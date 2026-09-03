@@ -89,6 +89,14 @@ drag already lands on, so a quantize puts a clip where dragging it would have.
 An edge is always one clip's: two clips of different lengths have no one edge
 to pull.
 
+**And one that was not possible until now: drag a clip onto another lane.** It
+follows your hand down the stack, and the drop is one edit — the clip leaves one
+lane's aggregate and joins the other's, in a single transaction, so Ctrl+Z puts
+it back where it came from in one step. It is the same call that moves a note
+between rows in a roll: a lane and a semitone are one structure, so the rule
+that decides which one the cursor is over is written once. An edge drag never
+does it — a trim is a length, and says nothing about which lane a clip is on.
+
 **And one about what your hand is on.** A clip draws its contents over each
 other and *one* of them is being edited: press the sweep's curve and you edit the
 curve (its points, and the bend between two of them) while the clip's grips

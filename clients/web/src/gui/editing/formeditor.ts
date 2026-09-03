@@ -324,6 +324,11 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * node rather than the element's — the rule every other edit-back follows.
      */
     private laneMembers = new Map<number, Member | null>();
+    /**
+     * Widget id → the lane's own base in beats, so a clip crossing the stack can
+     * be placed relative to the lane it lands on.
+     */
+    private laneBases = new Map<number, number>();
     /** widget id → the element whose notes that widget draws. */
     private rolls = new Map<number, Element>();
     /** patch widget id → the logical aggregate and its box-order handles. */
@@ -502,6 +507,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         this.clips = new Map();
         this.lanes = new Map();
         this.laneMembers = new Map();
+        this.laneBases = new Map();
         this.rolls = new Map();
         this.patches = new Map();
 
@@ -1101,6 +1107,11 @@ export class FormEditor extends Editor<Element> implements Adopting {
             if (node !== null) this.editLayer.set(node, String(rest[0]));
             return false;
         }
+        if (tag === "lane") {
+            // The clip left one lane and joined another: where it now *is*,
+            // which is two setmembers rather than one placement.
+            return this.applyClipLane(id, placed, Math.trunc(Number(rest[0])), Number(rest[1]));
+        }
         if (tag === "split") return this.applySplit(placed, Number(rest[0]));
         if (tag === "join") return this.applyJoin(placed, rest.map((a) => Math.trunc(Number(a))));
         if (tag !== "clip" || rest.length < 2) return false;
@@ -1481,6 +1492,90 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * node only *describes* one. What goes into the log is **one** intent over the
      * parent's members, so an undo puts the clip back whole.
      */
+    /**
+     * A clip **moved to another lane**, at `offset` on the shared axis.
+     *
+     * Moving a note between rows changes a number in the same list; moving a
+     * clip between lanes **reparents** — the clip is a member of the lane's
+     * aggregate, and a lane is a thing that exists with a node behind it. That
+     * is the one place the two boxes stop being the same object, and it is why
+     * this is not `place`: `Intent.Place` moves a node **within its parent** and
+     * carries no new one.
+     *
+     * So it is **two `setmembers` in one transaction** — the lane it left and
+     * the lane it joined — atomic in both directions and undone in one step.
+     * Half of it would be a clip in two lanes or in none.
+     *
+     * The element keeps its id across the move: it is the same element, placed
+     * somewhere else, and an identity that changed would leave the history
+     * describing a node the tree no longer has.
+     */
+    private applyClipLane(
+        widgetId: number,
+        placed: Placed,
+        laneWidget: number,
+        offset: number,
+    ): boolean {
+        const { member, owner } = placed;
+        const target = this.lanes.get(laneWidget);
+        if (member === null || owner === null || target === undefined || target === owner) {
+            return false;
+        }
+        if (!(target instanceof Aggregate) || target.kind !== CONCRETE) {
+            // A lane that is one element rather than an aggregate of clips has
+            // nowhere to put a second one: it *is* the clip it draws.
+            this.reason =
+                "that lane holds one element, not a list of clips: " +
+                "there is nowhere on it to place this one";
+            return false;
+        }
+        const fromNode = this.nodeId(owner);
+        const toNode = this.nodeId(target);
+        if (fromNode === null || toNode === null) return false;
+        const base = this.laneBases.get(laneWidget) ?? 0.0;
+        const onset = this.unitsToBeats(offset) - base;
+        const element = member.element;
+        const dur = member.dur;
+        const held = docIdOf(member);
+        const wasOffset = member.offset;
+        owner.remove(member);
+        const handle = target.add(element, onset, dur);
+        if (held !== null) setDocId(handle, held);
+        const [, document] = this.history();
+        const legs: [Intent, Intent][] = [];
+        for (const [node, aggregate] of [
+            [fromNode, owner],
+            [toNode, target],
+        ] as [number, Aggregate][]) {
+            const whole = toDocument(aggregate, { version: this.version }).root;
+            const intent = {
+                intent: "setmembers",
+                node,
+                members: (whole.members ?? []) as unknown[],
+            } as unknown as Intent;
+            const inverse = document.inverse(intent);
+            if (inverse === undefined) {
+                legs.length = 0;
+                break;
+            }
+            legs.push([intent, inverse]);
+        }
+        if (legs.length === 0 || !this.applyLegs("move the clip to another lane", legs)) {
+            // Put the arrangement back: the log refused, so nothing happened.
+            target.remove(handle);
+            const back = owner.add(element, wasOffset, dur);
+            if (held !== null) setDocId(back, held);
+            this.resync(widgetId);
+            return false;
+        }
+        // No projection: the tree already *is* what the intents say. What the
+        // window has to learn is that a clip it drew on one lane is on another,
+        // which is a redraw of the whole stack rather than a corrected value.
+        this.rederive = true;
+        this.restructured = true;
+        return this.changed();
+    }
+
     private applySplit(placed: Placed, atUnits: number): boolean {
         const { member, owner } = placed;
         if (member === null || owner === null) return false;
@@ -2796,7 +2891,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             // Its members start and end together: they are *one* thing on the
             // timeline, so they are one clip with layered bodies — not a lane of
             // clips that must be dragged one by one.
-            return [this.lane([this.clipFor(element, base, owner, member)], element, member)];
+            return [this.lane([this.clipFor(element, base, owner, member)], element, base, member)];
         }
         if (element instanceof Aggregate && element.kind === CONCRETE) {
             const clips: GuiNode[] = [];
@@ -2809,10 +2904,10 @@ export class FormEditor extends Editor<Element> implements Adopting {
                     clips.push(this.clipFor(child.element, childBase, element, child));
                 }
             }
-            const lane = clips.length > 0 ? [this.lane(clips, element, member)] : [];
+            const lane = clips.length > 0 ? [this.lane(clips, element, base, member)] : [];
             return [...lane, ...extra];
         }
-        return [this.lane([this.clipFor(element, base, owner, member)], element, member)];
+        return [this.lane([this.clipFor(element, base, owner, member)], element, base, member)];
     }
 
     /** One `track` lane holding `clips`, with the shared time chrome. */
@@ -2824,7 +2919,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * from the view: what the lane shows is what a reopened document says, and
      * pressing one writes back through the log like every other edit.
      */
-    private lane(clips: GuiNode[], element: Element, member: Member | null = null): GuiNode {
+    private lane(
+        clips: GuiNode[],
+        element: Element,
+        base = 0.0,
+        member: Member | null = null,
+    ): GuiNode {
         const wid = this.newId();
         const lane = track(
             {
@@ -2841,6 +2941,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         );
         this.lanes.set(wid, element);
         this.laneMembers.set(wid, member);
+        this.laneBases.set(wid, base);
         return lane;
     }
 

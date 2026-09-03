@@ -258,6 +258,9 @@ class FormEditor(Editor):
         #: widget id -> element, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
+        #: widget id -> the lane's own base in beats, so a clip crossing the
+        #: stack can be placed relative to the lane it lands on.
+        self._lane_bases: dict = {}
         #: The placement each lane draws, so an edit on its header names the
         #: window's node rather than the element's -- the rule every other
         #: edit-back follows.
@@ -414,6 +417,7 @@ class FormEditor(Editor):
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
+        self._lane_bases = {}
         self._lane_members = {}
         self._rolls = {}
         self._patches = {}
@@ -956,6 +960,11 @@ class FormEditor(Editor):
             if node is not None:
                 self._edit_layer[int(node)] = str(args[2])
             return False
+        if args[1] == "lane":
+            # The clip left one lane and joined another: where it now *is*,
+            # which is two setmembers rather than one placement.
+            return self._apply_clip_lane(int(args[0]), placed, int(args[2]),
+                                         float(args[3]))
         if args[1] == "split":
             return self._apply_split(placed, float(args[2]))
         if args[1] == "join":
@@ -1371,6 +1380,72 @@ class FormEditor(Editor):
             return False
         self._project(outcome["effective"])
         return True
+
+    def _apply_clip_lane(self, widget_id: int, placed, lane_widget: int,
+                         offset: float) -> bool:
+        """A clip **moved to another lane**, at ``offset`` on the shared axis.
+
+        Moving a note between rows changes a number in the same list; moving a
+        clip between lanes **reparents** — the clip is a member of the lane's
+        aggregate, and a lane is a thing that exists with a node behind it. That
+        is the one place the two boxes stop being the same object, and it is why
+        this is not `place`: `Intent.Place` moves a node **within its parent**
+        and carries no new one.
+
+        So it is **two `setmembers` in one transaction** — the lane it left and
+        the lane it joined — which is atomic in both directions and undone in
+        one step. Half of it would be a clip in two lanes or in none.
+
+        The element keeps its id across the move: it is the same element, placed
+        somewhere else, and an identity that changed would leave the history
+        describing a node the tree no longer has.
+        """
+        member, owner = placed.member, placed.owner
+        target = self._lanes.get(lane_widget)
+        if member is None or owner is None or target is None or target is owner:
+            return False
+        if not (isinstance(target, Aggregate) and target.kind == CONCRETE):
+            # A lane that is one element rather than an aggregate of clips has
+            # nowhere to put a second one: it *is* the clip it draws.
+            self._reason = ("that lane holds one element, not a list of clips: "
+                            "there is nowhere on it to place this one")
+            return False
+        from_node, to_node = self._node_id(owner), self._node_id(target)
+        if from_node is None or to_node is None:
+            return False
+        base = float(self._lane_bases.get(lane_widget, 0.0))
+        onset = self.units_to_beats(offset) - base
+        element, dur, held = member.element, member.dur, getattr(member, ID_ATTR, None)
+        was_offset = member.offset
+        owner.remove(member)
+        handle = target.add(element, onset, dur)
+        if held is not None:
+            setattr(handle, ID_ATTR, held)
+        _log, document = self._history()
+        legs = []
+        for node, aggregate in ((from_node, owner), (to_node, target)):
+            whole = to_document(aggregate, version=self._version)["root"]
+            intent = {"intent": "setmembers", "node": int(node),
+                      "members": whole.get("members", [])}
+            inverse = _native.document_inverse(document, intent)
+            if inverse is None:
+                legs = []
+                break
+            legs.append((intent, inverse))
+        if not legs or not self._apply_legs("move the clip to another lane", legs):
+            # Put the arrangement back: the log refused, so nothing happened.
+            target.remove(handle)
+            back = owner.add(element, was_offset, dur)
+            if held is not None:
+                setattr(back, ID_ATTR, held)
+            self._resync(widget_id)
+            return False
+        # No projection: the tree already *is* what the intents say. What the
+        # window has to learn is that a clip it drew on one lane is on another,
+        # which is a redraw of the whole stack rather than a corrected value.
+        self._rederive = True
+        self._restructured = True
+        return self._changed()
 
     def _apply_split(self, placed, at_units: float) -> bool:
         """A clip cut in two at ``at_units`` of its own time.
@@ -2565,7 +2640,7 @@ class FormEditor(Editor):
             # timeline, so they are one clip with layered bodies — not a lane of
             # clips that must be dragged one by one.
             return [self._lane([self._clip_for(element, base, owner, member)],
-                               element, member)]
+                               element, base, member)]
         if isinstance(element, Aggregate) and element.kind == CONCRETE:
             clips, extra = [], []
             for child in element.handles:
@@ -2574,12 +2649,12 @@ class FormEditor(Editor):
                     extra += self._lanes_for(child.element, child_base, element, child)
                 else:
                     clips.append(self._clip_for(child.element, child_base, element, child))
-            lane = [self._lane(clips, element, member)] if clips else []
+            lane = [self._lane(clips, element, base, member)] if clips else []
             return lane + extra
         return [self._lane([self._clip_for(element, base, owner, member)],
-                           element, member)]
+                           element, base, member)]
 
-    def _lane(self, clips: list, element, member=None) -> dict:
+    def _lane(self, clips: list, element, base: float = 0.0, member=None) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome and
         the **mixing** the element carries.
 
@@ -2593,6 +2668,7 @@ class FormEditor(Editor):
                      **_lane_mixing(element))
         self._lanes[wid] = element
         self._lane_members[wid] = member
+        self._lane_bases[wid] = float(base)
         return lane
 
     def _drawn_length(self, element, member) -> float:

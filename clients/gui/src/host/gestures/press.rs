@@ -640,6 +640,7 @@ impl Gestures {
                     self.drag = Some(Drag::Clip {
                         id: h.id,
                         lane: h.lane,
+                        press_lane: h.lane,
                         part: h.part,
                         body_x: h.body.x as f64,
                         body_w: h.body.w as f64,
@@ -650,6 +651,7 @@ impl Gestures {
                         contents: h.contents,
                         grid: snap,
                         block,
+                        stack: lane_stack(host, ctx, h.lane),
                     });
                 }
             }

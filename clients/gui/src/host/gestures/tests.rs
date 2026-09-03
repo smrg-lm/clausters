@@ -2255,6 +2255,88 @@ fn a_swept_lane_hands_its_clips_to_one_block_move() {
     );
 }
 
+/// **A clip changes lane by the call a note changes row with.** One vertical
+/// axis, one `index_at`: the clip follows the hand across the stack while it is
+/// still held -- a clip drawn on a lane it is not over would be a lie -- and
+/// what leaves at the release is the one payload that names where it now is.
+#[test]
+fn a_clip_dragged_across_the_stack_changes_lane() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","children":[
+            {"id":80,"type":"field","label":"one","link":"a","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","children":[]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let clip = placed_rect(&host, &ctx, 81);
+    let lower = placed_rect(&host, &ctx, 90);
+    let from = (
+        (clip.x + clip.w * 0.5) as f64,
+        (clip.y + clip.h * 0.5) as f64,
+    );
+    let to = (from.0, (lower.y + lower.h * 0.5) as f64);
+    let holds = |host: &Host, lane: i32| {
+        host.window_def(1)
+            .and_then(|t| t.find(lane))
+            .is_some_and(|w| w.children.iter().any(|c| c.id == Some(81)))
+    };
+    assert!(holds(&host, 80) && !holds(&host, 90));
+    g.press(&mut host, &ctx, from.0, from.1);
+    g.drag_to(&mut host, &ctx, to.0, to.1);
+    assert!(
+        holds(&host, 90) && !holds(&host, 80),
+        "the clip follows the hand onto the lane under it"
+    );
+    let effects = g.release(&mut host, &ctx, to.0, to.1);
+    let args = first_emit(&effects, 81).expect("the lane change reported");
+    assert_eq!(args[0], OscType::String("lane".into()));
+    assert_eq!(args[1], OscType::Int(90), "the lane it is on now");
+    assert_eq!(args.len(), 5, "the lane, then the clip's own three numbers");
+}
+
+/// An **edge** drag says nothing about which lane a clip is on: a trim is a
+/// length, and pulling one downwards must not move the clip to the lane below.
+#[test]
+fn a_trim_never_changes_lane() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","children":[
+            {"id":80,"type":"field","label":"one","link":"a","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","children":[]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let clip = placed_rect(&host, &ctx, 81);
+    let lower = placed_rect(&host, &ctx, 90);
+    // On the clip's end grip, then dragged down onto the other lane.
+    let grip = (
+        (clip.x + clip.w - 2.0) as f64,
+        (clip.y + clip.h * 0.5) as f64,
+    );
+    g.press(&mut host, &ctx, grip.0, grip.1);
+    g.drag_to(
+        &mut host,
+        &ctx,
+        grip.0 - 30.0,
+        (lower.y + lower.h * 0.5) as f64,
+    );
+    g.release(
+        &mut host,
+        &ctx,
+        grip.0 - 30.0,
+        (lower.y + lower.h * 0.5) as f64,
+    );
+    assert!(
+        host.window_def(1)
+            .and_then(|t| t.find(80))
+            .is_some_and(|w| w.children.iter().any(|c| c.id == Some(81))),
+        "the trim left it where it was"
+    );
+}
+
 /// The arguments of the first `/gui_event` a verb emitted for `id`.
 fn first_emit(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
     effects.iter().find_map(|e| match e {

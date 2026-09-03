@@ -74,6 +74,8 @@ impl Gestures {
             contents,
             grid,
             block,
+            stack,
+            press_lane: _,
         }) = self.drag.clone()
         else {
             return out;
@@ -107,8 +109,10 @@ impl Gestures {
                 contents,
                 grid,
                 block,
+                stack,
             },
             cx,
+            None,
         );
         emit_view(host, &mut out, ctx.def_id, lane);
         out
@@ -351,8 +355,10 @@ impl Gestures {
                 contents,
                 grid,
                 ref block,
+                ref stack,
+                press_lane: _,
             } => {
-                apply_clip_drag(
+                let now = apply_clip_drag(
                     host,
                     &mut out,
                     def_id,
@@ -369,9 +375,19 @@ impl Gestures {
                         contents,
                         grid,
                         block: block.clone(),
+                        stack: stack.clone(),
                     },
                     cx,
+                    Some(cy),
                 );
+                // The clip may have changed lane under the hand: the drag holds
+                // the lane it is on now, so the next step measures against it
+                // and the release reports from it.
+                if now != lane
+                    && let Some(Drag::Clip { lane, .. }) = self.drag.as_mut()
+                {
+                    *lane = now;
+                }
             }
             Drag::LaneLevel { id, rect } => {
                 let part = interact::HeaderPart::Fader;
@@ -498,12 +514,23 @@ impl Gestures {
         if let Some(Drag::Clip {
             id,
             lane,
+            press_lane,
             ref block,
             ..
         }) = self.drag.clone()
         {
             let block = !block.is_empty();
             self.drag = None;
+            // **The clip crossed the stack**, so what it reports is which lane
+            // it is on now and where it sits there. The owner reparents it and
+            // places it in one transaction, because one gesture is one edit --
+            // and a lane change is two `setmembers`, the lane it left and the
+            // lane it joined.
+            if lane != press_lane {
+                emit_clip_lane(host, &mut out, def_id, id, lane);
+                out.push(GestureEffect::Redraw(def_id));
+                return out;
+            }
             // **One gesture is one edit**, whether it moved one clip or twelve:
             // a block leaves as the lane's `"clips"`, which the owner applies as
             // one transaction and undoes in one step. A run of `"clip"` messages

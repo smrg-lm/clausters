@@ -58,4 +58,6 @@ pub(crate) use edit::{
     set_clip_selected,
 };
 pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};
-pub(crate) use read::{clip_event_args, clips_event_args, lane_event_args, plane_can_pan};
+pub(crate) use read::{
+    clip_event_args, clip_lane_event_args, clips_event_args, lane_event_args, plane_can_pan,
+};

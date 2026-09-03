@@ -105,6 +105,22 @@ pub(crate) fn clips_event_args(tree: &Widget, lane_id: i32) -> Option<Vec<OscTyp
     (args.len() > 1).then_some(args)
 }
 
+/// **Where a clip now is**: `"lane" lane offset dur start` — the placement plus
+/// the lane it has moved to.
+///
+/// It is `"clip"` with the lane in front, and it is a payload of its own for
+/// the reason the plural one is: what the owner has to do differs. A `"clip"`
+/// is one placement inside the aggregate it already belonged to; this is the
+/// clip **leaving** one aggregate and joining another, which is two
+/// `setmembers` in one transaction — and an owner that read it as a plain move
+/// would put the clip at the right time on the wrong lane.
+pub(crate) fn clip_lane_event_args(tree: &Widget, id: i32, lane_id: i32) -> Option<Vec<OscType>> {
+    let mut args = clip_event_args(tree, id)?;
+    args[0] = OscType::String("lane".into());
+    args.insert(1, OscType::Int(lane_id));
+    Some(args)
+}
+
 pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let widget = tree.find(id)?;
     let window = widget.window.unwrap_or_default();

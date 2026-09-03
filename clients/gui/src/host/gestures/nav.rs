@@ -9,6 +9,7 @@
 use clausters_core::osc::OscType;
 
 use super::super::Host;
+use super::super::bands::Bands;
 use super::super::graphics::track;
 use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
@@ -322,6 +323,73 @@ pub(super) fn pan_timeline(
     redraw_all(out, &roots);
 }
 
+/// **The lane stack a clip can be dragged across**: the lanes sharing the
+/// dragged clip's navigation group, top to bottom, as their widget ids and the
+/// [`Bands`] their rectangles make.
+///
+/// A clip changes lane by the same call a note changes row —
+/// [`Bands::index_at`] — which is the whole point of there being one vertical
+/// axis: the cross-band logic is written once. The stack shares the time axis,
+/// so a lane in another navigation group is not somewhere this clip can go: its
+/// x is a different window and the drop would land at a position the hand never
+/// pointed at.
+///
+/// Read **once, at the press**: the lanes do not move while a clip is dragged
+/// over them, and re-laying the window out per drag step to re-derive them
+/// would be the search the hit chain exists to avoid.
+#[derive(Clone, Debug, Default)]
+pub(super) struct LaneStack {
+    /// The lanes' widget ids, top to bottom.
+    pub(super) ids: Vec<i32>,
+    /// Where the first lane's rectangle starts, in window pixels.
+    pub(super) top: f32,
+    /// The bands the lanes make, measured from `top`. A gap between two lanes
+    /// (a ruler strip, a `gap` in the column) belongs to the lane above it, so
+    /// a drop between lanes lands on one rather than on nothing.
+    pub(super) bands: Bands,
+}
+
+impl LaneStack {
+    /// The lane a cursor y falls on, when it falls on one.
+    pub(super) fn at(&self, cy: f64) -> Option<i32> {
+        self.ids
+            .get(self.bands.index_at(cy as f32 - self.top)?)
+            .copied()
+    }
+}
+
+/// The stack `lane_id` belongs to: every `track` in the window on the same
+/// navigation group, ordered by where it was placed.
+pub(super) fn lane_stack(host: &Host, ctx: &GestureCtx, lane_id: i32) -> LaneStack {
+    let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {
+        return LaneStack::default();
+    };
+    let group = host.timeline_key(lane_id);
+    let mut lanes: Vec<(f32, f32, i32)> = placed
+        .iter()
+        .filter(|p| matches!(p.widget.kind, WidgetKind::Track { .. }))
+        .filter_map(|p| Some((p.rect.y, p.rect.h, p.widget.id?)))
+        .filter(|(_, _, id)| group.is_none() || host.timeline_key(*id) == group)
+        .collect();
+    lanes.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let Some(&(top, _, _)) = lanes.first() else {
+        return LaneStack::default();
+    };
+    // Each band runs to the next lane's top, so nothing between two lanes is
+    // outside the stack; the last band is the last lane's own height.
+    let heights: Vec<f32> = (0..lanes.len())
+        .map(|i| match lanes.get(i + 1) {
+            Some((next_top, _, _)) => next_top - lanes[i].0,
+            None => lanes[i].1,
+        })
+        .collect();
+    LaneStack {
+        ids: lanes.iter().map(|(_, _, id)| *id).collect(),
+        top,
+        bands: Bands::table(heights),
+    }
+}
+
 /// One in-flight clip drag, as the placement math needs it: the press-time
 /// snapshot plus the lane geometry the cursor maps through.
 #[derive(Clone)]
@@ -345,11 +413,18 @@ pub(super) struct ClipDrag {
     /// press-time `(index, offset, row)` of every selected clip on the lane,
     /// the grabbed one first.
     pub(super) block: Vec<(usize, f64, f32)>,
+    /// The lanes this clip can be dragged across, read at the press.
+    pub(super) stack: LaneStack,
 }
 
 /// Applies a clip drag at cursor `cx`: maps the cursor to a timeline sample,
 /// runs the shared placement math (move/resize against the press snapshot,
 /// snapped and clamped), writes it and reports it.
+///
+/// `cy` is the cursor's height, or `None` where the caller has none — the edge
+/// scroll, which pans the axis under a held cursor and knows only how far along
+/// it is. With no height there is no lane to ask for, so the clip stays on the
+/// one it is on.
 ///
 /// The cursor maps through the group's **current** window, not the press-time
 /// one — that is what lets the edge auto-scroll ([`super::Gestures::tick`]) carry the
@@ -362,14 +437,29 @@ pub(super) fn apply_clip_drag(
     def_id: i32,
     d: ClipDrag,
     cx: f64,
-) {
+    cy: Option<f64>,
+) -> i32 {
     let (nav_start, nav_len) = group_view(host, d.lane)
         .map(|(start, len, _)| (start, len))
         .unwrap_or((d.nav_start, d.nav_len));
     let sample = interact::sample_at(nav_start, nav_len, d.body_x, d.body_w, cx);
     let placed =
         interact::clip_drag_placement(d.part, sample, d.press_sample, d.orig, d.contents, d.grid);
+    let mut lane = d.lane;
     if d.block.is_empty() {
+        // **The clip can change lane, by the call a note changes row with.**
+        // One vertical axis, one `index_at`, one place the cross-band logic is
+        // written. A body drag only: an edge trim is a length and says nothing
+        // about which lane the clip is on, and a **block** stays on its lane
+        // because moving several clips across a stack is several reparents with
+        // one snapshot of indices behind them -- the snapshot is what would go
+        // stale, and a wrong index moves the wrong clip.
+        if d.part == interact::Part::Body
+            && let Some(to) = cy.and_then(|cy| d.stack.at(cy)).filter(|to| *to != d.lane)
+            && reparent_clip(host, def_id, d.id, d.lane, to)
+        {
+            lane = to;
+        }
         interact::clip_set(host, def_id, d.id, placed);
     } else {
         // **The block moves rigidly by the grabbed clip's own delta**, and the
@@ -379,12 +469,12 @@ pub(super) fn apply_clip_drag(
         // it, which is what makes the block a block and not a set of clips that
         // each round differently.
         let dt = placed.offset - d.orig.offset;
-        if let Some(lane) = host
+        if let Some(w) = host
             .window_def_mut(def_id)
             .and_then(|tree| tree.find_mut(d.lane))
         {
             let row = 0.0;
-            let mut clips = track::LaneClips::of(lane, row);
+            let mut clips = track::LaneClips::of(w, row);
             placement::move_block(&mut clips, &d.block, dt, 0.0, (row, row), None);
         }
     }
@@ -402,6 +492,42 @@ pub(super) fn apply_clip_drag(
     // of a hundred steps for one drag, and a hundred round trips whose
     // acknowledgements the next frame outruns.
     out.push(GestureEffect::Redraw(def_id));
+    lane
+}
+
+/// **Moves a clip widget from one lane to another**, keeping its own id and
+/// everything it holds. Returns whether it moved.
+///
+/// The picture has to change while the hand is still holding it — a clip that
+/// only jumped lanes on release would be drawn on a lane it is not over — so
+/// this is the drag's mutation, exactly as writing the offset is. What the
+/// **owner** does about it leaves once, at the release (`"lane"`), because one
+/// gesture is one edit.
+fn reparent_clip(host: &mut Host, def_id: i32, clip: i32, from: i32, to: i32) -> bool {
+    let Some(tree) = host.window_def_mut(def_id) else {
+        return false;
+    };
+    let Some(source) = tree.find_mut(from) else {
+        return false;
+    };
+    let Some(at) = source.children.iter().position(|c| c.id == Some(clip)) else {
+        return false;
+    };
+    let widget = source.children.remove(at);
+    match tree.find_mut(to) {
+        Some(target) => {
+            target.children.push(widget);
+            true
+        }
+        None => {
+            // The target went away between the press and this step: put the
+            // clip back where it was rather than dropping it out of the tree.
+            if let Some(source) = tree.find_mut(from) {
+                source.children.insert(at, widget);
+            }
+            false
+        }
+    }
 }
 
 /// How near a lane body's edge (device pixels) a held clip drag starts pulling

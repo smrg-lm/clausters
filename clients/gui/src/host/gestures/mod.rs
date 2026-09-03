@@ -231,10 +231,14 @@ enum Drag {
     /// `grid`.
     Clip {
         id: i32,
-        /// The lane the clip sits on — the navigation-group member, which the
-        /// clip itself is not; the cursor mapping and the edge scroll reach the
-        /// shared axis through it.
+        /// The lane the clip sits on **now** — the navigation-group member,
+        /// which the clip itself is not; the cursor mapping and the edge scroll
+        /// reach the shared axis through it. It changes under the hand: a body
+        /// drag across the stack moves the clip to the lane it is over.
         lane: i32,
+        /// The lane it was on at the press, so the release can tell a move
+        /// *across* the stack from a move along one.
+        press_lane: i32,
         part: interact::Part,
         body_x: f64,
         body_w: f64,
@@ -256,6 +260,12 @@ enum Drag {
         /// own, and always empty for an edge drag: a trim is one clip's, since
         /// two clips of different lengths have no one edge to pull.
         block: Vec<(usize, f64, f32)>,
+        /// The lanes this clip can be dragged across, read at the press — a
+        /// clip changes lane by [`Bands::index_at`], the call a note changes
+        /// row with.
+        ///
+        /// [`Bands::index_at`]: super::bands::Bands::index_at
+        stack: nav::LaneStack,
     },
     /// Dragging a lane header's level fader: the cursor's x over the fader's
     /// rectangle is the value, so the press itself already sets it.

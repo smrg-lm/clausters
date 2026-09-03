@@ -132,6 +132,21 @@ pub(super) fn emit_clip(
     emit_read(host, out, def_id, widget_id, interact::clip_event_args);
 }
 
+/// Emits a clip's **lane change** — `/gui_event clip "lane" lane offset dur
+/// start` — the one report that names where a clip now *is* rather than only
+/// where it sits.
+pub(super) fn emit_clip_lane(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    clip_id: i32,
+    lane_id: i32,
+) {
+    emit_read(host, out, def_id, clip_id, |tree, id| {
+        interact::clip_lane_event_args(tree, id, lane_id)
+    });
+}
+
 /// Emits a lane's block edit — `/gui_event lane "clips" id offset dur start …`
 /// over the clips the hand is holding.
 pub(super) fn emit_clips(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, lane_id: i32) {

@@ -43,8 +43,12 @@ use std::ops::Range;
 
 /// A stack of horizontal bands, measured from the stack's own zero (a caller
 /// adds its rectangle's `y`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Bands {
+    /// No bands at all — a view whose rows have not arrived yet. Every question
+    /// below answers about an empty stack rather than refusing.
+    #[default]
+    None,
     /// Every band the same height — the chromatic roll. Holds **nothing**: the
     /// count and one height are the whole of it.
     Uniform { n: usize, h: f32 },
@@ -76,6 +80,7 @@ impl Bands {
     /// How many bands there are.
     pub fn len(&self) -> usize {
         match self {
+            Bands::None => 0,
             Bands::Uniform { n, .. } => *n,
             Bands::Table { edges } => edges.len().saturating_sub(1),
         }
@@ -89,6 +94,7 @@ impl Bands {
     /// How tall the whole stack is.
     pub fn total(&self) -> f32 {
         match self {
+            Bands::None => 0.0,
             Bands::Uniform { n, h } => *n as f32 * h,
             Bands::Table { edges } => edges.last().copied().unwrap_or(0.0),
         }
@@ -99,6 +105,7 @@ impl Bands {
     /// drawing pass that has fallen out of step should draw nothing, not stop.
     pub fn band(&self, i: usize) -> (f32, f32) {
         match self {
+            Bands::None => (0.0, 0.0),
             Bands::Uniform { n, h } => {
                 if i >= *n {
                     (*n as f32 * h, 0.0)
@@ -120,6 +127,7 @@ impl Bands {
             return None;
         }
         match self {
+            Bands::None => None,
             Bands::Uniform { h, .. } => (*h > 0.0).then(|| (y / h) as usize),
             // The first edge strictly past `y`, less one: the band that holds
             // it. Binary, which is why a stack of half a million bands costs
@@ -137,12 +145,14 @@ impl Bands {
         let (y0, y1) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
         let n = self.len();
         let first = match self {
+            Bands::None => 0,
             Bands::Uniform { h, .. } if *h > 0.0 => (y0 / h).floor().max(0.0) as usize,
             Bands::Uniform { .. } => 0,
             Bands::Table { edges } => edges.partition_point(|e| *e <= y0).saturating_sub(1),
         }
         .min(n);
         let last = match self {
+            Bands::None => 0,
             Bands::Uniform { h, .. } if *h > 0.0 => (y1 / h).ceil().max(0.0) as usize,
             Bands::Uniform { .. } => 0,
             Bands::Table { edges } => edges.partition_point(|e| *e < y1),
@@ -159,6 +169,7 @@ impl Bands {
     /// a row off. Clamped to the stack's own span at both ends.
     pub fn at(&self, i: f32) -> f32 {
         match self {
+            Bands::None => 0.0,
             Bands::Uniform { n, h } => (i * h).clamp(0.0, *n as f32 * h),
             Bands::Table { .. } => {
                 let n = self.len();
@@ -176,6 +187,7 @@ impl Bands {
     /// at. Clamped to `[0, len]`.
     pub fn index_of(&self, y: f32) -> f32 {
         match self {
+            Bands::None => 0.0,
             Bands::Uniform { n, h } if *h > 0.0 => (y / h).clamp(0.0, *n as f32),
             Bands::Uniform { .. } => 0.0,
             Bands::Table { .. } => {
@@ -268,7 +280,7 @@ mod tests {
     /// a view whose lanes have not arrived yet is drawn empty, not crashed.
     #[test]
     fn an_empty_stack_answers_everything() {
-        for b in [Bands::uniform(0, 10.0), Bands::table([])] {
+        for b in [Bands::None, Bands::uniform(0, 10.0), Bands::table([])] {
             assert!(b.is_empty());
             assert_eq!(b.total(), 0.0);
             assert_eq!(b.band(0), (0.0, 0.0));
