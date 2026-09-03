@@ -3129,6 +3129,38 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The score's element hit is a linear scan over the whole page** *(found
+  2026-09-03, measuring the vertical axis for a different design and checking a
+  premise that the score's hit was the scalable case)*. `ScoreData::hit`
+  (`graphics/score/cursor.rs:242`) walks every box the page engraved, keeps the
+  ones that hold the point and takes the smallest by area; `entry_at` (`:271`)
+  is a second walk of the same shape. The `partition_point` in
+  `graphics/score/tess.rs:171` is not this at all — it is the playhead's search
+  over the timemap's cursors, which is why the scan is easy to miss.
+
+  Measured with that exact shape, per click:
+
+  ```
+        200 boxes       158 ns      <- a real page
+      2 000 boxes     1 045 ns      <- a dense page
+     20 000 boxes    10 313 ns
+    200 000 boxes    75 907 ns
+  2 000 000 boxes 1 318 750 ns      <- 1.3 ms
+  ```
+
+  **This is correct today and is written down for the day it stops being.** The
+  widget holds one engraved page (`elements/score.rs:62-82`) — the client
+  re-engraves and sends it — so the view never holds the work, and at page
+  scale the scan costs less than a microsecond. It becomes the thing to look at
+  first the day a page stops being a page: a very dense orchestral system, or a
+  continuous unrolled view. The fix, if it is ever needed, is a coarse grid or
+  an interval tree over `hits`, built in `index()` where the boxes are already
+  being walked — not a change to the hit itself.
+
+  The reason it is filed rather than fixed: the answer to "a score can have
+  millions of elements" is already in the design, and it is not a faster index
+  — it is that the view holds a page and the work stays in the client.
+
 - ✅ **A session host draws no lane mixing, and its header controls reach
   nothing** *(found 2026-09-02, closing the Python client's `C48`; fixed
   2026-09-02)*. The host emitted the three tags from a lane header and carried
