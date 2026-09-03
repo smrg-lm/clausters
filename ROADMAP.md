@@ -94,7 +94,17 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-**Nothing open here.** The five that came before are closed: three on
+- ⬜ **A clip dropped where another already starts merges the whole lane into
+  one** *(`clients/python/PLAN.md`, Found by use)*. An aggregate whose members
+  start and end together draws as one clip with layered bodies, and two members
+  with no stated length count as ending together — so a drop at an onset another
+  clip already holds makes the lane draw a single stacked clip, and neither
+  placement can be addressed on its own until the drop is undone. **The
+  decision**: whether a *drop* may build that structure at all, or only an
+  authored one — the entry names the two shapes it could take (require stated
+  lengths, or decide the layering when the window opens).
+
+**Otherwise nothing open here.** The five that came before are closed: three on
 2026-08-27, and two on 2026-09-01 — the tempo map's owner, and how an editable
 structure is identified across the seam, whose answer (the registry mints it)
 moved the edit stack to section 4. The tempo one is worth naming because it did
