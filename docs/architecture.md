@@ -410,6 +410,19 @@ imports **nothing** from the GUI (it is pure and transport-agnostic), and the
 driver is the **only** converter between the arrangement's units and the view's
 timeline samples.
 
+**And a third, which is about what this layer is *for*.** The arrangement is a
+**secondary, specific module**: it places structures in time, and those
+structures exist, are edited and are drawn without it (`edit(x)` opens a buffer,
+a timeline or a curve with no tree anywhere). So the visual abstractions are
+independent of it -- a clip, a lane, a roll, a waveform are **views configured
+by what they hold**, and what a view draws and what edits it admits are derived
+from the structure inside it, never from the class `form` happens to have built.
+Gating an *edit action* on an arrangement type is the defect this rule exists to
+name; the question such an action asks is the material's (*is there an
+addressable time axis here?*), which samples, notes, events and segments all
+answer yes. See "A view is configured by what it holds, and the arrangement is
+not the norm" in [Design decisions](decisions.md).
+
 **The arrangement has two units, and which one a number is in is derived, never
 stored.** An onset — a member's offset, an element's own — is in **beats**: a
 placement is a musical decision and takes the unit of what contains it. A

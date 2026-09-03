@@ -77,13 +77,41 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **A clip over a track cannot be split, and a timeline is not an algorithm**
-  *(`clients/python/PLAN.md`, Future directions)*. The split admits samples and
-  refuses everything else, which is right about a generator and wrong about a
-  `Track`: cutting a timeline of notes at a time is as definable as cutting
-  samples, and the halves are two windows onto one timeline. The example teaches
-  `e` over a take and it does nothing over a roll clip. The one thing to settle
-  is a note the cut falls inside, and the roll's own `e` already answers it.
+- ⬜ **A selection has two axes wherever the picture has two, and one where it
+  has one** *(`clients/gui/PLAN.md`, Found by use)*. The rule the unified sweep
+  has to satisfy: the patcher, the multitrack (across clips of **different**
+  tracks) and the notes select horizontally *and* vertically; a signal selects on
+  time alone, because its second axis is amplitude. What is still short of it is
+  the picture, not the take -- the lane stack's band is the navigation group's and
+  paints every lane. It is what the next entry has to be measured against, and it
+  is first because it states the criterion the other one is a case of.
+
+- ⬜ **Which edits a clip admits is asked of `form`'s classes, not of the data**
+  *(`clients/python/PLAN.md`, Found by use)*. The split tests `isinstance` against
+  two arrangement classes and refuses the rest, so a piano-roll clip cannot be
+  cut. A clip is a **view**: what it holds decides what it admits, and everything
+  with an addressable time axis -- samples, notes, events, segments -- cuts and
+  joins by the same action in its own unit. The unified verbs must exist for every
+  clip; only the arithmetic branches. One sub-question is open (a note the cut
+  falls inside), and the roll's own `e` has to answer it the same way. **It is the
+  head of a small family**: the two entries below and the silent refusal in
+  section 2 are all downstream of the same mistake, and the rule that names it is
+  "A view is configured by what it holds, and the arrangement is not the norm"
+  (`docs/decisions.md`).
+
+- ⬜ **`Segment` and `Segments` live in the arrangement and are general**
+  *(`clients/python/PLAN.md`, Found by use)*. They sit in `form/element.py`, which
+  is what let a split read as an arrangement's capability. A segment is what
+  cutting anything on a time axis produces, and a run of them is what a join
+  assembles; they belong beside the structures, in the shared core, bound by both
+  clients. Small move, one seam to check.
+
+- ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
+  *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
+  are legal and ordinary; the lane draws coincident members as a single clip with
+  layered bodies, which is the piano roll's logic on the wrong material, and the
+  two placements stop being addressable. A defect of the picture, not a question
+  about drops -- which is what it was filed as until 2026-09-03.
 
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
@@ -111,18 +139,14 @@ on each one; none of them is being taken by this file.
   candidates. Related: the host refuses its *own* gestures out loud (a
   `"refused"` event), so the two halves of one window disagree about whether a
   refusal is announced.
+  **Sized after section 1, not before it**: most of what it would display are
+  refusals that should not happen (see "Which edits a clip admits..."), and what
+  is left is the honest case -- a generator that has not been rendered.
 
-- ⬜ **A clip dropped where another already starts merges the whole lane into
-  one** *(`clients/python/PLAN.md`, Found by use)*. An aggregate whose members
-  start and end together draws as one clip with layered bodies, and two members
-  with no stated length count as ending together — so a drop at an onset another
-  clip already holds makes the lane draw a single stacked clip, and neither
-  placement can be addressed on its own until the drop is undone. **The
-  decision**: whether a *drop* may build that structure at all, or only an
-  authored one — the entry names the two shapes it could take (require stated
-  lengths, or decide the layering when the window opens).
-
-**Otherwise nothing open here.** The five that came before are closed: three on
+**Otherwise nothing open here.** One entry left this section without being
+closed: the layered clip drop, which on 2026-09-03 stopped being a question about
+drops and became a defect of the lane's drawing -- it is in section 1 now, under
+its new title. The five that came before are closed: three on
 2026-08-27, and two on 2026-09-01 — the tempo map's owner, and how an editable
 structure is identified across the seam, whose answer (the registry mints it)
 moved the edit stack to section 4. The tempo one is worth naming because it did

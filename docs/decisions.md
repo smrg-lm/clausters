@@ -844,6 +844,44 @@ to play it, and a logical aggregate emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
 exceptions were resolved in the algebra's favour, and both are recorded above.
 
+## A view is configured by what it holds, and the arrangement is not the norm
+
+`clausters.form` is the layer that *places* things in time, and because it was
+the last big piece to land it started being read as the centre of the client:
+the type a value has **there** was taken as the answer to questions that are not
+its. It is not the centre. The structures are — samples, notes, events, curves,
+segments — and they exist, are edited and are drawn with no arrangement anywhere
+near them (`edit(x)` opens a buffer, a timeline or a curve on its own).
+
+**Decision.** The arrangement is a **secondary, specific module**, and every
+visual abstraction is independent of it. A clip, a lane, a roll, a waveform are
+**views**, and a view is **configured by what it holds**: the drawing and the
+edits it admits are derived from the structure inside it, never from which class
+built it and never from where in a tree it sits. The wire has said this since the
+model replaced the widget catalog — a `field` carrying a placement *is* a clip,
+and no type on it spells "audio clip" or "midi clip" — and the same rule governs
+the client side of the seam.
+
+**What it rules out, concretely.** An edit action may not be gated on an
+arrangement class. The question a split, a join or a trim asks is about the
+material: *does this have an addressable time axis?* Samples do, a timeline of
+notes does, a list of events does, and a run of segments does — so all of them
+cut and join, by the same action with the arithmetic of their own unit. A
+**generator** is the one thing that genuinely refuses, and even that is not "it
+cannot be split" but "not until it is rendered", which is the change of state the
+model already names. An `isinstance` against `Vector`/`Segments` standing where
+that question belongs is a defect, and it is how one action comes to be written
+once per type: exactly the per-door drift the auto-fit, the placement and the
+selection each had to be unified out of.
+
+**Consequence.** Where a structure that is *general* was filed under the
+arrangement, it moves. `Segment`/`Segments` are what cutting anything on a time
+axis produces — a signal, a sequence, a track — so they belong beside the
+structures rather than in `form/element.py`, and every client binds the same one.
+And a picture that layers, collapses or refuses is answering a property of its
+contents; when it answers a property of the tree instead, the tree has leaked
+into a view.
+
 ## The piano-roll: OSC items get their own lane, and the notes live once
 
 The editor-grade `pianoroll` draws the two message families a sequence carries —

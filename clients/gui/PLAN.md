@@ -3143,6 +3143,28 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A selection has two axes wherever the picture has two, and one where it
+  has one** *(stated 2026-09-03 by the user, closing the selection unification)*.
+  The rule the configured sweep has to satisfy, written as a rule rather than as
+  four behaviours: **the patcher, the multitrack and the notes select
+  horizontally *and* vertically** -- a rectangle over boxes on a plane, a
+  rectangle down the lane stack that takes clips of **different tracks**, a
+  rectangle over the roll that takes the notes of the pitch rows it crossed --
+  while **a signal selects on time alone**, because its second axis is amplitude
+  and a band of it answers no question a hand asked. (The spectrogram is the
+  exception the `select_box` step already expresses: bins are a real second axis,
+  which is why the restriction is a *step* and not a mode.)
+
+  Where the tree stands against it: the three vertical selections all take the
+  right things now, and it is the **picture** that is still one-axis on the lane
+  stack -- the swept band is the navigation group's, so it paints every lane
+  while the clips taken are the crossed ones. That is the entry below ("The swept
+  time band is the whole group's"), and this one is what it has to be measured
+  against: not "draw fewer lanes" but "the vertical half of a rectangle is a
+  value the hand chose, in every view that has a second axis". Signal views are
+  correct as they are and must stay that way -- one axis is the answer there, not
+  a missing feature.
+
 - ⬜ **A refused edit springs back and says nothing** *(found 2026-09-03, while
   chasing "the clip does not respond": pressing `e` over a piano-roll clip is
   answered by a clear refusal nobody can see)*. The acknowledgement already
@@ -3164,6 +3186,15 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   what the `"refused"` emissions already are for the gestures the *host* itself
   declines, which is an inconsistency of its own (the host refuses out loud and
   the owner refuses silently).
+
+  **What this is *not* an excuse for** *(added 2026-09-03)*: the refusal that
+  raised it should not exist. A clip is a view and what it holds decides what it
+  admits, so a piano-roll clip refusing to split is a defect of the client, not
+  a message with nowhere to go -- see "Which edits a clip admits is asked of
+  `form`'s classes, not of the data" (`clients/python/PLAN.md`, Found by use).
+  Fixing that removes most of what this entry would have had to display and
+  leaves the honest case (a generator that has not been rendered), which is what
+  the decision should actually be sized against.
 
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;

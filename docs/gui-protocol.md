@@ -316,6 +316,14 @@ given thickness `h`, with nothing placed on it and no lane chrome, is the
 free-standing **ruler**; anything else is a **lane** — including an empty one,
 which a multitrack opens all the time and which must not read as a ruler.
 
+**A clip is a view, and what it holds configures it.** Nothing on the wire spells
+"audio clip" or "midi clip", and that is the model rather than an omission: the
+`field` states a placement, its children state what is drawn on it, and the edits
+a hand may perform — move, trim, `split`, `join` — belong to the *material* under
+it, not to a type. So a clip over samples and a clip over a timeline of notes take
+the same edits, each in the unit of what it measures, and a client that admits one
+and refuses the other is disagreeing with the wire, not implementing it.
+
 ### The elements
 
 | Type | Replaces | How the old name is said |

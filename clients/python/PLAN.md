@@ -1126,6 +1126,45 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **Which edits a clip admits is asked of `form`'s classes, not of the data**
+  *(found 2026-09-03 while chasing "the clip does not respond"; re-framed the
+  same day with the user, whose reading is the entry)*. `_apply_split` tests
+  `isinstance(element, (Vector, Segments))` and refuses everything else, on the
+  ground that splitting "a pattern or an aggregate would have to say what half
+  of an algorithm is". The ground is wrong, and the shape of the test is more
+  wrong than the ground. **A clip is a view**, not a data type: it says where
+  and how long, and what it holds decides what it admits. Samples cut and join;
+  so does a timeline of notes, a list of events, a run of segments -- anything
+  with an addressable time axis, which is what the action actually needs.
+  Nothing about a `Track` makes a cut undefined: the halves are two windows onto
+  one timeline, the same placement rule in the other unit.
+
+  So the unified actions **must exist for every clip**, and the branch is the
+  arithmetic of the cut, never whether the verb is available. What genuinely
+  refuses is a **generator**, and even it does not refuse forever -- "not until
+  it is rendered", which is the change of state the model already has a verb
+  for. The fix: ask the element (does it have an addressable time axis, and in
+  which unit), drop the class test, and give `split`/`join` the beats arithmetic
+  beside the seconds one. One sub-question is open and only one: **a note the
+  cut falls inside** -- shorten it into the first half, move it whole to the
+  second, or cut it in two -- and the roll's own `e` one level down has to give
+  the same answer. **Related:** "A refused edit springs back and says nothing"
+  (`clients/gui/PLAN.md`) is downstream of this one; most of what it would have
+  had to display should not have been refused.
+
+- ⬜ **`Segment` and `Segments` live in the arrangement and are general**
+  *(found 2026-09-03, from the entry above)*. They are in
+  `clausters/form/element.py`, which is what made a split read as an
+  arrangement's capability and let two classes own an action that belongs to
+  every structure with a time axis. A segment is **what cutting anything on a
+  time axis produces** -- a signal, a sequence, a track -- and a run of them is
+  the assembled result a join is the inverse of; neither mentions placement,
+  offsets or a tree. They belong beside the structures (and in the shared core,
+  so both clients bind one), with `form` importing them like any other reader.
+  The move is small; what has to be checked is the seam it crosses -- the
+  document's body kinds, the web port's twin, and the `duration_unit` derivation
+  that currently names both classes.
+
 - ✅ **A clip that changed lane went back to its content's length** *(found
   2026-09-03, testing `composer.py` with `autofit=False`; fixed the same day)*.
   The hold was right and its key was not. `_fit` filed a held pair under the
@@ -1147,20 +1186,25 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   faces answer one question. (This amends the entry below, which said identity
   was enough: it is enough for a redefine, not for a reparent.)
 
-- ⬜ **A clip dropped where another already starts merges the whole lane into
-  one** *(found 2026-09-03, while reproducing the above)*. An aggregate whose
-  members start and end together is drawn as one clip with layered bodies --
-  they are *one thing* on the timeline -- and two members with no stated length
-  count as ending together. So dropping a clip onto a lane at the same onset as
-  the clip already there makes the lane draw a single layered clip, and neither
-  placement can be addressed on its own until the drop is undone.
+- ⬜ **Two clips at the same onset are drawn as one, and neither can be
+  addressed** *(found 2026-09-03 while reproducing the entry above; re-framed
+  2026-09-03 after the user's reading -- the first framing had it as a question
+  about drops, and it is not one)*. Overlapping placements are **legal and
+  ordinary** on a track: two clips may share a lane, an onset and an end, and a
+  piece says so all the time. What is wrong is only the picture. The lane draws
+  members that start and end together as **one clip with layered bodies** -- and
+  two members with no stated length count as ending together -- so the two
+  become a single rectangle, and nothing can move, trim or select either of them
+  on its own.
 
-  The rule reads an authored structure correctly; what is in question is
-  whether a *drop* should be able to make one silently. The two candidates: only
-  collapse when the members' lengths are stated (an unstated pair is not
-  evidence they end together), or decide the layering when the window opens and
-  leave a drop out of it. Either is a decision, not a bug fix, so it is written
-  down rather than taken.
+  That collapse is the roll's logic on the wrong material: stacking at one
+  position is the same data seen twice in a piano roll, and it is two separate
+  placements on a track. The rule is reading the *tree* (an aggregate's kind and
+  whether its members coincide) where it should be reading the **view's** need:
+  a lane shows placements, and overlapping ones are drawn overlapping -- offset
+  in depth, or on sub-rows -- each keeping its own body, its own grips and its
+  own hit. See "A view is configured by what it holds, and the arrangement is
+  not the norm" in `docs/decisions.md`.
 
 - ✅ **A clip resized itself when a note inside it moved** *(found 2026-09-03,
   testing `composer.py` with `autofit=False`; fixed the same day)*. A placement
@@ -2532,23 +2576,6 @@ work, where a pending item reads as done.)*
   tempo 1 and was freed after **one** at tempo 2 — half the take.
 
 ## Future directions (a design that is not a fix)
-
-- ⬜ **A clip over a track cannot be split, and a timeline is not an algorithm**
-  *(found 2026-09-03, while chasing "the clip does not respond")*. `_apply_split`
-  admits `Vector` and `Segments` and refuses everything else, on the ground that
-  splitting "a pattern or an aggregate would have to say what half of an
-  algorithm is". That is right about a **generator** and wrong about a
-  `Track`: a track is a timeline of notes, cutting it at a time is exactly as
-  definable as cutting samples, and the two halves are two windows onto one
-  timeline -- the same placement rule, in the other unit. As it stands the `e`
-  the composer example teaches over a take does nothing over a roll clip, and
-  the reason it gives is not shown (`clients/gui/PLAN.md`, Found by use,
-  "A refused edit springs back and says nothing").
-
-  What it needs: the split's window arithmetic in beats, and an answer for a
-  note the cut falls *inside* -- shorten it into the first half, move it whole
-  to the second, or cut it in two, which is the roll's own `e` one level down
-  and should give the same answer.
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather

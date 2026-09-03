@@ -312,6 +312,21 @@ on trust, so that is where drift accumulates:
   The framework's own record is `docs/decisions.md` — there is no source document
   behind it to consult.
 
+  **`form` is a secondary, specific module, and the visual abstractions are
+  independent of it.** What is fundamental is the **data structures** — samples,
+  notes, events, curves, segments — and the verbs they admit; `clausters.form`
+  is one client-side way of *placing* them in time, not the norm the rest of the
+  system is read against. A clip, a lane, a roll, a waveform are **views**, and
+  **a view is configured by what it holds**, never by which class built it: what
+  a hand may do to a clip (move, trim, split, join) is asked of the structure
+  inside it — does it have an addressable time axis — and never of `form`'s type
+  list. An `isinstance` against an arrangement class deciding whether an *edit
+  exists* is the defect, and it is how one action comes to be implemented once
+  per type instead of once. The wire already gets this right (a `field` with a
+  placement is a clip; nothing on it names an "audio clip" or a "midi clip"),
+  and so do the structures an edit produces — a cut yields `Segment`/`Segments`,
+  which are general to anything with a time axis and not the arrangement's own.
+
 ## Commit workflow
 
 **Work directly on `main`.** This is a single-maintainer repo; commit to

@@ -10,6 +10,15 @@ take placed against a melody, a generator that has not been evaluated yet.
 point of the pair is that the graphic is not a picture of the music: dragging a
 clip moves the *element*, and the score follows.
 
+**And it is a layer, not the centre.** What is fundamental is the data — samples,
+notes, events, curves — and it is edited and drawn with no arrangement anywhere
+near it: `edit(x)` opens a buffer, a timeline or a curve on its own, and this
+chapter's editor composes those same editors rather than replacing them. So the
+pictures are independent of this module too: **a clip is a view configured by what
+it holds**, and the edits it admits — move, trim, split, join — come from the
+structure inside it, in the unit that structure measures. A clip over samples and a
+clip over a timeline of notes take the same actions; only the arithmetic differs.
+
 ## Elements
 
 An **element** is any bounded thing that produces a unit of meaning and can be
