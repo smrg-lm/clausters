@@ -277,6 +277,28 @@ export class BufferSegments extends SegmentRun<SourceLike> {
     }
 
     /**
+     * Whether these windows are **one run of one buffer**: each opening exactly
+     * where the one before it stopped.
+     *
+     * What makes a join the inverse of a split rather than a pile of wrappers —
+     * a run like this *is* the single window it was cut from, and says so, so
+     * cutting and rejoining leaves the composition it started with. A run of one
+     * is trivially one run.
+     */
+    get contiguous(): boolean {
+        if (this.segments.length === 0) return false;
+        const first = this.segments[0];
+        let expected = first.start;
+        for (const seg of this.segments) {
+            if (seg.source !== first.source || Math.abs(seg.start - expected) >= 0.5) {
+                return false;
+            }
+            expected = this.advanced(seg.start, seg.duration);
+        }
+        return true;
+    }
+
+    /**
      * What playing one window asks the instrument for: the buffer, and the frame
      * the window opens at.
      */

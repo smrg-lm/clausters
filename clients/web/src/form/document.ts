@@ -655,7 +655,13 @@ function kindBody(element: Element, ids: Ids): DocNode {
                     timelineMember(beat, item, ids),
                 ),
             },
-            { form: FORM_TRACK },
+            // The **window** onto the timeline, written only when there is one
+            // — the beats counterpart of a vector's `start`, and through the
+            // same door: the config carries what the document does not
+            // interpret. A track saying nothing about a window reads its
+            // timeline from the beginning, which is every track written before
+            // windows existed.
+            element.start ? { form: FORM_TRACK, start: element.start } : { form: FORM_TRACK },
         );
     }
     if (element instanceof Aggregate) {
@@ -1196,7 +1202,8 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
             }
             timeline.add(Number(member.offset ?? 0.0), item);
         }
-        built = new Track(timeline, onset, duration);
+        built = new Track(timeline, onset, duration,
+                          { start: Number(config.start ?? 0) || 0 });
     } else if (kind === "aggregate") {
         const aggregate = new Aggregate(null, src.grouping === LOGICAL ? LOGICAL : CONCRETE, {
             onset,

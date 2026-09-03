@@ -275,6 +275,49 @@ export class Element {
         return temporalCharacter(this.onset, this.duration);
     }
 
+    // -- windows: what a trim, a split and a join ask an element -------------
+    //
+    // **The question is the material's, never the class's.** Cutting is defined
+    // wherever there is an addressable time axis — samples, notes, events,
+    // segments — so the verb asks the element whether it has one instead of
+    // testing what it is. What genuinely answers no is a **generator**: not
+    // "cannot be cut" but *not until it is rendered*, which is the change of
+    // state the model already has a verb for.
+
+    /**
+     * Where this element **reads from** inside what it holds, or `null` when it
+     * holds no window at all.
+     *
+     * In the unit the material is *addressed* in — frames for samples, beats
+     * for events — which is the same coordinate {@link Segment.start} is in and
+     * for the same reason.
+     */
+    windowStart(): number | null {
+        return null;
+    }
+
+    /**
+     * The element the **second half** of a cut at `at` reads, or `null` when
+     * this element cannot be cut.
+     *
+     * `at` and `length` are in this element's own unit ({@link durationUnit}),
+     * and `rate` is the sample rate to bridge with when the material is
+     * addressed in frames and its source does not know its own — the one number
+     * an element may need from the caller.
+     *
+     * The **first** half is never built: it is the element it always was, with
+     * its placement shortened, which is the arrangement's rule (a placement is a
+     * window onto an element, never a rewrite of it) and what makes an undo of a
+     * split one step. Nothing is copied and nothing is lost either way —
+     * lengthening a half brings back exactly what the cut hid.
+     */
+    windowed(at: number, length: number, rate = 0.0): Element | null {
+        void at;
+        void length;
+        void rate;
+        return null;
+    }
+
     /**
      * Delegates playing to the wrapped item's `play(destination)` — the
      * double-dispatch seam shared by `seq.Event`, `seq.OscItem` and
@@ -452,6 +495,30 @@ export class Vector extends Element {
     }
 
     /**
+     * The frame this element reads from — it has had a window since trimming
+     * existed.
+     */
+    override windowStart(): number | null {
+        return this.start;
+    }
+
+    /**
+     * The same buffer, read from `at` seconds further in. The frames neither
+     * half shows are still there, which is why stretching either one brings them
+     * back.
+     */
+    override windowed(at: number, length: number, rate = 0.0): Vector {
+        const hz = Number(this.wraps ? (this.buffer.sampleRate ?? 0) : 0) || rate || 0;
+        return new Vector(this.buffer, null, length - at, {
+            instrument: this.instrument,
+            controls: this.controls,
+            start: this.start + at * hz,
+            loop: this.loop,
+            name: this.name,
+        });
+    }
+
+    /**
      * The event that plays this buffer: the `instrument` def with the buffer
      * number in its `buf` control, sounding for the element's `duration`.
      *
@@ -593,6 +660,45 @@ export class Segments extends Element {
     }
 
     /**
+     * Zero: a run's window is in its segments, each of which carries its own —
+     * so there is no single frame this element reads from, and a trim moves the
+     * windows rather than a head.
+     */
+    override windowStart(): number | null {
+        return 0.0;
+    }
+
+    /**
+     * The windows past the cut, with the one the cut falls inside cut in two —
+     * which is `SegmentRun.cut` (`../segments.ts`), the arithmetic this element
+     * places rather than reimplements.
+     *
+     * A tail that is **one run of one buffer** comes back as the plain
+     * {@link Vector} it is ({@link BufferSegments.contiguous}): that is not an
+     * optimization, it is what makes a cut and a join inverses instead of a pile
+     * of wrappers.
+     */
+    override windowed(at: number, length: number, rate = 0.0): Element {
+        void length;
+        void rate;
+        const [, tail] = this.run.cut(at) as [BufferSegments, BufferSegments];
+        if (tail.contiguous) {
+            const first = tail.segments[0];
+            return new Vector(first.source, null, tail.total, {
+                instrument: this.instrument,
+                controls: this.controls,
+                start: first.start,
+                name: this.name,
+            });
+        }
+        return new Segments(tail.segments, null, null, {
+            instrument: this.instrument,
+            controls: this.controls,
+            name: this.name,
+        });
+    }
+
+    /**
      * The segments with the second each one **starts at** inside this element:
      * `[offset, segment]` pairs, which is what both rendering and drawing lay
      * out from.
@@ -643,25 +749,83 @@ export class Segments extends Element {
     }
 }
 
+/** {@link Track}'s options. */
+export interface TrackOptions extends ElementOptions {
+    /**
+     * The beat of the timeline this element **reads from**. A track is a window
+     * onto its timeline exactly as a {@link Vector} is a window onto its buffer,
+     * and for the same reason: a trim reads from further in, a split gives two
+     * windows over one timeline, and the notes neither window shows are still on
+     * it — so lengthening either half brings them back. A cut is not a rewrite
+     * of the material.
+     */
+    start?: number;
+}
+
 /**
  * *Set*: mixed placement of elements — a DAW track.
  *
  * Wraps a `seq.Timeline` (free placement of items by beat). A fresh empty
- * `Timeline` is created when none is given.
+ * `Timeline` is created when none is given. With `start`, it is a **window**
+ * onto that timeline: `duration` is then how much of it this element is.
  */
 export class Track extends Element {
+    /**
+     * The **beat of the timeline this element reads from** — the head of its
+     * window, the beats counterpart of {@link Vector.start}.
+     */
+    start: number;
+
     constructor(
         timeline: Timeline | null = null,
         onset: Beats = null,
         duration: Beats = null,
-        { name = null }: ElementOptions = {},
+        { start = 0.0, name = null }: TrackOptions = {},
     ) {
         super(timeline ?? new Timeline(), onset, duration, false, { name });
+        this.start = Number(start);
     }
 
     /** The timeline this track places its items on. */
     get timeline(): Timeline {
         return this.wraps as Timeline;
+    }
+
+    /** The beat this element reads its timeline from. */
+    override windowStart(): number | null {
+        return this.start;
+    }
+
+    /**
+     * The same timeline, read from `at` beats further in. Both units are beats
+     * here, so there is nothing to bridge — the notes outside either window are
+     * on the timeline, not gone.
+     */
+    override windowed(at: number, length: number, rate = 0.0): Track {
+        void rate;
+        return new Track(this.timeline, null, length - at, {
+            start: this.start + at,
+            name: this.name,
+        });
+    }
+
+    /**
+     * The `[beat, item]` pairs this element **shows**: its window's, placed from
+     * the element's own zero.
+     *
+     * The whole timeline when it has no window (a track written by a script is
+     * the timeline), and the window's contents shifted back to zero when a trim
+     * or a split gave it one. What falls outside is not here and is not gone.
+     */
+    items(): [number, unknown][] {
+        const entries = [...this.timeline] as [number, unknown][];
+        if (!this.start && this.duration === null) {
+            return entries.map(([beat, item]) => [Number(beat), item]);
+        }
+        const end = this.duration === null ? Infinity : this.start + Number(this.duration);
+        return entries
+            .filter(([beat]) => Number(beat) >= this.start && Number(beat) < end)
+            .map(([beat, item]) => [Number(beat) - this.start, item]);
     }
 }
 

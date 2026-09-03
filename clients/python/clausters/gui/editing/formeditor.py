@@ -47,7 +47,7 @@ from ...form.document import (FIRST_VERSION, ID_ATTR, MIXING, leaf_config,
                               leaf_node, next_node_id, set_mixing, to_document)
 from ...form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
 from ...form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
-                             Segments, Vector, to_beats)
+                             Segments, Track, Vector, to_beats)
 from ...defs.ugens import points_to_env
 from ...form.render import flatten
 from ...seq.automation import Automation
@@ -1363,12 +1363,29 @@ class FormEditor(Editor):
     def _window_moved(self, placed, start) -> bool:
         """Whether the host reported a **window** that is not the one the
         element already reads — half a frame's worth, the same threshold a move
-        uses."""
+        uses.
+
+        The element is asked whether it *has* a window rather than tested for
+        which class it is: a take reads from a frame and a track reads from a
+        beat, and both are trimmed by the same drag on the same edge."""
         if start is None or placed.member is None:
             return False
         element = placed.member.element
-        return (isinstance(element, Vector)
-                and abs(float(start) - float(element.start)) >= 0.5)
+        held = element.window_start() if isinstance(element, Element) else None
+        if held is None:
+            return False
+        # Half a frame, in whatever the element addresses itself in -- the axis
+        # is samples either way, so the threshold crosses with the value.
+        floor = 0.5 if element.duration_unit == SECONDS else self.units_to_beats(0.5)
+        return abs(self._window_units(element, start) - float(held)) >= floor
+
+    def _window_units(self, element, start: float) -> float:
+        """The window the host reported, in the unit that element is
+        **addressed** in: the axis is samples, and a track reads its timeline by
+        the beat."""
+        if element.duration_unit == SECONDS:
+            return float(start)
+        return self.units_to_beats(float(start))
 
     def _trim(self, placed, offset: float, dur: float, start: float) -> bool:
         """A **trim**: the clip begins later or ends earlier, and the window over
@@ -1399,7 +1416,9 @@ class FormEditor(Editor):
                                              self.units_to_beats(offset))
         edited["node"] = dict(edited["node"])
         config = dict(edited["node"].get("config") or {})
-        config["start"] = float(start)
+        # In the element's own addressing unit, which is the one its config
+        # states a window in -- frames for samples, beats for a track.
+        config["start"] = self._window_units(member.element, start)
         edited["node"]["config"] = config
         outcome = self._record({"intent": "setmembers", "node": node,
                                 "members": members}, "trim the clip")
@@ -1494,14 +1513,12 @@ class FormEditor(Editor):
         if member is None or owner is None:
             return False
         element = member.element
-        if not isinstance(element, (Vector, Segments)):
-            # Only a window onto samples can be cut into windows. Splitting a
-            # pattern or an aggregate would have to say what half of an algorithm
-            # is, which is a different question and not this one.
-            self._reason = ("only a clip over samples can be split: this one "
-                            "holds " + _name(element))
-            return False
-        length = member.length if member.length is not None else element.duration
+        # **The length the clip is drawn at**, which is what the hand cut in
+        # two: the placement's when it states one, else the element's own, else
+        # what it extends to -- the same rule the drawing asks, so a cut lands
+        # where the eye put it even on a placement that states no length (which
+        # every note clip written by a script is).
+        length = self._drawn_length(element, member)
         # In the element's own unit -- seconds, for the only elements a split
         # applies to -- because that is what the placement's length is in.
         at = self.units_to_length(at_units, element,
@@ -1511,7 +1528,22 @@ class FormEditor(Editor):
         node = self._node_id(owner)
         if node is None:
             return False
-        second_element = self._tail(element, float(at), float(length))
+        # **The element says whether it can be cut**, because cutting is defined
+        # by the material and not by the class this client wrapped it in: a
+        # window onto samples, a run of windows and a window onto a timeline of
+        # notes all answer, each in its own unit. What answers `None` is a
+        # generator -- and not "it cannot be split" but *not until it is
+        # rendered*, which is the change of state the model already names.
+        second_element = element.windowed(float(at), float(length),
+                                          self.sample_rate)
+        if second_element is None:
+            self._reason = (
+                "a generator has no time axis to cut: render it to a track or "
+                "a take first (this clip holds " + _name(element) + ")"
+                if isinstance(element, Generator)
+                else "this clip holds " + _name(element) + ", which has no "
+                     "window to cut into two")
+            return False
         # The cut, on the arrangement: the first half stops early — its
         # *placement* does, the element is untouched — and the second is placed
         # where it stops. Stamped with an id of its own **before** any
@@ -1539,35 +1571,6 @@ class FormEditor(Editor):
         self._rederive = True
         self._restructured = True
         return self._changed()
-
-    def _tail(self, element, at: float, length: float):
-        """The element the **second half** of a cut reads: the same samples,
-        from ``at`` seconds in (``at`` and ``length`` are the element's own
-        unit, which for samples is seconds).
-
-        The first half is not built at all — it is the element it always was,
-        with its placement shortened, which is the arrangement's own rule (a
-        placement is a window onto an element, never a rewrite of it) and what
-        makes an undo of a split one step. A `Vector` gives a window that starts
-        further in; a `Segments` gives the segments past the cut, with the one
-        the cut falls inside cut into two.
-        """
-        if isinstance(element, Segments):
-            after = []
-            for offset, seg in element.placed():
-                end = offset + seg.duration
-                if offset >= at - 1e-9:
-                    after.append(seg)
-                elif end > at + 1e-9:
-                    head = at - offset
-                    after.append(Segment(seg.buffer,
-                                         seg.start + self.secs_to_units(head),
-                                         seg.duration - head))
-            return self._joined_element([element], after)
-        return Vector(element.wraps, duration=length - at,
-                      instrument=element.instrument, controls=element.controls,
-                      start=element.start + self.secs_to_units(at),
-                      loop=element.loop, name=element.name)
 
     def _segments_within(self, element, length) -> list:
         """The segments a placement of ``length`` seconds actually shows of a
@@ -1609,27 +1612,46 @@ class FormEditor(Editor):
             return False
         run.sort(key=lambda p: p.member.offset)
         elements = [p.member.element for p in run]
-        if not all(isinstance(e, (Vector, Segments)) for e in elements):
-            self._reason = "only clips over samples can be joined"
-            return False
-        # The segments the run holds, in reading order: a `Vector` is one, a
-        # `Segments` is however many it already carries.
-        segments: list = []
+        lengths = []
         for p, element in zip(run, elements):
             length = p.member.length if p.member.length is not None else element.duration
             if length is None:
-                self._reason = "a clip with no length has no samples to join"
+                self._reason = "a clip with no length has nothing to join"
                 return False
-            if isinstance(element, Segments):
-                segments += self._segments_within(element, length)
-            else:
-                segments.append(Segment(element.wraps, element.start, float(length)))
+            lengths.append(float(length))
+        # **The unit is the material's, and a join does not cross it.** Windows
+        # over samples and windows over a timeline both join; a run mixing the
+        # two would have to say what the result measures in, which is a
+        # different question and not this one.
+        units = {e.duration_unit for e in elements}
+        if len(units) > 1:
+            self._reason = ("these clips are not measured in the same unit, so "
+                            "there is no one thing they read as")
+            return False
+        if units == {BEATS}:
+            joined, total = self._joined_track(elements, lengths)
+            if joined is None:
+                return False
+            segments = []
+        else:
+            # The segments the run holds, in reading order: a `Vector` is one, a
+            # `Segments` is however many it already carries.
+            segments = []
+            for element, length in zip(elements, lengths):
+                if isinstance(element, Segments):
+                    segments += self._segments_within(element, length)
+                elif isinstance(element, Vector):
+                    segments.append(Segment(element.wraps, element.start, length))
+                else:
+                    self._reason = ("this clip holds " + _name(element)
+                                    + ", which has no window to read as one")
+                    return False
+            joined = self._joined_element(elements, segments)
+            total = sum(seg.duration for seg in segments)
         node = self._node_id(owner)
         if node is None:
             return False
-        joined = self._joined_element(elements, segments)
         keep, dropped = run[0].member, {id(p.member) for p in run[1:]}
-        total = sum(seg.duration for seg in segments)
         # The members as they would stand -- the document's own serialization,
         # with the run's first holding the joined samples and the rest gone.
         # Built rather than mutated, which is the cut's shape too: nothing on
@@ -1657,6 +1679,39 @@ class FormEditor(Editor):
         self._rederive = True
         self._restructured = True
         return self._changed()
+
+    def _joined_track(self, elements: list, lengths: list):
+        """What a run of **windows onto one timeline** joins into: the single
+        window they were cut from, or ``None`` with a reason.
+
+        The mirror of a split over notes, and it has to be, or a cut could not
+        be undone by the verb that exists for it. Adjacent windows over one
+        timeline are one window -- from the first's start, as long as the two
+        together -- and nothing is copied, so cutting it again gives the same
+        two back.
+
+        What it cannot do yet is the other shape, the one a run of *different*
+        timelines would need: that is a body the document stores for samples
+        only (`clausters_document::SegmentRef` names a source of samples), so it
+        is refused out loud rather than half-built.
+        """
+        first = elements[0]
+        timeline = getattr(first, "wraps", None)
+        expected = float(first.window_start() or 0.0)
+        for element, length in zip(elements, lengths):
+            if (not isinstance(element, Track)
+                    or getattr(element, "wraps", None) is not timeline
+                    or abs(float(element.window_start() or 0.0) - expected) > 1e-9):
+                self._reason = (
+                    "only adjacent windows of one timeline join back into one; "
+                    "a run of several timelines needs a segments body the "
+                    "document does not carry for notes yet")
+                return None, 0.0
+            expected += length
+        total = sum(lengths)
+        return Track(timeline, duration=total,
+                     start=float(first.window_start() or 0.0),
+                     name=first.name), total
 
     def _joined_element(self, elements: list, segments: list):
         """What a run of clips joins **into**: the single window they were cut
@@ -1786,9 +1841,19 @@ class FormEditor(Editor):
         node = self._node_id(element)
         if node is None:
             return False
-        # The notes as they stand, in the order the roll drew them — what the
-        # i-th note of the payload is an edit *of*.
-        held = [item for _, item in timeline if _pitch(item) is not None]
+        # **The window the roll drew.** A track is a window onto its timeline
+        # (a trim reads from further in, a split gives two windows over one
+        # timeline), so the payload is an edit of the notes *inside* it, placed
+        # from the element's own zero. The ones outside are not in the payload
+        # and must not be taken as deleted: they are carried through untouched,
+        # with their own ids and their own beats.
+        lo, hi = self._note_window(element)
+        held, outside = [], []
+        for beat, item in timeline:
+            if _pitch(item) is None:
+                continue
+            (held if lo <= float(beat) < hi else outside).append((float(beat), item))
+        held = [item for _, item in held]
         new = []
         for i, (start, dur, pitch, vel, channel) in enumerate(_quintuples(list(values))):
             length = self.units_to_beats(dur)
@@ -1810,7 +1875,9 @@ class FormEditor(Editor):
                               velocity=int(vel))
             if int(channel):
                 params["channel"] = int(channel)
-            new.append((self.units_to_beats(start), SeqEvent(params)))
+            # Back onto the timeline's own axis: the roll drew from the
+            # window's zero, and the timeline is where the window opens.
+            new.append((self.units_to_beats(start) + lo, SeqEvent(params)))
         # **Through the log**: the roll's edit is a `SetMembers`, which is what
         # that intent was written for — "notes added, moved and removed arrive
         # as the resulting list. Members keep their ids".
@@ -1821,9 +1888,13 @@ class FormEditor(Editor):
         # note's id and the extras are minted past everything the arrangement
         # holds — which is what makes a note the same node across an edit, to
         # the log and to a view.
-        kept = [getattr(item, ID_ATTR, None) for _, item in timeline
-                if _pitch(item) is not None]
-        members = []
+        kept = [getattr(item, ID_ATTR, None) for beat, item in timeline
+                if _pitch(item) is not None and lo <= float(beat) < hi]
+        members = [{"offset": float(beat),
+                    "node": {"id": int(getattr(item, ID_ATTR, None)
+                                       or self._mint_id()),
+                             "kind": "clang", "config": leaf_config(Clang(item))}}
+                   for beat, item in outside]
         for i, (beat, event) in enumerate(new):
             nid = kept[i] if i < len(kept) and kept[i] is not None else self._mint_id()
             # **Through the conversion's own door.** A note's event is not
@@ -1841,6 +1912,18 @@ class FormEditor(Editor):
             return False
         self._project(outcome["effective"])
         return self._changed(outcome["applied"])
+
+    def _note_window(self, element) -> tuple:
+        """The beats of the timeline a roll over ``element`` **draws**: its
+        window, or everything when it has none.
+
+        One question asked in one place, because the drawing and the edit-back
+        have to agree about it -- a roll that drew a window and wrote back the
+        whole timeline would delete every note the window did not show."""
+        start = element.window_start() if isinstance(element, Element) else None
+        lo = float(start or 0.0)
+        length = element.duration if isinstance(element, Element) else None
+        return lo, (lo + float(length) if length is not None else float("inf"))
 
     def _mint_id(self) -> int:
         """A node id nothing in this arrangement holds, for a note a gesture
@@ -2240,6 +2323,14 @@ class FormEditor(Editor):
             # is the default -- reading from the first frame, once.
             element.start = float(config.get("start", 0.0))
             element.loop = bool(config.get("loop", False))
+            return True
+        if isinstance(element, Track):
+            # The same configuration over the other material: which **beat** of
+            # its timeline this element begins at. A trim of a roll clip is the
+            # same gesture as a trim of a take, and it lands here for the same
+            # reason -- the window is the element's, and the placement is the
+            # aggregate's.
+            element.start = float(config.get("start", 0.0))
             return True
         auto = _automation(element, self.tempo)
         flat = config.get("points")
@@ -2967,6 +3058,14 @@ class FormEditor(Editor):
         notes = self._notes(element)
         if notes:
             body = dict(notes=notes, **self._pitch_window(element, notes))
+            # The **window** onto the timeline, in the axis' units like every
+            # other clip prop: a track reads its notes from a beat the way a
+            # take reads its frames from a frame, and the host has to know it or
+            # a drag on the left edge would report a trim back to zero on a clip
+            # that never was there. Sent only when there is one to state.
+            window = element.window_start() if isinstance(element, Element) else None
+            if window:
+                body["start"] = self.beats_to_units(float(window))
             # **Say it before the hand tries.** These notes are a *rendering* of
             # a forward-only generator when there is no editable timeline behind
             # them, so the roll refuses the press instead of offering a drag it

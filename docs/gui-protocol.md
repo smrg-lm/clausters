@@ -322,7 +322,11 @@ which a multitrack opens all the time and which must not read as a ruler.
 a hand may perform — move, trim, `split`, `join` — belong to the *material* under
 it, not to a type. So a clip over samples and a clip over a timeline of notes take
 the same edits, each in the unit of what it measures, and a client that admits one
-and refuses the other is disagreeing with the wire, not implementing it.
+and refuses the other is disagreeing with the wire, not implementing it. The
+clip's `start` says the same thing for both: **the window** its own time zero
+reads — a frame of the samples, a beat of the timeline — sent whenever there is
+one to state, and reported back with the placement when a drag on an edge trims
+it.
 
 ### The elements
 

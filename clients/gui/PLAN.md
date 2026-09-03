@@ -3187,14 +3187,17 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   declines, which is an inconsistency of its own (the host refuses out loud and
   the owner refuses silently).
 
-  **What this is *not* an excuse for** *(added 2026-09-03)*: the refusal that
-  raised it should not exist. A clip is a view and what it holds decides what it
-  admits, so a piano-roll clip refusing to split is a defect of the client, not
-  a message with nowhere to go -- see "Which edits a clip admits is asked of
-  `form`'s classes, not of the data" (`clients/python/PLAN.md`, Found by use).
-  Fixing that removes most of what this entry would have had to display and
-  leaves the honest case (a generator that has not been rendered), which is what
-  the decision should actually be sized against.
+  **What this is *not* an excuse for** *(added 2026-09-03; the fix landed the
+  same day)*: the refusal that raised it should not have existed. A clip is a
+  view and what it holds decides what it admits, so a piano-roll clip refusing
+  to split was a defect of the client, not a message with nowhere to go -- see
+  "Which edits a clip admits is asked of `form`'s classes, not of the data"
+  (`clients/python/PLAN.md`, Found by use), now closed: a roll clip splits,
+  joins and trims. What is left for this entry to display is the honest
+  remainder -- a generator that has not been rendered, and a join across
+  timelines the document cannot store yet -- which is what the decision should
+  be sized against, and it is a much smaller thing than the day it was
+  written.
 
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;

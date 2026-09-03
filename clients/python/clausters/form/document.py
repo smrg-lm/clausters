@@ -552,7 +552,14 @@ def _kind_body(element, ids: _Ids) -> dict:
                 _timeline_member(beat, item, ids)
                 for beat, item in _timeline_items(element.wraps)
             ],
-        }, {"form": FORM_TRACK})
+        }, _named({"form": FORM_TRACK,
+                   # The **window** onto the timeline, written only when there
+                   # is one -- the beats counterpart of a vector's `start`, and
+                   # through the same door: the config carries what the document
+                   # does not interpret. A track saying nothing about a window
+                   # reads its timeline from the beginning, which is every track
+                   # written before windows existed.
+                   "start": float(element.start) if element.start else None}))
     if isinstance(element, Clang):
         return _with_config({"kind": "clang"}, _plain(_item_data(element.wraps)))
     if isinstance(element, Sequence):
@@ -974,7 +981,8 @@ def _element(node: dict, resolve, *, placed: bool = False):
                 # save, and an intent recorded against it still names it.
                 setattr(item, ID_ATTR, int(child["id"]))
             timeline.add(member.get("offset", 0.0), item)
-        built = Track(timeline, onset=onset, duration=duration)
+        built = Track(timeline, onset=onset, duration=duration,
+                      start=config.get("start", 0.0) or 0.0)
     elif kind == "aggregate":
         aggregate = Aggregate(
             kind=LOGICAL if node.get("grouping") == LOGICAL else CONCRETE,

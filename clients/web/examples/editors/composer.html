@@ -52,7 +52,11 @@ crate</b> decides what it becomes: the musical <code>quant</code> grid snaps it
 there, not here. With <code>follow</code> on, the composition is re-scheduled
 from the playhead on every edit, so you hear the clip where you dropped it. With
 the pointer over a clip, <b>e</b> cuts it in two and <b>j</b> joins it back with
-what touches it — the two halves are two windows onto one buffer.
+what touches it — the two halves are two windows onto one buffer. The same two
+letters do the same thing on the <b>melody</b> clip, in beats instead of
+seconds: the halves are two windows onto one timeline, and the notes the cut hid
+are still on it, so dragging the second half's head back to the left brings them
+out again.
 
 <b>The view never re-frames itself.</b> The editor is built with
 <code>autofit: false</code>, which says the picture is <i>yours</i>. One switch

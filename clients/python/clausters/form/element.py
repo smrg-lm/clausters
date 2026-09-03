@@ -203,6 +203,42 @@ class Element:
         derived from the presence of ``onset`` and ``duration``."""
         return temporal_character(self.onset, self.duration)
 
+    # -- windows: what a trim, a split and a join ask an element --------------
+    #
+    # **The question is the material's, never the class's.** Cutting is defined
+    # wherever there is an addressable time axis -- samples, notes, events,
+    # segments -- so the verb asks the element whether it has one instead of
+    # testing what it is. What genuinely answers no is a **generator**: not
+    # "cannot be cut" but *not until it is rendered*, which is the change of
+    # state the model already has a verb for.
+
+    def window_start(self):
+        """Where this element **reads from** inside what it holds, or ``None``
+        when it holds no window at all.
+
+        In the unit the material is *addressed* in -- frames for samples, beats
+        for events -- which is the same coordinate
+        `clausters.segments.Segment.start` is in and for the same reason.
+        """
+        return None
+
+    def windowed(self, at: float, length: float, rate: float = 0.0):
+        """The element the **second half** of a cut at ``at`` reads, or ``None``
+        when this element cannot be cut.
+
+        ``at`` and ``length`` are in this element's own unit
+        (`duration_unit`), and ``rate`` is the sample rate to bridge with when
+        the material is addressed in frames and its source does not know its
+        own -- the one number an element may need from the caller.
+
+        The **first** half is never built: it is the element it always was, with
+        its placement shortened, which is the arrangement's rule (a placement is
+        a window onto an element, never a rewrite of it) and what makes an undo
+        of a split one step. Nothing is copied and nothing is lost either way --
+        lengthening a half brings back exactly what the cut hid.
+        """
+        return None
+
     def play(self, destination):
         """Delegate playing to the wrapped item's ``play(destination)`` — the
         double-dispatch seam shared by `clausters.seq.Event`,
@@ -339,6 +375,21 @@ class Vector(Element):
         """`SECONDS`: this element's data is samples, and their seconds were
         fixed when they were recorded — a tempo change does not shorten a take."""
         return SECONDS
+
+    def window_start(self):
+        """The frame this element reads from -- it has had a window since
+        trimming existed."""
+        return self.start
+
+    def windowed(self, at: float, length: float, rate: float = 0.0):
+        """The same buffer, read from ``at`` seconds further in. The frames
+        neither half shows are still there, which is why stretching either one
+        brings them back."""
+        hz = float(getattr(self.wraps, "sample_rate", 0.0) or rate or 0.0)
+        return Vector(self.wraps, duration=float(length) - float(at),
+                      instrument=self.instrument, controls=self.controls,
+                      start=self.start + float(at) * hz, loop=self.loop,
+                      name=self.name)
 
     def to_event(self, tempo_map=None, at: float = 0.0):
         """The event that plays this buffer: the `instrument` def with the buffer
@@ -488,6 +539,30 @@ class Segments(Element):
         drawing lay out from."""
         return self.run.placed()
 
+    def window_start(self):
+        """Zero: a run's window is in its segments, each of which carries its
+        own -- so there is no single frame this element reads from, and a trim
+        moves the windows rather than a head."""
+        return 0.0
+
+    def windowed(self, at: float, length: float, rate: float = 0.0):
+        """The windows past the cut, with the one the cut falls inside cut in
+        two -- which is `clausters.segments.SegmentRun.cut`, the arithmetic this
+        element places rather than reimplements.
+
+        A tail that is **one run of one buffer** comes back as the plain
+        `Vector` it is (`clausters.segments.BufferSegments.contiguous`): that is
+        not an optimization, it is what makes a cut and a join inverses instead
+        of a pile of wrappers."""
+        _, tail = self.run.cut(float(at))
+        if tail.contiguous:
+            first = tail.segments[0]
+            return Vector(first.source, duration=tail.total,
+                          instrument=self.instrument, controls=self.controls,
+                          start=first.start, name=self.name)
+        return Segments(tail.segments, instrument=self.instrument,
+                        controls=self.controls, name=self.name)
+
     def to_events(self, tempo_map=None, at: float = 0.0) -> list:
         """One ``(offset, event)`` per segment: the instrument playing that
         buffer, from that frame, for that long. The offsets are relative to the
@@ -528,15 +603,60 @@ class Track(Element):
 
     Wraps a `clausters.seq.Timeline` (free placement of items by beat). A fresh
     empty `Timeline` is created when none is given.
+
+    Args:
+        timeline: the `clausters.seq.Timeline` the track places.
+        onset: start in beats relative to the context, or ``None``.
+        duration: length in **beats** — how much of the timeline this element
+            is. With ``start``, it is the *window*: what a clip of this track
+            draws and plays.
+        start: the beat of the timeline this element **reads from**. A track is
+            a window onto its timeline exactly as a `Vector` is a window onto
+            its buffer, and for the same reason: a trim reads from further in, a
+            split gives two windows over one timeline, and the notes neither
+            window shows are still on it — so lengthening either half brings
+            them back. A cut is not a rewrite of the material.
     """
 
-    def __init__(self, timeline=None, onset=None, duration=None, *, name=None):
+    def __init__(self, timeline=None, onset=None, duration=None, *, start=0.0,
+                 name=None):
         if timeline is None:
             from ..seq.timeline import Timeline
 
             timeline = Timeline()
         super().__init__(wraps=timeline, onset=onset, duration=duration,
                          name=name)
+        #: The **beat of the timeline this element reads from** — the head of
+        #: its window, the beats counterpart of `Vector.start`.
+        self.start = float(start)
+
+    def window_start(self):
+        """The beat this element reads its timeline from."""
+        return self.start
+
+    def windowed(self, at: float, length: float, rate: float = 0.0):
+        """The same timeline, read from ``at`` beats further in. Both units are
+        beats here, so there is nothing to bridge — the notes outside either
+        window are on the timeline, not gone."""
+        return Track(self.wraps, duration=float(length) - float(at),
+                     start=self.start + float(at), name=self.name)
+
+    def items(self) -> list:
+        """The ``(beat, item)`` pairs this element **shows**: its window's, placed
+        from the element's own zero.
+
+        The whole timeline when it has no window (a track written by a script is
+        the timeline), and the window's contents shifted back to zero when a
+        trim or a split gave it one. What falls outside is not here and is not
+        gone."""
+        timeline = self.wraps
+        entries = list(timeline)
+        if not self.start and self.duration is None:
+            return [(float(beat), item) for beat, item in entries]
+        end = (self.start + float(self.duration) if self.duration is not None
+               else float("inf"))
+        return [(float(beat) - self.start, item) for beat, item in entries
+                if self.start <= float(beat) < end]
 
 
 class Generator(Element):

@@ -1126,31 +1126,43 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **Which edits a clip admits is asked of `form`'s classes, not of the data**
+- ✅ **Which edits a clip admits is asked of `form`'s classes, not of the data**
   *(found 2026-09-03 while chasing "the clip does not respond"; re-framed the
-  same day with the user, whose reading is the entry)*. `_apply_split` tests
-  `isinstance(element, (Vector, Segments))` and refuses everything else, on the
-  ground that splitting "a pattern or an aggregate would have to say what half
-  of an algorithm is". The ground is wrong, and the shape of the test is more
-  wrong than the ground. **A clip is a view**, not a data type: it says where
-  and how long, and what it holds decides what it admits. Samples cut and join;
-  so does a timeline of notes, a list of events, a run of segments -- anything
-  with an addressable time axis, which is what the action actually needs.
-  Nothing about a `Track` makes a cut undefined: the halves are two windows onto
-  one timeline, the same placement rule in the other unit.
+  same day with the user, whose reading is the entry; fixed the same day)*.
+  `_apply_split` tested `isinstance(element, (Vector, Segments))` and refused
+  everything else, on the ground that splitting "a pattern or an aggregate would
+  have to say what half of an algorithm is". The ground was wrong and the shape
+  of the test more wrong than the ground: **a clip is a view**, not a data type,
+  and what it holds decides what it admits.
 
-  So the unified actions **must exist for every clip**, and the branch is the
-  arithmetic of the cut, never whether the verb is available. What genuinely
-  refuses is a **generator**, and even it does not refuse forever -- "not until
-  it is rendered", which is the change of state the model already has a verb
-  for. The fix: ask the element (does it have an addressable time axis, and in
-  which unit), drop the class test, and give `split`/`join` the beats arithmetic
-  beside the seconds one. One sub-question is open and only one: **a note the
-  cut falls inside** -- shorten it into the first half, move it whole to the
-  second, or cut it in two -- and the roll's own `e` one level down has to give
-  the same answer. **Related:** "A refused edit springs back and says nothing"
-  (`clients/gui/PLAN.md`) is downstream of this one; most of what it would have
-  had to display should not have been refused.
+  **The element answers now.** `Element.window_start` says where it reads from
+  (and in which unit it addresses itself), `Element.windowed` gives what the
+  second half of a cut reads, or `None`. `Vector` answers in frames, `Segments`
+  through the run's own `cut`, and **`Track` answers in beats** -- which is the
+  piece that was missing: a track had no window, so two halves of one timeline
+  would both have drawn its beginning. It has one now (`Track(timeline,
+  start=...)`, the beats counterpart of `Vector.start`), and with it a roll clip
+  **splits, joins and trims** by the same three verbs a take does. The one that
+  answers `None` is a generator, and the reason it gives is not "never" but
+  *render it first*, which is the change of state the model already has a verb
+  for.
+
+  What the window ripples into, and all of it is the same rule (*the window is
+  the element's, the placement is the aggregate's*): rendering reads
+  `Track.items()` rather than the timeline, the document carries the window in
+  the body's opaque config beside `form: track` (so it round-trips and an undo
+  restores it), the clip's `start` prop states it on the wire, and the roll's
+  edit-back writes back **inside** the window and carries the notes outside it
+  through untouched -- without that last one, editing a note in a split half
+  would have deleted every note the other half held. Twin tests in both clients:
+  the split, the join, the trim, the note edit and the generator's answer.
+
+  **What is left is one shape**: a join of windows onto *different* timelines,
+  which is what `NoteSegments` is for and what the document cannot store yet
+  (`clausters_document::SegmentRef` names a source of samples, and
+  `Body::Segments` answers `Seconds` by construction). It is refused out loud
+  with that reason rather than half-built. Adjacent windows of one timeline
+  join, which is what a split's inverse needs.
 
 - ✅ **`Segment` and `Segments` live in the arrangement and are general**
   *(found 2026-09-03, from the entry above; moved and generalized the same

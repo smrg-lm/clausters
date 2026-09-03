@@ -86,21 +86,14 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   paints every lane. It is what the next entry has to be measured against, and it
   is first because it states the criterion the other one is a case of.
 
-- ⬜ **Which edits a clip admits is asked of `form`'s classes, not of the data**
-  *(`clients/python/PLAN.md`, Found by use)*. The split tests `isinstance` against
-  two arrangement classes and refuses the rest, so a piano-roll clip cannot be
-  cut. A clip is a **view**: what it holds decides what it admits, and everything
-  with an addressable time axis -- samples, notes, events, segments -- cuts and
-  joins by the same action in its own unit. The unified verbs must exist for every
-  clip; only the arithmetic branches. One sub-question is open (a note the cut
-  falls inside), and the roll's own `e` has to answer it the same way. **The
-  structure it stands on shipped on 2026-09-03**: the windows are general now
-  (`clausters.segments`, both clients), so what is left here is the crate's
-  segment body, the verb's admission test, and the arithmetic in beats. **It is the
-  head of a small family**: the two entries below and the silent refusal in
-  section 2 are all downstream of the same mistake, and the rule that names it is
-  "A view is configured by what it holds, and the arrangement is not the norm"
-  (`docs/decisions.md`).
+- ⬜ **A run of windows onto several timelines has nowhere to be stored**
+  *(`clients/python/PLAN.md`, Found by use, inside "Which edits a clip admits is
+  asked of `form`'s classes")*. The split, the trim and the join over notes
+  shipped on 2026-09-03; what a join of windows onto *different* timelines would
+  make is a `NoteSegments`, and the document stores a segment as samples only
+  (`SegmentRef`'s source, `Body::Segments` answering `Seconds` by construction).
+  It is refused out loud with that reason. Closing it is a crate change that
+  reaches both clients' projections and the parity vectors.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
@@ -136,8 +129,10 @@ on each one; none of them is being taken by this file.
   `"refused"` event), so the two halves of one window disagree about whether a
   refusal is announced.
   **Sized after section 1, not before it**: most of what it would display are
-  refusals that should not happen (see "Which edits a clip admits..."), and what
-  is left is the honest case -- a generator that has not been rendered.
+  refusals that should not happen, and after the split, the trim and the join
+  over notes landed (2026-09-03) what is left is the honest case -- a generator
+  that has not been rendered, and a join across timelines the document cannot
+  store yet.
 
 **Otherwise nothing open here.** One entry left this section without being
 closed: the layered clip drop, which on 2026-09-03 stopped being a question about

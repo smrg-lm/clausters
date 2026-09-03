@@ -2961,3 +2961,99 @@ def test_a_composed_view_seeks_and_selects_for_the_piece_it_is_part_of():
                                     0.5 * BEAT, 1.0 * BEAT])
     assert ed.selection["start"] == pytest.approx(0.5)
     assert ed.selection.get("nodes"), "it is a selection of that element"
+
+
+# ---- a clip is a view: what it holds decides what it admits ----
+
+def test_a_clip_over_a_track_splits_into_two_windows_of_one_timeline():
+    """Cutting a timeline of notes is as definable as cutting samples: the
+    halves are two windows onto one timeline, the same placement rule in the
+    other unit. Nothing is copied -- the notes neither window shows are still on
+    the timeline, which is what makes the cut reversible."""
+    ed = editor()
+    (clip,) = clips(lanes(ed.draw())[1])
+    was = clip["dur"]
+    # One beat into the clip, which the melody has three notes in.
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT]) is True
+
+    first, second = clips(lanes(ed.draw())[1])
+    assert first["dur"] == pytest.approx(BEAT)
+    assert second["offset"] == pytest.approx(3 * BEAT)   # the lane starts at 2
+    assert second["dur"] == pytest.approx(was - BEAT)
+    # The second reads the same timeline from a beat in -- it is a window, and
+    # it draws the notes that window holds, placed from its own zero.
+    assert second["start"] == pytest.approx(BEAT)
+    assert [n for n in second["notes"][::5]] == [pytest.approx(0.0),
+                                                 pytest.approx(BEAT)]
+
+    assert ed.undo() is True
+    (whole,) = clips(lanes(ed.draw())[1])
+    assert whole["dur"] == pytest.approx(was)
+
+
+def test_the_halves_of_a_split_track_join_back_into_the_window_they_were_cut_from():
+    """The join is the inverse of the split over notes as it is over samples,
+    or a cut would be a one-way door."""
+    ed = editor()
+    (clip,) = clips(lanes(ed.draw())[1])
+    was = clip["dur"]
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT])
+    first, second = clips(lanes(ed.draw())[1])
+    assert ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                                   first["id"], second["id"]]) is True
+    (whole,) = clips(lanes(ed.draw())[1])
+    assert whole["dur"] == pytest.approx(was)
+    assert "start" not in whole          # the window it was cut from
+    assert [n for n in whole["notes"][::5]] == [pytest.approx(0.0),
+                                                pytest.approx(BEAT),
+                                                pytest.approx(2 * BEAT)]
+
+
+def test_a_note_edited_inside_a_window_leaves_the_notes_outside_it_alone():
+    """The roll draws a window's notes, so an edit is an edit *of those* -- the
+    ones outside are not in the payload and must not read as deleted."""
+    ed = editor()
+    (clip,) = clips(lanes(ed.draw())[1])
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT])
+    first, second = clips(lanes(ed.draw())[1])
+
+    # The window's first note up a semitone, its own second left alone.
+    notes = list(second["notes"])
+    notes[2] += 1
+    assert ed.apply("/gui_event", [second["id"], SEQ, UNSTATED, "notes",
+                                   *notes]) is True
+
+    first, second = clips(lanes(ed.draw())[1])
+    assert second["notes"][2] == 65
+    # The note outside the window is where it was, at the pitch it was.
+    assert first["notes"][2] == 60
+
+
+def test_a_roll_clip_trims_to_a_window_of_its_timeline():
+    """The same drag on the same edge, over the other material: the clip begins
+    later and reads its timeline from further in, and the notes it stops showing
+    are still on it."""
+    ed = editor()
+    (clip,) = clips(lanes(ed.draw())[1])
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "clip",
+                                   clip["offset"] + BEAT, clip["dur"] - BEAT,
+                                   BEAT]) is True
+    (trimmed,) = clips(lanes(ed.draw())[1])
+    assert trimmed["start"] == pytest.approx(BEAT)
+    assert [n for n in trimmed["notes"][::5]] == [pytest.approx(0.0),
+                                                  pytest.approx(BEAT)]
+
+
+def test_a_generator_is_not_refused_a_cut_but_told_to_be_rendered_first():
+    """The one element that genuinely answers no, and it does not answer
+    'never' -- a generator has no time axis until the change of state gives it
+    one."""
+    from clausters.seq.pattern import Pbind
+
+    piece = Aggregate([(0.0, Aggregate([(0.0, Generator(Pbind(midinote=[60, 62]),
+                                                        duration=2.0))],
+                                       name="gen"))], name="song")
+    ed = editor(piece)
+    (clip,) = clips(lanes(ed.draw())[0])
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT]) is False
+    assert "render" in (ed._reason or "")

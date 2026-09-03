@@ -47,6 +47,7 @@ import { SynthDef } from "../../defs/synthdef.ts";
 import { pointsToEnv } from "../../defs/ugens/index.ts";
 import type { Server } from "../../defs/server/index.ts";
 import {
+    BEATS,
     CONCRETE,
     LOGICAL,
     SECONDS,
@@ -57,6 +58,7 @@ import {
     Generator,
     Segment,
     Segments,
+    Track,
     Vector,
     docIdOf,
     flatten,
@@ -1478,11 +1480,28 @@ export class FormEditor extends Editor<Element> implements Adopting {
     /**
      * Whether the host reported a **window** that is not the one the element
      * already reads — half a frame's worth, the same threshold a move uses.
+     *
+     * The element is asked whether it *has* a window rather than tested for
+     * which class it is: a take reads from a frame and a track reads from a
+     * beat, and both are trimmed by the same drag on the same edge.
      */
     private windowMoved(placed: Placed, start: number | null): boolean {
         if (start === null || placed.member === null) return false;
         const element = placed.member.element;
-        return element instanceof Vector && Math.abs(Number(start) - element.start) >= 0.5;
+        const held = element.windowStart();
+        if (held === null) return false;
+        // Half a frame, in whatever the element addresses itself in — the axis
+        // is samples either way, so the threshold crosses with the value.
+        const floor = element.durationUnit === SECONDS ? 0.5 : this.unitsToBeats(0.5);
+        return Math.abs(this.windowUnits(element, Number(start)) - held) >= floor;
+    }
+
+    /**
+     * The window the host reported, in the unit that element is **addressed**
+     * in: the axis is samples, and a track reads its timeline by the beat.
+     */
+    private windowUnits(element: Element, start: number): number {
+        return element.durationUnit === SECONDS ? Number(start) : this.unitsToBeats(Number(start));
     }
 
     /**
@@ -1507,7 +1526,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
         edited.offset = this.unitsToBeats(offset) - placed.base;
         edited.dur = this.unitsToLength(dur, member.element, this.unitsToBeats(offset));
         const holder = { ...(edited.node as Record<string, unknown>) };
-        holder.config = { ...((holder.config as Record<string, unknown>) ?? {}), start: Number(start) };
+        // In the element's own addressing unit, which is the one its config
+        // states a window in — frames for samples, beats for a track.
+        holder.config = {
+            ...((holder.config as Record<string, unknown>) ?? {}),
+            start: this.windowUnits(member.element, Number(start)),
+        };
         edited.node = holder;
         const outcome = this.record(
             { intent: "setmembers", node, members },
@@ -1622,19 +1646,30 @@ export class FormEditor extends Editor<Element> implements Adopting {
         const { member, owner } = placed;
         if (member === null || owner === null) return false;
         const element = member.element;
-        if (!(element instanceof Vector) && !(element instanceof Segments)) {
-            // Only a window onto samples can be cut into windows.
-            this.reason = `only a clip over samples can be split: this one holds ${nameOf(element)}`;
-            return false;
-        }
-        const length = member.length ?? element.duration;
-        // In the element's own unit -- seconds, for the only elements a split
-        // applies to -- because that is what the placement's length is in.
+        // **The length the clip is drawn at**, which is what the hand cut in
+        // two: the placement's when it states one, else the element's own, else
+        // what it extends to — the same rule the drawing asks, so a cut lands
+        // where the eye put it even on a placement that states no length (which
+        // every note clip written by a script is).
+        const length = this.drawnLength(element, member);
         const at = this.unitsToLength(atUnits, element, placed.base + (member.offset ?? 0.0));
         if (length === null || !(at > 0.0 && at < Number(length))) return false;
         const node = this.nodeId(owner);
         if (node === null) return false;
-        const second = this.tailElement(element, at, Number(length));
+        // **The element says whether it can be cut**, because cutting is defined
+        // by the material and not by the class this client wrapped it in: a
+        // window onto samples, a run of windows and a window onto a timeline of
+        // notes all answer, each in its own unit. What answers `null` is a
+        // generator — and not "it cannot be split" but *not until it is
+        // rendered*, which is the change of state the model already names.
+        const second = element.windowed(at, Number(length), this.sampleRate);
+        if (second === null) {
+            this.reason =
+                element instanceof Generator
+                    ? `a generator has no time axis to cut: render it to a track or a take first (this clip holds ${nameOf(element)})`
+                    : `this clip holds ${nameOf(element)}, which has no window to cut into two`;
+            return false;
+        }
         // The cut, on the arrangement: the first half stops early — its
         // *placement* does, the element is untouched — and the second is placed
         // where it stops. Stamped with an id of its own **before** any conversion
@@ -1664,43 +1699,6 @@ export class FormEditor extends Editor<Element> implements Adopting {
         this.rederive = true;
         this.restructured = true;
         return this.changed();
-    }
-
-    /**
-     * The element the **second half** of a cut reads: the same samples, from `at`
-     * beats in.
-     *
-     * The first half is not built at all — it is the element it always was, with
-     * its placement shortened, which is the arrangement's own rule and what makes
-     * an undo of a split one step.
-     */
-    private tailElement(element: Vector | Segments, at: number, length: number): Element {
-        if (element instanceof Segments) {
-            const after: Segment[] = [];
-            for (const [offset, seg] of element.placed()) {
-                const end = offset + seg.duration;
-                if (offset >= at - 1e-9) {
-                    after.push(seg);
-                } else if (end > at + 1e-9) {
-                    const head = at - offset;
-                    after.push(
-                        new Segment(
-                            seg.buffer,
-                            seg.start + this.secsToUnits(head),
-                            seg.duration - head,
-                        ),
-                    );
-                }
-            }
-            return this.joinedElement([element], after);
-        }
-        return new Vector(element.buffer, null, length - at, {
-            instrument: element.instrument,
-            controls: element.controls,
-            start: element.start + this.secsToUnits(at),
-            loop: element.loop,
-            name: element.name,
-        });
     }
 
     /**
@@ -1744,33 +1742,55 @@ export class FormEditor extends Editor<Element> implements Adopting {
         if (run.length < 2) return false;
         run.sort((a, b) => (a.member as Member).offset - (b.member as Member).offset);
         const elements = run.map((p) => (p.member as Member).element);
-        if (!elements.every((e) => e instanceof Vector || e instanceof Segments)) {
-            this.reason = "only clips over samples can be joined";
-            return false;
-        }
-        // The segments the run holds, in reading order: a `Vector` is one, a
-        // `Segments` is however many it already carries.
-        const segments: Segment[] = [];
+        const lengths: number[] = [];
         for (let i = 0; i < run.length; i++) {
-            const p = run[i] as Placed;
-            const element = elements[i] as Vector | Segments;
-            const length = (p.member as Member).length ?? element.duration;
-            if (length === null) {
-                this.reason = "a clip with no length has no samples to join";
+            const length = (run[i] as Placed).member?.length ?? elements[i].duration;
+            if (length === null || length === undefined) {
+                this.reason = "a clip with no length has nothing to join";
                 return false;
             }
-            if (element instanceof Segments) {
-                segments.push(...this.segmentsWithin(element, length));
-            } else {
-                segments.push(new Segment(element.buffer, element.start, Number(length)));
+            lengths.push(Number(length));
+        }
+        // **The unit is the material's, and a join does not cross it.** Windows
+        // over samples and windows over a timeline both join; a run mixing the
+        // two would have to say what the result measures in, which is a
+        // different question and not this one.
+        const units = new Set(elements.map((e) => e.durationUnit));
+        if (units.size > 1) {
+            this.reason =
+                "these clips are not measured in the same unit, so there is no one thing they read as";
+            return false;
+        }
+        const segments: Segment[] = [];
+        let joined: Element;
+        let total: number;
+        if (units.has(BEATS)) {
+            const track = this.joinedTrack(elements, lengths);
+            if (track === null) return false;
+            joined = track;
+            total = lengths.reduce((sum, l) => sum + l, 0.0);
+        } else {
+            // The segments the run holds, in reading order: a `Vector` is one, a
+            // `Segments` is however many it already carries.
+            for (let i = 0; i < elements.length; i++) {
+                const element = elements[i];
+                const length = lengths[i] as number;
+                if (element instanceof Segments) {
+                    segments.push(...this.segmentsWithin(element, length));
+                } else if (element instanceof Vector) {
+                    segments.push(new Segment(element.buffer, element.start, length));
+                } else {
+                    this.reason = `this clip holds ${nameOf(element)}, which has no window to read as one`;
+                    return false;
+                }
             }
+            joined = this.joinedElement(elements as (Vector | Segments)[], segments);
+            total = segments.reduce((sum, seg) => sum + seg.duration, 0.0);
         }
         const node = this.nodeId(owner);
         if (node === null) return false;
-        const joined = this.joinedElement(elements as (Vector | Segments)[], segments);
         const keep = (run[0] as Placed).member as Member;
         const dropped = new Set(run.slice(1).map((p) => p.member as Member));
-        const total = segments.reduce((sum, seg) => sum + seg.duration, 0.0);
         // The members as they would stand — built rather than mutated, which is
         // the cut's shape too: nothing on this side moves until the crate has
         // said what the edit becomes.
@@ -1810,6 +1830,45 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * The first case is not an optimization — it is what makes a join the inverse
      * of a split.
      */
+    /**
+     * What a run of **windows onto one timeline** joins into: the single window
+     * they were cut from, or `null` with a reason.
+     *
+     * The mirror of a split over notes, and it has to be, or a cut could not be
+     * undone by the verb that exists for it. Adjacent windows over one timeline
+     * are one window — from the first's start, as long as the two together — and
+     * nothing is copied, so cutting it again gives the same two back.
+     *
+     * What it cannot do yet is the other shape, the one a run of *different*
+     * timelines would need: that is a body the document stores for samples only
+     * (`clausters_document::SegmentRef` names a source of samples), so it is
+     * refused out loud rather than half-built.
+     */
+    private joinedTrack(elements: Element[], lengths: number[]): Track | null {
+        const first = elements[0];
+        const timeline = first instanceof Track ? first.timeline : null;
+        let expected = Number(first.windowStart() ?? 0.0);
+        for (let i = 0; i < elements.length; i++) {
+            const element = elements[i];
+            if (
+                !(element instanceof Track) ||
+                element.timeline !== timeline ||
+                Math.abs(Number(element.windowStart() ?? 0.0) - expected) > 1e-9
+            ) {
+                this.reason =
+                    "only adjacent windows of one timeline join back into one; a run of " +
+                    "several timelines needs a segments body the document does not carry " +
+                    "for notes yet";
+                return null;
+            }
+            expected += lengths[i] as number;
+        }
+        return new Track(timeline, null, lengths.reduce((sum, l) => sum + l, 0.0), {
+            start: Number(first.windowStart() ?? 0.0),
+            name: first.name,
+        });
+    }
+
     private joinedElement(elements: (Vector | Segments)[], segments: Segment[]): Element {
         const first = elements[0] as Vector | Segments;
         const instrument = first.instrument;
@@ -1907,11 +1966,21 @@ export class FormEditor extends Editor<Element> implements Adopting {
         if (timeline === null) return false;
         const node = this.nodeId(element);
         if (node === null) return false;
-        // The notes as they stand, in the order the roll drew them — what the
-        // i-th note of the payload is an edit *of*.
-        const held = [...timeline]
-            .filter(([, item]) => pitchOf(item) !== null)
-            .map(([, item]) => item as SeqEvent);
+        // **The window the roll drew.** A track is a window onto its timeline (a
+        // trim reads from further in, a split gives two windows over one
+        // timeline), so the payload is an edit of the notes *inside* it, placed
+        // from the element's own zero. The ones outside are not in the payload
+        // and must not be taken as deleted: they are carried through untouched,
+        // with their own ids and their own beats.
+        const [lo, hi] = this.noteWindow(element);
+        const inside = [...timeline].filter(
+            ([beat, item]) => pitchOf(item) !== null && Number(beat) >= lo && Number(beat) < hi,
+        );
+        const outside = [...timeline].filter(
+            ([beat, item]) =>
+                pitchOf(item) !== null && !(Number(beat) >= lo && Number(beat) < hi),
+        );
+        const held = inside.map(([, item]) => item as SeqEvent);
         const fresh: [number, SeqEvent][] = [];
         let index = 0;
         for (const [start, dur, pitch, vel, channel] of quintuples(values.map((x) => Number(x)))) {
@@ -1939,7 +2008,9 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 };
             }
             if (Math.trunc(channel)) params.channel = Math.trunc(channel);
-            fresh.push([this.unitsToBeats(start), new SeqEvent(params)]);
+            // Back onto the timeline's own axis: the roll drew from the
+            // window's zero, and the timeline is where the window opens.
+            fresh.push([this.unitsToBeats(start) + lo, new SeqEvent(params)]);
         }
         // **Through the log**: the roll's edit is a `setmembers` — "notes added,
         // moved and removed arrive as the resulting list. Members keep their
@@ -1947,10 +2018,16 @@ export class FormEditor extends Editor<Element> implements Adopting {
         // no ids: a roll sends the resulting notes in order, so **order is the
         // only information there is**. The i-th note inherits the i-th note's id
         // and the extras are minted past everything the arrangement holds.
-        const kept = [...timeline]
-            .filter(([, item]) => pitchOf(item) !== null)
-            .map(([, item]) => docIdOf(item));
-        const members = fresh.map(([beat, event], i) => {
+        const kept = inside.map(([, item]) => docIdOf(item));
+        const carried = outside.map(([beat, item]) => ({
+            offset: Number(beat),
+            node: {
+                id: Math.trunc(docIdOf(item) ?? this.mintId()),
+                kind: "clang",
+                config: leafConfig(new Clang(item as SeqEvent)) as Record<string, unknown>,
+            },
+        }));
+        const edited = fresh.map(([beat, event], i) => {
             const nid = kept[i] ?? this.mintId();
             return {
                 offset: Number(beat),
@@ -1966,10 +2043,25 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 },
             };
         });
+        const members = [...carried, ...edited];
         const outcome = this.record({ intent: "setmembers", node, members }, label);
         if (outcome === null) return false;
         this.project(outcome.effective);
         return this.changed(outcome.applied);
+    }
+
+    /**
+     * The beats of the timeline a roll over `element` **draws**: its window, or
+     * everything when it has none.
+     *
+     * One question asked in one place, because the drawing and the edit-back
+     * have to agree about it — a roll that drew a window and wrote back the
+     * whole timeline would delete every note the window did not show.
+     */
+    private noteWindow(element: Element): [number, number] {
+        const lo = Number(element.windowStart() ?? 0.0);
+        const length = element.duration;
+        return [lo, length === null ? Infinity : lo + Number(length)];
     }
 
     /**
@@ -2457,6 +2549,15 @@ export class FormEditor extends Editor<Element> implements Adopting {
             // is the default — reading from the first frame, once.
             element.start = Number(config.start ?? 0.0);
             element.loop = Boolean(config.loop ?? false);
+            return true;
+        }
+        if (element instanceof Track) {
+            // The same configuration over the other material: which **beat** of
+            // its timeline this element begins at. A trim of a roll clip is the
+            // same gesture as a trim of a take, and it lands here for the same
+            // reason — the window is the element's, and the placement is the
+            // aggregate's.
+            element.start = Number(config.start ?? 0.0);
             return true;
         }
         const auto = automationOf(element, this.tempo);
@@ -3321,6 +3422,13 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 notes,
                 ...this.pitchWindow(element, notes),
             };
+            // The **window** onto the timeline, in the axis' units like every
+            // other clip prop: a track reads its notes from a beat the way a
+            // take reads its frames from a frame, and the host has to know it or
+            // a drag on the left edge would report a trim back to zero on a clip
+            // that never was there. Sent only when there is one to state.
+            const window = element.windowStart();
+            if (window) body.start = this.beatsToUnits(Number(window));
             // **Say it before the hand tries.** These notes are a *rendering* of a
             // forward-only generator when there is no editable timeline behind
             // them, so the roll refuses the press instead of offering a drag it

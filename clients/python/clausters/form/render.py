@@ -283,7 +283,12 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
             _emit(member.element, base + member.offset, out, member.dur,
                   tempo_map=tempo_map, mix=mix)
     elif isinstance(element, Track):
-        for beat, item in element.wraps:
+        # `items()` and not the timeline: a track is a **window** onto it (a
+        # trim reads from further in, a split gives two windows over one
+        # timeline), so what sounds is what the window shows, placed from the
+        # element's own zero. Without a window that is the whole timeline,
+        # which is what a track written by a script is.
+        for beat, item in element.items():
             _heard(out, base + beat, item, mix)
     elif isinstance(element, Clang):
         _heard(out, base, element.wraps, mix)

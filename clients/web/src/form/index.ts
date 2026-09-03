@@ -42,6 +42,7 @@ export type {
     GeneratorOptions,
     SegmentSpec,
     SegmentsOptions,
+    TrackOptions,
     SourceLike,
     TemporalCharacter,
     TimeUnit,

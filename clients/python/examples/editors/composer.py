@@ -69,6 +69,15 @@ back exactly what the cut separated. (Over a roll the same two letters cut and
 join *notes* — but only once notes are selected, so with nothing in hand they
 still reach the clip.)
 
+**And the same two letters on the melody clip**, which is the point of them
+being the same two: a clip over a **track** cuts and joins exactly as a clip
+over samples does, in beats instead of seconds. The halves are two windows onto
+one timeline — the notes the cut hid are still on it, so dragging the second
+half's head back to the left brings them out again, and `j` puts the phrase back
+together. An edge drag trims a roll clip for the same reason. Nothing about
+notes made this different; what was different was a client that asked which
+class the element was instead of asking whether it had a time axis.
+
 The drums lane holds **two different files** for that reason. Drag the second
 take against the first and press `j`: what you get is one clip that reads both,
 back to back — you hear the two notes in a row from a single clip, and the clip

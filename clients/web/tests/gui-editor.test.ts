@@ -38,6 +38,7 @@ import { Event as SeqEvent } from "../src/seq/event.ts";
 import { pointsToEnv } from "../src/defs/ugens/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Timeline } from "../src/seq/timeline.ts";
+import { Pbind } from "../src/seq/pattern.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
 const here = new URL(".", import.meta.url);
@@ -1636,4 +1637,104 @@ test("a generator has no samples and the refusal says so", async () => {
         () => ed.openSignal(asHost(new FakeHost()), gen),
         /no samples/,
     );
+});
+
+// ---- a clip is a view: what it holds decides what it admits ----
+
+test("a clip over a track splits into two windows of one timeline", () => {
+    const ed = editor();
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const was = clip.dur as number;
+    // One beat into the clip, which the melody has three notes in.
+    assert.equal(
+        ed.apply("/gui_event", [clip.id, SEQ, UNSTATED, "split", BEAT]),
+        true,
+    );
+
+    const [first, second] = clipsOf(lanes(ed.draw())[1] as GuiNode);
+    assert.equal(first?.dur, BEAT);
+    assert.equal(second?.offset, 3 * BEAT); // the lane starts at 2
+    assert.equal(second?.dur, was - BEAT);
+    // The second reads the same timeline from a beat in — it is a window, and it
+    // draws the notes that window holds, placed from its own zero.
+    assert.equal(second?.start, BEAT);
+    assert.deepEqual((second?.notes as number[]).filter((_, i) => i % 5 === 0), [0.0, BEAT]);
+
+    assert.equal(ed.undo(), true);
+    const whole = clipsOf(lanes(ed.draw())[1] as GuiNode);
+    assert.equal(whole.length, 1);
+    assert.equal(whole[0]?.dur, was);
+});
+
+test("the halves of a split track join back into the window they were cut from", () => {
+    const ed = editor();
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const was = clip.dur as number;
+    ed.apply("/gui_event", [clip.id, SEQ, UNSTATED, "split", BEAT]);
+    const [first, second] = clipsOf(lanes(ed.draw())[1] as GuiNode);
+    assert.equal(
+        ed.apply("/gui_event", [first?.id, SEQ, UNSTATED, "join", first?.id, second?.id]),
+        true,
+    );
+    const joined = clipsOf(lanes(ed.draw())[1] as GuiNode);
+    assert.equal(joined.length, 1);
+    assert.equal(joined[0]?.dur, was);
+    assert.equal("start" in (joined[0] as GuiNode), false); // the window it was cut from
+    assert.deepEqual(
+        (joined[0]?.notes as number[]).filter((_, i) => i % 5 === 0),
+        [0.0, BEAT, 2 * BEAT],
+    );
+});
+
+test("a note edited inside a window leaves the notes outside it alone", () => {
+    const ed = editor();
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    ed.apply("/gui_event", [clip.id, SEQ, UNSTATED, "split", BEAT]);
+    const cut = clipsOf(lanes(ed.draw())[1] as GuiNode);
+
+    // The window's first note up a semitone, its own second left alone.
+    const notes = [...((cut[1] as GuiNode).notes as number[])];
+    notes[2] = (notes[2] as number) + 1;
+    assert.equal(
+        ed.apply("/gui_event", [cut[1]?.id, SEQ, UNSTATED, "notes", ...notes]),
+        true,
+    );
+
+    const [first, second] = clipsOf(lanes(ed.draw())[1] as GuiNode);
+    assert.equal((second?.notes as number[])[2], 65);
+    // The note outside the window is where it was, at the pitch it was.
+    assert.equal((first?.notes as number[])[2], 60);
+});
+
+test("a roll clip trims to a window of its timeline", () => {
+    const ed = editor();
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    assert.equal(
+        ed.apply(
+            "/gui_event",
+            clipEvent(clip.id as number, (clip.offset as number) + BEAT,
+                      (clip.dur as number) - BEAT, BEAT),
+        ),
+        true,
+    );
+    const trimmed = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    assert.equal(trimmed.start, BEAT);
+    assert.deepEqual((trimmed.notes as number[]).filter((_, i) => i % 5 === 0), [0.0, BEAT]);
+});
+
+test("a generator is not refused a cut but told to be rendered first", () => {
+    const piece = new Aggregate(
+        [[0.0, new Aggregate(
+            [[0.0, new Generator(new Pbind({ midinote: [60, 62] }), null, 2.0)]],
+            "concrete",
+            { name: "gen" },
+        )]],
+        "concrete",
+        { name: "song" },
+    );
+    const ed = editor(piece);
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    assert.equal(ed.apply("/gui_event", [clip.id, SEQ, UNSTATED, "split", BEAT]), false);
+    const refused = ed as unknown as { reason: string | null };
+    assert.ok((refused.reason ?? "").includes("render"));
 });

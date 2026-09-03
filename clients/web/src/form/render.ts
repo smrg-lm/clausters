@@ -368,7 +368,12 @@ function emitElement(
             emit(member.element, base + member.offset, out, member.dur, tempoMap, mix);
         }
     } else if (element instanceof Track) {
-        for (const [beat, item] of element.timeline) heard(out, base + beat, item, mix);
+        // `items()` and not the timeline: a track is a **window** onto it (a
+        // trim reads from further in, a split gives two windows over one
+        // timeline), so what sounds is what the window shows, placed from the
+        // element's own zero. Without a window that is the whole timeline,
+        // which is what a track written by a script is.
+        for (const [beat, item] of element.items()) heard(out, base + beat, item, mix);
     } else if (element instanceof Clang) {
         heard(out, base, element.wraps, mix);
     } else if (element instanceof Sequence || element instanceof Generator) {

@@ -307,6 +307,17 @@ phrase = Segments([(take_a, 0, 2.0),          # two seconds of one file...
                   instrument="take")
 ```
 
+A `Track` is a window onto its timeline in exactly the same way, in beats:
+`Track(timeline, start=2.0, duration=2.0)` is the two beats from the third on,
+and the notes outside it are still on the timeline — which is what makes
+splitting a roll clip and dragging its edge back out bring them back. The two
+verbs are the same verb, and the unit is the material's:
+
+```python
+phrase = Track(melody, duration=4.0)      # the whole of it
+second_half = phrase.windowed(2.0, 4.0)   # what a split's tail reads
+```
+
 The windows themselves are **not** the arrangement's: they are
 `clausters.segments` — `Segment` and the runs, `BufferSegments` over samples and
 `NoteSegments` over a timeline of events — because a window is about the
