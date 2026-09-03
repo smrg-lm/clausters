@@ -2459,6 +2459,15 @@ class FormEditor(Editor):
                 # old one -- and the aggregate holding it stops being found at all.
                 if restored is not None:
                     setattr(restored, ID_ATTR, int(node))
+                    # **And the index has to learn the handle that holds it
+                    # now.** A restored placement is a *new* handle for an old
+                    # node, and the index maps a node to the object an intent
+                    # writes to -- so left alone it goes on naming the handle
+                    # this restoration replaced, and every later `place` on that
+                    # clip is applied by the crate, answered `True`, and written
+                    # onto a placement nobody is drawing. That is a clip that
+                    # cannot be moved and says nothing about why.
+                    self._editing.index(found[2], aggregate, restored)
         return True
 
     def _set_notes(self, element, members: list) -> bool:

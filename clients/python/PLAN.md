@@ -1126,6 +1126,42 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **A clip that would not move, and the edit said it had** *(reported
+  2026-09-03 by the user -- "no responde quiere decir que no se puede mover y no
+  se puede hacer split; la selección anda, los grip se muestran" -- and found
+  the same day by the lead they gave with it, a clip composed by a join; fixed
+  the same day)*. The reproduction is `join`, then **undo**, then drag the clip
+  the undo put back: the editor answers `True`, the crate applies the intent,
+  and the clip stays exactly where it was. Nothing is refused, so nothing has a
+  reason to show.
+
+  The index maps a node id to **the object** an intent writes to, and
+  `_set_placements` restores a placement by `add`ing it again -- a *new* handle
+  for an old node. The id was stamped back onto it (that part was already
+  right); the index was not told, so it went on naming the handle the
+  restoration had replaced. Every later `place` on that clip moved a placement
+  nobody was drawing. One line at the restore site (`Editing.index` over the
+  handle that holds the node now), and its twin in TypeScript.
+
+  It is the third time the same shape has been the bug: **the arrangement
+  replaces objects, so anything keyed by object identity goes stale** -- the
+  auto-fit hold (fixed by keying on the node), and the two doors that replace a
+  handle (a lane change and a restore). The index's own comment claimed the
+  opposite in as many words -- *"a re-derivation names the same nodes, so
+  nothing here goes stale"* -- which is true of the ids and false of what they
+  point at.
+
+  **The rest of the editor was audited for the same shape and is clean.** The
+  registries a draw rebuilds (`_clips`, `_lanes`, `_rolls`, `_patches`,
+  `_lane_bases`, `_lane_members`) cannot go stale by construction; the two held
+  by `id()` across edits -- `_expanded` (which aggregates are resolved into
+  lanes) and `_patch_geometry` (a patcher's box positions) -- are keyed on
+  **elements**, and an element is never replaced: a cut takes its placement, and
+  the index deliberately keeps the element itself, which is also what stops the
+  address from being reused under the key. Handles are what get replaced, and
+  the two doors that replace one are the lane change and this restore, both now
+  keyed on the node.
+
 - ⬜ **A window onto notes is a window while the session lasts and a copy once
   it is written** *(found 2026-09-03 by the user, right after the split
   shipped: "cuando se hace un split de un pianoroll, sigue siendo una ventana a

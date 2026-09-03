@@ -3057,3 +3057,29 @@ def test_a_generator_is_not_refused_a_cut_but_told_to_be_rendered_first():
     (clip,) = clips(lanes(ed.draw())[0])
     assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT]) is False
     assert "render" in (ed._reason or "")
+
+
+def test_a_placement_that_came_back_from_an_undo_can_still_be_moved():
+    """The index maps a node to *the object* an intent writes to, and a restored
+    placement is a new handle for an old node. Left unlearned, every later move
+    of that clip is applied by the crate, answered `True`, and written onto a
+    placement nobody draws -- a clip that does not respond and says nothing."""
+    a = Vector(ServerBuffer(bufnum=7, frames=int(8 * BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take")
+    b = Vector(ServerBuffer(bufnum=8, frames=int(8 * BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take")
+    song = Aggregate([(0.0, Aggregate([(0.0, a), (1.0, b)], name="audio"))],
+                     name="song")
+    ed = editor(song)
+    first, second = clips(lanes(ed.draw())[0])
+    ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                            first["id"], second["id"]])
+    assert ed.undo() is True
+
+    # The clip the undo put back, moved one beat along.
+    _, restored = clips(lanes(ed.draw())[0])
+    assert ed.apply("/gui_event", [restored["id"], SEQ + 1, UNSTATED, "clip",
+                                   restored["offset"] + BEAT,
+                                   restored["dur"]]) is True
+    _, moved = clips(lanes(ed.draw())[0])
+    assert moved["offset"] == pytest.approx(2 * BEAT)

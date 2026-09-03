@@ -1738,3 +1738,34 @@ test("a generator is not refused a cut but told to be rendered first", () => {
     const refused = ed as unknown as { reason: string | null };
     assert.ok((refused.reason ?? "").includes("render"));
 });
+
+test("a placement that came back from an undo can still be moved", () => {
+    // The index maps a node to *the object* an intent writes to, and a restored
+    // placement is a new handle for an old node. Left unlearned, every later move
+    // of that clip is applied by the crate, answered `true`, and written onto a
+    // placement nobody draws — a clip that does not respond and says nothing.
+    const a = new Vector(buffer(7), null, 1.0, { instrument: "take" });
+    const b = new Vector(buffer(8), null, 1.0, { instrument: "take" });
+    const piece = new Aggregate(
+        [[0.0, new Aggregate([[0.0, a], [1.0, b]], "concrete", { name: "audio" })]],
+        "concrete",
+        { name: "song" },
+    );
+    const ed = editor(piece);
+    const [first, second] = clipsOf(lanes(ed.draw())[0] as GuiNode);
+    ed.apply("/gui_event", [first?.id, SEQ, UNSTATED, "join", first?.id, second?.id]);
+    assert.equal(ed.undo(), true);
+
+    // The clip the undo put back, moved one beat along.
+    const restored = clipsOf(lanes(ed.draw())[0] as GuiNode)[1] as GuiNode;
+    assert.equal(
+        ed.apply(
+            "/gui_event",
+            clipEvent(restored.id as number, (restored.offset as number) + BEAT,
+                      restored.dur as number),
+        ),
+        true,
+    );
+    const moved = clipsOf(lanes(ed.draw())[0] as GuiNode)[1] as GuiNode;
+    assert.equal(moved.offset, 2 * BEAT);
+});
