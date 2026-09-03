@@ -258,6 +258,14 @@ impl WebApp {
                     None => return,
                 }
             }
+            // ...and the block verb over the clips a marquee left in the hand:
+            // the same letter the roll quantizes its notes with, one level up.
+            Key::Character(c) if c.eq_ignore_ascii_case("q") => {
+                match slot.gestures.clip_quantize(&mut self.host, &ctx, cx, cy) {
+                    Some(effects) => effects,
+                    None => return,
+                }
+            }
             // The clipboard verbs over the view under the cursor, last, so a
             // focused field and a roll's own block keys answer first.
             Key::Character(c) if c.eq_ignore_ascii_case("c") && ctx.ctrl => {

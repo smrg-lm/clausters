@@ -819,6 +819,12 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("j") => {
                         self.clip_verb(def_id, ClipEdit::Join);
                     }
+                    // ...and the block verb over the clips a marquee left in
+                    // the hand: the same letter the roll quantizes its notes
+                    // with, one level up.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("q") => {
+                        self.clip_quantize(def_id);
+                    }
                     // The monitor: the space bar plays what the cursor is over
                     // and stops what is playing. Last among the window's own
                     // keys for the usual reason — a focused field types a

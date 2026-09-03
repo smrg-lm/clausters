@@ -248,6 +248,14 @@ enum Drag {
         /// What the contents behind the clip allows the edges to do.
         contents: interact::Contents,
         grid: f64,
+        /// **The block the hand is moving**, when the grabbed clip was one the
+        /// marquee had selected: `(index in the lane's clips, offset, row)` per
+        /// selected clip at the press, **the grabbed one first** — it is the
+        /// snap anchor, exactly as it is for a block of notes
+        /// (`placement::move_block`). Empty when one clip is being moved on its
+        /// own, and always empty for an edge drag: a trim is one clip's, since
+        /// two clips of different lengths have no one edge to pull.
+        block: Vec<(usize, f64, f32)>,
     },
     /// Dragging a lane header's level fader: the cursor's x over the fader's
     /// rectangle is the value, so the press itself already sets it.

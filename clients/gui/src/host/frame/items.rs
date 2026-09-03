@@ -70,6 +70,8 @@ pub(super) struct ClipItem {
     /// are its affordance, so they are drawn while it is and not while a hand
     /// is editing something inside the clip.
     pub(super) placement_active: bool,
+    /// Whether the hand is holding this clip ([`Widget::selected`]).
+    pub(super) selected: bool,
     pub(super) clip: Option<Rect>,
     /// The opacity and corner radius this widget draws with
     /// ([`super::ink_of`]).
@@ -338,6 +340,7 @@ pub(super) fn collect_widgets(
                     }),
                     placement_active: crate::host::layers::active(p.widget)
                         == crate::host::layers::Layer::Placement,
+                    selected: p.widget.selected,
                     clip: p.clip,
                     ink,
                     theme: p.widget.theme.clone(),

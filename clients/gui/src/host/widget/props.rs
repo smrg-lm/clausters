@@ -696,10 +696,16 @@ impl GestureMap {
             return map;
         }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
+            // A lane locates on a plain drag and **selects on Ctrl**: the
+            // sweep is what puts a span on the shared axis and what puts the
+            // clips inside it in the hand (the marquee), so the modifier that
+            // adds one clip to the selection is the modifier that sweeps for
+            // several. `Element` stays first on both, because a clip under the
+            // pointer answers before the lane does either.
             WidgetKind::Track { .. } => (
                 &[Element, Locate],
                 &[Pan],
-                &[Element, Locate],
+                &[Element, Select],
                 &[Element, Locate],
             ),
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),

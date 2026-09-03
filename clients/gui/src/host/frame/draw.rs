@@ -662,7 +662,7 @@ pub(super) fn draw_static_meshes(
         mesh.set_clip(item.clip);
         mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_clip(&mut Draw::new(mesh, m, th), item.rect);
+        track::draw_clip(&mut Draw::new(mesh, m, th), item.rect, item.selected);
     }
     for item in &collected.clip_bodies {
         mesh.set_clip(item.clip);

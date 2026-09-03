@@ -120,23 +120,72 @@ pub(crate) fn header_set(
     });
 }
 
+/// **Drops the clip selection** across a window's whole tree, returning whether
+/// anything was holding one.
+///
+/// A window-wide clear rather than a lane-wide one, because a selection is one
+/// hand's: pressing an unselected clip on another lane lets go of what was
+/// held, exactly as pressing an unselected note does in a roll.
+pub(crate) fn clear_clip_selection(host: &mut Host, def_id: i32) -> bool {
+    let mut changed = false;
+    if let Some(tree) = host.window_def_mut(def_id) {
+        tree.walk_mut(&mut |w| {
+            if w.selected {
+                w.selected = false;
+                changed = true;
+            }
+        });
+    }
+    changed
+}
+
+/// Sets one clip's own mark, returning whether it changed.
+pub(crate) fn set_clip_selected(host: &mut Host, def_id: i32, id: i32, on: bool) -> bool {
+    match host.window_def_mut(def_id).and_then(|t| t.find_mut(id)) {
+        Some(w) if w.selected != on => {
+            w.selected = on;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// **The marquee**: selects the clips of `lane_id` whose span meets the time
+/// span `[t0, t1)`, dropping whatever was held elsewhere. Returns whether the
+/// selection changed.
+///
+/// The rule is the roll's, one level up: a sweep sets the shared time selection
+/// and the boxes inside it become the selected set — `placement::in_rect` over
+/// the lane's clips, the same call `notes_in_rect` is. The vertical half of the
+/// rectangle is the lane itself for now; a sweep across lanes is what the
+/// vertical axis is for.
+pub(crate) fn select_clips_in(
+    host: &mut Host,
+    def_id: i32,
+    lane_id: i32,
+    t0: f64,
+    t1: f64,
+) -> bool {
+    let mut changed = clear_clip_selection(host, def_id);
+    let Some(lane) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(lane_id))
+    else {
+        return changed;
+    };
+    let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
+    for i in crate::host::placement::in_rect(&clips, t0, t1, 0.0, 0.0) {
+        changed |= clips.set_selected(i, true);
+    }
+    changed
+}
+
 /// Writes a clip's placement (`offset`/`dur`, each clamped `>= 0`) in the host
 /// tree — the drag's mutation.
 pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super::Placement) {
     if let Some(tree) = host.window_def_mut(def_id)
         && let Some(w) = tree.find_mut(clip_id)
     {
-        if let WidgetKind::Clip { offset, dur, .. } = &mut w.kind {
-            *offset = placed.offset.max(0.0);
-            *dur = placed.dur.max(0.0);
-        } else {
-            return;
-        }
-        // The window travels with the placement: a trimmed start shows less of
-        // the contents from further in, which is the whole difference between
-        // trimming a clip and squeezing it.
-        w.window
-            .get_or_insert_with(crate::host::widget::SourceWindow::default)
-            .start = placed.start;
+        crate::host::graphics::track::set_clip_placement(w, placed);
     }
 }

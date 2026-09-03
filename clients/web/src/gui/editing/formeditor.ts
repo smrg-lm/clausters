@@ -1081,6 +1081,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
             // A logical aggregate's directed patch: a cord drawn or a box moved.
             return this.applyPatch(id, tag, rest);
         }
+        if (tag === "clips") {
+            // A block of clips moved by one hand, reported on the **lane** that
+            // holds them — the one message that says "these several placements
+            // are one edit".
+            return this.applyClips(rest);
+        }
         const placed = this.clips.get(id);
         if (placed === undefined) return false;
         if (tag === "points") return this.applyPoints(placed, rest);
@@ -1949,8 +1955,20 @@ export class FormEditor extends Editor<Element> implements Adopting {
             ]);
         }
 
+        return this.applyLegs(label, prepared);
+    }
+
+    /**
+     * Apply prepared `[intent, inverse]` legs as **one** entry.
+     *
+     * The body `transact` and `applyClips` share: what differs between a cord's
+     * three configurations and a block of clips' several placements is which
+     * intents are prepared, never what "one gesture is one edit" means.
+     */
+    private applyLegs(label: string, prepared: readonly [Intent, Intent][]): boolean {
+        const [log, document] = this.history();
         const applied: [Intent, Intent][] = [];
-        prepared.forEach(([intent, inverse], index) => {
+        for (const [index, [intent, inverse]] of prepared.entries()) {
             // **The staleness check is the gesture's, not each leg's.** One
             // gesture was made against one picture, and the first leg applied is
             // what moves the version — so checking the rest against the version
@@ -1960,11 +1978,15 @@ export class FormEditor extends Editor<Element> implements Adopting {
             const outcome = document.apply(intent, options);
             if (outcome.applied) applied.push([outcome.effective, inverse]);
             else if (outcome.reason) {
+                // Refused for a rule rather than for being a resend: put back
+                // what landed and record nothing. **Half a transaction would
+                // undo one node and leave the other where the gesture put it**,
+                // which is what carrying on through the rest of the legs would
+                // leave behind.
                 for (const [, undo] of [...applied].reverse()) document.apply(undo);
-                applied.length = 0;
-                prepared.length = 0;
+                return false;
             }
-        });
+        }
         if (applied.length === 0) return false;
 
         log.history.record(
@@ -1978,6 +2000,57 @@ export class FormEditor extends Editor<Element> implements Adopting {
         );
         for (const [effective] of applied) this.project(effective);
         return this.changed();
+    }
+
+    /**
+     * A **block of clips moved by one hand** (`"clips" id offset dur start …`),
+     * applied as one transaction.
+     *
+     * The plural of the clip route, meaning the same thing about each clip it
+     * names — the same conversion from the axis to the placement, through the
+     * same `place` intent. What it adds is that the several placements are **one
+     * entry**: a marquee's block undoes in one step, because that is what the
+     * hand did. A run of separate `"clip"` messages could not say so, which is
+     * why the host sends one message and not several.
+     *
+     * A block move never resizes and never trims: every clip keeps the length
+     * and the window it had, and only the offsets travel.
+     */
+    private applyClips(rest: readonly unknown[]): boolean {
+        const [, document] = this.history();
+        const legs: [Intent, Intent][] = [];
+        const moved: [number, Placed, number][] = [];
+        for (let i = 0; i + 3 < rest.length; i += 4) {
+            const widgetId = Math.trunc(Number(rest[i]));
+            const offset = Number(rest[i + 1]);
+            const placed = this.clips.get(widgetId);
+            if (placed === undefined || placed.member === null) continue;
+            if (Math.abs(offset - placed.offset) < 0.5) continue; // half a sample
+            const node = this.nodeId(placed.member.element, placed.member);
+            if (node === null) continue;
+            const intent = {
+                intent: "place",
+                node,
+                offset: this.unitsToBeats(offset) - placed.base,
+            } as unknown as Intent;
+            const inverse = document.inverse(intent);
+            if (inverse === undefined) continue;
+            legs.push([intent, inverse]);
+            moved.push([widgetId, placed, offset]);
+        }
+        if (legs.length === 0 || !this.applyLegs("move the clips", legs)) {
+            // Refused as one, so every clip goes back as one: what the host is
+            // drawing is not what the document holds.
+            for (const [widgetId] of moved) this.resync(widgetId);
+            return false;
+        }
+        // The clips were drawn where they now are: keep the registry truthful,
+        // or the next edit would measure a move against a stale placement.
+        for (const [, placed, offset] of moved) placed.offset = offset;
+        this.version = (this.doc as Document).version;
+        this.dirty = true;
+        this.followRender();
+        return true;
     }
 
     /**

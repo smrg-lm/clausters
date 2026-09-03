@@ -73,7 +73,8 @@ impl Gestures {
             orig,
             contents,
             grid,
-        }) = self.drag
+            block,
+        }) = self.drag.clone()
         else {
             return out;
         };
@@ -105,6 +106,7 @@ impl Gestures {
                 orig,
                 contents,
                 grid,
+                block,
             },
             cx,
         );
@@ -249,6 +251,17 @@ impl Gestures {
                     (max > min && !axis.is_whole(min, max)).then_some((min, max))
                 });
                 set_selection(host, &mut out, def_id, id, anchor, cur, range);
+                // **A sweep over a lane is also its marquee**: the shared time
+                // selection is set either way, and the clips inside it become
+                // the hand's — the very rule a roll follows for the notes
+                // inside the same sweep. The vertical half of the rectangle is
+                // the lane itself; a sweep across lanes is what the vertical
+                // axis is for.
+                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. }))
+                    && interact::select_clips_in(host, def_id, id, anchor, cur)
+                {
+                    out.push(GestureEffect::Redraw(def_id));
+                }
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and
                 // leaves the piece where it is, which is why this is live and
@@ -337,6 +350,7 @@ impl Gestures {
                 orig,
                 contents,
                 grid,
+                ref block,
             } => {
                 apply_clip_drag(
                     host,
@@ -354,6 +368,7 @@ impl Gestures {
                         orig,
                         contents,
                         grid,
+                        block: block.clone(),
                     },
                     cx,
                 );
@@ -480,9 +495,24 @@ impl Gestures {
         // A moved or trimmed clip leaves as **one intent at the end**, for the
         // reason the two arms above give: the placement followed the hand all
         // along, and this is the edit it amounts to.
-        if let Some(Drag::Clip { id, .. }) = self.drag.clone() {
+        if let Some(Drag::Clip {
+            id,
+            lane,
+            ref block,
+            ..
+        }) = self.drag.clone()
+        {
+            let block = !block.is_empty();
             self.drag = None;
-            emit_clip(host, &mut out, def_id, id);
+            // **One gesture is one edit**, whether it moved one clip or twelve:
+            // a block leaves as the lane's `"clips"`, which the owner applies as
+            // one transaction and undoes in one step. A run of `"clip"` messages
+            // would be an entry each.
+            if block {
+                emit_clips(host, &mut out, def_id, lane);
+            } else {
+                emit_clip(host, &mut out, def_id, id);
+            }
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }

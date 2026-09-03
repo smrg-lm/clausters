@@ -187,6 +187,7 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
         span: None,
         window: None,
         layer: crate::host::layers::Layer::Placement,
+        selected: false,
         children: Vec::new(),
     }
 }

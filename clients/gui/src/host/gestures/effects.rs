@@ -132,6 +132,12 @@ pub(super) fn emit_clip(
     emit_read(host, out, def_id, widget_id, interact::clip_event_args);
 }
 
+/// Emits a lane's block edit — `/gui_event lane "clips" id offset dur start …`
+/// over the clips the hand is holding.
+pub(super) fn emit_clips(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, lane_id: i32) {
+    emit_read(host, out, def_id, lane_id, interact::clips_event_args);
+}
+
 /// Repaints every window in `roots` (the windows a group mutation touched).
 pub(super) fn redraw_all(out: &mut Vec<GestureEffect>, roots: &[i32]) {
     for root in roots {

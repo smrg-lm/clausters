@@ -231,6 +231,23 @@ impl App {
         true
     }
 
+    /// Quantize the clips the hand is holding on the lane under the cursor.
+    /// Returns whether it was consumed.
+    pub(super) fn clip_quantize(&mut self, def_id: i32) -> bool {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return false;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return false;
+        };
+        let Some(effects) = ws.gestures.clip_quantize(&mut self.host, &ctx, cx, cy) else {
+            return false;
+        };
+        self.apply_gesture_effects(effects);
+        true
+    }
+
     /// The space bar over the view under the cursor: play its samples, or stop
     /// what is playing. Returns whether it was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {

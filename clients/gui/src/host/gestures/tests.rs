@@ -2179,6 +2179,82 @@ fn a_clip_is_cut_at_the_cursor_and_joined_with_what_touches_it() {
     );
 }
 
+/// **A marquee over a lane leaves clips in the hand, and one gesture moves
+/// them all.** The sweep that sets the shared time selection is also the
+/// selection of the clips inside it -- the roll's rule one level up -- and
+/// grabbing one of them moves the block rigidly, reported as the lane's
+/// `"clips"` so the owner undoes it in one step.
+#[test]
+fn a_swept_lane_hands_its_clips_to_one_block_move() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"snap":100.0,"children":[
+            {"id":80,"type":"field","label":"takes","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":0.0,"dur":300.0,"data":[0.0,1.0]},
+                {"id":82,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]},
+                {"id":83,"type":"field","offset":1600.0,"dur":100.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    // Ctrl is the lane's selection modifier: it sweeps for several clips and
+    // adds one at a time, which is the pair the roll already has for notes.
+    let sweeping = GestureCtx {
+        ctrl: true,
+        ..GestureCtx::new(1, 800, 200)
+    };
+    let first = placed_rect(&host, &ctx, 81);
+    let second = placed_rect(&host, &ctx, 82);
+    let midy = (first.y + first.h * 0.5) as f64;
+    // Sweep the lane's **empty** strip -- the gap after the second clip, back
+    // to the lane's own edge. The third clip is further along and stays out of
+    // the hand.
+    let from = (second.x + second.w + 4.0) as f64;
+    let to = first.x as f64;
+    g.press(&mut host, &sweeping, from, midy);
+    g.drag_to(&mut host, &sweeping, to, midy);
+    g.release(&mut host, &sweeping, to, midy);
+    let held = |host: &Host, id: i32| {
+        host.window_def(1)
+            .and_then(|t| t.find(id))
+            .is_some_and(|w| w.selected)
+    };
+    assert!(held(&host, 81) && held(&host, 82), "the sweep took both");
+    assert!(!held(&host, 83), "the clip past the sweep stayed out");
+
+    // Grab one of them by the body and move it: the block travels as one.
+    let grab = ((first.x + first.w * 0.5) as f64, midy);
+    let step = (first.w as f64) * 4.0 / 3.0; // 400 samples at this zoom
+    g.press(&mut host, &ctx, grab.0, midy);
+    g.drag_to(&mut host, &ctx, grab.0 + step, midy);
+    let effects = g.release(&mut host, &ctx, grab.0 + step, midy);
+    let offset =
+        |host: &Host, id: i32| match host.window_def(1).and_then(|t| t.find(id)).map(|w| &w.kind) {
+            Some(WidgetKind::Clip { offset, .. }) => *offset,
+            _ => panic!("not a clip"),
+        };
+    assert!(
+        (offset(&host, 81) - 400.0).abs() < 1.0 && (offset(&host, 82) - 800.0).abs() < 1.0,
+        "both moved by the same delta: {} {}",
+        offset(&host, 81),
+        offset(&host, 82)
+    );
+    assert!(
+        (offset(&host, 83) - 1600.0).abs() < 1.0,
+        "the clip nobody was holding stayed"
+    );
+    // One edit for the gesture, named on the lane and naming every clip it
+    // moved -- not one message per clip, which would be one undo entry each.
+    let args = first_emit(&effects, 80).expect("the block reported on the lane");
+    assert_eq!(args[0], OscType::String("clips".into()));
+    assert_eq!(args[1], OscType::Int(81));
+    assert_eq!(args[5], OscType::Int(82));
+    assert_eq!(args.len(), 9, "four numbers per clip: {args:?}");
+    assert!(
+        first_emit(&effects, 81).is_none(),
+        "a block does not also report per clip"
+    );
+}
+
 /// The arguments of the first `/gui_event` a verb emitted for `id`.
 fn first_emit(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
     effects.iter().find_map(|e| match e {

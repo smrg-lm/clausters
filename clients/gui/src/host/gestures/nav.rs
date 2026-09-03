@@ -9,8 +9,10 @@
 use clausters_core::osc::OscType;
 
 use super::super::Host;
+use super::super::graphics::track;
 use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
+use super::super::placement;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::effects::{emit, emit_view, redraw_all};
@@ -322,7 +324,7 @@ pub(super) fn pan_timeline(
 
 /// One in-flight clip drag, as the placement math needs it: the press-time
 /// snapshot plus the lane geometry the cursor maps through.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct ClipDrag {
     pub(super) id: i32,
     pub(super) lane: i32,
@@ -339,6 +341,10 @@ pub(super) struct ClipDrag {
     /// whether the window loops off them.
     pub(super) contents: interact::Contents,
     pub(super) grid: f64,
+    /// The block this drag moves, when the grabbed clip was selected: the
+    /// press-time `(index, offset, row)` of every selected clip on the lane,
+    /// the grabbed one first.
+    pub(super) block: Vec<(usize, f64, f32)>,
 }
 
 /// Applies a clip drag at cursor `cx`: maps the cursor to a timeline sample,
@@ -363,7 +369,25 @@ pub(super) fn apply_clip_drag(
     let sample = interact::sample_at(nav_start, nav_len, d.body_x, d.body_w, cx);
     let placed =
         interact::clip_drag_placement(d.part, sample, d.press_sample, d.orig, d.contents, d.grid);
-    interact::clip_set(host, def_id, d.id, placed);
+    if d.block.is_empty() {
+        interact::clip_set(host, def_id, d.id, placed);
+    } else {
+        // **The block moves rigidly by the grabbed clip's own delta**, and the
+        // core clamps the whole of it as one — the same call, over the same
+        // snapshot shape, that moves a block of notes in a roll. The grabbed
+        // clip snapped to the grid; every other clip keeps its distance from
+        // it, which is what makes the block a block and not a set of clips that
+        // each round differently.
+        let dt = placed.offset - d.orig.offset;
+        if let Some(lane) = host
+            .window_def_mut(def_id)
+            .and_then(|tree| tree.find_mut(d.lane))
+        {
+            let row = 0.0;
+            let mut clips = track::LaneClips::of(lane, row);
+            placement::move_block(&mut clips, &d.block, dt, 0.0, (row, row), None);
+        }
+    }
     // The lane's extent moved with the clip: re-register it, so the shared axis
     // grows when a clip is dragged past the end — keeping the window's length,
     // so the axis *scrolls* under the drag rather than zooming out from under

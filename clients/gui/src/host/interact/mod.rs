@@ -53,6 +53,9 @@ pub(crate) use crate::host::placement::{Contents, Part, Placement};
 pub(crate) use coords::{
     Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of, sample_at, time_of,
 };
-pub(crate) use edit::{clip_set, header_set, lane_resize, scroll_set_view};
+pub(crate) use edit::{
+    clear_clip_selection, clip_set, header_set, lane_resize, scroll_set_view, select_clips_in,
+    set_clip_selected,
+};
 pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};
-pub(crate) use read::{clip_event_args, lane_event_args, plane_can_pan};
+pub(crate) use read::{clip_event_args, clips_event_args, lane_event_args, plane_can_pan};

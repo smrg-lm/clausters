@@ -251,6 +251,57 @@ fn place_body(offset: f64, dur: f64, limit: Limit) -> f64 {
     offset.min(last).max(0.0)
 }
 
+/// **Cut a box in two** at `at`, a position on the box's own axis strictly
+/// inside its span. `None` when the cut falls on an edge or outside: that would
+/// leave a box of nothing beside the one that was already there, which is not a
+/// cut.
+///
+/// The **window travels with the second half**, the same rule an edge trim
+/// follows: the halves are two windows over one source, and the later one reads
+/// further into it by exactly the length of the earlier one. So cutting and
+/// joining back leaves what was there.
+pub fn split_at(p: Placement, at: f64) -> Option<(Placement, Placement)> {
+    if at <= p.offset || at >= p.offset + p.dur {
+        return None;
+    }
+    Some((
+        Placement {
+            dur: at - p.offset,
+            ..p
+        },
+        Placement {
+            offset: at,
+            dur: p.offset + p.dur - at,
+            start: p.start + (at - p.offset),
+        },
+    ))
+}
+
+/// **Join two boxes into the one that spans both**: from the earlier onset to
+/// the later end, reading its source from where the earlier one read.
+///
+/// The inverse of [`split_at`] on two halves it produced, and a merge of an
+/// overlap otherwise — a join is stated over what is there, not over what the
+/// halves were.
+pub fn merge(a: Placement, b: Placement) -> Placement {
+    let (first, second) = if a.offset <= b.offset { (a, b) } else { (b, a) };
+    let end = (first.offset + first.dur).max(second.offset + second.dur);
+    Placement {
+        offset: first.offset,
+        dur: end - first.offset,
+        start: first.start,
+    }
+}
+
+/// Whether `b` begins where `a` ends, within `tol` — what "two juxtaposed
+/// boxes" means on an axis whose positions are snapped and whose lengths are
+/// floats. An overlap counts: boxes that share pixels are not two boxes to a
+/// reader.
+pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
+    let (first, second) = if a.offset <= b.offset { (a, b) } else { (b, a) };
+    second.offset <= first.offset + first.dur.max(0.0) + tol
+}
+
 /// **Indexed access to a run of boxes**, whatever they are stored as.
 ///
 /// Not a common item type and not a slice: notes live contiguously in a

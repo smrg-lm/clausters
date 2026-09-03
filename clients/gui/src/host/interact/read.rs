@@ -77,6 +77,34 @@ pub(crate) fn lane_event_args(
 /// what a `/gui_event` carries to the script (and what a bound clip would
 /// forward). Flat OSC primitives, the same pattern as the `bpf` `"points"`
 /// payload.
+/// **What a lane's selected clips report after a block edit**: `"clips" id
+/// offset dur start …`, one quadruple per clip, in the order the lane draws
+/// them.
+///
+/// It is the plural of `"clip"` and means exactly the same thing about each
+/// clip it names — the same three numbers, read the same way. It is a payload
+/// of its own rather than one `"clip"` per clip because **one gesture is one
+/// edit**: a block moved by one hand undoes in one step, and a run of separate
+/// messages gives the owner no way to know that. The owner applies them as one
+/// transaction.
+pub(crate) fn clips_event_args(tree: &Widget, lane_id: i32) -> Option<Vec<OscType>> {
+    let lane = tree.find(lane_id)?;
+    let mut args = vec![OscType::String("clips".into())];
+    for w in &lane.children {
+        let WidgetKind::Clip { offset, dur, .. } = &w.kind else {
+            continue;
+        };
+        let (Some(id), true) = (w.id, w.selected) else {
+            continue;
+        };
+        args.push(OscType::Int(id));
+        args.push(OscType::Float(*offset as f32));
+        args.push(OscType::Float(*dur as f32));
+        args.push(OscType::Float(w.window.unwrap_or_default().start as f32));
+    }
+    (args.len() > 1).then_some(args)
+}
+
 pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let widget = tree.find(id)?;
     let window = widget.window.unwrap_or_default();

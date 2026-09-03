@@ -21,6 +21,7 @@ use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
+use crate::host::placement::{Contents, Placement, Placements};
 use crate::host::timeline;
 use crate::host::widget::{SourceWindow, Widget, WidgetKind};
 use crate::viewport::View;
@@ -403,10 +404,148 @@ pub fn draw(
 /// Draws one clip's own box into the rectangle the layout placed it at: its
 /// fill, its edge and its `label`. Its **bodies** are children, drawn after it
 /// from their own placements ([`draw_body_widget`]), so they land over it.
-pub fn draw_clip(d: &mut Draw, cr: Rect) {
+///
+/// A **selected** clip is drawn in the selection's own roles, the same two a
+/// selected note is drawn in (`pianoroll::draw_notes`): one hand holding
+/// several boxes looks the same whichever boxes they are.
+pub fn draw_clip(d: &mut Draw, cr: Rect, selected: bool) {
     let (mesh, m, theme) = d.parts();
-    mesh.rect(cr, theme.object_fill);
-    mesh.border(cr, m.divider_w, theme.object_edge);
+    let (fill, edge) = if selected {
+        (theme.selected_fill, theme.selected_edge)
+    } else {
+        (theme.object_fill, theme.object_edge)
+    };
+    mesh.rect(cr, fill);
+    mesh.border(cr, m.divider_w, edge);
+}
+
+/// **Indexed access to a lane's clips**, so a block of them is edited by the
+/// very code a block of notes is ([`crate::host::placement`]).
+///
+/// A lane's clips are widget children and a roll's notes are rows of a `Vec`,
+/// and neither moves: what they share is the operations, so what is shared is
+/// an accessor over an index. Only the clip children are addressed — a lane
+/// holds no others today, and naming them by kind keeps that from being an
+/// assumption.
+pub struct LaneClips<'a> {
+    children: &'a mut Vec<Widget>,
+    /// Which children are clips, in the order they are drawn.
+    clips: Vec<usize>,
+    /// The row every clip on this lane sits on — the lane's own index. A clip
+    /// changing lanes is the vertical axis' work and is not here yet, so
+    /// [`Placements::set_row`] is a no-op and the block move clamps its own
+    /// delta to zero.
+    row: f32,
+}
+
+impl<'a> LaneClips<'a> {
+    /// The clips of `lane`, which must be the lane widget itself.
+    pub fn of(lane: &'a mut Widget, row: f32) -> Self {
+        let clips = lane
+            .children
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| matches!(w.kind, WidgetKind::Clip { .. }))
+            .map(|(i, _)| i)
+            .collect();
+        LaneClips {
+            children: &mut lane.children,
+            clips,
+            row,
+        }
+    }
+
+    /// The widget id of the clip at `i`, when it has one.
+    pub fn id(&self, i: usize) -> Option<i32> {
+        self.children[self.clips[i]].id
+    }
+
+    /// Whether the hand is holding the clip at `i`.
+    pub fn is_selected(&self, i: usize) -> bool {
+        self.children[self.clips[i]].selected
+    }
+
+    /// Marks the clip at `i`, reporting whether it changed.
+    pub fn set_selected(&mut self, i: usize, on: bool) -> bool {
+        let at = self.clips[i];
+        let w = &mut self.children[at];
+        let changed = w.selected != on;
+        w.selected = on;
+        changed
+    }
+
+    /// The index of the clip with widget id `id`.
+    pub fn index_of(&self, id: i32) -> Option<usize> {
+        (0..self.clips.len()).find(|&i| self.id(i) == Some(id))
+    }
+}
+
+/// Writes a placement onto a clip widget: its `offset`/`dur` (each clamped
+/// `>= 0`) and the **window** that travels with a trim.
+///
+/// One door, so the drag, the block move and the quantize cannot disagree about
+/// what writing a placement means.
+pub fn set_clip_placement(w: &mut Widget, p: Placement) {
+    if let WidgetKind::Clip { offset, dur, .. } = &mut w.kind {
+        *offset = p.offset.max(0.0);
+        *dur = p.dur.max(0.0);
+    } else {
+        return;
+    }
+    // The window travels with the placement: a trimmed start shows less of the
+    // contents from further in, which is the whole difference between trimming
+    // a clip and squeezing it.
+    w.window
+        .get_or_insert_with(crate::host::widget::SourceWindow::default)
+        .start = p.start;
+}
+
+/// The placement a clip widget carries, or the zero one for a widget that is
+/// not a clip.
+pub fn clip_placement(w: &Widget) -> Placement {
+    match w.kind {
+        WidgetKind::Clip { offset, dur, .. } => Placement {
+            offset,
+            dur,
+            start: w.window.unwrap_or_default().start,
+        },
+        _ => Placement::default(),
+    }
+}
+
+impl Placements for LaneClips<'_> {
+    fn len(&self) -> usize {
+        self.clips.len()
+    }
+
+    fn placement(&self, i: usize) -> Placement {
+        clip_placement(&self.children[self.clips[i]])
+    }
+
+    fn set_placement(&mut self, i: usize, p: Placement) {
+        let at = self.clips[i];
+        set_clip_placement(&mut self.children[at], p);
+    }
+
+    fn row(&self, _i: usize) -> f32 {
+        self.row
+    }
+
+    fn set_row(&mut self, _i: usize, _r: f32) {}
+
+    fn contents(&self, i: usize) -> Contents {
+        let w = &self.children[self.clips[i]];
+        let total = w
+            .clip_body(crate::host::widget::element::BodyRole::Take)
+            .and_then(|k| k.as_element())
+            .and_then(|el| el.sample_shape())
+            .map(|(_, frames)| frames as f64)
+            .filter(|f| *f > 0.0);
+        Contents {
+            total,
+            looping: w.window.unwrap_or_default().looping,
+        }
+    }
 }
 
 /// Which **ends** of a clip are on screen, read off the clip's own axis: the
@@ -1112,7 +1251,11 @@ mod tests {
         // ...and a clip's box is drawn from its own placement.
         let before = m.vertex_count();
         let (cr, _) = placed(0.0, 100.0, &View::full(400));
-        draw_clip(&mut Draw::new(&mut m, &metrics, &Theme::default()), cr);
+        draw_clip(
+            &mut Draw::new(&mut m, &metrics, &Theme::default()),
+            cr,
+            false,
+        );
         assert!(m.vertex_count() > before);
         // The name is the overlay's, so it is not in that count: drawn with the
         // box, a take's trace (or a spectral clip's texture) would bury it.

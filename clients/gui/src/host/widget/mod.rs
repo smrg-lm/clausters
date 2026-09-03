@@ -322,6 +322,21 @@ pub struct Widget {
     /// affordance — are [`crate::host::layers`], and this is where the answer
     /// is kept.
     pub layer: super::layers::Layer,
+    /// Whether this widget is in the **hand's selection** — a clip a marquee
+    /// swept over, which a block move, a quantize or a delete then acts on as
+    /// one.
+    ///
+    /// It is here for the reason [`layer`](Self::layer) is: a selection is not
+    /// one widget's idea. The roll keeps its selected *notes* as indices,
+    /// because a note is a row in a list the element owns; a clip is a node of
+    /// the tree, so the only place its mark can live is the node.
+    ///
+    /// **Native view state, and it does not travel.** A selection is what a
+    /// hand is holding, not what the composition is — the document is explicit
+    /// that what a view is currently editing is never part of it — so nothing
+    /// on the wire sets or reports this, exactly as nothing reports which notes
+    /// a roll has selected.
+    pub selected: bool,
     pub children: Vec<Widget>,
 }
 
@@ -505,6 +520,7 @@ impl Widget {
             span: parse::span(props),
             window: SourceWindow::declared(props),
             layer: super::layers::Layer::Placement,
+            selected: false,
             children,
         };
         // The active **edit layer**, last: it is named by what the container
@@ -611,6 +627,16 @@ impl Widget {
     /// The widget with id `id` anywhere in this tree.
     pub fn find(&self, id: i32) -> Option<&Widget> {
         self.descendants().find(|w| w.id == Some(id))
+    }
+
+    /// Runs `f` over this widget and every one below it — the mutable
+    /// counterpart of [`descendants`](Self::descendants), for a pass that
+    /// writes the same field everywhere (clearing a selection).
+    pub fn walk_mut(&mut self, f: &mut impl FnMut(&mut Widget)) {
+        f(self);
+        for c in &mut self.children {
+            c.walk_mut(f);
+        }
     }
 
     /// The widget with id `id` anywhere in this tree, mutably (for `/gui_set`

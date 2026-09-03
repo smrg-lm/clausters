@@ -16,6 +16,7 @@
 use super::super::Host;
 use super::super::interact::{self, Hit};
 use super::super::layers;
+use super::super::placement::Placements;
 use super::super::widget::element::{PendingEdit, TimeSpace};
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
@@ -609,6 +610,26 @@ impl Gestures {
                     if self.clip_layer_press(host, ctx, &h, cx, cy, out) {
                         return true;
                     }
+                    // **Ctrl adds or removes one clip**, and consumes the
+                    // press: a selection built one box at a time is not a drag,
+                    // which is the rule the roll's notes already follow.
+                    if ctx.ctrl && h.part == interact::Part::Body {
+                        let held = host
+                            .window_def(def_id)
+                            .and_then(|t| t.find(h.id))
+                            .is_some_and(|w| w.selected);
+                        interact::set_clip_selected(host, def_id, h.id, !held);
+                        out.push(GestureEffect::Redraw(def_id));
+                        return true;
+                    }
+                    // **Grabbing a selected clip moves the whole selection**;
+                    // grabbing an unselected one lets go of it and moves
+                    // singly. A trim is always one clip's: two clips of
+                    // different lengths have no one edge to pull.
+                    let block = clip_block(host, def_id, h.lane, h.id, h.part);
+                    if block.is_empty() && interact::clear_clip_selection(host, def_id) {
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
                     let press_sample = interact::sample_at(
                         h.nav.start,
                         h.nav.len,
@@ -628,6 +649,7 @@ impl Gestures {
                         orig: h.placement,
                         contents: h.contents,
                         grid: snap,
+                        block,
                     });
                 }
             }
@@ -652,4 +674,40 @@ impl Gestures {
         // Nothing the element wanted: the press goes back to the chain.
         self.drag.is_some() || out.len() > effects_before
     }
+}
+
+/// **The block a clip press takes hold of**: the press-time
+/// `(index, offset, row)` of every selected clip on `lane_id`, the grabbed one
+/// first — the snapshot shape `placement::move_block` moves, and the same one a
+/// roll builds for a block of notes.
+///
+/// Empty when the grabbed clip is not selected (the press moves it alone) or
+/// when an **edge** was grabbed: a trim is one clip's.
+fn clip_block(
+    host: &mut Host,
+    def_id: i32,
+    lane_id: i32,
+    clip_id: i32,
+    part: interact::Part,
+) -> Vec<(usize, f64, f32)> {
+    if part != interact::Part::Body {
+        return Vec::new();
+    }
+    let Some(lane) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(lane_id))
+    else {
+        return Vec::new();
+    };
+    let clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
+    let Some(grabbed) = clips.index_of(clip_id).filter(|&i| clips.is_selected(i)) else {
+        return Vec::new();
+    };
+    let row = Placements::row(&clips, grabbed);
+    // The grabbed clip leads: it is the snap anchor, and the rest keep their
+    // distance from it.
+    std::iter::once(grabbed)
+        .chain((0..clips.len()).filter(|&i| i != grabbed && clips.is_selected(i)))
+        .map(|i| (i, clips.placement(i).offset, row))
+        .collect()
 }

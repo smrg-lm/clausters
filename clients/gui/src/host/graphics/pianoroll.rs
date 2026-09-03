@@ -708,6 +708,99 @@ pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> 
         .collect()
 }
 
+/// **Split notes at `at`** (a region-relative time): every named note the time
+/// falls strictly inside becomes two, the second carrying the same pitch,
+/// velocity and channel. `indices` picks the notes (the selection); empty
+/// splits them all. Returns the selection the cut leaves — both halves of every
+/// note that was cut — so the block stays in hand.
+///
+/// The clip's `e` verb, over notes. A clip asks its owner to cut, because the
+/// owner holds the element; a roll holds its own notes and cuts them.
+pub fn split_notes(notes: &mut Vec<Note>, indices: &[usize], at: f64) -> Vec<usize> {
+    let targets: Vec<usize> = if indices.is_empty() {
+        (0..notes.len()).collect()
+    } else {
+        let mut t = indices.to_vec();
+        t.sort_unstable();
+        t.dedup();
+        t
+    };
+    let mut out = Vec::new();
+    for i in targets {
+        let Some(n) = notes.get(i).copied() else {
+            continue;
+        };
+        let Some((head, tail)) = placement::split_at(notes.placement(i), at) else {
+            continue;
+        };
+        notes.set_placement(i, head);
+        let mut second = n;
+        second.start = tail.offset;
+        second.dur = tail.dur;
+        out.push(i);
+        out.push(insert_note(notes, second));
+    }
+    out
+}
+
+/// **Join the named notes**: on each pitch, a run of notes that touch or
+/// overlap becomes one, spanning from the first onset to the last end and
+/// keeping the first note's velocity and channel. `indices` picks the notes;
+/// empty joins over the whole list. Returns the selection that is left.
+///
+/// The clip's `j` verb, over notes — and the same reading of "juxtaposed": what
+/// joins is what touches, so no second selection model is needed to say which
+/// two. A pitch is what makes two notes the same voice, which is the roll's
+/// answer to the lane a clip's join is confined to.
+pub fn join_notes(notes: &mut Vec<Note>, indices: &[usize]) -> Vec<usize> {
+    let mut targets: Vec<usize> = if indices.is_empty() {
+        (0..notes.len()).collect()
+    } else {
+        let mut t = indices.to_vec();
+        t.sort_unstable();
+        t.dedup();
+        t
+    };
+    // Earliest first within a pitch, so a run is walked in the order it sounds.
+    targets.sort_by(|&a, &b| {
+        let (na, nb) = (notes[a], notes[b]);
+        na.pitch
+            .total_cmp(&nb.pitch)
+            .then(na.start.total_cmp(&nb.start))
+    });
+    let mut absorbed: Vec<usize> = Vec::new();
+    let mut head: Option<usize> = None;
+    for i in targets {
+        match head {
+            Some(h)
+                if notes[h].pitch == notes[i].pitch
+                    && placement::adjacent(notes.placement(h), notes.placement(i), JOIN_TOL) =>
+            {
+                let joined = placement::merge(notes.placement(h), notes.placement(i));
+                notes.set_placement(h, joined);
+                absorbed.push(i);
+            }
+            _ => head = Some(i),
+        }
+    }
+    if absorbed.is_empty() {
+        return indices.to_vec();
+    }
+    // The survivors, re-indexed after the absorbed ones leave the list.
+    let left: Vec<usize> = (0..notes.len()).filter(|i| !absorbed.contains(i)).collect();
+    let kept: Vec<usize> = indices
+        .iter()
+        .filter(|i| !absorbed.contains(i))
+        .map(|&i| left.iter().position(|&j| j == i).unwrap_or(i))
+        .collect();
+    remove_notes(notes, &absorbed);
+    kept
+}
+
+/// How near two notes' edges must be to count as touching — half a sample, the
+/// same tolerance every other "did this actually move" question uses.
+const JOIN_TOL: f64 = 0.5;
+
 /// Quantize note onsets to the `grid` (timeline samples) — the shared
 /// [`placement::quantize`], which a lane's clips run the same way.
 pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool {
@@ -907,6 +1000,55 @@ mod tests {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
         resize_note(&mut notes, 0, Part::Start, 50.0, floor(10.0, Some(1000.0)));
         assert_eq!((notes[0].start, notes[0].dur), (50.0, 250.0));
+    }
+
+    /// A cut leaves two notes end to end, and joining them back leaves what
+    /// was there — the roll's `e` and `j`, which are the clip's own two verbs
+    /// over a list the host holds itself.
+    #[test]
+    fn a_split_and_a_join_are_inverses() {
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        let sel = split_notes(&mut notes, &[], 150.0);
+        assert_eq!(sel, vec![0, 1]);
+        assert_eq!((notes[0].start, notes[0].dur), (100.0, 50.0));
+        assert_eq!((notes[1].start, notes[1].dur), (150.0, 150.0));
+        assert_eq!(notes[1].pitch, 60.0, "the second half is the same note");
+        let sel = join_notes(&mut notes, &sel);
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].start, notes[0].dur), (100.0, 200.0));
+        assert_eq!(sel, vec![0]);
+    }
+
+    /// A cut on an edge is not a cut, and neither is one outside the note.
+    #[test]
+    fn a_cut_that_would_leave_nothing_is_no_cut() {
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        assert!(split_notes(&mut notes, &[], 100.0).is_empty());
+        assert!(split_notes(&mut notes, &[], 300.0).is_empty());
+        assert!(split_notes(&mut notes, &[], 50.0).is_empty());
+        assert_eq!(notes.len(), 1);
+    }
+
+    /// **A pitch is what makes two notes one voice**, which is the roll's
+    /// answer to the lane a clip's join is confined to: notes that touch join,
+    /// notes on another pitch do not, and neither do notes with a gap.
+    #[test]
+    fn a_join_takes_what_touches_on_the_same_pitch() {
+        let mut notes = vec![
+            Note::new(0.0, 100.0, 60.0),
+            Note::new(100.0, 100.0, 60.0), // touches the first
+            Note::new(100.0, 100.0, 64.0), // another voice
+            Note::new(400.0, 100.0, 60.0), // a gap
+        ];
+        let sel = join_notes(&mut notes, &[]);
+        assert_eq!(notes.len(), 3);
+        assert_eq!((notes[0].start, notes[0].dur), (0.0, 200.0));
+        assert!(
+            sel.is_empty(),
+            "nothing was selected, nothing is left selected"
+        );
+        assert!(notes.iter().any(|n| n.pitch == 64.0 && n.dur == 100.0));
+        assert!(notes.iter().any(|n| n.start == 400.0));
     }
 
     #[test]

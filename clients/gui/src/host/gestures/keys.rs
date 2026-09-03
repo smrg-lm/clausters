@@ -19,8 +19,10 @@ use super::super::interact::Hit;
 use clausters_core::osc::OscType;
 
 use super::super::clipboard::Clip;
+use super::super::placement::Placements;
+use super::super::widget::WidgetKind;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock};
-use super::effects::{emit, emit_view, redraw_all};
+use super::effects::{emit, emit_clips, emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
@@ -311,10 +313,15 @@ impl Gestures {
                     )
                 }) - clip.placement.offset;
                 // A cut at either edge is not a cut: it would leave a clip of
-                // nothing beside the one that was already there.
-                if at <= 0.0 || at >= clip.dur {
-                    return None;
-                }
+                // nothing beside the one that was already there. The rule is
+                // `placement::split_at`'s, the same one a roll's `e` runs over
+                // its notes.
+                let span = crate::host::placement::Placement {
+                    offset: 0.0,
+                    dur: clip.dur,
+                    start: clip.placement.start,
+                };
+                crate::host::placement::split_at(span, at)?;
                 vec![OscType::String("split".into()), OscType::Float(at as f32)]
             }
             ClipEdit::Join => {
@@ -325,6 +332,49 @@ impl Gestures {
             }
         };
         emit(host, &mut out, ctx.def_id, clip.id, args);
+        Some(out)
+    }
+
+    /// **Quantize the clips the hand is holding**, on the lane under the
+    /// cursor: each selected clip's offset snaps to the lane's own `snap`
+    /// grid — the grid a drag already lands on, so a quantize puts a clip where
+    /// dragging it would have.
+    ///
+    /// The roll's `q` over a lane's clips, and literally the same call
+    /// ([`placement::quantize`]): the selection is where the pointer has been,
+    /// which is why this is a key and not a gesture. Nothing selected quantizes
+    /// nothing — a lane's clips are the composition, and "all of them" is not
+    /// something to do by leaning on a letter. (A roll's `q` quantizes every
+    /// note when nothing is selected, because a roll's notes are one element's
+    /// contents and the whole of what is on screen.)
+    ///
+    /// Returns `None` when the pointer is not over a lane, so the key falls
+    /// through.
+    pub fn clip_quantize(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Option<Vec<GestureEffect>> {
+        let h = hit(host, ctx, cx, cy)?;
+        let (lane_id, _) = crate::host::interact::time_of(&h.chain)?;
+        let grid = match host.widget_kind(ctx.def_id, lane_id) {
+            Some(WidgetKind::Track { snap, .. }) => *snap,
+            _ => return None,
+        };
+        let lane = host
+            .window_def_mut(ctx.def_id)
+            .and_then(|t| t.find_mut(lane_id))?;
+        let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
+        let held: Vec<usize> = (0..clips.len()).filter(|&i| clips.is_selected(i)).collect();
+        if held.is_empty() || !crate::host::placement::quantize(&mut clips, &held, grid) {
+            return None;
+        }
+        let mut out = Vec::new();
+        emit_clips(host, &mut out, ctx.def_id, lane_id);
+        host.sync_track_totals_keeping_view();
+        out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)
     }
 

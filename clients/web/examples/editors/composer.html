@@ -54,6 +54,15 @@ from the playhead on every edit, so you hear the clip where you dropped it. With
 the pointer over a clip, <b>e</b> cuts it in two and <b>j</b> joins it back with
 what touches it — the two halves are two windows onto one buffer.
 
+<b>Ctrl+drag over a lane</b> sweeps a <b>marquee</b>: the clips inside the swept
+span go into your hand and are drawn in the selection's colours (Ctrl+click adds
+or removes one). Grab any of them by its body and the whole block moves rigidly,
+and <b>Ctrl+Z puts all of them back in one step</b> — one gesture is one edit,
+which is why the host reports a block as a single message
+(<code>"clips"</code> on the lane) the owner applies as one transaction. Press
+<b>q</b> over the lane and the clips in hand quantize onto its own grid, the same
+grid a drag already lands on. An edge is always one clip's.
+
 <b>Undo</b> and <b>redo</b> are the buttons, or <b>Ctrl+Z</b> /
 <b>Ctrl+Shift+Z</b> over the window. The history is <b>not this editor's</b>: it
 lives with the document, in the same Rust crate both clients bind.

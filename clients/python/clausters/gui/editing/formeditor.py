@@ -934,6 +934,11 @@ class FormEditor(Editor):
             # A logical aggregate's directed patch: a cord drawn (rewire) or a box
             # moved (presentation).
             return self._apply_patch(int(args[0]), args[1], args[2:])
+        if args[1] == "clips":
+            # A block of clips moved by one hand, reported on the **lane** that
+            # holds them -- the one message that says "these several placements
+            # are one edit".
+            return self._apply_clips(args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -1027,6 +1032,58 @@ class FormEditor(Editor):
         # The clip was drawn where it now is: keep the registry truthful, or the
         # next edit would measure its move against a stale placement.
         placed.offset, placed.dur = offset, dur
+        self._version = self._document.version
+        self.dirty = True
+        self._follow_render()
+        return True
+
+    def _apply_clips(self, args) -> bool:
+        """A **block of clips moved by one hand** (`"clips" id offset dur start
+        ...`), applied as one transaction.
+
+        It is the plural of the clip route above and means the same thing about
+        each clip it names -- the same conversion from the axis to the
+        placement, through the same `place` intent. What it adds is that the
+        several placements are **one entry**: a marquee's block undoes in one
+        step, because that is what the hand did. A run of separate `"clip"`
+        messages could not say so, which is why the host sends one message and
+        not several.
+
+        A block move never resizes and never trims: every clip keeps the length
+        and the window it had, and only the offsets travel. So there is nothing
+        here of the trim road the single-clip route has to carry.
+        """
+        legs = []
+        moved = []
+        _log, document = self._history()
+        for i in range(0, len(args) - 3, 4):
+            widget_id, offset = int(args[i]), float(args[i + 1])
+            placed = self._clips.get(widget_id)
+            if placed is None or placed.member is None:
+                continue
+            if abs(offset - placed.offset) < 0.5:   # half a sample: a real edit
+                continue
+            node = self._node_id(placed.member.element, placed.member)
+            if node is None:
+                continue
+            intent = {"intent": "place", "node": int(node),
+                      "offset": float(self.units_to_beats(offset) - placed.base)}
+            inverse = _native.document_inverse(document, intent)
+            if inverse is None:
+                continue
+            legs.append((intent, inverse))
+            moved.append((widget_id, placed, offset))
+        if not legs or not self._apply_legs("move the clips", legs):
+            if moved:
+                # Refused as one, so every clip goes back as one: what the host
+                # is drawing is not what the document holds.
+                for widget_id, _placed, _offset in moved:
+                    self._resync(widget_id)
+            return False
+        for widget_id, placed, offset in moved:
+            # The clip was drawn where it now is: keep the registry truthful, or
+            # the next edit would measure its move against a stale placement.
+            placed.offset = offset
         self._version = self._document.version
         self.dirty = True
         self._follow_render()
@@ -1914,6 +1971,16 @@ class FormEditor(Editor):
             prepared.append(({"intent": "configure", "node": int(node),
                               "config": config}, inverse))
 
+        return self._apply_legs(label, prepared)
+
+    def _apply_legs(self, label: str, prepared: list) -> bool:
+        """Apply prepared ``(intent, inverse)`` legs as **one** entry.
+
+        The body `_transact` and `_apply_clips` share: what differs between a
+        cord's three configurations and a block of clips' several placements is
+        which intents are prepared, never what "one gesture is one edit" means.
+        """
+        log, document = self._history()
         applied = []
         for index, (intent, inverse) in enumerate(prepared):
             # **The staleness check is the gesture's, not each leg's.** One

@@ -740,8 +740,8 @@ impl Element for Notes {
     }
 
     /// The block operations, addressed to whatever the pointer is over: `q`
-    /// quantizes, Delete removes the selection, Ctrl+C/X/V move a block through
-    /// the host-wide clipboard.
+    /// quantizes, `e` splits and `j` joins, Delete removes the selection,
+    /// Ctrl+C/X/V move a block through the host-wide clipboard.
     ///
     /// They are keys rather than gestures because they act on the *selection*,
     /// which is already where the pointer has been. A key this element has no
@@ -753,6 +753,28 @@ impl Element for Notes {
             Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
                 pianoroll::quantize_notes(&mut self.notes, &self.selected, self.snap)
                     .then(|| self.notes_event())
+            }
+            // **Split and join**, the clip's own two verbs over notes — same
+            // keys, same reading. A clip asks its owner to cut, because the
+            // owner holds the element; a roll holds its notes and cuts them
+            // itself, which is the whole of the difference.
+            //
+            // The cut falls on the **step cursor**, which is where the roll is
+            // being written and where a paste already lands: a roll's key
+            // gestures have no pointer to read.
+            Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
+                let at = snap_to(self.step, self.snap).max(0.0);
+                let cut = pianoroll::split_notes(&mut self.notes, &self.selected, at);
+                if cut.is_empty() {
+                    return None;
+                }
+                self.selected = cut;
+                Some(self.notes_event())
+            }
+            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => {
+                let before = self.notes.len();
+                self.selected = pianoroll::join_notes(&mut self.notes, &self.selected);
+                (self.notes.len() != before).then(|| self.notes_event())
             }
             Key::Delete | Key::Backspace if !self.selected.is_empty() => {
                 pianoroll::remove_notes(&mut self.notes, &self.selected);

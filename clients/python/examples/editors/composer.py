@@ -76,6 +76,19 @@ windows it was made of, because nothing was copied. That element is a
 ``Segments([(buf, 0, 1.0), (other_buf, 0, 1.0)], instrument="take")`` — a
 window's length being in seconds, like every length over samples.
 
+**And one about holding several clips at once.** Ctrl+drag over a lane sweeps a
+**marquee**: the clips inside the swept span go into your hand and are drawn in
+the selection's colours (Ctrl+click adds or removes one). Grab any of them by
+its body and the whole block moves rigidly, keeping the distances between them —
+and **Ctrl+Z puts all of them back in one step**, because one gesture is one
+edit. That is the whole reason the host reports a block as a single message
+(``"clips"`` on the lane) rather than one per clip: several placements the
+owner applies as **one transaction**. Press **`q`** with the pointer over the
+lane and the clips in hand quantize onto the lane's own grid — the same grid a
+drag already lands on, so a quantize puts a clip where dragging it would have.
+An edge is always one clip's: two clips of different lengths have no one edge
+to pull.
+
 **And one about what your hand is on.** A clip draws its contents over each
 other and *one* of them is being edited: press the sweep's curve and you edit the
 curve (its points, and the bend between two of them) while the clip's grips
