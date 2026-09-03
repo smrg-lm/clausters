@@ -2196,10 +2196,10 @@ fn a_swept_lane_hands_its_clips_to_one_block_move() {
     host.sync_track_totals();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 200);
-    // Ctrl is the lane's selection modifier: it sweeps for several clips and
+    // Alt is the crate's selection modifier: it sweeps for several clips and
     // adds one at a time, which is the pair the roll already has for notes.
     let sweeping = GestureCtx {
-        ctrl: true,
+        alt: true,
         ..GestureCtx::new(1, 800, 200)
     };
     let first = placed_rect(&host, &ctx, 81);

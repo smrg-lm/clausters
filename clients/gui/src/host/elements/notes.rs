@@ -762,7 +762,14 @@ impl Element for Notes {
             // The cut falls on the **step cursor**, which is where the roll is
             // being written and where a paste already lands: a roll's key
             // gestures have no pointer to read.
-            Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
+            // **Only over a selection.** A roll drawn as a *clip's body* shares
+            // these two letters with the clip they belong to, and the clip is
+            // what a lane's hand is on: with nothing selected the key falls
+            // through and cuts the clip, which is what `e` has always meant
+            // there. Selecting notes first is how you say you meant the notes.
+            // It is also the sane reading on its own -- splitting every note in
+            // the roll is not something anyone asks for by leaning on a letter.
+            Key::Char('e') | Key::Char('E') if !input.mods.ctrl && !self.selected.is_empty() => {
                 let at = snap_to(self.step, self.snap).max(0.0);
                 let cut = pianoroll::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
@@ -771,7 +778,7 @@ impl Element for Notes {
                 self.selected = cut;
                 Some(self.notes_event())
             }
-            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => {
+            Key::Char('j') | Key::Char('J') if !input.mods.ctrl && !self.selected.is_empty() => {
                 let before = self.notes.len();
                 self.selected = pianoroll::join_notes(&mut self.notes, &self.selected);
                 (self.notes.len() != before).then(|| self.notes_event())

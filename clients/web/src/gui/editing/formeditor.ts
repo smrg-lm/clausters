@@ -2904,7 +2904,17 @@ export class FormEditor extends Editor<Element> implements Adopting {
                     clips.push(this.clipFor(child.element, childBase, element, child));
                 }
             }
-            const lane = clips.length > 0 ? [this.lane(clips, element, base, member)] : [];
+            // **A lane with no clips is still a lane.** What decides whether
+            // this aggregate draws a band of its own is whether any of its
+            // members were *expanded* into lanes of their own — then the band
+            // would be an empty duplicate of what is drawn below it. An
+            // aggregate that simply has nothing in it keeps its lane, or
+            // dragging the last clip off a lane would delete the lane, and a
+            // composition would lose a track by moving a clip.
+            const lane =
+                clips.length > 0 || extra.length === 0
+                    ? [this.lane(clips, element, base, member)]
+                    : [];
             return [...lane, ...extra];
         }
         return [this.lane([this.clipFor(element, base, owner, member)], element, base, member)];

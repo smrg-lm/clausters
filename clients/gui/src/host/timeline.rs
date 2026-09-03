@@ -145,6 +145,16 @@ pub struct GroupState {
     /// one file's waveform and spectrogram would disagree about where it is.
     pub playhead_loop_start: f64,
     pub playhead_loop_len: f64,
+    /// **The extent this window was last clamped against.** Not a fact about
+    /// the composition — that is `timeline_total`, read from the members — but
+    /// about *this window*: it is what says whether the view was showing
+    /// everything or was zoomed into part of it, which is a question only
+    /// answerable against the total that was in force when the hand left it.
+    ///
+    /// It is kept because a redefine cannot ask afterwards: the widget ids are
+    /// allocated afresh and the new members carry no extent yet, so the total by
+    /// key reads zero exactly when the answer is needed.
+    pub total: usize,
 }
 
 impl GroupState {
@@ -161,6 +171,7 @@ impl GroupState {
             playhead: editor.playhead,
             playhead_loop_start: editor.playhead_loop_start,
             playhead_loop_len: editor.playhead_loop_len,
+            total: nav.len.max(0.0) as usize,
         }
     }
 
@@ -594,6 +605,9 @@ impl Host {
                 // deliberately zoomed-out view back onto the content).
                 state.nav.set_start(state.nav.start, span);
             }
+            // What the window now stands against, so a redefine can still ask
+            // whether it was showing everything once the members are gone.
+            state.total = new_total;
         }
     }
 
@@ -880,6 +894,7 @@ impl Host {
                 playhead: -1.0,
                 playhead_loop_start: 0.0,
                 playhead_loop_len: 0.0,
+                total: 1,
             })
         });
         // Re-clamp the (carried or adopted) window against the new membership
@@ -906,9 +921,6 @@ impl Host {
     /// kept (the fronts re-register them as the new data loads, and the prune
     /// below drops the ones whose widgets are gone).
     pub(super) fn sync_timeline_groups(&mut self, redefined: Option<i32>) {
-        // A lane's extent is its clips (no data loads for it), so register it
-        // here, before the groups seed their windows from the totals.
-        self.sync_track_totals();
         let members = self.timeline_members();
         // **What the axis was showing survives a redefine.** A redefine is how a
         // *content* change reaches a window -- a clip split, a lane rebuilt, a
@@ -917,7 +929,15 @@ impl Host {
         // move. Dropping it here reset the zoom on every structural edit, which
         // reads as the window starting over; the rest of the group state is
         // rebuilt exactly as before.
-        let mut carried: HashMap<GroupKey, GroupState> = HashMap::new();
+        //
+        // **Read before the totals are re-registered**, which is what makes the
+        // rule true rather than only written down: `sync_track_totals` below
+        // *refits* every window to the new extent, so a state taken after it
+        // has already lost what was on screen — and the comparison against the
+        // new total then always says "this view was showing everything". The
+        // window survived a redefine only while the composition's length did
+        // not change, which is exactly the case where nothing needed surviving.
+        let mut carried: HashMap<GroupKey, (GroupState, usize)> = HashMap::new();
         if let Some(def) = redefined {
             let spans_other: Vec<GroupKey> = members
                 .iter()
@@ -926,11 +946,22 @@ impl Host {
                 .collect();
             for m in members.iter().filter(|m| m.root == def) {
                 if !spans_other.contains(&m.key)
-                    && let Some(state) = self.timelines.states.remove(&m.key)
+                    && let Some(state) = self.timelines.states.get(&m.key).cloned()
                 {
-                    carried.insert(m.key, state);
+                    // The total it was *showing* against, since that is what
+                    // says whether the view was zoomed in or showing the whole
+                    // composition -- and the totals below are about to change.
+                    let was = state.total;
+                    carried.insert(m.key, (state, was));
                 }
             }
+        }
+        // A lane's extent is its clips (no data loads for it), so register it
+        // here, before the groups seed their windows from the totals.
+        self.sync_track_totals();
+        // The carried groups reseed from what they were showing, so they go now.
+        for key in carried.keys() {
+            self.timelines.states.remove(key);
         }
         // The first member of a fresh group seeds it from its own def-time
         // editor props; the rest of the members read what it seeded.
@@ -946,12 +977,15 @@ impl Host {
                     let total = self.timeline_total(m.key);
                     let span = self.timeline_span(m.key);
                     let held = carried.get(&m.key);
-                    let nav = match held.map(|state| state.nav) {
+                    let nav = match held.map(|(state, was)| (state.nav, *was)) {
                         // The same rule a growing extent follows: a view that
                         // was showing the whole timeline goes on showing all of
                         // it, and a zoomed one keeps its window and is only
-                        // re-clamped.
-                        Some(old) if old.len > 0.0 && old.len < total as f64 => {
+                        // re-clamped. **Zoomed in is measured against the total
+                        // it was showing**, not against the new one: a view that
+                        // filled a 400-long piece is showing everything, and
+                        // that is still true when the piece becomes 800 long.
+                        Some((old, was)) if old.len > 0.0 && old.len < was as f64 => {
                             let mut nav = old;
                             nav.set_start(nav.start, span);
                             nav
@@ -965,7 +999,7 @@ impl Host {
                     // under it were rebuilt. Reseeding it from the def's props
                     // threw away a sweep on every structural edit, which is the
                     // zoom's defect wearing a different name.
-                    if let Some(old) = held.filter(|old| old.sel_len > 0.0) {
+                    if let Some((old, _)) = held.filter(|(old, _)| old.sel_len > 0.0) {
                         state.sel_start = old.sel_start;
                         state.sel_len = old.sel_len;
                     }
@@ -1211,6 +1245,7 @@ mod tests {
             playhead: parked,
             playhead_loop_start: loop_start,
             playhead_loop_len: loop_len,
+            total: 1,
         }
     }
 
@@ -1897,6 +1932,52 @@ mod tests {
         );
         let (nav, total) = host.timeline_nav(100).unwrap();
         assert_eq!((nav.start, nav.len, total), (0.0, 800.0, 800));
+    }
+
+    /// **A zoomed window survives a redefine that changes the composition's
+    /// length** — which is the case the rule above exists for and the one it was
+    /// not covering.
+    ///
+    /// The carry read the group's state *after* the extents had been
+    /// re-registered, and registering them refits every window that was showing
+    /// everything. So the state it carried was already the refitted one, and the
+    /// comparison against the new total then always said "this view was showing
+    /// it all". The window survived a redefine exactly while the composition's
+    /// length did not change, which is the case where nothing needed surviving:
+    /// a clip moved to another lane, a split, a join — every structural edit —
+    /// reset the zoom.
+    ///
+    /// Which is also why the state remembers the total it stands against: after
+    /// a redefine the widget ids are fresh and carry no extent yet, so asking
+    /// the members reads zero exactly when the answer is needed.
+    #[test]
+    fn a_zoomed_window_survives_a_redefine_that_moves_the_end() {
+        let lanes = |dur: f64| {
+            format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":100,"type":"field","link":7,"children":[
+                        {{"id":110,"type":"field","offset":0.0,"dur":{dur}}}]}}
+                ]}}"#
+            )
+        };
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(4000.0)), from());
+        host.sync_track_totals();
+        // Zoomed into a tenth of it.
+        host.set_timeline_view(100, Some(1000.0), Some(400.0));
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((1000.0, 400.0))
+        );
+        // A structural edit: the clip is longer, so the composition is.
+        host.handle_packet(def_msg(1, &lanes(9000.0)), from());
+        let (after, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 9000, "the axis learned the new extent");
+        assert_eq!(
+            (after.start, after.len),
+            (1000.0, 400.0),
+            "and the window is where the hand left it"
+        );
     }
 
     /// The editor's case, end to end: its lanes carry no `link`, so they share

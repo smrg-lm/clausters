@@ -65,7 +65,9 @@ moving — the samples stand still and the clip shows less of it; drag the edge
 back and the frames come out again. And with the pointer over a clip, **`e`**
 cuts it in two at the time cursor and **`j`** joins it back with what touches it:
 the two halves are two windows onto one buffer, which is why the join can put
-back exactly what the cut separated.
+back exactly what the cut separated. (Over a roll the same two letters cut and
+join *notes* — but only once notes are selected, so with nothing in hand they
+still reach the clip.)
 
 The drums lane holds **two different files** for that reason. Drag the second
 take against the first and press `j`: what you get is one clip that reads both,
@@ -76,9 +78,11 @@ windows it was made of, because nothing was copied. That element is a
 ``Segments([(buf, 0, 1.0), (other_buf, 0, 1.0)], instrument="take")`` — a
 window's length being in seconds, like every length over samples.
 
-**And one about holding several clips at once.** Ctrl+drag over a lane sweeps a
+**And one about holding several clips at once.** Alt+drag over a lane sweeps a
 **marquee**: the clips inside the swept span go into your hand and are drawn in
-the selection's colours (Ctrl+click adds or removes one). Grab any of them by
+the selection's colours (Alt+click adds or removes one — the same key that adds
+a note to a roll's selection, which is why it is this one and not Ctrl: over a
+roll, Ctrl *removes* a note). Grab any of them by
 its body and the whole block moves rigidly, keeping the distances between them —
 and **Ctrl+Z puts all of them back in one step**, because one gesture is one
 edit. That is the whole reason the host reports a block as a single message

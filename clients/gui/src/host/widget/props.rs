@@ -696,17 +696,22 @@ impl GestureMap {
             return map;
         }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
-            // A lane locates on a plain drag and **selects on Ctrl**: the
-            // sweep is what puts a span on the shared axis and what puts the
-            // clips inside it in the hand (the marquee), so the modifier that
-            // adds one clip to the selection is the modifier that sweeps for
-            // several. `Element` stays first on both, because a clip under the
-            // pointer answers before the lane does either.
+            // A lane locates on a plain drag and **selects on Alt**: the sweep
+            // is what puts a span on the shared axis and what puts the clips
+            // inside it in the hand (the marquee), so the modifier that adds one
+            // clip to the selection is the modifier that sweeps for several.
+            //
+            // **Alt is the crate's selection modifier**, and it was already:
+            // Alt on a note adds it to a roll's selection (`Notes::press_grid`),
+            // where Ctrl *removes* the note. So a clip's selection rides the
+            // same key one level up, and Ctrl keeps meaning here what it means
+            // everywhere else on a lane. `Element` stays first on both, because
+            // a clip under the pointer answers before the lane does either.
             WidgetKind::Track { .. } => (
                 &[Element, Locate],
                 &[Pan],
-                &[Element, Select],
                 &[Element, Locate],
+                &[Element, Select],
             ),
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
             // A workspace claims nothing: whatever no element and no inner

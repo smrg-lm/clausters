@@ -610,10 +610,14 @@ impl Gestures {
                     if self.clip_layer_press(host, ctx, &h, cx, cy, out) {
                         return true;
                     }
-                    // **Ctrl adds or removes one clip**, and consumes the
+                    // **Alt adds or removes one clip**, and consumes the
                     // press: a selection built one box at a time is not a drag,
-                    // which is the rule the roll's notes already follow.
-                    if ctx.ctrl && h.part == interact::Part::Body {
+                    // which is the rule the roll's notes already follow — with
+                    // the same key, since Alt is what adds a *note* to a roll's
+                    // selection. Which of the two a press means is the layer
+                    // question, already answered above: an Alt press that landed
+                    // on a body's own contents never reaches here.
+                    if ctx.alt && h.part == interact::Part::Body {
                         let held = host
                             .window_def(def_id)
                             .and_then(|t| t.find(h.id))
