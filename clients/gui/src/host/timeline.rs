@@ -482,6 +482,23 @@ impl Host {
         }
     }
 
+    /// **Whether group `key` follows its content.** A group is one window, so
+    /// one member asking to be left alone leaves the whole axis alone: a reader
+    /// who pinned a view pinned the axis it shares, and a linked lane refitting
+    /// it from the side would be the same defect by another door.
+    pub(super) fn group_autofit(&self, key: GroupKey) -> bool {
+        self.timeline_members()
+            .iter()
+            .filter(|m| m.key == key)
+            .all(|m| {
+                self.window_defs
+                    .get(&m.root)
+                    .and_then(|t| t.find(m.id))
+                    .and_then(|w| w.kind.editor())
+                    .is_none_or(|e| e.autofit)
+            })
+    }
+
     /// The empty axis group `key` navigates before it holds anything:
     /// [`EMPTY_BEATS`] of a roll's own grid, or one sample for a group with no
     /// roll (a view of a given signal has nothing to show out there, and a lane
@@ -591,6 +608,10 @@ impl Host {
             self.timelines.totals.insert(id, total);
             return;
         };
+        // **A view that does not follow its content never refits**, whatever
+        // the caller asked for: the extent is registered either way, and what
+        // `autofit` decides is only whether the *window* moves with it.
+        let refit = refit && self.group_autofit(key);
         let old_total = self.timeline_total(key);
         self.timelines.totals.insert(id, total);
         let new_total = self.timeline_total(key);
@@ -977,6 +998,7 @@ impl Host {
                     let total = self.timeline_total(m.key);
                     let span = self.timeline_span(m.key);
                     let held = carried.get(&m.key);
+                    let autofit = self.group_autofit(m.key);
                     let nav = match held.map(|(state, was)| (state.nav, *was)) {
                         // **The same test `set_timeline_total_inner` makes**,
                         // and in the same words: only a window that was showing
@@ -993,8 +1015,14 @@ impl Host {
                         // one: a view that filled a 400-long piece was showing
                         // everything, and that is still true when the piece
                         // becomes 800 long.
+                        //
+                        // And a view that does not `autofit` keeps its window
+                        // whatever it was showing: the switch is the general
+                        // answer, and this is the door a *structural* edit comes
+                        // through.
                         Some((old, was))
-                            if old.len > 0.0 && (old.len - was as f64).abs() >= 1.0 =>
+                            if old.len > 0.0
+                                && (!autofit || (old.len - was as f64).abs() >= 1.0) =>
                         {
                             let mut nav = old;
                             nav.set_start(nav.start, span);
@@ -2023,6 +2051,50 @@ mod tests {
             after.len, 8000.0,
             "the window is where the hand left it, out in the empty time"
         );
+    }
+
+    /// **`autofit` off pins the window to what the reader left**, and that is
+    /// the general answer to "the view keeps re-framing itself".
+    ///
+    /// A view that follows its content is right for a monitor and wrong for an
+    /// editor, because in an editor the content change is mostly the reader's
+    /// *own* edit: undoing a trim, splitting a clip, dragging one onto another
+    /// lane. Re-framing on those is the window starting over under the hand
+    /// that made them. The extent is still registered either way — the axis
+    /// knows how far it can go — and what the switch decides is only whether
+    /// the window moves with it.
+    #[test]
+    fn a_view_that_does_not_autofit_keeps_its_window_when_the_content_changes() {
+        let lanes = |dur: f64, autofit: &str| {
+            format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":100,"type":"field","link":7,"autofit":{autofit},"children":[
+                        {{"id":110,"type":"field","offset":0.0,"dur":{dur}}}]}}
+                ]}}"#
+            )
+        };
+        // With it on (the default), a window showing everything follows.
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(400.0, "1")), from());
+        host.sync_track_totals();
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(400.0));
+        host.handle_packet(def_msg(1, &lanes(800.0, "1")), from());
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(800.0));
+
+        // With it off, the same view stays where it was — and still learns the
+        // extent, so it can be navigated out there.
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(400.0, "0")), from());
+        host.sync_track_totals();
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(400.0));
+        host.handle_packet(def_msg(1, &lanes(800.0, "0")), from());
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!((nav.len, total), (400.0, 800));
+
+        // ...and a `/gui_set` moving a clip does not refit it either, which is
+        // the door an acknowledgement comes back through.
+        host.handle_packet(set_msg(110, &[("offset", OscType::Float(2000.0))]), from());
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(400.0));
     }
 
     /// The editor's case, end to end: its lanes carry no `link`, so they share

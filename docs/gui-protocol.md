@@ -395,7 +395,9 @@ Under an axis a property drops the axis marker — `x.start` is the old
 
 | Axis | Properties |
 |---|---|
-| `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
+| `x` | `autofit`, `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
+
+**`autofit`** is an x-axis property of its own, because what it governs is the window rather than a value: it says whether the view's window **follows its content**. `1` — the default, and what every view did before there was a switch — refits a window that was showing the whole timeline when the content changes, so a view that grows goes on showing all of it: right for a monitor, and for a roll being written into. `0` says the window is the **reader's**: the extent is still registered, so the axis knows how far it can go, and nothing moves it. That is what an *editor* wants, and the reason is that there a content change is mostly the reader's own edit — undoing a trim, splitting a clip, dragging one onto another lane — and an edit that re-frames the view is the window starting over under the hand that made it. **A navigation group is one window, so one member asking to be left alone leaves the whole axis alone**: a reader who pinned a view pinned the axis it shares. It governs the window and never the extent, so nothing is lost by turning it off.
 | `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth`, `sel_min`, `sel_max` |
 
 **`y.unit` labels the axis; it does not map it.** The picture is linear in

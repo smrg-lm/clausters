@@ -304,6 +304,18 @@ pub struct EditorProps {
     pub x_len: f64,
     pub link: Option<i32>,
     pub offset: f64,
+    /// **Whether this view's window follows its content.** `true` — the
+    /// default, and what every view did before there was a switch — refits a
+    /// window that was showing the whole timeline when the content changes, so
+    /// a lane that grows goes on showing all of it.
+    ///
+    /// `false` says the window is the **reader's**: the extent is still
+    /// registered (the axis knows how far it can go) and nothing moves it. That
+    /// is what an editor wants, and the reason is that a content change is
+    /// mostly the reader's *own* edit — undoing a trim, splitting a clip,
+    /// dragging one onto another lane — and an edit that re-frames the view is
+    /// the window starting over under the hand that made it.
+    pub autofit: bool,
 }
 
 impl EditorProps {
@@ -340,6 +352,7 @@ impl EditorProps {
                 .filter(|n| *n >= 0)
                 .map(|n| n as i32),
             offset: number_f64(props, "offset", 0.0).max(0.0),
+            autofit: props.get("autofit").and_then(truthy).unwrap_or(true),
         }
     }
 
@@ -411,6 +424,7 @@ impl EditorProps {
             "tempo" => set_f64(&mut self.tempo, v),
             "beat_at" => set_f64(&mut self.beat_at, v),
             "quant" => set_f64(&mut self.quant, v),
+            "autofit" => truthy(v).map(|b| self.autofit = b).is_some(),
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),

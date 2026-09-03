@@ -808,6 +808,56 @@ def test_an_undone_take_clip_answers_with_a_correction_the_wire_can_carry():
     assert any("loop" in p for p in sent), f"the window came back: {sent}"
 
 
+def test_the_views_do_not_re_frame_themselves_while_autofit_is_off():
+    """Found by use: dragging a note re-centred the whole roll, and every
+    structural edit refitted the time axis.
+
+    The general answer is one switch, and it has two halves because the two
+    windows are owned by different sides. The **time** axis is the host's, so
+    the lanes carry the `autofit` prop and the host stops moving the window when
+    the extent changes. The **pitch domain** is a prop this editor derives from
+    the notes, so it is held here — and held by *growing*, never freezing: a
+    drag clamps a pitch into the window the roll is drawn over, so a domain that
+    could not widen would be a roll that can never be written above its own top
+    line. Monotone is what makes it stable; an edge only ever moves outward."""
+    from clausters.seq.timeline import Timeline
+
+    def piece():
+        lead = Track(Timeline([
+            (0.0, SeqEvent(midinote=60, dur=1.0)),
+            (1.0, SeqEvent(midinote=64, dur=1.0)),
+        ]))
+        return Aggregate([(0.0, Aggregate([(0.0, lead)], name="lead"))], name="piece")
+
+    def window(tree):
+        roll = _find(tree, lambda n: "notes" in n)
+        return roll["id"], roll["notes"], (roll["min"], roll["max"])
+
+    # On (the host's own default): the domain follows the notes both ways.
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=True)
+    wid, notes, before = window(ed.draw())
+    assert _find(ed.draw(), lambda n: n.get("label") == "lead")["axes"]["x"]["autofit"] is True
+    moved = list(notes)
+    moved[7] = 62.0
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *moved]) is True
+    assert window(ed.draw())[2] != before, "it re-centred on what is left"
+
+    # Off: the same edit moves nothing, and one that lands outside widens it.
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=False)
+    wid, notes, before = window(ed.draw())
+    assert _find(ed.draw(), lambda n: n.get("label") == "lead")["axes"]["x"]["autofit"] is False
+    moved = list(notes)
+    moved[7] = 62.0
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *moved]) is True
+    assert window(ed.draw())[2] == before, "the roll stayed where it was drawn"
+    out = list(window(ed.draw())[1])
+    out[7] = 84.0
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *out]) is True
+    _wid, _notes, after = window(ed.draw())
+    assert after[0] == before[0] and after[1] > before[1], (
+        f"it grew to hold the new pitch and did not slide: {before} -> {after}")
+
+
 class _FakeHost:
     """Records the `/gui_set`s the editor sends (the lanes' playhead chrome) and
     the acknowledgements it answers events with, and hands out widget ids like

@@ -9,6 +9,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -83,6 +84,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -150,6 +152,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -225,6 +228,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -353,6 +357,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -379,6 +384,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -447,6 +453,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }
@@ -499,6 +506,7 @@
      {
       "axes": {
        "x": {
+        "autofit": false,
         "sample_rate": 48000.0,
         "tempo": 2.0
        }

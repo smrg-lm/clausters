@@ -1298,6 +1298,7 @@ mod tests {
             tempo: 1.0,
             beat_at: 0.0,
             quant: 4.0,
+            autofit: true,
             sel_start: 0.0,
             sel_len: 0.0,
             x_start: 0.0,

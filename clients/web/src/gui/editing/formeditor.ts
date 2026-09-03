@@ -156,6 +156,17 @@ export interface EditorOptions {
     quant?: number;
     /** Re-render on every edit (the live editor). */
     follow?: boolean;
+    /**
+     * Whether the views **follow their content**: the time axis refits when the
+     * composition's length changes, and a roll's pitch domain re-centres on the
+     * notes it holds. Off by default here, which is the opposite of the host's
+     * own default and deliberate — an editor's content changes are mostly the
+     * reader's *own* edits, and an edit that re-frames the view is the window
+     * starting over under the hand that made it. The time half is the widgets'
+     * `autofit` prop; the pitch half is this editor's, since the domain is a
+     * prop it derives.
+     */
+    autofit?: boolean;
     /** Extra GuiDef nodes placed under the lanes (a transport panel, say). */
     extra?: readonly GuiNode[];
     /** The window title. */
@@ -305,6 +316,15 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * arrangement, and `rerender` decides when it is heard.
      */
     follow: boolean;
+    /** Whether the views follow their content (see the option). */
+    autofit: boolean;
+    /**
+     * The pitch window each roll was first drawn with, by element. **Not reset
+     * by a draw**, unlike the registries beside it: those describe the widgets a
+     * draw made and this describes what the reader is looking at, which a redraw
+     * is precisely not entitled to move.
+     */
+    private pitch = new Map<Element, { min: number; max: number }>();
     /** Widgets appended to the window after the lanes. They are the script's. */
     extra: GuiNode[];
     /**
@@ -402,6 +422,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             tempoMap,
             quant = 0.0,
             follow = false,
+            autofit = false,
             extra = [],
             title = "Composition",
             width = 1000,
@@ -412,6 +433,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         super(element, { sampleRate, tempo, tempoMap, title, width, height, baseId });
         this.quant = Number(quant);
         this.follow = Boolean(follow);
+        this.autofit = Boolean(autofit);
         this.extra = [...extra];
         this.transport = new Transport(null, () => this.playline(), {
             source: (at) => this.renderPass(at),
@@ -2929,6 +2951,45 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * from the view: what the lane shows is what a reopened document says, and
      * pressing one writes back through the log like every other edit.
      */
+    /**
+     * The `min`/`max` a roll is drawn over: the notes it holds, with headroom,
+     * and never narrower than the default octave range.
+     *
+     * While `autofit` is off it **only ever grows**, which is the vertical half
+     * of the rule the time axis keeps: a note dragged to a new pitch moved the
+     * extremes, so the domain was re-derived and the whole roll slid under the
+     * hand that moved one note — and so did removing the highest note, which
+     * collapsed the window around what was left.
+     *
+     * Grows rather than freezes, because a **drag clamps a pitch into the
+     * window the roll is drawn over**: a domain that could not widen would be a
+     * roll that can never be written above its own top line. So the held window
+     * is the widest one this element has needed. It is monotone, which is the
+     * whole of what makes it stable: an edge only ever moves outward, so
+     * nothing under the hand slides.
+     *
+     * Keyed by the element itself rather than by a widget id, because the
+     * widget is allocated afresh on every redefine and the window has to
+     * outlive that: a structural edit is exactly when the re-centring showed.
+     */
+    private pitchWindow(
+        element: Element,
+        notes: readonly (readonly number[])[],
+    ): { min: number; max: number } {
+        const pitches = notes.map((n) => n[2]);
+        let window = {
+            min: Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+            max: Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]),
+        };
+        if (this.autofit) return window;
+        const held = this.pitch.get(element);
+        if (held !== undefined) {
+            window = { min: Math.min(held.min, window.min), max: Math.max(held.max, window.max) };
+        }
+        this.pitch.set(element, window);
+        return window;
+    }
+
     private lane(
         clips: GuiNode[],
         element: Element,
@@ -2943,6 +3004,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 sampleRate: this.sampleRate,
                 tempo: this.tempo,
                 snap: this.quant > 0 ? this.beatsToUnits(this.quant) : undefined,
+                autofit: this.autofit,
                 mute: Boolean(element.mute),
                 solo: Boolean(element.solo),
                 level: Number(element.level ?? 1.0),
@@ -3176,11 +3238,9 @@ export class FormEditor extends Editor<Element> implements Adopting {
 
         const notes = this.notesOf(element);
         if (notes.length > 0) {
-            const pitches = notes.map((n) => n[2]);
             const body: Record<string, unknown> = {
                 notes,
-                min: Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
-                max: Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]),
+                ...this.pitchWindow(element, notes),
             };
             // **Say it before the hand tries.** These notes are a *rendering* of a
             // forward-only generator when there is no editable timeline behind

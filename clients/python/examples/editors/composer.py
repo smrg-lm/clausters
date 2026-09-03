@@ -93,6 +93,17 @@ drag already lands on, so a quantize puts a clip where dragging it would have.
 An edge is always one clip's: two clips of different lengths have no one edge
 to pull.
 
+**And one you should not see at all: the view never re-frames itself.** The
+editor is built with ``autofit=False``, which says the window is *yours* — the
+time axis stays where you left it when the composition's length changes, and a
+roll's pitch range stops re-centring when you drag a note. It is off here and on
+by default in the host, and the reason is the difference between a monitor and
+an editor: in an editor the content change is nearly always your own edit, and
+an edit that re-frames the view is the window starting over under the hand that
+made it. Turn it on (``autofit=True``) and every structural edit — a split, a
+join, a clip moved to another lane, an undo — refits the axis, which is what it
+did before there was a switch.
+
 **And one that was not possible until now: drag a clip onto another lane.** It
 follows your hand down the stack, and the drop is one edit — the clip leaves one
 lane's aggregate and joins the other's, in a single transaction, so Ctrl+Z puts
@@ -481,6 +492,7 @@ def say(message: str):
 
 gui = session.gui()
 editor = FormEditor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
+                    autofit=False,
                 follow=True, extra=[bar], title="Composer")
 win = editor.open()
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")

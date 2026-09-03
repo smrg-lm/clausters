@@ -772,6 +772,22 @@ export interface TimelineOptions extends WidgetOptions {
      */
     link?: number;
     /**
+     * Whether this view's window **follows its content**. The default (`true`,
+     * and what every view did before there was a switch) refits a window that
+     * was showing the whole timeline when the content changes, so a view that
+     * grows goes on showing all of it — right for a monitor.
+     *
+     * `false` says the window is the **reader's**: the extent is still
+     * registered, so the axis knows how far it can go, and nothing moves it.
+     * That is what an editor wants, because there the content change is mostly
+     * the reader's own edit — undoing a trim, splitting a clip, dragging one
+     * onto another lane — and an edit that re-frames the view is the window
+     * starting over under the hand that made it. It is the axis' own property,
+     * so **one view asking to be left alone leaves the whole navigation group
+     * alone**.
+     */
+    autofit?: boolean;
+    /**
      * The axis pair written the long way, for a property this client does not
      * name flat yet — `{ x: { unit: "beats", tempo: 2.0 }, y: { bit_depth: 16 } }`.
      * Merged over the flat options per axis, so what it names wins.
@@ -2717,7 +2733,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
         selMin, selMax,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
-        yStart, yLen, link, axes: pair, ...rest
+        yStart, yLen, link, autofit, axes: pair, ...rest
     } = options;
     return {
         ...rest,
@@ -2735,6 +2751,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
                 ["playhead_loop_start", playheadLoopStart],
                 ["playhead_loop_len", playheadLoopLen],
                 ["link", link],
+                ["autofit", autofit],
             ]),
             {
                 ...drop([

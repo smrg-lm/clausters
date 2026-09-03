@@ -311,6 +311,12 @@ fn lane_of(
     if look.quant > 0.0 {
         props.insert("snap".into(), json!(look.quant * look.units_per_beat));
     }
+    // **The window is the reader's.** A session host is an editor, and in an
+    // editor a content change is mostly the reader's own edit -- undoing a
+    // trim, splitting a clip, dragging one onto another lane -- so the axis
+    // does not re-frame itself on one. The extent is still registered; only the
+    // window stays put.
+    props.insert("autofit".into(), json!(false));
     props.insert("children".into(), Value::Array(clips));
     lanes.push(Value::Object(props));
 }

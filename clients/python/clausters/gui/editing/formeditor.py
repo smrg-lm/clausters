@@ -238,7 +238,8 @@ class FormEditor(Editor):
 
     def __init__(self, element, *, sample_rate: float, tempo: float = 1.0,
                  tempo_map=None,
-                 quant: float = 0.0, follow: bool = False, extra=(),
+                 quant: float = 0.0, follow: bool = False,
+                 autofit: bool = False, extra=(),
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
         super().__init__(element, sample_rate=sample_rate, tempo=tempo,
@@ -249,6 +250,23 @@ class FormEditor(Editor):
         #: where you dropped it). Off by default — an edit then only changes the
         #: arrangement, and `rerender` decides when it is heard.
         self.follow = bool(follow)
+        #: Whether the views **follow their content**: the time axis refits when
+        #: the composition's length changes, and a roll's pitch domain re-centres
+        #: on the notes it holds. Off by default here, which is the opposite of
+        #: the host's own default and deliberate — an editor's content changes
+        #: are mostly the reader's *own* edits, and an edit that re-frames the
+        #: view is the window starting over under the hand that made it. The
+        #: time half is the widgets' ``autofit`` prop; the pitch half is this
+        #: editor's, since the domain is a prop it derives.
+        self.autofit = bool(autofit)
+        #: The pitch window each roll was first drawn with, by element identity.
+        #: **Not reset by a draw**, unlike every registry beside it: those
+        #: describe the widgets a draw made and this describes what the reader
+        #: is looking at, which a redraw is precisely not entitled to move
+        #: — what keeps a note edit from re-centring the roll under the hand
+        #: while `autofit` is off. A note can never leave the domain (a drag
+        #: clamps the pitch into it), so it never has to grow.
+        self._pitch: dict = {}
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: an aggregate resolved rather than collapsed).
         self._expanded: set[int] = set()
@@ -2662,6 +2680,39 @@ class FormEditor(Editor):
         return [self._lane([self._clip_for(element, base, owner, member)],
                            element, base, member)]
 
+    def _pitch_window(self, element, notes) -> dict:
+        """The ``min``/``max`` a roll is drawn over: the notes it holds, with
+        headroom, and never narrower than the default octave range.
+
+        While `autofit` is off it **only ever grows**, which is the vertical half
+        of the rule the time axis keeps: a note dragged to a new pitch moved the
+        extremes, so the domain was re-derived and the whole roll slid under the
+        hand that moved one note -- and so did removing the highest note, which
+        collapsed the window around what was left.
+
+        Grows rather than freezes, because a **drag clamps a pitch into the
+        window the roll is drawn over**: a domain that could not widen would be
+        a roll that can never be written above its own top line. So the held
+        window is the widest one this element has needed. It is monotone, which
+        is the whole of what makes it stable: an edge only ever moves outward,
+        so nothing under the hand slides.
+
+        Keyed by the element's identity rather than by a widget id, because the
+        widget is allocated afresh on every redefine and the window has to
+        outlive that: a structural edit is exactly when the re-centring showed.
+        """
+        pitches = [n[2] for n in notes]
+        window = dict(min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+                      max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+        if self.autofit:
+            return window
+        held = self._pitch.get(id(element))
+        if held is not None:
+            window = dict(min=min(held["min"], window["min"]),
+                          max=max(held["max"], window["max"]))
+        self._pitch[id(element)] = window
+        return window
+
     def _lane(self, clips: list, element, base: float = 0.0, member=None) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome and
         the **mixing** the element carries.
@@ -2673,6 +2724,7 @@ class FormEditor(Editor):
         lane = track(*clips, id=wid, label=_name(element),
                      sample_rate=self.sample_rate, tempo=self.tempo,
                      snap=self.beats_to_units(self.quant) if self.quant > 0 else None,
+                     autofit=self.autofit,
                      **_lane_mixing(element))
         self._lanes[wid] = element
         self._lane_members[wid] = member
@@ -2854,10 +2906,7 @@ class FormEditor(Editor):
 
         notes = self._notes(element)
         if notes:
-            pitches = [n[2] for n in notes]
-            body = dict(notes=notes,
-                        min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
-                        max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+            body = dict(notes=notes, **self._pitch_window(element, notes))
             # **Say it before the hand tries.** These notes are a *rendering* of
             # a forward-only generator when there is no editable timeline behind
             # them, so the roll refuses the press instead of offering a drag it

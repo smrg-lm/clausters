@@ -1385,7 +1385,8 @@ def menu(options=(), *, index: int | None = None, label: str | None = None,
     return node("menu", id=id, options=list(options), **extra, **props)
 
 
-def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
+def waveform(*, autofit: bool | None = None,
+             data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
              measure: str | None = None, fills: bool | None = None,
@@ -1509,7 +1510,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
                        channels=channels, base_bucket=base_bucket, measure=measure,
                        color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
-                       min=min, max=max,
+                       min=min, max=max, autofit=autofit,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
@@ -1524,7 +1525,8 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     return node("signal", id=id, view="trace", **extra, **props)
 
 
-def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None,
+def spectrogram(*, autofit: bool | None = None,
+                data=None, blob: int | None = None, buffer: int | None = None,
                 path: str | None = None, cache: str | None = None, channels: int | None = None,
                 window_size: int | None = None, hop: int | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
@@ -1580,7 +1582,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
-                       tempo=tempo, beat_at=beat_at, quant=quant,
+                       tempo=tempo, beat_at=beat_at, quant=quant, autofit=autofit,
                        sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
                        playhead_at=playhead_at, playhead=playhead,
@@ -2055,7 +2057,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 
 def track(*clips, label: str | None = None, height: float | None = None, snap: float | None = None,
           header_w: float | None = None, mute: bool | None = None, solo: bool | None = None,
-          level: float | None = None,
+          level: float | None = None, autofit: bool | None = None,
           ruler: str | None = None, sample_rate: float | None = None, tempo: float | None = None,
           beat_at: float | None = None, quant: float | None = None,
           playhead_at: float | None = None, playhead: float | None = None,
@@ -2069,6 +2071,18 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     clip at a given offset lines up across lanes. ``snap`` is the drag grid in
     timeline samples a clip's move/resize rounds to (omitted / ``0`` = snap to
     whole samples).
+
+    ``autofit`` says whether the lane's window **follows its content**. The
+    default (``True``, and what every view did before there was a switch) refits
+    a window that was showing the whole timeline when the content changes, so a
+    lane that grows goes on showing all of it — right for a monitor. ``False``
+    says the window is the **reader's**: the extent is still registered, so the
+    axis knows how far it can go, and nothing moves it. That is what an editor
+    wants, because there the content change is mostly the reader's own edit —
+    undoing a trim, splitting a clip, dragging one onto another lane — and an
+    edit that re-frames the view is the window starting over under the hand that
+    made it. It is the axis' own property, so **one lane asking to be left alone
+    leaves the whole navigation group alone**.
 
     **Ctrl+wheel over a lane resizes it**: the host sets that lane's ``h`` and
     emits ``"height" h`` (logical pixels), which a driver mirrors onto its
@@ -2126,11 +2140,13 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
                        beat_at=beat_at, quant=quant, playhead_at=playhead_at,
                        playhead=playhead, playhead_loop_start=playhead_loop_start,
-                       playhead_loop_len=playhead_loop_len, link=link))
+                       playhead_loop_len=playhead_loop_len, link=link,
+                       autofit=autofit))
     return node("field", id=id, children=clips, **extra, **props)
 
 
-def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float | None = None,
+def timeruler(*, h: float = 20.0, autofit: bool | None = None,
+              ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
               axes: dict | None = None, id: int | None = None, **props) -> View:
@@ -2166,7 +2182,7 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
     """
     extra = _drop_none(theme=theme, color=color)
     extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
-                       beat_at=beat_at, quant=quant, link=link))
+                       beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
 
@@ -2304,6 +2320,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
               snap: float | None = None, velocity: bool | None = None,
               osc_lane: bool | None = None, midi_in: bool | None = None, link: int | None = None,
+              autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               sel_start: float | None = None, sel_len: float | None = None,
@@ -2368,7 +2385,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         sel_start=sel_start, sel_len=sel_len,
         sel_min=sel_min, sel_max=sel_max, playhead_at=playhead_at,
         playhead=playhead, playhead_loop_start=playhead_loop_start,
-        playhead_loop_len=playhead_loop_len,
+        playhead_loop_len=playhead_loop_len, autofit=autofit,
         y_start=y_start, y_len=y_len))
     if velocity is not None:
         extra["velocity"] = 1 if velocity else 0
@@ -2700,7 +2717,7 @@ def _drop_none(**kwargs) -> dict:
 _X_AXIS = {
     "ruler": "unit", "view_start": "start", "view_len": "len",
     "tempo": "tempo", "beat_at": "beat_at", "quant": "quant",
-    "sample_rate": "sample_rate", "link": "link",
+    "sample_rate": "sample_rate", "link": "link", "autofit": "autofit",
     "sel_start": "sel_start", "sel_len": "sel_len",
     "playhead": "playhead", "playhead_at": "playhead_at",
     "playhead_loop_start": "playhead_loop_start",
