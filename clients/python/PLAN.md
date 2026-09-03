@@ -2494,7 +2494,7 @@ than being ticked here.
   broken — what is wrong is that the *rule* for what a note edit means is
   written twice, which is the duplication this whole track exists to remove.
 
-  **Why it was not simply collapsed**, and this is the part that has to be
+  **Why it was not simply collapsed**, and this is the part that had to be
   decided rather than typed: a leaf's notes and points **are the document's** —
   they are what a save writes and what a reopened piece gets back — while a
   domain writes the client object and leaves the document to be derived again.
@@ -2504,6 +2504,36 @@ than being ticked here.
   question is which of the two is the arrangement's real model of a track's
   notes — and it is the same question as "`Track` wraps a `Timeline`, so the
   tree has two ways of placing things", below. It converges there, not here.
+
+  **Decided 2026-09-03, with the user: the tree's road wins.** A note is a
+  **member with an id**, so `SetMembers` is the real model and the events domain
+  is what goes — for a timeline that is part of a composition. The evidence was
+  already written down twice and had not been read against this entry:
+  `crates/clausters-document/src/intent.rs:188` documents `SetMembers` as *"the
+  roll's edit: notes added, moved and removed arrive as the resulting list.
+  Members keep their ids, so what survived an edit is still the same"*, and the
+  entry below says the outlier is the client's `Track`. What decides it is not
+  which road is shorter but what an id **buys**: an edit that survives its
+  siblings moving, and the OSC markers, which are un-editable today precisely
+  because they are items without nodes.
+
+  **The other direction had been argued here and is now closed.** It ran: a note
+  has no identity anywhere the eye can see — five numbers in the host's
+  `Vec<Note>`, no widget id, no address on the wire — so the note-box is content
+  of a structure rather than a member of the tree, and `_apply_notes`'s
+  id-by-index block exists only to keep ids across a payload that carries none.
+  That is a true description of the **view** and not of the model: the host
+  draws boxes without identity for the same reason it draws a waveform without
+  samples, and what the document holds is a separate question. Recording it
+  because the argument is a good one and will be made again.
+
+  **So what this entry is waiting on is the entry below**, and it is now a
+  design and a typing rather than a decision. Note the one case that is not
+  covered by "the tree's road wins": `edit(timeline)` over a **bare** timeline
+  has no document to hold members, which is why the domain exists at all — and
+  the answer to that is the same one the base class already gives every other
+  bare structure (a `History` and no `Document`), so it is part of the design
+  below rather than an exception to it.
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
   call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo
@@ -2736,10 +2766,24 @@ than being ticked here.
   playable projection anything flattens to (`Element.to_timeline`), not a
   container in the tree.
 
-  **What is open**: where the timeline's own verbs land once a track is an
-  aggregate (`quantize`, `from_pattern`, random access, the `Playhead` scan —
-  flatten-then-play already covers the last), how it meets the crate's open
-  decision on member identity, and that it is the arrangement model in both
-  clients plus the bridge that writes the document. **Related:** "Two views of
-  one arrangement keep two histories" (Found by use) — a note with no id is also
-  a note a history cannot name.
+  **The direction is decided (2026-09-03, with the user): a track's notes are
+  members with ids, and `Track` stops wrapping a `Timeline`.** What made it
+  decidable was putting the note-box and the clip-box side by side under one
+  geometry (`host/placement.rs`, and `host/bands.rs` for the vertical): once
+  every editing and positioning action is written once for both, the one place
+  the two boxes genuinely differ is **identity** — a clip reparents when it
+  changes lane and a note only changes a number — and that is a fact about the
+  model, which is what this entry has to settle. The full argument, including
+  the reading that lost, is in "A clip's body and a composed view edit the same
+  data by two roads" above.
+
+  **What is open is now design and typing, not the direction**: where the
+  timeline's own verbs land once a track is an aggregate (`quantize`,
+  `from_pattern`, random access, the `Playhead` scan — flatten-then-play already
+  covers the last), how it meets the crate's open decision on member identity,
+  what a **bare** `edit(timeline)` is once notes are members (the base class
+  already says a bare structure has a `History` and no `Document`, so this is
+  where that lands), and that it is the arrangement model in both clients plus
+  the bridge that writes the document. **Related:** "Two views of one
+  arrangement keep two histories" (Found by use) — a note with no id is also a
+  note a history cannot name.

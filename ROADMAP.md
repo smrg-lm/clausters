@@ -317,8 +317,9 @@ into this file is exactly the migration the rules forbid.
   mapping question above.
 
 - ⬜ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
-  *(`clients/python/PLAN.md`, Future directions)*. A design, and the one that
-  reaches furthest: it is the arrangement model in both clients plus the bridge
+  *(`clients/python/PLAN.md`, Future directions)*. **The direction is decided**
+  (2026-09-03: a track's notes are members with ids); what is left is a design
+  and a typing, and it is the one that reaches furthest: it is the arrangement model in both clients plus the bridge
   that writes the document. The crate is already written for the other model (a
   lane is a projection; `SetMembers` is the roll's edit as a member list with
   ids), and as an aggregate a note — and an OSC marker — gains the id that today
