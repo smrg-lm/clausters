@@ -53,6 +53,8 @@ import {
     transpose,
 } from "../src/gui/notation/index.ts";
 import type { Sheet } from "../src/gui/notation/index.ts";
+import { edit } from "../src/gui/editing/edit.ts";
+import { Editing } from "../src/gui/editing/context.ts";
 import { Event } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
@@ -587,6 +589,60 @@ test("a note dragged on the page moves the model's item", {
     // the arrival means, and nobody has to say so
     assert.equal(moved.step, "b");
     assert.equal(moved.alter, -1);
+});
+
+test("a page and a roll walk one order", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    // The join: a score is a structure of the editing context like any other, so
+    // a window holding a page and a lane has **one** Ctrl+Z.
+    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
+    const timeline = new Timeline([[0.0, new Event({ midinote: 72, dur: 1.0 })]]);
+    // One context for both — what a window drawing the two would build.
+    const editor = edit(timeline, {
+        sampleRate: 48_000,
+        tempo: 2.0,
+        context: Editing.of(score),
+    });
+    const step = () =>
+        (score.sheet().staves as { voices: { items: { pitches: { step: string }[] }[] }[] }[])[0]
+            .voices[0].items[0].pitches[0].step;
+    const pitches = () => [...timeline].map(([, item]) => (item as Event).midinote());
+
+    assert.ok(score.apply({ op: "transpose", semitones: 2 }));
+    const payload = editor.domain?.payload(
+        timeline as never,
+        "notes",
+        [0.0, 24_000, 67, 100, 0],
+    );
+    const reach = editor as unknown as { edit(p: unknown, label: string): boolean };
+    assert.ok(reach.edit(payload, "edit the notes"));
+    assert.deepEqual([step(), pitches()], ["d", [67]]);
+
+    // Undone from the *roll's* window, in the order the hand made them.
+    assert.ok(editor.undo());
+    assert.deepEqual([step(), pitches()], ["d", [72]]);
+    assert.ok(editor.undo());
+    assert.deepEqual([step(), pitches()], ["c", [72]]);
+
+    // And from the score's side it is the same pile, walked the same way.
+    assert.ok(score.redo());
+    assert.equal(step(), "d");
+});
+
+test("a score that did not move records nothing", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
+    const first = (score.sheet().staves as { voices: { items: { id: number }[] }[] }[])[0]
+        .voices[0].items[0].id;
+    assert.ok(score.transpose(`n${first}`, -1));
+    assert.ok(score.canUndo);
+    const before = score.mei();
+    assert.ok(!score.transpose(`n${first}`, 0));
+    assert.equal(score.mei(), before);
+    assert.ok(score.undo());
+    assert.ok(!score.canUndo, "one edit, one entry");
 });
 
 test("a refused operation leaves the page and the model alone", {

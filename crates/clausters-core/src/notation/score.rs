@@ -220,6 +220,29 @@ impl<E: Engraver> Score<E> {
         self.mei_locked()
     }
 
+    /// Replace the document with `mei` — **a state, not a step**.
+    ///
+    /// The door for an owner that keeps the order somewhere else: a client
+    /// whose editing context holds one history over several structures records
+    /// a score's edit as the MEI it produced, and puts a previous one back
+    /// through here. That is the same shape every other editable structure has
+    /// — an absolute payload, idempotent, carrying no direction — and it is why
+    /// a score can join an undo order that also holds curves, samples and
+    /// notes.
+    ///
+    /// **It clears this score's own stack**, in both directions, because that
+    /// stack described a document this one is not. Two histories over one score
+    /// is the thing this call exists to stop, so it does not quietly leave half
+    /// of one behind.
+    pub fn load(&mut self, mei: &str) -> bool {
+        let _guard = self.engraver.lock();
+        let ok = self.load_locked(mei);
+        self.resync_locked();
+        self.undo.clear();
+        self.redo.clear();
+        ok
+    }
+
     /// Whether there is an edit to step back over.
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()

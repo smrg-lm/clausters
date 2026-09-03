@@ -318,6 +318,13 @@ score.apply({"op": "transpose", "semitones": 2})   # what `transpose` builds
 score.undo()                                        # the model goes back too
 ```
 
+**And the undo is the editing context's**, not the score's own. A page registers
+in `Editing.of(score)` like a curve, a take or a roll, and each edit is recorded
+as the MEI it produced with the previous one as its inverse — so a window
+holding a page beside a lane has **one** Ctrl+Z, walked in the order the hand
+made the edits, whichever of the two the pointer was over. `score.can_undo`
+answers for that order and may well be an edit to something else.
+
 Dragging a note on the page is `move_steps`, which is **not** transposition: it
 moves along the staff and takes the key signature's alteration for the letter it
 lands on, so a note dragged onto a B in E flat is a B flat. `transpose` is the

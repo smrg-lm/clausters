@@ -233,6 +233,51 @@ def test_a_rejected_edit_leaves_the_score_untouched():
     assert s.can_undo is False
 
 
+def test_a_page_and_a_roll_walk_one_order():
+    """The join: a score is a structure of the editing context like any other,
+    so a window holding a page and a lane has **one** Ctrl+Z."""
+    from clausters.gui import edit
+    from clausters.gui.editing import Editing
+
+    s, nid = _edited_score()
+    timeline = Timeline([(0.0, Event(midinote=72, dur=1.0))])
+    # One context for both — what a window drawing the two would build.
+    editor = edit(timeline, sample_rate=48_000.0, tempo=2.0,
+                  context=Editing.of(s))
+
+    s.transpose(nid, -2)
+    payload = editor.domain.payload(timeline, "notes", [0.0, 24_000.0, 67, 100, 0])
+    editor._edit(payload, "edit the notes")
+    assert (_pitches(s)[0], _midinotes(timeline)) == (57, [67.0])
+
+    # Undone from the *roll's* window, in the order the hand made them.
+    assert editor.undo() is True
+    assert (_pitches(s)[0], _midinotes(timeline)) == (57, [72.0])
+    assert editor.undo() is True
+    assert (_pitches(s)[0], _midinotes(timeline)) == (60, [72.0])
+
+    # And from the score's side it is the same pile, walked the same way.
+    assert s.redo() is True
+    assert _pitches(s)[0] == 57
+
+
+def test_a_score_that_did_not_move_records_nothing():
+    # `transpose_to` answers True for a note already where it was asked to go --
+    # the state holds -- and a resend is not an edit anywhere else either.
+    s, nid = _edited_score()
+    assert s.transpose(nid, -1) is True
+    assert s.can_undo is True
+    before = _pitches(s)
+    assert s.transpose(nid, 0) is False
+    assert _pitches(s) == before
+    assert s.undo() is True
+    assert s.can_undo is False, "one edit, one entry"
+
+
+def _midinotes(timeline) -> list:
+    return [event.midinote() for _beat, event in timeline]
+
+
 def test_the_score_round_trips_through_mei():
     s, nid = _edited_score()
     s.transpose(nid, -2)

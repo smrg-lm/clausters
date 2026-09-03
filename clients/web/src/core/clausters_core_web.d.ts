@@ -509,6 +509,15 @@ export class Score {
      */
     edit(action: string, param: string): boolean;
     /**
+     * Replace the document with `mei` — **a state, not a step**.
+     *
+     * The door for a page whose editing context holds one history over several
+     * structures: a score's edit is recorded there as the MEI it produced, and
+     * a previous one is put back through here. It clears the score's own
+     * stack, so there is only ever one history over one score.
+     */
+    load(mei: string): boolean;
+    /**
      * The score as MEI, ids and all — what to persist, and what an undo step
      * is made of.
      */
@@ -1192,6 +1201,7 @@ export interface InitOutput {
     readonly score_canUndo: (a: number) => number;
     readonly score_displayList: (a: number, b: number) => [number, number, number, number];
     readonly score_edit: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly score_load: (a: number, b: number, c: number) => number;
     readonly score_mei: (a: number) => [number, number];
     readonly score_new: (a: any, b: number, c: number) => [number, number, number];
     readonly score_redo: (a: number) => number;

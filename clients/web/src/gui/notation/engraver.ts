@@ -18,6 +18,8 @@ import {
     svgToDisplayList as coreSvgToDisplayList,
 } from "../../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
+import { Editing } from "../editing/context.ts";
+import type { Intent } from "../../document.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
 import type { MeiOptions } from "./mei.ts";
 import type { Op, Sheet } from "./sheet.ts";
@@ -68,9 +70,22 @@ export interface EngraveOptions {
  * its selection across the round trip: the id the user clicked still names the
  * same note afterwards.
  *
- * The edit cycle and the undo stack are the shared layer's
- * (`clausters_core::notation::Score`), not this shell's — as they are in the
- * Python client, which holds the same model over the C ABI.
+ * The edit cycle is the shared layer's (`clausters_core::notation::Score`), not
+ * this shell's — as it is in the Python client, which holds the same model over
+ * the C ABI.
+ *
+ * **The undo order is the editing context's**, like every other editable
+ * structure's. A score registers in `Editing.of(score)` under the `"score"`
+ * vocabulary and records each edit as the MEI it produced, with the previous one
+ * as its inverse — an absolute payload, so a step is idempotent and carries no
+ * direction. That is what makes a window holding a lane and a page walk **one**
+ * order: before this, an engraved page had a real history of its own and Ctrl+Z
+ * meant one of two different things depending on what the pointer was over.
+ *
+ * The shared layer's own snapshot stack is still there and is what a caller with
+ * no such context uses — a standalone host holding a page and nothing else. From
+ * here it is not read: {@link Score.undo} and {@link Score.redo} walk the
+ * context's pile and put a state back through the crate's `load`.
  *
  * **Opening is asynchronous where the Python client's is not**, and only because
  * of where verovio is: a page loads the engraver module the first time one is
@@ -169,27 +184,132 @@ export class Score {
      * refused; either way the page and the model are as they were.
      */
     apply(op: Op): boolean {
-        return this.inner.apply(JSON.stringify(op));
+        const before = this.mei();
+        if (!this.inner.apply(JSON.stringify(op))) return false;
+        this.record(before, String((op as { op?: unknown }).op ?? "edit the score"));
+        return true;
     }
 
-    /** Whether there is an edit to step back over. */
+    // ---- the editing context: one order over everything being edited ----
+
+    /**
+     * This score's editing context, attaching it on first ask.
+     *
+     * The context hangs on the **data**, so a page opened twice is one structure
+     * in one order; attaching makes the score a participant, which is what lets
+     * an undo made in a *neighbouring* window step it too.
+     */
+    private get editing(): Editing {
+        const context = Editing.of(this);
+        context.attach(this);
+        return context;
+    }
+
+    /** This score's identity in the pile — minted once, per score. */
+    private get structure(): number {
+        return this.editing.identity(this, "score");
+    }
+
+    /**
+     * Record one edit: the MEI it produced, and the one it replaced.
+     *
+     * **A state, not a step.** The page a score is at describes it whole, the
+     * way a curve's points and a timeline's events do, so an entry is idempotent
+     * and reads the same in both directions — which is the only shape a pile
+     * shared with other structures can carry.
+     */
+    private record(before: string, label: string): void {
+        const after = this.mei();
+        if (after === before) return; // a resend is not an edit
+        const context = this.editing;
+        context.turn(this, () => {
+            // `forward` is a **step** and `backward` is a bare payload: the pile
+            // hands an inverse back as what it holds, and wrapping it a second
+            // time hands the reader a leg it cannot read.
+            context.history.record(
+                [
+                    {
+                        structure: this.structure,
+                        // The payload is this domain's own vocabulary and
+                        // the pile never reads it; the arrangement's `Intent` is
+                        // only what the type happens to name.
+                        forward: { edit: { mei: after } as unknown as Intent },
+                        backward: { mei: before },
+                    },
+                ],
+                { label },
+            );
+            context.changed();
+        });
+    }
+
+    /**
+     * Put back the legs of a history step that name **this** score.
+     *
+     * What the context hands round. A page is not a view — nothing here redraws
+     * — so a caller re-engraves after a step exactly as it does after an edit.
+     */
+    projectLegs(legs: readonly unknown[]): boolean {
+        let moved = false;
+        for (const leg of legs as { structure?: number; payload?: { mei?: unknown } }[]) {
+            if (Math.trunc(Number(leg.structure ?? -1)) !== this.structure) continue;
+            const mei = leg.payload?.mei;
+            if (typeof mei !== "string") continue;
+            moved = this.load(mei) || moved;
+        }
+        return moved;
+    }
+
+    /**
+     * Another window in this context edited. Nothing here: a score is data and
+     * draws nothing of its own — whoever engraved the page redraws it.
+     */
+    adopt(): void {}
+
+    /**
+     * Replace the document with `mei` — **a state, not a step**.
+     *
+     * The door the pile puts a previous page back through. It clears the shared
+     * layer's own stack, so one score has one history.
+     */
+    load(mei: string): boolean {
+        return this.inner.load(mei);
+    }
+
+    /**
+     * Whether the **context's** pile has an edit to step back over — which may
+     * be an edit to something else entirely, since the order is one.
+     */
     get canUndo(): boolean {
-        return this.inner.canUndo;
+        return this.editing.history.canUndo;
     }
 
-    /** Whether there is an undone edit to step forward into. */
+    /** @see {@link Score.canUndo} */
     get canRedo(): boolean {
-        return this.inner.canRedo;
+        return this.editing.history.canRedo;
     }
 
-    /** Step back one edit; `false` when there is nothing to undo. */
+    /**
+     * Step the editing context back one edit, and say whether anything moved.
+     * `false` when there is nothing to undo.
+     *
+     * The step is the **context's**, not this score's: a page edited beside a
+     * lane steps in the order the two were edited in, and a leg naming another
+     * structure is projected by whoever holds it.
+     */
     undo(): boolean {
-        return this.inner.undo();
+        return this.step("undo");
     }
 
-    /** Step forward again after an undo; `false` when there is nothing to redo. */
+    /** Step forward again after {@link Score.undo}; `false` when there is nothing to redo. */
     redo(): boolean {
-        return this.inner.redo();
+        return this.step("redo");
+    }
+
+    private step(direction: "undo" | "redo"): boolean {
+        const context = this.editing;
+        const legs = context.step(direction);
+        return legs === undefined ? false : context.distribute(legs, this);
     }
 
     /**
@@ -203,7 +323,10 @@ export class Score {
      * only when the delta is what you actually have.
      */
     transpose(elementId: string, steps: number): boolean {
-        return this.inner.transpose(elementId, steps);
+        const before = this.mei();
+        if (!this.inner.transpose(elementId, steps)) return false;
+        this.record(before, "transpose");
+        return true;
     }
 
     /**
@@ -212,7 +335,14 @@ export class Score {
      * twice. True when the note is now there, including when it already was.
      */
     transposeTo(elementId: string, position: number, page = 1): boolean {
-        return this.inner.transposeTo(elementId, position, page);
+        const before = this.mei();
+        if (!this.inner.transposeTo(elementId, position, page)) return false;
+        // **A note already there is not an edit.** The call answers true for it,
+        // because the requested state holds; `record` sees the same MEI on both
+        // sides and leaves the pile alone, which is the rule a resend follows
+        // everywhere else.
+        this.record(before, "transpose");
+        return true;
     }
 
     /**
@@ -221,7 +351,10 @@ export class Score {
      * A rejected action leaves the score untouched.
      */
     edit(action: string, param: Record<string, unknown> = {}): boolean {
-        return this.inner.edit(action, JSON.stringify(param));
+        const before = this.mei();
+        if (!this.inner.edit(action, JSON.stringify(param))) return false;
+        this.record(before, action);
+        return true;
     }
 
     /** The engraver's version — what both clients must agree on. */

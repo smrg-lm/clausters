@@ -54,6 +54,14 @@ export interface Adopting {
      * as props, or as a whole redraw when `whole`.
      */
     adopt(intents: readonly Intent[], whole: boolean): void;
+    /**
+     * Put back the legs of a history step that name **this** participant's
+     * structure, and say whether anything moved.
+     *
+     * What {@link Editing.distribute} hands round. A participant need not draw
+     * anything: a `Score` answers this and has no window at all.
+     */
+    projectLegs(legs: readonly unknown[]): boolean;
 }
 
 /** Where a structure's context lives, keyed by the object it belongs to. */
@@ -170,6 +178,41 @@ export class Editing {
             else alive.push(view);
         }
         return alive;
+    }
+
+    /**
+     * Take one step off the pile and give back its legs, in the order they must
+     * be applied — `undefined` when there was nothing to take.
+     */
+    step(direction: "undo" | "redo"): unknown[] | undefined {
+        const walked = direction === "undo" ? this.history.undo() : this.history.redo();
+        if (walked === undefined) return undefined;
+        return ((direction === "undo"
+            ? (walked as { inverses?: unknown[] }).inverses
+            : (walked as { edits?: unknown[] }).edits) ?? []) as unknown[];
+    }
+
+    /**
+     * Hand a step's legs round **everything registered here** and say whether
+     * anything moved.
+     *
+     * One entry can name several structures — a stroke over a take and a bend of
+     * the curve above it are one order, and so is an edit to a page beside a
+     * lane — so the step is offered to every participant and each projects the
+     * legs it owns. Whoever is walking is included whether or not it is in the
+     * list, since a structure with no window open still holds legs the step may
+     * name.
+     *
+     * It lives here rather than on the editor because a participant need not be
+     * one: what this asks of a thing is {@link Adopting.projectLegs}, and a
+     * `Score` answers it without drawing anything.
+     */
+    distribute(legs: readonly unknown[], walker: Adopting): boolean {
+        const views = this.views();
+        const walkers = views.includes(walker) ? views : [walker, ...views];
+        let stepped = false;
+        for (const view of walkers) stepped = view.projectLegs(legs) || stepped;
+        return stepped;
     }
 
     /** Drop a view whose window is gone. */

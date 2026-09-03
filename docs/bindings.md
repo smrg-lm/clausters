@@ -333,7 +333,8 @@ out an opaque handle and takes it back to every call, and wasm has a class.
 | `clausters_score_edit` | `JsScore.edit` | |
 | `clausters_score_apply` | `JsScore.apply` | the **edit path**: one model operation as one undo step. It is not the engraver's editor, because there is one implementation of what an edit to a score means and it is the vocabulary both clients already bind — a standalone host holding a sheet performs the same operation through the same code |
 | `clausters_score_sheet` | `JsScore.sheet` | `idiom` — the envelope-versus-throw difference. The open document as the model, or a refusal when it could not be read into one, which is a state rather than a failure: the page still draws and still plays |
-| `clausters_score_undo` | `JsScore.undo` | |
+| `clausters_score_load` | `JsScore.load` | the door for an owner that keeps the order **somewhere else**: a client whose editing context holds one history over several structures records a score's edit as the MEI it produced and puts a previous one back through here, which is the same absolute, idempotent shape every other editable structure has. It clears the score's own stack, so one score has one history |
+| `clausters_score_undo` | `JsScore.undo` | the score's own stack, for a caller with no such context — a standalone host holding a page and nothing else |
 | `clausters_score_redo` | `JsScore.redo` | |
 | `clausters_score_can_undo` | `JsScore.can_undo` | `idiom` — a getter |
 | `clausters_score_can_redo` | `JsScore.can_redo` | `idiom` — a getter |

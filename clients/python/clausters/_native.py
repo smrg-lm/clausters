@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 36
+CORE_ABI_VERSION = 37
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -649,6 +649,8 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         ]
         lib.clausters_score_edit.restype = ctypes.c_int32
         lib.clausters_score_edit.argtypes = [ctypes.c_void_p, u8p, size, u8p, size]
+        lib.clausters_score_load.restype = ctypes.c_int32
+        lib.clausters_score_load.argtypes = [ctypes.c_void_p, u8p, size]
         for name in ("undo", "redo", "can_undo", "can_redo"):
             fn = getattr(lib, f"clausters_score_{name}")
             fn.restype = ctypes.c_int32

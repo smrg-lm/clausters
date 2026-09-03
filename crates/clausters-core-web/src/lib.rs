@@ -1972,6 +1972,16 @@ impl JsScore {
         serde_json::to_string(sheet).map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Replace the document with `mei` — **a state, not a step**.
+    ///
+    /// The door for a page whose editing context holds one history over several
+    /// structures: a score's edit is recorded there as the MEI it produced, and
+    /// a previous one is put back through here. It clears the score's own
+    /// stack, so there is only ever one history over one score.
+    pub fn load(&mut self, mei: &str) -> bool {
+        self.0.load(mei)
+    }
+
     /// Whether there is an edit to step back over.
     #[wasm_bindgen(getter, js_name = canUndo)]
     pub fn can_undo(&self) -> bool {

@@ -1729,6 +1729,19 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
+- ✅ **The score keeps a second history, and nothing joins the two** *(the port
+  of `clients/python/PLAN.md`'s entry of the same name, fixed 2026-09-02 in the
+  same commit and by the same calls)*. `Score` registers in `Editing.of(score)`
+  under the ``"score"`` vocabulary, attaches itself as a participant, records
+  each edit as the MEI it produced with the previous one as its inverse, and
+  walks the context's pile through `Editing.step`/`Editing.distribute` — so a
+  page and a lane in one page have one Ctrl+Z. `JsScore.load` is the wasm half
+  of the new core door (`clausters_score_load` natively), declared in
+  `docs/bindings.md` like every other pair.
+
+  One spelling is `idiom`: `Adopting` grew `projectLegs`, since TypeScript
+  states what a participant must answer where Python asks the object.
+
 - ✅ **An OSC marker dragged in a roll changes the picture and nothing else**
   *(the port of `clients/python/PLAN.md`'s entry of the same name — the gap was
   identical here, which at least made it a shared hole and not a divergence;

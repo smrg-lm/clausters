@@ -690,17 +690,8 @@ export class Editor<S = unknown> implements Adopting {
      * pile over several structures is the point.
      */
     protected step(direction: "undo" | "redo"): boolean {
-        const history = this.editing.history;
-        const walked = direction === "undo" ? history.undo() : history.redo();
-        if (walked === undefined) return false;
-        const legs = ((direction === "undo"
-            ? (walked as { inverses?: unknown[] }).inverses
-            : (walked as { edits?: unknown[] }).edits) ?? []) as Leg[];
-        let stepped = false;
-        for (const editor of this.walkers()) {
-            stepped = editor.projectLegs(legs) || stepped;
-        }
-        if (!stepped) return false;
+        const legs = this.editing.step(direction);
+        if (legs === undefined || !this.editing.distribute(legs, this)) return false;
         // **Once for the walk, not once per window.** The version is the
         // context's, and every view reports the same one — and only this one
         // draws from here: the others are told on the way out of the turn, the
@@ -709,17 +700,6 @@ export class Editor<S = unknown> implements Adopting {
         this.version += 1;
         this.reflectStep();
         return true;
-    }
-
-    /**
-     * Everybody a history step is offered to: the views of this context, and
-     * this editor whether or not it has a window (a host-less one still holds a
-     * structure the step may name).
-     */
-    protected walkers(): Editor[] {
-        const views = this.editing.views() as unknown as Editor[];
-        const me = this as Editor;
-        return views.includes(me) ? views : [me, ...views];
     }
 
     /**

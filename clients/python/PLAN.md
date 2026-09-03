@@ -1173,24 +1173,39 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   entry is what a marker's *arguments* would need, and they are not drawn at
   all.
 
-- ⬜ **The score keeps a second history, and nothing joins the two**
-  *(found 2026-09-02, in the same audit)*. An engraved page is edited through
-  `Score.undo`/`redo`, which walk a stack of **MEI snapshots** the engraver holds
-  in Rust (`clausters_score_undo`) — a real history, and not the document's. So a
-  window showing a lane and a page has two orders, and Ctrl+Z over it means one
+- ✅ **The score keeps a second history, and nothing joins the two**
+  *(found 2026-09-02, in the same audit; fixed 2026-09-02)*. An engraved page
+  was edited through `Score.undo`/`redo`, which walked a stack of MEI snapshots
+  the engraver holds in Rust — a real history, and not the composition's. A
+  window showing a lane and a page had two orders, and Ctrl+Z over it meant one
   of two different things depending on what the pointer was over.
 
-  This is exactly the case `O16` was written for: *the pile is generic, the
-  verbs are the domain's*. A score is a third data domain and it predates the
-  seam, so what it needs is to register in the composition's `History` like any
-  other structure and record its own verbs as opaque payloads — after which
-  `O15`'s rule holds for it too and the two orders become one.
+  **The decision the entry named went to the first branch, and the reason is
+  that a snapshot already *is* an invertible entry.** A page describes the score
+  whole, the way a curve's points and a timeline's events do, so an edit records
+  the MEI it produced with the previous one as its inverse: absolute,
+  idempotent, no direction — the only shape a pile shared with other structures
+  can carry. `O18`'s non-invertible slot was not needed and is not used here.
 
-  What is not obvious, and is why this is an entry rather than a patch: a
-  snapshot stack and an inverse-per-entry pile are not the same shape. Either the
-  score's operations learn their inverses (the model's verbs are data, so they
-  can), or a snapshot is recorded as a non-invertible entry that restores whole
-  — which `O18` already has a marked slot for.
+  So a `Score` registers in `Editing.of(score)` under the ``"score"`` vocabulary
+  and **attaches itself as a participant**, which is the half that makes the
+  order work in both directions: an undo made in a neighbouring window steps the
+  page too, because the walk hands the step round everything registered rather
+  than round the views. That walk moved to the context (`Editing.step` /
+  `Editing.distribute`) so the editor and the score share it instead of spelling
+  it twice — what it asks of a participant is `project_legs`, and a score
+  answers it while drawing nothing.
+
+  **The one thing it cost is a core symbol**: putting a state back needs a
+  `load`, which the shared layer had internally and neither binding exposed
+  (`clausters_score_load`, `JsScore.load`; `CORE_ABI_VERSION` 36 → 37, SemVer's
+  tier already moved this cycle). It clears the shared layer's own stack, so one
+  score has one history — and that stack stays for a caller with no editing
+  context, which is a standalone host holding a page and nothing else.
+
+  What is **not** here: a page does not redraw itself after a step, exactly as
+  it does not after an edit — a caller re-engraves. A view that owns that is the
+  score editor `N9` will need, not this entry.
 
 - ✅ **A patch cord reports a change even when the cord is the one already
   there** *(found 2026-09-02, sweeping the "a no-op is not a change" class;

@@ -48,13 +48,25 @@ class Score:
     selection across the round trip: the id the user clicked still names the same
     note afterwards.
 
-    The edit cycle and the undo stack are the shared layer's
-    (``clausters_notation::Score``), not this shell's: every edit runs the
-    editor action, then a commit that re-runs the layout, then a reload that
-    refreshes the MIDI/timemap cache an edit does not invalidate; undo is a stack
-    of MEI snapshots, because the engraver's own stack cannot survive that reload
-    and its ``undo`` on an empty stack takes the process down. What Python owns
-    is the **handle's lifetime**: the score is freed when this object is.
+    The edit cycle is the shared layer's (``clausters_notation::Score``), not
+    this shell's: every edit runs the editor action, then a commit that re-runs
+    the layout, then a reload that refreshes the MIDI/timemap cache an edit does
+    not invalidate. What Python owns is the **handle's lifetime**: the score is
+    freed when this object is.
+
+    **The undo order is the editing context's**, like every other editable
+    structure's. A score registers in `clausters.gui.editing.Editing.of(score)`
+    under the ``"score"`` vocabulary and records each edit as the MEI it
+    produced, with the previous one as its inverse — an absolute payload, so a
+    step is idempotent and carries no direction. That is what makes a window
+    holding a lane and a page walk **one** order: before this, an engraved page
+    had a real history of its own and Ctrl+Z meant one of two different things
+    depending on what the pointer was over.
+
+    The shared layer's own snapshot stack is still there and is what a caller
+    with no such context uses — a standalone host holding a page and nothing
+    else. From here it is not read: `undo` and `redo` walk the context's pile
+    and put a state back through the crate's `load`.
     """
 
     def __init__(self, data: str, *, scale: int = 40, page_width: int = 2100,
@@ -85,22 +97,111 @@ class Score:
         undo stack is made of."""
         return _text(_native.lib().clausters_score_mei, self._h)
 
+    # ---- the editing context: one order over everything being edited ----
+
+    @property
+    def _editing(self):
+        """This score's editing context, attaching it on first ask.
+
+        The context hangs on the **data**, so a page opened twice is one
+        structure in one order; attaching makes the score a participant, which
+        is what lets an undo made in a *neighbouring* window step it too.
+        """
+        from ..editing import Editing
+
+        context = Editing.of(self)
+        context.attach(self)
+        return context
+
+    @property
+    def _structure(self) -> int:
+        """This score's identity in the pile — minted once, per score."""
+        return self._editing.identity(self, "score")
+
+    def _record(self, before: str, label: str) -> None:
+        """Record one edit: the MEI it produced, and the one it replaced.
+
+        **A state, not a step.** The page a score is at describes it whole, the
+        way a curve's points and a timeline's events do, so an entry is
+        idempotent and reads the same in both directions — which is the only
+        shape a pile shared with other structures can carry.
+        """
+        after = self.mei()
+        if after == before:
+            return                      # a resend is not an edit
+        context = self._editing
+        with context.turn(self):
+            context.history.record(
+                # `forward` is a **step** and `backward` is a bare payload:
+                # the pile hands an inverse back as what it holds, and wrapping
+                # it a second time hands the reader a leg it cannot read.
+                [{"structure": self._structure,
+                  "forward": {"edit": {"mei": after}},
+                  "backward": {"mei": before}}],
+                label=label)
+            context.changed()
+
+    def project_legs(self, legs: list) -> bool:
+        """Put back the legs of a history step that name **this** score.
+
+        What the context hands round. A page is not a view — nothing here
+        redraws — so a caller re-engraves after a step exactly as it does after
+        an edit.
+        """
+        moved = False
+        for leg in legs:
+            if int(leg.get("structure", -1)) != self._structure:
+                continue
+            mei = (leg.get("payload") or {}).get("mei")
+            if not isinstance(mei, str):
+                continue
+            moved |= self.load(mei)
+        return moved
+
+    def adopt(self, intents: list, whole: bool) -> None:
+        """Another window in this context edited. Nothing here: a score is data
+        and draws nothing of its own — whoever engraved the page redraws it."""
+
+    def load(self, mei: str) -> bool:
+        """Replace the document with ``mei`` — **a state, not a step**.
+
+        The door the pile puts a previous page back through. It clears the
+        shared layer's own stack, so one score has one history.
+        """
+        raw = mei.encode("utf-8")
+        return bool(_native.lib().clausters_score_load(
+            self._h, _native.as_u8(raw), len(raw)))
+
     @property
     def can_undo(self) -> bool:
-        return bool(_native.lib().clausters_score_can_undo(self._h))
+        """Whether the **context's** pile has an edit to step back over — which
+        may be an edit to something else entirely, since the order is one."""
+        history = self._editing.history
+        return bool(history is not None and history.can_undo)
 
     @property
     def can_redo(self) -> bool:
-        return bool(_native.lib().clausters_score_can_redo(self._h))
+        history = self._editing.history
+        return bool(history is not None and history.can_redo)
 
     def undo(self) -> bool:
-        """Step back one edit. False (never a crash) when there is nothing to
-        undo."""
-        return bool(_native.lib().clausters_score_undo(self._h))
+        """Step the editing context back one edit, and say whether anything
+        moved. False (never a crash) when there is nothing to undo.
+
+        The step is the **context's**, not this score's: a page edited beside a
+        lane steps in the order the two were edited in, and a leg naming another
+        structure is projected by whoever holds it.
+        """
+        return self._step("undo")
 
     def redo(self) -> bool:
         """Step forward again after `undo`; False when there is nothing to redo."""
-        return bool(_native.lib().clausters_score_redo(self._h))
+        return self._step("redo")
+
+    def _step(self, direction: str) -> bool:
+        context = self._editing
+        legs = context.step(direction)
+        return False if legs is None else context.distribute(legs, self)
 
     def sheet(self) -> dict:
         """The open score as the **model** (`clausters.gui.notation.sheet`).
@@ -129,8 +230,12 @@ class Score:
         was refused; either way the page and the model are as they were.
         """
         raw = json.dumps(op).encode("utf-8")
-        return bool(_native.lib().clausters_score_apply(
-            self._h, _native.as_u8(raw), len(raw)))
+        before = self.mei()
+        if not _native.lib().clausters_score_apply(
+                self._h, _native.as_u8(raw), len(raw)):
+            return False
+        self._record(before, str(op.get("op") or "edit the score"))
+        return True
 
     def transpose(self, element_id: str, steps: int) -> bool:
         """Move a note by ``steps`` **diatonic** steps along the staff — up when
@@ -152,8 +257,12 @@ class Score:
         is what you actually have.
         """
         raw = element_id.encode("utf-8")
-        return bool(_native.lib().clausters_score_transpose(
-            self._h, _native.as_u8(raw), len(raw), steps))
+        before = self.mei()
+        if not _native.lib().clausters_score_transpose(
+                self._h, _native.as_u8(raw), len(raw), steps):
+            return False
+        self._record(before, "transpose")
+        return True
 
     def transpose_to(self, element_id: str, position: int, page: int = 1) -> bool:
         """Move a note **to** the diatonic staff position ``position`` on
@@ -176,8 +285,16 @@ class Score:
         staff to measure against, or the engraver refused the move.
         """
         raw = element_id.encode("utf-8")
-        return bool(_native.lib().clausters_score_transpose_to(
-            self._h, _native.as_u8(raw), len(raw), position, page))
+        before = self.mei()
+        if not _native.lib().clausters_score_transpose_to(
+                self._h, _native.as_u8(raw), len(raw), position, page):
+            return False
+        # **A note already there is not an edit.** The call answers True for it,
+        # because the requested state holds; `_record` sees the same MEI on both
+        # sides and leaves the pile alone, which is the rule a resend follows
+        # everywhere else.
+        self._record(before, "transpose")
+        return True
 
     def edit(self, action: str, **param) -> bool:
         """Apply one raw editor action (``set``, ``insert``, ``delete``, ...) as
@@ -186,9 +303,13 @@ class Score:
         the score untouched."""
         act = action.encode("utf-8")
         par = json.dumps(param).encode("utf-8")
-        return bool(_native.lib().clausters_score_edit(
-            self._h, _native.as_u8(act), len(act),
-            _native.as_u8(par), len(par)))
+        before = self.mei()
+        if not _native.lib().clausters_score_edit(
+                self._h, _native.as_u8(act), len(act),
+                _native.as_u8(par), len(par)):
+            return False
+        self._record(before, action)
+        return True
 
     @classmethod
     def from_notes(cls, notes, *, meter: str = "4/4", clef: str = "G2",

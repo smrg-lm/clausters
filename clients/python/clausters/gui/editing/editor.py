@@ -603,18 +603,8 @@ class Editor:
         over somebody else's edit and undo nothing, which looks exactly like a
         dead button.
         """
-        history = self._editing.history
-        if history is None:
-            return False
-        step = history.undo() if direction == "undo" else history.redo()
-        if step is None:
-            return False
-        legs = (step.get("inverses") if direction == "undo"
-                else step.get("edits")) or []
-        stepped = False
-        for editor in self._walkers():
-            stepped |= editor.project_legs(legs)
-        if not stepped:
+        legs = self._editing.step(direction)
+        if legs is None or not self._editing.distribute(legs, self):
             return False
         # **Once for the walk, not once per window.** The version is the
         # context's, and every view reports the same one — and only this one
@@ -624,13 +614,6 @@ class Editor:
         self._version += 1
         self.reflect_step()
         return True
-
-    def _walkers(self) -> list:
-        """Everybody a history step is offered to: the views of this context,
-        and this editor whether or not it has a window (a host-less one still
-        holds a structure the step may name)."""
-        views = self._editing.views()
-        return views if any(view is self for view in views) else [self, *views]
 
     def project_legs(self, legs: list) -> bool:
         """Project the legs of a history step that name **this** editor's

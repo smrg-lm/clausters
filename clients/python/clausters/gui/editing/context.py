@@ -138,6 +138,41 @@ class Editing:
         self._views = [held for held in self._views if held() is not None]
         return [held() for held in self._views]
 
+    def step(self, direction: str) -> "list | None":
+        """Take one step off the pile and give back its legs, in the order they
+        must be applied — ``None`` when there was nothing to take."""
+        if self.history is None:
+            return None
+        step = (self.history.undo() if direction == "undo"
+                else self.history.redo())
+        if step is None:
+            return None
+        return (step.get("inverses") if direction == "undo"
+                else step.get("edits")) or []
+
+    def distribute(self, legs: list, walker) -> bool:
+        """Hand a step's legs round **everything registered here** and say
+        whether anything moved.
+
+        One entry can name several structures — a stroke over a take and a bend
+        of the curve above it are one order, and so is an edit to a page beside
+        a lane — so the step is offered to every participant and each projects
+        the legs it owns. Whoever is walking is included whether or not it is in
+        the list, since a structure with no window open still holds legs the
+        step may name.
+
+        It lives here rather than on the editor because a participant need not
+        be one: what this asks of a thing is `project_legs`, and a
+        `clausters.gui.notation.Score` answers it without drawing anything.
+        """
+        views = self.views()
+        walkers = (views if any(view is walker for view in views)
+                   else [walker, *views])
+        stepped = False
+        for view in walkers:
+            stepped |= bool(view.project_legs(legs))
+        return stepped
+
     def changed(self):
         """Say that the data changed in the turn being run.
 

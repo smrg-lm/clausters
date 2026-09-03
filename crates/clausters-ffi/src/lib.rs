@@ -226,7 +226,7 @@ pub use time::*;
 /// `clausters_document_apply` of its own, and a span of samples, whose frames
 /// live in a buffer rather than in a value. Additive, and the counter moves for
 /// v31's reason.
-pub const CORE_ABI_VERSION: u32 = 36;
+pub const CORE_ABI_VERSION: u32 = 37;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

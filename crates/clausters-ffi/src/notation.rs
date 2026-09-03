@@ -652,6 +652,34 @@ pub unsafe extern "C" fn clausters_score_edit(
     unsafe { &mut *h }.edit(&action, param.as_deref().unwrap_or("{}")) as i32
 }
 
+/// Replace the document with `mei` — **a state, not a step**. Returns `1` on
+/// success, `0` when the engraver could not read it.
+///
+/// The door for a client whose editing context holds one history over several
+/// structures: a score's edit is recorded there as the MEI it produced, and a
+/// previous one is put back through here. It clears the score's own stack, so
+/// there is only ever one history over one score.
+///
+/// # Safety
+/// `h` must be a live score handle; `mei`/`mei_len` a valid UTF-8 range.
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_score_load(
+    h: *mut Score,
+    mei: *const u8,
+    mei_len: usize,
+) -> i32 {
+    if h.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees the range.
+    let Some(mei) = (unsafe { text(mei, mei_len) }) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees a live handle.
+    unsafe { &mut *h }.load(&mei) as i32
+}
+
 /// Step back one edit. Returns `1` on success, `0` when there is nothing to
 /// undo (never a crash).
 ///

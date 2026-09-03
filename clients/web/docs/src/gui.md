@@ -278,8 +278,13 @@ win.widget("page").onEvent((tag, id, position) => {
 });
 ```
 
-`score.undo()` and `score.redo()` are the client's, not the host's: the score
-owns a stack of MEI snapshots, and the host holds no score at all.
+`score.undo()` and `score.redo()` are the client's, not the host's — the host
+holds no score at all — and what they walk is the **editing context's** pile,
+not a stack of the score's own. A page registers in `Editing.of(score)` like a
+curve, a take or a roll, and each edit is recorded as the MEI it produced with
+the previous one as its inverse, so a window holding a page beside a lane has
+one Ctrl+Z, in the order the hand made the edits. `score.canUndo` answers for
+that order and may well be an edit to something else.
 
 To **play** the page with the cursor following the sound, `gui.Transport` is the
 same object every time view uses — a lane, a piano roll, an engraved page — and
