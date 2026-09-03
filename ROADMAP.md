@@ -93,18 +93,14 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   with an addressable time axis -- samples, notes, events, segments -- cuts and
   joins by the same action in its own unit. The unified verbs must exist for every
   clip; only the arithmetic branches. One sub-question is open (a note the cut
-  falls inside), and the roll's own `e` has to answer it the same way. **It is the
+  falls inside), and the roll's own `e` has to answer it the same way. **The
+  structure it stands on shipped on 2026-09-03**: the windows are general now
+  (`clausters.segments`, both clients), so what is left here is the crate's
+  segment body, the verb's admission test, and the arithmetic in beats. **It is the
   head of a small family**: the two entries below and the silent refusal in
   section 2 are all downstream of the same mistake, and the rule that names it is
   "A view is configured by what it holds, and the arrangement is not the norm"
   (`docs/decisions.md`).
-
-- ⬜ **`Segment` and `Segments` live in the arrangement and are general**
-  *(`clients/python/PLAN.md`, Found by use)*. They sit in `form/element.py`, which
-  is what let a split read as an arrangement's capability. A segment is what
-  cutting anything on a time axis produces, and a run of them is what a join
-  assembles; they belong beside the structures, in the shared core, bound by both
-  clients. Small move, one seam to check.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track

@@ -1152,39 +1152,38 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   (`clients/gui/PLAN.md`) is downstream of this one; most of what it would have
   had to display should not have been refused.
 
-- ⬜ **`Segment` and `Segments` live in the arrangement and are general**
-  *(found 2026-09-03, from the entry above)*. They are in
-  `clausters/form/element.py`, which is what made a split read as an
-  arrangement's capability and let two classes own an action that belongs to
-  every structure with a time axis. A segment is **what cutting anything on a
-  time axis produces** -- a signal, a sequence, a track -- and a run of them is
-  the assembled result a join is the inverse of; neither mentions placement,
-  offsets or a tree. They belong beside the structures (and in the shared core,
-  so both clients bind one), with `form` importing them like any other reader.
-  The move is small; what has to be checked is the seam it crosses -- the
-  document's body kinds, the web port's twin, and the `duration_unit` derivation
-  that currently names both classes.
+- ✅ **`Segment` and `Segments` live in the arrangement and are general**
+  *(found 2026-09-03, from the entry above; moved and generalized the same
+  day)*. They were in `clausters/form/element.py`, which is what made a split
+  read as an arrangement's capability and let two classes own an action that
+  belongs to every structure with a time axis.
 
-- ✅ **A clip that changed lane went back to its content's length** *(found
-  2026-09-03, testing `composer.py` with `autofit=False`; fixed the same day)*.
-  The hold was right and its key was not. `_fit` filed a held pair under the
-  object it was derived from (`id(member)`, the handle itself in TypeScript),
-  and the arrangement *replaces* that object for edits that change nothing a
-  reader can see: a clip that changes lane reparents -- the handle leaves one
-  aggregate and a fresh one joins another -- and a placement that comes back
-  from an undo is added again. At those doors the hold was orphaned, the draw
-  re-derived the length from the content, and the clip shrank under the hand,
-  which is exactly the re-framing the switch is off to prevent.
+  They are `clausters.segments` now (and `clients/web/src/segments.ts`), and the
+  move came with the generalization it was for. What is **general** is the
+  arithmetic -- the order of the windows, where each starts inside the run, how
+  long the run is, where a cut falls, what two runs make joined -- and it is
+  written once in `SegmentRun`. What only the source knows turned out to be two
+  hooks, which is what makes the subclasses thin: **how a position advances by a
+  length** (`advanced`), because a window's `start` is in the unit the source is
+  *addressed* in -- frames for samples -- while a length is in the unit it
+  *measures*, and for notes the two are the same; and **what one window is
+  played as**. So `BufferSegments` (seconds, frames, a buffer-reading event) and
+  `NoteSegments` (beats throughout, the items inside the window) differ by about
+  fifteen lines each. `form.Segments` is the element that *places* a run and
+  asks it for its unit rather than stating one.
 
-  The document already keeps the identity that survives all of them -- the node
-  id, carried across the reparent on purpose and stamped back onto a restored
-  placement -- so that is the key: `FormEditor._hold_key` / `holdKey`, which
-  asks for the id and triggers the first conversion if that is what it takes,
-  the way `_node_id` does. The object itself remains a fallback for a holder the
-  document has not numbered yet. An element is never replaced, which is why the
-  pitch domain never showed this; it is filed under the node now too, so the two
-  faces answer one question. (This amends the entry below, which said identity
-  was enough: it is enough for a redefine, not for a reparent.)
+  The property that made this worth doing for notes as well: **a cut hides
+  material, it does not delete it**, so dragging the edge back out brings the
+  notes back exactly as it brings frames back -- which a destructive split of a
+  timeline could never do. Twin tests, same calls in the same order
+  (`tests/test_segments.py`, `clients/web/tests/segments.test.ts`).
+
+  **What is left, and it is the split's own step:** the document stores a
+  segment as samples only (`clausters_document::SegmentRef`'s source is a
+  sample source, and `Body::Segments`' `duration_unit` is `Seconds` by
+  construction), so a run of note windows has no way through the crate yet --
+  nothing builds one from a gesture, and the next entry is where it will need
+  to.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be
   addressed** *(found 2026-09-03 while reproducing the entry above; re-framed

@@ -395,6 +395,7 @@ of the Python client's book; the reasoning behind it is in
 | Clang | `seq.Event` (parameters in one action) | `seq/event.py` |
 | List (order, no concrete time) | a Python list, or a `Pattern` | `seq/pattern.py` |
 | Vector (a list at constant time) | `defs.Buffer` over the server's pool buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
+| A window onto material, and a run of them | what a **cut** makes and a **join** assembles — over samples (`BufferSegments`) or over a timeline of events (`NoteSegments`); **not** the arrangement's, which is why it is not in `form` | `clients/python/clausters/segments.py`, `clients/web/src/segments.ts` |
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |

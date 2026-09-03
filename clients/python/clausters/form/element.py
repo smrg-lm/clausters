@@ -50,6 +50,12 @@ into ``clausters-core`` in a future port).
 #: hold two bases.
 from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
+#: The windows are **not** the arrangement's: a segment is about the material,
+#: not about where it sits in a piece, so `Segment` and the runs live beside the
+#: structures (`clausters.segments`) and this module reads them like any other
+#: reader. Re-exported here because `Segments` is the element that places one.
+from ..segments import BufferSegments, Segment  # noqa: E402,F401
+
 
 def to_beats(length: float, unit: str, tempo: float) -> float:
     """``length`` (in ``unit``) as beats at ``tempo`` beats per second.
@@ -426,11 +432,11 @@ class Segments(Element):
     more buffers, which sound as a single thing.
 
     A `Vector` is one window onto one buffer. This is what a **join** makes when
-    the fragments do not come from one place: a list of
-    ``(buffer, start, duration)`` — the buffer to read, the frame to read it
-    from, and how long that segment lasts in seconds — read back to back. It is
-    the same memory-view idea one level up: nothing is copied, and cutting one
-    of these apart again gives back windows over the same buffers.
+    the fragments do not come from one place, and what a **split** takes apart
+    again. The windows themselves are not the arrangement's -- they are
+    `clausters.segments.BufferSegments`, the general run this element *places* --
+    so nothing about assembling material has to be written twice for the two
+    kinds of material that have a time axis.
 
     Rendering emits **one event per segment**, each at its own offset inside the
     element and each carrying its own window, so the segments sound continuous
@@ -440,9 +446,11 @@ class Segments(Element):
     Args:
         segments: the runs, as ``(buffer, start, duration)`` triples (a
             plain ``(buffer, duration)`` reads that buffer from its first
-            frame). ``start`` is in frames and ``duration`` in **seconds** —
-            one base for both fields, and the one these samples are already in.
-        instrument: the def that plays them — one def for all of them, since
+            frame). ``start`` is the **frame** the window opens at and
+            ``duration`` its length in **seconds** -- the addressing unit and
+            the measured one, which `clausters.segments.SegmentRun.advanced`
+            is the single bridge between.
+        instrument: the def that plays them -- one def for all of them, since
             what this element *is* is one thing to play (see `Vector`).
         controls: extra event parameters passed to that def.
         onset: start in beats relative to the context, or ``None``.
@@ -452,38 +460,38 @@ class Segments(Element):
 
     def __init__(self, segments, onset=None, duration=None, *, instrument=None,
                  controls=None, name=None):
-        parsed = [Segment.of(s) for s in segments]
-        if duration is None and parsed:
-            duration = sum(seg.duration for seg in parsed)
-        super().__init__(wraps=parsed, onset=onset, duration=duration, name=name)
+        run = BufferSegments(segments, instrument=instrument, controls=controls)
+        if duration is None and len(run):
+            duration = run.total
+        super().__init__(wraps=run.segments, onset=onset, duration=duration,
+                         name=name)
+        #: The windows themselves, as the general structure they are.
+        self.run = run
         self.instrument = instrument
         self.controls = dict(controls or {})
 
     @property
     def duration_unit(self) -> str:
-        """`SECONDS`, like the `Vector` this is the several-windows form of."""
-        return SECONDS
+        """The run's own -- `SECONDS`, because these windows are onto samples.
+        Asked of the data rather than stated here, which is what lets the same
+        element place a run of any material."""
+        return self.run.unit
 
     @property
     def segments(self) -> list:
-        """The segments, in reading order — the element's own data."""
-        return list(self.wraps or ())
+        """The segments, in reading order -- the element's own data."""
+        return self.run.segments
 
     def placed(self) -> list:
         """The segments with the second each one **starts at** inside this
         element: ``(offset, segment)`` pairs, which is what both rendering and
-        drawing lay out from. Seconds throughout, like the lengths they
-        accumulate."""
-        out, cursor = [], 0.0
-        for seg in self.segments:
-            out.append((cursor, seg))
-            cursor += seg.duration
-        return out
+        drawing lay out from."""
+        return self.run.placed()
 
     def to_events(self, tempo_map=None, at: float = 0.0) -> list:
         """One ``(offset, event)`` per segment: the instrument playing that
         buffer, from that frame, for that long. The offsets are relative to the
-        element, exactly as an aggregate's members' are — and in **beats**,
+        element, exactly as an aggregate's members' are -- and in **beats**,
         converted here from the seconds the windows are measured in, because
         what comes out of this is played by a clock.
 
@@ -507,52 +515,12 @@ class Segments(Element):
             # to the beat its own seconds reach from there.
             onset = end_beat(at, offset, SECONDS, tempo_map)
             end = end_beat(onset, seg.duration, SECONDS, tempo_map)
-            params = dict(instrument=self.instrument, buf=seg.buffer.bufnum,
-                          legato=1.0, amp=1.0, dur=end - onset)
-            if seg.start:
-                params["start"] = float(seg.start)
+            params = dict(instrument=self.instrument, legato=1.0, amp=1.0,
+                          dur=end - onset)
+            params.update(self.run.event_params(seg))
             params.update(self.controls)
             out.append((onset - at, SeqEvent(params)))
         return out
-
-
-class Segment:
-    """One segment of a `Segments`: which buffer, from which frame, for how
-    long. A window, named the same way a `Vector` element's is.
-
-    ``start`` is in frames and ``duration`` in **seconds** — one base for both,
-    and the base these samples are already in."""
-
-    __slots__ = ("buffer", "start", "duration")
-
-    def __init__(self, buffer, start=0.0, duration=None):
-        self.buffer = buffer
-        self.start = float(start)
-        self.duration = 0.0 if duration is None else float(duration)
-
-    @classmethod
-    def of(cls, spec) -> "Segment":
-        """A segment from a triple ``(buffer, start, duration)``, a pair
-        ``(buffer, duration)``, or one of these."""
-        if isinstance(spec, Segment):
-            return spec
-        items = tuple(spec)
-        if len(items) == 3:
-            return cls(items[0], items[1], items[2])
-        if len(items) == 2:
-            return cls(items[0], 0.0, items[1])
-        raise TypeError(
-            "a segment is (buffer, start, duration) or (buffer, duration), "
-            f"not {spec!r}"
-        )
-
-    def __repr__(self) -> str:
-        return (f"Segment({self.buffer!r}, start={self.start}, "
-                f"duration={self.duration})")
-
-    def __eq__(self, other) -> bool:
-        return (isinstance(other, Segment) and other.buffer is self.buffer
-                and other.start == self.start and other.duration == self.duration)
 
 
 class Track(Element):

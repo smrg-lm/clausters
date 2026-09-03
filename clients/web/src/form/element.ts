@@ -142,32 +142,15 @@ export function endBeat(at: number, length: number, unit: string, tempoMap: Temp
     return tempoMap.beatsAt(tempoMap.secsAt(at) + length);
 }
 
-/**
- * What a `Vector` or a `Segment` reads: a server `Buffer`, or the frozen
- * reference a document carried when this process holds no buffer for it.
- */
-export interface SourceLike {
-    readonly bufnum: number;
-    readonly lifetime?: string;
-    readonly generation?: number;
-    /**
-     * The shape a *held* buffer knows and a frozen reference does not: what a
-     * view draws with, and what an element with no stated duration is as long
-     * as. Optional because a document names a source by number and says nothing
-     * about its shape — a session reopened without its sources resolved has the
-     * number and nothing else.
-     */
-    readonly frames?: number;
-    readonly channels?: number;
-    readonly sampleRate?: number;
-    /**
-     * The **file these samples came from**, when they came from one. Carried and
-     * never acted on: what it is for is saying where the samples are when a
-     * piece is written down, which is exactly what a session's source table
-     * needs and the one thing a bare slot number cannot tell it.
-     */
-    readonly path?: string | null;
-}
+// The windows are **not** the arrangement's: a segment is about the material,
+// not about where it sits in a piece, so `Segment`, the runs and what they read
+// live beside the structures (`../segments.ts`) and this module reads them like
+// any other reader. Re-exported here because `Segments` is the element that
+// places one.
+export { BufferSegments, NoteSegments, Segment, SegmentRun } from "../segments.ts";
+export type { SegmentSpec, SourceLike, TimelineLike } from "../segments.ts";
+import { BufferSegments, Segment } from "../segments.ts";
+import type { SegmentSpec, SourceLike } from "../segments.ts";
 
 /** The optional label every element takes. */
 export interface ElementOptions {
@@ -517,63 +500,6 @@ export class Vector extends Element {
     }
 }
 
-/** One segment's spec, as {@link Segment.of} takes it. */
-export type SegmentSpec =
-    | Segment
-    | readonly [source: SourceLike, start: number, duration: number]
-    | readonly [source: SourceLike, duration: number];
-
-/**
- * One segment of a {@link Segments}: which buffer, from which frame, for how
- * long. A window, named the same way a {@link Vector} element's is.
- *
- * `start` is in frames and `duration` in **seconds** — one base for both, and
- * the base these samples are already in.
- */
-export class Segment {
-    readonly buffer: SourceLike;
-    readonly start: number;
-    readonly duration: number;
-
-    constructor(buffer: SourceLike, start = 0.0, duration: number | null = null) {
-        this.buffer = buffer;
-        this.start = Number(start);
-        this.duration = duration === null ? 0.0 : Number(duration);
-    }
-
-    /**
-     * A segment from a triple `[buffer, start, duration]`, a pair
-     * `[buffer, duration]`, or one of these.
-     */
-    static of(spec: SegmentSpec): Segment {
-        if (spec instanceof Segment) return spec;
-        const items = spec as readonly unknown[];
-        if (items.length === 3) {
-            return new Segment(
-                items[0] as SourceLike,
-                Number(items[1]),
-                Number(items[2]),
-            );
-        }
-        if (items.length === 2) {
-            return new Segment(items[0] as SourceLike, 0.0, Number(items[1]));
-        }
-        throw new TypeError(
-            "a segment is [buffer, start, duration] or [buffer, duration], " +
-                `not ${JSON.stringify(spec)}`,
-        );
-    }
-
-    equals(other: unknown): boolean {
-        return (
-            other instanceof Segment &&
-            other.buffer === this.buffer &&
-            other.start === this.start &&
-            other.duration === this.duration
-        );
-    }
-}
-
 /** {@link Segments}'s options. */
 export interface SegmentsOptions extends ElementOptions {
     instrument?: string | null;
@@ -632,48 +558,47 @@ export function take(
 }
 
 export class Segments extends Element {
+    /** The windows themselves, as the general structure they are. */
+    readonly run: BufferSegments;
     instrument: string | null;
     controls: EventControls;
 
     constructor(
-        segments: Iterable<SegmentSpec>,
+        segments: Iterable<SegmentSpec<SourceLike>>,
         onset: Beats = null,
         duration: Beats = null,
         { instrument = null, controls = null, name = null }: SegmentsOptions = {},
     ) {
-        const parsed = [...segments].map((s) => Segment.of(s));
+        const run = new BufferSegments(segments, { instrument, controls });
         let dur = beats(duration);
-        if (dur === null && parsed.length > 0) {
-            dur = parsed.reduce((sum, seg) => sum + seg.duration, 0.0);
-        }
-        super(parsed, onset, dur, false, { name });
+        if (dur === null && run.length > 0) dur = run.total;
+        super(run.segments, onset, dur, false, { name });
+        this.run = run;
         this.instrument = instrument ?? null;
         this.controls = { ...(controls ?? {}) };
     }
 
-    /** `SECONDS`, like the {@link Vector} this is the several-windows form of. */
+    /**
+     * The run's own — `SECONDS`, because these windows are onto samples. Asked
+     * of the data rather than stated here, which is what lets the same element
+     * place a run of any material.
+     */
     override get durationUnit(): TimeUnit {
-        return SECONDS;
+        return this.run.unit;
     }
 
     /** The segments, in reading order — the element's own data. */
-    get segments(): Segment[] {
-        return [...((this.wraps as Segment[] | null) ?? [])];
+    get segments(): Segment<SourceLike>[] {
+        return this.run.segments;
     }
 
     /**
      * The segments with the second each one **starts at** inside this element:
      * `[offset, segment]` pairs, which is what both rendering and drawing lay
-     * out from. Seconds throughout, like the lengths they accumulate.
+     * out from.
      */
-    placed(): [number, Segment][] {
-        const out: [number, Segment][] = [];
-        let cursor = 0.0;
-        for (const seg of this.segments) {
-            out.push([cursor, seg]);
-            cursor += seg.duration;
-        }
-        return out;
+    placed(): [number, Segment<SourceLike>][] {
+        return this.run.placed();
     }
 
     /**
@@ -706,12 +631,11 @@ export class Segments extends Element {
             const end = endBeat(onset, Number(seg.duration), SECONDS, map);
             const params: Record<string, unknown> = {
                 instrument: this.instrument,
-                buf: seg.buffer.bufnum,
                 legato: 1.0,
                 amp: 1.0,
                 dur: end - onset,
             };
-            if (seg.start) params.start = Number(seg.start);
+            Object.assign(params, this.run.eventParams(seg));
             Object.assign(params, this.controls);
             out.push([onset - at, new SeqEvent(params)]);
         }

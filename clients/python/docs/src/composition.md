@@ -307,6 +307,14 @@ phrase = Segments([(take_a, 0, 2.0),          # two seconds of one file...
                   instrument="take")
 ```
 
+The windows themselves are **not** the arrangement's: they are
+`clausters.segments` — `Segment` and the runs, `BufferSegments` over samples and
+`NoteSegments` over a timeline of events — because a window is about the
+material and not about where the material sits in a piece. The cut and the join
+are written once there, over lengths, and each kind supplies only what the base
+cannot know: how a position advances by a length, and what one window holds. So
+a phrase of notes cuts and joins exactly as a phrase of samples does.
+
 And the placement rule holds over it like everything else: shorten the clip and
 it draws and plays the segments it reaches; lengthen it and the rest come back.
 

@@ -51,6 +51,11 @@ The layers:
   itself; this is them opened to the script.
 - `clausters.form` — the **arrangement**: a recursive algebra of elements
   over the sequencing/def layers, for composing at any granularity.
+- `clausters.segments` — a **window onto material** and a run of windows read
+  as one: what a join assembles and a split takes apart, over samples
+  (`BufferSegments`) or over a timeline of events (`NoteSegments`). A window is
+  about the material, not about where it sits in a piece, which is why it is
+  here and not in the arrangement.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
 - `clausters.gui` — the `GuiHost` and GuiDef building for the Clausters GUI
@@ -74,7 +79,7 @@ The layers:
 """
 
 from . import _native
-from . import base, data, defs, errors, form, gui, ipc, launch, seq
+from . import base, data, defs, errors, form, gui, ipc, launch, segments, seq
 from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock
