@@ -28,6 +28,10 @@ mod items;
 
 use draw::*;
 pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
+// The arrow's width is the drawing's own business; a gesture asks `marker_at`
+// what was hit. The test that pins the reach to it is the one exception.
+#[cfg(test)]
+pub(crate) use draw::marker_w;
 use items::*;
 
 use std::collections::HashMap;

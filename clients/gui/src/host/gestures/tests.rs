@@ -2046,6 +2046,33 @@ fn ctrl_click_marks_the_ruler_and_a_click_on_a_marker_goes_to_its_time() {
         Some(time as f32),
         "the click went to the marker's time"
     );
+
+    // **The reach is the arrow plus the usual slop.** An arrow a character
+    // cell and a half wide is a target a few pixels across, and a hand that
+    // lands beside it has aimed at nothing else -- so a press within the slop
+    // is still this marker, and one clearly past it is the plain locate
+    // underneath. Without the slop the near miss became a head a few pixels
+    // off the mark, which only shows once the view is zoomed in.
+    let m = host.metrics_for(1);
+    let reach = (crate::host::frame::marker_w(m) * 0.5 + m.hit_slop) as f64;
+    let locate_at = |g: &mut Gestures, host: &mut Host, x: f64| {
+        g.press(host, &ctx, x, y);
+        let effects = g.release(host, &ctx, x, y);
+        emitted_args(&effects, 75).and_then(|args| match (args.first(), args.get(1)) {
+            (Some(OscType::String(tag)), Some(OscType::Float(v))) if tag == "locate" => Some(*v),
+            _ => None,
+        })
+    };
+    assert_eq!(
+        locate_at(&mut g, &mut host, at + reach - 1.0),
+        Some(time as f32),
+        "a press inside the slop is still the marker"
+    );
+    let past = locate_at(&mut g, &mut host, at + reach + 8.0);
+    assert!(
+        past.is_some_and(|v| v != time as f32),
+        "well past it, the ruler locates at the pixel"
+    );
 }
 
 fn lane_host() -> Host {

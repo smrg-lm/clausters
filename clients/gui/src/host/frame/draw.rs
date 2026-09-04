@@ -50,8 +50,8 @@ pub(crate) fn ruler_strip(rect: Rect, body: Rect) -> Rect {
     Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0))
 }
 
-/// **How wide a marker's arrow is** — and so how far from one a press still
-/// counts as landing on it ([`marker_at`]).
+/// **How wide a marker's arrow is** — the mark a press aims at, which
+/// [`marker_at`] reaches with the usual slop around it.
 ///
 /// It is **the ruler's own text cell**, not a number: a marker stands among the
 /// tick labels, so it is read against them, and a fixed pixel width came out
@@ -120,8 +120,22 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
 }
 
 /// **The marker a press at `x` landed on**, as an index into `markers` — the
-/// nearest whose arrow the point falls within. The gesture reads it from the
-/// geometry the drawing used, so what can be clicked is exactly what is drawn.
+/// nearest whose arrow the point is within reach of. The gesture reads it from
+/// the geometry the drawing used, so what can be clicked is what is drawn.
+///
+/// **The arrow is the target, and the label is not.** A marker's name is text
+/// on the tick row, as long as whatever it says, and making it clickable would
+/// give a marker called `intro` ten times the reach of one called `2` — the
+/// hand would be aiming at a word rather than at a moment. The arrow is the
+/// mark, so the arrow is what is aimed at.
+///
+/// Which is why the reach is the arrow **plus `hit_slop`**, the same allowance
+/// every other small target gets. The arrow is a character cell and a half
+/// wide because that is how it is *read* among the numbers; a hand that lands
+/// two pixels off it has not aimed at anything else, and without the slop the
+/// press falls through to the plain locate underneath and the head lands near
+/// the marker instead of on it — a miss that only shows up once you zoom in
+/// and see the two apart.
 pub(crate) fn marker_at(
     strip: Rect,
     nav: &View,
@@ -138,7 +152,7 @@ pub(crate) fn marker_at(
         }
         let mx = strip.x + strip.w * frac as f32;
         let d = (mx - x as f32).abs();
-        if d <= width * 0.5 && best.is_none_or(|(_, b)| d < b) {
+        if d <= width * 0.5 + m.hit_slop && best.is_none_or(|(_, b)| d < b) {
             best = Some((i, d));
         }
     }

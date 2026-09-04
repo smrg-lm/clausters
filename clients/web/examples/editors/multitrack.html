@@ -33,7 +33,9 @@ since a lane's own ruler is reserved out of that lane's height — it carries th
 piece's <b>markers</b> and the two selections, so a drag scrolls the axis,
 <b>Alt+drag</b> sweeps a time range, <b>Ctrl+click</b> adds a marker (numbered)
 or removes the one under the pointer, and a <b>click</b> puts the cursor where
-it points, or on a marker at exactly the moment it was placed at; the <b>lanes</b>
+it points, or on a marker's <b>arrow</b> at exactly the moment it was placed at
+(the arrow is what is aimed at; the label beside it is a name, not a target);
+the <b>lanes</b>
 in a scrolled stack; and a <b>transport</b> with a counter that reads the
 position in beats, seconds and samples at once.
 
@@ -65,7 +67,7 @@ it rather than on the next play.</div>
       /examples/editors/multitrack.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, seq } from "../../dist/index.js";
+      import { Event, Group, Session, gui, seq } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, out, sine,
       } from "../../dist/defs/index.js";
@@ -170,9 +172,22 @@ it rather than on the next play.</div>
         LANES.map((n) => [n, { mute: false, solo: false, level: 0.8 }]));
 
       /** A take: one tone filling the clip, as long as the clip looks. */
+      /**
+       * **What fills a clip sounds for all of it.** An `Event` frees its synth
+       * after `sustain`, which is `dur * legato` — and `legato` defaults to
+       * 0.8, the phrasing a *sequence of notes* wants: each one lets go a
+       * little before the next. A clip is not a note in a phrase. Left at the
+       * default, the `/node_free` lands at four fifths of the clip and the
+       * sound stops while the picture still shows a take and the playhead is
+       * still crossing it — 0.8 of a beat early on a four-beat clip, which is
+       * what "the sound ends before the clip does" was. So every event here
+       * says it outright: a clip's length **is** its sounding length.
+       */
+      const FULL = 1.0;
+
       const toneEvents = (freq, decay, amp = 0.2) => (beats, gain) =>
         [[0.0, new Event({
-          instrument: "multi_tone", freq, dur: beats,
+          instrument: "multi_tone", freq, dur: beats, legato: FULL,
           secs: beats / TEMPO, decay, amp: amp * gain,
         })]];
 
@@ -183,7 +198,7 @@ it rather than on the next play.</div>
           new Event({
             instrument: "multi_tone",
             freq: 440.0 * 2 ** ((pitch - 69) / 12),
-            dur: Math.min(dur, beats - start),
+            dur: Math.min(dur, beats - start), legato: FULL,
             secs: Math.min(dur, beats - start) / TEMPO,
             amp: amp * gain,
           }),
@@ -192,7 +207,8 @@ it rather than on the next play.</div>
       /** The spectral clip: one glide over the whole clip. */
       const sweepEvents = (amp = 0.18) => (beats, gain) =>
         [[0.0, new Event({
-          instrument: "multi_sweep", dur: beats, secs: beats / TEMPO, amp: amp * gain,
+          instrument: "multi_sweep", dur: beats, legato: FULL,
+          secs: beats / TEMPO, amp: amp * gain,
         })]];
 
       /**
@@ -207,16 +223,40 @@ it rather than on the next play.</div>
       }
 
       /** The arrangement as a `Timeline`, built fresh for every pass. */
-      function buildTimeline() {
+      /**
+       * The arrangement as a `Timeline` the playhead can scan. Every event is
+       * aimed at `target`, the group the pass owns: that is what lets the
+       * *next* pass end this one's sound rather than leave it ringing where
+       * the arrangement no longer says anything is.
+       */
+      function buildTimeline(target) {
         const tl = new seq.Timeline();
         for (const spec of Object.values(CLIPS)) {
           const gain = laneGain(spec.lane);
           if (gain <= 0.0) continue;
           for (const [rel, event] of spec.events(spec.beats, gain)) {
+            event.target = target;
             tl.add(spec.at + rel, event);
           }
         }
         return tl;
+      }
+
+      /** The group the pass in flight plays into — its voices, as one handle. */
+      let passGroup = null;
+
+      /**
+       * Free what the last pass started. Stopping a playhead only stops the
+       * *scan* (`Playhead.stop` says so: what is already rendered keeps
+       * sounding, its release scheduled), which is right for a library and
+       * wrong for a driver that just moved the clip those voices came from.
+       * Owning them as a group is what lets this page say the other thing.
+       */
+      function silence() {
+        if (passGroup !== null) {
+          passGroup.free();
+          passGroup = null;
+        }
       }
 
       /** Where the last clip ends, read on each use. */
@@ -353,9 +393,18 @@ it rather than on the next play.</div>
          * Begin a pass at beat `at`. The transport calls this on **every** play,
          * so the timeline is rebuilt from the arrangement each time — which is
          * how a clip dragged a beat later, or a lane muted, is heard now.
+         *
+         * And the pass gets a **group of its own**, the last one freed as this
+         * one begins: an edit re-cues the piece, so what the previous
+         * arrangement had already started has to end here — otherwise a clip
+         * dragged away keeps sounding for as long as its note lasts, in the
+         * place it just left.
          */
         const startPass = (at) => {
-          const head = new seq.Playhead(buildTimeline(), session.clock, server);
+          silence();
+          passGroup = new Group({ server });
+          const head = new seq.Playhead(
+            buildTimeline(passGroup.id), session.clock, server);
           head.play({ at });
           return head;
         };
@@ -454,7 +503,12 @@ it rather than on the next play.</div>
           if (transport.playing) transport.pause();
           else transport.play(server);
         });
-        win.widget("b_stop").onClick(() => transport.stop());
+        // A stop that leaves the last clip ringing over the rewound cursor is
+        // a pause with a different picture.
+        win.widget("b_stop").onClick(() => {
+          transport.stop();
+          silence();
+        });
         win.widget("b_rew").onClick(() => transport.locate(0.0));
         // The ruler's two events: a locate, and the markers after a hand
         // changed them. A marker edit arrives as the **whole list** -- `time

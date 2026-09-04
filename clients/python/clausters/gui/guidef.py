@@ -2205,9 +2205,12 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     and a selection band are. **Ctrl+click** on the ruler adds one, *numbered*,
     or removes the one under the pointer, and a **click** on one puts the
     transport at the exact time it was placed at rather than at the pixel the
-    hand landed on. An edit flows back as a flat ``"markers"`` event (``time
-    label color …``): the time and the text are what the owner is handed, and
-    what it keeps against its own document.
+    hand landed on. **What is clicked is the arrow**, with the usual slop
+    around it: the label is text on the tick row, and making a word the target
+    would give a marker called ``intro`` ten times the reach of one called
+    ``2``. An edit flows back as a flat ``"markers"`` event (``time label color
+    …``): the time and the text are what the owner is handed, and what it keeps
+    against its own document.
 
     **The ruler is where the time range is swept.** Two selections live at once
     over a stack of lanes or a roll — the **data** one (the clips, the boxes,

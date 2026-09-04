@@ -19,8 +19,9 @@ The other GUI examples each open *one* view. This one composes a whole
    group, and comes back where it was. It carries the piece's **markers** and
    the two selections: a drag scrolls the axis, **Alt+drag** sweeps a time
    range, **Ctrl+click** adds a marker (numbered) or removes the one under the
-   pointer, and a **click** puts the cursor where it points — or, on a marker,
-   at exactly the moment that marker was placed at;
+   pointer, and a **click** puts the cursor where it points — or, on a marker's
+   **arrow**, at exactly the moment that marker was placed at (the arrow is
+   what is aimed at; the label beside it is a name, not a target);
 4. the **editor** — three lanes inside a vertical `scroll` (``axis="y"``,
    ``zoom=False``: the wheel scrolls the stack, the time axis never moves), each
    lane a different kind of resource on one shared axis:
@@ -61,7 +62,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from clausters import Session
+from clausters import Group, Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.gui import (Transport, button, clip, label, layout, menu, samples_to_file, scroll, slider, timeruler, toggle, track, view)
 from clausters.seq import Event, Playhead, Timeline
@@ -218,13 +219,26 @@ server.sync()
 # two things that drift; this is one thing seen twice.
 
 # %%
+#: **What fills a clip sounds for all of it.** An `clausters.seq.Event` frees
+#: its synth after ``sustain``, which is ``dur * legato`` — and ``legato``
+#: defaults to 0.8, the phrasing a *sequence of notes* wants: each one lets go
+#: a little before the next. A clip is not a note in a phrase. Left at the
+#: default, the ``/node_free`` lands at four fifths of the clip and the sound
+#: stops while the picture still shows a take and the playhead is still
+#: crossing it — 0.8 of a beat early on a four-beat clip, which is what
+#: "the sound ends before the clip does" was. So every event here says it
+#: outright: a clip's length **is** its sounding length.
+FULL = 1.0
+
+
 def tone_events(freq: float, decay: float, amp: float = 0.2):
     """A take: one tone filling the clip. ``secs`` is the clip's own length, so a
     resized clip sounds as long as it looks — and ``decay`` is the one the file
     was written with, so it sounds the shape it draws."""
     def events(beats, gain):
         return [(0.0, Event(instrument="multi_tone", freq=freq, dur=beats,
-                            secs=beats / TEMPO, decay=decay, amp=amp * gain))]
+                            legato=FULL, secs=beats / TEMPO, decay=decay,
+                            amp=amp * gain))]
     return events
 
 
@@ -234,7 +248,7 @@ def lead_events(notes, amp: float = 0.14):
     def events(beats, gain):
         return [(start, Event(instrument="multi_tone",
                               freq=440.0 * 2 ** ((pitch - 69) / 12),
-                              dur=min(dur, beats - start),
+                              dur=min(dur, beats - start), legato=FULL,
                               secs=min(dur, beats - start) / TEMPO, amp=amp * gain))
                 for start, dur, pitch in notes if start < beats]
     return events
@@ -243,7 +257,7 @@ def lead_events(notes, amp: float = 0.14):
 def sweep_events(amp: float = 0.18):
     """The spectral clip: one glide over the whole clip."""
     def events(beats, gain):
-        return [(0.0, Event(instrument="multi_sweep", dur=beats,
+        return [(0.0, Event(instrument="multi_sweep", dur=beats, legato=FULL,
                             secs=beats / TEMPO, amp=amp * gain))]
     return events
 
@@ -274,15 +288,20 @@ def lane_gain(lane: str) -> float:
     return st["level"]
 
 
-def build_timeline() -> Timeline:
+def build_timeline(target: int) -> Timeline:
     """The arrangement as a `Timeline` the playhead can scan — built fresh for
-    every pass, so it is always the piece as it now stands."""
+    every pass, so it is always the piece as it now stands.
+
+    Every event is aimed at ``target``, the group the pass owns: that is what
+    lets the *next* pass end this one's sound rather than leave it ringing
+    where the arrangement no longer says anything is."""
     tl = Timeline()
     for spec in CLIPS.values():
         gain = lane_gain(spec["lane"])
         if gain <= 0.0:
             continue
         for rel, event in spec["events"](spec["beats"], gain):
+            event["target"] = target
             tl.add(spec["at"] + rel, event)
     return tl
 
@@ -445,11 +464,35 @@ print(f"opened window {win} -- menu bar, toolbar, ruler, {3} lanes, transport")
 # ``ids`` are read on each use, so the three lanes all carry the line.
 
 # %%
+#: The group the pass in flight plays into — its voices, as one handle.
+pass_group = None
+
+
+def silence():
+    """Free what the last pass started. Stopping a playhead only stops the
+    *scan* (`clausters.seq.Playhead.stop` says so: what is already rendered
+    keeps sounding, its release scheduled), which is right for a library and
+    wrong for a driver that just moved the clip those voices came from. Owning
+    them as a group is what lets this script say the other thing."""
+    global pass_group
+    if pass_group is not None:
+        pass_group.free()
+        pass_group = None
+
+
 def start_pass(at: float, **kw):
     """Begin a pass at beat ``at``. The transport calls this on **every** play,
     so the timeline is rebuilt from the arrangement each time — which is how a
-    clip dragged a beat later, or a lane muted, is heard on the next play."""
-    head = Playhead(build_timeline(), session.clock, server)
+    clip dragged a beat later, or a lane muted, is heard on the next play.
+
+    And the pass gets a **group of its own**, the last one freed as this one
+    begins: an edit re-cues the piece, so what the previous arrangement had
+    already started has to end here — otherwise a clip dragged away keeps
+    sounding for as long as its note lasts, in the place it just left."""
+    global pass_group
+    silence()
+    pass_group = Group(server=server)
+    head = Playhead(build_timeline(pass_group.id), session.clock, server)
     head.play(at=at)
     return head
 
@@ -629,7 +672,14 @@ def on_ruler(tag, *payload):
 # The transport buttons act on their **click**: the press completed on the
 # button, so sliding off before letting go cancels it.
 win["b_play"].on_click(play_pause)
-win["b_stop"].on_click(transport.stop)
+def stop():
+    """Rewind, and end what is sounding — a stop that leaves the last clip
+    ringing over the rewound cursor is a pause with a different picture."""
+    transport.stop()
+    silence()
+
+
+win["b_stop"].on_click(stop)
 win["b_rew"].on_click(lambda: transport.locate(0.0))
 win["ruler"].on_event(on_ruler)
 
