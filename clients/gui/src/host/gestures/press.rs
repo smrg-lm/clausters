@@ -639,7 +639,8 @@ impl Gestures {
                     // grabbing an unselected one lets go of it and moves
                     // singly. A trim is always one clip's: two clips of
                     // different lengths have no one edge to pull.
-                    let block = clip_block(host, def_id, h.lane, h.id, h.part);
+                    let stack = lane_stack(host, ctx, h.lane);
+                    let block = clip_block(host, def_id, &stack, h.lane, h.id, h.part);
                     if block.is_empty() && interact::clear_clip_selection(host, def_id) {
                         out.push(GestureEffect::Redraw(def_id));
                     }
@@ -664,7 +665,7 @@ impl Gestures {
                         contents: h.contents,
                         grid: snap,
                         block,
-                        stack: lane_stack(host, ctx, h.lane),
+                        stack,
                     });
                 }
             }
@@ -691,38 +692,60 @@ impl Gestures {
     }
 }
 
-/// **The block a clip press takes hold of**: the press-time
-/// `(index, offset, row)` of every selected clip on `lane_id`, the grabbed one
-/// first — the snapshot shape `placement::move_block` moves, and the same one a
-/// roll builds for a block of notes.
+/// **The block a clip press takes hold of**: per lane of the stack, the
+/// press-time `(index, offset, row)` of every selected clip on it — the
+/// snapshot shape `placement::move_block` moves, and the same one a roll builds
+/// for a block of notes. The grabbed clip's lane leads, and the grabbed clip
+/// leads inside it, because it is the snap anchor the rest keep their distance
+/// from.
+///
+/// **A selection is not one lane's**, so neither is the block: a marquee down
+/// the stack takes clips of several lanes and grabbing any one of them moves
+/// all of them, which is the rule the patcher already states for a set of boxes
+/// on a plane. A lane of the stack holding nothing selected contributes
+/// nothing.
 ///
 /// Empty when the grabbed clip is not selected (the press moves it alone) or
-/// when an **edge** was grabbed: a trim is one clip's.
+/// when an **edge** was grabbed: a trim is one clip's, since two clips of
+/// different lengths have no one edge to pull.
 fn clip_block(
     host: &mut Host,
     def_id: i32,
+    stack: &LaneStack,
     lane_id: i32,
     clip_id: i32,
     part: interact::Part,
-) -> Vec<(usize, f64, f32)> {
+) -> super::nav::ClipBlock {
     if part != interact::Part::Body {
         return Vec::new();
     }
-    let Some(lane) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(lane_id))
-    else {
-        return Vec::new();
-    };
-    let clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
-    let Some(grabbed) = clips.index_of(clip_id).filter(|&i| clips.is_selected(i)) else {
-        return Vec::new();
-    };
-    let row = Placements::row(&clips, grabbed);
-    // The grabbed clip leads: it is the snap anchor, and the rest keep their
-    // distance from it.
-    std::iter::once(grabbed)
-        .chain((0..clips.len()).filter(|&i| i != grabbed && clips.is_selected(i)))
-        .map(|i| (i, clips.placement(i).offset, row))
-        .collect()
+    // The grabbed lane first, then the rest of the stack in order; a stack that
+    // was never read is the grabbed lane alone.
+    let lanes = std::iter::once(lane_id)
+        .chain(stack.ids.iter().copied().filter(|id| *id != lane_id))
+        .collect::<Vec<i32>>();
+    let mut out: super::nav::ClipBlock = Vec::new();
+    for lane in lanes {
+        let Some(w) = host.window_def_mut(def_id).and_then(|t| t.find_mut(lane)) else {
+            continue;
+        };
+        let clips = crate::host::graphics::track::LaneClips::of(w, 0.0);
+        // The grabbed clip leads its own lane; the others are in drawing order.
+        let grabbed = (lane == lane_id)
+            .then(|| clips.index_of(clip_id).filter(|&i| clips.is_selected(i)))
+            .flatten();
+        if lane == lane_id && grabbed.is_none() {
+            // The press moves an unselected clip alone, whatever else is held.
+            return Vec::new();
+        }
+        let held: super::nav::HeldClips = grabbed
+            .into_iter()
+            .chain((0..clips.len()).filter(|&i| Some(i) != grabbed && clips.is_selected(i)))
+            .map(|i| (i, clips.placement(i).offset, Placements::row(&clips, i)))
+            .collect();
+        if !held.is_empty() {
+            out.push((lane, held));
+        }
+    }
+    out
 }

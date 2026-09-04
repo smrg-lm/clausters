@@ -324,9 +324,10 @@ pub struct TimelineGroups {
     /// nothing (see [`Host::selection_addressee`]). Last selection wins,
     /// because it is the only ordering a window has over its views.
     last_selected: Option<i32>,
-    /// **Which lanes a sweep crossed**, for the groups where a hand has said
-    /// so: the vertical half of a marquee over a lane stack, as the lanes'
-    /// widget ids.
+    /// **Which lanes a sweep crossed and how much of each**, for the groups
+    /// where a hand has said so: the vertical half of a marquee over a lane
+    /// stack, as `(lane id, t0, t1)` — the fractions of that lane's own
+    /// rectangle the rectangle covered.
     ///
     /// The time span is the group's — it is the loop region, and every linked
     /// view draws it — but *how far down the stack the rectangle reached* is
@@ -341,7 +342,7 @@ pub struct TimelineGroups {
     /// every selection goes through drops it.
     ///
     /// [`Bands`]: crate::host::bands::Bands
-    sel_lanes: HashMap<GroupKey, Vec<i32>>,
+    sel_lanes: HashMap<GroupKey, Vec<(i32, f32, f32)>>,
 }
 
 impl TimelineGroups {
@@ -367,20 +368,26 @@ impl TimelineGroups {
 
     /// The lanes the sweep that wrote group `key`'s selection crossed, or
     /// `None` when no sweep did — the whole stack, in that case.
-    pub fn selection_lanes(&self, key: GroupKey) -> Option<&[i32]> {
+    pub fn selection_lanes(&self, key: GroupKey) -> Option<&[(i32, f32, f32)]> {
         self.sel_lanes.get(&key).map(Vec::as_slice)
     }
 
-    /// **Whether lane `id` is one the selection was swept over**, which is
-    /// whether it draws the band.
+    /// **How much of lane `id` the sweep covered**, as the vertical edges of
+    /// the band it draws inside `rect` — its own rectangle, which is what the
+    /// fractions were measured against.
     ///
-    /// True for every member of a group no sweep restricted, so a view that is
-    /// not a lane of the swept stack — a waveform linked to it, a roll — is
-    /// unaffected: it asks with its own id and no vertical range names it.
-    pub fn lane_shows_selection(&self, key: GroupKey, id: i32) -> bool {
-        self.sel_lanes
-            .get(&key)
-            .is_none_or(|lanes| lanes.contains(&id))
+    /// `Some(whole rect)` for every member of a group no sweep restricted, so a
+    /// view that is not a lane of the swept stack — a waveform linked to it, a
+    /// standalone roll — is unaffected: it asks with its own id, no vertical
+    /// range names it, and it draws the band the way it always did. `None` is a
+    /// lane the rectangle never reached, which draws nothing.
+    pub fn lane_selection_span(&self, key: GroupKey, id: i32, rect: Rect) -> Option<(f64, f64)> {
+        let whole = (rect.y as f64, (rect.y + rect.h) as f64);
+        let Some(lanes) = self.sel_lanes.get(&key) else {
+            return Some(whole);
+        };
+        let (_, t0, t1) = lanes.iter().find(|(lane, ..)| *lane == id)?;
+        Some(((rect.y + t0 * rect.h) as f64, (rect.y + t1 * rect.h) as f64))
     }
 
     /// **The axis widget `id` was placed on**, as the coordinate system an
@@ -812,13 +819,36 @@ impl Host {
     pub fn select_timeline(&mut self, id: i32, a: f64, b: f64) -> Option<(f64, f64, Vec<i32>)> {
         let key = self.timeline_key(id)?;
         let total = self.timeline_total(key) as f64;
-        let (a, b) = (a.clamp(0.0, total), b.clamp(0.0, total));
+        // **A far edge belongs to data, and a lane holds none.** A view of a
+        // signal stops at its last sample because there is nothing after it to
+        // select -- neither played nor cut. A lane's extent is only where its
+        // clips happen to end: the empty bars after them are ordinary,
+        // addressable time (a span to paste into, a region to loop over while
+        // writing), so a rectangle drawn across them is a rectangle, and
+        // stopping it at the last clip is the axis answering a question about
+        // its contents.
+        let far = if self.is_lane(id) {
+            f64::INFINITY
+        } else {
+            total
+        };
+        let (a, b) = (a.clamp(0.0, far), b.clamp(0.0, far));
         // The samples the sweep passed over, never the space between two of
-        // them (see `snap_selection`), and never past the last one there is.
+        // them (see `snap_selection`), and never past the last one there is --
+        // where there is a last one.
         let (start, len) = snap_selection(a, b);
-        let len = len.min((total - start).max(0.0));
+        let len = len.min((far - start).max(0.0));
         let roots = self.set_timeline_selection(id, Some(start), Some(len));
         Some((start, len, roots))
+    }
+
+    /// Whether widget `id` is a **lane** of a multitrack, which is the one
+    /// timeline view whose axis is not bounded by anything it holds.
+    fn is_lane(&self, id: i32) -> bool {
+        self.window_defs.values().any(|tree| {
+            tree.find(id)
+                .is_some_and(|w| matches!(w.kind, crate::host::widget::WidgetKind::Track { .. }))
+        })
     }
 
     /// Sets widget `id`'s group selection from the `/gui_set` `sel_start`/
@@ -871,7 +901,7 @@ impl Host {
     /// Called after the selection itself, which is what drops any previous
     /// range: the two are one gesture's two axes, and the horizontal one is
     /// the door they share.
-    pub fn select_lanes(&mut self, id: i32, lanes: Vec<i32>) {
+    pub fn select_lanes(&mut self, id: i32, lanes: Vec<(i32, f32, f32)>) {
         let Some(key) = self.timeline_key(id) else {
             return;
         };
@@ -1041,7 +1071,7 @@ impl Host {
         // range, and the stack draws the span the way it did before a hand
         // ever swept it.
         self.timelines.sel_lanes.retain(|key, lanes| {
-            lanes.retain(|id| members.iter().any(|m| m.key == *key && m.id == *id));
+            lanes.retain(|(id, ..)| members.iter().any(|m| m.key == *key && m.id == *id));
             !lanes.is_empty()
         });
         // **What the axis was showing survives a redefine.** A redefine is how a

@@ -2255,6 +2255,159 @@ fn a_swept_lane_hands_its_clips_to_one_block_move() {
     );
 }
 
+/// **A block is a selection's, not a lane's.** A marquee down the stack takes
+/// clips of several lanes, so grabbing any one of them moves all of them --
+/// the patcher's rule for a set of boxes on a plane, one level up. The lane
+/// each clip is on is untouched: a block travels in time, and the vertical
+/// half of the rectangle said which clips, not where they go.
+#[test]
+fn a_block_grabbed_on_one_lane_moves_the_clips_held_on_the_others() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","snap":100.0,"children":[
+                {"id":91,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":95,"type":"field","label":"three","link":"a","snap":100.0,"children":[
+                {"id":96,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let sweeping = GestureCtx {
+        alt: true,
+        ..GestureCtx::new(1, 800, 300)
+    };
+    let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
+    let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
+    let (y0, y1) = (
+        (first.y + first.h * 0.5) as f64,
+        (second.y + second.h * 0.5) as f64,
+    );
+    g.press(&mut host, &sweeping, from, y0);
+    g.drag_to(&mut host, &sweeping, to, y1);
+    g.release(&mut host, &sweeping, to, y1);
+
+    // Grab the clip on the first lane and carry it 400 samples to the right.
+    let step = (first.w as f64) * 4.0 / 3.0;
+    let grab = (first.x + first.w * 0.5) as f64;
+    g.press(&mut host, &ctx, grab, y0);
+    g.drag_to(&mut host, &ctx, grab + step, y0);
+    let effects = g.release(&mut host, &ctx, grab + step, y0);
+    let offset =
+        |host: &Host, id: i32| match host.window_def(1).and_then(|t| t.find(id)).map(|w| &w.kind) {
+            Some(WidgetKind::Clip { offset, .. }) => *offset,
+            _ => panic!("not a clip"),
+        };
+    assert!(
+        (offset(&host, 81) - 800.0).abs() < 1.0 && (offset(&host, 91) - 800.0).abs() < 1.0,
+        "the held clips moved as one: {} {}",
+        offset(&host, 81),
+        offset(&host, 91),
+    );
+    assert!(
+        (offset(&host, 96) - 400.0).abs() < 1.0,
+        "and the lane nobody swept stayed where it was",
+    );
+    // The clip stayed on its own lane: a block moves in time only.
+    assert!(
+        host.window_def(1)
+            .and_then(|t| t.find(90))
+            .is_some_and(|w| w.children.iter().any(|c| c.id == Some(91))),
+        "the clip is still a child of the lane it was held on",
+    );
+    // **One message for the gesture**, addressed to the lane the hand was on
+    // and naming every clip it moved, wherever that clip sits: one edit, one
+    // transaction, one step to undo. One `"clips"` per lane would be an undo
+    // entry per lane, which is the very thing the plural payload avoids.
+    let args = first_emit(&effects, 80).expect("the block reported where the hand was");
+    assert_eq!(args[0], OscType::String("clips".into()));
+    assert_eq!(args[1], OscType::Int(81));
+    assert_eq!(args[5], OscType::Int(91), "the clip held on the other lane");
+    assert_eq!(args.len(), 9, "four numbers per clip: {args:?}");
+    assert!(
+        first_emit(&effects, 90).is_none() && first_emit(&effects, 81).is_none(),
+        "and nothing reports a second time",
+    );
+}
+
+/// **`q` rounds off the same set the hand carries.** The key is the block
+/// move's other half -- the selection is where the pointer has been, which is
+/// why it is a key and not a gesture -- so it answers for every lane the
+/// selection is on, not for the one the cursor happens to sit over.
+#[test]
+fn quantize_rounds_off_the_held_clips_of_every_lane() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":430.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","snap":100.0,"children":[
+                {"id":91,"type":"field","offset":380.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":95,"type":"field","label":"three","link":"a","snap":100.0,"children":[
+                {"id":96,"type":"field","offset":430.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let sweeping = GestureCtx {
+        alt: true,
+        ..GestureCtx::new(1, 800, 300)
+    };
+    let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
+    let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
+    let (y0, y1) = (
+        (first.y + first.h * 0.5) as f64,
+        (second.y + second.h * 0.5) as f64,
+    );
+    g.press(&mut host, &sweeping, from, y0);
+    g.drag_to(&mut host, &sweeping, to, y1);
+    g.release(&mut host, &sweeping, to, y1);
+    let effects = g
+        .clip_quantize(&mut host, &ctx, to, y0)
+        .expect("the cursor is over a lane and something is held");
+    let offset =
+        |host: &Host, id: i32| match host.window_def(1).and_then(|t| t.find(id)).map(|w| &w.kind) {
+            Some(WidgetKind::Clip { offset, .. }) => *offset,
+            _ => panic!("not a clip"),
+        };
+    assert!(
+        (offset(&host, 81) - 400.0).abs() < 1.0 && (offset(&host, 91) - 400.0).abs() < 1.0,
+        "both held clips landed on the grid: {} {}",
+        offset(&host, 81),
+        offset(&host, 91),
+    );
+    assert!(
+        (offset(&host, 96) - 430.0).abs() < 1.0,
+        "and the clip nobody was holding kept its place",
+    );
+    let args = first_emit(&effects, 80).expect("reported where the cursor was");
+    assert_eq!(args[0], OscType::String("clips".into()));
+    assert_eq!(args.len(), 9, "both clips in one message: {args:?}");
+}
+
+/// **A lane's far edge is not where its clips end.** A signal view stops a
+/// selection at its last sample because there is nothing after it to select;
+/// a lane holds no data of its own, and the empty bars after the last clip are
+/// ordinary time -- a span to paste into, a region to loop over while writing.
+/// So a rectangle drawn across them is the rectangle that was drawn.
+#[test]
+fn a_sweep_over_a_lane_does_not_stop_at_the_last_clip() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":0.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let (start, len, _) = host
+        .select_timeline(80, 100.0, 2000.0)
+        .expect("the lane is in a group");
+    assert_eq!(
+        (start, len),
+        (100.0, 1901.0),
+        "the span the hand drew, past the end of the only clip",
+    );
+}
+
 /// **A marquee crosses lanes, because the stack is its second axis.** One hand
 /// dragging down the stack means every clip it passed over, which is the roll's
 /// own gesture one level up: a semitone row and a lane are one structure, and
@@ -2348,7 +2501,10 @@ fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
     };
     let painted = |host: &Host, id: i32| {
         let key = host.timeline_key(id).expect("a lane is in a group");
-        host.timelines().lane_shows_selection(key, id)
+        let rect = placed_rect(host, &ctx, id);
+        host.timelines()
+            .lane_selection_span(key, id, rect)
+            .map(|(y0, y1)| (y0 as f32, y1 as f32, rect))
     };
     let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
     let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
@@ -2359,19 +2515,32 @@ fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
     g.press(&mut host, &sweeping, from, y0);
     g.drag_to(&mut host, &sweeping, to, y1);
     g.release(&mut host, &sweeping, to, y1);
+    let (top_y0, top_y1, top) = painted(&host, 80).expect("the lane the sweep started in");
+    let (low_y0, low_y1, low) = painted(&host, 90).expect("the lane it ended in");
+    assert!(painted(&host, 95).is_none(), "and not the one below it");
+    // **And it is the rectangle, not the lanes it touched**: the sweep started
+    // half way down the first lane and ended half way down the second, so each
+    // of them is drawn the half the hand covered -- the patcher's marquee over
+    // a box it half covers, one level up.
     assert!(
-        painted(&host, 80) && painted(&host, 90),
-        "the two lanes the rectangle reached",
+        top_y0 > top.y + 1.0 && (top_y1 - (top.y + top.h)).abs() < 1.0,
+        "from where the hand pressed to the bottom of that lane: {top_y0}..{top_y1} in {top:?}",
     );
-    assert!(!painted(&host, 95), "and not the one below it");
+    assert!(
+        (low_y0 - low.y).abs() < 1.0 && low_y1 < low.y + low.h - 1.0,
+        "from the top of the next lane to where the hand let go: {low_y0}..{low_y1} in {low:?}",
+    );
 
     // The span written from the wire is the whole stack's again: nobody chose
     // a vertical range, so there is none to draw.
     host.set_timeline_selection(80, Some(100.0), Some(200.0));
-    assert!(
-        painted(&host, 80) && painted(&host, 90) && painted(&host, 95),
-        "a selection no sweep drew restricts no lane",
-    );
+    for id in [80, 90, 95] {
+        let (y0, y1, rect) = painted(&host, id).expect("a selection no sweep drew restricts none");
+        assert!(
+            (y0 - rect.y).abs() < 0.01 && (y1 - (rect.y + rect.h)).abs() < 0.01,
+            "and each lane draws the whole of its own band",
+        );
+    }
 }
 
 /// **A clip changes lane by the call a note changes row with.** One vertical

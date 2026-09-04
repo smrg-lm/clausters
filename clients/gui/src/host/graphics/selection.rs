@@ -55,6 +55,15 @@ pub enum Vertical {
     },
     /// A roll's pitch window: the `lo`/`hi` its rows are drawn over.
     Pitch { lo: f32, hi: f32 },
+    /// **The stack of lanes**, seen from one lane of it: the restriction is
+    /// already this widget's own window pixels, because the rectangle was drawn
+    /// across several widgets and only the stack knows where its edges fell.
+    ///
+    /// The lane is the one view whose second axis is not its own — it is the
+    /// column of lanes it stands in — so it is the one whose vertical range
+    /// cannot be expressed in anything it measures. Everything else is the same:
+    /// a band the whole height owns two edges, a cut one owns four.
+    Stack,
 }
 
 /// The x range a sample span covers in `body`, or `None` when it covers no
@@ -99,11 +108,26 @@ pub fn bands(
     // per lane: the two look the same and only the first is honest about what
     // the hand did, which is what decides the edges below.
     let whole = vec![(body.y, body.h)];
+    // **The stack answers first**, because it is the one axis whose range is
+    // already this widget's pixels: the caller knows where the rectangle's
+    // edges fell across several lanes and there is no mapping left to do. It
+    // is also the one whose *empty* range is a real answer -- a lane the
+    // rectangle only touched at its edge is drawn nothing -- rather than the
+    // "nothing restricts this" the filter below reads an empty pair as.
+    if vertical == Vertical::Stack {
+        let Some((min, max)) = restriction else {
+            return whole;
+        };
+        return clipped(body, min as f32, max as f32)
+            .map(|band| vec![band])
+            .unwrap_or_default();
+    }
     let Some((min, max)) = restriction.filter(|(a, b)| b > a) else {
         return whole;
     };
     match vertical {
         Vertical::Whole => whole,
+        Vertical::Stack => unreachable!("answered above"),
         Vertical::Pitch { lo, hi } => {
             // A pitch axis is discrete: the band covers the *rows* it holds, so
             // it runs from the top edge of the highest to the bottom edge of the

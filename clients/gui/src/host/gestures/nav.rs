@@ -341,6 +341,12 @@ pub(super) fn pan_timeline(
 pub(super) struct LaneStack {
     /// The lanes' widget ids, top to bottom.
     pub(super) ids: Vec<i32>,
+    /// Each lane's **own** rectangle as `(y, height)` in window pixels, beside
+    /// its id. Not the same as its band: a band runs to the next lane's top so
+    /// that nothing between two lanes is outside the stack, while this is the
+    /// lane itself — what a swept rectangle is measured against when the
+    /// picture has to show the edges the hand drew rather than whole lanes.
+    pub(super) rects: Vec<(f32, f32)>,
     /// Where the first lane's rectangle starts, in window pixels.
     pub(super) top: f32,
     /// The bands the lanes make, measured from `top`. A gap between two lanes
@@ -358,18 +364,35 @@ impl LaneStack {
     }
 
     /// The lanes a **vertical span** touches, top to bottom — what a marquee
-    /// sweeping down the stack catches.
+    /// sweeping down the stack catches — each with **how much of it the span
+    /// covered**, as the fractions `(t0, t1)` of the lane's own rectangle.
     ///
     /// [`Bands::window`] is the same call a roll makes for the semitone rows a
     /// rectangle crosses, which is the point of one vertical axis: a lane and a
     /// row are one structure, so sweeping across either is one piece of code.
     /// A span that touches nothing (a stack that was never read, a sweep above
     /// the first lane) catches nothing.
-    pub(super) fn across(&self, y0: f64, y1: f64) -> Vec<i32> {
+    ///
+    /// **The fractions are what keeps the picture the hand's.** Which lanes
+    /// were crossed is what the *take* needs, and a lane grazed at its last
+    /// pixel is crossed; but a band painted over the whole of it would be the
+    /// rectangle snapping to lanes, which is not the rectangle that was drawn.
+    /// Fractions rather than pixels because the lanes move afterwards — the
+    /// stack scrolls, the window resizes — and a range in window pixels would
+    /// stay where the screen was.
+    pub(super) fn across(&self, y0: f64, y1: f64) -> Vec<(i32, f32, f32)> {
         let range = self
             .bands
             .window(y0 as f32 - self.top, y1 as f32 - self.top);
-        self.ids.get(range).map(<[i32]>::to_vec).unwrap_or_default()
+        let (y0, y1) = (y0 as f32, y1 as f32);
+        range
+            .filter_map(|i| {
+                let (&id, &(y, h)) = (self.ids.get(i)?, self.rects.get(i)?);
+                let h = h.max(f32::MIN_POSITIVE);
+                let t = |v: f32| ((v - y) / h).clamp(0.0, 1.0);
+                Some((id, t(y0), t(y1)))
+            })
+            .collect()
     }
 }
 
@@ -400,10 +423,19 @@ pub(super) fn lane_stack(host: &Host, ctx: &GestureCtx, lane_id: i32) -> LaneSta
         .collect();
     LaneStack {
         ids: lanes.iter().map(|(_, _, id)| *id).collect(),
+        rects: lanes.iter().map(|(y, h, _)| (*y, *h)).collect(),
         top,
         bands: Bands::table(heights),
     }
 }
+
+/// **The press-time snapshot of the clips one lane holds**, in the shape
+/// [`placement::move_block`] moves: `(index, offset, row)` per held clip.
+pub(super) type HeldClips = Vec<(usize, f64, f32)>;
+
+/// **A block of held clips, per lane** — what one hand carries when it grabs
+/// one of a selection a marquee took across the stack.
+pub(super) type ClipBlock = Vec<(i32, HeldClips)>;
 
 /// One in-flight clip drag, as the placement math needs it: the press-time
 /// snapshot plus the lane geometry the cursor maps through.
@@ -424,10 +456,15 @@ pub(super) struct ClipDrag {
     /// whether the window loops off them.
     pub(super) contents: interact::Contents,
     pub(super) grid: f64,
-    /// The block this drag moves, when the grabbed clip was selected: the
-    /// press-time `(index, offset, row)` of every selected clip on the lane,
-    /// the grabbed one first.
-    pub(super) block: Vec<(usize, f64, f32)>,
+    /// The block this drag moves, when the grabbed clip was selected: **per
+    /// lane**, the press-time `(index, offset, row)` of every selected clip on
+    /// it, the grabbed clip's own lane first and the grabbed clip first in it.
+    ///
+    /// A selection is not one lane's -- a marquee down the stack takes clips of
+    /// several -- and neither is the block that moves it, which is the
+    /// patcher's rule for a set of boxes: what the hand grabbed is the whole of
+    /// what it holds.
+    pub(super) block: ClipBlock,
     /// The lanes this clip can be dragged across, read at the press.
     pub(super) stack: LaneStack,
 }
@@ -483,14 +520,29 @@ pub(super) fn apply_clip_drag(
         // clip snapped to the grid; every other clip keeps its distance from
         // it, which is what makes the block a block and not a set of clips that
         // each round differently.
-        let dt = placed.offset - d.orig.offset;
-        if let Some(w) = host
-            .window_def_mut(def_id)
-            .and_then(|tree| tree.find_mut(d.lane))
-        {
-            let row = 0.0;
-            let mut clips = track::LaneClips::of(w, row);
-            placement::move_block(&mut clips, &d.block, dt, 0.0, (row, row), None);
+        //
+        // **Rigid across lanes too**, which is why the near edge is clamped
+        // here rather than left to each lane: `move_block` stops its own
+        // snapshot at zero, so a block spanning three lanes would have the
+        // lowest clip of each one stop separately and the block would fold as
+        // it reached the start. Clamped once against the earliest clip of the
+        // whole set, every lane then moves by a delta that is already legal
+        // and the per-lane clamp never fires.
+        let earliest = d
+            .block
+            .iter()
+            .flat_map(|(_, clips)| clips.iter().map(|(_, offset, _)| *offset))
+            .fold(f64::INFINITY, f64::min);
+        let dt = (placed.offset - d.orig.offset).max(-earliest);
+        for (lane_id, clips) in &d.block {
+            if let Some(w) = host
+                .window_def_mut(def_id)
+                .and_then(|tree| tree.find_mut(*lane_id))
+            {
+                let row = 0.0;
+                let mut lane_clips = track::LaneClips::of(w, row);
+                placement::move_block(&mut lane_clips, clips, dt, 0.0, (row, row), None);
+            }
         }
     }
     // The lane's extent moved with the clip: re-register it, so the shared axis

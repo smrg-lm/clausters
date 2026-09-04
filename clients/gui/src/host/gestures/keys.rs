@@ -363,16 +363,37 @@ impl Gestures {
             Some(WidgetKind::Track { snap, .. }) => *snap,
             _ => return None,
         };
-        let lane = host
-            .window_def_mut(ctx.def_id)
-            .and_then(|t| t.find_mut(lane_id))?;
-        let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
-        let held: Vec<usize> = (0..clips.len()).filter(|&i| clips.is_selected(i)).collect();
-        if held.is_empty() || !crate::host::placement::quantize(&mut clips, &held, grid) {
+        // **Every lane the selection is on**, not only the one under the
+        // pointer: a selection is the stack's -- a marquee down it takes clips
+        // of several lanes and one hand moves them all -- so the key that
+        // rounds them off answers for the same set the drag does. The pointer
+        // says *which stack*, exactly as it says which lane.
+        let stack = super::nav::lane_stack(host, ctx, lane_id);
+        let lanes: Vec<i32> = if stack.ids.is_empty() {
+            vec![lane_id]
+        } else {
+            stack.ids.clone()
+        };
+        let mut moved = false;
+        for lane_id in &lanes {
+            let Some(lane) = host
+                .window_def_mut(ctx.def_id)
+                .and_then(|t| t.find_mut(*lane_id))
+            else {
+                continue;
+            };
+            let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
+            let held: Vec<usize> = (0..clips.len()).filter(|&i| clips.is_selected(i)).collect();
+            if held.is_empty() {
+                continue;
+            }
+            moved |= crate::host::placement::quantize(&mut clips, &held, grid);
+        }
+        if !moved {
             return None;
         }
         let mut out = Vec::new();
-        emit_clips(host, &mut out, ctx.def_id, lane_id);
+        emit_clips(host, &mut out, ctx.def_id, lane_id, &lanes);
         host.sync_track_totals_keeping_view();
         out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)

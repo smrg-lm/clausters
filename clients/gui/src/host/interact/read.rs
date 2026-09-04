@@ -87,20 +87,21 @@ pub(crate) fn lane_event_args(
 /// edit**: a block moved by one hand undoes in one step, and a run of separate
 /// messages gives the owner no way to know that. The owner applies them as one
 /// transaction.
-pub(crate) fn clips_event_args(tree: &Widget, lane_id: i32) -> Option<Vec<OscType>> {
-    let lane = tree.find(lane_id)?;
+pub(crate) fn clips_event_args(tree: &Widget, lanes: &[i32]) -> Option<Vec<OscType>> {
     let mut args = vec![OscType::String("clips".into())];
-    for w in &lane.children {
-        let WidgetKind::Clip { offset, dur, .. } = &w.kind else {
-            continue;
-        };
-        let (Some(id), true) = (w.id, w.selected) else {
-            continue;
-        };
-        args.push(OscType::Int(id));
-        args.push(OscType::Float(*offset as f32));
-        args.push(OscType::Float(*dur as f32));
-        args.push(OscType::Float(w.window.unwrap_or_default().start as f32));
+    for lane in lanes.iter().filter_map(|id| tree.find(*id)) {
+        for w in &lane.children {
+            let WidgetKind::Clip { offset, dur, .. } = &w.kind else {
+                continue;
+            };
+            let (Some(id), true) = (w.id, w.selected) else {
+                continue;
+            };
+            args.push(OscType::Int(id));
+            args.push(OscType::Float(*offset as f32));
+            args.push(OscType::Float(*dur as f32));
+            args.push(OscType::Float(w.window.unwrap_or_default().start as f32));
+        }
     }
     (args.len() > 1).then_some(args)
 }

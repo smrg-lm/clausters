@@ -269,18 +269,20 @@ impl Gestures {
                 // ([`Bands::window`], through the stack read at the press), and
                 // a sweep that stays inside one lane catches that one.
                 if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. })) {
-                    let lanes = match stack.across(origin_y.min(cy), origin_y.max(cy)) {
-                        found if found.is_empty() => vec![id],
+                    let swept = match stack.across(origin_y.min(cy), origin_y.max(cy)) {
+                        found if found.is_empty() => vec![(id, 0.0, 1.0)],
                         found => found,
                     };
+                    let lanes: Vec<i32> = swept.iter().map(|(id, ..)| *id).collect();
                     if interact::select_clips_in(host, def_id, &lanes, anchor, cur) {
                         out.push(GestureEffect::Redraw(def_id));
                     }
                     // And the picture says the same thing the hand did: the
-                    // band is painted on the lanes the rectangle reached and
-                    // on no others. Written after the span, which is what
-                    // drops the range a previous sweep left.
-                    host.select_lanes(id, lanes);
+                    // band is painted on the lanes the rectangle reached, over
+                    // the part of each one it actually covered. Written after
+                    // the span, which is what drops the range a previous sweep
+                    // left.
+                    host.select_lanes(id, swept);
                 }
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and
@@ -535,7 +537,7 @@ impl Gestures {
             ..
         }) = self.drag.clone()
         {
-            let block = !block.is_empty();
+            let lanes: Vec<i32> = block.iter().map(|(lane, _)| *lane).collect();
             self.drag = None;
             // **The clip crossed the stack**, so what it reports is which lane
             // it is on now and where it sits there. The owner reparents it and
@@ -547,14 +549,15 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
                 return out;
             }
-            // **One gesture is one edit**, whether it moved one clip or twelve:
-            // a block leaves as the lane's `"clips"`, which the owner applies as
-            // one transaction and undoes in one step. A run of `"clip"` messages
-            // would be an entry each.
-            if block {
-                emit_clips(host, &mut out, def_id, lane);
-            } else {
+            // **One gesture is one edit**, whether it moved one clip or
+            // twelve, and whether they sat on one lane or on four: the block
+            // leaves as a single `"clips"`, which the owner applies as one
+            // transaction and undoes in one step. A run of `"clip"` messages --
+            // or one `"clips"` per lane -- would be an entry each.
+            if lanes.is_empty() {
                 emit_clip(host, &mut out, def_id, id);
+            } else {
+                emit_clips(host, &mut out, def_id, lane, &lanes);
             }
             out.push(GestureEffect::Redraw(def_id));
             return out;

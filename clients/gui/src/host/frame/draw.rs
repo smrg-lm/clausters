@@ -608,21 +608,28 @@ pub(super) fn draw_static_meshes(
             // **And only where the rectangle reached.** The span is the
             // group's, so every linked lane used to paint it while the clips
             // the sweep took were the crossed lanes' -- the picture and the
-            // hand disagreeing about the second axis of one rectangle. A
-            // selection nobody swept down the stack names no lanes and every
-            // one of them draws it, which is the `/gui_set` case unchanged.
-            let swept = inputs
-                .world
-                .timelines
-                .lane_shows_selection(group_key(item.id, item.editor.link), item.id);
+            // hand disagreeing about the second axis of one rectangle. What
+            // the sweep covered of *this* lane comes back in its own pixels,
+            // and it is the rectangle the hand drew rather than the lanes it
+            // touched: a marquee that ends a third of the way down a lane is
+            // drawn a third of the way down it, the way the patcher's is over
+            // a box it half covers. `None` is a lane the rectangle never
+            // reached; a selection nobody swept names no lanes at all and
+            // every one of them draws the whole band, which is the `/gui_set`
+            // case unchanged.
+            let swept = inputs.world.timelines.lane_selection_span(
+                group_key(item.id, item.editor.link),
+                item.id,
+                item.rect,
+            );
             selection::draw_span(
                 &mut Draw::new(over, m, th),
                 body,
                 &nav,
-                swept.then(|| chrome.selection()).flatten(),
+                swept.and(chrome.selection()),
                 1,
-                None,
-                selection::Vertical::Whole,
+                swept,
+                selection::Vertical::Stack,
             );
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
@@ -709,12 +716,18 @@ pub(super) fn draw_static_meshes(
                 track::clip_grip_at(item.rect, item.ends, m, x as f32)
             }),
         };
-        if grip.is_none() && item.label.is_none() {
+        if grip.is_none() && item.label.is_none() && !item.selected {
             continue;
         }
         over.set_clip(item.clip);
         over.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
+        // The held edge goes over the bodies, because a body covers the box
+        // that drew it -- and the spectral one covers it in a pass no mesh
+        // reaches at all.
+        if item.selected {
+            track::draw_clip_selection(&mut Draw::new(over, m, th), item.rect);
+        }
         if let Some((rect, side)) = grip {
             track::draw_clip_grip(&mut Draw::new(over, m, th), rect, side);
         }

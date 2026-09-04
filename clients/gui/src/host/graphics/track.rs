@@ -681,6 +681,22 @@ pub fn draw_clip_grip(d: &mut Draw, grip: Rect, side: ClipSide) {
     );
 }
 
+/// **The mark that a clip is held**, into whichever mesh is painted over its
+/// bodies.
+///
+/// It is drawn twice on purpose and neither is redundant: [`draw_clip`] paints
+/// the held *fill* under the bodies, where it shows through an empty clip and
+/// through the air around a trace, and this paints the held *edge* over them.
+/// The reason is the one the name already gives: a body drawn over the box
+/// covers whatever the box drew, and the time-frequency texture -- which is not
+/// mesh at all but a GPU pass after every mesh -- covers it outright. So a
+/// spectral clip could be taken by a marquee, moved, and never look taken;
+/// which of the two happened is exactly what a hand cannot tell.
+pub fn draw_clip_selection(d: &mut Draw, cr: Rect) {
+    let (mesh, m, theme) = d.parts();
+    mesh.border(cr, m.divider_w, theme.selected_edge);
+}
+
 /// Draws a clip's **name**, into whichever mesh is painted over its bodies.
 ///
 /// It is a separate call because a name has to read: drawn with the box, the

@@ -147,10 +147,25 @@ pub(super) fn emit_clip_lane(
     });
 }
 
-/// Emits a lane's block edit — `/gui_event lane "clips" id offset dur start …`
-/// over the clips the hand is holding.
-pub(super) fn emit_clips(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, lane_id: i32) {
-    emit_read(host, out, def_id, lane_id, interact::clips_event_args);
+/// Emits a block edit — `/gui_event lane "clips" id offset dur start …` — over
+/// every clip the hand is holding, wherever in the stack it sits.
+///
+/// **One message even when the block spans lanes**, and that is the whole
+/// reason it takes a list: one gesture is one edit, and each clip is named by
+/// its own widget id, so the owner applies the lot as a single transaction and
+/// undoes it in one step. A message per lane would be an undo entry per lane —
+/// the very thing the plural payload exists to avoid. It is addressed to the
+/// lane the hand was on, which is where the gesture happened.
+pub(super) fn emit_clips(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    at: i32,
+    lanes: &[i32],
+) {
+    emit_read(host, out, def_id, at, |tree, _| {
+        interact::clips_event_args(tree, lanes)
+    });
 }
 
 /// Repaints every window in `roots` (the windows a group mutation touched).

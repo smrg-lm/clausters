@@ -269,7 +269,7 @@ enum Drag {
         /// (`placement::move_block`). Empty when one clip is being moved on its
         /// own, and always empty for an edge drag: a trim is one clip's, since
         /// two clips of different lengths have no one edge to pull.
-        block: Vec<(usize, f64, f32)>,
+        block: nav::ClipBlock,
         /// The lanes this clip can be dragged across, read at the press — a
         /// clip changes lane by [`Bands::index_at`], the call a note changes
         /// row with.

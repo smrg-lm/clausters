@@ -2238,6 +2238,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * hand did. A run of separate `"clip"` messages could not say so, which is
      * why the host sends one message and not several.
      *
+     * The clips it names may sit on **different lanes** — a marquee down the
+     * stack takes clips of several, and grabbing any one of them moves all of
+     * them — so nothing here reads the lane the message was addressed to: each
+     * clip is found by its own id, and the placements go into one transaction
+     * whatever aggregate they belong to.
+     *
      * A block move never resizes and never trims: every clip keeps the length
      * and the window it had, and only the offsets travel.
      */
