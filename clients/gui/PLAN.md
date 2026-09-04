@@ -3281,6 +3281,20 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   so the two lists cannot drift apart one builder at a time. `multitrack.py` and
   its page twin seed three and print what comes back.
 
+  **It is sized against the numbers it stands among** *(found 2026-09-04 by the
+  user, looking at the example: "se ven bien muy chicos")*. It was drawn at
+  `micro_scale` -- the size a roll's OSC flags use, in a lane of their own -- and
+  its arrow was a fixed nine pixels: a full step under the tick labels it sits
+  beside, and a number that stopped meaning anything at another density. Both
+  now come off the ruler's own caption: the label at `caption_scale`, on the
+  tick labels' row, and the arrow a cell and a half of that font wide
+  (`marker_w`). The tick row's own two numbers are named (`TICK_H`,
+  `TICK_LABEL_TOP`) so the marker stands on that line by construction rather
+  than by a literal repeated in a second file. The test asserts the *proportion*
+  at every density the metrics are generated at -- wider than one character,
+  narrower than the strip is tall -- since the rule is the proportion and not a
+  pixel count.
+
   **What is not here, and is not missing**: dragging a marker to move it. A
   marker is a moment and the press has already said which; moving one is a
   second gesture on a surface whose plain drag is the scroll, and it is worth

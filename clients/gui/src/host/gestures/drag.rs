@@ -546,7 +546,7 @@ impl Gestures {
                 .widget_kind(def_id, id)
                 .and_then(|k| k.editor().map(|e| e.markers.clone()))
                 .and_then(|markers| {
-                    super::nav::marker_under(host, id, strip, &markers, cx)
+                    super::nav::marker_under(host, def_id, id, strip, &markers, cx)
                         .and_then(|i| markers.get(i).map(|m| m.time))
                 });
             match marker {

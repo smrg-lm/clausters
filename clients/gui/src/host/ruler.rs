@@ -984,12 +984,23 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 /// a mark up against the body's bottom edge (taller when labeled), the label
 /// centered under it and edge-clamped into the strip. The one drawing of the
 /// x-ruler strip — the editor frames and the plot both call it.
+/// **How far down the strip a tick's label sits**, and how tall the tick
+/// itself is — named because a marker's arrow and its text stand on this same
+/// row, and two literals in two files is how they come to disagree the first
+/// time either moves.
+pub(crate) const TICK_H: f32 = 6.0;
+pub(crate) const TICK_LABEL_TOP: f32 = 7.0;
+
 pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
     let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
     for tick in ticks {
         let x = strip.x + strip.w * tick.frac as f32;
-        let h = if tick.label.is_some() { 6.0 } else { 3.0 };
+        let h = if tick.label.is_some() {
+            TICK_H
+        } else {
+            TICK_H * 0.5
+        };
         mesh.rect(
             Rect::new(x, strip.y, metrics.divider_w, h),
             theme.ruler_line,
@@ -997,7 +1008,14 @@ pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
         if let Some(label) = &tick.label {
             let w = font::width(label, scale);
             let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            font::text(mesh, label, lx, strip.y + 7.0, scale, theme.ruler_text);
+            font::text(
+                mesh,
+                label,
+                lx,
+                strip.y + TICK_LABEL_TOP,
+                scale,
+                theme.ruler_text,
+            );
         }
     }
 }

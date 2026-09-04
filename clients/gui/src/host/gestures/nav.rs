@@ -329,6 +329,7 @@ pub(super) fn transport_follows_selection(
 /// the markers were set.
 pub(super) fn marker_under(
     host: &Host,
+    def_id: i32,
     id: i32,
     strip: Rect,
     markers: &[crate::host::widget::Marker],
@@ -336,7 +337,7 @@ pub(super) fn marker_under(
 ) -> Option<usize> {
     let (start, len, _) = group_view(host, id)?;
     let nav = crate::viewport::View { start, len };
-    crate::host::frame::marker_at(strip, &nav, markers, cx)
+    crate::host::frame::marker_at(strip, &nav, markers, cx, host.metrics_for(def_id))
 }
 
 /// Writes the widget's markers and reports them: the flat `time label color`

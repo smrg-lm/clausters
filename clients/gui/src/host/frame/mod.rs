@@ -1295,6 +1295,30 @@ mod tests {
         assert_eq!(clamp_viewport(gone, fb_w, fb_h).3, 0.0);
     }
 
+    /// **A marker is measured against the numbers it stands among.** It used
+    /// to be a fixed nine pixels drawn in the size a roll's OSC flags use,
+    /// which read as a speck beside the tick labels at one density and as a
+    /// blob at another. The rule is the proportion, so this asserts it at
+    /// every scale the metrics are generated at rather than a pixel count.
+    #[test]
+    fn a_markers_arrow_is_read_against_the_rulers_own_text() {
+        for scale in [0.75, 1.0, 1.5, 2.0, 3.0] {
+            let m = Metrics::default().at(scale);
+            let w = draw::marker_w(&m);
+            let cell = crate::host::font::advance(m.caption_scale);
+            assert!(
+                w >= cell,
+                "an arrow narrower than one character of the row it stands on \
+                 is the speck this replaced (scale {scale})"
+            );
+            assert!(
+                w <= m.ruler_h,
+                "and one wider than the strip is tall would cover the numbers \
+                 rather than point at them (scale {scale})"
+            );
+        }
+    }
+
     fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
         EditorProps {
             ruler,

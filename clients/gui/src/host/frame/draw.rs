@@ -50,9 +50,19 @@ pub(crate) fn ruler_strip(rect: Rect, body: Rect) -> Rect {
     Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0))
 }
 
-/// **How wide a marker's arrow is**, device pixels — and so how far from one a
-/// press still counts as landing on it ([`marker_at`]).
-pub(crate) const MARKER_W: f32 = 9.0;
+/// **How wide a marker's arrow is** — and so how far from one a press still
+/// counts as landing on it ([`marker_at`]).
+///
+/// It is **the ruler's own text cell**, not a number: a marker stands among the
+/// tick labels, so it is read against them, and a fixed pixel width came out
+/// tiny beside the numbers at one density and clumsy at another. Two character
+/// cell and a half wide is the arrow reading as a mark on that row rather than
+/// as a speck under it, and still narrower than the strip is tall at every
+/// density the metrics are generated at -- an arrow as wide as the strip is
+/// high stops pointing at the numbers and starts covering them.
+pub(crate) fn marker_w(m: &Metrics) -> f32 {
+    1.5 * font::advance(m.caption_scale)
+}
 
 /// The markers on this strip: an **arrow pointing up into the ticks** at the
 /// exact time each one names, its label beside it.
@@ -67,7 +77,13 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
         return;
     }
     let (mesh, metrics, theme) = d.parts();
-    let scale = metrics.micro_scale;
+    // **The ruler's own caption**, the size its numbers are drawn at: a marker
+    // is read against them, so it is measured against them. `micro_scale` --
+    // the size a roll's OSC flags use in a lane of their own -- put the label
+    // a full step under the numbers it sits beside, which is what read as
+    // "very small" rather than as small on purpose.
+    let scale = metrics.caption_scale;
+    let width = marker_w(metrics);
     for marker in markers {
         let frac = (marker.time - nav.start) / nav.len.max(1e-9);
         if !(0.0..=1.0).contains(&frac) {
@@ -75,11 +91,11 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
         }
         let color = marker.color(theme);
         let x = strip.x + strip.w * frac as f32;
-        // The apex touches the tick row; the base sits a third of the strip
-        // down, so the arrow reads as pointing *at* the ruler without covering
-        // the labels under it.
-        let h = (strip.h * 0.5).min(MARKER_W);
-        let half = MARKER_W * 0.5;
+        // The apex touches the tick row and the base stops where a tick's own
+        // does, so the arrow reads as pointing *at* the ruler and stands as
+        // tall as the marks it points among.
+        let h = (strip.h * 0.6).min(width);
+        let half = width * 0.5;
         mesh.tri(
             [x, strip.y],
             [x - half, strip.y + h],
@@ -88,8 +104,17 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
         );
         if !marker.label.is_empty() {
             let w = font::width(&marker.label, scale);
-            let lx = (x + half + 1.0).min((strip.x + strip.w - w).max(strip.x));
-            font::text(mesh, &marker.label, lx, strip.y, scale, color);
+            let lx = (x + half + metrics.divider_w).min((strip.x + strip.w - w).max(strip.x));
+            // The tick labels' own row, so the marker's name and the numbers
+            // read as one line instead of two.
+            font::text(
+                mesh,
+                &marker.label,
+                lx,
+                strip.y + crate::host::ruler::TICK_LABEL_TOP,
+                scale,
+                color,
+            );
         }
     }
 }
@@ -97,7 +122,14 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
 /// **The marker a press at `x` landed on**, as an index into `markers` — the
 /// nearest whose arrow the point falls within. The gesture reads it from the
 /// geometry the drawing used, so what can be clicked is exactly what is drawn.
-pub(crate) fn marker_at(strip: Rect, nav: &View, markers: &[Marker], x: f64) -> Option<usize> {
+pub(crate) fn marker_at(
+    strip: Rect,
+    nav: &View,
+    markers: &[Marker],
+    x: f64,
+    m: &Metrics,
+) -> Option<usize> {
+    let width = marker_w(m);
     let mut best: Option<(usize, f32)> = None;
     for (i, marker) in markers.iter().enumerate() {
         let frac = (marker.time - nav.start) / nav.len.max(1e-9);
@@ -106,7 +138,7 @@ pub(crate) fn marker_at(strip: Rect, nav: &View, markers: &[Marker], x: f64) -> 
         }
         let mx = strip.x + strip.w * frac as f32;
         let d = (mx - x as f32).abs();
-        if d <= MARKER_W * 0.5 && best.is_none_or(|(_, b)| d < b) {
+        if d <= width * 0.5 && best.is_none_or(|(_, b)| d < b) {
             best = Some((i, d));
         }
     }

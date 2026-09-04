@@ -347,7 +347,7 @@ impl Gestures {
                 else {
                     return false;
                 };
-                match super::nav::marker_under(host, id, strip, &markers, cx) {
+                match super::nav::marker_under(host, def_id, id, strip, &markers, cx) {
                     Some(i) => {
                         markers.remove(i);
                     }
