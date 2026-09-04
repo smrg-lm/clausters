@@ -112,7 +112,7 @@ inst = chain.render(server)
 ```
 
 ```python
-patcher.poll()                     # the edit lands on the aggregate
+# the edit lands on the aggregate as the wire is dropped
 print(chain.members[2][2].controls)   # {} — 'in' no longer names a bus
 ```
 
@@ -128,7 +128,6 @@ inst = chain.render(server)       # silent: the gain stage reads nothing
 Wire `in` back to `mix` on screen, then:
 
 ```python
-patcher.poll()
 inst.free()
 inst = chain.render(server)       # and it sounds again, wired as drawn
 ```
@@ -137,7 +136,6 @@ Clean up the demo:
 
 ```python
 inst.free()
-patcher.poll()                     # drain anything left
 gui.close(pwin)
 ```
 

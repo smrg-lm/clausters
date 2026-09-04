@@ -110,15 +110,17 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A curve opens on the wrong axis, and the first edit flattens it**
-  *(`clients/python/PLAN.md`, Found by use)*. `PointsView` builds its `bpf` with
-  no `min`/`max`, so a curve of any range but the unipolar default is drawn
-  against a `0..1` axis and the first drag writes axis values onto the data --
-  the shipped `edit_curve.py` loses its 200-4000 Hz range irrecoverably.
-  **The decision**: which span the axis takes from the data (its own, padded, or
-  one the caller names) and what a drag past it does (grow, clamp, refuse) --
-  the "an element owns its space" question, answered the same way in both
-  clients.
+- ⬜ **A curve opens on no axis at all: the values flatten and the time
+  rescales** *(`clients/python/PLAN.md`, Found by use)*. `PointsView` builds its
+  `bpf` with no `min`/`max` and no `duration`, so a curve of any range but the
+  unipolar default is drawn against a `0..1` axis and the first drag writes axis
+  values onto the data (the shipped `edit_curve.py` loses its 200-4000 Hz range
+  irrecoverably), while the time axis refits to the last point on every edit, so
+  moving it rescales the axis under all the others.
+  **The decision**: which span each axis takes from the data (its own, padded, or
+  one the caller names), what a drag past it does (grow, clamp, refuse), and what
+  may refit while a hand is on a point -- the "an element owns its space"
+  question, answered the same way in both clients.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
@@ -220,17 +222,19 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **The client's event loop: `edit(x)` opens, and nobody writes a drain
-  loop**, `C52`-`C53`, with `W29` *(`clients/python/PLAN.md`, "The generic
+- ⬜ **The examples pass: the drain loop is deleted, once**, `C53`, with `W29` *(`clients/python/PLAN.md`, "The generic
   editor: one editor per domain, and `edit(x)`"; `clients/web/PLAN.md`, `W29`)*.
-  The track closed with `C51` and left this: `edit` is the only verb in the
-  client that returns something unopened, and the only one that then asks the
-  script for a poll loop -- which 43 example files spell out by hand. The
-  milestone is the loop the client has never had (`EventLoop`) plus the clock
-  over it (`AppClock`, sclang's reading, seconds, sibling of `TempoClock`), and
-  `C53` is the examples pass, its own commit. **The three decisions it needed
-  were taken 2026-09-04 from a discarded prototype** and are written in the
-  plan with their measurements, so nothing is waiting on an answer.
+  `C52` shipped the loop (2026-09-04): `edit(x)` opens, the host's `EventLoop`
+  delivers, and the `AppClock` is the application's seconds over it. What is
+  left is the sweep it deliberately did not do -- **40 example files** still
+  spell out a drain by hand (`views/` 13, `panels/` 12, `editors/` 9 after the
+  three `edit_*` went with `C52`, `notation/` 4, and the root
+  `examples/clock_recorder.py`), and none of them is run by anything, so each is
+  run by hand. The pass also takes the one question `C52` left open: whether
+  `open()` should start the loop for every window, rather than only where an
+  editor or the `AppClock` asks for it -- until it does, a plain panel still
+  needs `pump` and the web client does not, which is the gap `W29` would
+  inherit.
 
 ### Waiting on a decision
 

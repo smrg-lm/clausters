@@ -82,7 +82,8 @@ optional. Distinct from a [placement](#placement)'s `dur`, which overrides and
 
 **edit-back** — the GUI-to-data direction of the loop: the window's gestures
 (`"clip"` move/resize, `"points"` curve edits, `"wire"` rewiring, `"locate"`)
-applied onto the arrangement by `FormEditor.apply` / `FormEditor.poll`.
+applied onto the arrangement by `FormEditor.apply`, which the host's event
+loop calls as each gesture arrives.
 ([Editing](editing.md))
 
 **element** — the arrangement's unit: any bounded thing that produces a unit of
@@ -188,9 +189,15 @@ sample clock so it tracks the audio (`FormEditor.anchor`). Also the
 `clausters.seq.Playhead` object itself: what a render returns. Compare
 [cursor](#cursor). ([Rendering](render.md), [Editing](editing.md))
 
+**event loop** — what drains a host and delivers its messages: the editors that
+subscribed to it (each applies the gestures naming its own widgets) and then the
+widget callbacks. Started by opening an editor, and it is why an edit lands with
+nothing written in the script. ([The GUI](../gui.md), [Editing](editing.md))
+
 **poll** — `FormEditor.poll()`: drain the window's pending events into the
-arrangement (apply each), returning whether the composition changed. One call,
-no loop; never from the clock thread. ([Editing](editing.md))
+arrangement by hand, for a script that would rather deliver them itself. It
+answers `False` while the event loop is the one delivering; never call it from
+the clock thread. ([Editing](editing.md))
 
 **quant** — the one musical grid, in beats: the editor converts it once and
 hands it to the lanes as their drag grid, and snaps edit-backs to it — so the

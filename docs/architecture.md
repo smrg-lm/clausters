@@ -350,6 +350,28 @@ table rather than derived again. The arrangement layer in the next section is
 | beats → items, forward only | `Stream` / a pattern | a value |
 | a position that advances | `TempoClock` | a **process** over the others |
 | a position that does not | `Moment` | a value |
+| what is ready, and what is due | `EventLoop` (`base/loop.py`) | a **process** over sources and timers |
+| the application's own seconds | `AppClock` (`base/appclock.py`) | a **process**, the clock face over that loop |
+
+**There are two clocks, and they are not two implementations of one thing.**
+`TempoClock` keeps musical time (beats, on its own thread, a piece plays on it);
+`AppClock` keeps the application's (seconds, on the event loop's thread, and
+everything that touches a window belongs there). sclang draws the same line, and
+the part worth taking from it is that the loop's timer source *is* the clock: an
+animation is a routine that waits, not an animation API. The two share what
+would otherwise be written twice — the queue is
+`clausters_core::tempoclock::Scheduler` in both (beats in one, seconds in the
+other) and resuming a routine is `base.stream.resume` in both — so what is
+per-clock is exactly the unit and the drive.
+
+`EventLoop` under it is the ordinary machine (sources, one wait bounded by the
+nearest timer, a wake pipe, fixed phases, `run` or `iterate`), and it is
+deliberately ignorant of the GUI: a `GuiHost` registers itself as a source and
+gets a loop per host, since there is one inbound carrier per host. **What must
+not be re-derived per client is the schedule, not the loop**: the wait, the
+thread and the GIL are the language's, which is why the browser has no
+`EventLoop` at all — the page is one — and the web client's `AppClock` is the
+same surface over `setTimeout`.
 
 Three things this makes visible that no single type does:
 

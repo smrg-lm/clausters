@@ -595,9 +595,9 @@ through once it is editable on its own).
   is bounced onto a timeline of its own and the widget is told `notes_editable`
   is false, instead of unwinding each drag after the fact.
 
-- ⬜ **C52 — The client's event loop: `edit(x)` opens, and nobody writes a drain
-  loop** *(designed 2026-09-04 with the user, off a throwaway prototype whose
-  three measurements are below)*. `edit` is the **only** verb in the client that
+- ✅ **C52 — The client's event loop: `edit(x)` opens, and nobody writes a drain
+  loop** *(designed and done 2026-09-04 with the user, off a throwaway prototype
+  whose three measurements are below)*. `edit` is the **only** verb in the client that
   hands back something unopened: `plot`, `scope`, `plot_def` and `View.open` all
   resolve the ambient host, open, and return a handle the script may discard.
   And it is the only one that then asks the script for a loop — `while
@@ -702,6 +702,46 @@ through once it is editable on its own).
   one call and a notebook needs none; `AppClock.play(routine)` animates a widget
   from a routine, and a routine on the `TempoClock` reaches a window through
   `defer` without blocking the clock.
+
+  **Done 2026-09-04.** `base/loop.py` (`EventLoop`), `base/appclock.py`
+  (`AppClock`), the host's end (`loop`, `clock`, `looping`,
+  `subscribe`/`unsubscribe`, `deliver`, the reply slot) and `edit(x)` opening,
+  with `Editor` grown into a handle (`id`, `closed`, `close`, `on_closed`) --
+  plus the three `edit_*` examples, which are this milestone's own acceptance
+  surface and lost their loops here rather than in `C53`. Checked by eye: five
+  points where the example built four, times and shapes moved, read back off the
+  `Automation` with nothing written in the script. Four things the work changed
+  or found, each because something was wrong rather than missing:
+
+  - **The lock is not what answers a torn read; a swap is.** Decision 1 said the
+    loop must hold a lock and the reader take it, which is true of a handler in
+    general and answers nothing for `print(curve.to_points())` -- nobody takes a
+    lock to print. So the projection stopped clearing and re-adding:
+    `Timeline.replace` builds the new order and binds it in **one step**, and the
+    same measurement that gave 87.7% torn reads at 4000 notes now gives **0 of
+    5099** with no lock anywhere. The loop still holds its lock across a whole
+    delivery, for what a swap cannot cover (several structures written together,
+    a handler of the caller's own).
+  - **`OscTcpInterface.recv(0.0)` never touched the socket.** It computed a
+    remaining budget, found it spent and returned -- so a loop that waits on the
+    descriptor itself and then reads with no timeout of its own span on a
+    readable socket it never drained. A zero timeout now means *what is there
+    now*, which is what the whole select-then-read shape asks of it.
+  - **A socket's timeout belongs to the socket, not to the call.** With a loop
+    reading on one thread and a script sending on another, `_recv_into_buf`'s
+    `settimeout` governed the other thread's `sendall` too. The TCP interface
+    grew a lock held over the *timeout*, never over the wait -- the loop reads
+    with `timeout=0`, so it never holds it while waiting.
+  - **One editor, one window.** `open` on an open editor answered by opening a
+    second and orphaning the first, which nothing did until `edit` began opening
+    for itself. A second view of one structure is `edit(x)` twice -- two editors
+    on one history -- so this now returns the window it already has.
+
+  What is **not** in it, and is `C53`'s: the other 40 examples, and the question
+  of whether `open()` should start the loop for every window rather than only
+  where an editor or the `AppClock` asks for it. Until that is taken, a plain
+  panel still delivers its callbacks through `pump`, which is a difference from
+  the web client the port will read as a gap.
 
 - ⬜ **C53 — The examples pass: the drain loop is deleted, once** *(its own
   commit, after `C52`)*. 43 example files hand-write a drain today —
@@ -1251,33 +1291,46 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **A curve opens on the wrong axis, and the first edit flattens it** *(found
-  2026-09-04, by eye, while running the throwaway prototype for `C52` over
-  `examples/editors/edit_curve.py`'s own curve)*. The example builds a cutoff
-  automation from 200 to 4000 Hz, `edit`s it, and after a few drags the curve
-  read back is `[0.0, 0.446, ..., 0.523, ..., 0.909, ...]` — every value inside
-  `[0, 1]`, and the frequencies gone.
+- ⬜ **A curve opens on no axis at all: the values flatten and the time
+  rescales** *(found 2026-09-04, by eye, while running the throwaway prototype
+  for `C52` over `examples/editors/edit_curve.py`'s own curve; the second
+  symptom reported by the user on the acceptance pass — "el último punto parece
+  que hace autofit y cambia su posición con respecto a los demás")*. The example
+  builds a cutoff automation from 200 to 4000 Hz, `edit`s it, and after a few
+  drags the curve read back is `[0.0, 0.446, ..., 0.523, ..., 0.909, ...]` —
+  every value inside `[0, 1]`, and the frequencies gone.
 
-  `bpf` is explicit that its values live in `[min, max]` and that the default is
-  the unipolar `0`/`1`, and `PointsView.build` (`gui/editing/points.py`) builds
-  `bpf(id=..., points=..., label=...)` with **neither**. So a curve of any other
-  range is drawn against a `0..1` axis — its points pinned to the top of the
-  field, which is what the window shows — and the edit-back reports positions in
-  the *axis*'s values, which the domain then projects onto the automation as if
-  they were the data's. One drag destroys the curve's range, silently and
-  irreversibly (the inverse restores the flattened state, not the original).
+  **One cause, two symptoms, and it is that the view declares no space.**
+  `PointsView.build` (`gui/editing/points.py`) builds
+  `bpf(id=..., points=..., label=...)` and nothing else, while `bpf` is explicit
+  that values live in `[min, max]` — defaulting to the unipolar `0`/`1` — and
+  that times span `[0, duration]`, *"omitting `duration` fits the last point"*.
+  So:
 
-  It reproduces in the shipped example with nothing else running: same builder,
-  same curve, no loop and no prototype involved. The web client's `PointsView`
-  is to be read against this one before either is fixed.
+  - **the value axis is `0..1`**, a curve of any other range is drawn with its
+    points pinned to the top of the field, and the edit-back reports positions
+    in the *axis*'s values, which the domain projects onto the automation as if
+    they were the data's. One drag destroys the range, silently and
+    irreversibly (the inverse restores the flattened state, not the original);
+  - **the time axis refits on every edit**, so the last point is pinned to the
+    right edge and moving it rescales the axis under all the others — which is
+    what a hand at the window actually notices first.
+
+  It reproduces in the shipped example with nothing else running.
+
+  The web client's `PointsView` is to be read against this one before either is
+  fixed.
 
   **What is not yet decided is the fix**, and it is the reason this is filed
-  rather than patched: the axis has to come from the data, but *which* span —
-  the curve's own min/max, that span with margin, or a range the caller may
+  rather than patched: both axes have to come from the data, but *which* span —
+  the curve's own extent, that extent with margin, or a range the caller may
   name — and what happens when a hand drags a point **past** it (the axis grows,
   the value clamps, or the edit is refused) is the "an element owns its space"
-  question, and it must be answered the same way in both clients. `exp=True` for
-  a frequency-shaped span belongs to the same decision.
+  question, and it must be answered the same way in both clients. The time axis
+  adds one of its own: an axis that refits *while* the hand is on a point is
+  wrong whatever span it fits, so what is fixed at open and what may move is
+  part of the same answer. `exp=True` for a frequency-shaped span belongs to it
+  too.
 
 - ✅ **A clip that would not move, and the edit said it had** *(reported
   2026-09-03 by the user -- "no responde quiere decir que no se puede mover y no

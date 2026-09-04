@@ -980,6 +980,8 @@ class _FakeHost:
         #: Messages `poll` hands out, and what `dispatch` was asked to route.
         self.inbox = []
         self.dispatched = []
+        #: What `subscribe` was handed -- an open editor's `apply`.
+        self.subscribed: list = []
 
     def alloc_id(self):
         return next(self._ids)
@@ -1017,6 +1019,21 @@ class _FakeHost:
     def dispatch(self, addr, args):
         self.dispatched.append((addr, list(args)))
         return True
+
+    # The event loop's end of the protocol. A double is a host, so it answers
+    # the two things an editor asks of one at `open`: what to subscribe to, and
+    # a loop -- which a double does not have and does not need, since nothing
+    # here is delivered by one.
+    def subscribe(self, func):
+        self.subscribed.append(func)
+        return func
+
+    def unsubscribe(self, func):
+        if func in self.subscribed:
+            self.subscribed.remove(func)
+
+    looping = False
+    loop = None
 
 
 def test_a_sweep_becomes_the_crates_typed_selection():

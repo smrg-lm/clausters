@@ -32,7 +32,7 @@ import time
 import traceback
 
 from .. import _native
-from .stream import Stream, StopStream
+from .stream import Stream, StopStream, resume
 from .timebase import MonotonicTimebase, SampleClockTimebase
 
 
@@ -731,36 +731,13 @@ class TempoClock:
     # ---- driving ----
 
     def _wake(self, item, beat):
-        """Resume ``item`` at ``beat``; reschedule if it asks for more time."""
-        from .main import main
+        """Resume ``item`` at ``beat``; reschedule if it asks for more time.
 
-        prev = main.current_routine
-        main.current_routine = item
-        if isinstance(item, Stream):
-            item.clock = self          # the running thread carries its clock (sc3)
-            item._logical_beat = beat  # ...and its exact logical time (yield-driven)
-        try:
-            if isinstance(item, Stream):
-                delta = item.next(self)
-            elif callable(item):
-                delta = item()
-            else:
-                return
-        except StopStream:
-            return
-        except Exception:
-            # A raising routine loses its place in the schedule -- and only its
-            # own place. The clock thread must survive it: it drives every other
-            # routine, and a dead thread would leave a clock that still reports
-            # itself running while waking nobody. Report it the way a thread
-            # dying used to (the traceback on stderr) and drop this one.
-            if isinstance(item, Stream):
-                item.state = "done"
-            traceback.print_exc()
-            return
-        finally:
-            main.current_routine = prev
-        if isinstance(delta, (int, float)):
+        The resumption itself is `clausters.base.stream.resume`, shared with the
+        `clausters.base.appclock.AppClock` -- what is this clock's is the beat
+        the routine is woken on and the requeue."""
+        delta = resume(item, self, logical=beat)
+        if delta is not None:
             with self._cond:
                 self._push(beat + float(delta), item)
                 self._cond.notify()

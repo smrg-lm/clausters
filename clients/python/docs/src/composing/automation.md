@@ -5,7 +5,7 @@ driving a voice — placed in the composition like everything else. This page
 carries three ideas: an **`Automation`** is a curve rendered as a control
 signal; a curve and the voice it shapes can be **grouped into one clip**; and
 the curve is **edited in place**, on the lane, with the same
-gesture → `poll()` → `play()` rhythm as a clip.
+gesture → `play()` rhythm as a clip.
 
 ## The voice: an instrument that reads a bus
 
@@ -125,7 +125,7 @@ The curve's break-points are live on the lane:
 Pull the middle point up toward 1500 Hz, then the rhythm you know:
 
 ```python
-editor.poll()               # the points land on the automation's Env
+# the points land on the automation's Env as you draw them
 print(sweep.to_points())    # the curve, as (t, v, shape, curve) — as drawn
 sweep.prepare(server)       # re-fill the control buffer from the edited Env
 editor.play(at=0.0)

@@ -153,6 +153,18 @@ class OscInterface:
         default (NRT/one-way) has nothing to return."""
         return None
 
+    def fileno(self):
+        """The descriptor an event loop can wait on, or ``None`` when this
+        carrier has none (a ring buffer, an in-process double).
+
+        What it is for: a `clausters.base.loop.EventLoop` waits on every source
+        at once and reads with **no timeout of its own** once one is ready --
+        which is also what keeps this interface's timeout juggling off the
+        sending thread, since a zero-timeout read leaves the socket blocking
+        again before a `send_msg` on another thread can see otherwise.
+        """
+        return None
+
     def close(self):
         pass
 
@@ -208,6 +220,10 @@ class OscUdpInterface(OscInterface):
                 f"(the default) for payloads this large")
         return data
 
+    def fileno(self):
+        self._ensure()
+        return self._sock.fileno()
+
     def recv(self, timeout):
         self._ensure()
         self._sock.settimeout(timeout)
@@ -241,6 +257,13 @@ class OscTcpInterface(OscInterface):
         self.port = port
         self._sock = None
         self._buf = b""        # leftover bytes between framed reads
+        #: Held over the socket's **timeout**, not over the wait. A timeout in
+        #: Python belongs to the socket rather than to the call that set it, so
+        #: a read on an event loop's thread and a send on the script's can see
+        #: each other's: this makes the two atomic against one another. An
+        #: event loop reads with ``timeout=0``, so it never holds this while
+        #: waiting -- the waiting is the loop's, over `fileno`.
+        self._io = threading.RLock()
 
     def start(self):
         self._sock = socket.create_connection((self.host, self.port))
@@ -263,14 +286,20 @@ class OscTcpInterface(OscInterface):
     def _frame(payload: bytes) -> bytes:
         return len(payload).to_bytes(4, "big") + payload
 
+    def fileno(self):
+        self._ensure()
+        return self._sock.fileno()
+
     def send_msg(self, target, addr, *args):
         self._ensure()
-        self._sock.sendall(self._frame(_osclib.message(addr, *args)))
+        with self._io:
+            self._sock.sendall(self._frame(_osclib.message(addr, *args)))
 
     def send_bundle(self, target, when, *messages):
         self._ensure()
         packets = [_osclib.message(*m) for m in messages]
-        self._sock.sendall(self._frame(_osclib.bundle_at(when, *packets)))
+        with self._io:
+            self._sock.sendall(self._frame(_osclib.bundle_at(when, *packets)))
 
     def _recv_into_buf(self, timeout) -> bool:
         """Reads one chunk into ``_buf`` within ``timeout``; False on
@@ -284,13 +313,14 @@ class OscTcpInterface(OscInterface):
         cannot complete at once then raises instead of waiting, which is a
         send this client never gave a deadline to.
         """
-        self._sock.settimeout(timeout)
-        try:
-            chunk = self._sock.recv(65536)
-        except (TimeoutError, OSError):
-            return False
-        finally:
-            self._sock.settimeout(None)
+        with self._io:
+            self._sock.settimeout(timeout)
+            try:
+                chunk = self._sock.recv(65536)
+            except (TimeoutError, OSError):
+                return False
+            finally:
+                self._sock.settimeout(None)
         if not chunk:
             return False
         self._buf += chunk
@@ -301,6 +331,7 @@ class OscTcpInterface(OscInterface):
         the 4-byte length prefix and payload across TCP segments."""
         self._ensure()
         deadline = time.monotonic() + timeout
+        read = False
         while True:
             if len(self._buf) >= 4:
                 length = int.from_bytes(self._buf[:4], "big")
@@ -309,7 +340,17 @@ class OscTcpInterface(OscInterface):
                     self._buf = self._buf[4 + length:]
                     return packet
             remaining = deadline - time.monotonic()
-            if remaining <= 0 or not self._recv_into_buf(remaining):
+            if remaining <= 0:
+                # **A zero timeout still reads once.** It means "whatever is
+                # there now", which is exactly what an event loop asks for after
+                # its own wait has said the socket is ready -- and answering it
+                # by returning without touching the socket left such a loop
+                # spinning on a readable descriptor it never drained.
+                if read:
+                    return None
+                remaining = 0.0
+            read = True
+            if not self._recv_into_buf(max(0.0, remaining)):
                 return None
 
 

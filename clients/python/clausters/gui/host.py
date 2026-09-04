@@ -19,6 +19,8 @@ up as the interactive widgets land.
 """
 
 import json
+import queue
+import time
 from dataclasses import dataclass, field
 
 from ..base import _osclib
@@ -141,6 +143,25 @@ class GuiHost:
         #: window id -> the handle handed out for it, so a redraw can
         #: refresh it in place instead of orphaning the caller's copy.
         self._handles: dict = {}
+        #: This host's event loop and the clock over it, both built on first
+        #: use (`loop`, `clock`) and never before: a script that drives its own
+        #: poll loop must not find a second thread on its socket.
+        self._loop = None
+        self._app = None
+        #: What the loop hands every inbound message to before the handle
+        #: callbacks -- an open `clausters.gui.editing.Editor`, which applies
+        #: the ones naming its own widgets.
+        #:
+        #: **Held strongly, and that is the editor's lifetime**: an open window
+        #: is a resource this host owns until it closes, so `clausters.gui.edit`
+        #: can be called for its effect (`edit(curve)` and nothing else) without
+        #: the editor being collected out from under the window. What ends it is
+        #: the window closing, which unsubscribes.
+        self._listeners: list = []
+        #: Where a reply waits while the loop owns the socket. A reply is not an
+        #: event: it belongs to whoever asked, and dispatching it would both
+        #: lose it and hand a query's answer to a widget callback.
+        self._replies: "queue.Queue" = queue.Queue()
         #: id -> event handler (a `WidgetHandle.on_event`) and window id ->
         #: closed handler (a `WindowHandle.on_closed`), dispatched by `pump`.
         #: The stamp of the last ``/gui_event`` seen -- what `ack` answers. The
@@ -699,10 +720,23 @@ class GuiHost:
         widget: it still answers, the way the server replies even on a miss.
         """
         self._osc.send_msg(self.target, "/gui_query", id)
-        data = self._osc.recv(timeout)
-        if data is None:
-            raise ReplyTimeout(f"no /gui_info for widget {id} within {timeout}s")
-        addr, args = _osclib.decode(data)
+        if self.looping:
+            # The loop owns the socket, so the answer comes back through the
+            # slot it puts replies in rather than off the wire here. This is
+            # also the only shape of this call that is *correct*: reading the
+            # socket directly takes whatever arrives next, so an event landing
+            # between the question and the answer loses the reply even with no
+            # loop running at all.
+            try:
+                addr, args = self._replies.get(timeout=timeout)
+            except queue.Empty:
+                raise ReplyTimeout(
+                    f"no /gui_info for widget {id} within {timeout}s") from None
+        else:
+            data = self._osc.recv(timeout)
+            if data is None:
+                raise ReplyTimeout(f"no /gui_info for widget {id} within {timeout}s")
+            addr, args = _osclib.decode(data)
         if addr != "/gui_info" or not args:
             raise ReplyTimeout(f"no /gui_info for widget {id} within {timeout}s")
         # args = [id, type, k, v, k, v, ...]
@@ -743,6 +777,82 @@ class GuiHost:
             self._on_closed.pop(id, None)
         else:
             self._on_closed[id] = func
+
+    # ---- the event loop ----
+
+    @property
+    def loop(self):
+        """This host's `clausters.base.loop.EventLoop`, built on first use.
+
+        One loop per host, because there is one inbound carrier per host and
+        therefore one thing to drain. Reading this **builds and starts** it: the
+        loop takes the socket over from that moment, and `poll` and `pump` stop
+        touching it (see their notes). A script that would rather drain the
+        socket itself simply never asks for this.
+        """
+        if self._loop is None:
+            from ..base.loop import EventLoop
+
+            loop = EventLoop(name=f"GuiHost{self.target}")
+            loop.add_source(_HostSource(self))
+            self._loop = loop
+            loop.start()
+        return self._loop
+
+    @property
+    def clock(self):
+        """The `clausters.base.appclock.AppClock` over this host's loop -- the
+        application's time, in seconds, on the thread the windows are drained
+        on. `clausters.gui.app_clock` reaches the ambient host's."""
+        if self._app is None:
+            from ..base.appclock import AppClock
+
+            self._app = AppClock(self.loop)
+        return self._app
+
+    @property
+    def looping(self) -> bool:
+        """Whether a loop of this host's own is draining the socket. What `poll`
+        and `pump` answer to, and what a caller checks before writing a drain
+        loop by hand."""
+        return self._loop is not None and self._loop.running
+
+    def subscribe(self, func):
+        """Hand every inbound ``(addr, args)`` to ``func`` before the handle
+        callbacks, and return it.
+
+        This is the seam an owner of data plugs into — an editor applies an edit
+        here, ahead of the callbacks a script registered on the same window. The
+        registration is **strong** and is dropped by `unsubscribe`, which is
+        what an editor does when its window closes; see `_listeners`.
+        """
+        self._listeners.append(func)
+        return func
+
+    def unsubscribe(self, func):
+        """Remove a `subscribe` registration. A ``func`` that is not registered
+        is not an error — an owner may unsubscribe on a close it already
+        answered."""
+        for entry in list(self._listeners):
+            if entry == func:
+                self._listeners.remove(entry)
+
+    def deliver(self, addr, args) -> bool:
+        """Act on one inbound message: the listeners, then `dispatch`.
+
+        The loop's delivery, and the one door a message reaches this client
+        through when a loop is running -- so an edit lands before the script's
+        own callback sees the same event, and in one order.
+        """
+        did = False
+        for func in list(self._listeners):
+            try:
+                did |= bool(func(addr, args))
+            except Exception:
+                import traceback
+
+                traceback.print_exc()
+        return bool(self.dispatch(addr, args)) or did
 
     def dispatch(self, addr, args) -> bool:
         """Route one inbound message to the handle callback registered for its id
@@ -789,7 +899,15 @@ class GuiHost:
         `WindowHandle.on_closed`. Returns how many were dispatched. The
         event-driven counterpart to `poll` (the raw primitive): call it from the
         script's loop — **never** the clock thread, which a routine must not
-        block."""
+        block.
+
+        **With this host's `loop` running there is nothing here to do**: the
+        loop drains the socket and calls the same handlers, so this answers 0
+        without touching the carrier. Two drains over one socket would race for
+        every message and deliver half of them twice.
+        """
+        if self.looping:
+            return 0
         n = 0
         while (msg := self.poll(timeout)) is not None:
             if self.dispatch(*msg):
@@ -805,7 +923,17 @@ class GuiHost:
         script that built the window. Drive an interactive panel by polling this
         in a loop, wrap it with a `clausters.responders.OscFunc`-style dispatch,
         or — for the handle callbacks — `pump` it.
+
+        **With this host's `loop` running this answers ``None``** and waits out
+        ``timeout``: the socket is the loop's, and a second reader would take
+        messages the loop is there to deliver. A script written around this call
+        therefore keeps working beside a loop — it simply stops being the one
+        that drains.
         """
+        if self.looping:
+            if timeout:
+                time.sleep(timeout)
+            return None
         data = self._osc.recv(timeout)
         if data is None:
             return None
@@ -822,3 +950,38 @@ class GuiHost:
             msg = self.poll(timeout=0.1)
             if msg is not None:
                 handler(*msg)
+
+
+class _HostSource:
+    """A `GuiHost` as something an event loop can wait on.
+
+    Three methods and no policy: the descriptor to wait on, one message when
+    there is one, and what to do with it. What separates a **reply** from an
+    **event** lives here because it is the loop's own question — a reply is
+    somebody's answer and goes to the slot they are waiting at, an event is news
+    and goes to the subscribers and the callbacks.
+    """
+
+    #: The addresses that answer a question somebody asked, rather than
+    #: reporting something that happened.
+    REPLIES = ("/gui_info",)
+
+    def __init__(self, host):
+        self.host = host
+
+    def fileno(self):
+        return self.host._osc.fileno()
+
+    def read(self, timeout: float = 0.0):
+        data = self.host._osc.recv(timeout)
+        return None if data is None else _osclib.decode(data)
+
+    def deliver(self, item):
+        addr, args = item
+        if addr in self.REPLIES:
+            self.host._replies.put(item)
+            return
+        self.host.deliver(addr, args)
+
+    def __repr__(self):
+        return f"_HostSource({self.host.target})"

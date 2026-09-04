@@ -15,6 +15,10 @@ What to do in the window:
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo — the history belongs to the
   curve, not to the window, which is what the second cell shows.
 
+**Nothing here drives a loop.** ``edit`` opens the window and the host's event
+loop delivers each gesture to the curve on its own thread, so reading the
+`clausters.seq.Automation` at any moment reads what the hand has left there.
+
 **How an edit inverts is the shared crate's.** The payload goes in with the
 curve as it stands and comes back as the curve it now is *plus* the payload that
 puts it back — one call, because the inverse has to be read before the edit
@@ -64,9 +68,7 @@ curve = Automation.from_points(
 
 # %%
 session = Session.live(boot=False)
-gui = session.gui()
 editor = edit(curve, sample_rate=48_000.0, title="cutoff")
-editor.open(gui)
 
 
 # %% [markdown]
@@ -79,9 +81,7 @@ editor.open(gui)
 # %%
 def second_window():
     """Open a second view of the same curve. Edit in one, undo in the other."""
-    other = edit(curve, sample_rate=48_000.0, title="cutoff (again)")
-    other.open(gui)
-    return other
+    return edit(curve, sample_rate=48_000.0, title="cutoff (again)")
 
 
 # %% [markdown]
@@ -104,9 +104,8 @@ def read_back() -> list:
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
     print("draw in the window; Ctrl+Z undoes. Close it when you are done.")
-    while editor.window is not None:
-        editor.poll(0.05)
-        time.sleep(0.01)
+    while not editor.closed:
+        time.sleep(0.05)
     print("the curve, as it was left:")
     read_back()
 

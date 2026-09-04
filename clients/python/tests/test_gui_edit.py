@@ -30,6 +30,9 @@ class FakeHost:
         self.acks: list = []
         self.trees: list = []
         self.next = 20_000
+        #: What `subscribe` was handed -- an open editor's `apply`.
+        self.subscribed: list = []
+        self.closed: list = []
 
     def alloc_id(self) -> int:
         self.next += 1
@@ -49,11 +52,32 @@ class FakeHost:
     def push(self, seq, *corrections, doc_version=0, reason=None):
         self.acks.append((seq, list(corrections), reason))
 
+    def close(self, id):
+        self.closed.append(id)
+
+    def _set_closed_handler(self, id, func):
+        self.on_closed = (id, func)
+
     def poll(self, timeout=0.0):
         return None
 
     def dispatch(self, *msg):
         pass
+
+    # The event loop's end of the protocol. A double is a host, so it answers
+    # the two things an editor asks of one at `open`: what to subscribe to, and
+    # a loop -- which a double does not have and does not need, since nothing
+    # here is delivered by one.
+    def subscribe(self, func):
+        self.subscribed.append(func)
+        return func
+
+    def unsubscribe(self, func):
+        if func in self.subscribed:
+            self.subscribed.remove(func)
+
+    looping = False
+    loop = None
 
 
 def a_curve() -> Automation:
@@ -101,9 +125,31 @@ def blob(values) -> bytes:
 # ---- the verb ----
 
 def test_the_verb_opens_the_editor_the_structure_asks_for():
-    assert isinstance(edit(a_curve(), sample_rate=SR), PointsEditor)
-    assert isinstance(edit(a_timeline(), sample_rate=SR), NotesEditor)
-    assert isinstance(edit(FakeBuffer()), SamplesEditor)
+    assert isinstance(edit(a_curve(), sample_rate=SR, open=False), PointsEditor)
+    assert isinstance(edit(a_timeline(), sample_rate=SR, open=False), NotesEditor)
+    assert isinstance(edit(FakeBuffer(), open=False), SamplesEditor)
+
+
+def test_the_verb_opens_the_window_and_subscribes_the_editor_to_the_host():
+    """`edit(x)` is one call: it resolves a host, opens, and plugs the editor
+    into what the host delivers -- so ``edit(curve)`` on its own is a complete
+    program and nothing writes a drain loop. ``open=False`` is the one case the
+    separate `Editor.open` was ever for: a caller composing a window out of
+    several editors."""
+    host = FakeHost()
+    editor = edit(a_curve(), sample_rate=SR, host=host)
+    assert editor.id == editor.window and editor.id is not None
+    assert editor.closed is False
+    assert host.subscribed == [editor.apply]
+
+    editor.close()
+    assert editor.closed and editor.id is None
+    assert host.subscribed == [], "a closed window stops being delivered to"
+
+
+def test_open_false_builds_the_editor_without_a_window():
+    editor = edit(a_curve(), sample_rate=SR, open=False)
+    assert editor.window is None and editor.closed
 
 
 def test_something_none_of_the_three_reads_says_what_they_are():
@@ -115,7 +161,7 @@ def test_something_none_of_the_three_reads_says_what_they_are():
 
 def test_a_curve_is_drawn_edited_and_read_back_with_no_composition():
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO)
+    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
     host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "points",
@@ -135,7 +181,7 @@ def test_a_segments_shape_survives_the_round_trip():
     # The crate carries a point's `data` and reads none of it, which is what
     # keeps an undo from putting the curve back straight.
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO)
+    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "points",
                                 0.0, 300.0, 5, -4.0,
@@ -149,7 +195,7 @@ def test_a_segments_shape_survives_the_round_trip():
 
 def test_a_resend_of_the_curve_is_not_an_edit():
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO)
+    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "points",
                                        *curve.to_points()]) is False
@@ -160,7 +206,7 @@ def test_a_resend_of_the_curve_is_not_an_edit():
 
 def test_a_roll_edits_the_timeline_the_caller_holds():
     timeline = a_timeline()
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "notes",
@@ -177,7 +223,7 @@ def test_a_note_keeps_what_the_roll_cannot_draw():
     # Order is the only identity the payload carries, so the i-th note's own
     # event is edited rather than rebuilt from the five numbers.
     timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell"))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 65, 100, 0])
     _beat, event = next(iter(timeline))
@@ -191,7 +237,7 @@ def test_what_the_roll_does_not_draw_is_kept():
     timeline = a_timeline()
     marker = OscItem("/mark")
     timeline.add(3.0, marker)
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
     assert any(item is marker for _beat, item in timeline), \
@@ -205,7 +251,7 @@ def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
 
     timeline = a_timeline()
     timeline.add(3.0, OscItem("/hit", 7))
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
     at = [(beat, item) for beat, item in timeline if isinstance(item, OscItem)]
@@ -223,7 +269,7 @@ def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
 
     timeline = Timeline([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
                          (2.0, OscItem("/c", 3))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
     assert [(item.addr, item.args) for _beat, item in timeline] == \
@@ -237,7 +283,7 @@ def test_a_marker_added_in_the_roll_is_refused_and_says_why():
     from clausters.seq.timeline import OscItem
 
     timeline = Timeline([(0.0, OscItem("/a"))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) \
         is False
@@ -252,7 +298,7 @@ def test_the_notes_gesture_does_not_move_the_markers():
 
     timeline = a_timeline()
     timeline.add(3.0, OscItem("/hit"))
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
     assert [(beat, type(item).__name__) for beat, item in timeline] == \
@@ -263,7 +309,7 @@ def test_the_notes_gesture_does_not_move_the_markers():
 
 def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
     take = FakeBuffer(frames=8)
-    editor = edit(take, tempo=TEMPO)
+    editor = edit(take, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 2,
@@ -278,7 +324,7 @@ def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
 
 def test_one_dragged_sample_is_the_same_edit_one_frame_wide():
     take = FakeBuffer(frames=8)
-    editor = edit(take, tempo=TEMPO)
+    editor = edit(take, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]) is True
     assert take.data[3] == pytest.approx(0.9)
@@ -289,7 +335,7 @@ def test_one_dragged_sample_is_the_same_edit_one_frame_wide():
 def test_a_stroke_on_one_channel_of_a_stereo_take_leaves_the_other_alone():
     take = FakeBuffer(frames=4, channels=2)
     take.data = [0.1, 0.2] * 4
-    editor = edit(take, tempo=TEMPO)
+    editor = edit(take, tempo=TEMPO, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1,
                                 blob([0.7, 0.8]), blob([0.2, 0.2])])
@@ -300,7 +346,8 @@ def test_a_stroke_on_one_channel_of_a_stereo_take_leaves_the_other_alone():
 
 def test_edit_called_twice_gives_two_windows_and_one_stack():
     curve = a_curve()
-    left, right = edit(curve, sample_rate=SR), edit(curve, sample_rate=SR)
+    left = edit(curve, sample_rate=SR, open=False)
+    right = edit(curve, sample_rate=SR, open=False)
     left_host, wid = opened(left)
     right_host, _ = opened(right)
     right_host.acks.clear()
@@ -319,8 +366,8 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     # The composed case: two structures, one editing context, one order.
     context = Editing()
     curve, timeline = a_curve(), a_timeline()
-    curve_editor = edit(curve, sample_rate=SR, tempo=TEMPO, context=context)
-    roll = edit(timeline, sample_rate=SR, tempo=TEMPO, context=context)
+    curve_editor = edit(curve, sample_rate=SR, tempo=TEMPO, context=context, open=False)
+    roll = edit(timeline, sample_rate=SR, tempo=TEMPO, context=context, open=False)
     _ch, curve_wid = opened(curve_editor)
     _rh, roll_wid = opened(roll)
 

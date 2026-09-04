@@ -18,6 +18,10 @@ sends, so the message survives the drag — print it with ``read_back()``. Addin
 one *there* is refused and says why, because a marker is the message it sends
 and the lane has no way to type an address: add it here in the script instead.
 
+**Nothing here drives a loop.** ``edit`` opens the window and the host's event
+loop delivers each gesture to the timeline, so playing it after an edit plays
+what was drawn without a step in between.
+
 **A note keeps what the roll cannot draw.** Order is the only identity the
 payload carries, so the i-th note's own `clausters.seq.Event` is *edited* rather
 than rebuilt from the five numbers a roll can say — which is what keeps the
@@ -66,11 +70,10 @@ timeline = Timeline([
 
 # %%
 session = Session.live()
-gui = session.gui()
+session.gui()          # the host wired to this session's server
 editor = edit(timeline,
               sample_rate=session.server.query_info().nominal_sample_rate,
               tempo=session.clock.tempo, title="notes")
-editor.open(gui)
 
 
 # %% [markdown]
@@ -108,9 +111,8 @@ def read_back():
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
     print("edit the notes; space plays nothing here — call play(). Close when done.")
-    while editor.window is not None:
-        editor.poll(0.05)
-        time.sleep(0.01)
+    while not editor.closed:
+        time.sleep(0.05)
     print("the timeline, as it was left:")
     read_back()
 

@@ -326,13 +326,27 @@ class Editor:
         named — the same rule `clausters.gui.guidef.View.open`, `clausters.plot`
         and `clausters.scope` follow.
 
+        **The host's event loop is started here**, and this editor subscribes to
+        it: from now on the gestures reach the structure on the loop's thread,
+        with no drain written anywhere. That is what makes `clausters.gui.edit`
+        one call — and it is also why `poll` becomes unnecessary rather than
+        wrong (it answers ``False`` while the loop runs).
+
         Returns the **window handle** `clausters.gui.host.GuiHost.open` hands
         back: it equals the window id, and it also resolves the tree's named
         widgets."""
+        if self._window is not None:
+            # **One editor, one window.** Opening an open editor is not a second
+            # view of the structure -- that is `edit(x)` a second time, which
+            # gives a second editor on the same history -- so this answers the
+            # window it already has rather than orphaning it.
+            return self._window
         self._host = _resolve_host(host)
         self._window = self._host.open(self.draw(), id=id)
         self._editing.attach(self)
         self._announce()
+        self._host.subscribe(self.apply)
+        self._host.loop            # built and started on first use
         return self._window
 
     # ---- the edit-back ----
@@ -365,8 +379,13 @@ class Editor:
                 self._window = None
                 # Closing a *view* is not an event of the history, so the
                 # context stays exactly as it is -- what goes is this window's
-                # place in the list of who to tell.
+                # place in the list of who to tell, and this editor's place in
+                # what the host delivers to. The second is also this editor's
+                # **lifetime**: the host holds an open editor so a script need
+                # not, and this is where it stops.
                 self._editing.detach(self)
+                if self._host is not None:
+                    self._host.unsubscribe(self.apply)
             return False
         if addr != "/gui_event" or len(args) < 3:
             return False
@@ -687,6 +706,48 @@ class Editor:
         """The open window's id, or ``None``."""
         return self._window
 
+    #: What a handle in this client is addressed by. `clausters.plot.PlotWindow`
+    #: and `clausters.gui.handle.WindowHandle` answer to the same name, so the
+    #: four things a visual verb hands back are read the same way.
+    @property
+    def id(self):
+        """The open window's id, or ``None`` — the same number as `window`."""
+        return self._window
+
+    @property
+    def closed(self) -> bool:
+        """Whether this editor's window is gone."""
+        return self._window is None
+
+    def close(self):
+        """Close this editor's window (``/gui_free``) and stop listening.
+
+        **The history is not closed with it.** An undo order belongs to the data
+        (`clausters.gui.editing.Editing.of`), so editing the same structure again
+        resumes the same order — closing a window is not an edit, and never was.
+        """
+        window, self._window = self._window, None
+        if self._host is not None:
+            self._host.unsubscribe(self.apply)
+            if window is not None:
+                self._host.close(window)
+        self._editing.detach(self)
+        return self
+
+    def on_closed(self, func):
+        """Call ``func()`` when this editor's window is closed, and return
+        ``self``. ``None`` clears it.
+
+        The same verb `clausters.plot.PlotWindow.on_closed` and
+        `clausters.gui.handle.WindowHandle.on_closed` carry, over the same
+        registry — so a window opened by `clausters.gui.edit` and one opened by
+        `clausters.plot` are told about in one way.
+        """
+        if self._host is None or self._window is None:
+            raise RuntimeError("open() the editor before asking to be told it closed")
+        self._host._set_closed_handler(int(self._window), func)
+        return self
+
     def poll(self, timeout: float = 0.0) -> bool:
         """Drain the host's pending messages into the structure (`apply` each)
         **and on to the window's own handlers**. Returns whether the data
@@ -702,6 +763,12 @@ class Editor:
         """
         if self._host is None:
             raise RuntimeError("open(host) the editor first")
+        if self._host.looping:
+            # The loop drains this host and hands every message to `apply`
+            # already. Answering `False` rather than raising is deliberate: a
+            # script written around this call keeps running unchanged, it has
+            # simply stopped being the thing that delivers.
+            return False
         changed = False
         while (msg := self._host.poll(timeout)) is not None:
             changed |= self.apply(*msg)

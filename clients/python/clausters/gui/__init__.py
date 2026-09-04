@@ -140,12 +140,33 @@ def ambient_host():
     return _ambient
 
 
+def app_clock(host=None):
+    """The `clausters.base.appclock.AppClock` of ``host``, or of the ambient one.
+
+    The application's clock: **seconds**, on the thread the windows are drained
+    on. It is where anything that touches a window belongs — an animation, a
+    periodic read-out, a follow-up to a gesture — and it is what a routine on
+    the musical `clausters.base.clock.TempoClock` reaches through
+    ``app_clock().defer(...)``, since that thread must never block::
+
+        app_clock().play(Routine(blink))        # a routine that yields seconds
+        app_clock().sched(0.5, lambda: knob.set(value=1.0))
+        app_clock().defer(lambda: win.close())  # from any other thread
+
+    Asking for it starts the host's loop, exactly as opening an editor does.
+    """
+    from ..plot import _ambient_host
+
+    return (host if host is not None else _ambient_host()).clock
+
+
 __all__ = [
     "GuiHost",
     "WidgetInfo",
     "DEFAULT_PORT",
     "set_ambient_host",
     "ambient_host",
+    "app_clock",
     "Editor",
     "FormEditor",
     "MEASURES",

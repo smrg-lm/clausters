@@ -32,14 +32,15 @@ Concretely, the rhythm you will fall into on the editor pages is:
 
 ```python
 # make a gesture in the window (drag a clip, reshape a curve) ... then:
-editor.poll()      # fold the pending edits into the arrangement
 editor.play()      # hear the piece as it now stands
 ```
 
-No polling loop, no dispatch table: one call drains the window's pending
-events into the arrangement, and one call plays the result. (A self-contained
-*script* form of the very same piece — transport buttons on screen, a poll
-loop — is `examples/editors/composer.py`; the tutorial points at it at the end.)
+No polling loop, no dispatch table, and no step in between: opening an editor
+starts the host's [event loop](gui.md#the-event-loop-when-nobody-pumps), which
+applies each gesture to the arrangement as it arrives, so the only call left is
+the one that plays the result. (A self-contained *script* form of the very same
+piece — transport buttons on screen — is `examples/editors/composer.py`; the
+tutorial points at it at the end.)
 
 ## What you will build
 

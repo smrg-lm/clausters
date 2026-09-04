@@ -176,10 +176,7 @@ already answered by holding one:
 ```python
 from clausters.gui import edit
 
-editor = edit(curve, sample_rate=48_000.0)
-editor.open(gui)
-while editor.window is not None:
-    editor.poll(0.05)
+edit(curve, sample_rate=48_000.0)     # the window is up
 
 curve.to_points()      # the edited curve, out of the object you already held
 ```
@@ -233,14 +230,13 @@ from clausters.gui import FormEditor
 editor = FormEditor(song, sample_rate=SR, tempo=2.0, quant=0.5, follow=True)
 editor.open()                       # the arrangement, as a multitrack window
 editor.render(server, clock)        # play it; the playhead sweeps the clips
-
-while editor.window is not None:
-    editor.poll(0.05)               # a dragged clip moves the element
 ```
 
-`poll` drains the host's events into the arrangement — drag a clip to move it, an
-edge to trim it — and with `follow=True` the composition is re-scheduled from the
-playhead, so you hear it where you dropped it. The semantics there are honest:
+Gestures reach the arrangement on their own — drag a clip to move it, an edge to
+trim it — because opening an editor starts the host's [event
+loop](gui.md#the-event-loop-when-nobody-pumps) and the editor is subscribed to
+it. With `follow=True` the composition is re-scheduled from the playhead, so you
+hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding
 keeps sounding.
 
@@ -392,7 +388,7 @@ history: a note moved in the roll reaches the clip drawing it, as props, without
 either window being redefined, and Ctrl+Z in either walks the one order. The
 editors this one composed are `FormEditor.composed`.
 
-Edits flow back through `poll` exactly as the multitrack's do, **when the
+Edits flow back exactly as the multitrack's do, **when the
 element is editable**: a dragged, added or removed note is written onto a
 `Track`'s timeline (times converted to beats, any OSC/MIDI items on the same
 timeline preserved). A note is *updated*, not rebuilt — the event keeps its
@@ -608,7 +604,7 @@ the document, beside the data it inverts, and `FormEditor.undo` / `FormEditor.re
 through it:
 
 ```python
-editor.apply(*gui.poll())        # a dragged clip
+# after dragging a clip in the window
 editor.can_undo                  # True
 editor.undo_label                # "move the clip"
 editor.undo()                    # the clip springs back, and the window is told
@@ -641,20 +637,17 @@ multitrack = FormEditor(piece, sample_rate=sr)
 roll = FormEditor(piece, sample_rate=sr)      # a second window, same composition
 multitrack.open(gui)
 roll.open(gui)
-
-message = gui.poll(timeout=0.05)          # one loop feeds both editors
-multitrack.apply(*message)                # a clip is dragged here
-roll.apply(*message)                      # the other window's events fall through
+                                          # drag a clip in either window
 roll.can_undo                             # True: it is showing the data that moved
 roll.undo()                               # and the clip springs back in both
 ```
 
-**Feed every message to every editor.** An editor is driven by `apply`, not by
-`pump`: `pump` dispatches to the widget handles a script registered and consumes
-the message, so an editor that is pumped and never applied hears no drag and no
-Ctrl+Z. Handing one loop to both is the supported shape — every route resolves
-through an editor's own registries, so another window's events fall through
-untouched.
+**Every message reaches every editor**, and that is what the host's event loop
+does with them: each open editor is handed the whole stream and answers for the
+widgets it drew, so another window's events fall through untouched. An editor is
+driven by `apply` rather than by `pump` — `pump` dispatches to the widget handles
+a script registered — and the loop calls the first before the second, in one
+order.
 
 An edit in one window **reaches** the others, which nothing else would do: an
 acknowledgement goes to the window whose gesture it answered. It arrives as
@@ -681,7 +674,7 @@ A sweep on a lane is not an edit — nothing in the composition changes — but 
 is the **value** an operation is handed, so the editor keeps it typed:
 
 ```python
-editor.apply(*gui.poll())        # a marquee swept on a lane
+# after sweeping a marquee on a lane
 editor.selection                 # {"start": 1.0, "len": 2.0}   (beats)
 editor.resolve_selection()       # [{"node": 3, "source": {...}, "range": [...], ...}]
 ```
@@ -729,7 +722,7 @@ them the way it answers everything else — by deciding nothing an intent could
 decide:
 
 ```python
-editor.apply(*gui.poll())    # Ctrl+X over a selection covering a clip
+# Ctrl+X over a selection covering a clip
 editor.can_undo              # True: a cut is an edit, so it inverts
 ```
 

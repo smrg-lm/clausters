@@ -211,7 +211,7 @@ class NotesDomain(Domain):
         # gesture actually rewrote is built from its description.
         held = [[_plain(item_data(item)), item] for _beat, item in structure
                 if item_data(item) is not None]
-        structure.clear()
+        rebuilt = []
         for event in edited["state"]:
             data = event.get("data") or {}
             was = next((h for h in held if h[1] is not None and h[0] == data), None)
@@ -219,9 +219,12 @@ class NotesDomain(Domain):
                 item, was[1] = was[1], None
             else:
                 item = item_from_data(data)
-            structure.add(float(event.get("at", 0.0)), item)
-        for beat, item in others:
-            structure.add(beat, item)
+            rebuilt.append((float(event.get("at", 0.0)), item))
+        # **One step, not a clear and a rebuild.** The projection runs on the
+        # event loop's thread while the script may be reading the same
+        # timeline, and a timeline emptied for the length of a rebuild is a
+        # timeline somebody reads as empty -- see `Timeline.replace`.
+        structure.replace(rebuilt + others)
         return True
 
     def label(self, payload: dict) -> str:

@@ -253,6 +253,33 @@ Turn the knob and click the button: the values print. Nothing is delivered
 until you pump — the host's messages queue up, and the script decides when it
 is listening, exactly as it does for the audio server.
 
+### The event loop: when nobody pumps
+
+A host can also deliver by itself. Ask it for its **event loop** and it takes
+the socket over on a thread of its own, calling the same callbacks as they
+arrive:
+
+```python
+gui.loop                  # built and started here
+gui.looping               # True: the loop is the one draining now
+```
+
+From then on `pump` has nothing to do and answers `0`, and `poll` answers
+`None` — two drains over one socket would race for every message and deliver
+half of them twice, so the manual pair stands down rather than competing. A
+script written around `poll` keeps running unchanged beside a loop; it simply
+stops being the thing that delivers.
+
+You rarely ask for this directly. Opening an editor with
+[`edit(x)`](composition.md) starts it, and so does asking for the application's
+clock ([`app_clock()`](routines-and-clocks.md#the-applications-clock-appclock)):
+both need messages to arrive without a script standing over them.
+
+A **reply is not an event**, and the loop keeps them apart: `query`'s answer
+goes to whoever asked rather than to the callbacks. That is also the only
+correct shape for it — reading the socket by hand takes whatever arrived next,
+so an event landing between the question and the answer loses the reply.
+
 ## What a `type` names
 
 Every node is `{id, type, props, children}`, and a `type` names one of three

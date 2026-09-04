@@ -512,11 +512,19 @@ class FormEditor(Editor):
         back: it equals the window id, and it also resolves the tree's named
         widgets, so the transport buttons are reachable by name
         (``win["play"].on_event(...)``)."""
+        if self._window is not None:
+            return self._window            # one editor, one window: see `Editor.open`
         host = _resolve_host(host)
         self._host = self.transport.host = host
         self._window = host.open(self.draw(), id=id)
         self._editing.attach(self)
         self._announce()
+        # The same two lines the generic `Editor.open` ends with: the host's
+        # loop delivers to this window too, so a multitrack needs no drain of
+        # its own -- and neither does the transport, whose gestures arrive the
+        # same way.
+        host.subscribe(self.apply)
+        host.loop
         return self._window
 
     def adopt(self, intents: list, whole: bool) -> None:

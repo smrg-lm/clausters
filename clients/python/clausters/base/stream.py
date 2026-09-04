@@ -235,3 +235,48 @@ def _call(func, inval):
         return func(inval) if len(params) >= 1 else func()
     except (TypeError, ValueError):
         return func()
+
+
+def resume(item, clock, logical=None):
+    """Resume ``item`` on ``clock`` and return the delay it asks for next, or
+    ``None`` when it wants no more time.
+
+    The one resumption, so the two clocks cannot disagree about what driving a
+    routine means: `clausters.base.clock.TempoClock` calls it in beats (passing
+    the exact logical beat a ``yield`` fell on) and
+    `clausters.base.appclock.AppClock` in seconds, where there is no logical
+    beat to carry and ``logical`` is left out.
+
+    ``item`` is a `Stream` or a plain callable; anything else is ignored. A
+    raising routine **loses its place in the schedule and nothing else**: the
+    traceback goes to stderr and the driving thread survives, because it drives
+    every other routine and a dead one would leave a clock that reports itself
+    running while waking nobody.
+    """
+    import traceback
+
+    from .main import main
+
+    prev = main.current_routine
+    main.current_routine = item
+    if isinstance(item, Stream):
+        item.clock = clock             # the running thread carries its clock (sc3)
+        if logical is not None:
+            item._logical_beat = logical   # ...and its exact logical time
+    try:
+        if isinstance(item, Stream):
+            delta = item.next(clock)
+        elif callable(item):
+            delta = item()
+        else:
+            return None
+    except StopStream:
+        return None
+    except Exception:
+        if isinstance(item, Stream):
+            item.state = "done"
+        traceback.print_exc()
+        return None
+    finally:
+        main.current_routine = prev
+    return delta if isinstance(delta, (int, float)) else None

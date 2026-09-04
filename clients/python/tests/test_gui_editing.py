@@ -75,6 +75,8 @@ class FakeHost:
         self.acks: list = []
         self.pushes: list = []
         self.next = 20_000
+        #: What `subscribe` was handed -- an open editor's `apply`.
+        self.subscribed: list = []
 
     def alloc_id(self) -> int:
         self.next += 1
@@ -98,6 +100,21 @@ class FakeHost:
 
     def dispatch(self, *msg):
         pass
+
+    # The event loop's end of the protocol. A double is a host, so it answers
+    # the two things an editor asks of one at `open`: what to subscribe to, and
+    # a loop -- which a double does not have and does not need, since nothing
+    # here is delivered by one.
+    def subscribe(self, func):
+        self.subscribed.append(func)
+        return func
+
+    def unsubscribe(self, func):
+        if func in self.subscribed:
+            self.subscribed.remove(func)
+
+    looping = False
+    loop = None
 
 
 def an_editor(structure=None):

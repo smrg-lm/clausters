@@ -12,6 +12,9 @@ nothing is read from the server to do it: a stroke's event carries the run it
 wrote *and* the run it replaced, which is what the protocol carries `previous`
 for.
 
+**Nothing here drives a loop.** ``edit`` opens the window and the host's event
+loop delivers each stroke to the buffer.
+
 **The one domain the crate does not hold.** A curve's points and a timeline's
 events are values this process owns, so the shared crate can be handed one and
 asked what an edit makes of it. A span of samples is a borrowed view over
@@ -65,9 +68,8 @@ take = Buffer.from_samples(samples, 1, rate, server=server)
 # straight from the server's buffer, and the crate's ``samples`` vocabulary.
 
 # %%
-gui = session.gui()
+session.gui()          # the host wired to this session's server
 editor = edit(take, title="take")
-editor.open(gui)
 
 # %% [markdown]
 # ## Hear the stroke
@@ -87,9 +89,8 @@ def run():
     """Keep the window open until it is closed."""
     print("zoom in (wheel) until the samples are discs, then Alt+drag to draw.")
     print("Ctrl+Z puts them back. Call play() to hear what you drew.")
-    while editor.window is not None:
-        editor.poll(0.05)
-        time.sleep(0.01)
+    while not editor.closed:
+        time.sleep(0.05)
 
 
 # %%

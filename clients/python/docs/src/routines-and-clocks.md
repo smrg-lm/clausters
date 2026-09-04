@@ -132,6 +132,47 @@ Because it is the same interface, one distinction matters as much offline as liv
 
 Placing something *in time* is the other path: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `send_msg` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a piece and a chord.
 
+## The application's clock: `app_clock()`
+
+There are two clocks here, and they answer different questions. The
+`TempoClock` above keeps **musical** time — beats, tempo, what a piece plays
+on. The other keeps the **application's** time: seconds, on the thread the
+windows are drained on, and it is where anything that touches a window belongs.
+
+```python
+from clausters.gui import app_clock
+
+app_clock().sched(0.5, lambda: knob.set(value=1.0))    # once, half a second on
+```
+
+An **animation** is not an API — it is a routine that waits, exactly like a
+musical one, in the other unit:
+
+```python
+def blink():
+    while True:
+        lamp.set(color="red");  yield 0.25
+        lamp.set(color="grey"); yield 0.25
+
+app_clock().play(Routine(blink))
+```
+
+And `defer` is the door from any other thread. A routine on the `TempoClock`
+must never block its own thread, so what it wants to do to a window it hands
+over instead:
+
+```python
+def piece(clock):
+    for beat in range(8):
+        Event(instrument="default", freq=330).play()
+        app_clock().defer(lambda beat=beat: counter.set(value=beat))
+        yield 1.0
+```
+
+The deferred call runs where the windows are, in the loop's own order, and the
+routine goes back to keeping time. Asking for `app_clock()` starts the host's
+[event loop](gui.md#the-event-loop-when-nobody-pumps) if it is not running yet.
+
 ## Sending to another application
 
 The same logical beat is available to anything else that speaks OSC. A destination is where OSC goes, and `session.destination(host, port)` opens one onto another application:

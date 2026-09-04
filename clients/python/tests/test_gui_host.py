@@ -294,3 +294,65 @@ def test_a_session_takes_a_host_it_did_not_boot():
     assert session.gui() is host
     assert session.gui_host is host
     assert host._process is None
+
+
+# ---- the event loop owns the socket ----
+
+
+class _Loopable(_Recorder):
+    """A `_Recorder` an `EventLoop` can be told to watch: no descriptor, and
+    whatever was queued into it."""
+
+    def __init__(self, *replies):
+        super().__init__()
+        self.queued = list(replies)
+
+    def fileno(self):
+        return None
+
+    def recv(self, timeout):
+        return self.queued.pop(0) if self.queued else None
+
+
+def test_poll_and_pump_stand_down_while_the_loop_drains():
+    """Two drains over one socket would race for every message and deliver half
+    of them twice, so the manual pair answers "nothing" rather than reading.
+    A script written around `poll` keeps running beside a loop; it simply stops
+    being the one that delivers."""
+    host = GuiHost(interface=_Loopable())
+    assert host.looping is False
+    host.loop                                   # built and started here
+    try:
+        assert host.looping is True
+        assert host.poll(0.0) is None
+        assert host.pump(0.0) == 0
+    finally:
+        host.loop.close()
+
+
+def test_a_subscriber_is_handed_every_message_before_the_callbacks():
+    """The seam an owner of data plugs into: an editor applies an edit here,
+    ahead of a callback the script registered on the same window."""
+    host = GuiHost(interface=_Recorder())
+    seen = []
+    host.subscribe(lambda addr, args: seen.append((addr, args)) or True)
+    host.deliver("/gui_event", [7, 1, 1, "points", 0.0])
+    assert seen == [("/gui_event", [7, 1, 1, "points", 0.0])]
+    host.unsubscribe(seen.append)               # not registered: not an error
+
+
+def test_a_reply_goes_to_whoever_asked_and_an_event_does_not():
+    """A reply is not an event. Dispatching one both loses it and hands a
+    query's answer to a widget callback -- and reading it off the socket by hand
+    takes whatever arrived next, which is how an event landing mid-query used to
+    lose the reply with no loop running at all."""
+    from clausters.gui.host import _HostSource
+
+    host = GuiHost(interface=_Recorder())
+    source = _HostSource(host)
+    events = []
+    host.subscribe(lambda addr, args: events.append(addr))
+    source.deliver(("/gui_info", [7, "curve"]))
+    source.deliver(("/gui_event", [7, 1, 1, "points"]))
+    assert events == ["/gui_event"]
+    assert host._replies.get_nowait() == ("/gui_info", [7, "curve"])
