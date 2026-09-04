@@ -2318,6 +2318,62 @@ fn a_marquee_dragged_down_the_stack_takes_the_clips_of_every_lane_it_crossed() {
     );
 }
 
+/// **The rectangle's second axis is drawn, not only taken.** The time span
+/// belongs to the navigation group -- it is the loop region, and every linked
+/// view draws it -- so the band used to appear on all five lanes of a sweep
+/// over two, while the clips in the hand were the crossed ones'. The picture
+/// and the hand disagreed about the vertical half of one rectangle.
+///
+/// The lanes the sweep reached are the group's now, beside the span, and a
+/// selection **no sweep drew** (a `/gui_set`, a def's own numbers) names none
+/// of them -- so it is the whole stack again, which is the only thing a
+/// horizontal selection can honestly mean.
+#[test]
+fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","snap":100.0,"children":[
+                {"id":91,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":95,"type":"field","label":"three","link":"a","snap":100.0,"children":[
+                {"id":96,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let sweeping = GestureCtx {
+        alt: true,
+        ..GestureCtx::new(1, 800, 300)
+    };
+    let painted = |host: &Host, id: i32| {
+        let key = host.timeline_key(id).expect("a lane is in a group");
+        host.timelines().lane_shows_selection(key, id)
+    };
+    let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
+    let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
+    let (y0, y1) = (
+        (first.y + first.h * 0.5) as f64,
+        (second.y + second.h * 0.5) as f64,
+    );
+    g.press(&mut host, &sweeping, from, y0);
+    g.drag_to(&mut host, &sweeping, to, y1);
+    g.release(&mut host, &sweeping, to, y1);
+    assert!(
+        painted(&host, 80) && painted(&host, 90),
+        "the two lanes the rectangle reached",
+    );
+    assert!(!painted(&host, 95), "and not the one below it");
+
+    // The span written from the wire is the whole stack's again: nobody chose
+    // a vertical range, so there is none to draw.
+    host.set_timeline_selection(80, Some(100.0), Some(200.0));
+    assert!(
+        painted(&host, 80) && painted(&host, 90) && painted(&host, 95),
+        "a selection no sweep drew restricts no lane",
+    );
+}
+
 /// **A clip changes lane by the call a note changes row with.** One vertical
 /// axis, one `index_at`: the clip follows the hand across the stack while it is
 /// still held -- a clip drawn on a lane it is not over would be a lie -- and

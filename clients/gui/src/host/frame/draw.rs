@@ -604,11 +604,22 @@ pub(super) fn draw_static_meshes(
             // like a gesture the window had ignored. Through the same routine
             // the signal views draw theirs with, into the overlay for the
             // reason the playhead is: a lane's clips are drawn after it.
+            //
+            // **And only where the rectangle reached.** The span is the
+            // group's, so every linked lane used to paint it while the clips
+            // the sweep took were the crossed lanes' -- the picture and the
+            // hand disagreeing about the second axis of one rectangle. A
+            // selection nobody swept down the stack names no lanes and every
+            // one of them draws it, which is the `/gui_set` case unchanged.
+            let swept = inputs
+                .world
+                .timelines
+                .lane_shows_selection(group_key(item.id, item.editor.link), item.id);
             selection::draw_span(
                 &mut Draw::new(over, m, th),
                 body,
                 &nav,
-                chrome.selection(),
+                swept.then(|| chrome.selection()).flatten(),
                 1,
                 None,
                 selection::Vertical::Whole,

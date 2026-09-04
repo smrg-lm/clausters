@@ -3143,8 +3143,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A selection has two axes wherever the picture has two, and one where it
-  has one** *(stated 2026-09-03 by the user, closing the selection unification)*.
+- ✅ **A selection has two axes wherever the picture has two, and one where it
+  has one** *(stated 2026-09-03 by the user, closing the selection unification;
+  done the same day)*.
   The rule the configured sweep has to satisfy, written as a rule rather than as
   four behaviours: **the patcher, the multitrack and the notes select
   horizontally *and* vertically** -- a rectangle over boxes on a plane, a
@@ -3164,6 +3165,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   value the hand chose, in every view that has a second axis". Signal views are
   correct as they are and must stay that way -- one axis is the answer there, not
   a missing feature.
+
+  **Closed by the entry below**, which was the whole of what was left: the lanes
+  a sweep crossed are now recorded beside the group's span and the band is
+  painted on those and no others, so the four pictures answer the rule the four
+  takes already did.
 
 - ⬜ **A refused edit springs back and says nothing** *(found 2026-09-03, while
   chasing "the clip does not respond": pressing `e` over a piano-roll clip is
@@ -3225,8 +3231,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   happens once for all of them; cleared per lane, the selection would keep only
   what the lane the sweep ended on had.
 
-- ⬜ **The swept time band is the whole group's, so a sweep over two lanes of
-  five paints all five** *(found 2026-09-03, writing the above)*. The time
+- ✅ **The swept time band is the whole group's, so a sweep over two lanes of
+  five paints all five** *(found 2026-09-03, writing the above; fixed the same
+  day)*. The time
   selection belongs to the navigation group -- it is the loop span, and every
   linked view draws it -- so the stripe correctly appears on every lane, while
   the *clips* the sweep took are only those of the lanes it crossed. The
@@ -3236,6 +3243,25 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   what has to be decided first is whether that range is host-internal (set by
   the sweep, dropped by any `/gui_set` of the selection) or a property of the
   axis on the wire, which is a protocol change and reaches both clients.
+
+  **Decided host-internal**, and the reason is the one `host/bands.rs` already
+  states for the vertical in general: *the vertical is the container's, never
+  the group's*. A span on the wire is a fact two clients can both mean -- it is
+  the loop region, and a script sets it -- while "how far down this window's
+  stack a pointer travelled" is not something a client that never swept has
+  anything to say about, and a prop nobody can honestly write is surface both
+  clients would have to carry. So `TimelineGroups` holds `sel_lanes` beside the
+  states, `Host::select_lanes` is written by the sweep immediately after the
+  span, and `set_timeline_selection` -- the one door every selection goes
+  through -- drops it, which makes a `/gui_set` the whole stack again without a
+  rule of its own. The lane asks `lane_shows_selection` before it draws, so a
+  view that is not a lane of the swept stack (a waveform linked to it) is
+  untouched: it asks with its own id and no range names it. A redefine
+  reallocating ids is handled where the members are already being walked
+  (`sync_timeline_groups` prunes a range to the lanes still in the group and
+  drops one left with none), because a range naming lanes that are gone would
+  hide the band everywhere -- a selection plainly there and drawn nowhere,
+  which is worse than the disagreement this fixes.
 
 - ✅ **The auto-fit was taught door by door, and the doors kept disagreeing**
   *(found 2026-09-03, on the report that a view still re-framed itself with

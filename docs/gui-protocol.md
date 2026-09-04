@@ -476,8 +476,16 @@ like one thing wherever it sweeps.
 **A multitrack lane's second axis is the stack of lanes**, not a value, so a
 sweep down it takes the clips of every lane it crossed — the roll's own gesture
 one level up, and the same call, since a semitone row and a lane are one
-structure. The *span* it sets is still the navigation group's, so every linked
-view draws the same band; which clips it took is drawn on the clips.
+structure. The *span* it sets is still the navigation group's — it is the loop
+region, and a linked waveform or roll draws it — but on the stack the band is
+painted **only on the lanes the rectangle reached**: that vertical reach is the
+second value the hand chose, and it is the same value that decided which clips
+it took. A selection **no sweep drew** — one written through `sel_start`/
+`sel_len`, or a def's own — restricts no lanes, and every lane of the stack
+draws it, which is the only thing a span alone can honestly mean. The reach is
+the host's own state, set by the sweep and dropped by any other write of the
+selection; it is not a property on the wire, because a client that never swept
+has nothing to say about it.
 
 **`min`/`max` are the value domain, and every view of a signal is drawn over
 it** — the trace of a take, a plot, a live scope, and the navigable waveform,

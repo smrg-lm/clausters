@@ -276,6 +276,11 @@ impl Gestures {
                     if interact::select_clips_in(host, def_id, &lanes, anchor, cur) {
                         out.push(GestureEffect::Redraw(def_id));
                     }
+                    // And the picture says the same thing the hand did: the
+                    // band is painted on the lanes the rectangle reached and
+                    // on no others. Written after the span, which is what
+                    // drops the range a previous sweep left.
+                    host.select_lanes(id, lanes);
                 }
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and

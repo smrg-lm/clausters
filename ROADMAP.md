@@ -77,23 +77,14 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **A selection has two axes wherever the picture has two, and one where it
-  has one** *(`clients/gui/PLAN.md`, Found by use)*. The rule the unified sweep
-  has to satisfy: the patcher, the multitrack (across clips of **different**
-  tracks) and the notes select horizontally *and* vertically; a signal selects on
-  time alone, because its second axis is amplitude. What is still short of it is
-  the picture, not the take -- the lane stack's band is the navigation group's and
-  paints every lane. It is what the next entry has to be measured against, and it
-  is first because it states the criterion the other one is a case of.
-
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --
-  deliberately, into a structure of its own -- does not exist. It is worth having
-  on its own, and it is also a candidate answer to the entry above (a split that
-  clones needs no crate change, at the price of a cut that deletes instead of
-  hiding). The three shapes are named there; the decision is one decision and
-  covers both entries.
+  deliberately, into a structure of its own -- does not exist. It was also the
+  alternative to the windows the split now cuts (a split that clones needs no
+  crate change, at the price of a cut that deletes instead of hiding), and that
+  half is decided and recorded in `docs/decisions.md`; what is left here is the
+  verb itself, whose three shapes are named in the plan.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
