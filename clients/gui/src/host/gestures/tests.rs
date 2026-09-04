@@ -1909,6 +1909,77 @@ fn the_rulers_drag_scrolls_alt_sweeps_the_range_and_a_click_locates() {
     );
 }
 
+/// **A ruler strip answers as a ruler, whoever drew it.** The strip a lane or
+/// a roll reserves out of its own height is not a widget -- the press lands on
+/// the lane or on the element -- so without the rule it would sweep clips or
+/// notes and Alt would never reach the time range. Over the *body* of the same
+/// widget nothing changes: that is still the data selection.
+#[test]
+fn a_reserved_ruler_strip_takes_the_rulers_table() {
+    for (view, id) in [
+        (
+            r#"{"id":70,"type":"field","label":"lane","ruler":"samples","children":[
+                 {"id":71,"type":"field","offset":0.0,"dur":1000.0}]}"#,
+            70,
+        ),
+        (
+            r#"{"id":70,"type":"notes","ruler":"samples","min":48.0,"max":72.0,
+                "notes":[0.0,400.0,60.0,100,0]}"#,
+            70,
+        ),
+    ] {
+        let mut host = host_from(&format!(
+            r#"{{"type":"window","margin":0,"children":[{view}]}}"#
+        ));
+        host.set_timeline_total(id, 10000);
+        host.zoom_timeline(id, 0.25, 0.5); // room to scroll in both directions
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 800, 200);
+        let (body, rect) = {
+            let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+            (interact::time_of(&h.chain).unwrap().1.body, h.rect)
+        };
+        // Inside the reserved strip: the bottom `ruler_h` of the widget's rect.
+        let y = (rect.y + rect.h) as f64 - 2.0;
+        let x0 = body.x as f64 + body.w as f64 * 0.5;
+        let key = host.timeline_key(id).unwrap();
+
+        // A plain drag scrolls, and takes nothing: no span, and on a roll no
+        // note either.
+        let before = host.timeline_nav(id).unwrap().0.start;
+        g.press(&mut host, &ctx, x0, y);
+        g.drag_to(&mut host, &ctx, x0 - 60.0, y);
+        assert!(
+            host.timeline_nav(id).unwrap().0.start > before,
+            "a drag on the strip scrolls the axis on {view}"
+        );
+        assert_eq!(
+            host.timelines().state(key).unwrap().sel_len,
+            0.0,
+            "scrolling writes no range on {view}"
+        );
+        g.release(&mut host, &ctx, x0 - 60.0, y);
+
+        // A click on the strip is the cursor.
+        g.press(&mut host, &ctx, x0, y);
+        let effects = g.release(&mut host, &ctx, x0, y);
+        assert!(
+            has_emit_tag(&effects, id, "locate"),
+            "a click on the strip is a cursor on {view}"
+        );
+
+        // Alt sweeps the range there.
+        ctx.alt = true;
+        g.press(&mut host, &ctx, x0, y);
+        g.drag_to(&mut host, &ctx, x0 + 80.0, y);
+        g.release(&mut host, &ctx, x0 + 80.0, y);
+        assert!(
+            host.timelines().state(key).unwrap().sel_len > 0.0,
+            "alt+drag on the strip sweeps the time range on {view}"
+        );
+    }
+}
+
 fn lane_host() -> Host {
     host_from(
         r#"{"type":"window","margin":0,"children":[

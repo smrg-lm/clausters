@@ -175,6 +175,7 @@ impl Gestures {
                 origin_x,
                 start,
                 body,
+                ..
             } => {
                 let body_w = body.w.max(1.0) as f64;
                 pan_timeline(host, &mut out, def_id, id, start, (cx - origin_x) / body_w);
@@ -520,20 +521,21 @@ impl Gestures {
         // **A marquee ends where it is**: the objects it covered followed it
         // live and stay selected, and the rectangle -- which was the gesture's
         // own picture and never a state -- goes with the drag that held it.
-        // **A pan on a ruler that never moved is a locate.** The ruler's plain
-        // drag scrolls the axis, so the cursor is what its *click* means --
-        // the same rule a lane's marquee and a waveform's sweep already
-        // answer a click with, and the reason the range could take Alt without
-        // locating needing a chord of its own. Only a ruler: elsewhere a pan
-        // is Shift's, and a Shift+click has never located anything.
+        // **A pan that began on a ruler and never moved is a locate.** The
+        // ruler's plain drag scrolls the axis, so the cursor is what its
+        // *click* means -- the same rule a lane's marquee and a waveform's
+        // sweep already answer a click with, and the reason the range could
+        // take Alt without locating needing a chord of its own. Only a ruler,
+        // and only the one the press was on: elsewhere a pan is Shift's, and a
+        // Shift+click has never located anything.
         if let Some(Drag::Pan {
-            id, origin_x, body, ..
+            id,
+            origin_x,
+            body,
+            on_ruler: true,
+            ..
         }) = self.drag
             && (cx - origin_x).abs() <= host.metrics_for(def_id).hit_slop as f64
-            && matches!(
-                host.widget_kind(def_id, id),
-                Some(crate::host::widget::WidgetKind::TimeRuler { .. })
-            )
         {
             self.drag = None;
             locate_timeline(host, &mut out, def_id, id, body, cx);

@@ -174,6 +174,10 @@ impl Gestures {
             origin_x: cx,
             start: sole.axis.nav.start,
             body: sole.axis.body,
+            // The window's sole axis, grabbed with Shift where no container
+            // claimed the press: nowhere near a ruler strip, and a Shift+click
+            // has never located anything.
+            on_ruler: false,
         });
         true
     }
@@ -209,6 +213,7 @@ impl Gestures {
                     origin_x: cx,
                     start: axis.nav.start,
                     body: axis.body,
+                    on_ruler: frame.ruler,
                 });
                 true
             }

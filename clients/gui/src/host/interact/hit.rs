@@ -14,7 +14,7 @@
 
 use super::super::Host;
 use super::super::layout::{self, Rect};
-use super::super::widget::WidgetKind;
+use super::super::widget::{GestureMap, WidgetKind};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
 use super::{HeaderPart, Part};
 use crate::host::graphics::track;
@@ -62,7 +62,7 @@ pub(crate) fn hit(
         scale: p.scale,
         indent: p.indent,
         kind: p.widget.kind.clone(),
-        chain: chain_of(host, def_id, &placed, i, lanes),
+        chain: chain_of(host, def_id, &placed, i, y, lanes),
     })
 }
 
@@ -128,6 +128,7 @@ fn chain_of(
     def_id: i32,
     placed: &[layout::Placed],
     i: usize,
+    y: f64,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Vec<Frame> {
     let mut chain = Vec::new();
@@ -161,7 +162,8 @@ fn chain_of(
             chain.push(Frame {
                 id: p.widget.id,
                 rect: p.rect,
-                map: p.widget.gesture_map(),
+                map: map_for(host, def_id, &p, y),
+                ruler: on_ruler(host, def_id, &p, y),
                 coords,
             });
         }
@@ -169,6 +171,49 @@ fn chain_of(
     }
     chain.reverse();
     chain
+}
+
+/// **A ruler strip answers as a ruler, whoever drew it** — the widget's own
+/// table everywhere else.
+///
+/// A free-standing `timeruler` is a widget, so its table is its kind's and this
+/// changes nothing for it. The ruler a *view* reserves out of its own height —
+/// a lane's `ruler` prop, a roll's, a signal's — is not a widget at all: the
+/// press lands on the lane or on the element, and their table is the body's, so
+/// without this a drag on the strip sweeps clips or notes and Alt never reaches
+/// the time range. Two selections told apart by *where* the gesture began need
+/// the where to be asked, and a [`GestureMap`] is asked by modifier alone.
+///
+/// It is one band, because every view reserves it the same way: the bottom
+/// [`Metrics::ruler_h`] of the widget's rect, when its editor has a ruler on
+/// (`lane_body`, `pianoroll::regions` and `timeline_body` all take it off the
+/// bottom). Read from the same numbers the drawing reserves it with, so the
+/// picture and the gesture cannot drift.
+fn on_ruler(host: &Host, def_id: i32, p: &layout::Placed, y: f64) -> bool {
+    if matches!(p.widget.kind, WidgetKind::TimeRuler { .. }) {
+        return true;
+    }
+    let Some(editor) = p.widget.kind.editor() else {
+        return false;
+    };
+    if editor.ruler == super::super::widget::Ruler::Off {
+        return false;
+    }
+    let rh = host.metrics_for(def_id).ruler_h.min(p.rect.h);
+    let top = (p.rect.y + p.rect.h - rh) as f64;
+    y >= top && y <= (p.rect.y + p.rect.h) as f64
+}
+
+/// The table that press reads, which is the answer above plus the widget's own.
+fn map_for(host: &Host, def_id: i32, p: &layout::Placed, y: f64) -> GestureMap {
+    match p.widget.kind.editor() {
+        Some(editor) if on_ruler(host, def_id, p, y) => {
+            GestureMap::of_kind(&WidgetKind::TimeRuler {
+                editor: editor.clone(),
+            })
+        }
+        _ => p.widget.gesture_map(),
+    }
 }
 
 /// The [`TimeAxis`] of a placed timeline view — the geometry the renderer drew

@@ -3211,8 +3211,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   clients' `timeruler` builder docs (all three said a press locates and that you
   scrub on the ruler).
 
-- ⬜ **A ruler *strip* is not the ruler widget, and it carries none of its
-  table** *(found 2026-09-04, implementing the entry above)*. The free-standing
+- ✅ **A ruler *strip* is not the ruler widget, and it carried none of its
+  table** *(found and fixed 2026-09-04, implementing the entry above)*. The free-standing
   `timeruler` is a widget of its own, so its gesture table is its kind's. The
   ruler an element reserves out of its own height — a lane's `ruler` prop, a
   roll's, a signal's — is **not**: the press lands on the lane or on the
@@ -3220,19 +3220,39 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   body sweeps and Alt does not reach the range. A roll's own strip is where
   `edit_notes.py` would look for it.
 
-  What stands in the way is that **a plan is per-modifier and a strip needs a
+  What stood in the way is that **a plan is per-modifier and a strip needs a
   per-region answer**: `GestureMap::of_kind` and `Element::gesture_map` are
   asked without coordinates, so neither can say "over the strip, this table;
-  over the grid, that one". The three shapes worth weighing, none taken here:
-  a region-aware gesture map (a coordinate on the call — touches every
-  element), a strip that claims the press itself and asks for the machine's
-  select (the `Claim::take().marquee()` door the patcher already uses, which
-  would want a `.select()` beside it), or making the strip a child widget so it
-  simply *is* a `timeruler` (the honest model, and the most disruptive: ids,
-  layout, and every def that sets `ruler` as a prop).
+  over the grid, that one". Three shapes were weighed and none taken — a
+  region-aware gesture map (a coordinate on the call, touching every element),
+  a strip that claims the press itself (the `Claim::take().marquee()` door,
+  which serves an element and not a lane, since a lane is a container), or
+  making the strip a child widget so it simply *is* a `timeruler` (the honest
+  model, and the most disruptive: ids, layout, and every def that sets `ruler`
+  as a prop).
 
-- ⬜ **Labelled markers on the time ruler** *(decided 2026-09-04 with the entry
-  above; the ruler is what makes it possible)*. A ruler that owns the time axis
+  **What it took was a fourth, and smaller: choose the table at the press, by
+  where it landed.** One site reads it — `interact::hit`'s `chain_of`, which is
+  the hit test and so already has the coordinates — and one predicate decides:
+  *a press in the bottom `ruler_h` of a widget whose editor has a ruler on is a
+  press on a ruler*. It is one band because every view reserves it the same way
+  (`lane_body`, `pianoroll::regions` and `timeline_body` all take `ruler_h` off
+  the bottom), so the gesture is read from the numbers the drawing reserves it
+  with and the two cannot drift.
+
+  The answer is kept on the `Frame` (`ruler: bool`) and carried into
+  `Drag::Pan` (`on_ruler`) rather than re-derived at the release: a pan may
+  travel off the strip it began on, and it is the *press* that says what the
+  gesture is. No element signature moved, no ids moved, and a def that sets
+  `ruler` as a prop lays out exactly as it did.
+
+  Written as a rule rather than as an exception, in the reference and in both
+  clients' `timeruler` docs: **a ruler strip answers as a ruler, whoever drew
+  it** — and over the body of the same widget nothing changes, which is still
+  the data selection.
+
+- ⬜ **Labelled markers on the time ruler** *(decided 2026-09-04 with the two
+  entries above; the ruler is what makes it possible)*. A ruler that owns the time axis
   is where markers belong: a `markers` prop of `(time, label)` pairs,
   **Ctrl+click** to add or remove one (the chord the ruler's plan deliberately
   leaves on the pan today), drag one to move it, flowing back as its own

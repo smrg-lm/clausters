@@ -77,16 +77,8 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **A ruler *strip* is not the ruler widget, and it carries none of its
-  table** *(`clients/gui/PLAN.md`, Found by use)*. **Next.** The free-standing
-  `timeruler` now sweeps the time range (Alt+drag), scrolls on a plain drag and
-  locates on a click. The ruler an element reserves out of its own height — a
-  lane's, a roll's, a signal's — keeps the body's plan, so the range is out of
-  reach there. The entry names what stands in the way (a plan is per-modifier,
-  a strip needs a per-region answer) and weighs three shapes without taking one.
-
 - ⬜ **Labelled markers on the time ruler** *(`clients/gui/PLAN.md`, Found by
-  use)*. After the two above: `(time, label)` pairs on the ruler, Ctrl+click to
+  use)*. **Next.** `(time, label)` pairs on the ruler, Ctrl+click to
   add or remove one — the chord the ruler's plan leaves free today. The WAV cue
   chunks that carry them are a data path of their own, later.
 

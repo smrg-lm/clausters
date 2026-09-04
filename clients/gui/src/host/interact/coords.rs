@@ -130,6 +130,12 @@ pub(crate) struct Frame {
     /// What a press on this container does, by modifier — the container's own
     /// table, or the default its kind carries.
     pub map: GestureMap,
+    /// Whether the press landed on a **ruler surface** — the `timeruler`
+    /// widget itself, or the strip a view reserves out of its own height. It
+    /// is what `map` was chosen by, kept because a gesture outlives the press:
+    /// a pan that never moved is a locate *on a ruler* and a scroll anywhere
+    /// else.
+    pub ruler: bool,
     pub coords: Coords,
 }
 

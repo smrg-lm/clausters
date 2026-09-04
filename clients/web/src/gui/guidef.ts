@@ -2400,8 +2400,12 @@ export function piano(
  * **Alt+drag sweeps the range**, the wheel zooms, and a **click locates** — a
  * drag that never left the slop is where the hand pointed. On a signal the
  * range is not a second thing: the frames and the span are one selection there,
- * so the ruler is another hand onto the one the view already has.
- * `h` is its thickness in logical pixels.
+ * so the ruler is another hand onto the one the view already has. And a lane's
+ * own `ruler`, a roll's and a signal's are **strips** rather than widgets — the
+ * press lands on the view — so the table is read from where the press landed:
+ * the bottom of a view that has a ruler answers with the ruler's table, whoever
+ * drew it.
+ * `h` is this one's thickness in logical pixels.
  */
 export function timeruler(
     options: TimelineOptions & {
