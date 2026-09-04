@@ -47,7 +47,8 @@ from ...form.document import (FIRST_VERSION, ID_ATTR, MIXING, leaf_config,
                               leaf_node, next_node_id, set_mixing, to_document)
 from ...form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
 from ...form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
-                             Segments, Track, Vector, to_beats)
+                             Segments, Track, Vector, _single_window, to_beats)
+from ...segments import BufferSegments, NoteSegments
 from ...defs.ugens import points_to_env
 from ...form.render import flatten
 from ...seq.automation import Automation
@@ -1581,24 +1582,6 @@ class FormEditor(Editor):
         self._restructured = True
         return self._changed()
 
-    def _segments_within(self, element, length) -> list:
-        """The segments a placement of ``length`` seconds actually shows of a
-        `Segments` — the placement being a window onto the samples like every
-        other placement here, so a half whose placement was shortened by a split
-        holds the samples it *plays*, not everything the element still knows
-        about.
-        """
-        if length is None:
-            return element.segments
-        out = []
-        for offset, seg in element.placed():
-            if offset >= float(length) - 1e-9:
-                break
-            room = float(length) - offset
-            out.append(seg if seg.duration <= room + 1e-9
-                       else Segment(seg.buffer, seg.start, room))
-        return out
-
     def _apply_join(self, placed, ids: list) -> bool:
         """Clips read as one.
 
@@ -1637,26 +1620,19 @@ class FormEditor(Editor):
             self._reason = ("these clips are not measured in the same unit, so "
                             "there is no one thing they read as")
             return False
-        if units == {BEATS}:
-            joined, total = self._joined_track(elements, lengths)
-            if joined is None:
-                return False
-            segments = []
-        else:
-            # The segments the run holds, in reading order: a `Vector` is one, a
-            # `Segments` is however many it already carries.
-            segments = []
-            for element, length in zip(elements, lengths):
-                if isinstance(element, Segments):
-                    segments += self._segments_within(element, length)
-                elif isinstance(element, Vector):
-                    segments.append(Segment(element.wraps, element.start, length))
-                else:
-                    self._reason = ("this clip holds " + _name(element)
-                                    + ", which has no window to read as one")
-                    return False
-            joined = self._joined_element(elements, segments)
-            total = sum(seg.duration for seg in segments)
+        joined = self._joined_element(elements, lengths)
+        if joined is None:
+            return False
+        # **A window names a node, so the thing it reads needs one.** A run over
+        # timelines is about to be written as windows onto content, and a
+        # timeline nobody had shared yet carries no id -- minted here, from the
+        # editor's own allocator, so the number is one this arrangement does not
+        # already hold.
+        if isinstance(joined, Segments) and joined.duration_unit == BEATS:
+            for seg in joined.run.segments:
+                if getattr(seg.source, ID_ATTR, None) is None:
+                    setattr(seg.source, ID_ATTR, self._mint_id())
+        total = sum(lengths)
         node = self._node_id(owner)
         if node is None:
             return False
@@ -1689,67 +1665,55 @@ class FormEditor(Editor):
         self._restructured = True
         return self._changed()
 
-    def _joined_track(self, elements: list, lengths: list):
-        """What a run of **windows onto one timeline** joins into: the single
-        window they were cut from, or ``None`` with a reason.
+    def _joined_element(self, elements: list, lengths: list):
+        """What a run of clips joins **into**, or ``None`` with a reason.
 
-        The mirror of a split over notes, and it has to be, or a cut could not
-        be undone by the verb that exists for it. Adjacent windows over one
-        timeline are one window -- from the first's start, as long as the two
-        together -- and nothing is copied, so cutting it again gives the same
-        two back.
-
-        What it cannot do yet is the other shape, the one a run of *different*
-        timelines would need: that is a body the document stores for samples
-        only (`clausters_document::SegmentRef` names a source of samples), so it
-        is refused out loud rather than half-built.
+        One shape for both kinds of contents, because a join is one action: the
+        windows each clip *plays* -- its own, bounded by its placement -- read
+        back to back as a run. A run that turns out to be **one run of one
+        source** is the single window it was cut from (a `Vector`, a `Track`),
+        which is what makes a join the inverse of a split rather than a pile of
+        wrappers; anything else is a `Segments`, the element that places a run
+        of windows onto whatever they come from.
         """
         first = elements[0]
-        timeline = getattr(first, "wraps", None)
-        expected = float(first.window_start() or 0.0)
+        windows = []
         for element, length in zip(elements, lengths):
-            if (not isinstance(element, Track)
-                    or getattr(element, "wraps", None) is not timeline
-                    or abs(float(element.window_start() or 0.0) - expected) > 1e-9):
-                self._reason = (
-                    "only adjacent windows of one timeline join back into one; "
-                    "a run of several timelines needs a segments body the "
-                    "document does not carry for notes yet")
-                return None, 0.0
-            expected += length
-        total = sum(lengths)
-        return Track(timeline, duration=total,
-                     start=float(first.window_start() or 0.0),
-                     name=first.name), total
-
-    def _joined_element(self, elements: list, segments: list):
-        """What a run of clips joins **into**: the single window they were cut
-        from when they are one run of one buffer, else the `Segments` that reads
-        their windows back to back.
-
-        The first case is not an optimization — it is what makes a join the
-        inverse of a split, so cutting and rejoining leaves the composition it
-        started with rather than a list of one.
-        """
-        first = elements[0]
+            if isinstance(element, Segments):
+                windows += self._windows_within(element, length)
+            elif isinstance(element, (Vector, Track)):
+                windows.append(Segment(element.wraps, element.window_start() or 0.0,
+                                       length))
+            else:
+                self._reason = ("this clip holds " + _name(element)
+                                + ", which has no window to read as one")
+                return None
         instrument = getattr(first, "instrument", None)
         controls = getattr(first, "controls", None)
-        contiguous = True
-        expected = segments[0].start
-        for seg in segments:
-            if seg.buffer is not segments[0].buffer or abs(seg.start - expected) >= 0.5:
-                contiguous = False
-                break
-            expected += self.secs_to_units(seg.duration)
-        if contiguous:
-            return Vector(segments[0].buffer,
-                          duration=sum(seg.duration for seg in segments),
-                          instrument=instrument, controls=controls,
-                          start=segments[0].start,
-                          loop=getattr(first, "loop", False),
-                          name=first.name)
-        return Segments(segments, instrument=instrument, controls=controls,
+        kind = (BufferSegments if first.duration_unit == SECONDS
+                else NoteSegments)
+        run = kind(windows, instrument=instrument, controls=controls)
+        if run.contiguous:
+            return _single_window(run, instrument, controls, first.name)
+        return Segments(run, instrument=instrument, controls=controls,
                         name=first.name)
+
+    def _windows_within(self, element, length) -> list:
+        """The windows a placement of ``length`` actually shows of a `Segments`
+        -- the placement being a window onto the element like every other
+        placement here, so a half whose placement was shortened by a split holds
+        what it *plays* and not everything the element still knows about.
+        """
+        if length is None:
+            return list(element.run.segments)
+        out = []
+        for offset, seg in element.placed():
+            if offset >= float(length) - 1e-9:
+                break
+            room = float(length) - offset
+            out.append(seg if seg.duration <= room + 1e-9
+                       else Segment(seg.source, seg.start, room))
+        return out
 
     def _apply_mixing(self, wid: int, tag: str, values) -> bool:
         """One lane header control onto the element that lane draws.
@@ -3036,8 +3000,8 @@ class FormEditor(Editor):
             return dict(points=[x for p in points for x in p],
                         points_min=lo, points_max=hi)
 
-        if isinstance(element, Segments):
-            segments = self._segments_within(element, limit)
+        if isinstance(element, Segments) and element.duration_unit == SECONDS:
+            segments = self._windows_within(element, limit)
             # **One clip, one take per segment.** The samples are several
             # windows read as one thing, so the clip holds one body per segment,
             # each over its own stretch of the clip and each reading its own

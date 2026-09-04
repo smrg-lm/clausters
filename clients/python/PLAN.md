@@ -1226,12 +1226,20 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   would have deleted every note the other half held. Twin tests in both clients:
   the split, the join, the trim, the note edit and the generator's answer.
 
-  **What is left is one shape**: a join of windows onto *different* timelines,
-  which is what `NoteSegments` is for and what the document cannot store yet
-  (`clausters_document::SegmentRef` names a source of samples, and
-  `Body::Segments` answers `Seconds` by construction). It is refused out loud
-  with that reason rather than half-built. Adjacent windows of one timeline
-  join, which is what a split's inverse needs.
+  **And the last shape landed on 2026-09-03**: a join of windows onto
+  *different* timelines. It waited on the document being able to say it (see
+  "A window onto notes is a window while the session lasts and a copy once it is
+  written"), and what it took here was one unification rather than a second
+  join: `_joined_element` reads the windows each clip *plays* -- its own,
+  bounded by its placement -- as a run, and a run that turns out to be **one run
+  of one source** comes back as the single window it was cut from (a `Vector`, a
+  `Track`), which is what makes a join the inverse of a split. Anything else is
+  a `Segments`, and `Segments` now places a run of **either** kind: it asks the
+  run for its unit, and a run of windows onto timelines needs no instrument,
+  because what it holds are events that carry their own. So the verb is written
+  once for both kinds of contents, `_windows_within` is one method instead of
+  two, and the cut takes a joined run apart into the windows it was made of
+  whichever material they are onto.
 
 - ✅ **`Segment` and `Segments` live in the arrangement and are general**
   *(found 2026-09-03, from the entry above; moved and generalized the same

@@ -571,21 +571,28 @@ fn windowed_notes(node: &Node, look: &Look<'_>) -> Option<Vec<(Beats, Beats, f32
     let Body::Segments { segments, .. } = &node.body else {
         return None;
     };
-    let window = segments.first()?;
-    let named = window.source.node()?;
-    let held = look.content?.iter().find(|n| n.id == named)?;
-    let Body::Aggregate { members, .. } = &held.body else {
-        return None;
-    };
-    let notes = notes_of(members)?;
-    let (from, to) = (window.start, window.start + window.duration);
-    Some(
-        notes
-            .into_iter()
-            .filter(|(start, _, _)| *start >= from && *start < to)
-            .map(|(start, dur, pitch)| (start - from, dur, pitch))
-            .collect(),
-    )
+    // **Every window, back to back**: one is what a cut leaves, several is what
+    // a join across timelines makes, and the run is read the same way either
+    // time -- each window's notes placed from where that window sits in it.
+    let mut out = Vec::new();
+    let mut cursor = 0.0;
+    for window in segments {
+        let named = window.source.node()?;
+        let held = look.content?.iter().find(|n| n.id == named)?;
+        let Body::Aggregate { members, .. } = &held.body else {
+            return None;
+        };
+        let notes = notes_of(members)?;
+        let (from, to) = (window.start, window.start + window.duration);
+        out.extend(
+            notes
+                .into_iter()
+                .filter(|(start, _, _)| *start >= from && *start < to)
+                .map(|(start, dur, pitch)| (cursor + start - from, dur, pitch)),
+        );
+        cursor += window.duration;
+    }
+    Some(out)
 }
 
 /// The `notes` body of an aggregate of clangs — the flat `start dur pitch velocity
@@ -1404,6 +1411,35 @@ mod depth_tests {
         let drawn = draw(&doc, &Look::default(), "piece");
         let clips = drawn.def["children"][0]["children"].as_array().unwrap();
         assert_eq!(clips.len(), 2, "one clip per window");
+        assert_eq!(
+            windowed_notes(
+                &Node::new(
+                    NodeId(9),
+                    Body::Segments {
+                        segments: vec![
+                            SegmentRef {
+                                source: SegmentSource::Node { node: NodeId(10) },
+                                start: 0.0,
+                                duration: 2.0,
+                            },
+                            SegmentRef {
+                                source: SegmentSource::Node { node: NodeId(10) },
+                                start: 2.0,
+                                duration: 2.0,
+                            },
+                        ],
+                        config: Opaque::none(),
+                    },
+                ),
+                &Look {
+                    content: Some(&doc.content),
+                    ..Look::default()
+                },
+            )
+            .map(|notes| notes.iter().map(|(at, _, _)| *at).collect::<Vec<_>>()),
+            Some(vec![0.0, 2.0]),
+            "a run of two windows reads them back to back"
+        );
         // Each half draws the note its window holds, placed from its own zero --
         // and the second's note is *not* drawn at beat two, which is where it
         // sits on the timeline they share.

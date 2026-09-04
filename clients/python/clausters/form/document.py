@@ -43,9 +43,10 @@ means. Give each appearance its own element over the same source — two
 
 import os
 
-from .element import (Vector, Element, Clang, Generator, Segments, Sequence,
-                      Track)
+from .element import (SECONDS, Vector, Element, Clang, Generator, Segments,
+                      Sequence, Track)
 from .aggregate import CONCRETE, LOGICAL, Aggregate
+from ..segments import NoteSegments
 
 #: The attribute `to_document` stamps a node id onto. Private by name because it
 #: is bookkeeping for the bridge, not part of the arrangement's own surface.
@@ -85,6 +86,21 @@ def to_document(element, *, version: int = FIRST_VERSION) -> dict:
     return document
 
 
+def _content_id(timeline, shared, ids) -> int:
+    """The node a window names for this timeline.
+
+    The conversion's own answer when it built one (`_shared_content`), else the
+    id already stamped on the timeline, else a fresh one -- which is the same
+    order every id question in this module takes, and what keeps a subtree
+    converted on its own (a join writing the node its member now holds) naming
+    the node the whole tree names.
+    """
+    entry = (shared or {}).get(id(timeline))
+    if entry is not None:
+        return int(entry["id"])
+    return ids.of(timeline)
+
+
 def _shared_content(root, ids: "_Ids") -> dict:
     """The contents **more than one element reads**, as content nodes.
 
@@ -102,17 +118,27 @@ def _shared_content(root, ids: "_Ids") -> dict:
     Returns ``{id(timeline): {"id": node id, "node": the content node}}``, built
     before the tree so the tree can name what is in it.
     """
+    #: ``id(timeline) -> (timeline, how many elements hold it)``, plus the ones a
+    #: window **names**: those are content however few read them, since there is
+    #: no other way to write "this clip plays a stretch of that timeline" down.
     holders: dict = {}
+    named: set = set()
+
     def scan(element):
         if isinstance(element, Track):
-            holders.setdefault(id(element.wraps), []).append(element)
+            held, readers = holders.get(id(element.wraps), (element.wraps, 0))
+            holders[id(element.wraps)] = (held, readers + 1)
+        if isinstance(element, Segments) and element.duration_unit != SECONDS:
+            for seg in element.segments:
+                holders.setdefault(id(seg.source), (seg.source, 0))
+                named.add(id(seg.source))
         for child in _children(element):
             scan(child)
+
     scan(root)
     shared = {}
-    for key, tracks in holders.items():
-        timeline = tracks[0].wraps
-        if len(tracks) < 2:
+    for key, (timeline, readers) in holders.items():
+        if readers < 2 and key not in named:
             # **Not content, and it has to stop being it.** A join makes two
             # windows one element again, and a timeline still carrying the id it
             # had as content would send the next note edit to a node this
@@ -522,7 +548,16 @@ class _Ids:
         holder = element if member is None else member
         existing = getattr(holder, ID_ATTR, None)
         if existing is not None and id(holder) not in self._renumber:
-            return int(existing)
+            # **Ownership is checked here and not only at the scan**, because
+            # not everything numbered is something the scan walks: a timeline is
+            # content, so it carries an id and is reached through a window
+            # rather than through the tree. One that arrives holding a number
+            # another object in this conversion already claimed is renumbered,
+            # which is the rule this class states -- it was simply only applied
+            # to what the scan had seen.
+            owner = self._owner.setdefault(int(existing), id(holder))
+            if owner == id(holder):
+                return int(existing)
         assigned = self.next
         self.next += 1
         self._owner[assigned] = id(holder)
@@ -669,7 +704,12 @@ def _kind_body(element, ids: _Ids, shared=None) -> dict:
             "kind": "segments",
             "segments": [
                 {
-                    "source": _source(seg.buffer),
+                    # A window is onto samples, which the document names by
+                    # reference, or onto **content** -- a timeline it holds --
+                    # which it names by node. The run says which; the shape on
+                    # the wire says it back.
+                    "source": (_source(seg.source) if element.duration_unit == SECONDS
+                               else {"node": _content_id(seg.source, shared, ids)}),
                     "start": float(seg.start),
                     "duration": float(seg.duration),
                 }
@@ -1109,24 +1149,32 @@ def _element(node: dict, resolve, *, placed: bool = False, content=None):
             # own length is the node's -- absent when nobody stated one -- and
             # the window's is how much of the notes it can show, which is
             # what a reader that does not resolve the content lays it out with.
-            if len(over_nodes) > 1:
-                raise NotImplementedError(
-                    "a run of windows onto several nodes is not built yet: the "
-                    "element for it is `clausters.segments.NoteSegments`, and "
-                    "what makes one is a join across timelines"
-                )
-            window = over_nodes[0]
-            held = (content or {}).get(int(window["source"]["node"]))
-            timeline = getattr(held, "wraps", None)
-            if timeline is None:
-                raise ValueError(
-                    "a window names content node "
-                    f"{window['source']['node']}, which this document does not "
-                    "hold: a window and the notes it reads are written "
-                    "together"
-                )
-            built = Track(timeline, onset=onset, duration=duration,
-                          start=float(window.get("start", 0.0)))
+            def timeline_of(window):
+                held = (content or {}).get(int(window["source"]["node"]))
+                found = getattr(held, "wraps", None)
+                if found is None:
+                    raise ValueError(
+                        "a window names content node "
+                        f"{window['source']['node']}, which this document does "
+                        "not hold: a window and the notes it reads are written "
+                        "together"
+                    )
+                return found
+
+            if len(over_nodes) == 1:
+                window = over_nodes[0]
+                built = Track(timeline_of(window), onset=onset,
+                              duration=duration,
+                              start=float(window.get("start", 0.0)))
+            else:
+                # Several windows onto timelines, read back to back: what a join
+                # across them makes. The element places the run; the run is what
+                # knows the windows.
+                built = Segments(
+                    NoteSegments([(timeline_of(w), float(w.get("start", 0.0)),
+                                   float(w.get("duration", 0.0)))
+                                  for w in over_nodes]),
+                    onset=onset, duration=duration)
         else:
             built = Segments(
                 [

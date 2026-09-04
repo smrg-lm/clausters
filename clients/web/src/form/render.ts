@@ -50,6 +50,7 @@ import type { PlayDestination } from "../seq/timeline.ts";
 import type { TempoClock } from "../base/clock.ts";
 import { CONCRETE, LOGICAL, Aggregate } from "./aggregate.ts";
 import {
+    BEATS,
     Clang,
     Element,
     Generator,
@@ -382,8 +383,10 @@ function emitElement(
         // Several windows read as one thing: one event per segment, each at its
         // own offset inside the element and each carrying its own window, so
         // what sounds is continuous even though the source is not one buffer.
-        // Without an instrument it is structure, exactly as a `Vector` is.
-        if (element.instrument !== null) {
+        // Without an instrument a run of *samples* is structure, exactly as a
+        // `Vector` is — a run of windows onto timelines needs none, because what
+        // it holds are events that carry their own.
+        if (element.instrument !== null || element.durationUnit === BEATS) {
             for (const [offset, event] of element.toEvents(tempoMap, base)) {
                 heard(out, base + offset, event, mix);
             }

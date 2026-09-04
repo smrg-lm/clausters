@@ -159,6 +159,28 @@ class SegmentRun:
                                     seg.duration - first))
         return self.like(head), self.like(tail)
 
+    @property
+    def contiguous(self) -> bool:
+        """Whether these windows are **one run of one source**: each opening
+        exactly where the one before it stopped.
+
+        What makes a join the inverse of a split rather than a pile of
+        wrappers -- a run like this *is* the single window it was cut from, and
+        says so, so cutting and rejoining leaves the composition it started
+        with. A run of one is trivially one run. The tolerance is half a unit of
+        whatever the source is addressed in, which for frames is half a frame
+        and for beats is far finer than anything a hand writes.
+        """
+        if not self.segments:
+            return False
+        first = self.segments[0]
+        expected = first.start
+        for seg in self.segments:
+            if seg.source is not first.source or abs(seg.start - expected) >= 0.5:
+                return False
+            expected = self.advanced(seg.start, seg.duration)
+        return True
+
     def joined(self, other: "SegmentRun") -> "SegmentRun":
         """This run followed by ``other``: the inverse of `cut`, and the reason
         both are the same action over any contents."""
@@ -216,26 +238,6 @@ class BufferSegments(SegmentRun):
 
     def _first_source(self):
         return self.segments[0].source if self.segments else None
-
-    @property
-    def contiguous(self) -> bool:
-        """Whether these windows are **one run of one buffer**: each opening
-        exactly where the one before it stopped.
-
-        What makes a join the inverse of a split rather than a pile of
-        wrappers -- a run like this *is* the single window it was cut from, and
-        says so, so cutting and rejoining leaves the composition it started
-        with. A run of one is trivially one run.
-        """
-        if not self.segments:
-            return False
-        first = self.segments[0]
-        expected = first.start
-        for seg in self.segments:
-            if seg.source is not first.source or abs(seg.start - expected) >= 0.5:
-                return False
-            expected = self.advanced(seg.start, seg.duration)
-        return True
 
     def event_params(self, seg: Segment) -> dict:
         """What playing one window asks the instrument for: the buffer, and the

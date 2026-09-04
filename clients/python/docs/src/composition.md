@@ -326,6 +326,13 @@ are written once there, over lengths, and each kind supplies only what the base
 cannot know: how a position advances by a length, and what one window holds. So
 a phrase of notes cuts and joins exactly as a phrase of samples does.
 
+A **join across two different phrases** works the same way and is the reason the
+windows are a run rather than a pair: the joined clip plays the first timeline's
+stretch and then the second's, from one clip, and cutting it apart again gives
+back the windows it was made of. The element is a `Segments` over a
+`NoteSegments` run — the same element that places a run of audio windows, asking
+the run what it is measured in.
+
 **And a window stays a window when the piece is written down.** Two elements
 reading one timeline — which is what a split leaves — are saved as *one* copy of
 the notes plus two windows naming it: the notes live in the document's `content`,

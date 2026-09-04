@@ -3120,3 +3120,44 @@ def test_a_split_over_notes_writes_the_notes_once_and_reopens_sharing_them():
     assert first.wraps is second.wraps
     assert len(first.wraps) == 3
     assert (first.window_start(), second.window_start()) == (0.0, 1.0)
+
+
+def test_clips_over_different_timelines_join_into_one_run_of_windows():
+    """The join across timelines, which is the same verb one unit over: two roll
+    clips holding different phrases read as one, and the document says so with
+    two windows onto two pieces of content rather than a copy of either."""
+    from clausters.form import Segments, to_document
+    from clausters.form.document import from_document
+
+    first = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                      (1.0, SeqEvent(midinote=62, dur=1.0))])
+    second = Timeline([(0.0, SeqEvent(midinote=67, dur=1.0))])
+    lane = Aggregate([(0.0, Track(first, duration=2.0)),
+                      (2.0, Track(second, duration=1.0))], name="notes")
+    ed = editor(Aggregate([(0.0, lane)], name="song"))
+    a, b = clips(lanes(ed.draw())[0])
+    assert ed.apply("/gui_event", [a["id"], SEQ, UNSTATED, "join",
+                                   a["id"], b["id"]]) is True
+
+    (joined,) = clips(lanes(ed.draw())[0])
+    assert joined["dur"] == pytest.approx(3 * BEAT)
+    # One clip, the three notes of both phrases in reading order.
+    assert joined["notes"][2::5] == [60.0, 62.0, 67.0]
+    element = ed._clips[joined["id"]].member.element
+    assert isinstance(element, Segments)
+
+    # The document holds each timeline once and names both from one node.
+    document = to_document(ed.element)
+    windows = document["root"]["members"][0]["node"]["members"][0]["node"]["segments"]
+    assert [w["source"] for w in windows] == [
+        {"node": n["id"]} for n in document["content"]]
+    assert from_document(document) is not None
+
+    # And the cut takes it apart into the windows it was made of: the second
+    # half is the timeline it came from, not a copy and not a list of one.
+    assert ed.apply("/gui_event", [joined["id"], SEQ + 1, UNSTATED, "split",
+                                   2 * BEAT]) is True
+    _, tail = clips(lanes(ed.draw())[0])
+    tail_element = ed._clips[tail["id"]].member.element
+    assert isinstance(tail_element, Track)
+    assert tail_element.wraps is second

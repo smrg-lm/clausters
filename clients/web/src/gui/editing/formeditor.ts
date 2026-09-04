@@ -46,6 +46,7 @@ import type { PortSpec } from "../../defs/patch.ts";
 import { SynthDef } from "../../defs/synthdef.ts";
 import { pointsToEnv } from "../../defs/ugens/index.ts";
 import type { Server } from "../../defs/server/index.ts";
+import type { SourceLike, TimelineLike } from "../../segments.ts";
 import {
     BEATS,
     CONCRETE,
@@ -56,10 +57,14 @@ import {
     Clang,
     Element,
     Generator,
+    BufferSegments,
+    NoteSegments,
     Segment,
+    SegmentRun,
     Segments,
     Track,
     Vector,
+    singleWindow,
     docIdOf,
     flatten,
     leafConfig,
@@ -1711,21 +1716,21 @@ export class FormEditor extends Editor<Element> implements Adopting {
     }
 
     /**
-     * The segments a placement of `length` beats actually shows of a `Segments` —
+     * The windows a placement of `length` actually shows of a `Segments` —
      * the placement being a window onto the samples like every other placement
      * here, so a half whose placement was shortened by a split holds the samples
      * it *plays*.
      */
-    private segmentsWithin(element: Segments, length: number | null): Segment[] {
-        if (length === null) return element.segments;
-        const out: Segment[] = [];
+    private windowsWithin(element: Segments, length: number | null): Segment<unknown>[] {
+        if (length === null) return [...element.run.segments];
+        const out: Segment<unknown>[] = [];
         for (const [offset, seg] of element.placed()) {
             if (offset >= Number(length) - 1e-9) break;
             const room = Number(length) - offset;
             out.push(
                 seg.duration <= room + 1e-9
                     ? seg
-                    : new Segment(seg.buffer, seg.start, room),
+                    : new Segment(seg.source, seg.start, room),
             );
         }
         return out;
@@ -1770,31 +1775,18 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 "these clips are not measured in the same unit, so there is no one thing they read as";
             return false;
         }
-        const segments: Segment[] = [];
-        let joined: Element;
-        let total: number;
-        if (units.has(BEATS)) {
-            const track = this.joinedTrack(elements, lengths);
-            if (track === null) return false;
-            joined = track;
-            total = lengths.reduce((sum, l) => sum + l, 0.0);
-        } else {
-            // The segments the run holds, in reading order: a `Vector` is one, a
-            // `Segments` is however many it already carries.
-            for (let i = 0; i < elements.length; i++) {
-                const element = elements[i];
-                const length = lengths[i] as number;
-                if (element instanceof Segments) {
-                    segments.push(...this.segmentsWithin(element, length));
-                } else if (element instanceof Vector) {
-                    segments.push(new Segment(element.buffer, element.start, length));
-                } else {
-                    this.reason = `this clip holds ${nameOf(element)}, which has no window to read as one`;
-                    return false;
-                }
+        const joined = this.joinedElement(elements, lengths);
+        if (joined === null) return false;
+        const total = lengths.reduce((sum, l) => sum + l, 0.0);
+        // **A window names a node, so the thing it reads needs one.** A run over
+        // timelines is about to be written as windows onto content, and a
+        // timeline nobody had shared yet carries no id — minted here, from the
+        // editor's own allocator, so the number is one this arrangement does not
+        // already hold.
+        if (joined instanceof Segments && joined.durationUnit === BEATS) {
+            for (const seg of joined.run.segments) {
+                if (docIdOf(seg.source) === null) setDocId(seg.source, this.mintId());
             }
-            joined = this.joinedElement(elements as (Vector | Segments)[], segments);
-            total = segments.reduce((sum, seg) => sum + seg.duration, 0.0);
         }
         const node = this.nodeId(owner);
         if (node === null) return false;
@@ -1840,70 +1832,50 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * of a split.
      */
     /**
-     * What a run of **windows onto one timeline** joins into: the single window
-     * they were cut from, or `null` with a reason.
+     * What a run of clips joins **into**, or `null` with a reason.
      *
-     * The mirror of a split over notes, and it has to be, or a cut could not be
-     * undone by the verb that exists for it. Adjacent windows over one timeline
-     * are one window — from the first's start, as long as the two together — and
-     * nothing is copied, so cutting it again gives the same two back.
-     *
-     * What it cannot do yet is the other shape, the one a run of *different*
-     * timelines would need: that is a body the document stores for samples only
-     * (`clausters_document::SegmentRef` names a source of samples), so it is
-     * refused out loud rather than half-built.
+     * One shape for both kinds of contents, because a join is one action: the
+     * windows each clip *plays* — its own, bounded by its placement — read back
+     * to back as a run. A run that turns out to be **one run of one source** is
+     * the single window it was cut from (a {@link Vector}, a {@link Track}),
+     * which is what makes a join the inverse of a split rather than a pile of
+     * wrappers; anything else is a {@link Segments}, the element that places a
+     * run of windows onto whatever they come from.
      */
-    private joinedTrack(elements: Element[], lengths: number[]): Track | null {
-        const first = elements[0];
-        const timeline = first instanceof Track ? first.timeline : null;
-        let expected = Number(first.windowStart() ?? 0.0);
+    private joinedElement(elements: Element[], lengths: number[]): Element | null {
+        const first = elements[0] as Element;
+        const windows: Segment<unknown>[] = [];
         for (let i = 0; i < elements.length; i++) {
-            const element = elements[i];
-            if (
-                !(element instanceof Track) ||
-                element.timeline !== timeline ||
-                Math.abs(Number(element.windowStart() ?? 0.0) - expected) > 1e-9
-            ) {
-                this.reason =
-                    "only adjacent windows of one timeline join back into one; a run of " +
-                    "several timelines needs a segments body the document does not carry " +
-                    "for notes yet";
+            const element = elements[i] as Element;
+            const length = lengths[i] as number;
+            if (element instanceof Segments) {
+                windows.push(...this.windowsWithin(element, length));
+            } else if (element instanceof Vector || element instanceof Track) {
+                windows.push(
+                    new Segment(element.wraps, element.windowStart() ?? 0.0, length),
+                );
+            } else {
+                this.reason = `this clip holds ${nameOf(element)}, which has no window to read as one`;
                 return null;
             }
-            expected += lengths[i] as number;
         }
-        return new Track(timeline, null, lengths.reduce((sum, l) => sum + l, 0.0), {
-            start: Number(first.windowStart() ?? 0.0),
-            name: first.name,
-        });
-    }
-
-    private joinedElement(elements: (Vector | Segments)[], segments: Segment[]): Element {
-        const first = elements[0] as Vector | Segments;
-        const instrument = first.instrument;
-        const controls = first.controls;
-        const head = segments[0];
-        if (head === undefined) return first;
-        let contiguous = true;
-        let expected = head.start;
-        for (const seg of segments) {
-            if (seg.buffer !== head.buffer || Math.abs(seg.start - expected) >= 0.5) {
-                contiguous = false;
-                break;
-            }
-            expected += this.secsToUnits(seg.duration);
+        const instrument = (first as Vector).instrument ?? null;
+        const controls = (first as Vector).controls ?? null;
+        const run = (
+            first.durationUnit === SECONDS
+                ? new BufferSegments(windows as unknown as Segment<SourceLike>[], {
+                      instrument,
+                      controls,
+                  })
+                : new NoteSegments(windows as unknown as Segment<TimelineLike>[], {
+                      instrument,
+                      controls,
+                  })
+        ) as unknown as SegmentRun<unknown>;
+        if (run.contiguous) {
+            return singleWindow(run, instrument, controls, first.name);
         }
-        const total = segments.reduce((sum, seg) => sum + seg.duration, 0.0);
-        if (contiguous) {
-            return new Vector(head.buffer, null, total, {
-                instrument,
-                controls,
-                start: head.start,
-                loop: first instanceof Vector ? first.loop : false,
-                name: first.name,
-            });
-        }
-        return new Segments(segments, null, null, { instrument, controls, name: first.name });
+        return new Segments(run, null, null, { instrument, controls, name: first.name });
     }
 
     /**
@@ -3402,8 +3374,8 @@ export class FormEditor extends Editor<Element> implements Adopting {
             return { points: points.flat(), points_min: lo, points_max: hi };
         }
 
-        if (element instanceof Segments) {
-            const segments = this.segmentsWithin(element, limit);
+        if (element instanceof Segments && element.durationUnit === SECONDS) {
+            const segments = this.windowsWithin(element, limit);
             // **One clip, one take per segment.** The samples are several windows
             // read as one thing, so the clip holds one body per segment, each
             // over its own stretch of the clip and each reading its own buffer
@@ -3413,7 +3385,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             for (const seg of segments) {
                 const offset = cursor;
                 cursor += seg.duration;
-                const buf = seg.buffer;
+                const buf = seg.source as SourceLike;
                 if (buf.channels === undefined) continue;
                 const take: Record<string, unknown> = {
                     view: "trace",

@@ -54,7 +54,8 @@ from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 #: not about where it sits in a piece, so `Segment` and the runs live beside the
 #: structures (`clausters.segments`) and this module reads them like any other
 #: reader. Re-exported here because `Segments` is the element that places one.
-from ..segments import BufferSegments, Segment  # noqa: E402,F401
+from ..segments import (BufferSegments, NoteSegments, Segment,  # noqa: E402,F401
+                        SegmentRun)
 
 
 def to_beats(length: float, unit: str, tempo: float) -> float:
@@ -511,7 +512,13 @@ class Segments(Element):
 
     def __init__(self, segments, onset=None, duration=None, *, instrument=None,
                  controls=None, name=None):
-        run = BufferSegments(segments, instrument=instrument, controls=controls)
+        # **A run of any contents, or the windows to make one of.** A list of
+        # ``(buffer, start, seconds)`` is the samples case and stays what it
+        # always was; a run handed in whole is what a join over notes makes,
+        # and this element places it without knowing which it is.
+        run = (segments if isinstance(segments, SegmentRun)
+               else BufferSegments(segments, instrument=instrument,
+                                   controls=controls))
         if duration is None and len(run):
             duration = run.total
         super().__init__(wraps=run.segments, onset=onset, duration=duration,
@@ -550,17 +557,16 @@ class Segments(Element):
         two -- which is `clausters.segments.SegmentRun.cut`, the arithmetic this
         element places rather than reimplements.
 
-        A tail that is **one run of one buffer** comes back as the plain
-        `Vector` it is (`clausters.segments.BufferSegments.contiguous`): that is
-        not an optimization, it is what makes a cut and a join inverses instead
-        of a pile of wrappers."""
+        A tail that is **one run of one source** comes back as the single window
+        it is -- a `Vector` over samples, a `Track` over a timeline
+        (`clausters.segments.SegmentRun.contiguous`). That is not an
+        optimization, it is what makes a cut and a join inverses instead of a
+        pile of wrappers."""
         _, tail = self.run.cut(float(at))
         if tail.contiguous:
-            first = tail.segments[0]
-            return Vector(first.source, duration=tail.total,
-                          instrument=self.instrument, controls=self.controls,
-                          start=first.start, name=self.name)
-        return Segments(tail.segments, instrument=self.instrument,
+            return _single_window(tail, self.instrument, self.controls,
+                                  self.name)
+        return Segments(tail, instrument=self.instrument,
                         controls=self.controls, name=self.name)
 
     def to_events(self, tempo_map=None, at: float = 0.0) -> list:
@@ -576,6 +582,12 @@ class Segments(Element):
         ones before."""
         from ..seq.event import Event as SeqEvent
 
+        if self.run.unit == BEATS:
+            # **Windows onto timelines are already events**: what each one shows
+            # is the items inside it, placed from the run's own zero and in
+            # beats, so there is nothing to build and nothing to convert. An
+            # instrument is the samples case's -- a note carries its own.
+            return list(self.run.items())
         if self.instrument is None:
             raise NotImplementedError(
                 "a Segments needs an instrument to be rendered as audio "
@@ -596,6 +608,22 @@ class Segments(Element):
             params.update(self.controls)
             out.append((onset - at, SeqEvent(params)))
         return out
+
+
+def _single_window(run, instrument=None, controls=None, name=None):
+    """The element **one run of one source** is: a `Vector` over samples, a
+    `Track` over a timeline.
+
+    A join that ends up with one window is the window it was cut from, and says
+    so rather than staying a list of one -- which is what makes a cut and a join
+    inverses. One place, so the two kinds cannot drift into answering it
+    differently.
+    """
+    first = run.segments[0]
+    if run.unit == SECONDS:
+        return Vector(first.source, duration=run.total, instrument=instrument,
+                      controls=controls, start=first.start, name=name)
+    return Track(first.source, duration=run.total, start=first.start, name=name)
 
 
 class Track(Element):

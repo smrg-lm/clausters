@@ -48,8 +48,8 @@ and raises a clear `NotImplementedError` here.
 
 from ..defs.node import Group as NodeGroup
 from .aggregate import CONCRETE, LOGICAL, Aggregate
-from .element import (Element, Generator, Clang, Segments, Sequence, Track,
-                      Vector, end_beat, tempo_map_of)
+from .element import (BEATS, Element, Generator, Clang, Segments, Sequence,
+                      Track, Vector, end_beat, tempo_map_of)
 
 
 def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
@@ -298,8 +298,10 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
         # Several windows read as one thing: one event per segment, each at its
         # own offset inside the element and each carrying its own window, so
         # what sounds is continuous even though the source is not one buffer.
-        # Without an instrument it is structure, exactly as a `Vector` is.
-        if element.instrument is not None:
+        # Without an instrument a run of *samples* is structure, exactly as a
+        # `Vector` is -- a run of windows onto timelines needs none, because
+        # what it holds are events that carry their own.
+        if element.instrument is not None or element.duration_unit == BEATS:
             for offset, event in element.to_events(tempo_map, base):
                 _heard(out, base + offset, event, mix)
     elif isinstance(element, Vector):

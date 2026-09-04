@@ -1808,3 +1808,50 @@ test("a split over notes writes the notes once and reopens sharing them", () => 
     assert.equal((first?.wraps as Timeline).length, 3);
     assert.deepEqual([first?.windowStart(), second?.windowStart()], [0.0, 1.0]);
 });
+
+test("clips over different timelines join into one run of windows", () => {
+    // The join across timelines, which is the same verb one unit over: two roll
+    // clips holding different phrases read as one, and the document says so with
+    // two windows onto two pieces of content rather than a copy of either.
+    const first = new Timeline([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+                                [1.0, new SeqEvent({ midinote: 62, dur: 1.0 })]]);
+    const second = new Timeline([[0.0, new SeqEvent({ midinote: 67, dur: 1.0 })]]);
+    const lane = new Aggregate(
+        [[0.0, new Track(first, null, 2.0)], [2.0, new Track(second, null, 1.0)]],
+        "concrete",
+        { name: "notes" },
+    );
+    const ed = editor(new Aggregate([[0.0, lane]], "concrete", { name: "song" }));
+    const [a, b] = clipsOf(lanes(ed.draw())[0] as GuiNode);
+    assert.equal(
+        ed.apply("/gui_event", [a?.id, SEQ, UNSTATED, "join", a?.id, b?.id]),
+        true,
+    );
+
+    const joined = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    assert.equal(joined.dur, 3 * BEAT);
+    // One clip, the three notes of both phrases in reading order.
+    assert.deepEqual((joined.notes as number[]).filter((_, i) => i % 5 === 2), [60, 62, 67]);
+
+    // The document holds each timeline once and names both from one node.
+    const document = toDocument(ed.element);
+    const lanes0 = ((document.root.members as Record<string, unknown>[])[0]
+        ?.node as Record<string, unknown>).members as Record<string, unknown>[];
+    const windows = ((lanes0[0]?.node as Record<string, unknown>)
+        .segments as Record<string, unknown>[]);
+    assert.deepEqual(
+        windows.map((w) => w.source),
+        (document.content ?? []).map((n) => ({ node: n.id })),
+    );
+    assert.ok(fromDocument(document) !== null);
+
+    // And the cut takes it apart into the windows it was made of: the second
+    // half is the timeline it came from, not a copy and not a list of one.
+    assert.equal(
+        ed.apply("/gui_event", [joined.id, SEQ + 1, UNSTATED, "split", 2 * BEAT]),
+        true,
+    );
+    const tail = clipsOf(lanes(ed.draw())[0] as GuiNode)[1] as GuiNode;
+    assert.equal(tail.start, undefined);
+    assert.deepEqual((tail.notes as number[]).filter((_, i) => i % 5 === 2), [67]);
+});

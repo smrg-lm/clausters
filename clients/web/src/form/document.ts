@@ -53,9 +53,12 @@ import { pointsToEnv } from "../defs/ugens/index.ts";
 import { CONCRETE, LOGICAL, Aggregate, Member } from "./aggregate.ts";
 import type { BusSpec } from "./aggregate.ts";
 import {
+    SECONDS,
     Clang,
     Element,
     Generator,
+    NoteSegments,
+    SegmentRun,
     Segments,
     Sequence,
     Track,
@@ -173,6 +176,25 @@ interface Content {
 }
 
 /**
+ * The node a window names for this timeline.
+ *
+ * The conversion's own answer when it built one ({@link sharedContent}), else
+ * the id already stamped on the timeline, else a fresh one — which is the same
+ * order every id question in this module takes, and what keeps a subtree
+ * converted on its own (a join writing the node its member now holds) naming the
+ * node the whole tree names.
+ */
+function contentId(
+    timeline: Timeline,
+    shared: Map<Timeline, Content> | null,
+    ids: Ids,
+): number {
+    const entry = shared?.get(timeline);
+    if (entry !== undefined) return entry.id;
+    return ids.of(timeline as unknown as Element);
+}
+
+/**
  * The contents **more than one element reads**, as content nodes.
  *
  * A window onto samples costs nothing to repeat because the samples are not in
@@ -186,19 +208,28 @@ interface Content {
  * table exists for sharing, not for tracks.
  */
 function sharedContent(root: Element, ids: Ids): Map<Timeline, Content> {
-    const holders = new Map<Timeline, Track[]>();
+    // How many elements hold each timeline, plus the ones a window **names**:
+    // those are content however few read them, since there is no other way to
+    // write "this clip plays a stretch of that timeline" down.
+    const holders = new Map<Timeline, number>();
+    const named = new Set<Timeline>();
     const scan = (element: Element): void => {
         if (element instanceof Track) {
-            const found = holders.get(element.timeline) ?? [];
-            found.push(element);
-            holders.set(element.timeline, found);
+            holders.set(element.timeline, (holders.get(element.timeline) ?? 0) + 1);
+        }
+        if (element instanceof Segments && element.durationUnit !== SECONDS) {
+            for (const seg of element.segments) {
+                const timeline = seg.source as unknown as Timeline;
+                if (!holders.has(timeline)) holders.set(timeline, 0);
+                named.add(timeline);
+            }
         }
         for (const child of children(element)) scan(child as Element);
     };
     scan(root);
     const shared = new Map<Timeline, Content>();
-    for (const [timeline, tracks] of holders) {
-        if (tracks.length < 2) {
+    for (const [timeline, readers] of holders) {
+        if (readers < 2 && !named.has(timeline)) {
             // **Not content, and it has to stop being it.** A join makes two
             // windows one element again, and a timeline still carrying the id it
             // had as content would send the next note edit to a node this
@@ -663,7 +694,18 @@ class Ids {
     of(element: object, member: Member | null = null): number {
         const holder: object = member ?? element;
         const existing = docIdOf(holder);
-        if (existing !== null && !this.renumber.has(holder)) return existing;
+        if (existing !== null && !this.renumber.has(holder)) {
+            // **Ownership is checked here and not only at the scan**, because
+            // not everything numbered is something the scan walks: a timeline is
+            // content, so it carries an id and is reached through a window
+            // rather than through the tree. One that arrives holding a number
+            // another object in this conversion already claimed is renumbered,
+            // which is the rule this class states — it was simply only applied
+            // to what the scan had seen.
+            const owner = this.owner.get(existing);
+            if (owner === undefined) this.owner.set(existing, holder);
+            if (owner === undefined || owner === holder) return existing;
+        }
         const assigned = this.next;
         this.next += 1;
         this.owner.set(assigned, holder);
@@ -837,7 +879,20 @@ function kindBody(element: Element, ids: Ids, shared: Map<Timeline, Content> | n
         const out: DocNode = {
             kind: "segments",
             segments: element.segments.map((seg) => ({
-                source: source(seg.buffer),
+                // A window is onto samples, which the document names by
+                // reference, or onto **content** — a timeline it holds — which
+                // it names by node. The run says which; the shape on the wire
+                // says it back.
+                source:
+                    element.durationUnit === SECONDS
+                        ? source(seg.source)
+                        : {
+                              node: contentId(
+                                  seg.source as unknown as Timeline,
+                                  shared,
+                                  ids,
+                              ),
+                          },
                 start: Number(seg.start),
                 duration: Number(seg.duration),
             })),
@@ -1390,27 +1445,42 @@ function fromNode(
             // own length is the node's — absent when nobody stated one — and the
             // window's is how much of the notes it can show, which is what a
             // reader that does not resolve the content lays it out with.
-            if (overNodes.length > 1) {
-                throw new Error(
-                    "a run of windows onto several nodes is not built yet: the " +
-                        "element for it is `NoteSegments` (../segments.ts), and " +
-                        "what makes one is a join across timelines",
+            const timelineOf = (window: DocNode): Timeline => {
+                const named = Number((window.source as DocNode).node);
+                const timeline = content?.get(named)?.wraps;
+                if (!(timeline instanceof Timeline)) {
+                    throw new Error(
+                        `a window names content node ${named}, which this ` +
+                            "document does not hold: a window and the notes it " +
+                            "reads are written together",
+                    );
+                }
+                return timeline;
+            };
+            if (overNodes.length === 1) {
+                const window = overNodes[0] as DocNode;
+                built = new Track(timelineOf(window), onset, duration, {
+                    start: Number(window.start ?? 0.0),
+                });
+            } else {
+                // Several windows onto timelines, read back to back: what a join
+                // across them makes. The element places the run; the run is what
+                // knows the windows.
+                built = new Segments(
+                    new NoteSegments(
+                        overNodes.map(
+                            (w) =>
+                                [
+                                    timelineOf(w),
+                                    Number(w.start ?? 0.0),
+                                    Number(w.duration ?? 0.0),
+                                ] as const,
+                        ),
+                    ) as unknown as SegmentRun<unknown>,
+                    onset,
+                    duration,
                 );
             }
-            const window = overNodes[0] as DocNode;
-            const named = Number((window.source as DocNode).node);
-            const held = content?.get(named);
-            const timeline = held?.wraps;
-            if (!(timeline instanceof Timeline)) {
-                throw new Error(
-                    `a window names content node ${named}, which this document ` +
-                        "does not hold: a window and the notes it reads are " +
-                        "written together",
-                );
-            }
-            built = new Track(timeline, onset, duration, {
-                start: Number(window.start ?? 0.0),
-            });
         } else {
         built = new Segments(
             ((src.segments as DocNode[]) ?? []).map(

@@ -149,7 +149,7 @@ export function endBeat(at: number, length: number, unit: string, tempoMap: Temp
 // places one.
 export { BufferSegments, NoteSegments, Segment, SegmentRun } from "../segments.ts";
 export type { SegmentSpec, SourceLike, TimelineLike } from "../segments.ts";
-import { BufferSegments, Segment } from "../segments.ts";
+import { BufferSegments, NoteSegments, Segment, SegmentRun } from "../segments.ts";
 import type { SegmentSpec, SourceLike } from "../segments.ts";
 
 /** The optional label every element takes. */
@@ -631,12 +631,23 @@ export class Segments extends Element {
     controls: EventControls;
 
     constructor(
-        segments: Iterable<SegmentSpec<SourceLike>>,
+        segments: Iterable<SegmentSpec<SourceLike>> | SegmentRun<unknown>,
         onset: Beats = null,
         duration: Beats = null,
         { instrument = null, controls = null, name = null }: SegmentsOptions = {},
     ) {
-        const run = new BufferSegments(segments, { instrument, controls });
+        // **A run of any contents, or the windows to make one of.** A list of
+        // `[buffer, start, seconds]` is the samples case and stays what it
+        // always was; a run handed in whole is what a join over notes makes, and
+        // this element places it without knowing which it is.
+        const run = (
+            segments instanceof SegmentRun
+                ? segments
+                : new BufferSegments(segments as Iterable<SegmentSpec<SourceLike>>, {
+                      instrument,
+                      controls,
+                  })
+        ) as BufferSegments;
         let dur = beats(duration);
         if (dur === null && run.length > 0) dur = run.total;
         super(run.segments, onset, dur, false, { name });
@@ -683,15 +694,9 @@ export class Segments extends Element {
         void rate;
         const [, tail] = this.run.cut(at) as [BufferSegments, BufferSegments];
         if (tail.contiguous) {
-            const first = tail.segments[0];
-            return new Vector(first.source, null, tail.total, {
-                instrument: this.instrument,
-                controls: this.controls,
-                start: first.start,
-                name: this.name,
-            });
+            return singleWindow(tail, this.instrument, this.controls, this.name);
         }
-        return new Segments(tail.segments, null, null, {
+        return new Segments(tail as unknown as SegmentRun<unknown>, null, null, {
             instrument: this.instrument,
             controls: this.controls,
             name: this.name,
@@ -719,6 +724,13 @@ export class Segments extends Element {
      * inside the element moves the segments after it and not the ones before.
      */
     toEvents(tempoMap?: TempoMap | null, at = 0.0): [number, SeqEvent][] {
+        if (this.run.unit === BEATS) {
+            // **Windows onto timelines are already events**: what each one shows
+            // is the items inside it, placed from the run's own zero and in
+            // beats, so there is nothing to build and nothing to convert. An
+            // instrument is the samples case's — a note carries its own.
+            return (this.run as unknown as NoteSegments).items() as [number, SeqEvent][];
+        }
         if (this.instrument === null) {
             throw new Error(
                 "a Segments needs an instrument to be rendered as audio " +
@@ -747,6 +759,36 @@ export class Segments extends Element {
         }
         return out;
     }
+}
+
+/**
+ * The element **one run of one source** is: a {@link Vector} over samples, a
+ * {@link Track} over a timeline.
+ *
+ * A join that ends up with one window is the window it was cut from, and says so
+ * rather than staying a list of one — which is what makes a cut and a join
+ * inverses. One place, so the two kinds cannot drift into answering it
+ * differently.
+ */
+export function singleWindow(
+    run: SegmentRun<unknown>,
+    instrument: string | null = null,
+    controls: EventControls | null = null,
+    name: string | null = null,
+): Element {
+    const first = run.segments[0];
+    if (run.unit === SECONDS) {
+        return new Vector(first.source as unknown as SourceLike, null, run.total, {
+            instrument,
+            controls,
+            start: first.start,
+            name,
+        });
+    }
+    return new Track(first.source as unknown as Timeline, null, run.total, {
+        start: first.start,
+        name,
+    });
 }
 
 /** {@link Track}'s options. */

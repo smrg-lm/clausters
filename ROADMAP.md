@@ -95,16 +95,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   hiding). The three shapes are named there; the decision is one decision and
   covers both entries.
 
-- ⬜ **A join across timelines has a shape to be written in and no writer yet**
-  *(`clients/python/PLAN.md`, Found by use, inside "Which edits a clip admits is
-  asked of `form`'s classes")*. The split, the trim and the join over notes
-  shipped on 2026-09-03, and the document learned windows onto content the same
-  day -- so a run of windows over *several* timelines is now expressible and is
-  simply not built: the join refuses it out loud, and reading one raises with the
-  element it would need (`clausters.segments.NoteSegments`). What is left is the
-  editor's join and both clients' readers, with no format question in front of
-  it.
-
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
   are legal and ordinary; the lane draws coincident members as a single clip with
