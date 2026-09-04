@@ -366,7 +366,7 @@ class FormEditor(Editor):
         #: kept, widening only when the data no longer fits inside it — never
         #: shrinking, so a point dragged down and back up leaves the picture
         #: where it was.
-        self._curve_axis: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+        self._kept_axis: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: patch widget id -> (logical `Aggregate`, its box-order member handles) —
         #: the directed-patch view of a logical aggregate, for its edit-back route.
         self._patches: dict = {}
@@ -2948,29 +2948,20 @@ class FormEditor(Editor):
         """The value axis this curve is drawn against — the one it was **first**
         drawn against, kept.
 
-        `_curve_range` answers what the break-points alone would ask for, and
-        that is the right answer exactly once: recomputed on every redraw it
-        makes an edit rescale the picture, so dragging one point visibly moves
-        every other one. The axis is therefore remembered per `Automation` and
-        only ever **widened**, when a curve no longer fits inside it (a script
-        replaced the envelope, an undo restored a taller one) — never narrowed,
-        so a point dragged down and back up leaves the drawing where it was.
+        The rule is the shared crate's (`clausters._native.curve_axis`), and the
+        standalone curve editor asks it the same question: the break-points' own
+        range is the right answer exactly once, since recomputed on every redraw
+        it makes an edit rescale the picture — drag one point and every other one
+        visibly moves. So the axis is remembered per `Automation` and only ever
+        **widened**, when a curve no longer fits inside it (a script replaced the
+        envelope, an undo restored a taller one) — never narrowed, so a point
+        dragged down and back up leaves the drawing where it was. What is this
+        editor's is only *which* curve the axis is kept for.
         """
-        lo, hi = _curve_range(points)
-        kept = self._curve_axis.get(auto)
-        if kept is not None:
-            klo, khi = kept
-            values = [float(p[1]) for p in points] or [0.0]
-            # **One side at a time.** Only the end that stopped holding the data
-            # moves; taking the union of the two padded ranges would drop the
-            # floor as well whenever the ceiling grew, which is the same jump
-            # one step removed.
-            lo = klo if min(values) >= klo else lo
-            hi = khi if max(values) <= khi else hi
-            if (lo, hi) == kept:
-                return kept
-        self._curve_axis[auto] = (lo, hi)
-        return lo, hi
+        values = [float(p[1]) for p in points]
+        axis = _native.curve_axis(values, self._kept_axis.get(auto))
+        self._kept_axis[auto] = axis
+        return axis
 
     def _body_for(self, element, limit=None) -> dict:
         """The clip-body props an element draws with — and a **simultaneous** aggregate
@@ -3404,15 +3395,6 @@ def _rewrite_timeline(timeline, keep, new):
     timeline.clear()
     for beat, item in kept + list(new):
         timeline.add(beat, item)
-
-
-def _curve_range(points) -> tuple:
-    """The value axis of a curve clip: the break-points' own range with a tenth of
-    headroom (a flat curve still gets a band to be dragged in)."""
-    values = [float(p[1]) for p in points] or [0.0]
-    lo, hi = min(values), max(values)
-    pad = (hi - lo) * 0.1 or (abs(hi) * 0.1 or 1.0)
-    return lo - pad, hi + pad
 
 
 def _pitch(item):

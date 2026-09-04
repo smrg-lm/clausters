@@ -90,20 +90,71 @@ class PointsDomain(Domain):
 
 
 class PointsView(View):
-    """One `clausters.gui.guidef.bpf`: the curve on its own axis."""
+    """One `clausters.gui.guidef.bpf`: the curve on its own axis.
+
+    **The axis is declared, and it is the view's to keep.** A `bpf` given
+    neither range draws against the unipolar default and fits its time to the
+    last point, so a curve of any other range is pinned to the top of the field
+    and the edit-back reports positions in the *axis*'s values — one drag
+    destroys the data's range — while the time rescales under the hand on every
+    edit. So both ends come from the curve, through
+    `clausters.gui.editing.points.PointsView.axis`, and are held: what a window
+    is looking at is a view's, and moving it under a gesture is the one thing an
+    axis must not do.
+    """
+
+    def __init__(self):
+        super().__init__()
+        #: The value axis this view is drawing against, and the time it spans,
+        #: kept per structure so a redraw does not re-fit them. Both only ever
+        #: **grow** — see `axis`.
+        self._axis: dict = {}
+        self._span: dict = {}
+
+    def axis(self, structure, points) -> tuple:
+        """The value axis and the duration this curve is drawn against.
+
+        The value axis is the shared crate's (`clausters._native.curve_axis`):
+        the points' range with headroom the first time, and after that the axis
+        already in hand, widened only where the data stopped fitting inside it.
+        The time axis is the same rule with nothing to pad — the last point's
+        time, and never shorter than it has been — because a curve that refits
+        while a point is being dragged moves every *other* point on screen,
+        which is the same defect in the other direction.
+        """
+        values = [float(p[1]) for p in _quads(points)]
+        times = [float(p[0]) for p in _quads(points)] or [0.0]
+        key = id(structure)
+        lo, hi = _native.curve_axis(values, self._axis.get(key))
+        span = max(max(times), self._span.get(key, 0.0))
+        self._axis[key], self._span[key] = (lo, hi), span
+        return lo, hi, span
 
     def build(self, editor) -> dict:
         from ..guidef import bpf, window
 
         wid = self.register(editor._new_id(), editor.structure)
-        return window(bpf(id=wid, points=editor.structure.to_points(),
+        points = editor.structure.to_points()
+        lo, hi, span = self.axis(editor.structure, points)
+        return window(bpf(id=wid, points=points, min=lo, max=hi,
+                          duration=span or None,
                           label=_name(editor.structure)),
                       *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 
     def props(self, editor, widget_id: int) -> dict:
-        return {"points": editor.structure.to_points()}
+        points = editor.structure.to_points()
+        lo, hi, span = self.axis(editor.structure, points)
+        props = {"points": points, "min": lo, "max": hi}
+        if span:
+            props["duration"] = span
+        return props
+
+
+def _quads(points):
+    """The flat ``[t, v, shape, curve, ...]`` list as quads."""
+    return [points[i:i + 4] for i in range(0, len(points) - 3, 4)]
 
 
 class PointsEditor(Editor):

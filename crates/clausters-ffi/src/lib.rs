@@ -33,6 +33,7 @@ mod builtins;
 mod bundle;
 mod clocksync;
 mod document;
+mod envshape;
 mod history;
 mod measure;
 #[cfg(feature = "notation")]
@@ -226,7 +227,23 @@ pub use time::*;
 /// `clausters_document_apply` of its own, and a span of samples, whose frames
 /// live in a buffer rather than in a value. Additive, and the counter moves for
 /// v31's reason.
-pub const CORE_ABI_VERSION: u32 = 37;
+///
+/// **v37 a score can be put back.** `clausters_score_load` (`JsScore.load` in a
+/// page) loads a MEI state into an engraved score and clears the shared layer's
+/// own stack, which is what an undo of a page needs once the history is the
+/// editing context's rather than the engraver's: one score, one order.
+///
+/// **v38 a curve's axis is not the view's to invent.**
+/// `clausters_core_curve_axis` answers what a break-point curve is *drawn*
+/// against — its range with a tenth of headroom, and, given the axis already in
+/// hand, only widened where the data stopped fitting inside it. It is a drawing
+/// rule rather than a signal one, and it is here for the reason the project
+/// gives for all of them: it was written twice, once per client, and was about
+/// to be written a third time for the standalone curve editor. Recomputed per
+/// redraw it makes an edit rescale the picture, so the two clients agreeing
+/// about it is the difference between one curve drawn one way and one curve
+/// drawn two. Additive, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 38;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

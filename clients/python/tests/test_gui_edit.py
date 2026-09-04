@@ -11,6 +11,7 @@ import struct
 
 import pytest
 
+from clausters.defs.ugens import points_to_env
 from clausters.gui import edit
 from clausters.gui.editing import (Editing, NotesEditor, PointsEditor,
                                    SamplesEditor)
@@ -382,3 +383,43 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     assert curve.to_points()[1] == pytest.approx(300.0), "the curve has not moved yet"
     assert curve_editor.undo() is True
     assert curve.to_points()[1] == pytest.approx(200.0)
+
+
+# ---- the axis a curve is drawn against ----
+
+
+def test_a_curve_is_drawn_against_its_own_axis_and_not_the_default_one():
+    """A `bpf` given no range draws against the unipolar default and fits its
+    time to the last point, so a curve of any other range is pinned to the top
+    of the field and the edit-back reports the *axis*'s values — one drag
+    destroys the data's range. Both ends come from the curve."""
+    curve = a_curve()                       # 200 Hz to 900 Hz, ending at beat 2
+    editor = edit(curve, sample_rate=SR, open=False)
+    widget = editor.draw()["children"][0]
+
+    band = widget["axes"]["y"]
+    assert band["min"] < 200.0 < 900.0 < band["max"], "the curve's own band"
+    assert widget["duration"] == pytest.approx(2.0), "and its own span"
+
+
+def test_the_axis_is_held_rather_than_refitted_under_the_hand():
+    """The defect a hand at the window notices first: an axis recomputed on
+    every redraw moves the picture while a point is being dragged, so every
+    *other* point visibly moves with it. It only ever grows."""
+    curve = a_curve()
+    editor = edit(curve, sample_rate=SR, open=False)
+    first = editor.draw()["children"][0]
+    band = first["axes"]["y"]
+
+    # A point dragged down and back up must leave the drawing where it was.
+    curve.env = points_to_env([0.0, 500.0, 2, 0.0, 2.0, 600.0, 1, 0.0])
+    again = editor.draw()["children"][0]
+    assert again["axes"]["y"] == band
+    assert again["duration"] == first["duration"]
+
+    # And a curve that no longer fits inside it widens the end that stopped
+    # holding it, keeping the other.
+    curve.env = points_to_env([0.0, 200.0, 2, 0.0, 4.0, 9000.0, 1, 0.0])
+    wider = editor.draw()["children"][0]["axes"]["y"]
+    assert wider["max"] > band["max"] and wider["min"] == band["min"]
+    assert editor.draw()["children"][0]["duration"] == pytest.approx(4.0)

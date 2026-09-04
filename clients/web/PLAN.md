@@ -1669,6 +1669,12 @@ there, and what the page owes back is only the surface:
   it. The **`EventLoop`** of the Python side has no counterpart and needs none -
   the page is one - which is `idiom` in `docs/bindings.md`'s sense and is
   written there.
+- **`Timeline.replace`** - the verb `C52` added for the loop's sake (one step
+  instead of a clear and a rebuild) and this client took in the same shape:
+  nothing here can observe a half-rebuilt timeline, since a page has one thread,
+  but the two surfaces are one surface and the verb is where an edit's
+  projection belongs in both. **Landed 2026-09-04 with the curve-axis fix**,
+  ahead of the rest of `W29`.
 - **`clausters-core::tempoclock::Scheduler`** is the timer queue on both sides,
   bound here through wasm as `TempoClock` already binds it, keyed in seconds.
   It is the only part of this that is shared code rather than a shared contract.

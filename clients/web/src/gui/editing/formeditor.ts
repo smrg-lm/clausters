@@ -82,6 +82,7 @@ import type { Adopting } from "./context.ts";
 import { Editor } from "./editor.ts";
 import type { Leg } from "./editor.ts";
 import { NotesEditor } from "./events.ts";
+import { curveAxis } from "./points.ts";
 import { MEASURES, SamplesEditor, isSamples, measures } from "./samples.ts";
 import type { Measure } from "./samples.ts";
 import type { Buffer } from "../../defs/buffer.ts";
@@ -413,7 +414,8 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * cleared by {@link FormEditor.restructure}.
      */
     private restructured = false;
-    private curveAxis = new WeakMap<Automation, [number, number]>();
+    /** The axis each curve is being drawn against — see {@link axisFor}. */
+    private keptAxis = new WeakMap<Automation, [number, number]>();
     /**
      * The editors this one opened over **parts** of the composition — a
      * dedicated roll of one track, the editor-grade waveform of one take.
@@ -3316,33 +3318,23 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * The value axis this curve is drawn against — the one it was **first** drawn
      * against, kept.
      *
-     * `curveRange` answers what the break-points alone would ask for, and that is
-     * the right answer exactly once: recomputed on every redraw it makes an edit
-     * rescale the picture, so dragging one point visibly moves every other one.
-     * The axis is therefore remembered per `Automation` and only ever
-     * **widened**, when a curve no longer fits inside it (a script replaced the
-     * envelope, an undo restored a taller one) — never narrowed, so a point
-     * dragged down and back up leaves the drawing where it was.
+     * The rule is the shared core's (`curveAxis`, in `points.ts`), and the standalone curve
+     * editor asks it the same question: the break-points' own range is the right
+     * answer exactly once, since recomputed on every redraw it makes an edit
+     * rescale the picture — drag one point and every other one visibly moves. So
+     * the axis is remembered per `Automation` and only ever **widened**, when a
+     * curve no longer fits inside it (a script replaced the envelope, an undo
+     * restored a taller one) — never narrowed, so a point dragged down and back
+     * up leaves the drawing where it was. What is this editor's is only *which*
+     * curve the axis is kept for.
      */
     private axisFor(
         auto: Automation,
         points: readonly [number, number, number, number][],
     ): [number, number] {
-        let [lo, hi] = curveRange(points);
-        const kept = this.curveAxis.get(auto);
-        if (kept !== undefined) {
-            const [klo, khi] = kept;
-            const values = points.length > 0 ? points.map(([, v]) => v) : [0.0];
-            // **One side at a time.** Only the end that stopped holding the data
-            // moves; taking the union of the two padded ranges would drop the
-            // floor as well whenever the ceiling grew, which is the same jump one
-            // step removed.
-            if (Math.min(...values) >= klo) lo = klo;
-            if (Math.max(...values) <= khi) hi = khi;
-            if (lo === klo && hi === khi) return kept;
-        }
-        this.curveAxis.set(auto, [lo, hi]);
-        return [lo, hi];
+        const axis = curveAxis(points.map(([, v]) => Number(v)), this.keptAxis.get(auto));
+        this.keptAxis.set(auto, axis);
+        return axis;
     }
 
     private bodyFor(element: Element, limit: number | null = null): Record<string, unknown> {
@@ -3837,20 +3829,7 @@ function rewriteTimeline(
     fresh: readonly [number, unknown][],
 ): void {
     const kept = timeline.range(0.0, Infinity).filter(([, item]) => keep(item));
-    timeline.clear();
-    for (const [beat, item] of [...kept, ...fresh]) timeline.add(beat, item);
-}
-
-/**
- * The value axis of a curve clip: the break-points' own range with a tenth of
- * headroom (a flat curve still gets a band to be dragged in).
- */
-function curveRange(points: readonly [number, number, number, number][]): [number, number] {
-    const values = points.length > 0 ? points.map((p) => Number(p[1])) : [0.0];
-    const lo = Math.min(...values);
-    const hi = Math.max(...values);
-    const pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.1 || 1.0;
-    return [lo - pad, hi + pad];
+    timeline.replace([...kept, ...fresh]);
 }
 
 /**

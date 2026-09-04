@@ -51,6 +51,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_window` | — | **gap** — the FFT smoothing windows. Nothing in the browser transforms anything: a spectrum is a view and the GUI host draws it, reaching `spectrum` and `window` as a Rust caller of the core |
 | `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |
 | `clausters_core_correlation` | `correlation` | |
+| `clausters_core_curve_axis` | `curve_axis` | `idiom` — the axis a break-point curve is *drawn* against: its range with a tenth of headroom, held and only widened once a view has one. C reads the kept axis out of the same `out` pointer it writes (a flag says whether to), wasm takes it as two optional arguments and returns the pair — the same split `clausters_core_stats` makes, and for the same reason. It is a **drawing** rule in the core because it was already written twice, and a range recomputed per redraw makes an edit rescale the picture |
 | `clausters_core_lissajous` | `lissajous` | |
 | `clausters_core_hz_to_mel` | `hz_to_mel` | the perceptual axes a spectrogram labels. Both clients spell the pair `cpsmel`/`melcps`, following SuperCollider's `<from><to>` conversions (`midicps`, `cpsoct`) — the core keeps the `hz_to_*` names because that is what the GUI host's ruler calls |
 | `clausters_core_mel_to_hz` | `mel_to_hz` | |

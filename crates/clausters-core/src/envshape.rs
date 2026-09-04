@@ -77,6 +77,74 @@ pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
     }
 }
 
+/// The value axis a break-point curve is **drawn** against: the break-points'
+/// own range with a tenth of headroom, and a flat curve still gets a band to be
+/// dragged in.
+///
+/// It is the fresh answer, and on its own it is right exactly once — see
+/// [`curve_axis`], which is what a view actually asks.
+pub fn curve_range(values: &[f64]) -> (f64, f64) {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for &v in values {
+        lo = lo.min(v);
+        hi = hi.max(v);
+    }
+    if !lo.is_finite() || !hi.is_finite() {
+        lo = 0.0;
+        hi = 0.0;
+    }
+    let mut pad = (hi - lo) * 0.1;
+    if pad == 0.0 {
+        pad = hi.abs() * 0.1;
+    }
+    if pad == 0.0 {
+        pad = 1.0;
+    }
+    (lo - pad, hi + pad)
+}
+
+/// The axis a view keeps for one curve: [`curve_range`] the first time, and
+/// afterwards the axis it was **already** drawn against, widened only where the
+/// data stopped fitting inside it.
+///
+/// Recomputing the range on every redraw is what makes an edit rescale the
+/// picture — drag one point and every other one visibly moves — so the axis is
+/// remembered per curve and only ever **grows**: never narrowed, so a point
+/// dragged down and back up leaves the drawing where it was.
+///
+/// **One side at a time.** Only the end that stopped holding the data moves;
+/// taking the union of the two padded ranges would drop the floor as well
+/// whenever the ceiling grew, which is the same jump one step removed.
+///
+/// `kept` is the axis in hand, or `None` for a curve being drawn for the first
+/// time. The same rule serves the time axis of a standalone editor and the
+/// value axis of a clip's curve body, which is why it lives here rather than in
+/// any one view: a rule with two implementations is how one curve comes to be
+/// drawn two ways.
+pub fn curve_axis(values: &[f64], kept: Option<(f64, f64)>) -> (f64, f64) {
+    let (mut lo, mut hi) = curve_range(values);
+    if let Some((klo, khi)) = kept {
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for &v in values {
+            min = min.min(v);
+            max = max.max(v);
+        }
+        if !min.is_finite() {
+            min = 0.0;
+            max = 0.0;
+        }
+        if min >= klo {
+            lo = klo;
+        }
+        if max <= khi {
+            hi = khi;
+        }
+    }
+    (lo, hi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +225,40 @@ mod tests {
         // Cubed keeps the sign through the real cube root.
         let mid = shape_value(SHAPE_CUBED, 0.0, -1.0, 1.0, 0.5);
         assert!(mid.abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_curves_axis_is_its_range_with_a_tenth_of_headroom() {
+        let (lo, hi) = curve_range(&[200.0, 4000.0, 800.0]);
+        assert!((lo - (200.0 - 380.0)).abs() < 1e-9);
+        assert!((hi - (4000.0 + 380.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_flat_curve_still_gets_a_band_to_be_dragged_in() {
+        let (lo, hi) = curve_range(&[0.5, 0.5]);
+        assert!(hi > lo);
+        // And one flat at zero, where a proportional pad would be no pad.
+        let (lo, hi) = curve_range(&[0.0, 0.0]);
+        assert_eq!((lo, hi), (-1.0, 1.0));
+        // No points at all is the same question with no answer in the data.
+        let (lo, hi) = curve_range(&[]);
+        assert_eq!((lo, hi), (-1.0, 1.0));
+    }
+
+    #[test]
+    fn a_kept_axis_is_held_while_the_data_fits_inside_it() {
+        let kept = curve_axis(&[0.0, 1.0], None);
+        // Dragging a point down and back up must not move the drawing.
+        assert_eq!(curve_axis(&[0.0, 0.5], Some(kept)), kept);
+        assert_eq!(curve_axis(&[0.0, 1.0], Some(kept)), kept);
+    }
+
+    #[test]
+    fn only_the_end_that_stopped_holding_the_data_moves() {
+        let kept = curve_axis(&[0.0, 1.0], None);
+        let (lo, hi) = curve_axis(&[0.0, 4.0], Some(kept));
+        assert_eq!(lo, kept.0, "the floor still holds the data, so it stays");
+        assert!(hi > kept.1, "the ceiling stopped holding it, so it grows");
     }
 }

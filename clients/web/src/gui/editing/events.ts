@@ -285,7 +285,7 @@ export class NotesDomain extends Domain<Timeline> {
             const data = itemData(item);
             if (data !== null) held.push([stable(plain(data)), item]);
         }
-        structure.clear();
+        const rebuilt: [number, unknown][] = [];
         for (const event of edited.state as CrateEvent[]) {
             const data = event.data ?? {};
             const key = stable(data);
@@ -297,9 +297,12 @@ export class NotesDomain extends Domain<Timeline> {
             } else {
                 item = itemFromData(data);
             }
-            structure.add(Number(event.at ?? 0), item);
+            rebuilt.push([Number(event.at ?? 0), item]);
         }
-        for (const [beat, item] of others) structure.add(beat, item);
+        // **One step, not a clear and a rebuild.** Same call as the Python
+        // client's, in the same place — see `Timeline.replace` for what a
+        // half-rebuilt timeline costs the client whose loop has a thread.
+        structure.replace([...rebuilt, ...others]);
         return true;
     }
 

@@ -1291,7 +1291,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **A curve opens on no axis at all: the values flatten and the time
+- ✅ **A curve opens on no axis at all: the values flatten and the time
   rescales** *(found 2026-09-04, by eye, while running the throwaway prototype
   for `C52` over `examples/editors/edit_curve.py`'s own curve; the second
   symptom reported by the user on the acceptance pass — "el último punto parece
@@ -1321,16 +1321,25 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   The web client's `PointsView` is to be read against this one before either is
   fixed.
 
-  **What is not yet decided is the fix**, and it is the reason this is filed
-  rather than patched: both axes have to come from the data, but *which* span —
-  the curve's own extent, that extent with margin, or a range the caller may
-  name — and what happens when a hand drags a point **past** it (the axis grows,
-  the value clamps, or the edit is refused) is the "an element owns its space"
-  question, and it must be answered the same way in both clients. The time axis
-  adds one of its own: an axis that refits *while* the hand is on a point is
-  wrong whatever span it fits, so what is fixed at open and what may move is
-  part of the same answer. `exp=True` for a frequency-shaped span belongs to it
-  too.
+  **Fixed 2026-09-04, and the answer was already in the tree.** The multitrack's
+  clip body draws the same curves and had the rule — the break-points' range with
+  a tenth of headroom, remembered per curve and only ever **widened**, one side
+  at a time — so the question this was filed with ("which span, and what happens
+  when a drag goes past it") was answered by using that rule rather than
+  inventing a second one. `PointsView` now declares both ends: the value axis
+  from the rule, and the time axis as the same rule with nothing to pad (the last
+  point's time, never shorter than it has been). A curve dragged past either end
+  widens it and stays where it was put; a point dragged down and back up leaves
+  the drawing where it was.
+
+  **The rule went to the shared core on the way** (`envshape::curve_axis`,
+  `clausters_core_curve_axis` / `curveAxis`, `CORE_ABI_VERSION` 38), taken
+  2026-09-04 by the user against the alternative of a helper per client: it was
+  already written twice, once per language, and this made it a third caller. The
+  reasoning for a *drawing* rule living in the core — the boundary usually
+  keeping display out of it, and why this crosses it — is in
+  `docs/decisions.md`. `exp=True` for a frequency-shaped span is **not** part of
+  the fix: it is a display choice for a range nothing has asked for yet.
 
 - ✅ **A clip that would not move, and the edit said it had** *(reported
   2026-09-03 by the user -- "no responde quiere decir que no se puede mover y no

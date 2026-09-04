@@ -21,6 +21,7 @@
  * @module
  */
 
+import { curveAxis as coreCurveAxis } from "../../core/clausters_core_web.js";
 import { POINTS, domainEdit } from "../../document.ts";
 import { pointsToEnv } from "../../defs/ugens/env.ts";
 import { Automation } from "../../seq/automation.ts";
@@ -122,14 +123,77 @@ export function flatPoints(points: readonly CratePoint[]): number[] {
 }
 
 /** One `bpf`: the curve on its own axis. */
+/**
+ * The axis a break-point curve is **drawn** against, as `[lo, hi]`: its values'
+ * range with a tenth of headroom, and a flat curve still gets a band to be
+ * dragged in.
+ *
+ * Pass the axis a view already has as `kept` and it is held, widened only where
+ * the data stopped fitting inside it — a range recomputed on every redraw makes
+ * an edit rescale the picture, so dragging one point visibly moves every other
+ * one.
+ *
+ * The rule is the shared core's, and both the standalone curve editor and the
+ * clip body that draws the same curve ask it, in both clients: a drawing rule
+ * with two implementations is how one curve comes to be drawn two ways.
+ */
+export function curveAxis(
+    values: readonly number[],
+    kept?: readonly [number, number],
+): [number, number] {
+    const out = coreCurveAxis(
+        Float64Array.from(values),
+        kept?.[0],
+        kept?.[1],
+    );
+    return [Number(out[0]), Number(out[1])];
+}
+
 export class PointsView extends View<Automation> {
+    /**
+     * The value axis this view is drawing against, and the time it spans, kept
+     * per structure so a redraw does not re-fit them. Both only ever **grow** —
+     * see {@link axis}.
+     */
+    private kept = new Map<unknown, [number, number]>();
+    private span = new Map<unknown, number>();
+
+    /**
+     * The value axis and the duration this curve is drawn against.
+     *
+     * The value axis is the shared core's (`curveAxis` below): the points' range
+     * with headroom the first time, and after that the axis already in hand,
+     * widened only where the data stopped fitting inside it. The time axis is
+     * the same rule with nothing to pad — the last point's time, never shorter
+     * than it has been — because a curve that refits while a point is being
+     * dragged moves every *other* point on screen.
+     */
+    axis(structure: Automation, points: readonly number[]): [number, number, number] {
+        const values: number[] = [];
+        const times: number[] = [0.0];
+        for (let i = 0; i + 3 < points.length; i += 4) {
+            times.push(Number(points[i]));
+            values.push(Number(points[i + 1]));
+        }
+        const [lo, hi] = curveAxis(values, this.kept.get(structure));
+        const span = Math.max(...times, this.span.get(structure) ?? 0.0);
+        this.kept.set(structure, [lo, hi]);
+        this.span.set(structure, span);
+        return [lo, hi, span];
+    }
+
     build(editor: Editor<Automation>): GuiNode {
         const wid = this.register(editor.newId(), editor.structure);
+        const points = editor.structure.toPoints();
+        const [min, max, duration] = this.axis(editor.structure, points);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
             bpf({
                 id: wid,
-                points: editor.structure.toPoints(),
+                points,
+                min,
+                max,
+                ...(duration > 0 ? { duration } : {}),
                 label: nameOf(editor.structure),
             }),
             ...editor.extra,
@@ -137,7 +201,15 @@ export class PointsView extends View<Automation> {
     }
 
     override props(editor: Editor<Automation>): Record<string, PropValue> {
-        return { points: editor.structure.toPoints() as PropValue };
+        const points = editor.structure.toPoints();
+        const [min, max, duration] = this.axis(editor.structure, points);
+        const props: Record<string, PropValue> = {
+            points: points as PropValue,
+            min,
+            max,
+        };
+        if (duration > 0) props.duration = duration;
+        return props;
     }
 }
 

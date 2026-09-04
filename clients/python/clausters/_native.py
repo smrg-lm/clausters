@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 37
+CORE_ABI_VERSION = 38
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -216,6 +216,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_float),
     ]
     lib.clausters_core_stats.restype = ctypes.c_int
+    # The axis a break-point curve is drawn against (ABI v38): the kept axis
+    # goes in and comes out through the same two doubles.
+    lib.clausters_core_curve_axis.argtypes = [
+        f64p_early, ctypes.c_size_t, ctypes.c_int,
+        ctypes.POINTER(ctypes.c_double),
+    ]
+    lib.clausters_core_curve_axis.restype = ctypes.c_int
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1076,6 +1083,29 @@ TREE = "tree"
 POINTS = "points"
 SAMPLES = "samples"
 EVENTS = "events"
+
+
+def curve_axis(values, kept=None) -> tuple:
+    """The axis a break-point curve is **drawn** against, as ``(lo, hi)``.
+
+    The values' own range with a tenth of headroom — a flat curve still gets a
+    band to be dragged in — and, given the axis a view already has as ``kept``,
+    that axis widened only where the data stopped fitting inside it.
+
+    **A view asks rather than computing the range itself**, and that is the
+    whole point of the call: a range recomputed on every redraw makes an edit
+    rescale the picture, so dragging one point visibly moves every other one.
+    The same rule serves the standalone curve editor and the clip body that
+    draws the same curve, in both clients (`clausters_core_curve_axis`).
+    """
+    _lib = lib()
+    n = len(values)
+    buf = (ctypes.c_double * n)(*[float(v) for v in values]) if n else None
+    out = (ctypes.c_double * 2)()
+    if kept is not None:
+        out[0], out[1] = float(kept[0]), float(kept[1])
+    _lib.clausters_core_curve_axis(buf, n, 1 if kept is not None else 0, out)
+    return float(out[0]), float(out[1])
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

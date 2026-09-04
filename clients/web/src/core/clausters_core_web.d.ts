@@ -758,6 +758,19 @@ export function channel_stats(samples: Float32Array, channels: number, channel: 
 export function correlation(left: Float32Array, right: Float32Array): number | undefined;
 
 /**
+ * JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` —
+ * its values' range with a tenth of headroom, and a flat curve still gets a
+ * band to be dragged in.
+ *
+ * Pass the axis already in hand as `keptLo`/`keptHi` and it is held, widened
+ * only where the data stopped fitting inside it: recomputing the range on
+ * every redraw makes an edit rescale the picture, so dragging one point
+ * visibly moves every other one. Omit them for a curve drawn for the first
+ * time.
+ */
+export function curveAxis(values: Float64Array, kept_lo?: number | null, kept_hi?: number | null): Float64Array;
+
+/**
  * JS face: scale degree → MIDI note number in the pitch space
  * `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
  * `scale` yields middle C.
@@ -1104,6 +1117,7 @@ export interface InitOutput {
     readonly bundle_validate: (a: number, b: number) => [number, number];
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
+    readonly curveAxis: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly document_apply: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_coalesceKey: (a: number, b: number) => [number, number];

@@ -7994,3 +7994,41 @@ Two consequences worth stating, because both were argued and neither is free:
   it. The price is that an edit whose bulk follows the audio is held as JSON;
   the ABI boundary already pays that, and it is what buys one pile instead of a
   vocabulary the pile has to know.
+
+## A drawing rule can belong in the shared core, and this one does
+
+`clausters-core` is described as the numeric and timing layer — "general audio
+tools, not display code" — and the split has held: a decibel curve, an
+oscilloscope's framing, a spectrum's peak hold are all the host's, and a client
+that wants to see a signal names a view rather than computing one.
+
+The axis a break-point curve is **drawn** against went into the core anyway
+(`envshape::curve_axis`, `clausters_core_curve_axis` / `curveAxis`), and the
+reason is worth writing down because the boundary above says it should not have.
+
+It is not that the arithmetic is hard — it is a range, a tenth of headroom, and
+a comparison. It is that **the same curve is drawn in four places**: the
+standalone curve editor and the clip body that draws the same automation, in
+each of two clients. The rule was already written twice when the third caller
+appeared, and the failure mode is not a wrong number but a *divergence nobody
+can see*: two windows over one curve, one of them rescaling under a drag and the
+other not, with no test able to compare them because each client's copy is
+correct against itself.
+
+So the line is not "audio belongs in the core and drawing does not". It is
+**what more than one process must agree about lives once**, and a client's
+picture of shared data is exactly that kind of agreement — the same argument
+that put the envelope segment shapes there, where what the editor draws is what
+the server plays, by construction. What stays out is what only one renderer ever
+answers: how a trace fades, how a ruler labels itself, how many pixels a column
+is.
+
+The rule itself has one non-obvious half. The fresh range is right **exactly
+once**: recomputed on every redraw it makes an edit rescale the picture, so
+dragging one point visibly moves every other one — the defect a hand at the
+window notices before it notices a wrong number. So the axis is remembered by
+whoever draws and only ever **widened**, one side at a time: only the end that
+stopped holding the data moves, since taking the union of the two padded ranges
+would drop the floor whenever the ceiling grew, which is the same jump one step
+removed. Widening rather than refitting is also what makes a point dragged down
+and back up leave the drawing where it was.

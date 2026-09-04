@@ -215,6 +215,25 @@ export class Timeline {
     }
 
     /**
+     * Replaces the whole contents with `items` (`[beat, item]` pairs), **in one
+     * step**.
+     *
+     * The step is what this is for. Clearing and re-adding leaves the timeline
+     * empty in between, which nothing here can observe — a page has one thread —
+     * and which the Python client's event loop very much can: a rebuild that
+     * outlasts CPython's switch interval was read half-done in 87.7% of reads at
+     * 4000 notes. The verb is the same in both clients because the surfaces are
+     * one surface; what differs is only whether the language could ever have
+     * noticed.
+     */
+    replace(items: Iterable<[number, unknown]>): this {
+        const entries = [...items].map(([beat, item]) => new Entry(Number(beat), item));
+        entries.sort((a, b) => a.beat - b.beat);
+        this.entries = entries;
+        return this;
+    }
+
+    /**
      * Snaps every placement to the nearest multiple of `grid` beats; a zero or
      * negative grid is a no-op.
      */

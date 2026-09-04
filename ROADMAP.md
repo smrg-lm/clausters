@@ -110,18 +110,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A curve opens on no axis at all: the values flatten and the time
-  rescales** *(`clients/python/PLAN.md`, Found by use)*. `PointsView` builds its
-  `bpf` with no `min`/`max` and no `duration`, so a curve of any range but the
-  unipolar default is drawn against a `0..1` axis and the first drag writes axis
-  values onto the data (the shipped `edit_curve.py` loses its 200-4000 Hz range
-  irrecoverably), while the time axis refits to the last point on every edit, so
-  moving it rescales the axis under all the others.
-  **The decision**: which span each axis takes from the data (its own, padded, or
-  one the caller names), what a drag past it does (grow, clamp, refuse), and what
-  may refit while a hand is on a point -- the "an element owns its space"
-  question, answered the same way in both clients.
-
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
   pairs, the host keeps them, nothing reads them and no client sends one -- so
