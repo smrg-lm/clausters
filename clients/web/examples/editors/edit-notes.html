@@ -106,7 +106,7 @@ the instrument, and everything else the author put on it.</div>
         // widget, the crate's `events` vocabulary, and the timeline's own
         // editing context.
         const editor = gui.edit(timeline, {
-          sampleRate: session.server.sampleRate,
+          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           tempo: session.clock.tempo,
           title: "notes",
         });

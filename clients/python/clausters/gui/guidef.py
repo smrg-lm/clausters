@@ -144,9 +144,13 @@ A ``gestures`` prop replaces that mapping, keyed by modifier (``drag``
 for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
 of steps: ``element`` (hand the press to whatever is under the cursor — a clip,
 a note, a box — which may decline), ``pan``, ``select`` (sweep the time span),
-``select_box`` (the same sweep restricted to the band of values it covered — a
-rectangle, which declines where the picture measures only time), ``locate``,
-``none``::
+``marquee`` (sweep the objects a rectangle covers — a lane's clips, a patcher's
+boxes — and no span), ``select_box`` (the same sweep restricted to the band of
+values it covered — a rectangle, which declines where the picture measures only
+time), ``sample`` (grab the sample under the pointer and drag it vertically,
+declining below the zoom that draws each one as a disc), ``draw`` (write the
+value under the pointer over every sample a stroke passes, refused out loud
+where a pixel is more than one sample), ``locate``, ``none``::
 
     waveform(data=take, gestures={"drag": "pan", "shift": "select"})
     waveform(data=take, gestures={"drag": "select", "ctrl": "select_box select"})

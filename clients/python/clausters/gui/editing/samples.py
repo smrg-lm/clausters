@@ -147,6 +147,16 @@ class SamplesDomain(Domain):
         return "draw the samples"
 
 
+#: **What a hand may do to the samples**, and it is three gestures rather than a
+#: mode: a plain drag sweeps a selection (what an editor does by default), Alt
+#: draws over the samples and Ctrl grabs one. A navigable `signal` declares only
+#: the first of those, so an editor that says nothing opens a window that can
+#: only select — which is what this editor was doing while its own docstring
+#: promised a stroke. It is the plan the standalone host builds the same view
+#: with (`clients/gui/src/host/document/tree.rs`), and one view is one plan.
+GESTURES = {"drag": "select", "alt": "draw", "ctrl": "sample"}
+
+
 class SamplesView(View):
     """One `clausters.gui.guidef.waveform`: the take on its own axis, drawn by
     the host straight from the server buffer, with the measures it stacks as a
@@ -166,7 +176,8 @@ class SamplesView(View):
                                channels=max(1, int(take.channels or 1)),
                                measure=" ".join(self.layers),
                                ruler="time", sample_rate=editor.sample_rate,
-                               tempo=editor.tempo, label=_name(take)),
+                               tempo=editor.tempo, label=_name(take),
+                               gestures=GESTURES),
                       *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")

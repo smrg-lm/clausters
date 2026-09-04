@@ -239,7 +239,8 @@ class FormEditor(Editor):
 
     Usage::
 
-        editor = FormEditor(song, sample_rate=server.sample_rate,
+        editor = FormEditor(song,
+                            sample_rate=server.query_info().nominal_sample_rate,
                             tempo=clock.tempo, quant=0.25)
         editor.open(gui)              # draw and open the window
         editor.apply(*gui.poll())     # a dragged clip moves the element

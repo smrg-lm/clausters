@@ -69,7 +69,7 @@ key, and where the state lives is the client's.</div>
         $("run").disabled = true;
         session = await Session.embed();
         const server = session.server;
-        const rate = server.sampleRate;
+        const rate = (await server.queryInfo()).nominalSampleRate;
 
         // A take, made here: two seconds of a decaying tone. A shape worth
         // recognizing, so a stroke over it is visibly a stroke over *this*.

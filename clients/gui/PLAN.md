@@ -4822,3 +4822,35 @@ finished work, where a pending item reads as done.
   What remains is `Clipboard::elements`, still a constructor nobody calls —
   and it is not an oversight but a missing door, written up under "Future
   directions" above.
+
+- ⬜ **A sweep on a roll's grid leaves a time band behind it** *(found 2026-09-04
+  by the user, running `clients/python/examples/editors/edit_notes.py`;
+  diagnosed, deferred)*. A selection of notes is a selection of the **rectangles
+  the notes are** — the patcher's marquee over its boxes, the multitrack's over
+  its clips, one gesture — and a *time range* over the same grid is the **other**
+  selection, the one the entry above already holds open for a lane. The roll
+  plans `select`, which does both: it sweeps the notes *and* writes the shared
+  span, so every drag leaves a band nobody asked for.
+
+  **Its own doc comment already says `marquee`** ("a note first, then the
+  container's marquee over the empty grid -- the same plan a lane carries"), and
+  the code under it says `Select`. What keeps that code from being a simple
+  typo is a gap one step down: the machine's `Marquee` arm asks only the
+  **lanes** what the rectangle caught, never the element it was begun on, so a
+  bare roll planning `marquee` would select nothing at all — `select` is the
+  only step that reaches a note, span and all.
+
+  **What it takes, both halves, since neither is right alone** (verified against
+  the tree, not a sketch): `Marquee` passes the element under the press to
+  `marquee_caught` — which is what its two parameters and `Drag::Marquee`'s own
+  `at` field are already for, the patcher's element-claim path filling that
+  field today — and the roll plans `[Element, Marquee]`, a lane's plan. The time
+  range stays reachable by name (`gestures={"drag": "select"}`) in all three
+  views. One test asserts today's behaviour
+  (`a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it`) and
+  becomes two: the grid's sweep leaves `sel_len == 0` and catches the note, and
+  a roll asked for the range by name still sweeps it.
+
+  **It is the same shape as the entry above** — a plain drag that should catch
+  objects and a range nothing reaches by hand — so whoever takes one should read
+  the other first: the roll and the lane want one answer, not two.

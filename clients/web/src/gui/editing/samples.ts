@@ -209,6 +209,17 @@ export class SamplesDomain extends Domain<Buffer> {
  * One `waveform`: the take on its own axis, drawn by the host straight from the
  * server buffer.
  */
+/**
+ * **What a hand may do to the samples**, and it is three gestures rather than a
+ * mode: a plain drag sweeps a selection (what an editor does by default), Alt
+ * draws over the samples and Ctrl grabs one. A navigable `signal` declares only
+ * the first of those, so an editor that says nothing opens a window that can
+ * only select — which is what this editor was doing while its own docstring
+ * promised a stroke. It is the plan the standalone host builds the same view
+ * with (`clients/gui/src/host/document/tree.rs`), and one view is one plan.
+ */
+const GESTURES = { drag: "select", alt: "draw", ctrl: "sample" };
+
 export class SamplesView extends View<Buffer> {
     /** What the picture measures, innermost last. */
     layers: Measure[];
@@ -232,6 +243,7 @@ export class SamplesView extends View<Buffer> {
                 sampleRate: editor.sampleRate,
                 tempo: editor.tempo,
                 label: nameOf(take),
+                gestures: GESTURES,
             }),
             ...editor.extra,
         );

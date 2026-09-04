@@ -480,7 +480,8 @@ the sound are one function rather than two readings of it:
 
 ```python
 clock.set_tempo(2.0)                       # or clock.set_tempo(2.0, over=8)
-editor = FormEditor(song, sample_rate=server.sample_rate, tempo_map=clock.map)
+editor = FormEditor(song, sample_rate=server.query_info().nominal_sample_rate,
+                    tempo_map=clock.map)
 ```
 
 `editor.render(server, clock)` adopts the clock's map anyway and redraws if it

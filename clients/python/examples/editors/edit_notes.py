@@ -67,7 +67,8 @@ timeline = Timeline([
 # %%
 session = Session.live()
 gui = session.gui()
-editor = edit(timeline, sample_rate=session.server.sample_rate,
+editor = edit(timeline,
+              sample_rate=session.server.query_info().nominal_sample_rate,
               tempo=session.clock.tempo, title="notes")
 editor.open(gui)
 

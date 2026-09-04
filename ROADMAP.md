@@ -87,6 +87,15 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   (`select`) and no default plan carries. The entry names the three candidates
   and takes none.
 
+- ⬜ **A sweep on a roll's grid leaves a time band behind it**
+  *(`clients/gui/PLAN.md`, Found by use)*. The entry above, one view over: a
+  `pianoroll`'s plain drag should catch the notes the rectangle covered and
+  write no span, and it writes one — the roll plans `select` where its own doc
+  comment says `marquee`, and cannot plan `marquee` until the machine's marquee
+  asks the element under it, not only the lanes. Diagnosed to the two lines it
+  takes and to the test that changes. **Read with the entry above**: the roll
+  and the lane want one answer, so taking them apart is how they get two.
+
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --

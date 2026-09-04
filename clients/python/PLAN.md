@@ -2333,6 +2333,49 @@ work, where a pending item reads as done.)*
   a page's engine is not a process anyone launched with flags, so the web
   `Server` has no `options` at all.
 
+  **It was not closed: four sites survived the sweep** *(found 2026-09-04 by the
+  user, running the example)*. `examples/editors/edit_notes.py` crashed on the
+  same attribute the entry above is about, and the audit behind it found three
+  more of the same invention — `examples/editors/edit_samples.py`, and both page
+  twins (`edit-notes.html`, `edit-samples.html`, reading `server.sampleRate`) —
+  plus two places that *taught* the spelling: the composition chapter's tempo-map
+  snippet and `FormEditor`'s own usage docstring. The sweep had looked for
+  `server.options.sample_rate`, the divergence it was chasing, and these four
+  say something that exists in neither client, so they were never in the set it
+  read. All six now ask `query_info().nominal_sample_rate` /
+  `(await server.queryInfo()).nominalSampleRate`.
+
+  **Nothing was ever going to catch it.** `pyright` runs with
+  `typeCheckingMode: off` and four rules, none of which is attribute access —
+  it reports zero on the broken tree and zero on the fixed one — and no CI job
+  runs an example. The check is running it, which is what happened here.
+
+- ✅ **`edit(buffer)` opened a window that could not draw on the samples**
+  *(found 2026-09-04 by the user, running `examples/editors/edit_samples.py`)*.
+  The example says "Alt+drag to draw" and the window only swept selections. The
+  example was right and the editor was wrong: a navigable `signal` declares
+  `{drag: select, shift: pan, ctrl: select, alt: select}` for itself
+  (`SignalElement::gesture_map`), which has neither `draw` nor `sample` on any
+  modifier, and `SamplesView.build` passed no `gestures` at all — so the one
+  view whose purpose is writing frames opened with every writing gesture off.
+
+  **The plan already existed, one builder over.** The standalone host builds the
+  same view from a session file with `{"drag": "select", "alt": "draw", "ctrl":
+  "sample"}` (`clients/gui/src/host/document/tree.rs`), commented there as "the
+  plan, and it is three gestures rather than a mode". Two builders of one view
+  disagreeing is the "why are these two programs not the same program" case, and
+  the answer was a call the client never made. Both clients now declare that
+  plan as `GESTURES` beside the view (they were identical in the defect, so
+  there was no client-vs-client divergence to settle) — and `composed.py`'s
+  button, which flips the *plain* drag between sweeping and drawing, still means
+  what it meant.
+
+  **The prose had lost three steps too**: both clients' `gestures` documentation
+  listed `element`, `pan`, `select`, `select_box`, `locate`, `none` — no
+  `marquee`, no `sample`, no `draw`, though `docs/gui-protocol.md` names all of
+  them. A reader looking for how to draw would not have found it in the client
+  they were typing against. Named in both now.
+
 - ✅ **The random stream is `Rng` in one client and `_native.RngStream` in the
   other, and three of its verbs reach only one** *(found 2026-09-01, next door
   to the conversion audit — the same question asked of `base/rand`)*. The draws

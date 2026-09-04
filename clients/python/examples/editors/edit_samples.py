@@ -49,7 +49,7 @@ SECONDS = 2.0
 # %%
 session = Session.live()
 server = session.server
-rate = server.sample_rate
+rate = server.query_info().nominal_sample_rate
 frames = int(SECONDS * rate)
 samples = [
     math.exp(-3.0 * i / frames) * 0.7 * math.sin(2 * math.pi * 220.0 * i / rate)
