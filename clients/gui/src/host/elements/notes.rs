@@ -558,13 +558,21 @@ impl Element for Notes {
     /// A note first, then the **container's marquee** over the empty grid --
     /// the same plan a lane carries, because it is the same gesture. Shift is
     /// the axis' pan, as on every timeline view.
+    ///
+    /// **The plan says `marquee`, and for a while it said `select`** -- which
+    /// sweeps the notes *and* writes the shared time span, so a sweep over the
+    /// grid left a band behind it. A selection of notes is a selection of the
+    /// rectangles the notes are, exactly as a patcher's is of its boxes; a
+    /// **time range** over the same grid is the other selection, and it is
+    /// asked for by name (`{"drag": "select"}`), which is the rule a lane
+    /// already states.
     fn gesture_map(&self) -> Option<GestureMap> {
-        use crate::host::widget::GestureStep::{Element as El, Pan, Select};
+        use crate::host::widget::GestureStep::{Element as El, Marquee, Pan};
         Some(GestureMap::of_plans(
-            &[El, Select],
+            &[El, Marquee],
             &[Pan],
-            &[El, Select],
-            &[El, Select],
+            &[El, Marquee],
+            &[El, Marquee],
         ))
     }
 

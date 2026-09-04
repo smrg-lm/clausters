@@ -2350,6 +2350,12 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
       per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid —
       the messages the roll carries alongside the notes.
 
+    **A plain drag over the grid sweeps the notes** the rectangle covered — the
+    rectangles the notes *are*, the same gesture a patcher's canvas has over its
+    boxes and a lane has over its clips — and it writes **no time span**. A
+    *time range* over the same grid is the other selection, asked for by name
+    (``gestures={"drag": "select"}``), exactly as on a lane.
+
     Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
     drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
     add a note or remove the one under the cursor; drag in the velocity lane to

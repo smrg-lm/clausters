@@ -1475,11 +1475,13 @@ fn shift_drag_pans_whatever_timeline_view_is_under_it() {
     }
 }
 
-/// A sweep on the roll's grid is one marquee: the time span drives the
-/// shared selection every linked view follows, and the rectangle it covers
-/// in time x pitch picks the notes.
+/// A sweep on the roll's grid is a **marquee**: the rectangle it covers in
+/// time x pitch picks the notes, and it writes **no time span** -- a selection
+/// of notes is a selection of the rectangles the notes are, as a patcher's is
+/// of its boxes. The time range over the same grid is the other selection and
+/// is asked for by name (`{"drag": "select"}`), the rule a lane already states.
 #[test]
-fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
+fn a_sweep_on_the_roll_selects_the_notes_and_writes_no_span() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"children":[
             {"id":90,"type":"notes","min":48.0,"max":72.0,
@@ -1496,15 +1498,47 @@ fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
     let x0 = grid.x as f64 + 1.0;
     let x1 = grid.x as f64 + grid.w as f64 * 0.1;
     let effects = g.press(&mut host, &ctx, x0, (grid.y + grid.h) as f64 - 1.0);
-    assert!(has_emit_tag(&effects, 90, "selection"));
+    assert!(
+        !has_emit_tag(&effects, 90, "selection"),
+        "a marquee reports no span"
+    );
     g.drag_to(&mut host, &ctx, x1, grid.y as f64 + 1.0);
     let key = host.timeline_key(90).unwrap();
-    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+    assert_eq!(
+        host.timelines().state(key).unwrap().sel_len,
+        0.0,
+        "the grid's sweep leaves no band behind it"
+    );
     assert_eq!(
         selected_notes(&host, 90),
         vec![0],
         "only the note inside the swept rectangle"
     );
+}
+
+/// ...and the time range is still there, by name: a roll planned `select`
+/// sweeps the span every linked view draws, exactly as a lane does.
+#[test]
+fn a_roll_asked_for_the_range_by_name_sweeps_the_span() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"notes","min":48.0,"max":72.0,"gestures":{"drag":"select"},
+             "notes":[0.0,400.0,60.0,100,0, 6000.0,400.0,61.0,100,0]}]}"#,
+    );
+    host.set_timeline_total(90, 10000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let grid = {
+        let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let x0 = grid.x as f64 + 1.0;
+    let x1 = grid.x as f64 + grid.w as f64 * 0.1;
+    let effects = g.press(&mut host, &ctx, x0, (grid.y + grid.h) as f64 - 1.0);
+    assert!(has_emit_tag(&effects, 90, "selection"));
+    g.drag_to(&mut host, &ctx, x1, grid.y as f64 + 1.0);
+    let key = host.timeline_key(90).unwrap();
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
 
 /// The multi-note selection of a roll — view state no query reports, reached

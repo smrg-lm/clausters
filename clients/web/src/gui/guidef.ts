@@ -2288,6 +2288,12 @@ export function bpf(
  * OSC or raw-MIDI timeline item. An
  * edit flows back as a flat `"notes"` or `"osc"` event. `midiIn` arms live
  * MIDI painting in the native host.
+ *
+ * **A plain drag over the grid sweeps the notes** the rectangle covered — the
+ * rectangles the notes *are*, the same gesture a patcher's canvas has over its
+ * boxes and a lane has over its clips — and it writes **no time span**. A
+ * *time range* over the same grid is the other selection, asked for by name
+ * (`gestures: { drag: "select" }`), exactly as on a lane.
  */
 export function pianoroll(
     options: TimelineOptions & {

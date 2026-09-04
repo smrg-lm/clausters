@@ -300,12 +300,20 @@ impl Gestures {
                     // clip drag's, and a lane of its own where there is none.
                     stack: lane_stack(host, ctx, id),
                 };
+                // **And the element under it answers too.** A rectangle asks
+                // whichever holds the contents -- the lanes of the stack it
+                // sweeps down, *and* the element it was begun on, which is a
+                // roll's notes or a patcher's boxes. Asking only the lanes made
+                // this the one sweep that could not catch a note, which is why
+                // a bare roll had to plan `select` (a span it did not want) to
+                // select anything at all.
+                let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
                 // A press is the rectangle at no size, so it covers nothing and
                 // the hand lets go of whatever it held -- the one rule every
                 // view answers a click with.
-                marquee_caught(host, ctx, None, Some(&lanes), (cx, cy), (cx, cy));
+                marquee_caught(host, ctx, Some(element), Some(&lanes), (cx, cy), (cx, cy));
                 self.drag = Some(Drag::Marquee {
-                    at: None,
+                    at: Some(element),
                     lanes: Some(lanes),
                     origin: (cx, cy),
                     cursor: (cx, cy),
