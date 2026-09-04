@@ -185,7 +185,7 @@ fn chain_of(
 /// the where to be asked, and a [`GestureMap`] is asked by modifier alone.
 ///
 /// It is one band, because every view reserves it the same way: the bottom
-/// [`Metrics::ruler_h`] of the widget's rect, when its editor has a ruler on
+/// `Metrics::ruler_h` of the widget's rect, when its editor has a ruler on
 /// (`lane_body`, `pianoroll::regions` and `timeline_body` all take it off the
 /// bottom). Read from the same numbers the drawing reserves it with, so the
 /// picture and the gesture cannot drift.
