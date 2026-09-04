@@ -19,8 +19,8 @@ use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::effects::{emit, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
 
-/// The rectangle spanned by two corner points, whatever their order.
-#[cfg(feature = "patcher")]
+/// The rectangle spanned by two corner points, whatever their order — the
+/// marquee's own geometry, and the one every sweep is drawn from.
 pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
     let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
@@ -198,6 +198,19 @@ pub(super) fn extend_stroke(
         }
     }
     set_pending(host, def_id, id, Some(held));
+}
+
+/// **What the rectangle caught, and a repaint if anything changed** — the one
+/// call both marquees make, so a plane's sweep and a timeline's ask the same
+/// question in the same words.
+pub(super) fn sweep_element(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    at: super::element::At,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Option<(f64, f64)> {
+    super::element::swept(host, ctx, at, from, to).band
 }
 
 pub(super) fn set_selection(

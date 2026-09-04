@@ -73,13 +73,19 @@ drop is one edit, so Ctrl+Z puts it back where it came from in one step. It is
 the same call that moves a note between rows in a roll — a lane and a semitone
 are one structure — and an edge drag never does it, since a trim is a length.
 
-<b>Alt+drag over a lane</b> sweeps a <b>marquee</b>: the clips inside the swept
-span go into your hand and are drawn in the selection's colours (Alt+click adds
-or removes one — the same key that adds a note to a roll's selection, which is
-why it is this one and not Ctrl: over a roll, Ctrl <i>removes</i> a note). Grab any of them by its body and the whole block moves rigidly,
-and <b>Ctrl+Z puts all of them back in one step</b> — one gesture is one edit,
-which is why the host reports a block as a single message
-(<code>"clips"</code> on the lane) the owner applies as one transaction. Press
+<b>Drag over a lane's empty space</b> and you sweep a <b>marquee</b>: the clips
+inside the rectangle go into your hand and are drawn in the selection's colours
+— of every lane it crossed, since the stack is the sweep's second axis. It is
+the gesture a patcher's canvas and a roll's grid have, and it is the same one:
+the machine sweeps, and each view answers what fell inside. A <b>click</b> is a
+rectangle of no size, so it catches nothing and lets go of everything — and it
+puts the transport's cursor where you pointed. <b>Alt+click</b> adds or removes
+one clip (the same key that adds a note to a roll's selection, which is why it
+is this one and not Ctrl: over a roll, Ctrl <i>removes</i> a note). Grab any
+held clip by its body and the whole block moves rigidly — <b>every held clip,
+on whatever lane</b> — and <b>Ctrl+Z puts all of them back in one step</b>: one
+gesture is one edit, which is why the host reports a block as a single message
+(<code>"clips"</code>) the owner applies as one transaction. Press
 <b>q</b> over the lane and the clips in hand quantize onto its own grid, the same
 grid a drag already lands on. An edge is always one clip's.
 

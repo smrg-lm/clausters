@@ -926,9 +926,9 @@ waveform(data=take, gestures={"drag": "pan", "shift": "select"})
 
 The steps are `element` (hand the press to whatever is under the cursor, which
 may decline), `pan`, `select`, `select_box`, `locate` and `none`. The order is
-the point: `"element locate"` is a lane — grab the clip under the cursor, and
-if there is none, locate. A plan that consumes nothing falls outward to the
-container around it.
+the point: `"element select"` is a lane — grab the clip under the cursor, and
+if there is none, sweep the marquee. A plan that consumes nothing falls outward
+to the container around it.
 
 `select` sweeps the **time span**; `select_box` sweeps the same span
 **restricted to the band of values** it covered, which is a rectangle rather

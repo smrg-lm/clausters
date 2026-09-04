@@ -139,6 +139,20 @@ enum Drag {
     /// is the group's to pan and not the element's
     /// ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
     Element { at: element::At, edge: bool },
+    /// **The marquee over a plane**: the element claimed the press
+    /// ([`Take::marquee`](super::widget::element::Take::marquee)) and the
+    /// machine sweeps it, asking that element what each rectangle caught.
+    ///
+    /// It carries no state of the selection at all — the set is the element's,
+    /// and the only thing the machine can answer for is where the hand started
+    /// and where it is now. A timeline's sweep is [`Drag::Select`] instead,
+    /// because there the rectangle also writes the axis' own span, which
+    /// belongs to the navigation group and not to anything drawn on it.
+    Marquee {
+        at: element::At,
+        origin: (f64, f64),
+        cursor: (f64, f64),
+    },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
     /// (Shift+drag).
     Pan {
@@ -181,6 +195,11 @@ enum Drag {
         /// clip drag reads them there: they do not move while it is in flight.
         /// Empty for a view that is not one of a stack.
         stack: nav::LaneStack,
+        /// The **element** under the sweep, when the view holds one: a roll's
+        /// notes are asked what the rectangle caught, exactly as a plane's
+        /// boxes are. `None` for a view with nothing of its own inside it (a
+        /// lane, whose contents are the clips the machine places).
+        element: Option<element::At>,
     },
     /// Dragging one **sample** of a navigable trace vertically — the smallest
     /// destructive edit, and the one that proves the whole route.
@@ -323,6 +342,12 @@ impl Gestures {
                     interact::Part::Body => None,
                 },
             ),
+            // The rectangle a hand is sweeping over a plane, so the frame can
+            // draw it: the machine holds it, and the element it belongs to
+            // draws no marquee of its own any more.
+            Some(Drag::Marquee { at, origin, cursor }) => {
+                Grab::Marquee(at.id, corner_rect(*origin, *cursor))
+            }
             Some(_) => Grab::Other,
         }
     }

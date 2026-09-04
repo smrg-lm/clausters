@@ -152,7 +152,7 @@ rectangle, which declines where the picture measures only time), ``locate``,
     waveform(data=take, gestures={"drag": "select", "ctrl": "select_box select"})
 
 A plan that consumes nothing falls outward to the container around it. The
-defaults are per kind (``{"drag": "element locate", "shift": "pan"}`` on a
+defaults are per kind (``{"drag": "element select", "shift": "pan"}`` on a
 lane, ``{"drag": "select", "shift": "pan"}`` on the heavy views), a table names
 only what it changes, and a press on a view's vertical strip always pans that
 axis. Live via ``set`` (as JSON, the ``theme`` convention).

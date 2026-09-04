@@ -710,19 +710,23 @@ impl GestureMap {
             return map;
         }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
-            // A lane locates on a plain drag and **selects on Alt**: the sweep
-            // is what puts a span on the shared axis and what puts the clips
-            // inside it in the hand (the marquee), so the modifier that adds one
-            // clip to the selection is the modifier that sweeps for several.
+            // A lane **sweeps on a plain drag**, which is the marquee every
+            // other view sweeps on a plain drag: a rectangle over a patcher's
+            // canvas, over a roll's grid and over a stack of lanes is one
+            // gesture, and needing a modifier for it on one of the three was
+            // the mechanism differing by view rather than by what the view
+            // holds. `Element` stays first, because a clip under the pointer
+            // answers before the lane does.
             //
-            // **Alt is the crate's selection modifier**, and it was already:
-            // Alt on a note adds it to a roll's selection (`Notes::press_grid`),
-            // where Ctrl *removes* the note. So a clip's selection rides the
-            // same key one level up, and Ctrl keeps meaning here what it means
-            // everywhere else on a lane. `Element` stays first on both, because
-            // a clip under the pointer answers before the lane does either.
+            // **Locating did not move to a modifier, it moved to the click**:
+            // a sweep that never left the slop is where the hand pointed and
+            // nothing else, so it puts the cursor there (see
+            // `Gestures::release`) -- and the ruler over the stack locates on
+            // a plain drag as it always did. Alt still sweeps, because Alt is
+            // the crate's selection modifier and adds one clip at a time; Ctrl
+            // keeps meaning here what it means everywhere else on a lane.
             WidgetKind::Track { .. } => (
-                &[Element, Locate],
+                &[Element, Select],
                 &[Pan],
                 &[Element, Locate],
                 &[Element, Select],

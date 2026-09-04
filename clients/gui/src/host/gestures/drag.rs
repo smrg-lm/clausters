@@ -134,6 +134,18 @@ impl Gestures {
             return out;
         };
         match drag {
+            // **The marquee, wherever a hand sweeps one over a plane**: the
+            // machine holds the anchor and the frame draws the rectangle; the
+            // element only says what fell inside it.
+            Drag::Marquee { at, origin, .. } => {
+                sweep_element(host, ctx, at, origin, (cx, cy));
+                self.drag = Some(Drag::Marquee {
+                    at,
+                    origin,
+                    cursor: (cx, cy),
+                });
+                out.push(GestureEffect::Redraw(def_id));
+            }
             Drag::Element { at, .. } => {
                 let events = element::with(host, ctx, at, |el, input| el.drag((cx, cy), input));
                 if let Some(events) = events {
@@ -225,6 +237,7 @@ impl Gestures {
                 origin_y,
                 value,
                 stack,
+                element,
             } => {
                 // Against the group's **current** window (the press-time one is
                 // the fallback for a view that is in no group): the axis may
@@ -256,7 +269,15 @@ impl Gestures {
                     );
                     (max > min && !axis.is_whole(min, max)).then_some((min, max))
                 });
-                set_selection(host, &mut out, def_id, id, anchor, cur, range);
+                // **What the element under the sweep caught**, and the band it
+                // caught it in: a roll answers in semitones, which is the same
+                // second axis a waveform answers in amplitudes -- so the two
+                // reach `sel_min`/`sel_max` by one road. A view holding no
+                // element of its own (a lane, whose contents are widgets)
+                // answers nothing here and is served below.
+                let band = element
+                    .and_then(|at| sweep_element(host, ctx, at, (origin_x, origin_y), (cx, cy)));
+                set_selection(host, &mut out, def_id, id, anchor, cur, range.or(band));
                 // **A sweep over a lane is also its marquee**: the shared time
                 // selection is set either way, and the clips inside it become
                 // the hand's — the very rule a roll follows for the notes
@@ -517,13 +538,34 @@ impl Gestures {
         // leftwards. On release there is one answer and it is the right one; a
         // plain click still lands immediately, because a click is a press and a
         // release with nothing in between.
-        if let Some(Drag::Select { id, .. }) = self.drag {
+        // A marquee over a plane ends where it is: the set followed it live,
+        // and a selection is screen state that reports nothing.
+        if let Some(Drag::Marquee { .. }) = self.drag {
+            self.drag = None;
+            out.push(GestureEffect::Redraw(def_id));
+            return out;
+        }
+        if let Some(Drag::Select {
+            id, body, origin_x, ..
+        }) = self.drag
+        {
             let selection = host
                 .timeline_key(id)
                 .and_then(|key| host.timelines().state(key))
                 .map(|state| (state.sel_start, state.sel_len));
             if let Some((start, len)) = selection {
                 transport_follows_selection(host, def_id, id, start, len, true);
+                // **A sweep that never moved is a cursor.** The hand pointed
+                // at one place and let go, which is what a click on a lane has
+                // always meant -- and it is why the marquee could take the
+                // plain drag without the locate needing a modifier of its own.
+                //
+                // The same slop the sweep itself calls a click, and *not* the
+                // length of the selection: a press lands on a sample, and one
+                // sample is what the span of a click honestly is.
+                if (cx - origin_x).abs() <= host.metrics_for(def_id).hit_slop as f64 {
+                    locate_timeline(host, &mut out, def_id, id, body, cx);
+                }
             }
         }
         // A moved or trimmed clip leaves as **one intent at the end**, for the

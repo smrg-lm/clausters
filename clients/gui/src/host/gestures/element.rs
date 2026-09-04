@@ -126,6 +126,22 @@ pub(super) fn with<R>(
     }
 }
 
+/// **Asks the element at `at` what a rectangle caught** — the one marquee's one
+/// question ([`Element::select_in`]).
+///
+/// Answers `Swept::default()` where there is no element (a lane addresses its
+/// clips, which are widgets the machine places) so a caller can ask without
+/// knowing which kind of view it is sweeping over — which is the point.
+pub(super) fn swept(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    at: At,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> crate::host::widget::element::Swept {
+    with(host, ctx, at, |el, input| el.select_in(from, to, input)).unwrap_or_default()
+}
+
 /// **Which layer of the container `at` addresses the pointer is on** — the
 /// rule in [`crate::host::layers`], asked with the [`Input`] the container's
 /// own placement implies, so a layer answers about the pixels it was drawn on.

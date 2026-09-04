@@ -263,6 +263,17 @@ impl Gestures {
                 );
                 let anchor_v = value.map(|v| v.value_at(cy));
                 set_selection(host, out, def_id, id, anchor, anchor, None);
+                // **The press is a marquee of no size**, and that one rule is
+                // what lets go of everything a view was holding: a rectangle
+                // that covers nothing catches nothing, so the roll drops its
+                // notes and the lane drops its clips without either of them
+                // owning a rule about clicks.
+                let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
+                sweep_element(host, ctx, element, (cx, cy), (cx, cy));
+                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. })) {
+                    interact::select_clips_in(host, def_id, &[id], anchor, anchor);
+                    host.select_lanes(id, Vec::new());
+                }
                 // The stack this sweep can cross, where it is a lane of one:
                 // read at the press, like a clip drag's, and not read at all
                 // for a view that stands on its own.
@@ -280,6 +291,7 @@ impl Gestures {
                     origin_y: cy,
                     value: value.zip(anchor_v),
                     stack,
+                    element: Some(element),
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true
@@ -442,9 +454,21 @@ impl Gestures {
         let Claim::Take(take) = claim else {
             return false;
         };
-        self.drag = Some(Drag::Element {
-            at,
-            edge: take.edge_scroll,
+        // An element that asked for a **marquee** gets the machine's, not a
+        // drag of its own: the press is where its bare canvas is, and
+        // everything after it is the one sweep every view shares.
+        self.drag = Some(if take.marquee {
+            sweep_element(host, ctx, at, (cx, cy), (cx, cy));
+            Drag::Marquee {
+                at,
+                origin: (cx, cy),
+                cursor: (cx, cy),
+            }
+        } else {
+            Drag::Element {
+                at,
+                edge: take.edge_scroll,
+            }
         });
         element::report(host, out, ctx, at.id, take.events);
         out.push(GestureEffect::Redraw(ctx.def_id));

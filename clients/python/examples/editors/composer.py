@@ -87,16 +87,21 @@ windows it was made of, because nothing was copied. That element is a
 ``Segments([(buf, 0, 1.0), (other_buf, 0, 1.0)], instrument="take")`` — a
 window's length being in seconds, like every length over samples.
 
-**And one about holding several clips at once.** Alt+drag over a lane sweeps a
-**marquee**: the clips inside the swept span go into your hand and are drawn in
-the selection's colours (Alt+click adds or removes one — the same key that adds
-a note to a roll's selection, which is why it is this one and not Ctrl: over a
-roll, Ctrl *removes* a note). Grab any of them by
+**And one about holding several clips at once.** Drag over a lane's empty space
+and you sweep a **marquee**: the clips inside the rectangle go into your hand
+and are drawn in the selection's colours — of every lane it crossed, since the
+stack is the sweep's second axis. It is the gesture a patcher's canvas and a
+roll's grid have, and it is the same one: the machine sweeps, and each view
+answers what fell inside. A **click** is a rectangle of no size, so it catches
+nothing and lets go of everything — and it puts the transport's cursor where you
+pointed. **Alt+click** adds or removes one clip (the same key that adds a note to
+a roll's selection, which is why it is this one and not Ctrl: over a roll, Ctrl
+*removes* a note). Grab any held clip by
 its body and the whole block moves rigidly, keeping the distances between them —
-and **Ctrl+Z puts all of them back in one step**, because one gesture is one
-edit. That is the whole reason the host reports a block as a single message
-(``"clips"`` on the lane) rather than one per clip: several placements the
-owner applies as **one transaction**. Press **`q`** with the pointer over the
+**every held clip, on whatever lane** — and **Ctrl+Z puts all of them back in one
+step**, because one gesture is one edit. That is the whole reason the host reports
+a block as a single message (``"clips"``) rather than one per clip: several
+placements the owner applies as **one transaction**. Press **`q`** with the pointer over the
 lane and the clips in hand quantize onto the lane's own grid — the same grid a
 drag already lands on, so a quantize puts a clip where dragging it would have.
 An edge is always one clip's: two clips of different lengths have no one edge

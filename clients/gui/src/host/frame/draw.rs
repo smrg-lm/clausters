@@ -701,7 +701,7 @@ pub(super) fn draw_static_meshes(
         let grip = match inputs.grab {
             _ if !item.placement_active => None,
             // Something else has the pointer: no clip offers anything.
-            Grab::Other => None,
+            Grab::Other | Grab::Marquee(..) => None,
             // The held clip keeps the edge it is being resized by, wherever the
             // pointer has got to — it is named by the drag rather than found
             // under the cursor. A clip being **moved** holds no edge and lights
@@ -754,6 +754,19 @@ pub(super) fn draw_element_overlays(
     theme: &Theme,
 ) {
     let m = inputs.metrics;
+    // **The marquee a hand is sweeping over a plane**, through the routine every
+    // swept selection in this window is drawn with -- the same wash, the same
+    // edges, and here rather than in the element because the drag is the
+    // machine's. Over the element it belongs to and clipped to it, so a
+    // rectangle dragged out of a scrolled canvas stops at its edge.
+    if let Grab::Marquee(id, rect) = inputs.grab
+        && let Some(p) = placed.iter().find(|p| p.widget.id == Some(id))
+    {
+        over.set_clip(p.clip);
+        over.set_ink(super::ink_of(p));
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        selection::draw_rect(&mut Draw::new(over, m, th), rect);
+    }
     for p in placed {
         let (WidgetKind::Custom(el), Some(_)) = (&p.widget.kind, p.widget.kind.overlay_rect())
         else {

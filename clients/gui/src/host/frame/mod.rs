@@ -447,13 +447,19 @@ pub(crate) fn timeline_body(
 /// a grab that is not on the table, and the held clip's own grip must not blink
 /// out every time the pointer wanders between two snap steps (the clip moves in
 /// steps; the pointer does not).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) enum Grab {
     /// Nothing is held: affordances follow the pointer.
     #[default]
     None,
     /// Something else is held (a control, a curve, the axis): no clip lights up.
     Other,
+    /// A **marquee** is being swept over the element `id`, and this is the
+    /// rectangle: the frame draws it, through the routine every swept selection
+    /// in the window is drawn with. It is here rather than in the element
+    /// because the drag is the machine's — one marquee, wherever a hand sweeps
+    /// one.
+    Marquee(i32, Rect),
     /// This clip is held, by the named side — `None` for a move, where the side
     /// is still the pointer's.
     Clip(i32, Option<crate::host::graphics::track::ClipSide>),

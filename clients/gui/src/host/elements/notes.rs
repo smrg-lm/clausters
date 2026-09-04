@@ -35,7 +35,8 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::placement::{self, Bounds};
 use crate::host::widget::element::{
-    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Take, TimeSpace,
+    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Swept, Take,
+    TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_f, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
@@ -112,10 +113,6 @@ enum Drag {
     },
     /// A marker sliding along the time axis.
     OscMark { index: usize },
-    /// The marquee: the shared time selection swept from `anchor`, restricted
-    /// in pitch when the press was on the grid (`pitch` is `None` on the
-    /// strips under it, which read time alone).
-    Marquee { anchor: f64, pitch: Option<f32> },
 }
 
 /// Which region of a roll a press landed on.
@@ -348,15 +345,6 @@ impl Notes {
     /// Starts a marquee at `time`, dropping whatever the last sweep selected:
     /// the shared selection collapses to the press and the drag sweeps from
     /// there.
-    fn start_marquee(&mut self, time: f64, pitch: Option<f32>) -> Claim {
-        self.selected.clear();
-        self.drag = Some(Drag::Marquee {
-            anchor: time,
-            pitch,
-        });
-        Claim::events(Events::none().and_select(time, time))
-    }
-
     /// Inserts a note at `start`/`pitch` for the live-MIDI leg and the Ctrl+add
     /// gesture, returning its index.
     fn insert(&mut self, note: pianoroll::Note) -> usize {
@@ -567,9 +555,64 @@ impl Element for Notes {
     /// The roll takes every press on its own axis (its notes, its strips, its
     /// marquee) and leaves the modifier that is the *container's* — Shift pans
     /// the window, which is the axis' gesture and not the picture's.
+    /// A note first, then the **container's marquee** over the empty grid --
+    /// the same plan a lane carries, because it is the same gesture. Shift is
+    /// the axis' pan, as on every timeline view.
     fn gesture_map(&self) -> Option<GestureMap> {
-        use crate::host::widget::GestureStep::{Element as El, Pan};
-        Some(GestureMap::of_plans(&[El], &[Pan], &[El], &[El]))
+        use crate::host::widget::GestureStep::{Element as El, Pan, Select};
+        Some(GestureMap::of_plans(
+            &[El, Select],
+            &[Pan],
+            &[El, Select],
+            &[El, Select],
+        ))
+    }
+
+    /// **The notes the rectangle covered**, and the band of semitones it
+    /// crossed.
+    ///
+    /// The whole of what this element knows about a marquee: the gesture, the
+    /// anchor and the shared time span are the machine's, and this answers the
+    /// one question only the roll can -- with the same call its own marquee
+    /// used to make, over the same geometry the notes were drawn on.
+    ///
+    /// **A rectangle that crossed no whole semitone restricts nothing**, which
+    /// is the click it still is vertically: a pitch axis is discrete, so the
+    /// band takes the semitones the sweep passed *over*, exactly as the time
+    /// axis takes the samples it did.
+    ///
+    /// Only the grid answers. The strips under it (velocity, markers) and the
+    /// ruler beside it read time alone, so a sweep begun there sets the span
+    /// and takes no notes -- and it still lets go of what was held, because a
+    /// press is a marquee of no size and every one of them means the same
+    /// thing.
+    fn select_in(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
+        let before = self.selected.len();
+        self.selected.clear();
+        let h = self.hit(from, input);
+        if h.region != Region::Grid || !self.editable {
+            return Swept {
+                changed: before > 0,
+                band: None,
+            };
+        }
+        let (t0, t1) = (
+            self.time_at(h.grid, &h.nav, from.0),
+            self.time_at(h.grid, &h.nav, to.0),
+        );
+        let p0 = pianoroll::y_to_pitch(from.1 as f32, h.lo, h.hi, h.grid);
+        let p1 = pianoroll::y_to_pitch(to.1 as f32, h.lo, h.hi, h.grid);
+        self.selected = pianoroll::notes_in_rect(&self.notes, t0, t1, p0, p1);
+        let (a, b) = (p0.min(p1).ceil(), p0.max(p1).floor());
+        // A rectangle that never left its row restricts nothing -- the click it
+        // still is vertically. The ceil/floor pair says so on its own for a
+        // sweep inside a row; a press, whose two corners are one point, would
+        // land exactly on a row's own pitch and read as that one semitone.
+        let flat = (p0 - p1).abs() < f32::EPSILON;
+        Swept {
+            changed: before > 0 || !self.selected.is_empty(),
+            band: (b >= a && !flat).then_some((a as f64, b as f64)),
+        }
     }
 
     /// **The roll's own contents are its notes** — a note's rectangle, and the
@@ -614,14 +657,13 @@ impl Element for Notes {
         let is_body = input.time.is_some() && !self.navigable_placement(input);
         match h.region {
             Region::Grid => self.press_grid(&h, at, input, is_body),
-            Region::Velocity => self.press_velocity(&h, at, is_body),
-            Region::Osc => self.press_osc(&h, at, input, is_body),
+            Region::Velocity => self.press_velocity(&h, at),
+            Region::Osc => self.press_osc(&h, at, input),
             // The ruler strip and the slack beside the body: a time and nothing
             // else, so the sweep is time-only.
-            Region::Axis if !is_body => {
-                let t = self.time_at(h.grid, &h.nav, at.0);
-                self.start_marquee(t, None)
-            }
+            // The ruler strip and the slack beside the body: nothing of this
+            // element's is there, so the press goes back to the chain and the
+            // container sweeps -- the marquee is the machine's now.
             Region::Axis => Claim::Decline,
         }
     }
@@ -705,25 +747,6 @@ impl Element for Notes {
                 }
                 Events::none()
             }
-            Some(Drag::Marquee { anchor, pitch }) => {
-                // The time span drives the **group's** selection, which the
-                // element asks for; the rectangle over it picks this roll's own
-                // notes, which is state the element keeps.
-                let mut band = None;
-                if let Some(p0) = pitch {
-                    let p = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
-                    self.selected = pianoroll::notes_in_rect(&self.notes, anchor, time, p0, p);
-                    // The selection's second axis, in this axis' own unit. A
-                    // pitch axis is **discrete**, so the sweep takes the
-                    // semitones it passed over exactly as the time axis takes
-                    // the samples it did — and a sweep that has not crossed a
-                    // whole one restricts nothing, which is the click it still
-                    // is vertically.
-                    let (a, b) = (p0.min(p).ceil(), p0.max(p).floor());
-                    band = (b >= a).then_some((a as f64, b as f64));
-                }
-                Events::none().and_select_in(anchor, time, band)
-            }
             None => Events::none(),
         }
     }
@@ -734,7 +757,7 @@ impl Element for Notes {
         // as it went.
         match self.drag.take() {
             Some(Drag::OscMark { .. }) => self.osc_event(),
-            Some(Drag::Marquee { .. }) | None => Events::none(),
+            None => Events::none(),
             Some(_) => self.notes_event(),
         }
     }
@@ -1042,12 +1065,10 @@ impl Notes {
             // the container, whose own drag is what the rest of the rectangle
             // means. Standing alone the whole grid is the roll's, and the empty
             // part of it sweeps.
-            if is_body {
-                return Claim::Decline;
-            }
-            let t = self.time_at(h.grid, &h.nav, at.0);
-            let p = pianoroll::y_to_pitch(at.1 as f32, h.lo, h.hi, h.grid);
-            return self.start_marquee(t, Some(p));
+            // Empty grid is the container's sweep: this element answers what
+            // the rectangle caught ([`Element::select_in`]) and holds no drag
+            // of its own for it.
+            return Claim::Decline;
         };
         let press_time = self.time_at(h.grid, &h.nav, at.0);
         if nh.part == placement::Part::Body {
@@ -1090,13 +1111,9 @@ impl Notes {
     /// A press on the velocity lane: over a **selected** note the whole
     /// selection nudges together (relative, from a snapshot); over an
     /// unselected one the single bar follows the cursor.
-    fn press_velocity(&mut self, h: &Hit, at: (f64, f64), is_body: bool) -> Claim {
+    fn press_velocity(&mut self, h: &Hit, at: (f64, f64)) -> Claim {
         let Some(nh) = h.note else {
-            if is_body {
-                return Claim::Decline;
-            }
-            let t = self.time_at(h.grid, &h.nav, at.0);
-            return self.start_marquee(t, None);
+            return Claim::Decline;
         };
         if self.selected.contains(&nh.index) {
             let orig: Vec<_> = self
@@ -1118,7 +1135,7 @@ impl Notes {
 
     /// A press on the OSC lane: Ctrl adds or removes a marker, a press on one
     /// slides it.
-    fn press_osc(&mut self, h: &Hit, at: (f64, f64), input: &Input, is_body: bool) -> Claim {
+    fn press_osc(&mut self, h: &Hit, at: (f64, f64), input: &Input) -> Claim {
         if input.mods.ctrl {
             match h.osc {
                 Some(index) if index < self.osc.len() => {
@@ -1137,11 +1154,7 @@ impl Notes {
                 self.drag = Some(Drag::OscMark { index });
                 Claim::take().edge_scrolling()
             }
-            None if is_body => Claim::Decline,
-            None => {
-                let t = self.time_at(h.grid, &h.nav, at.0);
-                self.start_marquee(t, None)
-            }
+            None => Claim::Decline,
         }
     }
 }
@@ -1447,40 +1460,46 @@ mod tests {
         assert!((r.notes[0].start - 500.0).abs() < 1.0, "{:?}", r.notes[0]);
     }
 
-    /// The marquee is two things at once, and the split is the port's point:
-    /// the **time span** is asked of the machine (it is the group's selection,
-    /// which every linked view follows) and the **notes inside the rectangle**
-    /// are the element's own state.
+    /// **The marquee is the machine's; what it caught is the roll's.** The
+    /// gesture, the anchor and the shared time span belong to the container --
+    /// every linked view follows that selection -- and the one question left
+    /// for this element is which notes the rectangle covered, and in what band
+    /// of its own axis.
+    ///
+    /// The press declines, because there is nothing of the roll's on empty
+    /// grid; and a rectangle of no size is what lets go of the notes, which is
+    /// the same rule on every view that sweeps.
     #[test]
-    fn the_marquee_asks_for_the_selection_and_keeps_the_notes() {
+    fn the_roll_answers_what_the_rectangle_caught() {
         let m = Metrics::default();
         let mut r = roll(
             r#"{"notes":[0.0,100.0,60.0,100,0,200.0,100.0,64.0,100,0,
                          500.0,100.0,80.0,100,0],"min":48,"max":84}"#,
         );
-        // A press on empty grid, low in the pitch window.
+        // A press on empty grid is not the roll's: the container sweeps.
         let at = (x_of(&r, &m, 0.0, 1000.0), y_of(&r, &m, 58.0));
-        let Claim::Take(take) = r.press(at, &input(&m, rect(), axis(1000.0))) else {
-            panic!("empty grid sweeps")
-        };
-        assert_eq!(take.events.selection(), Some(((0.0, 0.0), None)));
+        assert_eq!(
+            r.press(at, &input(&m, rect(), axis(1000.0))),
+            Claim::Decline
+        );
 
         let to = (x_of(&r, &m, 400.0, 1000.0), y_of(&r, &m, 66.0));
-        let events = r.drag(to, &input(&m, rect(), axis(1000.0)));
-        let ((a, b), band) = events.selection().expect("the sweep asks every step");
-        assert!((a - 0.0).abs() < 1.0 && (b - 400.0).abs() < 2.0, "{a} {b}");
+        let swept = r.select_in(at, to, &input(&m, rect(), axis(1000.0)));
         // The pitch axis is discrete, so the band is the semitones the sweep
         // passed over -- 58 to 66 read as whole steps, both ends included.
-        let (lo_p, hi_p) = band.expect("a rectangle restricts the pitch axis");
+        let (lo_p, hi_p) = swept.band.expect("a rectangle restricts the pitch axis");
         assert!(
             (58.0..=59.0).contains(&lo_p) && (65.0..=66.0).contains(&hi_p),
             "{lo_p} {hi_p}"
         );
+        assert!(swept.changed);
         assert_eq!(r.selected, vec![0, 1], "the third note is out of the band");
-        assert!(
-            events.into_messages().is_empty(),
-            "a sweep edits nothing, so it reports nothing"
-        );
+
+        // A rectangle of no size covers nothing, which is the press: the notes
+        // are let go of, and no band is reported.
+        let swept = r.select_in(at, at, &input(&m, rect(), axis(1000.0)));
+        assert!(r.selected.is_empty() && swept.changed);
+        assert_eq!(swept.band, None, "a click restricts nothing vertically");
     }
 
     /// Grabbing a **selected** note moves the whole selection rigidly; grabbing

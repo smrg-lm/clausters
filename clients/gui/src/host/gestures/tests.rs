@@ -366,7 +366,14 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
         vec![0, 1],
         "the marquee spans both boxes"
     );
-    assert!(g.dragging(), "the element holds the sweep, and draws it");
+    assert!(g.dragging(), "the machine holds the sweep");
+    // And the frame is told to draw it: one marquee, drawn where every swept
+    // selection in the window is drawn, rather than by the element itself.
+    assert!(
+        matches!(g.grab(), crate::host::frame::Grab::Marquee(7, _)),
+        "the rectangle is the machine's to draw: {:?}",
+        g.grab(),
+    );
     g.release(
         &mut host,
         &plain,
@@ -1379,11 +1386,12 @@ fn a_drag_pans_the_frequency_axis_and_r_resets_it() {
 }
 
 /// The container's plan decides, and the element takes what it is handed:
-/// on a lane, the clip under the cursor moves, empty lane space locates the
-/// transport, and the header — beside the axis, on no position at all —
-/// does neither.
+/// on a lane, the clip under the cursor moves, empty lane space sweeps a
+/// marquee — and a sweep that never left the slop is a **click**, which is
+/// where the transport goes. The header — beside the axis, on no position at
+/// all — does neither.
 #[test]
-fn a_lanes_plan_grabs_the_clip_first_and_locates_where_there_is_none() {
+fn a_lanes_plan_grabs_the_clip_first_and_a_click_on_it_locates() {
     let mut host = lane_host();
     host.sync_track_totals();
     let mut g = Gestures::default();
@@ -1401,12 +1409,30 @@ fn a_lanes_plan_grabs_the_clip_first_and_locates_where_there_is_none() {
     assert!(g.dragging(), "the clip under the cursor was grabbed");
     g.release(&mut host, &ctx, on_clip, midy);
 
-    // Empty lane space: the element declines and the lane's own plan
-    // locates the transport there.
+    // Empty lane space: the element declines and the lane's own plan sweeps.
+    // The press names a span of no length, so nothing has been located yet --
+    // it is a locate only if the hand lets go without sweeping.
     let empty = body.x as f64 + body.w as f64 * 0.5;
     let effects = g.press(&mut host, &ctx, empty, midy);
-    assert!(has_emit_tag(&effects, 70, "locate"));
-    assert!(!g.dragging());
+    assert!(g.dragging(), "the marquee is in flight");
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "the press does not know yet whether it is a click",
+    );
+    let effects = g.release(&mut host, &ctx, empty, midy);
+    assert!(has_emit_tag(&effects, 70, "locate"), "a click is a cursor");
+
+    // ...and a sweep is not: it left a span, and the transport stays where it
+    // was until a hand points at one place.
+    let effects = {
+        g.press(&mut host, &ctx, empty, midy);
+        g.drag_to(&mut host, &ctx, empty + 80.0, midy);
+        g.release(&mut host, &ctx, empty + 80.0, midy)
+    };
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a rectangle is not a cursor",
+    );
 
     // The header strip, left of the axis: no clip, no position, no locate.
     let effects = g.press(&mut host, &ctx, body.x as f64 - 10.0, midy);
@@ -2252,6 +2278,51 @@ fn a_swept_lane_hands_its_clips_to_one_block_move() {
     assert!(
         first_emit(&effects, 81).is_none(),
         "a block does not also report per clip"
+    );
+}
+
+/// **A press is a marquee of no size, and that is what lets go.** One rule for
+/// the patcher's boxes, the roll's notes and the lane's clips: a rectangle that
+/// covers nothing catches nothing, so a click on empty space drops the
+/// selection without any view owning a rule about clicks. The lane used to keep
+/// its clips, because its sweep was written apart from the other two.
+#[test]
+fn a_click_on_empty_lane_space_lets_go_of_the_clips() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","snap":100.0,"children":[
+                {"id":91,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let held = |host: &Host, id: i32| {
+        host.window_def(1)
+            .and_then(|t| t.find(id))
+            .is_some_and(|w| w.selected)
+    };
+    let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
+    let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
+    let (y0, y1) = (
+        (first.y + first.h * 0.5) as f64,
+        (second.y + second.h * 0.5) as f64,
+    );
+    // A plain drag sweeps, with no modifier at all -- the gesture the patcher's
+    // canvas and the roll's grid have always had.
+    g.press(&mut host, &ctx, from, y0);
+    g.drag_to(&mut host, &ctx, to, y1);
+    g.release(&mut host, &ctx, to, y1);
+    assert!(held(&host, 81) && held(&host, 91), "the sweep took both");
+
+    // A click on the lane's empty space: nothing is in the rectangle, so
+    // nothing stays in the hand.
+    g.press(&mut host, &ctx, from, y0);
+    g.release(&mut host, &ctx, from, y0);
+    assert!(
+        !held(&host, 81) && !held(&host, 91),
+        "a click on empty space is a rectangle that caught nothing",
     );
 }
 

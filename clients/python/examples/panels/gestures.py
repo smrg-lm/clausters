@@ -15,13 +15,13 @@ value is an ordered plan of steps:
 - ``element`` — hand the press to whatever is under the cursor (a clip, a note,
   a box, a control). It may decline, and the plan goes on;
 - ``pan`` — pan the container's own axis (time here, the plane in a ``scroll``);
-- ``select`` — sweep the shared time selection (a rectangle in time x pitch on a
-  roll, which also picks its notes);
+- ``select`` — sweep the **marquee**: the shared time selection, and whatever
+  the rectangle covered of what the view holds (a lane's clips, a roll's notes);
 - ``locate`` — put the transport's cursor under the pointer;
 - ``none`` — nothing.
 
 This window shows the same views twice. The **left** column keeps the defaults
-(``"element locate"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
+(``"element select"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
 waveform); the **right** one is told to pan on a plain drag and select with
 Shift — the reversal, with no element's code involved. A menu switches the
 right column live through ``set(gestures=...)``, which starts again from the
@@ -127,7 +127,7 @@ session = Session.live()
 gui = session.gui()
 win = scene.open()
 print(f"opened window {win}")
-print("left column:  drag a lane locates, drag its clip moves it, "
+print("left column:  drag a lane sweeps (a click locates), drag its clip moves it, "
       "drag the waveform selects, Shift+drag pans anywhere")
 print("right column: drag pans everywhere, Shift+drag selects")
 

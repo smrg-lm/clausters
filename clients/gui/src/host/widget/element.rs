@@ -1151,6 +1151,24 @@ impl HitArea {
     }
 }
 
+/// **What a rectangle swept over an element caught** ([`Element::select_in`]).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Swept {
+    /// Whether the element's own selected set changed, which is whether the
+    /// window has anything new to draw.
+    pub changed: bool,
+    /// The band the rectangle covered on the element's **own second axis**, in
+    /// that axis' unit — a roll's semitones — or `None` where it has none, or
+    /// where the sweep crossed none of it.
+    ///
+    /// The container writes it as `sel_min`/`sel_max`, so a roll's marquee
+    /// reports its pitch band by the same road a waveform's reports its
+    /// amplitudes. The element answers rather than the machine because the unit
+    /// is the element's: a pitch axis is discrete and takes the semitones the
+    /// sweep *passed over*, exactly as the time axis takes the samples it did.
+    pub band: Option<(f64, f64)>,
+}
+
 /// What an element did with a press it was offered.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Claim {
@@ -1187,6 +1205,19 @@ pub struct Take {
     /// moved — which is why the drag must read its axis from
     /// [`Input::time`] each step rather than snapshotting it.
     pub edge_scroll: bool,
+    /// Ask the machine to run a **marquee** from this press: the rectangle is
+    /// drawn by the frame and what it caught is asked of this element
+    /// ([`Element::select_in`]), step by step, until the button comes up.
+    ///
+    /// It is what an element on a **plane** says instead of sweeping for
+    /// itself, and the reason it is a claim rather than a plan step is that
+    /// only the element knows where its bare canvas is — the paper beside a
+    /// patcher's graph belongs to the workspace, and a container-level step
+    /// there would sweep over nothing. On a **timeline** the container says it
+    /// instead ([`GestureStep::Select`](super::GestureStep::Select)), because
+    /// there the sweep also sets the axis' own span, which is the group's and
+    /// not the element's.
+    pub marquee: bool,
 }
 
 impl Claim {
@@ -1209,6 +1240,15 @@ impl Claim {
             events,
             ..Take::default()
         })
+    }
+
+    /// ...and let the machine sweep a marquee from this press (see
+    /// [`Take::marquee`]).
+    pub fn marquee(self) -> Self {
+        match self {
+            Claim::Take(t) => Claim::Take(Take { marquee: true, ..t }),
+            other => other,
+        }
     }
 
     /// ...and keep the axis scrolling while the drag is held past its edge.
@@ -1903,6 +1943,29 @@ pub trait Element: fmt::Debug {
     /// element's until the button comes up.
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         Claim::Decline
+    }
+
+    /// **What a rectangle swept over this element caught** — the marquee's one
+    /// question, asked of whatever holds contents.
+    ///
+    /// `from`/`to` are the two corners in **window pixels**, the coordinates a
+    /// press and a drag already arrive in, so an element maps them with the
+    /// geometry it drew with. The set it keeps is replaced by what the
+    /// rectangle covers, which is why a **zero-size** rectangle is the same
+    /// question as "let go of everything": a press is a marquee that has not
+    /// moved yet, and that is how one rule gives every view the same answer to
+    /// a click on its empty space.
+    ///
+    /// This exists because the marquee was written three times -- the patcher's
+    /// boxes, the roll's notes and the lane's clips -- and the three disagreed
+    /// about the modifier, about whether a press clears, and about what
+    /// counted as inside. The gesture is the machine's now, and the only part
+    /// an element can answer is this one.
+    ///
+    /// The default catches nothing, which is right for every element that has
+    /// no set of its own.
+    fn select_in(&mut self, _from: (f64, f64), _to: (f64, f64), _input: &Input) -> Swept {
+        Swept::default()
     }
 
     /// The cursor moved while this element held the press. It mutates *itself*

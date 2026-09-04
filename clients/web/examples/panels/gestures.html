@@ -34,8 +34,9 @@ Each container declares that mapping in a <code>gestures</code> table, keyed by
 modifier chord (<code>drag</code> for the plain drag, plus <code>shift</code>,
 <code>ctrl</code>, <code>alt</code>), whose value is an ordered plan of steps —
 <code>element</code> (hand the press to whatever is under the cursor; it may
-decline and the plan goes on), <code>pan</code>, <code>select</code>,
-<code>locate</code>.
+decline and the plan goes on), <code>pan</code>, <code>select</code> (the
+marquee: the shared time selection, and whatever the rectangle covered of what
+the view holds), <code>locate</code>.
 
 Two columns, the same contents, two tables: the left one takes the defaults, the
 right one is switched live by the menu under it.</div>
@@ -143,7 +144,7 @@ right one is switched live by the menu under it.</div>
         await session.gui();
         const win = await scene.open($("stage"));
         log(`opened window ${win.id}`);
-        log("left column:  drag a lane locates, drag its clip moves it, "
+        log("left column:  drag a lane sweeps (a click locates), drag its clip moves it, "
           + "drag the waveform selects, Shift+drag pans anywhere");
         log("right column: drag pans everywhere, Shift+drag selects");
 

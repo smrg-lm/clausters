@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 use crate::host::graphics::patch::{self, PatchDraw, Port, Side};
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Swept};
 use crate::host::widget::parse::{label, set_label};
 
 /// A patcher over its own canvas. `selected` and `drag` are native view state —
@@ -61,12 +61,6 @@ enum Drag {
         origin: (f64, f64),
         grabbed: Vec<(usize, f32, f32)>,
         moved: bool,
-    },
-    /// The selection marquee on the bare canvas: the selected set follows the
-    /// rectangle live, and the rectangle itself is drawn by this element.
-    Marquee {
-        origin: (f64, f64),
-        cursor: (f64, f64),
     },
 }
 
@@ -152,16 +146,14 @@ impl Element for Patch {
         // Flat geometry in the window's one mesh, like the other static views.
         // The canvas scales with the enclosing workspace's zoom, so boxes,
         // cords and text zoom together.
-        let (live, marquee) = match &self.drag {
-            Some(Drag::Wire { port, cursor }) => {
-                (Some((*port, (cursor.0 as f32, cursor.1 as f32))), None)
-            }
-            Some(Drag::Marquee { origin, cursor }) => (
-                None,
-                Some(crate::host::gestures::corner_rect(*origin, *cursor)),
-            ),
-            _ => (None, None),
+        // The marquee is **not** here any more: the machine holds it and the
+        // frame draws it, through the one routine every swept selection in the
+        // window is drawn with.
+        let live = match &self.drag {
+            Some(Drag::Wire { port, cursor }) => Some((*port, (cursor.0 as f32, cursor.1 as f32))),
+            _ => None,
         };
+        let marquee = None;
         patch::draw(
             d,
             ctx.rect,
@@ -230,16 +222,35 @@ impl Element for Patch {
         if input.mods.shift {
             return Claim::Decline;
         }
-        self.selected.clear();
-        self.drag = Some(Drag::Marquee {
-            origin: at,
-            cursor: at,
-        });
-        Claim::take()
+        // The bare canvas sweeps -- and the machine sweeps it. Only this
+        // element knows where its canvas ends (the paper beside the graph is
+        // the workspace's, and pans), so the press is claimed here; everything
+        // after it -- the anchor, the rectangle, the drawing, and asking what
+        // fell inside -- is the one marquee every view in the window shares.
+        Claim::take().marquee()
+    }
+
+    /// **The boxes the rectangle covered.**
+    ///
+    /// All this element knows about a marquee: the gesture, the anchor and the
+    /// drawing are the machine's, and the overlap test is the one it always
+    /// made. A rectangle of no size covers nothing, which is how a press on the
+    /// bare canvas lets go of the selection -- the rule every view now shares.
+    ///
+    /// A plane has no second axis to report: both of its axes are the hand's,
+    /// and neither is a value anything else reads.
+    fn select_in(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
+        let found = self.boxes_in(input.rect, from, to, input.scale);
+        let changed = found != self.selected;
+        self.selected = found;
+        Swept {
+            changed,
+            band: None,
+        }
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
-        let (rect, scale) = (input.rect, input.scale);
+        let scale = input.scale;
         match self.drag.take() {
             Some(Drag::Wire { port, .. }) => {
                 self.drag = Some(Drag::Wire { port, cursor: at });
@@ -263,10 +274,6 @@ impl Element for Patch {
                     grabbed,
                     moved: true,
                 });
-            }
-            Some(Drag::Marquee { origin, .. }) => {
-                self.selected = self.boxes_in(rect, origin, at, scale);
-                self.drag = Some(Drag::Marquee { origin, cursor: at });
             }
             None => {}
         }
@@ -570,28 +577,36 @@ mod tests {
         );
     }
 
-    /// The marquee is the **element's**: it sweeps its own boxes and asks the
-    /// machine for nothing, which is what makes the canvas need no coordinate
-    /// system of its own. Shift is the container's, so the press walks on.
+    /// **The canvas says where a marquee may start; the machine sweeps it.**
+    /// Only this element knows where its paper ends, so the press is claimed
+    /// here -- asking for the marquee rather than holding one -- and everything
+    /// after it is the one sweep every view in the window shares: the anchor,
+    /// the rectangle, the drawing, and this element answering what fell inside.
+    /// Shift is the container's, so that press walks on.
     #[test]
-    fn the_marquee_selects_the_boxes_it_sweeps_and_shift_leaves_the_press() {
+    fn the_canvas_asks_for_the_marquee_and_answers_what_it_caught() {
         let (m, r) = (Metrics::default(), rect());
         let mut p = graph();
         p.selected = vec![0];
         let empty = (350.0, 250.0);
-        assert!(matches!(
-            p.press(empty, &input(&m, r, Mods::default())),
-            Claim::Take(_)
-        ));
+        let Claim::Take(take) = p.press(empty, &input(&m, r, Mods::default())) else {
+            panic!("the bare canvas asks for a marquee")
+        };
+        assert!(take.marquee, "and holds no drag of its own for it");
+        assert!(p.drag.is_none());
+
+        // A rectangle of no size covers nothing, which is how a press lets go
+        // of the selection -- the same rule on every view that sweeps.
+        assert!(
+            p.select_in(empty, empty, &input(&m, r, Mods::default()))
+                .changed
+        );
         assert!(p.selected.is_empty(), "the press drops the last sweep");
 
-        p.drag((0.0, 0.0), &input(&m, r, Mods::default()));
+        let swept = p.select_in(empty, (0.0, 0.0), &input(&m, r, Mods::default()));
         assert_eq!(p.selected, vec![0, 1], "the rectangle spans both boxes");
-        assert!(
-            p.release((0.0, 0.0), true, &input(&m, r, Mods::default()))
-                .is_empty()
-        );
-        assert!(p.drag.is_none());
+        assert!(swept.changed);
+        assert_eq!(swept.band, None, "a plane reports no second axis");
 
         // Shift+drag on the bare canvas is the workspace's pan, not a marquee.
         let mut p = graph();
