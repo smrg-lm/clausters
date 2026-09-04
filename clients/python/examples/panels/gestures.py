@@ -15,13 +15,15 @@ value is an ordered plan of steps:
 - ``element`` — hand the press to whatever is under the cursor (a clip, a note,
   a box, a control). It may decline, and the plan goes on;
 - ``pan`` — pan the container's own axis (time here, the plane in a ``scroll``);
-- ``select`` — sweep the **marquee**: the shared time selection, and whatever
-  the rectangle covered of what the view holds (a lane's clips, a roll's notes);
+- ``select`` — sweep a **time range**: the shared selection, the span the
+  transport loops inside (a roll also picks the notes under it);
+- ``marquee`` — sweep a **selection of objects**: the clips a rectangle covered,
+  the boxes of a patcher. Two different selections, not one gesture;
 - ``locate`` — put the transport's cursor under the pointer;
 - ``none`` — nothing.
 
 This window shows the same views twice. The **left** column keeps the defaults
-(``"element select"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
+(``"element marquee"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
 waveform); the **right** one is told to pan on a plain drag and select with
 Shift — the reversal, with no element's code involved. A menu switches the
 right column live through ``set(gestures=...)``, which starts again from the

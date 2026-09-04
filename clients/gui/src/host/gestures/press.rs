@@ -263,24 +263,11 @@ impl Gestures {
                 );
                 let anchor_v = value.map(|v| v.value_at(cy));
                 set_selection(host, out, def_id, id, anchor, anchor, None);
-                // **The press is a marquee of no size**, and that one rule is
-                // what lets go of everything a view was holding: a rectangle
-                // that covers nothing catches nothing, so the roll drops its
-                // notes and the lane drops its clips without either of them
-                // owning a rule about clicks.
+                // The element under the sweep answers what its rectangle caught
+                // -- a roll's notes -- and a press is that rectangle at no size,
+                // which is what lets go of what it held.
                 let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
                 sweep_element(host, ctx, element, (cx, cy), (cx, cy));
-                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. })) {
-                    interact::select_clips_in(host, def_id, &[id], anchor, anchor);
-                    host.select_lanes(id, Vec::new());
-                }
-                // The stack this sweep can cross, where it is a lane of one:
-                // read at the press, like a clip drag's, and not read at all
-                // for a view that stands on its own.
-                let stack = match host.widget_kind(def_id, id) {
-                    Some(WidgetKind::Track { .. }) => super::nav::lane_stack(host, ctx, id),
-                    _ => super::nav::LaneStack::default(),
-                };
                 self.drag = Some(Drag::Select {
                     id,
                     body: axis.body,
@@ -290,8 +277,38 @@ impl Gestures {
                     origin_x: cx,
                     origin_y: cy,
                     value: value.zip(anchor_v),
-                    stack,
                     element: Some(element),
+                });
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            // **The marquee**: the objects the rectangle covers, and no span.
+            // On a stack of lanes that is the clips it crosses -- the patcher's
+            // gesture one level up, and the same `Drag::Marquee` -- while a
+            // *time range* over the same lanes is the other selection and is
+            // `Select` above.
+            (GestureStep::Marquee, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false;
+                }
+                let lanes = super::nav::MarqueeLanes {
+                    id,
+                    body: axis.body,
+                    nav_start: axis.nav.start,
+                    nav_len: axis.nav.len,
+                    // The stack this sweep can cross: read at the press, like a
+                    // clip drag's, and a lane of its own where there is none.
+                    stack: lane_stack(host, ctx, id),
+                };
+                // A press is the rectangle at no size, so it covers nothing and
+                // the hand lets go of whatever it held -- the one rule every
+                // view answers a click with.
+                marquee_caught(host, ctx, None, Some(&lanes), (cx, cy), (cx, cy));
+                self.drag = Some(Drag::Marquee {
+                    at: None,
+                    lanes: Some(lanes),
+                    origin: (cx, cy),
+                    cursor: (cx, cy),
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true
@@ -458,9 +475,10 @@ impl Gestures {
         // drag of its own: the press is where its bare canvas is, and
         // everything after it is the one sweep every view shares.
         self.drag = Some(if take.marquee {
-            sweep_element(host, ctx, at, (cx, cy), (cx, cy));
+            marquee_caught(host, ctx, Some(at), None, (cx, cy), (cx, cy));
             Drag::Marquee {
-                at,
+                at: Some(at),
+                lanes: None,
                 origin: (cx, cy),
                 cursor: (cx, cy),
             }

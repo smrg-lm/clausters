@@ -77,6 +77,16 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
+- ⬜ **A time range over a multitrack is a second selection, and nothing
+  reaches it by hand** *(`clients/gui/PLAN.md`, Found by use)*. A marquee over a
+  stack of lanes selects **boxes** — the clips it covered, as a patcher's canvas
+  covers boxes — and that is what the plain drag does. A **time range** over the
+  same lanes is a different selection of a different thing: a span the group
+  keeps, drawn as a band, looped by the transport. Both are wanted; what is
+  missing is how a hand reaches the second, which a script can already name
+  (`select`) and no default plan carries. The entry names the three candidates
+  and takes none.
+
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --

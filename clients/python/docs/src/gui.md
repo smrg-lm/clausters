@@ -925,10 +925,18 @@ waveform(data=take, gestures={"drag": "pan", "shift": "select"})
 ```
 
 The steps are `element` (hand the press to whatever is under the cursor, which
-may decline), `pan`, `select`, `select_box`, `locate` and `none`. The order is
-the point: `"element select"` is a lane — grab the clip under the cursor, and
-if there is none, sweep the marquee. A plan that consumes nothing falls outward
-to the container around it.
+may decline), `pan`, `select`, `select_box`, `marquee`, `locate` and `none`. The
+order is the point: `"element marquee"` is a lane — grab the clip under the
+cursor, and if there is none, sweep for the clips. A plan that consumes nothing
+falls outward to the container around it.
+
+`marquee` and `select` are **two selections, not one gesture with two
+pictures**. A marquee selects the *objects* a rectangle covered — a multitrack's
+clips, a patcher's boxes — and its rectangle is the gesture's own picture, gone
+when the hand lets go; what stays is what is selected. `select` sweeps a *time
+range*, which is a state the group keeps and draws as a band. A time range over
+a multitrack is a real selection and a valid thing to want: it is asked for by
+name, `gestures={"drag": "select"}` or on a modifier.
 
 `select` sweeps the **time span**; `select_box` sweeps the same span
 **restricted to the band of values** it covered, which is a rectangle rather

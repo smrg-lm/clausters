@@ -2542,18 +2542,17 @@ fn a_marquee_dragged_down_the_stack_takes_the_clips_of_every_lane_it_crossed() {
     );
 }
 
-/// **The rectangle's second axis is drawn, not only taken.** The time span
-/// belongs to the navigation group -- it is the loop region, and every linked
-/// view draws it -- so the band used to appear on all five lanes of a sweep
-/// over two, while the clips in the hand were the crossed ones'. The picture
-/// and the hand disagreed about the vertical half of one rectangle.
+/// **A multitrack selects boxes, and that is a different selection from a
+/// span.** A rectangle over a stack of lanes covers clips exactly as one over a
+/// patcher's canvas covers boxes: what stays is the clips, drawn as selected,
+/// and the rectangle -- the gesture's own picture -- goes with the hand.
 ///
-/// The lanes the sweep reached are the group's now, beside the span, and a
-/// selection **no sweep drew** (a `/gui_set`, a def's own numbers) names none
-/// of them -- so it is the whole stack again, which is the only thing a
-/// horizontal selection can honestly mean.
+/// **No span is written.** A time range over the same lanes is the *other*
+/// selection (`select`), a state the group keeps and draws as a band; a script
+/// asks for it by name. Writing one here left a band behind the marquee that
+/// read as a rectangle nobody rubbed out.
 #[test]
-fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
+fn a_marquee_over_lanes_takes_clips_and_writes_no_span() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
             {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
@@ -2566,16 +2565,15 @@ fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
     host.sync_track_totals();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    let sweeping = GestureCtx {
-        alt: true,
-        ..GestureCtx::new(1, 800, 300)
+    let held = |host: &Host, id: i32| {
+        host.window_def(1)
+            .and_then(|t| t.find(id))
+            .is_some_and(|w| w.selected)
     };
-    let painted = |host: &Host, id: i32| {
-        let key = host.timeline_key(id).expect("a lane is in a group");
-        let rect = placed_rect(host, &ctx, id);
-        host.timelines()
-            .lane_selection_span(key, id, rect)
-            .map(|(y0, y1)| (y0 as f32, y1 as f32, rect))
+    let span = |host: &Host| {
+        host.timeline_key(80)
+            .and_then(|key| host.timelines().state(key))
+            .and_then(|state| state.selection())
     };
     let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
     let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
@@ -2583,35 +2581,29 @@ fn the_band_is_drawn_on_the_lanes_the_sweep_crossed_and_no_others() {
         (first.y + first.h * 0.5) as f64,
         (second.y + second.h * 0.5) as f64,
     );
-    g.press(&mut host, &sweeping, from, y0);
-    g.drag_to(&mut host, &sweeping, to, y1);
-    g.release(&mut host, &sweeping, to, y1);
-    let (top_y0, top_y1, top) = painted(&host, 80).expect("the lane the sweep started in");
-    let (low_y0, low_y1, low) = painted(&host, 90).expect("the lane it ended in");
-    assert!(painted(&host, 95).is_none(), "and not the one below it");
-    // **And it is the rectangle, not the lanes it touched**: the sweep started
-    // half way down the first lane and ended half way down the second, so each
-    // of them is drawn the half the hand covered -- the patcher's marquee over
-    // a box it half covers, one level up.
+    g.press(&mut host, &ctx, from, y0);
+    g.drag_to(&mut host, &ctx, to, y1);
+    // While the hand holds it, the frame draws the rectangle -- the same
+    // `Grab::Marquee` a patcher's sweep is drawn from.
     assert!(
-        top_y0 > top.y + 1.0 && (top_y1 - (top.y + top.h)).abs() < 1.0,
-        "from where the hand pressed to the bottom of that lane: {top_y0}..{top_y1} in {top:?}",
+        matches!(g.grab(), crate::host::frame::Grab::Marquee(80, _)),
+        "the rectangle is the machine's to draw: {:?}",
+        g.grab(),
+    );
+    g.release(&mut host, &ctx, to, y1);
+    assert!(
+        held(&host, 81) && held(&host, 91) && !held(&host, 96),
+        "the clips of the lanes the rectangle covered, and no others",
     );
     assert!(
-        (low_y0 - low.y).abs() < 1.0 && low_y1 < low.y + low.h - 1.0,
-        "from the top of the next lane to where the hand let go: {low_y0}..{low_y1} in {low:?}",
+        !matches!(g.grab(), crate::host::frame::Grab::Marquee(..)),
+        "and the rectangle goes with the hand that drew it",
     );
-
-    // The span written from the wire is the whole stack's again: nobody chose
-    // a vertical range, so there is none to draw.
-    host.set_timeline_selection(80, Some(100.0), Some(200.0));
-    for id in [80, 90, 95] {
-        let (y0, y1, rect) = painted(&host, id).expect("a selection no sweep drew restricts none");
-        assert!(
-            (y0 - rect.y).abs() < 0.01 && (y1 - (rect.y + rect.h)).abs() < 0.01,
-            "and each lane draws the whole of its own band",
-        );
-    }
+    assert_eq!(
+        span(&host),
+        None,
+        "a marquee selects boxes; the span is the other selection",
+    );
 }
 
 /// **A clip changes lane by the call a note changes row with.** One vertical

@@ -88,13 +88,16 @@ windows it was made of, because nothing was copied. That element is a
 window's length being in seconds, like every length over samples.
 
 **And one about holding several clips at once.** Drag over a lane's empty space
-and you sweep a **marquee**: the clips inside the rectangle go into your hand
+and you sweep a **marquee**: the clips the rectangle covered go into your hand
 and are drawn in the selection's colours — of every lane it crossed, since the
-stack is the sweep's second axis. It is the gesture a patcher's canvas and a
-roll's grid have, and it is the same one: the machine sweeps, and each view
-answers what fell inside. A **click** is a rectangle of no size, so it catches
-nothing and lets go of everything — and it puts the transport's cursor where you
-pointed. **Alt+click** adds or removes one clip (the same key that adds a note to
+stack is the sweep's second axis. A multitrack selects **boxes**, exactly as a
+patcher's canvas does, and it is the same gesture: the machine sweeps, and each
+view answers what fell inside. The rectangle is the gesture's own picture and
+goes with your hand; a *time range* over the same lanes is a **different**
+selection (the span a transport loops inside), asked for by name with
+``gestures={"drag": "select"}``. A **click** is a rectangle of no size, so it
+catches nothing and lets go of everything — and it puts the transport's cursor
+where you pointed. **Alt+click** adds or removes one clip (the same key that adds a note to
 a roll's selection, which is why it is this one and not Ctrl: over a roll, Ctrl
 *removes* a note). Grab any held clip by
 its body and the whole block moves rigidly, keeping the distances between them —

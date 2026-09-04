@@ -3143,6 +3143,29 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A time range over a multitrack is a second selection, and nothing
+  reaches it by hand** *(stated 2026-09-03 by the user, closing the marquee's
+  unification)*. **The two are different selections of different things**, and
+  the confusion between them is what made the marquee leave a band behind it:
+
+  - a **selection of boxes** — the clips a rectangle covered, the way a
+    patcher's canvas covers boxes. The rectangle is the *gesture's* picture and
+    goes with the hand; what stays is the clips, drawn as selected. This is the
+    `marquee` step and it is a multitrack's plain drag.
+  - a **time range** — a span of the axis, which is the selection *itself* and
+    so outlives the gesture: the group keeps it, every linked view draws it as
+    a band, the transport loops inside it. This is the `select` step, and it is
+    what a drag over a waveform has always meant.
+
+  Both are valid over a stack of lanes and both are wanted. What is missing is
+  only **how a hand reaches the second one**: today a script asks for it by name
+  (`gestures={"drag": "select"}`, or on a modifier) and the default plan does
+  not carry it, so a person at the window can sweep clips and cannot sweep a
+  range. The candidates are a modifier of its own, the ruler over the stack
+  (which locates today and has the axis under it), or a mode. None of them is
+  taken here: what is written down is that the two exist, that they are not one
+  gesture with two pictures, and that the range has no hand yet.
+
 - ✅ **A selection has two axes wherever the picture has two, and one where it
   has one** *(stated 2026-09-03 by the user, closing the selection unification;
   done the same day)*.

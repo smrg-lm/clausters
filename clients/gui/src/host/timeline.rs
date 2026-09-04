@@ -324,25 +324,6 @@ pub struct TimelineGroups {
     /// nothing (see [`Host::selection_addressee`]). Last selection wins,
     /// because it is the only ordering a window has over its views.
     last_selected: Option<i32>,
-    /// **Which lanes a sweep crossed and how much of each**, for the groups
-    /// where a hand has said so: the vertical half of a marquee over a lane
-    /// stack, as `(lane id, t0, t1)` — the fractions of that lane's own
-    /// rectangle the rectangle covered.
-    ///
-    /// The time span is the group's — it is the loop region, and every linked
-    /// view draws it — but *how far down the stack the rectangle reached* is
-    /// not a fact about the axis, it is the second value the hand chose, and
-    /// the clips it took are the crossed lanes' alone. Kept beside the state
-    /// rather than in it for the reason [`Bands`] gives for the vertical in
-    /// general: it is the container's, never the group's.
-    ///
-    /// Absent means **the whole stack**, which is what a selection that no
-    /// sweep drew (a `/gui_set`, a def's own `sel_start`) says: nobody chose a
-    /// vertical range, so there is none to draw. That is also why the one door
-    /// every selection goes through drops it.
-    ///
-    /// [`Bands`]: crate::host::bands::Bands
-    sel_lanes: HashMap<GroupKey, Vec<(i32, f32, f32)>>,
 }
 
 impl TimelineGroups {
@@ -364,30 +345,6 @@ impl TimelineGroups {
     /// The view whose selection was written last, if one still is.
     pub fn last_selected(&self) -> Option<i32> {
         self.last_selected
-    }
-
-    /// The lanes the sweep that wrote group `key`'s selection crossed, or
-    /// `None` when no sweep did — the whole stack, in that case.
-    pub fn selection_lanes(&self, key: GroupKey) -> Option<&[(i32, f32, f32)]> {
-        self.sel_lanes.get(&key).map(Vec::as_slice)
-    }
-
-    /// **How much of lane `id` the sweep covered**, as the vertical edges of
-    /// the band it draws inside `rect` — its own rectangle, which is what the
-    /// fractions were measured against.
-    ///
-    /// `Some(whole rect)` for every member of a group no sweep restricted, so a
-    /// view that is not a lane of the swept stack — a waveform linked to it, a
-    /// standalone roll — is unaffected: it asks with its own id, no vertical
-    /// range names it, and it draws the band the way it always did. `None` is a
-    /// lane the rectangle never reached, which draws nothing.
-    pub fn lane_selection_span(&self, key: GroupKey, id: i32, rect: Rect) -> Option<(f64, f64)> {
-        let whole = (rect.y as f64, (rect.y + rect.h) as f64);
-        let Some(lanes) = self.sel_lanes.get(&key) else {
-            return Some(whole);
-        };
-        let (_, t0, t1) = lanes.iter().find(|(lane, ..)| *lane == id)?;
-        Some(((rect.y + t0 * rect.h) as f64, (rect.y + t1 * rect.h) as f64))
     }
 
     /// **The axis widget `id` was placed on**, as the coordinate system an
@@ -880,12 +837,6 @@ impl Host {
         // an edit-back — so it is where "the last one made" is recorded. A
         // cleared selection gives the title up rather than keeping it.
         //
-        // And where the **vertical** half is dropped, for the same reason: a
-        // selection written by anything but a sweep down the stack names no
-        // range of lanes, so the one the last sweep left would go on painting
-        // a rectangle nobody drew. A sweep writes its lanes back through
-        // `select_lanes`, immediately after this.
-        self.timelines.sel_lanes.remove(&key);
         let selected = state.sel_len > 0.0;
         if selected {
             self.timelines.last_selected = Some(id);
@@ -893,23 +844,6 @@ impl Host {
             self.timelines.last_selected = None;
         }
         self.timeline_roots(key)
-    }
-
-    /// **Records which lanes a sweep crossed**, as the vertical half of the
-    /// selection it just wrote into widget `id`'s group.
-    ///
-    /// Called after the selection itself, which is what drops any previous
-    /// range: the two are one gesture's two axes, and the horizontal one is
-    /// the door they share.
-    pub fn select_lanes(&mut self, id: i32, lanes: Vec<(i32, f32, f32)>) {
-        let Some(key) = self.timeline_key(id) else {
-            return;
-        };
-        if lanes.is_empty() {
-            self.timelines.sel_lanes.remove(&key);
-        } else {
-            self.timelines.sel_lanes.insert(key, lanes);
-        }
     }
 
     /// **Who a block operation is addressed to when the pointer is over
@@ -1062,18 +996,6 @@ impl Host {
     /// below drops the ones whose widgets are gone).
     pub(super) fn sync_timeline_groups(&mut self, redefined: Option<i32>) {
         let members = self.timeline_members();
-        // **A swept range of lanes outlives a redefine only as far as its
-        // lanes do.** A redefine allocates fresh widget ids, so a range naming
-        // lanes that are gone would hide the band on every lane of the new
-        // stack -- a selection plainly there and drawn nowhere, which is worse
-        // than the disagreement this range exists to fix. Pruned to the lanes
-        // that are still in the group; a range left with none of them is not a
-        // range, and the stack draws the span the way it did before a hand
-        // ever swept it.
-        self.timelines.sel_lanes.retain(|key, lanes| {
-            lanes.retain(|(id, ..)| members.iter().any(|m| m.key == *key && m.id == *id));
-            !lanes.is_empty()
-        });
         // **What the axis was showing survives a redefine.** A redefine is how a
         // *content* change reaches a window -- a clip split, a lane rebuilt, a
         // second view answering an edit made in the first -- and where a person

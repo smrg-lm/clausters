@@ -200,9 +200,41 @@ pub(super) fn extend_stroke(
     set_pending(host, def_id, id, Some(held));
 }
 
-/// **What the rectangle caught, and a repaint if anything changed** — the one
-/// call both marquees make, so a plane's sweep and a timeline's ask the same
-/// question in the same words.
+/// **What a marquee caught**, asked of whichever holds the contents: the
+/// element under it, or the lanes of the stack it is sweeping down.
+///
+/// One call, so the patcher's rectangle and the multitrack's are the same
+/// gesture and not two — which is the whole point of there being one
+/// [`Drag::Marquee`](super::Drag::Marquee). A rectangle of no size covers
+/// nothing, so this is also what a press does, and what makes a click let go.
+pub(super) fn marquee_caught(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    at: Option<super::element::At>,
+    lanes: Option<&MarqueeLanes>,
+    from: (f64, f64),
+    to: (f64, f64),
+) {
+    if let Some(at) = at {
+        sweep_element(host, ctx, at, from, to);
+    }
+    let Some(l) = lanes else {
+        return;
+    };
+    // Against the group's **current** window: the axis may have moved under the
+    // sweep, exactly as it may under a span's.
+    let (start, len) = group_view(host, l.id).map_or((l.nav_start, l.nav_len), |(s, n, _)| (s, n));
+    let sample = |x: f64| interact::sample_at(start, len, l.body.x as f64, l.body.w as f64, x);
+    let crossed = match l.stack.across(from.1.min(to.1), from.1.max(to.1)) {
+        found if found.is_empty() => vec![l.id],
+        found => found,
+    };
+    interact::select_clips_in(host, ctx.def_id, &crossed, sample(from.0), sample(to.0));
+}
+
+/// **What the rectangle caught, of an element's own contents** — a patcher's
+/// boxes, a roll's notes — and the band of its second axis it covered, where it
+/// has one.
 pub(super) fn sweep_element(
     host: &mut Host,
     ctx: &GestureCtx,
@@ -354,12 +386,6 @@ pub(super) fn pan_timeline(
 pub(super) struct LaneStack {
     /// The lanes' widget ids, top to bottom.
     pub(super) ids: Vec<i32>,
-    /// Each lane's **own** rectangle as `(y, height)` in window pixels, beside
-    /// its id. Not the same as its band: a band runs to the next lane's top so
-    /// that nothing between two lanes is outside the stack, while this is the
-    /// lane itself — what a swept rectangle is measured against when the
-    /// picture has to show the edges the hand drew rather than whole lanes.
-    pub(super) rects: Vec<(f32, f32)>,
     /// Where the first lane's rectangle starts, in window pixels.
     pub(super) top: f32,
     /// The bands the lanes make, measured from `top`. A gap between two lanes
@@ -377,35 +403,18 @@ impl LaneStack {
     }
 
     /// The lanes a **vertical span** touches, top to bottom — what a marquee
-    /// sweeping down the stack catches — each with **how much of it the span
-    /// covered**, as the fractions `(t0, t1)` of the lane's own rectangle.
+    /// sweeping down the stack catches.
     ///
     /// [`Bands::window`] is the same call a roll makes for the semitone rows a
     /// rectangle crosses, which is the point of one vertical axis: a lane and a
     /// row are one structure, so sweeping across either is one piece of code.
     /// A span that touches nothing (a stack that was never read, a sweep above
     /// the first lane) catches nothing.
-    ///
-    /// **The fractions are what keeps the picture the hand's.** Which lanes
-    /// were crossed is what the *take* needs, and a lane grazed at its last
-    /// pixel is crossed; but a band painted over the whole of it would be the
-    /// rectangle snapping to lanes, which is not the rectangle that was drawn.
-    /// Fractions rather than pixels because the lanes move afterwards — the
-    /// stack scrolls, the window resizes — and a range in window pixels would
-    /// stay where the screen was.
-    pub(super) fn across(&self, y0: f64, y1: f64) -> Vec<(i32, f32, f32)> {
+    pub(super) fn across(&self, y0: f64, y1: f64) -> Vec<i32> {
         let range = self
             .bands
             .window(y0 as f32 - self.top, y1 as f32 - self.top);
-        let (y0, y1) = (y0 as f32, y1 as f32);
-        range
-            .filter_map(|i| {
-                let (&id, &(y, h)) = (self.ids.get(i)?, self.rects.get(i)?);
-                let h = h.max(f32::MIN_POSITIVE);
-                let t = |v: f32| ((v - y) / h).clamp(0.0, 1.0);
-                Some((id, t(y0), t(y1)))
-            })
-            .collect()
+        self.ids.get(range).map(<[i32]>::to_vec).unwrap_or_default()
     }
 }
 
@@ -436,7 +445,6 @@ pub(super) fn lane_stack(host: &Host, ctx: &GestureCtx, lane_id: i32) -> LaneSta
         .collect();
     LaneStack {
         ids: lanes.iter().map(|(_, _, id)| *id).collect(),
-        rects: lanes.iter().map(|(y, h, _)| (*y, *h)).collect(),
         top,
         bands: Bands::table(heights),
     }
@@ -449,6 +457,22 @@ pub(super) type HeldClips = Vec<(usize, f64, f32)>;
 /// **A block of held clips, per lane** — what one hand carries when it grabs
 /// one of a selection a marquee took across the stack.
 pub(super) type ClipBlock = Vec<(i32, HeldClips)>;
+
+/// **The stack a marquee is sweeping over**, and the axis it measures time on:
+/// what a multitrack needs to answer "which clips did this rectangle cover".
+///
+/// Read at the press, like a clip drag's stack, for the same reason: the lanes
+/// do not move while a hand sweeps over them.
+#[derive(Clone)]
+pub(super) struct MarqueeLanes {
+    /// The lane the press landed on — where the gesture happened, and the
+    /// widget the rectangle is drawn over.
+    pub(super) id: i32,
+    pub(super) body: Rect,
+    pub(super) nav_start: f64,
+    pub(super) nav_len: f64,
+    pub(super) stack: LaneStack,
+}
 
 /// One in-flight clip drag, as the placement math needs it: the press-time
 /// snapshot plus the lane geometry the cursor maps through.

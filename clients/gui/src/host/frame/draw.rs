@@ -605,31 +605,19 @@ pub(super) fn draw_static_meshes(
             // the signal views draw theirs with, into the overlay for the
             // reason the playhead is: a lane's clips are drawn after it.
             //
-            // **And only where the rectangle reached.** The span is the
-            // group's, so every linked lane used to paint it while the clips
-            // the sweep took were the crossed lanes' -- the picture and the
-            // hand disagreeing about the second axis of one rectangle. What
-            // the sweep covered of *this* lane comes back in its own pixels,
-            // and it is the rectangle the hand drew rather than the lanes it
-            // touched: a marquee that ends a third of the way down a lane is
-            // drawn a third of the way down it, the way the patcher's is over
-            // a box it half covers. `None` is a lane the rectangle never
-            // reached; a selection nobody swept names no lanes at all and
-            // every one of them draws the whole band, which is the `/gui_set`
-            // case unchanged.
-            let swept = inputs.world.timelines.lane_selection_span(
-                group_key(item.id, item.editor.link),
-                item.id,
-                item.rect,
-            );
+            // **What is drawn here is a time range**, and on a lane that is a
+            // selection of its own -- not the marquee, which selects clips and
+            // is the gesture's own picture (`Grab::Marquee`), gone when the
+            // hand lets go. A lane draws this when something set a span on its
+            // group: a `select` plan, a `/gui_set`, a linked view's sweep.
             selection::draw_span(
                 &mut Draw::new(over, m, th),
                 body,
                 &nav,
-                swept.and(chrome.selection()),
+                chrome.selection(),
                 1,
-                swept,
-                selection::Vertical::Stack,
+                None,
+                selection::Vertical::Whole,
             );
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock

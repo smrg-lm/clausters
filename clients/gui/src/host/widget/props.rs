@@ -545,12 +545,30 @@ pub enum GestureStep {
     Element,
     /// Pan the container's axis: time on a timeline, the plane on a workspace.
     Pan,
-    /// Sweep a selection: the shared time selection on a timeline, restricted
-    /// in pitch where the axis has a vertical one. A selection that is the
-    /// *element's* — a patcher's box marquee — is not this: the element claims
-    /// the press and sweeps it itself, since nothing outside it can say what
-    /// the rectangle caught.
+    /// Sweep a **time range**: the shared selection of the navigation group,
+    /// the span every linked view draws and the transport loops inside.
+    ///
+    /// It is *not* the same gesture as [`Marquee`](GestureStep::Marquee), and
+    /// the difference is what the sweep is a selection **of**. This one selects
+    /// a stretch of the axis — what a drag over a waveform has always meant —
+    /// and it is a state that outlives the gesture, because the span itself is
+    /// the thing selected. The other selects the objects a rectangle covered
+    /// and leaves nothing drawn behind it.
+    ///
+    /// A view that holds contents of its own is still asked what fell inside
+    /// (a roll's notes, in the band of semitones it reports), because there the
+    /// span and the notes under it are one hand's one meaning.
     Select,
+    /// Sweep a **marquee**: the objects a rectangle covered — a lane's clips, a
+    /// patcher's boxes — and nothing else. The rectangle is the gesture's own
+    /// picture and is gone when the hand lets go; what stays is what is
+    /// selected, drawn as selected.
+    ///
+    /// The other half of the pair above, and the one a **multitrack** carries:
+    /// what a hand sweeps over a stack of lanes is the clips it covered, the
+    /// way a hand sweeping a patcher's canvas covers boxes. A time range over
+    /// the same lanes is a real and separate selection, and it is `select`.
+    Marquee,
     /// Sweep a selection **restricted on the container's second axis** — a
     /// rectangle rather than a stripe, over a view that measures a value.
     ///
@@ -595,6 +613,7 @@ impl GestureStep {
             "element" => GestureStep::Element,
             "pan" => GestureStep::Pan,
             "select" => GestureStep::Select,
+            "marquee" => GestureStep::Marquee,
             "select_box" => GestureStep::SelectBox,
             "sample" => GestureStep::Sample,
             "draw" => GestureStep::Draw,
@@ -710,26 +729,33 @@ impl GestureMap {
             return map;
         }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
-            // A lane **sweeps on a plain drag**, which is the marquee every
-            // other view sweeps on a plain drag: a rectangle over a patcher's
-            // canvas, over a roll's grid and over a stack of lanes is one
-            // gesture, and needing a modifier for it on one of the three was
-            // the mechanism differing by view rather than by what the view
-            // holds. `Element` stays first, because a clip under the pointer
-            // answers before the lane does.
+            // **A multitrack selects boxes**, which is what its plain drag
+            // sweeps: a rectangle over a stack of lanes covers clips exactly as
+            // one over a patcher's canvas covers boxes, and it is the same
+            // gesture -- needing a modifier for it on one of the two was the
+            // mechanism differing by view rather than by what the view holds.
+            // `Element` stays first, because a clip under the pointer answers
+            // before the lane does.
+            //
+            // **A time range over the same lanes is the other selection**, and
+            // it is `select`: a span the group keeps, drawn as a band, looped
+            // by the transport. Two selections, not one gesture with two
+            // pictures -- so a script that wants the range asks for it by name
+            // (`{"drag": "select"}`, or on a modifier), and the default here is
+            // the boxes.
             //
             // **Locating did not move to a modifier, it moved to the click**:
             // a sweep that never left the slop is where the hand pointed and
             // nothing else, so it puts the cursor there (see
             // `Gestures::release`) -- and the ruler over the stack locates on
-            // a plain drag as it always did. Alt still sweeps, because Alt is
+            // a plain drag as it always did. Alt sweeps too, because Alt is
             // the crate's selection modifier and adds one clip at a time; Ctrl
             // keeps meaning here what it means everywhere else on a lane.
             WidgetKind::Track { .. } => (
-                &[Element, Select],
+                &[Element, Marquee],
                 &[Pan],
                 &[Element, Locate],
-                &[Element, Select],
+                &[Element, Marquee],
             ),
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
             // A workspace claims nothing: whatever no element and no inner

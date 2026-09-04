@@ -139,17 +139,23 @@ enum Drag {
     /// is the group's to pan and not the element's
     /// ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
     Element { at: element::At, edge: bool },
-    /// **The marquee over a plane**: the element claimed the press
-    /// ([`Take::marquee`](super::widget::element::Take::marquee)) and the
-    /// machine sweeps it, asking that element what each rectangle caught.
+    /// **The marquee**: the objects a rectangle covers — a patcher's boxes, a
+    /// multitrack's clips — and nothing else.
     ///
-    /// It carries no state of the selection at all — the set is the element's,
-    /// and the only thing the machine can answer for is where the hand started
-    /// and where it is now. A timeline's sweep is [`Drag::Select`] instead,
-    /// because there the rectangle also writes the axis' own span, which
-    /// belongs to the navigation group and not to anything drawn on it.
+    /// It writes no span and leaves no picture: the rectangle is the gesture's
+    /// own, drawn while the hand holds it and gone when it lets go, and what
+    /// stays is what is selected. [`Drag::Select`] is the **other** selection,
+    /// a stretch of the axis that outlives the gesture because the span is the
+    /// thing selected; the two are not one gesture with two pictures.
+    ///
+    /// One drag for both, because sweeping a rectangle is one gesture: `at` is
+    /// the element to ask what fell inside (a patcher, which claimed the press
+    /// because only it knows where its paper ends), `lanes` the stack to ask
+    /// the same question of (a multitrack, whose contents are widgets the
+    /// machine places). A view has one or the other.
     Marquee {
-        at: element::At,
+        at: Option<element::At>,
+        lanes: Option<nav::MarqueeLanes>,
         origin: (f64, f64),
         cursor: (f64, f64),
     },
@@ -191,10 +197,6 @@ enum Drag {
         /// and the one a roll spells in semitones.
         origin_y: f64,
         value: Option<(ValueAxis, f64)>,
-        /// The lanes this sweep can cross, read at the press for the reason a
-        /// clip drag reads them there: they do not move while it is in flight.
-        /// Empty for a view that is not one of a stack.
-        stack: nav::LaneStack,
         /// The **element** under the sweep, when the view holds one: a roll's
         /// notes are asked what the rectangle caught, exactly as a plane's
         /// boxes are. `None` for a view with nothing of its own inside it (a
@@ -345,9 +347,17 @@ impl Gestures {
             // The rectangle a hand is sweeping over a plane, so the frame can
             // draw it: the machine holds it, and the element it belongs to
             // draws no marquee of its own any more.
-            Some(Drag::Marquee { at, origin, cursor }) => {
-                Grab::Marquee(at.id, corner_rect(*origin, *cursor))
-            }
+            Some(Drag::Marquee {
+                at,
+                lanes,
+                origin,
+                cursor,
+            }) => Grab::Marquee(
+                at.map(|at| at.id)
+                    .or(lanes.as_ref().map(|l| l.id))
+                    .unwrap_or(-1),
+                corner_rect(*origin, *cursor),
+            ),
             Some(_) => Grab::Other,
         }
     }

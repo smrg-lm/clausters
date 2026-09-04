@@ -137,10 +137,16 @@ impl Gestures {
             // **The marquee, wherever a hand sweeps one over a plane**: the
             // machine holds the anchor and the frame draws the rectangle; the
             // element only says what fell inside it.
-            Drag::Marquee { at, origin, .. } => {
-                sweep_element(host, ctx, at, origin, (cx, cy));
+            Drag::Marquee {
+                at,
+                ref lanes,
+                origin,
+                ..
+            } => {
+                marquee_caught(host, ctx, at, lanes.as_ref(), origin, (cx, cy));
                 self.drag = Some(Drag::Marquee {
                     at,
+                    lanes: lanes.clone(),
                     origin,
                     cursor: (cx, cy),
                 });
@@ -236,7 +242,6 @@ impl Gestures {
                 origin_x,
                 origin_y,
                 value,
-                stack,
                 element,
             } => {
                 // Against the group's **current** window (the press-time one is
@@ -278,33 +283,6 @@ impl Gestures {
                 let band = element
                     .and_then(|at| sweep_element(host, ctx, at, (origin_x, origin_y), (cx, cy)));
                 set_selection(host, &mut out, def_id, id, anchor, cur, range.or(band));
-                // **A sweep over a lane is also its marquee**: the shared time
-                // selection is set either way, and the clips inside it become
-                // the hand's — the very rule a roll follows for the notes
-                // inside the same sweep.
-                //
-                // **And the rectangle has a second axis here too**: the lanes,
-                // which is what a hand dragging down the stack means by it. It
-                // is the roll's own gesture one level up — a semitone row and a
-                // lane are one structure — so it is the same call
-                // ([`Bands::window`], through the stack read at the press), and
-                // a sweep that stays inside one lane catches that one.
-                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. })) {
-                    let swept = match stack.across(origin_y.min(cy), origin_y.max(cy)) {
-                        found if found.is_empty() => vec![(id, 0.0, 1.0)],
-                        found => found,
-                    };
-                    let lanes: Vec<i32> = swept.iter().map(|(id, ..)| *id).collect();
-                    if interact::select_clips_in(host, def_id, &lanes, anchor, cur) {
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                    // And the picture says the same thing the hand did: the
-                    // band is painted on the lanes the rectangle reached, over
-                    // the part of each one it actually covered. Written after
-                    // the span, which is what drops the range a previous sweep
-                    // left.
-                    host.select_lanes(id, swept);
-                }
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and
                 // leaves the piece where it is, which is why this is live and
@@ -538,10 +516,20 @@ impl Gestures {
         // leftwards. On release there is one answer and it is the right one; a
         // plain click still lands immediately, because a click is a press and a
         // release with nothing in between.
-        // A marquee over a plane ends where it is: the set followed it live,
-        // and a selection is screen state that reports nothing.
-        if let Some(Drag::Marquee { .. }) = self.drag {
+        // **A marquee ends where it is**: the objects it covered followed it
+        // live and stay selected, and the rectangle -- which was the gesture's
+        // own picture and never a state -- goes with the drag that held it.
+        if let Some(Drag::Marquee { lanes, origin, .. }) = self.drag.clone() {
             self.drag = None;
+            // A sweep that never moved is a **click**: on a stack of lanes
+            // that is where the hand pointed and nothing else, so it puts the
+            // transport's cursor there -- and it has already let go of the
+            // clips, being a rectangle of no size.
+            if let Some(l) =
+                lanes.filter(|_| (cx - origin.0).abs() <= host.metrics_for(def_id).hit_slop as f64)
+            {
+                locate_timeline(host, &mut out, def_id, l.id, l.body, cx);
+            }
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }
