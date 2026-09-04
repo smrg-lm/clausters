@@ -395,7 +395,7 @@ of the Python client's book; the reasoning behind it is in
 | Clang | `seq.Event` (parameters in one action) | `seq/event.py` |
 | List (order, no concrete time) | a Python list, or a `Pattern` | `seq/pattern.py` |
 | Vector (a list at constant time) | `defs.Buffer` over the server's pool buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
-| A window onto material, and a run of them | what a **cut** makes and a **join** assembles — over samples (`BufferSegments`) or over a timeline of events (`NoteSegments`); **not** the arrangement's, which is why it is not in `form` | `clients/python/clausters/segments.py`, `clients/web/src/segments.ts` |
+| A window onto contents, and a run of them | what a **cut** makes and a **join** assembles — over samples (`BufferSegments`) or over a timeline of events (`NoteSegments`); **not** the arrangement's, which is why it is not in `form` | `clients/python/clausters/segments.py`, `clients/web/src/segments.ts` |
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
@@ -419,7 +419,7 @@ independent of it -- a clip, a lane, a roll, a waveform are **views configured
 by what they hold**, and what a view draws and what edits it admits are derived
 from the structure inside it, never from the class `form` happens to have built.
 Gating an *edit action* on an arrangement type is the defect this rule exists to
-name; the question such an action asks is the material's (*is there an
+name; the question such an action asks is the contents' (*is there an
 addressable time axis here?*), which samples, notes, events and segments all
 answer yes. See "A view is configured by what it holds, and the arrangement is
 not the norm" in [Design decisions](decisions.md).
@@ -594,9 +594,9 @@ reasoning:
   pattern); an element carrying its samples inside the node is refused, because
   two of those are two copies that diverge.
 - **A window is onto samples or onto a node, and the second is why
-  `Document::content` exists.** The rule above holds for material the document
+  `Document::content` exists.** The rule above holds for contents the document
   does not carry — samples live outside it, so two windows are two references
-  and nothing is copied. It does not hold for material whose parts are *nodes*:
+  and nothing is copied. It does not hold for contents whose parts are *nodes*:
   a timeline of notes carries its notes inside the node, so cutting one in two
   and writing both halves writes the notes twice, with the same ids in each,
   which is the divergence that bullet refuses. `SegmentSource` therefore has a

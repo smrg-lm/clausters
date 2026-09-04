@@ -1184,7 +1184,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   one brings back what the cut hid.
 
   Two things fell out of it and both are the same rule (*an intent names where
-  the material is*). A **note edit names the content node**, not the window,
+  the notes are*). A **note edit names the content node**, not the window,
   since that is where the notes are -- so the editor asks the conversion (which
   is what decides and what stamps the id) instead of keeping a flag; and the
   index maps that node back to any reader, since they all hold the one timeline.
@@ -1254,7 +1254,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   asks it for its unit rather than stating one.
 
   The property that made this worth doing for notes as well: **a cut hides
-  material, it does not delete it**, so dragging the edge back out brings the
+  the notes, it does not delete them**, so dragging the edge back out brings the
   notes back exactly as it brings frames back -- which a destructive split of a
   timeline could never do. Twin tests, same calls in the same order
   (`tests/test_segments.py`, `clients/web/tests/segments.test.ts`).
@@ -1277,7 +1277,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   become a single rectangle, and nothing can move, trim or select either of them
   on its own.
 
-  That collapse is the roll's logic on the wrong material: stacking at one
+  That collapse is the roll's logic over placements it does not fit: stacking at one
   position is the same data seen twice in a piano roll, and it is two separate
   placements on a track. The rule is reading the *tree* (an aggregate's kind and
   whether its members coincide) where it should be reading the **view's** need:
@@ -2694,7 +2694,7 @@ work, where a pending item reads as done.)*
     written here as an option rather than chosen.
 
   Whatever it is, the *verb* belongs in the vocabulary in one shape for every
-  material, like the others: a clone of a stretch of samples is a bounce of that
+  contents, like the others: a clone of a stretch of samples is a bounce of that
   window into a new take, which is the same act one unit over.
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has

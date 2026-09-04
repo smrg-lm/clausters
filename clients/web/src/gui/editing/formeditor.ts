@@ -1666,7 +1666,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         const node = this.nodeId(owner);
         if (node === null) return false;
         // **The element says whether it can be cut**, because cutting is defined
-        // by the material and not by the class this client wrapped it in: a
+        // by the contents and not by the class this client wrapped them in: a
         // window onto samples, a run of windows and a window onto a timeline of
         // notes all answer, each in its own unit. What answers `null` is a
         // generator — and not "it cannot be split" but *not until it is
@@ -1760,7 +1760,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             }
             lengths.push(Number(length));
         }
-        // **The unit is the material's, and a join does not cross it.** Windows
+        // **The unit is the contents', and a join does not cross it.** Windows
         // over samples and windows over a timeline both join; a run mixing the
         // two would have to say what the result measures in, which is a
         // different question and not this one.
@@ -2576,7 +2576,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             return true;
         }
         if (element instanceof Track) {
-            // The same configuration over the other material: which **beat** of
+            // The same configuration over the other kind of contents: which **beat** of
             // its timeline this element begins at. A trim of a roll clip is the
             // same gesture as a trim of a take, and it lands here for the same
             // reason — the window is the element's, and the placement is the

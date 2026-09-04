@@ -86,7 +86,7 @@ def to_document(element, *, version: int = FIRST_VERSION) -> dict:
 
 
 def _shared_content(root, ids: "_Ids") -> dict:
-    """The material **more than one element reads**, as content nodes.
+    """The contents **more than one element reads**, as content nodes.
 
     A window onto samples costs nothing to repeat because the samples are not in
     the document; a window onto a timeline of notes is not so lucky -- the notes
@@ -435,7 +435,7 @@ def from_document(document: dict, *, resolve=None):
         The root `clausters.form.Element`.
     """
     # **Content first, because the tree names it.** A window onto a node reads
-    # material the document holds once and several windows share, so it is built
+    # contents the document holds once and several windows share, so it is built
     # before the tree and handed down -- and every window over one node gets the
     # *same* object, which is the whole point: two halves of a cut edit one
     # timeline, and reopening a piece must not hand them two.
@@ -612,7 +612,7 @@ def _kind_body(element, ids: _Ids, shared=None) -> dict:
             # `content` and each reader names the node
             # (`SegmentSource::Node`). The *element's* length stays the node's
             # own, absent when nobody stated one; the window's length is how
-            # much of the material it can show, which is what a reader that
+            # much of the notes it can show, which is what a reader that
             # does not resolve the content lays the clip out with.
             start = float(element.start)
             length = (float(element.duration) if element.duration is not None
@@ -1103,11 +1103,11 @@ def _element(node: dict, resolve, *, placed: bool = False, content=None):
         over_nodes = [w for w in windows if isinstance(w.get("source"), dict)
                       and "node" in (w.get("source") or {})]
         if over_nodes:
-            # **A window onto content**: the material is a node of this
+            # **A window onto content**: the notes are a node of this
             # document, built once and shared by every window that names it, so
             # this element is a `Track` reading that timeline from `start`. Its
             # own length is the node's -- absent when nobody stated one -- and
-            # the window's is how much of the material it can show, which is
+            # the window's is how much of the notes it can show, which is
             # what a reader that does not resolve the content lays it out with.
             if len(over_nodes) > 1:
                 raise NotImplementedError(
@@ -1122,7 +1122,7 @@ def _element(node: dict, resolve, *, placed: bool = False, content=None):
                 raise ValueError(
                     "a window names content node "
                     f"{window['source']['node']}, which this document does not "
-                    "hold: a window and the material it reads are written "
+                    "hold: a window and the notes it reads are written "
                     "together"
                 )
             built = Track(timeline, onset=onset, duration=duration,

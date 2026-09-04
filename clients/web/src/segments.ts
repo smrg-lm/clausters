@@ -1,10 +1,10 @@
-// Segments: a window onto material, and a run of windows read as one (mirrors
+// Segments: a window onto contents, and a run of windows read as one (mirrors
 // `clausters/segments.py`).
 //
 // A **segment** is a window: which source, from where, for how long. A **run**
 // of them is what a **join** assembles and what a **split** takes apart, read
 // back to back as a single thing. Neither idea belongs to the arrangement — a
-// window is about the *material*, not about where the material sits in a piece
+// window is about the *contents*, not about where they sit in a piece
 // — so they live here, beside the structures, and `form` reads them like any
 // other reader.
 //
@@ -17,7 +17,7 @@
 // unit it *measures*, and what one window is played as.
 //
 // Nothing is copied: cutting a run and joining the halves gives the run back,
-// and re-lengthening a window brings out the material the cut hid. That
+// and re-lengthening a window brings out what the cut hid. That
 // property is why notes want windows too, and not a destructive cut.
 
 import { BEATS, SECONDS } from "./base/time.ts";
@@ -119,7 +119,7 @@ export class Segment<S = SourceLike> {
  * Several windows read as one: the general run, and the arithmetic that is the
  * same whatever the windows are onto.
  *
- * Subclasses say what the material is — {@link BufferSegments} over samples,
+ * Subclasses say what the contents are — {@link BufferSegments} over samples,
  * {@link NoteSegments} over a timeline of events — by answering `unit`,
  * `advanced` and what a window is played as. Everything else here is length
  * arithmetic and holds for both.
@@ -173,7 +173,7 @@ export class SegmentRun<S = SourceLike> {
      * The window the cut falls inside becomes two windows — the first ends
      * early, the second opens where the first stopped — so nothing is copied
      * and nothing is lost: joining them back gives this run, and lengthening
-     * either half brings its hidden material out again. A cut at or past either
+     * either half brings out again what it hides. A cut at or past either
      * end gives one empty run and one whole one, which is the honest answer to
      * a cut that took nothing.
      */
@@ -203,7 +203,7 @@ export class SegmentRun<S = SourceLike> {
 
     /**
      * This run followed by `other`: the inverse of {@link cut}, and the reason
-     * both are the same action over any material.
+     * both are the same action over any contents.
      */
     joined(other: SegmentRun<S>): SegmentRun<S> {
         return this.like([...this.segments, ...other.segments]);
@@ -313,7 +313,7 @@ export class BufferSegments extends SegmentRun<SourceLike> {
  * A run of windows onto a **timeline of events**: which timeline, from which
  * beat, for how many beats.
  *
- * The same structure {@link BufferSegments} is, over the material whose lengths
+ * The same structure {@link BufferSegments} is, over the contents whose lengths
  * are musical — so both units are beats and {@link advanced} has nothing to
  * bridge. A cut here hides notes rather than deleting them, which is what makes
  * dragging the edge back out bring them back, exactly as it does for samples.

@@ -534,7 +534,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   *(found 2026-09-03 by the user, on the split over notes that shipped the same
   day: "cuando se hace un split de un pianoroll, sigue siendo una ventana a los
   datos originales?" -- it was, until it was written down; fixed the same day)*.
-  `SegmentRef.source` was a `SourceRef` and nothing else, so the only material a
+  `SegmentRef.source` was a `SourceRef` and nothing else, so the only contents a
   window could be onto was samples. That is enough while what a window reads
   lives *outside* the document -- two windows are two references and nothing is
   copied -- and it is not enough for a timeline of notes, whose notes are

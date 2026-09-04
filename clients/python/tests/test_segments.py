@@ -1,4 +1,4 @@
-"""Windows onto material, and runs of them: the arithmetic a cut and a join are.
+"""Windows onto contents, and runs of them: the arithmetic a cut and a join are.
 
 The structure is general (`clausters.segments`) and the two kinds differ only
 in what the base cannot know: how a position advances by a length, and what one

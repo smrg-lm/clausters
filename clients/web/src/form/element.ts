@@ -142,7 +142,7 @@ export function endBeat(at: number, length: number, unit: string, tempoMap: Temp
     return tempoMap.beatsAt(tempoMap.secsAt(at) + length);
 }
 
-// The windows are **not** the arrangement's: a segment is about the material,
+// The windows are **not** the arrangement's: a segment is about the contents,
 // not about where it sits in a piece, so `Segment`, the runs and what they read
 // live beside the structures (`../segments.ts`) and this module reads them like
 // any other reader. Re-exported here because `Segments` is the element that
@@ -277,7 +277,7 @@ export class Element {
 
     // -- windows: what a trim, a split and a join ask an element -------------
     //
-    // **The question is the material's, never the class's.** Cutting is defined
+    // **The question is the contents', never the class's.** Cutting is defined
     // wherever there is an addressable time axis — samples, notes, events,
     // segments — so the verb asks the element whether it has one instead of
     // testing what it is. What genuinely answers no is a **generator**: not
@@ -288,7 +288,7 @@ export class Element {
      * Where this element **reads from** inside what it holds, or `null` when it
      * holds no window at all.
      *
-     * In the unit the material is *addressed* in — frames for samples, beats
+     * In the unit the contents are *addressed* in — frames for samples, beats
      * for events — which is the same coordinate {@link Segment.start} is in and
      * for the same reason.
      */
@@ -301,8 +301,8 @@ export class Element {
      * this element cannot be cut.
      *
      * `at` and `length` are in this element's own unit ({@link durationUnit}),
-     * and `rate` is the sample rate to bridge with when the material is
-     * addressed in frames and its source does not know its own — the one number
+     * and `rate` is the sample rate to bridge with when the contents are
+     * addressed in frames and the source does not know its own — the one number
      * an element may need from the caller.
      *
      * The **first** half is never built: it is the element it always was, with
@@ -648,7 +648,7 @@ export class Segments extends Element {
     /**
      * The run's own — `SECONDS`, because these windows are onto samples. Asked
      * of the data rather than stated here, which is what lets the same element
-     * place a run of any material.
+     * place a run of any contents.
      */
     override get durationUnit(): TimeUnit {
         return this.run.unit;
@@ -757,7 +757,7 @@ export interface TrackOptions extends ElementOptions {
      * and for the same reason: a trim reads from further in, a split gives two
      * windows over one timeline, and the notes neither window shows are still on
      * it — so lengthening either half brings them back. A cut is not a rewrite
-     * of the material.
+     * of the notes.
      */
     start?: number;
 }

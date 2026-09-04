@@ -119,7 +119,7 @@ export function setDocId(obj: unknown, id: number): void {
 }
 
 /**
- * Takes the stamp off `obj` — for material that **stops** being content: a join
+ * Takes the stamp off `obj` — for contents that **stop** being shared: a join
  * makes two windows one element again, and a timeline still carrying the id it
  * had as content would send the next edit to a node the document no longer has.
  */
@@ -173,7 +173,7 @@ interface Content {
 }
 
 /**
- * The material **more than one element reads**, as content nodes.
+ * The contents **more than one element reads**, as content nodes.
  *
  * A window onto samples costs nothing to repeat because the samples are not in
  * the document; a window onto a timeline of notes is not so lucky — the notes
@@ -567,7 +567,7 @@ export function fromDocument(
     { resolve }: { resolve?: Resolver } = {},
 ): Element {
     // **Content first, because the tree names it.** A window onto a node reads
-    // material the document holds once and several windows share, so it is built
+    // contents the document holds once and several windows share, so it is built
     // before the tree and handed down — and every window over one node gets the
     // *same* object, which is the whole point: two halves of a cut edit one
     // timeline, and reopening a piece must not hand them two.
@@ -751,7 +751,7 @@ function kindBody(element: Element, ids: Ids, shared: Map<Timeline, Content> | n
             // reader would write one identity twice — so the notes are in
             // `content` and each reader names the node. The *element's* length
             // stays the node's own, absent when nobody stated one; the window's
-            // length is how much of the material it can show, which is what a
+            // length is how much of the notes it can show, which is what a
             // reader that does not resolve the content lays the clip out with.
             const start = Number(element.start);
             const length =
@@ -1384,11 +1384,11 @@ function fromNode(
                 "node" in (w.source as DocNode),
         );
         if (overNodes.length > 0) {
-            // **A window onto content**: the material is a node of this
+            // **A window onto content**: the notes are a node of this
             // document, built once and shared by every window that names it, so
             // this element is a `Track` reading that timeline from `start`. Its
             // own length is the node's — absent when nobody stated one — and the
-            // window's is how much of the material it can show, which is what a
+            // window's is how much of the notes it can show, which is what a
             // reader that does not resolve the content lays it out with.
             if (overNodes.length > 1) {
                 throw new Error(
@@ -1404,7 +1404,7 @@ function fromNode(
             if (!(timeline instanceof Timeline)) {
                 throw new Error(
                     `a window names content node ${named}, which this document ` +
-                        "does not hold: a window and the material it reads are " +
+                        "does not hold: a window and the notes it reads are " +
                         "written together",
                 );
             }

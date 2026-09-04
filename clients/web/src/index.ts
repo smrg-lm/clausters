@@ -201,9 +201,9 @@ export { ClaustersError } from "./errors.ts";
 export * as form from "./form/index.ts";
 
 /**
- * A **window onto material** and a run of windows read as one: what a join
+ * A **window onto contents** and a run of windows read as one: what a join
  * assembles and a split takes apart, over samples (`BufferSegments`) or over a
- * timeline of events (`NoteSegments`). A window is about the material, not
+ * timeline of events (`NoteSegments`). A window is about the contents, not
  * about where it sits in a piece, which is why it is here and not in the
  * arrangement. See `./segments.ts`.
  */

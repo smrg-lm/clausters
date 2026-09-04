@@ -846,7 +846,7 @@ exceptions were resolved in the algebra's favour, and both are recorded above.
 
 ## Windows all the way: a cut refers, and what two windows share lives beside the tree
 
-A cut is a **window**, not a rewrite: both halves read the material they always
+A cut is a **window**, not a rewrite: both halves read the contents they always
 read, and lengthening either one brings back what the cut hid. That is why a
 split can be undone by a join, and why trimming a take back out gives its frames
 again. It held for samples from the start and it did not hold for notes, and the
@@ -909,7 +909,7 @@ the client side of the seam.
 
 **What it rules out, concretely.** An edit action may not be gated on an
 arrangement class. The question a split, a join or a trim asks is about the
-material: *does this have an addressable time axis?* Samples do, a timeline of
+contents: *does this have an addressable time axis?* Samples do, a timeline of
 notes does, a list of events does, and a run of segments does — so all of them
 cut and join, by the same action with the arithmetic of their own unit. A
 **generator** is the one thing that genuinely refuses, and even that is not "it

@@ -311,7 +311,7 @@ A `Track` is a window onto its timeline in exactly the same way, in beats:
 `Track(timeline, start=2.0, duration=2.0)` is the two beats from the third on,
 and the notes outside it are still on the timeline — which is what makes
 splitting a roll clip and dragging its edge back out bring them back. The two
-verbs are the same verb, and the unit is the material's:
+verbs are the same verb, and the unit is the contents':
 
 ```python
 phrase = Track(melody, duration=4.0)      # the whole of it
@@ -321,7 +321,7 @@ second_half = phrase.windowed(2.0, 4.0)   # what a split's tail reads
 The windows themselves are **not** the arrangement's: they are
 `clausters.segments` — `Segment` and the runs, `BufferSegments` over samples and
 `NoteSegments` over a timeline of events — because a window is about the
-material and not about where the material sits in a piece. The cut and the join
+contents and not about where they sit in a piece. The cut and the join
 are written once there, over lengths, and each kind supplies only what the base
 cannot know: how a position advances by a length, and what one window holds. So
 a phrase of notes cuts and joins exactly as a phrase of samples does.

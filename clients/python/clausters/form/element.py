@@ -50,7 +50,7 @@ into ``clausters-core`` in a future port).
 #: hold two bases.
 from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
-#: The windows are **not** the arrangement's: a segment is about the material,
+#: The windows are **not** the arrangement's: a segment is about the contents,
 #: not about where it sits in a piece, so `Segment` and the runs live beside the
 #: structures (`clausters.segments`) and this module reads them like any other
 #: reader. Re-exported here because `Segments` is the element that places one.
@@ -205,7 +205,7 @@ class Element:
 
     # -- windows: what a trim, a split and a join ask an element --------------
     #
-    # **The question is the material's, never the class's.** Cutting is defined
+    # **The question is the contents', never the class's.** Cutting is defined
     # wherever there is an addressable time axis -- samples, notes, events,
     # segments -- so the verb asks the element whether it has one instead of
     # testing what it is. What genuinely answers no is a **generator**: not
@@ -216,7 +216,7 @@ class Element:
         """Where this element **reads from** inside what it holds, or ``None``
         when it holds no window at all.
 
-        In the unit the material is *addressed* in -- frames for samples, beats
+        In the unit the contents are *addressed* in -- frames for samples, beats
         for events -- which is the same coordinate
         `clausters.segments.Segment.start` is in and for the same reason.
         """
@@ -228,7 +228,7 @@ class Element:
 
         ``at`` and ``length`` are in this element's own unit
         (`duration_unit`), and ``rate`` is the sample rate to bridge with when
-        the material is addressed in frames and its source does not know its
+        the contents are addressed in frames and the source does not know its
         own -- the one number an element may need from the caller.
 
         The **first** half is never built: it is the element it always was, with
@@ -486,8 +486,8 @@ class Segments(Element):
     the fragments do not come from one place, and what a **split** takes apart
     again. The windows themselves are not the arrangement's -- they are
     `clausters.segments.BufferSegments`, the general run this element *places* --
-    so nothing about assembling material has to be written twice for the two
-    kinds of material that have a time axis.
+    so nothing about assembling contents has to be written twice for the two
+    kinds of contents that have a time axis.
 
     Rendering emits **one event per segment**, each at its own offset inside the
     element and each carrying its own window, so the segments sound continuous
@@ -525,7 +525,7 @@ class Segments(Element):
     def duration_unit(self) -> str:
         """The run's own -- `SECONDS`, because these windows are onto samples.
         Asked of the data rather than stated here, which is what lets the same
-        element place a run of any material."""
+        element place a run of any contents."""
         return self.run.unit
 
     @property
@@ -615,7 +615,7 @@ class Track(Element):
             its buffer, and for the same reason: a trim reads from further in, a
             split gives two windows over one timeline, and the notes neither
             window shows are still on it — so lengthening either half brings
-            them back. A cut is not a rewrite of the material.
+            them back. A cut is not a rewrite of the notes.
     """
 
     def __init__(self, timeline=None, onset=None, duration=None, *, start=0.0,

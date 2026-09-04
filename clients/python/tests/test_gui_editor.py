@@ -3030,7 +3030,7 @@ def test_a_note_edited_inside_a_window_leaves_the_notes_outside_it_alone():
 
 
 def test_a_roll_clip_trims_to_a_window_of_its_timeline():
-    """The same drag on the same edge, over the other material: the clip begins
+    """The same drag on the same edge, over the other kind of contents: the clip begins
     later and reads its timeline from further in, and the notes it stops showing
     are still on it."""
     ed = editor()

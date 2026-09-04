@@ -226,7 +226,7 @@ pub struct SourceRef {
 /// a session's table says where they are — which is what makes a window onto
 /// them cheap: two windows are two references and nothing is copied. A
 /// **node** is content the document itself holds, in [`Document::content`], and
-/// naming one buys exactly the same thing for material the crate cannot put in
+/// naming one gives exactly the same thing for contents the crate cannot put in
 /// a file: a timeline of notes, an assembled sequence, anything whose parts are
 /// addressable nodes rather than opaque frames.
 ///

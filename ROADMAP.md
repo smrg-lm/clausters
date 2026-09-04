@@ -108,7 +108,7 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
   are legal and ordinary; the lane draws coincident members as a single clip with
-  layered bodies, which is the piano roll's logic on the wrong material, and the
+  layered bodies, which is the piano roll's logic over placements it does not fit, and the
   two placements stop being addressable. A defect of the picture, not a question
   about drops -- which is what it was filed as until 2026-09-03.
 

@@ -1,9 +1,9 @@
-"""Segments: a window onto material, and a run of windows read as one.
+"""Segments: a window onto contents, and a run of windows read as one.
 
 A **segment** is a window: which source, from where, for how long. A **run** of
 them is what a **join** assembles and what a **split** takes apart, read back to
 back as a single thing. Neither idea belongs to the arrangement -- a window is
-about the *material*, not about where the material sits in a piece -- so they
+about the *contents*, not about where they sit in a piece -- so they
 live here, beside the structures, and `clausters.form` reads them like any other
 reader.
 
@@ -24,7 +24,7 @@ left, and it is exactly the two hooks a subclass fills in:
 
 **Nothing is copied.** A run refers to its sources, so cutting one and joining
 the halves back gives the run it started from, and re-lengthening a window
-brings back the material the cut hid rather than nothing -- the same placement
+brings back what the cut hid rather than nothing -- the same placement
 rule a trimmed take already follows, one level up. That property is why notes
 want windows too, and not a destructive cut that throws the notes away.
 """
@@ -84,7 +84,7 @@ class SegmentRun:
     """Several windows read as one: the general run, and the arithmetic that
     is the same whatever the windows are onto.
 
-    Subclasses say what the material is -- `BufferSegments` over samples,
+    Subclasses say what the contents are -- `BufferSegments` over samples,
     `NoteSegments` over a timeline of events -- by answering `unit`, `advanced`
     and `to_events`. Everything else here is length arithmetic and holds for
     both.
@@ -139,7 +139,7 @@ class SegmentRun:
         The window the cut falls inside becomes two windows -- the first ends
         early, the second opens where the first stopped -- so nothing is copied
         and nothing is lost: joining them back gives this run, and lengthening
-        either half brings its hidden material out again. A cut at or past
+        either half brings out again what it hides. A cut at or past
         either end gives one empty run and one whole one, which is the honest
         answer to a cut that took nothing.
         """
@@ -161,7 +161,7 @@ class SegmentRun:
 
     def joined(self, other: "SegmentRun") -> "SegmentRun":
         """This run followed by ``other``: the inverse of `cut`, and the reason
-        both are the same action over any material."""
+        both are the same action over any contents."""
         return self.like(list(self.segments) + list(other.segments))
 
     def like(self, segments) -> "SegmentRun":
@@ -250,7 +250,7 @@ class NoteSegments(SegmentRun):
     """A run of windows onto a **timeline of events**: which timeline, from
     which beat, for how many beats.
 
-    The same structure `BufferSegments` is, over the material whose lengths are
+    The same structure `BufferSegments` is, over the contents whose lengths are
     musical -- so both units are beats and `advanced` has nothing to bridge.
     A cut here hides notes rather than deleting them, which is what makes
     dragging the edge back out bring them back, exactly as it does for samples.
