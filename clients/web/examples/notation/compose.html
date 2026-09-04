@@ -185,7 +185,7 @@ refused by name.</div>
 
         const session = await Session.embed({ tempo: TEMPO });
         const server = session.server;
-        const sr = (await server.queryInfo()).actualSampleRate;
+        const sr = (await server.queryInfo()).nominalSampleRate;
         await session.gui();
         const win = await scene(dl, sr).open($("stage"));
         session.start();

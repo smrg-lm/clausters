@@ -93,7 +93,7 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
         const session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
         const server = session.server;
         await sampler().send(server);
-        const SR = (await server.queryInfo()).actualSampleRate;
+        const SR = (await server.queryInfo()).nominalSampleRate;
 
         // The take, bounced offline and installed in the engine's pool.
         const offline = await Session.nrt({ tempo: TEMPO });

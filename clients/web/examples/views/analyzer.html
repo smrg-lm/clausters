@@ -99,7 +99,7 @@ the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
         const session = await Session.embed();
         const server = session.server;
         await session.gui();
-        nyquist = (await server.queryInfo()).actualSampleRate / 2.0;
+        nyquist = (await server.queryInfo()).nominalSampleRate / 2.0;
 
         await stereoDef().send(server);
         const synth = new Synth("stereo_image", { freq: 220.0 }, { server });

@@ -239,7 +239,7 @@ it rather than on the next play.</div>
         session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
         server = session.server;
         await session.gui();
-        SR = (await server.queryInfo()).actualSampleRate;
+        SR = (await server.queryInfo()).nominalSampleRate;
         // Timeline samples per beat: the axis unit is the audio sample, so a
         // take's frames place 1:1.
         BEAT = Math.trunc(SR / TEMPO);

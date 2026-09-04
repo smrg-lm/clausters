@@ -100,9 +100,10 @@ exists.</div>
         const session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
         const server = session.server;
         await sampler().send(server);
-        // The rate the engine actually came up at — the script reads it off
-        // its server's options; here it is what the server reports.
-        const SR = (await server.queryInfo()).actualSampleRate;
+        // `queryInfo` rather than the launch options: it is the one spelling
+        // both clients have, so this page and its script twin ask the same
+        // question.
+        const SR = (await server.queryInfo()).nominalSampleRate;
 
         // The take, bounced offline and installed in the engine's pool.
         const offline = await Session.nrt({ tempo: TEMPO });
