@@ -1644,6 +1644,45 @@ being pumped. That is `idiom` in `docs/bindings.md`'s sense and is written there
 rather than being allowed to become a second shape.
 
 
+### ⬜ W29 - `edit(x)` opens, and the `AppClock` the page already half has
+
+The port of `clients/python/PLAN.md`'s `C52`/`C53`, where the analysis, the
+three measurements and the decisions are read. **Nothing here is decided
+separately.**
+
+The unusual half is that this client is the **reference** for once. `gui/host.ts`
+already states the shape the Python client is being brought to - *"Nothing
+pumps... the browser pushes"* - and routes `/gui_event`/`/gui_closed` to the
+handles as they arrive, which is why no example here drains anything. So the
+phase contract `C52` writes down is read off this client rather than invented
+there, and what the page owes back is only the surface:
+
+- **`edit(x)` opens** on the ambient host and returns the `Editor` of the
+  structure's kind, instead of an editor a caller must `open`. Same rule
+  `plot`, `scope` and `View.open` follow here already.
+- **`Editor` gains the handle surface**: `id`, `closed`, `close()`,
+  `onClosed()`. No per-kind window class in either client.
+- **`AppClock`** - the same class with the same calls, over the page's own loop
+  (`setTimeout`, and `requestAnimationFrame` where a redraw is what is being
+  paced) instead of a thread and a wait. `defer` exists here too and is not a
+  no-op: it is what puts a callback after the current task rather than inside
+  it. The **`EventLoop`** of the Python side has no counterpart and needs none -
+  the page is one - which is `idiom` in `docs/bindings.md`'s sense and is
+  written there.
+- **`clausters-core::tempoclock::Scheduler`** is the timer queue on both sides,
+  bound here through wasm as `TempoClock` already binds it, keyed in seconds.
+  It is the only part of this that is shared code rather than a shared contract.
+
+The two problems the Python prototype measured - a reader seeing a half-rebuilt
+timeline, and a reply stolen from `query` - **do not exist here**: one thread,
+and a subscription that already separates a reply from an event. Recording that
+is the point: they are the language's, not the design's, so the port must not
+grow a lock or a reply slot to look like the other client.
+
+*Acceptance:* the same program in both languages, verb by verb - build a curve,
+`edit` it, read it back after drawing, close the window - with no loop written
+in either, and both example directories showing it.
+
 ## Parity gaps carried from the Python client
 
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed

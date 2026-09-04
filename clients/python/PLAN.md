@@ -595,6 +595,131 @@ through once it is editable on its own).
   is bounced onto a timeline of its own and the widget is told `notes_editable`
   is false, instead of unwinding each drag after the fact.
 
+- ⬜ **C52 — The client's event loop: `edit(x)` opens, and nobody writes a drain
+  loop** *(designed 2026-09-04 with the user, off a throwaway prototype whose
+  three measurements are below)*. `edit` is the **only** verb in the client that
+  hands back something unopened: `plot`, `scope`, `plot_def` and `View.open` all
+  resolve the ambient host, open, and return a handle the script may discard.
+  And it is the only one that then asks the script for a loop — `while
+  editor.window is not None: editor.poll(...)` — which **43 example files**
+  currently spell out by hand. Both halves are one gap: there is no place in
+  this client where inbound host messages are drained, so the drain is copied
+  into every program that wants one.
+
+  The same absence shows up twice more. `WindowHandle.on_closed` and
+  `PlotWindow.on_closed` fire only in the programs that happen to pump, so a
+  callback the docstring promises is delivered by the caller. And the standing
+  rule that a routine must never block the clock thread has **nowhere to defer
+  to**: `OscReceiver` can already hand a handler to `clock.sched(0.0, ...)`, and
+  there is no equivalent for anything that touches a window.
+
+  **Two pieces, because the loop and the clock are not the same object.**
+
+  - **`EventLoop`** — the machine every application event loop is: registered
+    *sources* (the host's socket, timers, a cross-thread post queue), **one
+    wait** over all of them bounded by the nearest timer rather than a fixed
+    sleep, a wake channel so another thread can break that wait, an iteration
+    with **fixed phases** (due timers → ready sources → dispatch → deferred), and
+    `run()` / `stop()` / `iterate(timeout)` so it can be driven by someone else's
+    loop (a notebook, a test) instead of owning the thread.
+  - **`AppClock`** — the clock face over it, a sibling of `TempoClock`, in
+    **seconds**: `sched`, `play(routine)`, `defer(func)`. This is sclang's
+    reading and it is the substance of the split: the timer source of the app
+    loop *is* a clock, so an animation is a routine that waits, not a second
+    scheduling vocabulary beside the one the client already has. Beats stay
+    `TempoClock`'s; this is the application, not the music.
+
+  **The precedent is inside this client already**: `base/_oscinterface.py`'s
+  `OscReceiver` is a daemon thread with its **own socket** (`settimeout(0.1)`)
+  that optionally hands each handler to a clock. "Receiving thread, then deliver
+  to a clock" is how this client already talks to the audio server; what is
+  missing is the GUI's half of it.
+
+  **What goes to Rust, and it is almost nothing — measured, not assumed.**
+  `clausters-core::tempoclock::Scheduler` is already the timer queue this needs
+  (a min-heap by time, stable insertion order, `pop_due`/`remove`), and
+  `TempoClock` already binds it; the `AppClock` binds the same one keyed in
+  seconds instead of beats, and no second queue is written. Nothing else is worth
+  moving down: the wait, the thread, the GIL and the callback invocation are the
+  language's by definition, and a sans-io phase machine would shuttle opaque ids
+  across the FFI to decide "what is due" (that is the `Scheduler`) and "who gets
+  this" (that is a dict). The two problems the prototype actually found — the GIL
+  and the socket — are precisely the two a shared crate cannot own.
+
+  **The web client is not waiting on this; it already has it.** `gui/host.ts`
+  says so in as many words (*"Nothing pumps... the browser pushes"*) and routes
+  `/gui_event`/`/gui_closed` to the handles as they arrive; none of its examples
+  drain anything. So this milestone runs the unusual direction — **Python
+  catching up to a structure TypeScript has by language** — and the phase
+  contract is read off the browser's rather than invented here. What the port
+  owes is the surface: `edit(x)` opening, `Editor.close`/`onClosed`, and an
+  `AppClock` whose engine is the page's own loop (`clients/web/PLAN.md`, `W29`).
+
+  **Three decisions, taken from measurements rather than from taste** (the
+  prototype, 2026-09-04, discarded after the run):
+
+  1. **The loop holds a lock across a whole applied message, and the read side
+     can take it.** `NotesDomain.project` does `clear()` then re-`add`, so a
+     reader can see a half-rebuilt timeline. Measured, one thread applying while
+     the main thread reads: **0 torn reads in 3.2 M** at 8 notes and **0 in
+     214 k** at 300 — and **21 191 of 24 150 (87.7%)** at 4000, where the
+     rebuild finally outlasts CPython's 5 ms switch interval. That is the worst
+     possible shape (invisible in every small test, systematic in a real piece),
+     so the lock is not optional. Its cost is a tight-loop reader losing ~30% of
+     its reads, which is nothing in use.
+  2. **A reply is not an event: the loop routes it to whoever asked.**
+     With the drain thread running, `GuiHost.query` lost its `/gui_info`
+     intermittently (1 of 3); with a ten-line reply slot, 3 of 3. There is
+     exactly **one** such call site, and today's `query` is already fragile
+     without any loop — it requires the *very next* datagram to be `/gui_info`,
+     so an event arriving mid-query already breaks it. The loop is what makes
+     that correct, not what endangers it.
+  3. **The loop gets its own thread.** sclang's `AppClock` runs on the app's main
+     thread and inherits its safety for free; here the main thread is the user's
+     script, so it cannot. `OscReceiver` is the precedent and the audio server's
+     event sequencing is the reason: a shared thread would let a window's drain
+     delay it.
+
+  **`edit(x)` then opens** on the ambient host — the rule `plot`, `scope` and
+  `View.open` already follow — and returns the `Editor` of the structure's kind,
+  which is already one per window and one per kind. It gains what a handle in
+  this client means: `id`, `closed`, `close()`, `on_closed()`. **No
+  `MidiEditorWindow` and no per-kind window class**: that would be a second
+  hierarchy over the axis `SamplesEditor`/`PointsEditor`/`NotesEditor` already
+  is, and every useful member on it would be a back-pointer. Closing the window
+  deregisters the editor; the **history survives**, because it belongs to the
+  data (`Editing.of`), so re-opening resumes the same undo order.
+
+  **Deliberately out of scope: a shared base class for the four window handles.**
+  `PlotWindow.id` versus `Editor.window` for the same thing is untidy, and
+  tidying it unblocks nothing. What this milestone does take is the *name*: `id`
+  everywhere. The base class is a candidate for later, on its own merits.
+
+  *Acceptance:* `edit(curve)` followed by `print(curve.to_points())` reflects
+  what was drawn, with no loop written anywhere; `query` under the running loop
+  answers N of N; a 4000-note timeline read from the script while a stroke is
+  applied never sees fewer notes than it has; a script holds its window open with
+  one call and a notebook needs none; `AppClock.play(routine)` animates a widget
+  from a routine, and a routine on the `TempoClock` reaches a window through
+  `defer` without blocking the clock.
+
+- ⬜ **C53 — The examples pass: the drain loop is deleted, once** *(its own
+  commit, after `C52`)*. 43 example files hand-write a drain today —
+  `clients/python/examples/views/` 13 (`editor.py` four times),
+  `panels/` 12 (`piano.py` three times), `editors/` 12, `notation/` 4, and the
+  root `examples/clock_recorder.py`; `clients/web/examples/` has none, which is
+  the same evidence from the other side. They are rewritten against the loop, and
+  the pass is where **one decision that cannot be made in the abstract** gets
+  taken: a script must still hold its window open until it is closed (a by-eye
+  check needs the window to live), while a `# %%` notebook must not block at all,
+  since the loop is already running and the cells go on. That asymmetry is
+  written once — in the `examples` skill and in the books — rather than
+  rediscovered per example.
+
+  It is a separate commit so `C52`'s diff stays readable, and it is entirely
+  manual: **nothing runs any example**, so each one that is touched is run by
+  hand, and `npx pyright` in `clients/python` covers the call sites afterwards.
+
 ### The client API reform: the GUI element as an object (client arc, phased)
 
 A reform of the client's GUI surface, in two parts: **first the shape of the
@@ -1125,6 +1250,34 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 - **E2E** (CLAUDE.md rule: server and client in the **same** Bash invocation): start `./target/debug/clausters &`, define a FaustDef from the high-level client, `/synth_new`, control via bus, verify `/done`/replies, `kill`. NRT: score generated by `seq` → `render()` → compare WAV/golden.
 
 ## Found by use: the running list of fixes and open questions
+
+- ⬜ **A curve opens on the wrong axis, and the first edit flattens it** *(found
+  2026-09-04, by eye, while running the throwaway prototype for `C52` over
+  `examples/editors/edit_curve.py`'s own curve)*. The example builds a cutoff
+  automation from 200 to 4000 Hz, `edit`s it, and after a few drags the curve
+  read back is `[0.0, 0.446, ..., 0.523, ..., 0.909, ...]` — every value inside
+  `[0, 1]`, and the frequencies gone.
+
+  `bpf` is explicit that its values live in `[min, max]` and that the default is
+  the unipolar `0`/`1`, and `PointsView.build` (`gui/editing/points.py`) builds
+  `bpf(id=..., points=..., label=...)` with **neither**. So a curve of any other
+  range is drawn against a `0..1` axis — its points pinned to the top of the
+  field, which is what the window shows — and the edit-back reports positions in
+  the *axis*'s values, which the domain then projects onto the automation as if
+  they were the data's. One drag destroys the curve's range, silently and
+  irreversibly (the inverse restores the flattened state, not the original).
+
+  It reproduces in the shipped example with nothing else running: same builder,
+  same curve, no loop and no prototype involved. The web client's `PointsView`
+  is to be read against this one before either is fixed.
+
+  **What is not yet decided is the fix**, and it is the reason this is filed
+  rather than patched: the axis has to come from the data, but *which* span —
+  the curve's own min/max, that span with margin, or a range the caller may
+  name — and what happens when a hand drags a point **past** it (the axis grows,
+  the value clamps, or the edit is refused) is the "an element owns its space"
+  question, and it must be answered the same way in both clients. `exp=True` for
+  a frequency-shaped span belongs to the same decision.
 
 - ✅ **A clip that would not move, and the edit said it had** *(reported
   2026-09-03 by the user -- "no responde quiere decir que no se puede mover y no
