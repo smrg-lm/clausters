@@ -77,6 +77,7 @@ const X_AXIS: &[(&str, &str)] = &[
     ("playhead_at", "playhead_at"),
     ("playhead_loop_start", "playhead_loop_start"),
     ("playhead_loop_len", "playhead_loop_len"),
+    ("markers", "markers"),
 ];
 
 /// The y axis' properties. `min`/`max` are the value range five widgets carry

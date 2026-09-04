@@ -532,13 +532,27 @@ impl Gestures {
             id,
             origin_x,
             body,
-            on_ruler: true,
+            ruler: Some(strip),
             ..
         }) = self.drag
             && (cx - origin_x).abs() <= host.metrics_for(def_id).hit_slop as f64
         {
             self.drag = None;
-            locate_timeline(host, &mut out, def_id, id, body, cx);
+            // **A click on a marker is that marker's moment**, not the pixel's:
+            // the arrow is a handle onto an exact time, which is most of what a
+            // marker is for. Anywhere else on the strip the click is the
+            // ordinary locate, at the sample the pointer names.
+            let marker = host
+                .widget_kind(def_id, id)
+                .and_then(|k| k.editor().map(|e| e.markers.clone()))
+                .and_then(|markers| {
+                    super::nav::marker_under(host, id, strip, &markers, cx)
+                        .and_then(|i| markers.get(i).map(|m| m.time))
+                });
+            match marker {
+                Some(time) => super::nav::locate_at(host, &mut out, def_id, id, time),
+                None => locate_timeline(host, &mut out, def_id, id, body, cx),
+            }
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }

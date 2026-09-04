@@ -27,7 +27,7 @@ mod draw;
 mod items;
 
 use draw::*;
-pub(crate) use draw::{draw_time_ruler, ruler_strip_body};
+pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
 use items::*;
 
 use std::collections::HashMap;
@@ -1319,6 +1319,7 @@ mod tests {
             sel_max: 0.0,
             link: None,
             offset: 0.0,
+            markers: Vec::new(),
         }
     }
 

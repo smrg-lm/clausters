@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::host::graphics::selection;
+use crate::host::widget::Marker;
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
@@ -26,7 +27,7 @@ pub(crate) fn draw_time_ruler(
         return;
     }
     let metrics = d.m;
-    let strip = Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0));
+    let strip = ruler_strip(rect, body);
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
     }
@@ -39,6 +40,77 @@ pub(crate) fn draw_time_ruler(
         metrics,
     );
     ruler::draw_ticks_h(d, strip, &ticks);
+    draw_markers(d, strip, nav, &editor.markers);
+}
+
+/// **Where the ruler strip is**, given the widget's rect and the body it is
+/// reserved under — the one derivation, read by the drawing and by the gesture
+/// that puts a marker on it, so what is clicked is what was drawn.
+pub(crate) fn ruler_strip(rect: Rect, body: Rect) -> Rect {
+    Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0))
+}
+
+/// **How wide a marker's arrow is**, device pixels — and so how far from one a
+/// press still counts as landing on it ([`marker_at`]).
+pub(crate) const MARKER_W: f32 = 9.0;
+
+/// The markers on this strip: an **arrow pointing up into the ticks** at the
+/// exact time each one names, its label beside it.
+///
+/// It points at the ruler and stops there. A marker draws no line down the
+/// picture — a playhead and a selection band are the two things that do, and a
+/// third would make three vertical lines mean three different things at a
+/// glance. What a marker is *for* is the click: the transport goes to the
+/// moment it was placed at, not to the pixel the hand landed on.
+fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
+    if markers.is_empty() || strip.h <= 2.0 {
+        return;
+    }
+    let (mesh, metrics, theme) = d.parts();
+    let scale = metrics.micro_scale;
+    for marker in markers {
+        let frac = (marker.time - nav.start) / nav.len.max(1e-9);
+        if !(0.0..=1.0).contains(&frac) {
+            continue;
+        }
+        let color = marker.color(theme);
+        let x = strip.x + strip.w * frac as f32;
+        // The apex touches the tick row; the base sits a third of the strip
+        // down, so the arrow reads as pointing *at* the ruler without covering
+        // the labels under it.
+        let h = (strip.h * 0.5).min(MARKER_W);
+        let half = MARKER_W * 0.5;
+        mesh.tri(
+            [x, strip.y],
+            [x - half, strip.y + h],
+            [x + half, strip.y + h],
+            color,
+        );
+        if !marker.label.is_empty() {
+            let w = font::width(&marker.label, scale);
+            let lx = (x + half + 1.0).min((strip.x + strip.w - w).max(strip.x));
+            font::text(mesh, &marker.label, lx, strip.y, scale, color);
+        }
+    }
+}
+
+/// **The marker a press at `x` landed on**, as an index into `markers` — the
+/// nearest whose arrow the point falls within. The gesture reads it from the
+/// geometry the drawing used, so what can be clicked is exactly what is drawn.
+pub(crate) fn marker_at(strip: Rect, nav: &View, markers: &[Marker], x: f64) -> Option<usize> {
+    let mut best: Option<(usize, f32)> = None;
+    for (i, marker) in markers.iter().enumerate() {
+        let frac = (marker.time - nav.start) / nav.len.max(1e-9);
+        if !(0.0..=1.0).contains(&frac) {
+            continue;
+        }
+        let mx = strip.x + strip.w * frac as f32;
+        let d = (mx - x as f32).abs();
+        if d <= MARKER_W * 0.5 && best.is_none_or(|(_, b)| d < b) {
+            best = Some((i, d));
+        }
+    }
+    best.map(|(i, _)| i)
 }
 
 /// The pixel domain a free-standing `timeruler` labels: its own rect, indented

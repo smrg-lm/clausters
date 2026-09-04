@@ -16,7 +16,11 @@ The other GUI examples each open *one* view. This one composes a whole
    and the *only* one in the window: a lane's own ruler is reserved out of that
    lane's height, so the lanes below carry none and the strip up here rules them
    all. Hiding it is ``set(h=0)``: it stays in the tree, keeps its navigation
-   group, and comes back where it was;
+   group, and comes back where it was. It carries the piece's **markers** and
+   the two selections: a drag scrolls the axis, **Alt+drag** sweeps a time
+   range, **Ctrl+click** adds a marker (numbered) or removes the one under the
+   pointer, and a **click** puts the cursor where it points — or, on a marker,
+   at exactly the moment that marker was placed at;
 4. the **editor** — three lanes inside a vertical `scroll` (``axis="y"``,
    ``zoom=False``: the wheel scrolls the stack, the time axis never moves), each
    lane a different kind of resource on one shared axis:
@@ -311,6 +315,17 @@ COLORMAPS = ("viridis", "magma", "gray")
 # one and the ruler decides a bar is 24000 beats, finds no step whose labels fit
 # once you zoom out, and draws none.
 axis = dict(link=LINK, sample_rate=SR, tempo=TEMPO, quant=float(BAR))
+
+#: The piece's **markers**: a moment, what it is called, and a colour. They are
+#: the ruler's, not a lane's -- a marker names a moment in the *piece*, so every
+#: view of this axis shows the same ones. Ctrl+click on the ruler adds one
+#: (numbered from where it lands), Ctrl+click on one takes it away, and a plain
+#: click on one puts the transport exactly where it was placed. The script keeps
+#: the list because the host hands it back on every edit: the time and the text
+#: are what a piece is saved with.
+MARKERS = [(0.0, "top", "#7fd1ff"),
+           (2.0 * BEAT, "swell", "#ffd27f"),
+           (6.0 * BEAT, "tail", "#ff9f9f")]
 # `snap=0` is **no grid**: a clip moves by whole samples, so a drag follows the
 # pointer instead of jumping a sixteenth at a time. It is the right setting for
 # looking at the drawing (an edit lands where you put it, at any zoom); a piece
@@ -378,7 +393,7 @@ layout(toggle(label="ruler", value=True, name="t_ruler", w=90.0),
   flow="row", h=62.0, gap=6.0, margin=0.0),
 
 # -- 3. the ruler over the editor, in its own box (no lane pays for it)
-timeruler(name="ruler", ruler="beats", h=22.0, **axis),
+timeruler(name="ruler", ruler="beats", h=22.0, markers=MARKERS, **axis),
 
 # -- 4. the editor: three kinds of resource on one axis, vertically scrolled
 scroll(
@@ -591,9 +606,24 @@ def play_pause():
         transport.play(server)
 
 
-def on_ruler(tag, *vals):
-    if tag == "locate" and vals:
-        transport.locate(float(vals[0]) / BEAT)
+def on_ruler(tag, *payload):
+    """The ruler's two events: a locate, and the markers after a hand changed
+    them.
+
+    A marker edit arrives as the **whole list** — `time label color` per marker
+    — so this replaces what it holds instead of reconciling. The time and the
+    text are what a piece would be saved with; the colour is `""` where the
+    marker takes the theme's.
+    """
+    if tag == "locate" and payload:
+        transport.locate(float(payload[0]) / BEAT)
+    elif tag == "markers":
+        MARKERS[:] = [(float(t), str(label), str(color))
+                      for t, label, color in zip(payload[0::3],
+                                                 payload[1::3],
+                                                 payload[2::3])]
+        print("markers: " + ", ".join(
+            f"{label!r} at {t / BEAT:.2f} beats" for t, label, _c in MARKERS))
 
 
 # The transport buttons act on their **click**: the press completed on the

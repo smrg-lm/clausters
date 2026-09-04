@@ -169,11 +169,13 @@ enum Drag {
         /// that never left the slop is a **click**, and a click on a ruler
         /// locates -- which needs the box the sample is read against.
         body: Rect,
-        /// Whether the press was on a **ruler surface** (the widget, or the
-        /// strip a view reserves). Read at the press and carried, because that
-        /// is where the answer is: the release only knows where the hand ended
-        /// up, and a pan may have travelled off the strip it started on.
-        on_ruler: bool,
+        /// The **ruler strip the press was on** (the widget's own, or the one a
+        /// view reserves), or `None` anywhere else. Read at the press and
+        /// carried, because that is where the answer is: the release only knows
+        /// where the hand ended up, and a pan may have travelled off the strip
+        /// it started on. It doubles as the geometry a click reads its marker
+        /// out of, so the strip is derived once, where it is known.
+        ruler: Option<Rect>,
     },
     /// Sweeping a selection on a timeline container: `anchor` is the sample
     /// under the press, and the selection spans from it to the cursor's sample.

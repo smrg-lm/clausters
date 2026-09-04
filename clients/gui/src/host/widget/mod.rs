@@ -69,8 +69,8 @@ mod tests;
 pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
 pub use element::{Claim, Element, Needs};
 pub use props::{
-    Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Layout, Place, Range,
-    Rate, Ruler, RulerY, ScrollView, SourceWindow,
+    Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Layout, Marker, Place,
+    Range, Rate, Ruler, RulerY, ScrollView, SourceWindow, markers_json,
 };
 pub use size::Natural;
 

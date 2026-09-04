@@ -324,6 +324,81 @@ pub(super) fn transport_follows_selection(
 /// group's static cursor (drawn at once on every lane, so the click lands
 /// where you see it) and leaves as `/gui_event <id> "locate" <position>` — the
 /// script seeks its playhead there, which is what actually moves the music.
+/// **The marker a press at `cx` landed on**, over the strip it was drawn in —
+/// asked of the group's *current* window, since the axis may have moved since
+/// the markers were set.
+pub(super) fn marker_under(
+    host: &Host,
+    id: i32,
+    strip: Rect,
+    markers: &[crate::host::widget::Marker],
+    cx: f64,
+) -> Option<usize> {
+    let (start, len, _) = group_view(host, id)?;
+    let nav = crate::viewport::View { start, len };
+    crate::host::frame::marker_at(strip, &nav, markers, cx)
+}
+
+/// Writes the widget's markers and reports them: the flat `time label color`
+/// list, the same shape a `/gui_set markers` takes and a `/gui_query` gives
+/// back — **the time and the text are what the owner is handed**, and what it
+/// stores against its own document.
+pub(super) fn set_markers(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    markers: Vec<crate::host::widget::Marker>,
+) {
+    let Some(editor) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(id))
+        .and_then(|w| w.kind.editor_mut())
+    else {
+        return;
+    };
+    editor.markers = markers;
+    let args = std::iter::once(OscType::String("markers".into()))
+        .chain(
+            host.widget_kind(def_id, id)
+                .and_then(|k| k.editor().map(|e| e.markers.clone()))
+                .unwrap_or_default()
+                .iter()
+                .flat_map(|m| {
+                    [
+                        OscType::Double(m.time),
+                        OscType::String(m.label.clone()),
+                        OscType::String(m.color.clone().unwrap_or_default()),
+                    ]
+                }),
+        )
+        .collect();
+    emit(host, out, def_id, id, args);
+    out.push(GestureEffect::Redraw(def_id));
+}
+
+/// The transport's cursor at an **exact** position, rather than at the one a
+/// pixel names: what a click on a marker means, since a marker is the moment it
+/// was placed at and not the pixel it is drawn on.
+pub(super) fn locate_at(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    pos: f64,
+) {
+    let roots = host.set_timeline_cursor(id, pos);
+    emit(
+        host,
+        out,
+        def_id,
+        id,
+        vec![OscType::String("locate".into()), OscType::Float(pos as f32)],
+    );
+    redraw_all(out, &roots);
+    out.push(GestureEffect::Redraw(def_id));
+}
+
 pub(super) fn locate_timeline(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -336,16 +411,7 @@ pub(super) fn locate_timeline(
         return;
     };
     let pos = interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
-    let roots = host.set_timeline_cursor(id, pos);
-    emit(
-        host,
-        out,
-        def_id,
-        id,
-        vec![OscType::String("locate".into()), OscType::Float(pos as f32)],
-    );
-    redraw_all(out, &roots);
-    out.push(GestureEffect::Redraw(def_id));
+    locate_at(host, out, def_id, id, pos);
 }
 
 pub(super) fn pan_timeline(

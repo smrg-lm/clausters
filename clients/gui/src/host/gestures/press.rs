@@ -177,7 +177,7 @@ impl Gestures {
             // The window's sole axis, grabbed with Shift where no container
             // claimed the press: nowhere near a ruler strip, and a Shift+click
             // has never located anything.
-            on_ruler: false,
+            ruler: None,
         });
         true
     }
@@ -213,7 +213,9 @@ impl Gestures {
                     origin_x: cx,
                     start: axis.nav.start,
                     body: axis.body,
-                    on_ruler: frame.ruler,
+                    ruler: frame
+                        .ruler
+                        .then(|| crate::host::frame::ruler_strip(frame.rect, axis.body)),
                 });
                 true
             }
@@ -324,6 +326,54 @@ impl Gestures {
                     cursor: (cx, cy),
                 });
                 out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            // **The ruler's one edit.** A press adds a marker at the time it
+            // points at, or takes away the one it landed on -- the same
+            // add-or-remove Ctrl already means over a roll's notes and a
+            // curve's break-points. It is not a drag: a marker is a moment,
+            // and the press has already said which.
+            (GestureStep::Marker, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false;
+                }
+                let strip = crate::host::frame::ruler_strip(frame.rect, axis.body);
+                if strip.h <= 0.0 || !strip.contains(cx, cy) {
+                    return false;
+                }
+                let Some(mut markers) = host
+                    .widget_kind(def_id, id)
+                    .and_then(|k| k.editor().map(|e| e.markers.clone()))
+                else {
+                    return false;
+                };
+                match super::nav::marker_under(host, id, strip, &markers, cx) {
+                    Some(i) => {
+                        markers.remove(i);
+                    }
+                    None => {
+                        let time = interact::sample_at(
+                            axis.nav.start,
+                            axis.nav.len,
+                            axis.body.x as f64,
+                            axis.body.w as f64,
+                            cx,
+                        )
+                        .max(0.0);
+                        // **Numbered, not blank.** The label is what a client
+                        // is handed with the time, so a marker with none says
+                        // nothing to the reader or to the owner; the count is
+                        // the one name the host can give without asking.
+                        let label = (markers.len() + 1).to_string();
+                        markers.push(super::super::widget::Marker {
+                            time,
+                            label,
+                            color: None,
+                        });
+                        markers.sort_by(|a, b| a.time.total_cmp(&b.time));
+                    }
+                }
+                super::nav::set_markers(host, out, def_id, id, markers);
                 true
             }
             (GestureStep::Sample, interact::Coords::Time(axis)) => {

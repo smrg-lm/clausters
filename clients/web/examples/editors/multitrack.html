@@ -29,7 +29,11 @@ a <b>menu bar</b> whose entries are the view's own options; a <b>toolbar</b>
 repeating the two worth one click plus a slider over how thick a lane is — the
 same thickness <b>Ctrl+wheel</b> over any lane sets, which arrives as a
 <code>"height"</code> edit; the <b>time ruler</b>, the only one in the window,
-since a lane's own ruler is reserved out of that lane's height; the <b>lanes</b>
+since a lane's own ruler is reserved out of that lane's height — it carries the
+piece's <b>markers</b> and the two selections, so a drag scrolls the axis,
+<b>Alt+drag</b> sweeps a time range, <b>Ctrl+click</b> adds a marker (numbered)
+or removes the one under the pointer, and a <b>click</b> puts the cursor where
+it points, or on a marker at exactly the moment it was placed at; the <b>lanes</b>
 in a scrolled stack; and a <b>transport</b> with a counter that reads the
 position in beats, seconds and samples at once.
 
@@ -262,6 +266,20 @@ it rather than on the next play.</div>
         session.start();
 
         const axis = { link: LINK, sampleRate: SR, tempo: TEMPO, quant: BAR };
+
+        // The piece's **markers**: a moment, what it is called, and a colour.
+        // They are the ruler's, not a lane's -- a marker names a moment in the
+        // *piece*, so every view of this axis shows the same ones. Ctrl+click on
+        // the ruler adds one (numbered from where it lands), Ctrl+click on one
+        // takes it away, and a plain click on one puts the transport exactly
+        // where it was placed. The page keeps the list because the host hands it
+        // back on every edit: the time and the text are what a piece is saved
+        // with.
+        const MARKERS = [
+          [0.0, "top", "#7fd1ff"],
+          [2.0 * BEAT, "swell", "#ffd27f"],
+          [6.0 * BEAT, "tail", "#ff9f9f"],
+        ];
         const laneChrome = { snap: 0.0, mute: false, solo: false, level: 0.8, ...axis };
         const RULER_OPTIONS = ["ruler: shown", "ruler: hidden"];
         const UNIT_OPTIONS = UNITS.map((u) => `unit: ${u}`);
@@ -293,7 +311,7 @@ it rather than on the next play.</div>
               name: "t_laneh", w: 260.0 }),
             gui.label("", { weight: 1.0 }),
           ),
-          gui.timeruler({ name: "ruler", ruler: "beats", h: 22.0, ...axis }),
+          gui.timeruler({ name: "ruler", ruler: "beats", h: 22.0, markers: MARKERS, ...axis }),
           gui.scroll(
             { name: "editor", axis: "y", zoom: false, flow: "col", gap: 4.0,
               contentH: 3 * LANE_H + 8.0, weight: 1.0 },
@@ -438,8 +456,23 @@ it rather than on the next play.</div>
         });
         win.widget("b_stop").onClick(() => transport.stop());
         win.widget("b_rew").onClick(() => transport.locate(0.0));
-        win.widget("ruler").onEvent((tag, ...vals) => {
-          if (tag === "locate" && vals.length) transport.locate(Number(vals[0]) / BEAT);
+        // The ruler's two events: a locate, and the markers after a hand
+        // changed them. A marker edit arrives as the **whole list** -- `time
+        // label color` per marker -- so this replaces what it holds instead of
+        // reconciling. The time and the text are what a piece would be saved
+        // with; the colour is "" where the marker takes the theme's.
+        win.widget("ruler").onEvent((tag, ...payload) => {
+          if (tag === "locate" && payload.length) {
+            transport.locate(Number(payload[0]) / BEAT);
+          } else if (tag === "markers") {
+            MARKERS.length = 0;
+            for (let i = 0; i + 2 < payload.length; i += 3) {
+              MARKERS.push([Number(payload[i]), String(payload[i + 1]),
+                String(payload[i + 2])]);
+            }
+            log("markers: " + MARKERS.map(
+              ([t, label]) => `"${label}" at ${(t / BEAT).toFixed(2)} beats`).join(", "));
+          }
         });
 
         /** The transport's position, in all of its forms. */

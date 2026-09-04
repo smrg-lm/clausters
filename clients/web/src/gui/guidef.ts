@@ -720,6 +720,18 @@ export interface ContainerOptions extends WidgetOptions {
 export interface TimelineOptions extends WidgetOptions {
     /** The time ruler: `"time"`, `"samples"`, `"beats"` or `"off"`. */
     ruler?: string;
+    /**
+     * **The labelled points on the time axis**: `[time, label, color]` triples
+     * (label and colour optional), drawn as an **arrow into the ruler's
+     * ticks** — never a line down the picture, which is what a playhead and a
+     * selection band are. **Ctrl+click** on the ruler adds one, numbered, or
+     * removes the one under the pointer, and a **click** on one puts the
+     * transport at the exact time it was placed at rather than at the pixel
+     * the hand landed on. An edit flows back as a flat `"markers"` event
+     * (`time label color …`): the time and the text are what the owner is
+     * handed, and what it keeps against its own document.
+     */
+    markers?: MarkerSpec;
     /** Labels clock time, and places a spectral frequency axis. */
     sampleRate?: number;
     /** Musical time: beats per second, the beat at sample 0, beats per bar. */
@@ -2752,7 +2764,7 @@ export function canvas(
 function timelineProps(options: TimelineOptions, y: Props = {}): Props {
     const {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
-        selMin, selMax,
+        selMin, selMax, markers,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
         yStart, yLen, link, autofit, axes: pair, ...rest
     } = options;
@@ -2773,6 +2785,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
                 ["playhead_loop_len", playheadLoopLen],
                 ["link", link],
                 ["autofit", autofit],
+                ["markers", markers === undefined ? undefined : flatMarkers(markers)],
             ]),
             {
                 ...drop([
@@ -2927,6 +2940,33 @@ const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly
 function held<T>(value: T | Source | undefined, flatten: (v: T) => unknown): unknown {
     if (value === undefined || value instanceof Source) return value;
     return flatten(value);
+}
+
+/**
+ * A `markers` argument: `[time, label, color]`, `[time, label]` or a bare
+ * `time` per marker — the label and the colour both optional.
+ */
+export type MarkerSpec = readonly (
+    | number
+    | readonly [number]
+    | readonly [number, string]
+    | readonly [number, string, string]
+)[];
+
+/** A `markers` argument as the flat `time, label, color` triples the host reads. */
+export function flatMarkers(markers: MarkerSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const marker of markers) {
+        if (typeof marker === "number") out.push(marker, "", "");
+        else {
+            out.push(
+                marker[0],
+                marker.length > 1 ? String(marker[1]) : "",
+                marker.length > 2 ? String(marker[2]) : "",
+            );
+        }
+    }
+    return out;
 }
 
 /** An `osc` argument as the flat `time, label` pairs the host reads. */

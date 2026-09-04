@@ -77,11 +77,6 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **Labelled markers on the time ruler** *(`clients/gui/PLAN.md`, Found by
-  use)*. **Next.** `(time, label)` pairs on the ruler, Ctrl+click to
-  add or remove one — the chord the ruler's plan leaves free today. The WAV cue
-  chunks that carry them are a data path of their own, later.
-
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --

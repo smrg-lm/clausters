@@ -1404,7 +1404,7 @@ def waveform(*, autofit: bool | None = None,
              playhead_at: float | None = None, playhead: float | None = None,
              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
              y_start: float | None = None,
-             y_len: float | None = None, link: int | None = None, axes: dict | None = None,
+             y_len: float | None = None, link: int | None = None, markers=None, axes: dict | None = None,
              color: str | None = None, id: int | None = None, **props) -> View:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
@@ -1513,7 +1513,7 @@ def waveform(*, autofit: bool | None = None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, measure=measure,
                        color=color)
-    extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        min=min, max=max, autofit=autofit,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
@@ -1543,7 +1543,7 @@ def spectrogram(*, autofit: bool | None = None,
                 playhead_at: float | None = None, playhead: float | None = None,
                 playhead_loop_start: float | None = None,
                 playhead_loop_len: float | None = None, y_start: float | None = None,
-                y_len: float | None = None, link: int | None = None, axes: dict | None = None,
+                y_len: float | None = None, link: int | None = None, markers=None, axes: dict | None = None,
                 color: str | None = None, id: int | None = None, **props) -> View:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
@@ -1585,7 +1585,7 @@ def spectrogram(*, autofit: bool | None = None,
                        channels=channels, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, color=color)
-    extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, beat_at=beat_at, quant=quant, autofit=autofit,
                        sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
@@ -1881,6 +1881,25 @@ def _held(value, flatten):
     return flatten(value)
 
 
+def _flat_markers(markers) -> list:
+    """Normalizes a ``markers`` argument to the flat ``time, label, color``
+    triples the host reads.
+
+    Each marker is ``(time, label, color)``, ``(time, label)`` or a bare
+    ``time``; a missing label is ``""`` (the host numbers one it adds itself)
+    and a missing colour ``""`` (the theme's flag)."""
+    out: list = []
+    for m in markers:
+        if isinstance(m, (tuple, list)):
+            time = float(m[0])
+            label = str(m[1]) if len(m) > 1 and m[1] is not None else ""
+            color = str(m[2]) if len(m) > 2 and m[2] is not None else ""
+        else:
+            time, label, color = float(m), "", ""
+        out += [time, label, color]
+    return out
+
+
 def _flat_osc(osc) -> list:
     """Normalizes an ``osc`` argument to the flat ``time, label`` pairs the host
     reads. Each event is a ``(time, label)`` tuple or a bare ``time`` (no
@@ -2067,7 +2086,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
           playhead_at: float | None = None, playhead: float | None = None,
           playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
           link: int | None = None, theme: dict | None = None, color: str | None = None,
-          axes: dict | None = None, id: int | None = None, **props) -> View:
+          markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
@@ -2087,6 +2106,10 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     edit that re-frames the view is the window starting over under the hand that
     made it. It is the axis' own property, so **one lane asking to be left alone
     leaves the whole navigation group alone**.
+
+    ``markers`` are the labelled points on the shared time axis, drawn in
+    whatever ruler shows it — this lane's own strip, or the free-standing
+    `timeruler` over the stack, which documents them.
 
     **Ctrl+wheel over a lane resizes it**: the host sets that lane's ``h`` and
     emits ``"height" h`` (logical pixels), which a driver mirrors onto its
@@ -2141,7 +2164,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     """
     extra = _drop_none(label=label, height=height, snap=snap, header_w=header_w,
                        mute=mute, solo=solo, level=level, theme=theme, color=color)
-    extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, sample_rate=sample_rate, tempo=tempo,
                        beat_at=beat_at, quant=quant, playhead_at=playhead_at,
                        playhead=playhead, playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len, link=link,
@@ -2153,7 +2176,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
-              axes: dict | None = None, id: int | None = None, **props) -> View:
+              markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """A free-standing **time ruler**: the shared axis drawn as a strip the
     document places — a DAW's ruler above its tracks.
 
@@ -2176,6 +2199,16 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     group, not a widget: it is its own small namespace, unrelated to the ids the
     host assigns.)
 
+    ``markers`` are the **labelled points on the time axis**: ``(time, label,
+    color)`` triples (label and colour optional), drawn as an **arrow into the
+    ruler's ticks** — never a line down the picture, which is what a playhead
+    and a selection band are. **Ctrl+click** on the ruler adds one, *numbered*,
+    or removes the one under the pointer, and a **click** on one puts the
+    transport at the exact time it was placed at rather than at the pixel the
+    hand landed on. An edit flows back as a flat ``"markers"`` event (``time
+    label color …``): the time and the text are what the owner is handed, and
+    what it keeps against its own document.
+
     **The ruler is where the time range is swept.** Two selections live at once
     over a stack of lanes or a roll — the **data** one (the clips, the boxes,
     the notes a rectangle covered: what gets edited) and the **time range** (a
@@ -2197,7 +2230,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
               layout="col")
     """
     extra = _drop_none(theme=theme, color=color)
-    extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, sample_rate=sample_rate, tempo=tempo,
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
@@ -2344,7 +2377,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               playhead_at: float | None = None, playhead: float | None = None,
               playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
-              color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> View:
+              color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
     note grid, an optional velocity lane and an OSC lane — the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
@@ -2361,6 +2394,10 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) markers, one
       per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid —
       the messages the roll carries alongside the notes.
+
+    ``markers`` are the labelled points on the shared time axis, drawn in this
+    roll's own ruler strip when it has one (see `timeruler`, which documents
+    them).
 
     **A plain drag over the grid sweeps the notes** the rectangle covered — the
     rectangles the notes *are*, the same gesture a patcher's canvas has over its
@@ -2744,6 +2781,7 @@ _X_AXIS = {
     "playhead": "playhead", "playhead_at": "playhead_at",
     "playhead_loop_start": "playhead_loop_start",
     "playhead_loop_len": "playhead_loop_len",
+    "markers": "markers",
 }
 _Y_AXIS = {
     "ruler_y": "unit", "y_start": "start", "y_len": "len",

@@ -264,6 +264,84 @@ fn normalized_window(start: f64, len: f64) -> (f64, f64) {
 /// group-wide `link`/`sel_*`/`view_*`), but a change still re-clamps the group
 /// window and repaints every member, so it routes through the group model too.
 /// All members are at `offset = 0` until a multitrack layout places them.
+/// **A labelled point on the time axis** — a cue, a section, a rehearsal
+/// letter: three fields and nothing else, because that is what a marker is.
+///
+/// It is the ruler's, not a view's: a marker names a moment in the *piece*, so
+/// every view of that axis shows the same ones and none of them owns them. It
+/// draws no line down the picture (that is what a playhead and a selection band
+/// are for) — an arrow into the ruler's ticks, and a click on it puts the
+/// transport at exactly the `time` it was placed at, not at the pixel the hand
+/// landed on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Marker {
+    /// Where it is, in timeline sample units — the *exact* position, kept
+    /// whatever the zoom.
+    pub time: f64,
+    /// What it says. A marker added by hand is **numbered** (`"1"`, `"2"`, …)
+    /// until something renames it, which is what makes the gesture usable with
+    /// no text entry in front of it.
+    pub label: String,
+    /// Its own colour (`"#rrggbb"`/`"#rrggbbaa"`), or the theme's `flag` when
+    /// it names none.
+    pub color: Option<String>,
+}
+
+impl Marker {
+    /// The colour it draws in, resolved against the theme it is drawn under.
+    pub fn color(&self, theme: &crate::host::theme::Theme) -> crate::host::paint::Color {
+        self.color
+            .as_deref()
+            .and_then(crate::host::theme::parse_hex)
+            .unwrap_or(theme.flag)
+    }
+}
+
+/// Parses the `markers` prop: a flat `[time, label, color, …]` list, the
+/// convention every list on this wire follows (a scalar array, so one
+/// `/gui_set` can carry it as its JSON string). A trailing partial triple is
+/// dropped, an empty colour means the theme's.
+pub(crate) fn parse_markers(v: &Value) -> Option<Vec<Marker>> {
+    let carried;
+    let items = match v {
+        Value::Array(items) => items,
+        Value::String(s) => match serde_json::from_str::<Value>(s) {
+            Ok(Value::Array(a)) => {
+                carried = a;
+                &carried
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(
+        items
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .filter_map(|c| {
+                Some(Marker {
+                    time: c[0].as_f64()?.max(0.0),
+                    label: c[1].as_str().unwrap_or_default().to_string(),
+                    color: c[2].as_str().filter(|s| !s.is_empty()).map(str::to_string),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// The markers as the flat list they arrived in — what `/gui_query` reports and
+/// what an edit-back carries, so what comes out is what a `/gui_set` takes.
+pub fn markers_json(markers: &[Marker]) -> Value {
+    let mut out = Vec::with_capacity(markers.len() * 3);
+    for m in markers {
+        out.push(Value::from(m.time));
+        out.push(Value::from(m.label.clone()));
+        out.push(Value::from(m.color.clone().unwrap_or_default()));
+    }
+    Value::Array(out)
+}
+
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
@@ -316,6 +394,10 @@ pub struct EditorProps {
     /// dragging one onto another lane — and an edit that re-frames the view is
     /// the window starting over under the hand that made it.
     pub autofit: bool,
+    /// **The labelled points on this axis** ([`Marker`]). They are the ruler's,
+    /// and a ruler is a strip every timeline view can reserve, so they ride
+    /// here with the rest of the chrome rather than on one widget kind.
+    pub markers: Vec<Marker>,
 }
 
 impl EditorProps {
@@ -353,6 +435,10 @@ impl EditorProps {
                 .map(|n| n as i32),
             offset: number_f64(props, "offset", 0.0).max(0.0),
             autofit: props.get("autofit").and_then(truthy).unwrap_or(true),
+            markers: props
+                .get("markers")
+                .and_then(parse_markers)
+                .unwrap_or_default(),
         }
     }
 
@@ -435,6 +521,13 @@ impl EditorProps {
             "y_len" => set_f64(&mut self.y_len, v),
             "sel_min" => set_f64(&mut self.sel_min, v),
             "sel_max" => set_f64(&mut self.sel_max, v),
+            "markers" => match parse_markers(v) {
+                Some(markers) => {
+                    self.markers = markers;
+                    true
+                }
+                None => false,
+            },
             "view_start" => set_f64(&mut self.x_start, v),
             "view_len" => set_f64(&mut self.x_len, v),
             _ => false,
@@ -605,6 +698,15 @@ pub enum GestureStep {
     Draw,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
+    /// **Add a marker under the pointer, or remove the one already there** —
+    /// the ruler's edit, and the only one it has. A new marker is *numbered*
+    /// (`"1"`, `"2"`, …), which is what makes the gesture usable with no text
+    /// entry in front of it; renaming and recolouring are the owner's, through
+    /// the `markers` prop.
+    ///
+    /// It **declines where there is no ruler to put one on**, so a plan naming
+    /// it over a plain body falls through to whatever it names next.
+    Marker,
 }
 
 impl GestureStep {
@@ -617,6 +719,7 @@ impl GestureStep {
             "select_box" => GestureStep::SelectBox,
             "sample" => GestureStep::Sample,
             "draw" => GestureStep::Draw,
+            "marker" => GestureStep::Marker,
             "locate" => GestureStep::Locate,
             _ => return None,
         })
@@ -774,7 +877,7 @@ impl GestureMap {
             // On a signal the range is not a second thing: the frames and the
             // span are one selection there (the datum is the frame), so the
             // ruler is another hand onto the selection the view already has.
-            WidgetKind::TimeRuler { .. } => (&[Pan], &[Pan], &[Pan], &[Select]),
+            WidgetKind::TimeRuler { .. } => (&[Pan], &[Pan], &[Marker], &[Select]),
             // A workspace claims nothing: whatever no element and no inner
             // container took pans the plane.
             WidgetKind::Scroll { .. } => (

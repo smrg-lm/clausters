@@ -3251,15 +3251,40 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   it** — and over the body of the same widget nothing changes, which is still
   the data selection.
 
-- ⬜ **Labelled markers on the time ruler** *(decided 2026-09-04 with the two
-  entries above; the ruler is what makes it possible)*. A ruler that owns the time axis
-  is where markers belong: a `markers` prop of `(time, label)` pairs,
-  **Ctrl+click** to add or remove one (the chord the ruler's plan deliberately
-  leaves on the pan today), drag one to move it, flowing back as its own
-  edit-back — the shape a roll's `osc` lane already has. Both clients' builders,
-  the `timeruler` reference, and an example. Audio files carry them too (WAV cue
-  chunks), so reading and writing those is a data path of its own and comes
-  after this.
+- ✅ **Labelled markers on the time ruler** *(decided and done 2026-09-04 with
+  the two entries above; the ruler is what made it possible)*. A marker is
+  **three fields** — an exact `time`, a `label` and a `color` — and it is the
+  *axis'*, not a view's: a marker names a moment in the piece, so it rides on
+  the editor chrome (`EditorProps.markers`) and every ruler that shows that axis
+  draws the same ones.
+
+  **It draws an arrow into the ruler's ticks and no line down the picture.** A
+  playhead and a selection band are the two things that draw a vertical line,
+  and a third would make three lines mean three things at a glance. What a
+  marker is *for* is the click: the transport goes to the moment it was placed
+  at, not to the pixel the hand landed on — which is why the arrow is
+  hit-tested against the same geometry it was drawn with (`ruler_strip` /
+  `marker_at`, one derivation read by the drawing and by the gesture).
+
+  **Numbered, because a blank label says nothing.** Ctrl+click adds one — the
+  chord the ruler's plan was left holding for exactly this — labelled with the
+  count, and Ctrl+click on one takes it away; renaming and recolouring are the
+  owner's, through the prop. `GestureStep::Marker` declines where there is no
+  ruler to put one on, so a plan naming it over a plain body falls through.
+
+  The edit-back is the whole list every time (`"markers" time label color …`),
+  as `notes`/`osc`/`points` are, so an owner replaces what it holds rather than
+  reconciling; `/gui_query` gives it back as the JSON string a `/gui_set` takes.
+  Both clients take `markers` on the five builders that carry time chrome —
+  `timeruler`, `track`, `pianoroll`, `waveform`, `spectrogram` — through the one
+  place each has for it (`_X_AXIS`/`_axes`, `TimelineOptions`/`timelineProps`),
+  so the two lists cannot drift apart one builder at a time. `multitrack.py` and
+  its page twin seed three and print what comes back.
+
+  **What is not here, and is not missing**: dragging a marker to move it. A
+  marker is a moment and the press has already said which; moving one is a
+  second gesture on a surface whose plain drag is the scroll, and it is worth
+  deciding once there is a hand that wants it rather than now.
 
 - ✅ **A selection has two axes wherever the picture has two, and one where it
   has one** *(stated 2026-09-03 by the user, closing the selection unification;

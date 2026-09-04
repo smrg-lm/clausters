@@ -1980,6 +1980,74 @@ fn a_reserved_ruler_strip_takes_the_rulers_table() {
     }
 }
 
+/// **A marker is a moment with a name.** Ctrl+click puts one on the ruler,
+/// numbered, and takes it away again; a plain click on one puts the transport
+/// at the time it was placed at rather than at the pixel the hand landed on --
+/// which is the whole of what it is for, and why it draws an arrow into the
+/// ticks and no line down the picture.
+#[test]
+fn ctrl_click_marks_the_ruler_and_a_click_on_a_marker_goes_to_its_time() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"field","label":"lane","children":[
+                {"id":71,"type":"field","offset":0.0,"dur":10000.0}
+            ]},
+            {"id":75,"type":"field","h":20.0}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 200);
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 190.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let y = 190.0;
+    let markers = |host: &Host| {
+        host.widget_kind(1, 75)
+            .and_then(|k| k.editor().map(|e| e.markers.clone()))
+            .unwrap_or_default()
+    };
+
+    // Ctrl+click at a quarter along: one marker, numbered, at that sample.
+    ctx.ctrl = true;
+    let at = body.x as f64 + body.w as f64 * 0.25;
+    let effects = g.press(&mut host, &ctx, at, y);
+    g.release(&mut host, &ctx, at, y);
+    assert!(has_emit_tag(&effects, 75, "markers"), "the owner is told");
+    let one = markers(&host);
+    assert_eq!(one.len(), 1, "one marker");
+    assert_eq!(one[0].label, "1", "numbered, so it says something");
+    let time = one[0].time;
+    assert!(time > 0.0);
+
+    // A second, further along, and it is the next number.
+    let far = body.x as f64 + body.w as f64 * 0.75;
+    g.press(&mut host, &ctx, far, y);
+    g.release(&mut host, &ctx, far, y);
+    assert_eq!(markers(&host).len(), 2);
+    assert_eq!(markers(&host)[1].label, "2");
+
+    // Ctrl+click on one takes it away.
+    g.press(&mut host, &ctx, far, y);
+    g.release(&mut host, &ctx, far, y);
+    assert_eq!(markers(&host).len(), 1, "the second is gone");
+
+    // A plain click on the arrow locates at the marker's own time -- not at
+    // the pixel, which is what the offset press proves.
+    ctx.ctrl = false;
+    g.press(&mut host, &ctx, at + 3.0, y);
+    let effects = g.release(&mut host, &ctx, at + 3.0, y);
+    let located = emitted_args(&effects, 75).and_then(|args| match (args.first(), args.get(1)) {
+        (Some(OscType::String(tag)), Some(OscType::Float(v))) if tag == "locate" => Some(*v),
+        _ => None,
+    });
+    assert_eq!(
+        located,
+        Some(time as f32),
+        "the click went to the marker's time"
+    );
+}
+
 fn lane_host() -> Host {
     host_from(
         r#"{"type":"window","margin":0,"children":[

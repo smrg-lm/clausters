@@ -240,7 +240,21 @@ impl WidgetKind {
     /// non-scalar rides as the JSON string its `/gui_set` already accepts, so
     /// what a query gives back is what a set would take.
     pub fn info(&self) -> Vec<(String, Value)> {
-        match self {
+        // **The markers, wherever a ruler carries them.** They are the axis'
+        // chrome rather than one kind's, and a hand puts them there, so every
+        // widget that has an editor answers for them -- as the JSON string a
+        // `/gui_set markers` takes.
+        let markers = self
+            .editor()
+            .filter(|e| !e.markers.is_empty())
+            .map(|e| {
+                (
+                    "markers".to_string(),
+                    Value::from(super::markers_json(&e.markers).to_string()),
+                )
+            })
+            .into_iter();
+        let own = match self {
             WidgetKind::Custom(el) => el.info(),
             WidgetKind::Clip { offset, dur, .. } => vec![
                 ("offset".into(), Value::from(*offset)),
@@ -255,7 +269,8 @@ impl WidgetKind {
                 .collect(),
             WidgetKind::Scroll { view, .. } => view.info(),
             _ => Vec::new(),
-        }
+        };
+        own.into_iter().chain(markers).collect()
     }
 
     /// **What this widget reads from outside itself** — the one door every tree
