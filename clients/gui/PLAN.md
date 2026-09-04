@@ -3143,6 +3143,33 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A generation is carried, stored, and read by nothing** *(found 2026-09-04
+  in the review, fixing the samples window's lag behind its own undo)*.
+  `/gui_ack` takes `source generation` pairs, `ack::Outbox` keeps the last one
+  per source, and `outbox.generation(id)` is called by two tests and by no
+  code. Neither client ever sends a pair. So the one thing that can say
+  *these samples changed while their identity stayed put* says it to nobody,
+  and the protocol reference describes a mechanism that does not run.
+
+  **What is in its place, and why that is not the end of it.** The samples
+  editor now answers a history step with `reload`, which makes the element
+  forget what it resolved and read its server buffer again. It is correct and
+  it is the door that is open, but it re-reads a **whole take** for a stroke of
+  a thousand samples -- fine for the two-second take in `composed.py`, wrong
+  for the minutes-long one the bulk path exists for.
+
+  **What the work is**: a client sends `(source, generation)` for samples it
+  wrote; `settle` compares it with what the host holds for that source and, on
+  a bump, re-reads *that* source -- the same `reread` `reload` reaches, chosen
+  by the host instead of asked for by the owner. What it needs decided first is
+  what a **source id** is on this path: the pairs are named for the document's
+  sources, and a script-driven window has widgets over a `buffer=N` rather than
+  a document. Until that is answered a client cannot fill the field it is being
+  asked to fill, which is the likeliest reason neither ever did.
+
+  Related: the standalone host has no such gap -- it owns the document, so an
+  undo goes through `replay_writes` and its picture moves with the write.
+
 - ✅ **The time range is the ruler's, and the two selections coexist**
   *(stated 2026-09-03 by the user closing the marquee's unification, decided and
   done 2026-09-04 — the gesture table is the user's)*. Landed for the

@@ -110,6 +110,17 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
+- ⬜ **A generation is carried, stored, and read by nothing**
+  *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
+  pairs, the host keeps them, nothing reads them and no client sends one -- so
+  the only thing that can say *these samples changed while their identity
+  stayed put* says it to nobody. The samples editor answers a history step with
+  `reload` instead, which is correct and re-reads a whole take for a stroke.
+  **The decision**: what a source id is on this path, since the pairs are named
+  for the document's sources and a script-driven window has widgets over a
+  `buffer=N` rather than a document. That is the likeliest reason neither
+  client ever filled the field.
+
 - ⬜ **A refused edit springs back and says nothing** *(`clients/gui/PLAN.md`,
   Found by use)*. The acknowledgement carries the reason and the host parses it
   into a field nothing reads, so an edit an owner declined -- with a sentence
