@@ -3143,28 +3143,103 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A time range over a multitrack is a second selection, and nothing
-  reaches it by hand** *(stated 2026-09-03 by the user, closing the marquee's
-  unification)*. **The two are different selections of different things**, and
-  the confusion between them is what made the marquee leave a band behind it:
+- ✅ **The time range is the ruler's, and the two selections coexist**
+  *(stated 2026-09-03 by the user closing the marquee's unification, decided and
+  done 2026-09-04 — the gesture table is the user's)*. Landed for the
+  **free-standing `timeruler`**; the ruler *strips* an element reserves out of
+  its own height are the entry under this one.
 
-  - a **selection of boxes** — the clips a rectangle covered, the way a
-    patcher's canvas covers boxes. The rectangle is the *gesture's* picture and
-    goes with the hand; what stays is the clips, drawn as selected. This is the
-    `marquee` step and it is a multitrack's plain drag.
-  - a **time range** — a span of the axis, which is the selection *itself* and
-    so outlives the gesture: the group keeps it, every linked view draws it as
-    a band, the transport loops inside it. This is the `select` step, and it is
-    what a drag over a waveform has always meant.
+  **There are two selections, they are of different things, and they live at
+  the same time.** Confusing them is what made a marquee leave a band behind
+  it:
 
-  Both are valid over a stack of lanes and both are wanted. What is missing is
-  only **how a hand reaches the second one**: today a script asks for it by name
-  (`gestures={"drag": "select"}`, or on a modifier) and the default plan does
-  not carry it, so a person at the window can sweep clips and cannot sweep a
-  range. The candidates are a modifier of its own, the ruler over the stack
-  (which locates today and has the axis under it), or a mode. None of them is
-  taken here: what is written down is that the two exist, that they are not one
-  gesture with two pictures, and that the range has no hand yet.
+  - a **data selection** — what is going to be *edited*: the clips a rectangle
+    covered, the boxes of a patcher, the notes of a roll, the frames of a take.
+    The rectangle is the *gesture's* picture and goes with the hand; what stays
+    is the things, drawn as selected.
+  - a **time-range selection** — what is going to be *played or rendered*: a
+    span of the axis, which is the selection itself and so outlives the
+    gesture. The group keeps it, every linked view draws it as a band, the
+    transport loops inside it.
+
+  **Why a signal needs only one and a roll needs both.** In a signal the datum
+  *is* the axis — the unit is the frame, and a take's several channels are read
+  frame-wise — so a selection of samples **is** a span and one gesture answers
+  both questions. In a roll or a multitrack the data are **objects placed in
+  time**: which notes or clips are in the hand does not follow from a stretch of
+  the axis (a half-covered clip, a note outside the swept band of pitches), so
+  the two questions come apart and each needs its own gesture.
+
+  **They are told apart by where the gesture starts, not by a mode.** The data
+  selection is swept on the **body** — the grid, the lane stack, the trace — and
+  the time range on the **ruler**, which is the element that is nothing but the
+  axis. Nothing has to decide what a drag means; the place it began already
+  said.
+
+  **The ruler's table** (the chords are the ones already in use elsewhere, so
+  they are the ones to write; they can be changed later without changing any of
+  the above):
+
+  | Gesture on a ruler | What it does |
+  |---|---|
+  | drag | **scrolls** — pans the axis, on every view (signal, roll, lane), which is what the bare wheel and Shift+drag already do elsewhere |
+  | Alt+drag | sweeps the **time range** |
+  | Ctrl+click | adds or removes a **marker** (below) |
+  | click | puts the transport's cursor where it pointed |
+
+  On a **signal** the ruler's range is not a second thing: it writes the same
+  selection the body's sweep does, because there the frames and the span are one
+  selection. So nothing is disabled there and nothing doubles — the ruler is
+  simply another hand onto the selection the view already has.
+
+  **What it took.** `TimeRuler`'s plan was `(&[Locate], &[Pan], &[Locate],
+  &[Locate])` — the plain drag scrubbed. It is now plain, Shift and Ctrl `Pan`
+  (Ctrl left on the pan deliberately: the markers below want that chord and
+  nothing should be holding it), Alt `Select`, and `locate` moved to the
+  **click** — the precedent the lane already set ("locating did not move to a
+  modifier, it moved to the click": a sweep that never left the slop is where
+  the hand pointed). `Drag::Pan` grew the axis' `body` for it, which is what a
+  locate reads the sample against; it kept only the width before.
+
+  No new state, which is the half that made this cheap: a free-standing
+  `timeruler` already joins the lanes' navigation group, and the span already
+  lives on the group (`sel_start`/`sel_len`), where every linked view draws it
+  and the transport reads it. Nothing about the range itself was written — only
+  a hand onto it.
+
+  The pass: the host, `docs/gui-protocol.md`'s `timeruler` row, and both
+  clients' `timeruler` builder docs (all three said a press locates and that you
+  scrub on the ruler).
+
+- ⬜ **A ruler *strip* is not the ruler widget, and it carries none of its
+  table** *(found 2026-09-04, implementing the entry above)*. The free-standing
+  `timeruler` is a widget of its own, so its gesture table is its kind's. The
+  ruler an element reserves out of its own height — a lane's `ruler` prop, a
+  roll's, a signal's — is **not**: the press lands on the lane or on the
+  element, whose plan is the body's, so on a strip a drag sweeps whatever the
+  body sweeps and Alt does not reach the range. A roll's own strip is where
+  `edit_notes.py` would look for it.
+
+  What stands in the way is that **a plan is per-modifier and a strip needs a
+  per-region answer**: `GestureMap::of_kind` and `Element::gesture_map` are
+  asked without coordinates, so neither can say "over the strip, this table;
+  over the grid, that one". The three shapes worth weighing, none taken here:
+  a region-aware gesture map (a coordinate on the call — touches every
+  element), a strip that claims the press itself and asks for the machine's
+  select (the `Claim::take().marquee()` door the patcher already uses, which
+  would want a `.select()` beside it), or making the strip a child widget so it
+  simply *is* a `timeruler` (the honest model, and the most disruptive: ids,
+  layout, and every def that sets `ruler` as a prop).
+
+- ⬜ **Labelled markers on the time ruler** *(decided 2026-09-04 with the entry
+  above; the ruler is what makes it possible)*. A ruler that owns the time axis
+  is where markers belong: a `markers` prop of `(time, label)` pairs,
+  **Ctrl+click** to add or remove one (the chord the ruler's plan deliberately
+  leaves on the pan today), drag one to move it, flowing back as its own
+  edit-back — the shape a roll's `osc` lane already has. Both clients' builders,
+  the `timeruler` reference, and an example. Audio files carry them too (WAV cue
+  chunks), so reading and writing those is a data path of its own and comes
+  after this.
 
 - ✅ **A selection has two axes wherever the picture has two, and one where it
   has one** *(stated 2026-09-03 by the user, closing the selection unification;

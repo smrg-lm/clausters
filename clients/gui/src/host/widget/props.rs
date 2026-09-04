@@ -757,7 +757,24 @@ impl GestureMap {
                 &[Element, Locate],
                 &[Element, Marquee],
             ),
-            WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
+            // **A ruler is nothing but the axis, which is why the time range
+            // is its gesture.** Two selections live at once over a stack of
+            // lanes or a roll -- the **data** one (the clips, the boxes, the
+            // notes a rectangle covered: what gets edited) and the **time
+            // range** (a span the group keeps, drawn as a band, looped by the
+            // transport: what gets played) -- and they are told apart by where
+            // the gesture began, not by a mode: the body sweeps the first, the
+            // ruler the second.
+            //
+            // So the plain drag **scrolls** the axis, as it does over any view,
+            // Alt sweeps the range, and `locate` is the **click** -- the
+            // precedent a lane already set, a sweep that never left the slop
+            // being where the hand pointed and nothing else.
+            //
+            // On a signal the range is not a second thing: the frames and the
+            // span are one selection there (the datum is the frame), so the
+            // ruler is another hand onto the selection the view already has.
+            WidgetKind::TimeRuler { .. } => (&[Pan], &[Pan], &[Pan], &[Select]),
             // A workspace claims nothing: whatever no element and no inner
             // container took pans the plane.
             WidgetKind::Scroll { .. } => (

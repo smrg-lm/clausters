@@ -173,7 +173,7 @@ impl Gestures {
             id: sole.id,
             origin_x: cx,
             start: sole.axis.nav.start,
-            body_w: sole.axis.body.w.max(1.0) as f64,
+            body: sole.axis.body,
         });
         true
     }
@@ -208,7 +208,7 @@ impl Gestures {
                     id,
                     origin_x: cx,
                     start: axis.nav.start,
-                    body_w: axis.body.w.max(1.0) as f64,
+                    body: axis.body,
                 });
                 true
             }

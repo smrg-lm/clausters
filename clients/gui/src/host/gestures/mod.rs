@@ -165,7 +165,10 @@ enum Drag {
         id: i32,
         origin_x: f64,
         start: f64,
-        body_w: f64,
+        /// The axis' body, kept whole rather than as its width alone: a pan
+        /// that never left the slop is a **click**, and a click on a ruler
+        /// locates -- which needs the box the sample is read against.
+        body: Rect,
     },
     /// Sweeping a selection on a timeline container: `anchor` is the sample
     /// under the press, and the selection spans from it to the cursor's sample.

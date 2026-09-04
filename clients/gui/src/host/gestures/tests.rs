@@ -1847,6 +1847,68 @@ fn lane_header_of(host: &Host) -> crate::host::graphics::track::Header {
 
 /// One lane, one short clip, on a long axis — so zooming in leaves most of
 /// the timeline off screen, which is the case the edge scroll exists for.
+/// **The ruler is the time range's hand.** Two selections live at once over a
+/// stack of lanes -- the data one on the body, the range on the ruler -- and
+/// the ruler's own table says which is which: a plain drag scrolls the axis,
+/// Alt sweeps the range, and a click (a drag that never left the slop) is the
+/// cursor.
+#[test]
+fn the_rulers_drag_scrolls_alt_sweeps_the_range_and_a_click_locates() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"field","label":"lane","children":[
+                {"id":71,"type":"field","offset":0.0,"dur":1000.0}
+            ]},
+            {"id":75,"type":"field","h":20.0}]}"#,
+    );
+    host.sync_track_totals();
+    host.zoom_timeline(70, 0.25, 0.5); // room to scroll in both directions
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 200);
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 190.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let y = 190.0;
+    let x0 = body.x as f64 + body.w as f64 * 0.5;
+
+    // A plain drag scrolls: the axis moves and no span is written.
+    let before = host.timeline_nav(70).unwrap().0.start;
+    g.press(&mut host, &ctx, x0, y);
+    assert!(g.dragging(), "the ruler took the press");
+    g.drag_to(&mut host, &ctx, x0 - 60.0, y);
+    assert!(
+        host.timeline_nav(70).unwrap().0.start > before,
+        "dragging left scrolls the axis right"
+    );
+    let key = host.timeline_key(70).unwrap();
+    assert_eq!(
+        host.timelines().state(key).unwrap().sel_len,
+        0.0,
+        "scrolling writes no range"
+    );
+    g.release(&mut host, &ctx, x0 - 60.0, y);
+
+    // A click is the cursor -- a drag that never left the slop.
+    let effects = g.press(&mut host, &ctx, x0, y);
+    assert!(
+        !has_emit_tag(&effects, 75, "locate"),
+        "the press does not know yet whether it is a click"
+    );
+    let effects = g.release(&mut host, &ctx, x0, y);
+    assert!(has_emit_tag(&effects, 75, "locate"), "a click is a cursor");
+
+    // Alt sweeps the range, which the group keeps.
+    ctx.alt = true;
+    g.press(&mut host, &ctx, x0, y);
+    g.drag_to(&mut host, &ctx, x0 + 80.0, y);
+    g.release(&mut host, &ctx, x0 + 80.0, y);
+    assert!(
+        host.timelines().state(key).unwrap().sel_len > 0.0,
+        "alt+drag on the ruler sweeps the time range"
+    );
+}
+
 fn lane_host() -> Host {
     host_from(
         r#"{"type":"window","margin":0,"children":[

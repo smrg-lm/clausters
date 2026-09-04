@@ -2389,8 +2389,19 @@ export function piano(
  * the window's lanes on its own, since a free-standing ruler exists to rule
  * them —
  * and its ticks are indented by the **group's** gutter — the widest any member
- * asks for — so they stand over the samples they label. A press locates the transport, Shift+drag pans and the
- * wheel zooms: you scrub on the ruler. `h` is its thickness in logical pixels.
+ * asks for — so they stand over the samples they label.
+ *
+ * **The ruler is where the time range is swept.** Two selections live at once
+ * over a stack of lanes or a roll — the **data** one (the clips, the boxes, the
+ * notes a rectangle covered: what gets edited) and the **time range** (a span
+ * the group keeps, drawn as a band, looped by the transport: what gets played)
+ * — and they are told apart by where the gesture began, not by a mode: the body
+ * sweeps the first, the ruler the second. So a **drag scrolls** the axis,
+ * **Alt+drag sweeps the range**, the wheel zooms, and a **click locates** — a
+ * drag that never left the slop is where the hand pointed. On a signal the
+ * range is not a second thing: the frames and the span are one selection there,
+ * so the ruler is another hand onto the one the view already has.
+ * `h` is its thickness in logical pixels.
  */
 export function timeruler(
     options: TimelineOptions & {

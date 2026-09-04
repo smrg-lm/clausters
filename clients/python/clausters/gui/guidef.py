@@ -2176,9 +2176,17 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     group, not a widget: it is its own small namespace, unrelated to the ids the
     host assigns.)
 
-    A press on it **locates** the transport (emitting ``"locate"``, as a lane's
-    ruler does), Shift+drag pans the axis and the wheel zooms it — you scrub on
-    the ruler. ``h`` is its thickness in logical pixels::
+    **The ruler is where the time range is swept.** Two selections live at once
+    over a stack of lanes or a roll — the **data** one (the clips, the boxes,
+    the notes a rectangle covered: what gets edited) and the **time range** (a
+    span the group keeps, drawn as a band, looped by the transport: what gets
+    played) — and they are told apart by where the gesture began, not by a mode:
+    the body sweeps the first, the ruler the second. So a **drag scrolls** the
+    axis, **Alt+drag sweeps the range**, the wheel zooms, and a **click
+    locates** (emitting ``"locate"``) — a drag that never left the slop is where
+    the hand pointed. On a signal the range is not a second thing: the frames
+    and the span are one selection there, so the ruler is another hand onto the
+    one the view already has. ``h`` is its thickness in logical pixels::
 
         panel(timeruler(link=1, ruler="beats", tempo=2.0),
               track(clip(offset=0, dur=4, data=take), link=1),
