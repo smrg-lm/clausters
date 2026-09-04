@@ -737,14 +737,12 @@ through once it is editable on its own).
     for itself. A second view of one structure is `edit(x)` twice -- two editors
     on one history -- so this now returns the window it already has.
 
-  What is **not** in it, and is `C53`'s: the other 40 examples, and the question
+  What is **not** in it, and was `C53`'s: the other 40 examples, and the question
   of whether `open()` should start the loop for every window rather than only
-  where an editor or the `AppClock` asks for it. Until that is taken, a plain
-  panel still delivers its callbacks through `pump`, which is a difference from
-  the web client the port will read as a gap.
+  where an editor or the `AppClock` asks for it. (It should, and `C53` took it.)
 
-- ⬜ **C53 — The examples pass: the drain loop is deleted, once** *(its own
-  commit, after `C52`)*. 43 example files hand-write a drain today —
+- ✅ **C53 — The examples pass: the drain loop is deleted, once** *(done
+  2026-09-04)*. 43 example files hand-write a drain today —
   `clients/python/examples/views/` 13 (`editor.py` four times),
   `panels/` 12 (`piano.py` three times), `editors/` 12, `notation/` 4, and the
   root `examples/clock_recorder.py`; `clients/web/examples/` has none, which is
@@ -759,6 +757,42 @@ through once it is editable on its own).
   It is a separate commit so `C52`'s diff stays readable, and it is entirely
   manual: **nothing runs any example**, so each one that is touched is run by
   hand, and `npx pyright` in `clients/python` covers the call sites afterwards.
+
+  **Done**, and the decision it was here to take came out the simple way:
+  **opening a window starts the loop**, for every window and not only where an
+  editor or the `AppClock` asks. An open window is the thing that *has* events,
+  so having one is what makes a loop necessary — and a plain panel now delivers
+  its callbacks exactly as the page does, which is the gap `W29` would otherwise
+  have inherited. `pump` and `poll` stand down from the first open window (they
+  already did while a loop ran); a script that would rather drain by hand builds
+  its window with `define`, which opens nothing this client remembers.
+
+  What the pass added beyond deleting loops, each because the examples could not
+  be written honestly without it:
+
+  - **`wait` is the one call a script ends with**, on everything that opens a
+    window: `GuiHost.wait` (every window this host opened), `WindowHandle.wait`,
+    `Editor.wait`, `FormEditor.wait` (its own window *and* its composed views),
+    `PlotWindow.wait`, `PatchWindow.wait`, `ScopeWindow.wait` — with `closed`
+    beside each for the same question asked without blocking. Waiting from the
+    loop's own thread raises rather than hangs (`EventLoop.is_current`).
+  - **The transport ticks itself.** `Transport.update` was documented as "call
+    it once per pass of the script's loop", which is a hand-written pump by
+    another name and the reason seven examples had one. A `play` now schedules
+    it on the host's `AppClock` while the piece is sounding, and it stops when
+    the pass does.
+  - **`GuiHost.stop` closes the loop** — and the clock over it. A host that
+    started a thread to drain a socket had no business leaving it running once
+    the socket was closed.
+  - **The work that used to ride in the drain loop moved to the app clock**, not
+    to a `while` with a stopwatch: the timed restyles in `panels/text.py` and
+    `panels/style.py`, the membership demo in `views/linked.py`, and the
+    periodic read-outs in `views/take.py`, `editors/two_windows.py`,
+    `editors/composed.py` and `editors/multitrack.py`. Those are the examples to
+    read for the shape.
+
+  The root `examples/clock_recorder.py` was on the list and does not belong to
+  it: its `poll` is the shm IPC ring's, not a GUI host's, and it stays as it is.
 
 ### The client API reform: the GUI element as an object (client arc, phased)
 

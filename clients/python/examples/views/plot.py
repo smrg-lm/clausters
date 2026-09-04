@@ -28,7 +28,6 @@ adapter.
 import os
 import sys
 import tempfile
-import time
 
 from clausters import Session
 from clausters.gui import GuiHost, plot, samples_to_file, view
@@ -68,32 +67,20 @@ gui = GuiHost().boot()
 win = view(
     plot(name="render", path=path, min=-1.0, max=1.0, label="NRT render (mono)"),
     title="Plot of an NRT render", w=720, h=300).open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("a window plots the rendered signal; close it to stop")
 
 # %% [markdown]
 # ## Keep it open, then clean up
-
-# %%
-_closed = False
-
-
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (the plot is static).
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
+# A script has to stay alive for the window to be looked at, and
+# `clausters.gui.handle.WindowHandle.wait` is the whole of it: the host's event
+# loop is already running, and this only holds the main thread until the window
+# is closed. Cell by cell there is nothing to call -- the window is up, and the
+# next cell runs against it.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         gui.stop()
         if os.path.exists(path):

@@ -59,7 +59,6 @@ Synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL, server=se
 win = view(
     nodetree(name="tree", group=0, controls=True, label="node tree"),
     title="Live node tree", w=420, h=520).open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the window mirrors the server's node tree; watch freq sweep and "
       "a synth come and go; close the window to stop")
 
@@ -70,19 +69,17 @@ print("the window mirrors the server's node tree; watch freq sweep and "
 # None of this is pushed to the GUI -- it reads the tree from the server.
 
 # %%
-_closed = False
-
-
 def run(seconds: float | None = None) -> None:
     """Sweeps a control and cycles a synth in and out for ``seconds``.
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
+    give the prompt back. Nothing here drains the host -- the loop an open
+    window started delivers on its own thread.
     """
     extra = None
     start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+    while not win.closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         sweeper.set({"freq": 330.0 + 220.0 * math.sin(t)})
         if extra is None and int(t) % 4 == 2:
@@ -91,7 +88,7 @@ def run(seconds: float | None = None) -> None:
         elif extra is not None and int(t) % 4 == 0:
             extra.free()
             extra = None
-        gui.pump(timeout=0.1)
+        time.sleep(0.1)
 
 
 # %%

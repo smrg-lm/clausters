@@ -59,7 +59,6 @@ with no extra setup. Needs a display and a GPU adapter.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
@@ -133,9 +132,6 @@ print(f"synth {synth.id} playing at 220 Hz -- edit the freq in the field and the
 
 # %%
 _last_sent = None
-_closed = False
-
-
 def report_focus(who: str, payload) -> bool:
     """Print and swallow a ``("focus", 1|0)`` payload, so the handlers below see
     only the field's own value. Returns whether this was one."""
@@ -171,7 +167,6 @@ def on_scratch(*payload):
 
 win["field"].on_event(on_field)
 win["scratch"].on_event(on_scratch)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # The message field starts focused, so the window opens ready to type into --
 # no click needed. Tab moves the keyboard to the scratch pad and out again.
@@ -179,24 +174,17 @@ win["field"].focus()
 
 # %% [markdown]
 # ## Drive it
-# Cell-run: type in the field and watch the console. Script-run: pump events for
-# a while, then tear everything down.
-
-# %%
-def run(seconds: float | None = None) -> None:
-    """Dispatches field events for ``seconds``."""
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
+# Cell-run: type in the field and watch the console — the events arrive on the
+# host's own event loop, between cells and during them. Script-run: hold the
+# window open until it is closed, then tear everything down.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         synth.free()
         session.close()
     sys.exit(0)
 else:
-    print("oscsend up - run(10) to dispatch events, session.close() to end")
+    print("oscsend up - type in the field, session.close() to end")

@@ -101,9 +101,9 @@ print(f"two windows from one view: cutoff is {a['cutoff'].id} in one "
 # %% [markdown]
 # ## Drive and listen
 # Nudge the first panel's cutoff live (the `set` path), then register a
-# per-widget `on_event` on both: each handle fires with the new value(s) when the
-# host's messages are pumped. No ids, no manual matching -- and turning the knob
-# in one window leaves the other where it was.
+# per-widget `on_event` on both: each handle fires with the new value(s), on the
+# host's own event-loop thread. No ids, no manual matching -- and turning the
+# knob in one window leaves the other where it was.
 
 # %%
 time.sleep(0.5)
@@ -126,34 +126,22 @@ _open = {int(a), int(b)}
 
 
 def _closed_one(win):
-    """Stop only once both windows are gone."""
+    """Say how many are left as each one goes."""
     _open.discard(int(win))
     print(f"window closed ({len(_open)} left)")
-    globals()["_closed"] = not _open
 
 
-_closed = False
 a.on_closed(lambda: _closed_one(a))
 b.on_closed(lambda: _closed_one(b))
-
-
-def run(seconds: float | None = None) -> None:
-    """Dispatches panel events for ``seconds``.
-
-    Script-run there is no bound and the windows are what end it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        # `clausters.gui.GuiHost.wait` rather than a window's own: this script
+        # opened two, and it is done when *both* are gone.
+        gui.wait()
     finally:
         gui.stop()
 else:
-    print("panels up - run(10) to dispatch events, gui.stop() to end")
+    print("panels up - gui.wait() to hold them, gui.stop() to end")

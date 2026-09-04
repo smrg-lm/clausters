@@ -83,11 +83,26 @@ class PlotWindow:
         return self
 
     def on_closed(self, func):
-        """Call ``func()`` when the user closes this window (a ``/gui_closed``),
-        when the host's inbound messages are drained through
-        `clausters.gui.host.GuiHost.pump`. ``None`` clears it. Returns ``self``."""
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``).
+        It fires on the host's event-loop thread, which opening the window
+        started; ``None`` clears it. Returns ``self``."""
         self.host._set_closed_handler(int(self.id), func)
         return self
+
+    @property
+    def closed(self) -> bool:
+        """Whether this window is gone — closed by a hand or by `close`."""
+        return int(self.id) not in self.host._open
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until this window is closed.
+
+        What a **script** ends with, so the plot is still on screen when the
+        eye gets to it; a ``# %%`` notebook calls nothing and goes on to the
+        next cell. ``True`` when it closed, ``False`` on ``timeout``. The same
+        verb `clausters.gui.handle.WindowHandle.wait` and
+        `clausters.gui.editing.Editor.wait` carry."""
+        return self.host._wait_while(lambda: not self.closed, timeout)
 
     def close(self):
         """Close the window (``/gui_free``)."""
@@ -216,11 +231,26 @@ class PatchWindow:
         return self
 
     def on_closed(self, func):
-        """Call ``func()`` when the user closes this window (a ``/gui_closed``),
-        when the host's inbound messages are drained through
-        `clausters.gui.host.GuiHost.pump`. ``None`` clears it. Returns ``self``."""
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``).
+        It fires on the host's event-loop thread, which opening the window
+        started; ``None`` clears it. Returns ``self``."""
         self.host._set_closed_handler(int(self.id), func)
         return self
+
+    @property
+    def closed(self) -> bool:
+        """Whether this window is gone — closed by a hand or by `close`."""
+        return int(self.id) not in self.host._open
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until this window is closed.
+
+        What a **script** ends with, so the patch is still on screen when the
+        eye gets to it; a ``# %%`` notebook calls nothing. ``True`` when it
+        closed, ``False`` on ``timeout`` — the same verb `PlotWindow.wait`,
+        `clausters.gui.handle.WindowHandle.wait` and
+        `clausters.gui.editing.Editor.wait` carry."""
+        return self.host._wait_while(lambda: not self.closed, timeout)
 
     def close(self):
         """Close the window (``/gui_free``)."""

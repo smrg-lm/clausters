@@ -26,6 +26,12 @@ from ..base.time import TempoMap
 
 __all__ = ["Transport"]
 
+#: How often a rolling transport asks itself whether the pass has ended, in
+#: seconds. It is not the line's frame rate — the host sweeps that from the
+#: engine's clock without being told — only how sharply the cursor parks at the
+#: end of the piece.
+TICK = 0.05
+
 
 class Transport:
     """Drive a `clausters.seq.Playhead` and a view's playhead line together.
@@ -93,6 +99,7 @@ class Transport:
         #: the piece is over — the last clip is still sounding, and the line
         #: must go on crossing it. `None` outside that stretch.
         self._tail = None
+        self._ticking = False  # a self-driven `update` is scheduled
 
     # ---- the unit bridge ----
 
@@ -199,6 +206,7 @@ class Transport:
         self._playhead = self.source(at, **kw)
         self.cursor(None)          # the clock's line takes over from the cursor
         self.anchor(at=at)
+        self._watch()
         return self._playhead
 
     def pause(self) -> float:
@@ -245,6 +253,7 @@ class Transport:
             self.clock.thaw()
         self._ended = False
         self.anchor(at=self.position)
+        self._watch()
         return self._playhead
 
     def stop(self):
@@ -268,9 +277,54 @@ class Transport:
             self.cursor(beat)
         return self
 
+    def _watch(self):
+        """Have the end of the pass noticed, without a script asking.
+
+        `update` is the question "has it ended yet", and somebody has to ask it.
+        That used to be the script's own loop — which is how every example came
+        to have one — and it is now the host's
+        `clausters.base.appclock.AppClock`, the same thread the window's
+        gestures arrive on. A transport with no host (a view built but never
+        opened) simply keeps `update` as the manual call it always was.
+        """
+        if self._ticking:
+            return
+        clock = getattr(self.host, "clock", None)
+        if clock is None:
+            return
+        self._ticking = True
+        clock.sched(TICK, self._tick)
+
+    def _tick(self):
+        """One look, then another in `TICK` seconds while there is still
+        something to notice.
+
+        Returning a number is how the loop's timer reschedules, so this is a
+        periodic task with no loop of its own; returning ``None`` ends it.
+
+        "Still something to notice" is **not** `playing`: a scan that has just
+        run out is not playing and is exactly the moment `update` exists for, so
+        stopping there would leave the cursor sweeping off the end forever. It
+        is the piece sounding, or a drained scan that has not been parked yet —
+        and a `pause`, which keeps its playhead without ending it, stops the
+        asking until the next `play`."""
+        ph = self._playhead
+        if ph is None or self._ended or not (
+                self.playing or bool(getattr(ph, "finished", False))):
+            self._ticking = False
+            return None
+        self.update()
+        return TICK
+
     def update(self) -> bool:
-        """Park the cursor when the pass ends by itself. Call it once per pass of
-        the script's loop; it returns whether the piece just ended.
+        """Park the cursor when the pass ends by itself; it returns whether the
+        piece just ended.
+
+        **Nothing has to call this.** A `play` schedules it on the host's
+        application clock for as long as the piece is sounding, so a script
+        neither loops nor ticks. It stays public because a transport built
+        before its host exists has no clock to schedule on, and because asking
+        the question once more is always legal.
 
         The playhead says when its scan ran out (`clausters.seq.Playhead.finished`),
         so the end needs no timing here: the cursor stops at the piece's `extent`

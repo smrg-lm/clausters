@@ -171,7 +171,7 @@ def piece(clock):
 
 The deferred call runs where the windows are, in the loop's own order, and the
 routine goes back to keeping time. Asking for `app_clock()` starts the host's
-[event loop](gui.md#the-event-loop-when-nobody-pumps) if it is not running yet.
+[event loop](gui.md#the-event-loop-and-the-one-call-a-script-ends-with) if it is not running yet.
 
 ## Sending to another application
 

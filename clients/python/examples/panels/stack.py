@@ -47,7 +47,6 @@ and a GPU adapter.
 # %%
 import math
 import sys
-import time
 
 from clausters.gui import GuiHost, label, menu, panel, slider, spectrogram, stack, view, waveform
 
@@ -135,8 +134,6 @@ print("bound: picker -> pages.index, scroll -> wave.view_start; "
 # reports its new window as an event, which is the path the slider replaced.
 
 # %%
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 win["wave"].on_event(
     lambda tag, *payload: print(f"the axis moved by hand: {tag} {payload}")
     if tag == "view" else None)
@@ -147,24 +144,11 @@ def page(index: int) -> None:
     win["pages"].set(index=index)
 
 
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (only a pointer gesture on a view arrives:
-    the two bound widgets send none back).
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
-
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         gui.stop()
 else:
-    print("stack up - page(1) to switch from here, run(10) to pump, gui.stop() to end")
+    print("stack up - page(1) to switch from here, gui.stop() to end")

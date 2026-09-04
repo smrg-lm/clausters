@@ -579,7 +579,8 @@ print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 # a placement — its **offset** *and* its **length**, and the length trims how much of the
 # take plays — and a dragged break-point becomes the automation's new curve.
 # Anything it does not recognize is the script's: here, the buttons above.
-# `FormEditor.poll` drains the window's whole stream into it, so one call is the loop.
+# Nothing drains it here: the host's event loop hands the window's whole stream
+# to the editor on a thread of its own.
 #
 # With ``follow=True`` an edit re-schedules the composition from the playhead, so
 # what you dropped is what you hear; rendering always re-flattens the tree, so a
@@ -589,14 +590,15 @@ print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 # %%
 def run():
     """Hold until the window is closed — a by-eye and by-ear test ends when the
-    person looking at it says so, not on a timer."""
-    while editor.window is not None:
-        # The playhead reports the end of its own scan, so the piece ends by
-        # itself: the cursor parks at the composition's `extent` -- read from
-        # the arrangement, so a clip dragged out lengthens the piece -- rather
-        # than sweeping past it (rewind goes back to the top).
-        editor.transport.update()
-        editor.poll(0.05)
+    person looking at it says so, not on a timer.
+
+    The playhead reports the end of its own scan and the transport asks about it
+    on the host's application clock, so the piece ends by itself: the cursor
+    parks at the composition's `extent` -- read from the arrangement, so a clip
+    dragged out lengthens the piece -- rather than sweeping past it (rewind goes
+    back to the top). Nothing in this script keeps that time.
+    """
+    editor.wait()
 
 
 # %%

@@ -245,35 +245,49 @@ for OSC:
 ```python
 win["cutoff"].on_event(lambda v: print("cutoff ->", v))
 win["reset"].on_event(lambda v: print("reset", v))
-
-gui.pump(timeout=5.0)      # deliver whatever arrived, for five seconds
 ```
 
-Turn the knob and click the button: the values print. Nothing is delivered
-until you pump — the host's messages queue up, and the script decides when it
-is listening, exactly as it does for the audio server.
+Turn the knob and click the button: the values print. Nothing in the script
+delivers them — an open window is delivered to.
 
-### The event loop: when nobody pumps
+### The event loop, and the one call a script ends with
 
-A host can also deliver by itself. Ask it for its **event loop** and it takes
-the socket over on a thread of its own, calling the same callbacks as they
-arrive:
+Opening a window starts the host's **event loop**: a thread of its own that
+drains the socket and calls the callbacks as the messages arrive. An open window
+is the thing that *has* events, so having one is what makes the loop necessary,
+and there is nothing to switch on:
 
 ```python
-gui.loop                  # built and started here
-gui.looping               # True: the loop is the one draining now
+gui.looping               # True from the first open window
+gui.loop                  # the loop itself, if you want to schedule on it
 ```
 
-From then on `pump` has nothing to do and answers `0`, and `poll` answers
-`None` — two drains over one socket would race for every message and deliver
-half of them twice, so the manual pair stands down rather than competing. A
-script written around `poll` keeps running unchanged beside a loop; it simply
-stops being the thing that delivers.
+What a script still has to do is **stay alive** while a hand uses the window,
+and that is one call:
 
-You rarely ask for this directly. Opening an editor with
-[`edit(x)`](composition.md) starts it, and so does asking for the application's
-clock ([`app_clock()`](routines-and-clocks.md#the-applications-clock-appclock)):
-both need messages to arrive without a script standing over them.
+```python
+win.wait()                # until this window is closed
+gui.wait()                # until every window this host opened is closed
+win.wait(10.0)            # or bounded: False if it is still open after ten seconds
+```
+
+**A notebook calls neither.** The loop runs whether or not anyone waits, so a
+`# %%` cell that opens a window is finished when it returns and the next cell
+edits the window that is already there. Waiting is what a script does *instead
+of exiting*, and a cell has nothing to exit from. That is the only difference
+between the two ways of running the same file.
+
+The same verb is on everything that opens a window — `plot(...)`, `scope(...)`,
+`plot_def(...)`, `edit(x)` — with `closed` beside it for the same question asked
+without blocking.
+
+`pump` and `poll` are still there, and from the first open window they stand
+down: `pump` answers `0` and `poll` answers `None`. Two drains over one socket
+would race for every message and deliver half of them twice. A script written
+around `poll` therefore keeps running beside the loop; it simply stops being the
+thing that delivers. To keep draining by hand instead, build the window with
+`define` rather than `open` — nothing this client remembers is opened, and no
+loop starts.
 
 A **reply is not an event**, and the loop keeps them apart: `query`'s answer
 goes to whoever asked rather than to the callbacks. That is also the only

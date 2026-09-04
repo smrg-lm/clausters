@@ -7,6 +7,8 @@ TCP round-trip against a real host is exercised by the GUI examples and by
 the host's own Rust tests (`clients/gui/src/host/tcp.rs`).
 """
 
+import threading
+
 import pytest
 
 from clausters.base import OscTcpInterface, OscUdpInterface
@@ -59,6 +61,17 @@ class _Recorder:
 
     def send_msg(self, target, *args):
         self.sent.append(args)
+
+    def fileno(self):
+        # An interface with no descriptor -- the loop waits on it "blind",
+        # through `recv`, exactly as `OscInterface` allows.
+        return None
+
+    def recv(self, timeout=0.0):
+        import time as _time
+
+        _time.sleep(timeout)            # a carrier that waits, and says nothing
+        return None
 
     def close(self):
         self.started = False
@@ -311,7 +324,12 @@ class _Loopable(_Recorder):
         return None
 
     def recv(self, timeout):
-        return self.queued.pop(0) if self.queued else None
+        if self.queued:
+            return self.queued.pop(0)
+        import time as _time
+
+        _time.sleep(timeout)            # a carrier that waits, like a real one
+        return None
 
 
 def test_poll_and_pump_stand_down_while_the_loop_drains():
@@ -328,6 +346,81 @@ def test_poll_and_pump_stand_down_while_the_loop_drains():
         assert host.pump(0.0) == 0
     finally:
         host.loop.close()
+
+
+def test_opening_a_window_starts_the_loop():
+    """An open window is the thing that has events, so having one is what makes
+    a loop necessary: `on_event` and `on_closed` fire from the moment they are
+    registered, with nothing in the script driving them."""
+    from clausters.gui import guidef
+
+    host = GuiHost(interface=_Loopable())
+    assert host.looping is False
+    try:
+        win = host.open(guidef.window(guidef.knob()))
+        assert host.looping is True
+        assert win.closed is False
+    finally:
+        host.stop()
+    assert host.looping is False                # stop() ends the loop with it
+
+
+def test_wait_returns_when_the_last_window_closes():
+    """The one call a script ends with. It is not a drain -- the loop delivers
+    the close on its own thread -- only a way to stay alive until then."""
+    import threading
+
+    from clausters.gui import guidef
+
+    host = GuiHost(interface=_Loopable())
+    try:
+        win = host.open(guidef.window(guidef.knob()))
+        threading.Timer(0.1, lambda: host.deliver("/gui_closed", [int(win)])).start()
+        assert host.wait(timeout=2.0) is True
+        assert win.closed is True
+        assert host.wait(timeout=0.0) is True    # nothing open: returns at once
+    finally:
+        host.stop()
+
+
+def test_wait_gives_up_on_a_window_nobody_closes():
+    """A bounded wait is what a notebook cell asks for when it does want to
+    block: it comes back saying the window is still there."""
+    from clausters.gui import guidef
+
+    host = GuiHost(interface=_Loopable())
+    try:
+        win = host.open(guidef.window(guidef.knob()))
+        assert win.wait(timeout=0.15) is False
+        assert win.closed is False
+    finally:
+        host.stop()
+
+
+def test_waiting_from_the_loops_own_thread_is_refused():
+    """Waiting for a close on the thread that has to deliver it is a deadlock
+    the caller cannot see, so it raises instead of hanging."""
+    from clausters.gui import guidef
+
+    host = GuiHost(interface=_Loopable())
+    try:
+        host.open(guidef.window(guidef.knob()))
+        caught = []
+        done = threading.Event()
+
+        def on_the_loop():
+            try:
+                host.wait(timeout=0.01)
+            except RuntimeError as exc:
+                caught.append(exc)
+            finally:
+                done.set()
+
+        host.loop.post(on_the_loop)
+        assert done.wait(2.0)
+        assert caught and "event loop" in str(caught[0])
+    finally:
+        host.stop()
 
 
 def test_a_subscriber_is_handed_every_message_before_the_callbacks():

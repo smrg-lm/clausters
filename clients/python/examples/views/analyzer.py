@@ -158,13 +158,10 @@ print(f"waterfall: the last {RETAIN:.0f} s of the same bus, and because the "
 # ## Drive it
 # Sweep the stereo image over 6 s and drift the pitch slowly, so the spectrum
 # peak visibly moves along the log axis. The views need nothing from this loop --
-# the host reads the taps from the segment on its own; the loop only sweeps the
-# synth and pumps events so the close is seen.
+# the host reads the taps from the segment on its own, and the close arrives on
+# the host's own event loop; the loop here only sweeps the synth.
 
 # %%
-_closed = False
-
-
 def run(seconds: float | None = None) -> None:
     """Sweeps the stereo image for ``seconds``, narrating the three landmarks.
 
@@ -174,7 +171,7 @@ def run(seconds: float | None = None) -> None:
     """
     start = time.monotonic()
     regime = None
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+    while not win.closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         theta = math.pi * (0.5 - 0.5 * math.cos(2 * math.pi * t / 6.0))
         freq = 220.0 * (2.0 ** (0.5 * math.sin(2 * math.pi * t / 11.0)))
@@ -185,7 +182,7 @@ def run(seconds: float | None = None) -> None:
         if now != regime:
             regime = now
             print(f"  {regime}")
-        gui.pump(timeout=0.03)
+        time.sleep(0.03)
 
 
 def focus(start: float, length: float) -> None:

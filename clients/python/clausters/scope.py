@@ -95,6 +95,28 @@ class ScopeWindow:
         self.host.set(self.widget_id, **props)
         return self
 
+    def on_closed(self, func):
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``).
+        It fires on the host's event-loop thread, which opening the window
+        started; ``None`` clears it. Returns ``self``."""
+        self.host._set_closed_handler(int(self.id), func)
+        return self
+
+    @property
+    def closed(self) -> bool:
+        """Whether this window is gone — closed by a hand or by `close`."""
+        return self._closed or int(self.id) not in self.host._open
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until this window is closed.
+
+        What a **script** ends with, so the scope is still running when the eye
+        gets to it; a ``# %%`` notebook calls nothing. ``True`` when it closed,
+        ``False`` on ``timeout``. The same verb
+        `clausters.plot.PlotWindow.wait`, `clausters.gui.handle.WindowHandle.wait`
+        and `clausters.gui.editing.Editor.wait` carry."""
+        return self.host._wait_while(lambda: not self.closed, timeout)
+
     def close(self):
         """Close the window (``/gui_free``). Idempotent. The recording behind
         it is the host's business: it stops what no open view reads."""

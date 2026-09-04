@@ -120,15 +120,12 @@ def show(host, a_def, kind: str) -> None:
     the panel are captioned by the def *kind* (``SynthDef`` / ``FaustDef``) — the
     visualization this example is about — not by the def's own name.
 
-    The window handle answers its own close: `PatchWindow.on_closed` registers
-    the callback and `GuiHost.pump` fires it when the ``/gui_closed`` arrives —
-    no widget id matched by hand."""
+    The window handle answers its own close: `PatchWindow.wait` holds the
+    script until the ``/gui_closed`` arrives, on the host's own event loop — no
+    widget id matched by hand, and no loop written here."""
     print(f"\nthe {kind} (level 2) — close the window to continue")
     win = a_def.plot_def(host=host, title=f"{kind} — level 2")
-    closed = [False]
-    win.on_closed(lambda: closed.__setitem__(0, True))
-    while not closed[0]:
-        host.pump(timeout=0.1)
+    win.wait()
 
 
 if __name__ == "__main__":

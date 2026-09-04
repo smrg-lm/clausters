@@ -88,6 +88,11 @@ class WidgetInfo:
 #: (UDP/TCP 57110, WebSocket 57120).
 DEFAULT_PORT = 57210
 
+#: How long a `GuiHost.wait` sleeps between looks at what it is waiting for.
+#: It is not a poll of the socket — the loop delivers on its own thread — only
+#: how sharply a script notices that the last window went away.
+_WAIT_STEP = 0.05
+
 
 class GuiHost:
     """A connection to a running ``clausters-gui`` host.
@@ -283,11 +288,21 @@ class GuiHost:
 
     def stop(self):
         """Close the connection and, if this host `boot`-ed a ``clausters-gui``
-        process, stop it too. A host that was the ambient one stops being it."""
+        process, stop it too. A host that was the ambient one stops being it,
+        and its `loop` — and the `clock` over it — end with it: the loop exists
+        to drain this carrier, so it has nothing to do once the carrier is
+        closed."""
         from . import ambient_host, set_ambient_host
 
         if ambient_host() is self:
             set_ambient_host(None)
+        if self._loop is not None:
+            # Before the carrier, not after: the loop waits on that descriptor,
+            # and a closed socket under a running selector is an error nobody
+            # asked for.
+            self._loop.close()
+            self._loop = None
+            self._app = None
         self._osc.close()
         if self._process is not None:
             self._process.close()
@@ -322,13 +337,23 @@ class GuiHost:
         def becomes one), and is invisible to the handle, which goes on resolving
         the tree's names. Reach for `clausters.gui.guidef.view` when the window's
         own properties matter — a title, a size, a theme — since those are
-        properties of a root nobody frames."""
+        properties of a root nobody frames.
+
+        **An open window is delivered to.** Opening starts this host's `loop`,
+        so a `clausters.gui.handle.WidgetHandle.on_event` or an
+        `clausters.gui.handle.WindowHandle.on_closed` fires from the moment it
+        is registered, with nothing driving it — the window is the thing that
+        has events, so having one is what makes the loop necessary. `pump` and
+        `poll` stand down from here on (see their notes), and a script that
+        would rather drain the socket by hand builds its window with `define`,
+        which opens nothing this client remembers."""
         if tree.get("type") != "window":
             tree = _view(tree, hug=True)
         if id is None:
             id = self.alloc_id()
         handle = self.define(id, tree, *blobs)
         self._open.add(int(id))
+        self.loop                       # an open window is delivered to
         return handle
 
     def close(self, id: int):
@@ -816,6 +841,51 @@ class GuiHost:
         and `pump` answer to, and what a caller checks before writing a drain
         loop by hand."""
         return self._loop is not None and self._loop.running
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until every window this host opened is closed.
+
+        The call a **script** ends with, and the whole of what a script needs to
+        do about the loop: the windows are already being delivered to, and this
+        only keeps the process alive long enough for a hand to use them. It
+        returns ``True`` when the last one closed and ``False`` when ``timeout``
+        ran out first; with no window open it returns at once.
+
+        **A notebook calls nothing.** The loop runs whether or not anyone waits,
+        so a ``# %%`` cell that opens a window is finished when it returns — the
+        next cell edits the window that is already there. Waiting is what a
+        script does *instead of* exiting, and a cell has nothing to exit from.
+
+        Waiting from the loop's own thread — inside an `on_event`, a
+        `WindowHandle.on_closed`, an `clausters.base.appclock.AppClock` routine
+        — would wait for a close the waiting thread is the one that has to
+        deliver, so it raises `RuntimeError` rather than hang."""
+        return self._wait_while(lambda: bool(self._open), timeout)
+
+    def _wait_while(self, pred, timeout: "float | None" = None) -> bool:
+        """Block while ``pred()`` is true, for at most ``timeout`` seconds.
+
+        The shared body of `wait` and `clausters.gui.handle.WindowHandle.wait`.
+        It drains the socket itself when nothing else is (a host that never
+        opened a window still answers `pump`), so the call means the same thing
+        either side of the loop existing."""
+        if self._loop is not None and self._loop.is_current():
+            raise RuntimeError(
+                "wait() from the event loop's own thread would wait for what "
+                "this thread is the one to deliver — call it from the script")
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while pred():
+            step = _WAIT_STEP
+            if deadline is not None:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                step = min(step, left)
+            if self.looping:
+                time.sleep(step)
+            else:
+                self.pump(timeout=step)
+        return not pred()
 
     def subscribe(self, func):
         """Hand every inbound ``(addr, args)`` to ``func`` before the handle

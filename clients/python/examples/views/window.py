@@ -67,7 +67,6 @@ v = view(
     title="clausters-gui - waveform", w=720, h=360, layout="col")
 
 win = v.open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the host opened a window; zoom/pan the waveform, close it to stop")
 
 # %% [markdown]
@@ -83,30 +82,17 @@ print("the same window now draws a slower sine")
 
 # %% [markdown]
 # ## Keep it open
-# Nothing else to drive -- the waveform is navigated with the mouse. Wait for
-# the close, then stop the host.
-
-# %%
-_closed = False
-
-
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (the waveform is navigated with the mouse).
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
+# Nothing else to drive -- the waveform is navigated with the mouse. A script
+# holds the main thread until the window is closed with
+# `clausters.gui.handle.WindowHandle.wait`; the host's event loop is already
+# running underneath, so this is a wait and not a drain. Cell by cell there is
+# nothing to call at all.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         gui.stop()
 else:
-    print("window up - run(10) to keep it open, gui.stop() to end")
+    print("window up - win.wait(10) to hold it, gui.stop() to end")

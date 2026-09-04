@@ -63,7 +63,6 @@ adapter.
 
 # %%
 import sys
-import time
 
 from clausters.gui import GuiHost, knob, label, panel, slider, toggle, view
 
@@ -140,12 +139,9 @@ win["accent_a"].set(color="#40d0d0")
 # %% [markdown]
 # ## Drive it
 # Cell-run: restyle from the cell above. Script-run: replay the timed restyles
-# once, pumping for the window-close in between.
+# once, then hold the window open until you close it.
 
 # %%
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
-
 # (delay seconds, widget name, props, message)
 CHANGES = [
     (4.0, "cool", {"theme": '{"accent": "#b060e0", "accent_dim": "#6a3a8a", '
@@ -158,15 +154,21 @@ CHANGES = [
 ]
 
 
+def restyle(name: str, props: dict, what: str) -> None:
+    win[name].set(**props)
+    print(what)
+
+
 def run(seconds: float | None = None) -> None:
-    start = time.monotonic()
-    pending = list(CHANGES)
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-        while pending and time.monotonic() - start > pending[0][0]:
-            _, name, props, what = pending.pop(0)
-            win[name].set(**props)
-            print(what)
+    """Put the restyles on the clock, then hold the window open.
+
+    The delays are `clausters.base.appclock.AppClock.sched` and not a stopwatch
+    in a loop: each one runs on the host's own event-loop thread when its moment
+    comes, so the script has nothing left to do but wait for the close.
+    """
+    for delay, name, props, what in CHANGES:
+        gui.clock.sched(delay, lambda n=name, p=props, w=what: restyle(n, p, w))
+    win.wait(seconds)
 
 
 # %%

@@ -167,26 +167,40 @@ print("press play to hear it — the playhead is where the audio is")
 
 
 # %% [markdown]
-# ## The loop
-# `FormEditor.poll` drains the window's events into the editor. A selection is not an
-# edit — nothing in the composition changes — so it is read off the editor rather
-# than waited for, and printed as it moves.
+# ## The read-out
+# Nothing here drains anything: the gestures reach the editor on the host's own
+# event loop, and the transport parks its cursor there too. A selection is not
+# an edit — nothing in the composition changes — so it is *read off* the editor
+# rather than waited for, which is a periodic read-out and belongs on the
+# application clock (`clausters.base.appclock.AppClock`): a function returning a
+# number is rescheduled by it, so this is a repeating task with no loop of its
+# own.
 
 # %%
+_last = None
+
+
+def watch_selection():
+    """Print the selection whenever it moves; asks again in 50 ms."""
+    global _last
+    if editor.selection and editor.selection != _last:
+        _last = editor.selection
+        span = (_last["start"], _last["start"] + _last["len"])
+        print(f"selection: {span[0]:.3f} .. {span[1]:.3f} beats "
+              f"of {'the take' if _last.get('nodes') else 'the axis'}")
+    return 0.05
+
+
 def run():
     """Hold until the window is closed — a by-eye and by-ear test ends when the
-    person looking at it says so, not on a timer."""
-    last = None
-    # `windows` rather than `window`: this editor is on screen through the view
-    # it composed, and never opened one of its own.
-    while editor.windows:
-        editor.transport.update()
-        editor.poll(0.05)
-        if editor.selection and editor.selection != last:
-            last = editor.selection
-            span = (last["start"], last["start"] + last["len"])
-            print(f"selection: {span[0]:.3f} .. {span[1]:.3f} beats "
-                  f"of {'the take' if last.get('nodes') else 'the axis'}")
+    person looking at it says so, not on a timer.
+
+    `FormEditor.wait` asks about `FormEditor.windows` rather than ``window``:
+    this editor is on screen through the view it composed, and never opened one
+    of its own.
+    """
+    gui.clock.sched(0.05, watch_selection)
+    editor.wait()
 
 
 # %% [markdown]
@@ -218,4 +232,5 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("up — run() to hold the window, session.close() to end")
+    print("up — run() to hold the window and print selections, "
+          "session.close() to end")

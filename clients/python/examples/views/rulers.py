@@ -117,7 +117,6 @@ print(f"opened window {win} — click the menus to cycle each axis' unit")
 
 # %%
 _amp_unit = "norm"  # remembered so the toggle can restore it
-_closed = False
 
 
 def on_time(index):
@@ -158,7 +157,6 @@ win["freq"].on_event(on_freq)
 win["yaxis"].on_event(on_yaxis)
 win["wave"].on_event(on_view_y)
 win["spect"].on_event(on_view_y)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## The same math from the client
@@ -224,9 +222,9 @@ def teardown():
 if __name__ == "__main__":
     try:
         # No deadline: the axes are here to be navigated, so the run ends
-        # when you close the window.
-        while not _closed:
-            gui.pump(timeout=0.05)
+        # when you close the window. The gestures arrive on the host's own
+        # event loop, so this only holds the main thread.
+        win.wait()
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))

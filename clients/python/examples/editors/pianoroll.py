@@ -46,7 +46,6 @@ Needs a display and a GPU adapter, plus an audio device.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.base import Routine
@@ -122,7 +121,6 @@ session.start()
 
 # %%
 notes = list(NOTES)     # kept current from the "notes" edit-back
-closed = False
 player = None           # the sequence playing, if any
 loop = None             # the repeat routine, while the transport is on
 
@@ -145,7 +143,7 @@ def play():
 
 def repeat():
     """Play the roll every `LOOP` beats, until stopped."""
-    while not closed:
+    while not win.closed:
         play()
         yield LOOP
 
@@ -183,22 +181,20 @@ def on_roll(tag, *vals):
 
 win["roll"].on_event(on_roll)
 win["play"].on_event(lambda value: start() if value == 1 else stop())
-win.on_closed(lambda: globals().__setitem__("closed", True))
 
 # %% [markdown]
 # ## Drive it
 # Cell-run: keep editing, and `start()` / `stop()` (or the toggle) between cells.
-# Script-run: the script's loop does one thing -- pump the roll's events, so edits
-# print as they arrive and the toggle drives the transport. Timing is never this
-# loop's business; it belongs to the routine on the session clock, in the same
-# beats the roll is drawn in.
+# Script-run: hold the window open. Neither dispatches anything -- the roll's
+# edits arrive on the host's event loop, so they print as they are made and the
+# toggle drives the transport. Timing is nobody's business here either; it
+# belongs to the routine on the session clock, in the same beats the roll is
+# drawn in.
 
 # %%
 def run(seconds: float | None = None) -> None:
-    """Dispatch the roll's events for ``seconds``; the toggle is the transport."""
-    until = time.monotonic() + (seconds or 0.0)
-    while not closed and (seconds is None or time.monotonic() < until):
-        gui.pump(timeout=0.05)
+    """Hold the window open for ``seconds``; the toggle is the transport."""
+    win.wait(seconds)
     stop()
 
 

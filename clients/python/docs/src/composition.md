@@ -233,8 +233,8 @@ editor.render(server, clock)        # play it; the playhead sweeps the clips
 ```
 
 Gestures reach the arrangement on their own — drag a clip to move it, an edge to
-trim it — because opening an editor starts the host's [event
-loop](gui.md#the-event-loop-when-nobody-pumps) and the editor is subscribed to
+trim it — because opening a window starts the host's [event
+loop](gui.md#the-event-loop-and-the-one-call-a-script-ends-with) and the editor is subscribed to
 it. With `follow=True` the composition is re-scheduled from the playhead, so you
 hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding

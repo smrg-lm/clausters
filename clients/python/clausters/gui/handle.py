@@ -80,11 +80,13 @@ class WidgetHandle:
         return self._host.query(self.id, timeout)
 
     def on_event(self, func) -> "WidgetHandle":
-        """Call ``func(*payload)`` whenever this widget emits a ``/gui_event``,
-        when the host's inbound messages are drained through `GuiHost.pump`. The
-        payload is the event's arguments after the id (a control's value, or a
-        view's ``tag`` followed by its flat values). Passing ``None`` clears the
-        handler.
+        """Call ``func(*payload)`` whenever this widget emits a ``/gui_event``.
+        The payload is the event's arguments after the id (a control's value, or
+        a view's ``tag`` followed by its flat values). Passing ``None`` clears
+        the handler.
+
+        It fires on the host's own event-loop thread, which an open window
+        starts, so nothing in the script has to drive it.
 
         This is the **raw** stream and sees everything, the interface events of
         `on_press`/`on_release`/`on_click` included -- those arrive here as the
@@ -257,10 +259,26 @@ class WindowHandle(int):
         """Free this window's subtree (see `GuiHost.free`)."""
         self._host.free(int(self))
 
+    @property
+    def closed(self) -> bool:
+        """Whether this window is gone — closed by a hand or by `close`.
+
+        It reads the host's set of open windows, which a ``/gui_closed``
+        updates, so it answers as soon as the loop has delivered the close."""
+        return int(self) not in self._host._open
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until this window is closed.
+
+        `clausters.gui.host.GuiHost.wait` for one window rather than all of
+        them — what a script that opened exactly one ends with. ``True`` when it
+        closed, ``False`` when ``timeout`` ran out first."""
+        return self._host._wait_while(lambda: not self.closed, timeout)
+
     def on_closed(self, func) -> "WindowHandle":
-        """Call ``func()`` when the user closes this window (a ``/gui_closed``),
-        when inbound messages are drained through `GuiHost.pump`. ``None``
-        clears it."""
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``).
+        It fires on the host's event-loop thread, like `WidgetHandle.on_event`;
+        ``None`` clears it. To simply hold a script open until then, `wait`."""
         self._host._set_closed_handler(int(self), func)
         return self
 

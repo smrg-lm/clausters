@@ -38,7 +38,6 @@ It self-launches the audio server and the GUI host: this one plays.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.gui import edit
@@ -111,8 +110,7 @@ def read_back():
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
     print("edit the notes; space plays nothing here — call play(). Close when done.")
-    while not editor.closed:
-        time.sleep(0.05)
+    editor.wait()
     print("the timeline, as it was left:")
     read_back()
 

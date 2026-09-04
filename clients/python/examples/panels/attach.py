@@ -94,27 +94,11 @@ print(f"the guest let go, and the host still answers: {gui_is_up(port=owner.targ
 # Close either window to end the run; the owner's `stop` is what ends the host.
 
 # %%
-_closed = False
-first.on_closed(lambda: globals().__setitem__("_closed", True))
-
-
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds``.
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        owner.pump(timeout=0.1)
-
-
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        first.wait()
     finally:
         owner.stop()          # this handle booted the process, so this ends it
 else:
-    print("two windows up - run(10) to keep them open, owner.stop() to end")
+    print("two windows up - first.wait(10) to hold them, owner.stop() to end")

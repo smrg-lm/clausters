@@ -42,7 +42,6 @@ it as a plain script.
 
 # %%
 import sys
-import time
 
 from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, view
 
@@ -137,8 +136,6 @@ win = workspace().open()
 print("drag and wheel over each pane; navigation events print here")
 print("('reset view' puts the plane back at the origin, at its default zoom)")
 
-closed = [False]
-win.on_closed(lambda: closed.__setitem__(0, True))
 
 
 # %% [markdown]
@@ -162,27 +159,11 @@ win["reset"].on_click(reset)
 
 
 # %%
-def run(seconds: float | None = None):
-    """Pump the host until the window closes, or ``seconds`` elapse.
-
-    The bound is for a cell run, where a notebook wants the loop to give the
-    prompt back; script-run there is none, and the window is what ends it.
-    
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    deadline = time.monotonic() + (seconds or 0.0)
-    while not closed[0] and (seconds is None or time.monotonic() < deadline):
-        gui.pump(timeout=0.1)
-
-
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         gui.stop()
 else:
-    print("workspace up - run(20) to drive it, gui.stop() to end")
+    print("workspace up - drag and wheel over the panes, gui.stop() to end")

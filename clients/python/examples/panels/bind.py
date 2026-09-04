@@ -44,7 +44,6 @@ GPU adapter.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import Env, SynthDef, control, env_gen, out, sine
@@ -132,7 +131,6 @@ v = layout(knob(FREQ, min=110.0, max=880.0),
 
 win = v.open()
 win.bind(synth)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print(f"bound to synth {synth.id}: {win.controls} -- turn them, the sound "
       "follows directly and nothing prints here (no script round-trip). "
       "Hold `hold` and the note sustains for as long as you hold it; hit "
@@ -141,33 +139,17 @@ print(f"bound to synth {synth.id}: {win.controls} -- turn them, the sound "
 # %% [markdown]
 # ## Drive it
 # Nothing to do but wait: every bound widget sends its value to the server, not
-# here, so this loop only pumps events to notice the window closing. Turn the
-# knob and hear the pitch follow with no Python in the path; hold `hold` for a
-# sustained note and tap `fire` for a blip, and notice that the difference
-# between them is one prop.
-
-# %%
-_closed = False
-
-
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (a bound knob sends none back).
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
+# here, so the script has nothing left but to stay alive until the window is
+# closed. Turn the knob and hear the pitch follow with no Python in the path;
+# hold `hold` for a sustained note and tap `fire` for a blip, and notice that
+# the difference between them is one prop.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         synth.free()
         session.close()
 else:
-    print("bind up - run(10) to pump events, session.close() to end")
+    print("bind up - win.wait(10) to hold it, session.close() to end")

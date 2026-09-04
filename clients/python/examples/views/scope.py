@@ -65,7 +65,6 @@ panel(scope(0, name="triggered", window_ms=15.0, trigger=0.0,
        label="free-running"),
  layout="col"),
 title="Audio-rate oscilloscope", w=560, h=420).open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the top trace stays locked while the pitch sweeps; "
       "the bottom one drifts; close the window to stop")
 
@@ -75,21 +74,20 @@ print("the top trace stays locked while the pitch sweeps; "
 # re-locks. The scopes read the bus from shared memory on their own.
 
 # %%
-_closed = False
-
-
 def run(seconds: float | None = None) -> None:
     """Sweeps the tone's frequency for ``seconds``.
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
+    give the prompt back. Nothing here drains the host: the scopes read the bus
+    from shared memory themselves, and the close arrives on the host's own
+    event loop.
     """
     start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+    while not win.closed and (seconds is None or time.monotonic() - start < seconds):
         phase = (time.monotonic() - start) / 8.0
         synth.set({"freq": 330.0 + 110.0 * math.sin(2 * math.pi * phase)})
-        gui.pump(timeout=0.03)
+        time.sleep(0.03)
 
 
 # %%

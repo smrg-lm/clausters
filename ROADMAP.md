@@ -210,19 +210,16 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **The examples pass: the drain loop is deleted, once**, `C53`, with `W29` *(`clients/python/PLAN.md`, "The generic
-  editor: one editor per domain, and `edit(x)`"; `clients/web/PLAN.md`, `W29`)*.
-  `C52` shipped the loop (2026-09-04): `edit(x)` opens, the host's `EventLoop`
-  delivers, and the `AppClock` is the application's seconds over it. What is
-  left is the sweep it deliberately did not do -- **40 example files** still
-  spell out a drain by hand (`views/` 13, `panels/` 12, `editors/` 9 after the
-  three `edit_*` went with `C52`, `notation/` 4, and the root
-  `examples/clock_recorder.py`), and none of them is run by anything, so each is
-  run by hand. The pass also takes the one question `C52` left open: whether
-  `open()` should start the loop for every window, rather than only where an
-  editor or the `AppClock` asks for it -- until it does, a plain panel still
-  needs `pump` and the web client does not, which is the gap `W29` would
-  inherit.
+- ⬜ **`edit(x)` opens, and the `AppClock` the page already half has**, `W29`
+  *(`clients/web/PLAN.md`, `W29`)*. The web half of what the Python client
+  closed on 2026-09-04 (`C52` shipped the loop, `C53` the examples pass and the
+  decision that **opening a window starts it**). The page is the reference for
+  the loop itself -- nothing pumps there and never did -- so what is owed back
+  is the surface: `edit(x)` opening, `Editor`'s `id`/`closed`/`close`/
+  `onClosed`, an `AppClock` over the page's own loop, a transport that ticks
+  itself, and `closed` on everything that opens a window. The blocking `wait`
+  the scripts grew has no counterpart in a page and must not be transliterated;
+  the plan says which half crosses.
 
 ### Waiting on a decision
 

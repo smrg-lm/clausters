@@ -72,12 +72,32 @@ naming what to call by hand.
 **An example that exists to be looked at ends when the person looking at it
 says so.** The `run(30.0)` above is the shape for something that *finishes* — a
 render, a sequence that plays out. A GUI example is the manual test surface for
-whatever it draws, so a script run holds until the **window** is closed
-(`gui.pump` in a loop over an `on_closed` flag; `patch1.py` and `text.py`
-are the shape), and the seconds bound stays only for the cell run, where a
-notebook wants the loop to give the prompt back. A window that times out ends
-the test before the reader has finished reading it, which is the one failure a
-by-eye check cannot recover from.
+whatever it draws, so a script run holds until the **window** is closed. A
+window that times out ends the test before the reader has finished reading it,
+which is the one failure a by-eye check cannot recover from.
+
+**Holding the window open is one call, and a notebook makes none.** Opening a
+window starts the host's event loop, so every gesture, every edit and every
+close is already being delivered on a thread of the host's own — an example
+never writes a drain, a pump, a poll or a `_closed` flag, and never ticks a
+transport. What is left is the asymmetry between the two ways of running the
+same file:
+
+- a **script** must stay alive, and does it with `win.wait()` (or `gui.wait()`
+  for a file that opened several, `editor.wait()` for an editor, and the same
+  verb on what `plot`, `scope` and `plot_def` return). `wait(seconds)` bounds
+  it; bare `wait()` ends when the window does.
+- a **notebook** calls nothing at all. The loop is already running, the window
+  is up, and the cell is finished when it returns — the next cell edits the
+  window that is there. There is nothing to give the prompt back *from*.
+
+So the `seconds` argument that used to exist for the cell run mostly goes away
+with the loop it bounded; keep one only where a cell genuinely wants a bounded
+hold. Work that used to ride in the drain loop — an animation, a periodic
+read-out, a timed sequence of `set` calls — goes on the **application clock**
+(`gui.clock.sched`, which reschedules a function by the number it returns), not
+into a `while` loop with a stopwatch in it. `views/linked.py`, `panels/text.py`
+and `editors/two_windows.py` are the shape.
 
 A few older examples end with plain top-level teardown and no guard
 (`verbs.py`, `scoping.py`). That is the earlier form, not a second idiom: the

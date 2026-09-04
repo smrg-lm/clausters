@@ -34,7 +34,6 @@ nothing has to be found on disk.
 # %%
 import math
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import Buffer
@@ -89,8 +88,7 @@ def run():
     """Keep the window open until it is closed."""
     print("zoom in (wheel) until the samples are discs, then Alt+drag to draw.")
     print("Ctrl+Z puts them back. Call play() to hear what you drew.")
-    while not editor.closed:
-        time.sleep(0.05)
+    editor.wait()
 
 
 # %%

@@ -21,6 +21,17 @@ class _Recorder:
     def send_msg(self, target, *args):
         self.sent.append(args)
 
+    def fileno(self):
+        # An interface with no descriptor -- the loop waits on it "blind",
+        # through `recv`, exactly as `OscInterface` allows.
+        return None
+
+    def recv(self, timeout=0.0):
+        import time as _time
+
+        _time.sleep(timeout)            # a carrier that waits, and says nothing
+        return None
+
 
 def _host() -> GuiHost:
     host = GuiHost("127.0.0.1", 57990)

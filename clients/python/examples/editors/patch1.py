@@ -195,9 +195,6 @@ print("press render to hear the chain, stop to free it.")
 # object you built.
 
 # %%
-_closed = False
-
-
 def on_patch(tag, *payload):
     """The canvas edits onto the patch model."""
     if tag == "wire" and len(payload) >= 4:
@@ -219,20 +216,18 @@ win["patch"].on_event(on_patch)
 win["workspace"].on_event(on_view)
 win["render"].on_click(render)
 win["stop"].on_click(stop)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 
 # %% [markdown]
-# ## The loop: apply edits, re-audition on render
-# Cell-run: `gui.pump()` between cells while you drag and cord. Script-run: the
-# loop pumps the events onto the model until the window closes; **render**
-# re-flattens and instances whatever you have drawn by then.
+# ## Apply edits, re-audition on render
+# Nothing here dispatches anything: the host's event loop puts every gesture on
+# the model as it arrives, cell by cell and during a script's wait alike.
+# **Render** re-flattens and instances whatever you have drawn by then.
 
 # %%
 if __name__ == "__main__":
     try:
-        while not _closed:
-            gui.pump(timeout=0.05)
+        win.wait()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))
     finally:

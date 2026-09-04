@@ -191,8 +191,9 @@ sample clock so it tracks the audio (`FormEditor.anchor`). Also the
 
 **event loop** — what drains a host and delivers its messages: the editors that
 subscribed to it (each applies the gestures naming its own widgets) and then the
-widget callbacks. Started by opening an editor, and it is why an edit lands with
-nothing written in the script. ([The GUI](../gui.md), [Editing](editing.md))
+widget callbacks. Started by opening a **window**, and it is why an edit lands
+with nothing written in the script. What a script writes instead is
+[wait](#wait). ([The GUI](../gui.md), [Editing](editing.md))
 
 **poll** — `FormEditor.poll()`: drain the window's pending events into the
 arrangement by hand, for a script that would rather deliver them itself. It
@@ -249,6 +250,12 @@ time arithmetic. ([The editor](editor.md))
 **vector (element)** — the `Vector` primitive: a list at constant time
 (samples). Wraps a `clausters.defs.Buffer` — the server buffer holds the
 samples, the element places a window onto it. ([Elements](elements.md))
+
+**wait** — `editor.wait()`, `win.wait()`, `gui.wait()`: hold the calling thread
+until the window (or every window) is closed. The one call a **script** ends
+with, since the event loop delivers on its own thread and the script's only
+remaining job is not to exit; a `# %%` notebook calls nothing.
+([The GUI](../gui.md#the-event-loop-and-the-one-call-a-script-ends-with))
 
 **wire** — one `(member, control) ↔ bus` connection of a patch. Rewiring on
 screen rewrites the member `Generator`'s controls; the next render sends the

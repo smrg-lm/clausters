@@ -49,7 +49,6 @@ With the client importable (``pip install -e ./clients/python``)::
 import os
 import random
 import sys
-import time
 
 from clausters import Buffer, Session, Synth, SynthDef
 from clausters.defs import control
@@ -146,8 +145,6 @@ win = view(
              ruler="off", ruler_y="off", link=LONG),
     timeruler(ruler="time", sample_rate=RATE, link=LONG, h=22),
     title="the page's window, mapped", w=980, h=560, layout="col").open()
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## What the buttons do
@@ -223,25 +220,16 @@ def finished() -> None:
 
 # %% [markdown]
 # ## Run it
-# `clausters.gui.GuiHost.pump` is what makes the buttons work *and* what makes
-# closing the window end this: the host's messages are dispatched to the
-# handlers from the script's own loop, never from a thread of their own.
-
-# %%
-def run(seconds: "float | None" = None) -> None:
-    """Pumps host events until the window is closed (or ``seconds`` pass, which
-    is what a cell run wants so the prompt comes back)."""
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.05)
-
+# The buttons work with nothing driving them: the host's event loop delivers
+# every message on a thread of its own, so all a script has left to do is stay
+# alive until the window closes. Cell by cell there is nothing to call.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         session.close()
 else:
     print("up — press the buttons, or call record(), peer_edit(), finished(); "
-          "run(10) to pump for ten seconds, session.close() to end")
+          "win.wait(10) to hold for ten seconds, session.close() to end")

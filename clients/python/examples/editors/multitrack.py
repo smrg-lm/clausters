@@ -59,7 +59,6 @@ Needs a display and a GPU adapter; the install bundles the GUI binary (see
 import math
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 from clausters import Group, Session
@@ -683,8 +682,6 @@ win["b_stop"].on_click(stop)
 win["b_rew"].on_click(lambda: transport.locate(0.0))
 win["ruler"].on_event(on_ruler)
 
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## The counter
@@ -706,28 +703,42 @@ def readout() -> str:
         for unit, text in forms.items())
 
 
+_shown = None
+
+
+def tick_counter():
+    """Keep the counter live; asks again in 50 ms.
+
+    A read-out is not an event -- the transport's position is *read*, not
+    reported -- so it belongs on the application clock
+    (`clausters.base.appclock.AppClock`), where a function returning a number is
+    rescheduled by whatever it returns. Nothing here parks the cursor either:
+    the transport asks about the end of its own pass on the same clock.
+    """
+    global _shown
+    text = readout()
+    if text != _shown:              # a stopped transport sends nothing
+        win["counter"].set(text=text)
+        _shown = text
+    return 0.05
+
+
 def run(seconds: float | None = None) -> None:
-    """Drain the host's events and keep the counter live for ``seconds``.
+    """Hold the window open for ``seconds``.
 
     Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
+    ``seconds`` argument is for a cell run, where a notebook wants the wait to
+    give the prompt back. The counter goes on either way -- it is on the clock,
+    not in here.
     """
-    start = time.monotonic()
-    shown = None
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.05)
-        transport.update()          # parks the cursor when the piece ends
-        text = readout()
-        if text != shown:           # a stopped transport sends nothing
-            win["counter"].set(text=text)
-            shown = text
+    win.wait(seconds)
 
 
 set_unit(0)
 show_ruler(True)
 transport.locate(0.0)
 win["counter"].set(text=readout())
+gui.clock.sched(0.05, tick_counter)   # from here on the counter keeps itself
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):

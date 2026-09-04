@@ -154,30 +154,36 @@ signal["stop"].on_click(editor.stop)
 multitrack["play"].on_click(lambda: editor.play(server, session.clock))
 multitrack["stop"].on_click(editor.stop)
 
-_closed = False
-multitrack.on_closed(lambda: globals().__setitem__("_closed", True))
-signal.on_closed(lambda: globals().__setitem__("_closed", True))
-
 # %% [markdown]
-# ## The loop
-# `FormEditor.poll` drains the host **and the editors it composed** — one socket,
-# so one loop. Each editor answers only for the widgets it drew, and the read-out
-# prints what the history says after every event: one label, whichever window is
-# about to move it.
+# ## The read-out
+# The host's event loop delivers to this editor **and to the editors it
+# composed** — one socket, so one loop, and it is the host's rather than the
+# script's. Each editor answers only for the widgets it drew. The history's
+# labels are not an event, so they are *read* rather than waited for: a periodic
+# read-out, which is what the application clock
+# (`clausters.base.appclock.AppClock`) is for — a function returning a number is
+# rescheduled by it.
 
 # %%
+_shown = None
+
+
+def show_history():
+    """Print the undo/redo labels whenever they move; asks again in 50 ms."""
+    global _shown
+    state = (editor.can_undo, editor.undo_label,
+             editor.can_redo, editor.redo_label)
+    if state != _shown:
+        _shown = state
+        print(f"undo={state[0]!s:5} {state[1]!r:20} "
+              f"redo={state[2]!s:5} {state[3]!r}")
+    return 0.05
+
+
 def run():
-    """Hold until a window is closed."""
-    shown = None
-    while not _closed:
-        editor.transport.update()
-        editor.poll(0.05)
-        state = (editor.can_undo, editor.undo_label,
-                 editor.can_redo, editor.redo_label)
-        if state != shown:
-            shown = state
-            print(f"undo={state[0]!s:5} {state[1]!r:20} "
-                  f"redo={state[2]!s:5} {state[3]!r}")
+    """Hold until both windows are closed."""
+    gui.clock.sched(0.05, show_history)
+    editor.wait()
 
 
 # %%
@@ -189,4 +195,5 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         session.close()
     sys.exit(0)
 else:
-    print("two windows up - run() to hold them, session.close() to end")
+    print("two windows up - run() to hold them and watch the history, "
+          "session.close() to end")

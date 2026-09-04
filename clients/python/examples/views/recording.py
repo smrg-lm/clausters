@@ -62,7 +62,6 @@ stays up between cells, or run it as a plain script.
 # %%
 import random
 import sys
-import time
 
 from clausters import Buffer, Session, Synth, SynthDef
 from clausters.defs import control
@@ -123,8 +122,6 @@ win = view(
     # give every one of them the same room whatever the count — and capped, so
     # thirty-two lanes stay on a screen rather than growing off it.
     w=900, h=min(40 + 24 * TRACKS, 760), layout="col").open()
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the window is empty: nothing has been recorded into the takes yet, "
       "and `fills` is what makes that read as empty rather than as silence")
 
@@ -165,32 +162,18 @@ print("recording: the traces grow with the sound, a frame of samples at a time")
 
 # %% [markdown]
 # ## Watch them fill
-# Nothing in this loop touches the pictures. The host is reading the frontiers
-# on its own tick and re-summarizing what appeared; all this does is keep the
-# script alive while it happens. A client that wants the same news — a headless
-# capture, or a page, which can map nothing — asks for it over the wire
+# Nothing here touches the pictures. The host is reading the frontiers on its
+# own tick and re-summarizing what appeared; all
+# `clausters.gui.handle.WindowHandle.wait` does is keep the script alive while
+# it happens — bounded here, since the takes have a length, and unbounded at the
+# end, where the window is what says when. A client that wants the same news — a
+# headless capture, or a page, which can map nothing — asks for it over the wire
 # instead: `clausters.data.RecordingStream`, which subscribes for them and keeps
 # one peak cache per take — the wire carries the summary and not the samples.
 
 # %%
-def watch(seconds: "float | None" = None) -> None:
-    """Keeps the script alive while the pictures fill, until the window is
-    closed (or ``seconds`` pass, which is what a notebook wants so the prompt
-    comes back).
-
-    `clausters.gui.GuiHost.pump` is what makes closing the window end this:
-    the host's messages — a widget's events, and the ``/gui_closed`` a closed
-    window sends — are dispatched to the handlers from **the script's own
-    loop**, never from a thread of their own. A loop that only sleeps is a
-    script that never hears anything.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.05)
-
-
-watch(SECONDS + 2.0)
-print("window closed" if _closed else "done recording")
+win.wait(SECONDS + 2.0)
+print("window closed" if win.closed else "done recording")
 
 # %% [markdown]
 # ## And they are ordinary samples afterwards
@@ -201,7 +184,7 @@ print("window closed" if _closed else "done recording")
 # prop live, which is why this is a `set` and not a second window.
 
 # %%
-if not _closed:
+if not win.closed:
     for i in range(TRACKS):
         win[f"take{i}"].set(fills=False)
     print("takes finished: the lanes draw the whole of what they hold")
@@ -212,9 +195,9 @@ if not _closed:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        if not _closed:
+        if not win.closed:
             print("zoom with the wheel, sweep a selection, then close the window")
-            watch()
+            win.wait()
     finally:
         # The recorders freed themselves at the end of their buffers
         # (``done_action=2``), which is what stopped the pictures from growing;
@@ -222,4 +205,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         # and the GUI host it started.
         session.close()
 else:
-    print("the takes are up - watch() to hold them open, session.close() to end")
+    print("the takes are up - win.wait() to hold them open, session.close() to end")

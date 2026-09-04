@@ -55,7 +55,6 @@ adapter.
 
 # %%
 import sys
-import time
 
 from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider, text, toggle, view)
 
@@ -140,8 +139,6 @@ win["center"].set(align="end")
 # timed changes once and then hold the window open until you close it.
 
 # %%
-_closed = False
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # (delay seconds, widget name, props)
 CHANGES = [
@@ -152,21 +149,23 @@ CHANGES = [
 ]
 
 
-def run(seconds: float | None = None) -> None:
-    """Replay the timed changes, then keep pumping.
+def change(name: str, props: dict) -> None:
+    win[name].set(**props)
+    print(f"set {props} on {name}")
 
-    ``seconds`` bounds the run from a cell; script-run it is ``None`` and the
-    loop ends when **you** close the window -- the text is here to be read, and
-    a window that times out is a manual test you cannot finish.
+
+def run(seconds: float | None = None) -> None:
+    """Put the timed changes on the clock, then hold the window open.
+
+    The delays are `clausters.base.appclock.AppClock.sched`, so each change runs
+    on the host's own event-loop thread when its moment comes and nothing here
+    keeps time. ``seconds`` bounds the wait from a cell; script-run it is
+    ``None`` and it ends when **you** close the window -- the text is here to be
+    read, and a window that times out is a manual test you cannot finish.
     """
-    start = time.monotonic()
-    pending = list(CHANGES)
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-        while pending and time.monotonic() - start > pending[0][0]:
-            _, name, props = pending.pop(0)
-            win[name].set(**props)
-            print(f"set {props} on {name}")
+    for delay, name, props in CHANGES:
+        gui.clock.sched(delay, lambda n=name, p=props: change(n, p))
+    win.wait(seconds)
 
 
 # %%

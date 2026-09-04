@@ -48,7 +48,6 @@ Needs a display and a GPU adapter, plus an audio device.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
@@ -117,9 +116,6 @@ print(f"opened window {win} -- play the keys")
 
 # %%
 _voices = {}  # sounding pitch -> Synth
-_closed = False
-
-
 def midi_to_hz(note: float) -> float:
     return 440.0 * 2.0 ** ((note - 69.0) / 12.0)
 
@@ -155,20 +151,19 @@ def on_keys(tag, *payload):
 
 
 win["keys"].on_event(on_keys)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## Plain-script run
-# Cell-run: call `gui.pump()` between cells while you play. Script-run: the loop
-# maps notes for a while, then everything is torn down (any voice still sounding
-# is gated off).
+# Cell-run: play it, and the notes are mapped between cells and during them —
+# the host's event loop delivers each key press on a thread of its own.
+# Script-run: hold the window open until you close it, then everything is torn
+# down (any voice still sounding is gated off).
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         # No deadline: play it for as long as you like, then close the window.
-        while not _closed:
-            gui.pump(timeout=0.02)
+        win.wait()
         for pitch in list(_voices):
             note_event(pitch, 0, 0, 0)
         gui.close(win)
@@ -176,4 +171,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))
 else:
-    print("piano up - gui.pump() to map notes, session.close() to end")
+    print("piano up - play it; session.close() to end")

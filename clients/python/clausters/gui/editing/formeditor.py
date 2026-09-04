@@ -720,6 +720,13 @@ class FormEditor(Editor):
         """
         if self._host is None:
             raise RuntimeError("open(host) the editor first")
+        if self._host.looping:
+            # The host's loop drains the socket and hands every message to
+            # `apply` already -- and to the composed editors', through the same
+            # subscription. `False` rather than a raise, for the reason
+            # `Editor.poll` states: a script written around this call keeps
+            # running, it has simply stopped being the thing that delivers.
+            return False
         changed = False
         while (msg := self._host.poll(timeout)) is not None:
             changed |= self.apply(*msg)
@@ -728,6 +735,19 @@ class FormEditor(Editor):
             self._host.dispatch(*msg)
             timeout = 0.0  # only the first wait blocks
         return changed
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until every window this editor is on screen
+        through is closed.
+
+        `windows` rather than `window`, for the reason that property states: a
+        multitrack may be on screen through a composed view alone. ``True`` when
+        the last one closed, ``False`` when ``timeout`` ran out first — the same
+        verb `Editor.wait` and `clausters.gui.handle.WindowHandle.wait` carry.
+        """
+        if self._host is None:
+            return True
+        return self._host._wait_while(lambda: bool(self.windows), timeout)
 
     @property
     def windows(self) -> list:

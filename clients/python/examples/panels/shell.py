@@ -59,7 +59,6 @@ audio device.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
@@ -131,15 +130,15 @@ print(f"opened window {win}")
 # ## Drive it, wired by name
 # The script is the application logic: each button/control has its own handle
 # callback, and every action rewrites the status label -- `win["status"].set(
-# text=...)` is the whole status-bar API. The oscilloscope needs nothing from
-# this loop -- the host reads the buses from the segment on its own.
+# text=...)` is the whole status-bar API. Nothing here drives them: the host's
+# event loop delivers each gesture on a thread of its own, and the oscilloscope
+# reads the buses from the segment without being asked.
 
 # %%
 _voice = None
 # The last values seen, seeded from the **controls'** own defaults rather than
 # from a third copy of the same two numbers.
 _freq, _amp = FREQ.default, AMP.default
-_closed = False
 
 
 def set_status(text: str) -> None:
@@ -183,28 +182,14 @@ win["play"].on_click(start)
 win["stop"].on_click(stop)
 win["freq"].on_event(on_freq)
 win["amp"].on_event(on_amp)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
-
-
-def run(seconds: float | None = None) -> None:
-    """Dispatches shell events for ``seconds``.
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start_t = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start_t < seconds):
-        gui.pump(timeout=0.03)
-
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         if _voice is not None:
             _voice.set({"gate": 0.0})
         session.close()
 else:
-    print("shell up - run(10) to dispatch events, session.close() to end")
+    print("shell up - play with it; session.close() to end")

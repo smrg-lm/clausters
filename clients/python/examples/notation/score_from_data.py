@@ -187,16 +187,18 @@ def stop():
 # Wire the two buttons by name: act on the press (1), ignore the release.
 win["play"].on_click(play)
 win["stop"].on_click(stop)
-closed = [False]
-win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
+win.on_closed(lambda: print("window closed"))
 print("press play -- the cursor follows the sound; close the window to stop")
 
 
 # %%
 def run():
-    """Pump the host until the window closes."""
-    while not closed[0]:
-        gui.pump(timeout=0.1)
+    """Hold the window open until it is closed.
+
+    Nothing is drained here: the host's event loop delivers every gesture, and
+    the cursor follows the sound off the engine's own clock.
+    """
+    win.wait()
 
 
 # %%
@@ -206,4 +208,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("score up - play(), stop(), run() to pump; session.close() to end")
+    print("score up - play(), stop(), run() to hold it; session.close() to end")

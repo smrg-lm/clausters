@@ -286,19 +286,19 @@ win["from_note"].on_click(from_note)
 win["undo"].on_click(undo)
 win["redo"].on_click(redo)
 win["score"].on_event(on_score)
-closed = [False]
-win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
+win.on_closed(lambda: print("window closed"))
 
 
 # %%
 def run():
-    """Pump the host until the window closes."""
-    while not closed[0]:
-        # The pass ends by itself: the playhead reports its scan ran out and
-        # the transport parks the cursor at `phrase_end`, rather than letting
-        # it sweep off the page (rewind goes back to the top).
-        transport.update()
-        gui.pump(timeout=0.1)
+    """Hold the window open until it is closed.
+
+    The pass ends by itself with nothing here asking: the playhead reports its
+    scan ran out and the transport parks the cursor at `phrase_end` from the
+    host's application clock, rather than letting it sweep off the page (rewind
+    goes back to the top).
+    """
+    win.wait()
 
 
 # %%
@@ -308,4 +308,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("score up - run() to pump, session.close() to end")
+    print("score up - run() to hold the window, session.close() to end")

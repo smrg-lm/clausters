@@ -73,7 +73,6 @@ bus = Bus.control(server=server)  # the bus the shader's green channel follows
 win = view(
     canvas(name="shader", shader=SHADER, buses=[-1, bus.index], label="shader"),
     title="Canvas (shader)", w=560, h=560).open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("an animated shader: its ring follows the OSC param, its green "
       "channel the control bus; close the window to stop")
 
@@ -83,22 +82,20 @@ print("an animated shader: its ring follows the OSC param, its green "
 # host reads from shared memory into `params.y`).
 
 # %%
-_closed = False
-
-
 def run(seconds: float | None = None) -> None:
     """Sweeps the OSC param and the control bus for ``seconds``.
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
+    give the prompt back. Nothing here drains the host — the close arrives on
+    its own event loop — so this only writes the two values.
     """
     start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+    while not win.closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         win["shader"].set(param0=0.5 + 0.5 * math.sin(t * 0.7))
         bus.set(0.5 + 0.5 * math.cos(t * 1.3))
-        gui.pump(timeout=0.03)
+        time.sleep(0.03)
 
 
 # %%

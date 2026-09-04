@@ -51,7 +51,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 
 from clausters import Session
 from clausters.gui import (clip, label, menu, panel, pianoroll, samples_to_file, timeruler, track, view, waveform)
@@ -140,9 +139,6 @@ print("right column: drag pans everywhere, Shift+drag selects")
 # widgets throughout — nothing about the waveform, the lane or the roll changed.
 
 # %%
-_closed = False
-
-
 def on_preset(index):
     table = [{}, REVERSED, LANE_PANS][int(index)]
     for tag in ("ruler", "lane", "roll", "wave"):
@@ -159,12 +155,12 @@ win["preset"].on_event(on_preset)
 for side in ("default", "reversed"):
     for tag in ("ruler", "lane", "roll", "wave", "clip"):
         win[f"{side}-{tag}"].on_event(report)
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## Plain-script run
-# Cell by cell the window stays live under your hands; as a script this block
-# services the events for a while, then tears everything down.
+# Cell by cell the window stays live under your hands — the host's event loop
+# delivers to it between cells; as a script this block holds it open until you
+# close it, then tears everything down.
 
 # %%
 def teardown():
@@ -179,8 +175,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         # No deadline: the gestures are here to be tried, so the run ends
         # when you close the window.
-        while not _closed:
-            gui.pump(timeout=0.05)
+        win.wait()
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))

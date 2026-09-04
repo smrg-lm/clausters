@@ -96,7 +96,6 @@ panel(meter(bus.index, rate="control", name="level",
  layout="row"),
 waveform(name="buffer", buffer=bufnum),
 title="Meters + server buffer", w=640, h=440, layout="col").open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("watch the meter/scope move and the buffer waveform render; "
       "close the window to stop")
 
@@ -107,20 +106,18 @@ print("watch the meter/scope move and the buffer waveform render; "
 # GUI.
 
 # %%
-_closed = False
-
-
 def run(seconds: float | None = None) -> None:
     """Animates the control bus for ``seconds``.
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
+    give the prompt back. Nothing here drains the host -- the loop an open
+    window started delivers on its own thread, and this only writes the bus.
     """
     start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+    while not win.closed and (seconds is None or time.monotonic() - start < seconds):
         bus.set(math.sin(2 * math.pi * 0.5 * (time.monotonic() - start)))
-        gui.pump(timeout=0.03)
+        time.sleep(0.03)
 
 
 # %%

@@ -69,8 +69,9 @@ Then run it either way:
 - **Interactively** — open the file in VS Code (Python + Jupyter extensions) or a
   Jupyter notebook and run each ``# %%`` cell (Shift+Enter), inspecting between
   cells and driving the open window from the live ``session``/``gui``/``win``
-  handles: ``win["wave"].set(...)``, ``play_pass()``, ``gui.pump()``. The kernel
-  stays alive with the window open.
+  handles: ``win["wave"].set(...)``, ``play_pass()``. The kernel stays alive
+  with the window open, and the host's event loop keeps delivering to it
+  between cells.
 - **As a script** — ``python clients/python/examples/views/editor.py`` runs the
   whole file: one playback pass with the playhead following it, then the window
   stays open until you close it (``play_pass()`` from a cell replays it). The
@@ -217,12 +218,11 @@ print(f"opened window {win} — drag to select, Shift+drag to pan, wheel to zoom
 # ## Follow the playhead and read events
 # Re-run `play_pass()` to play the take again and re-anchor the orange playhead.
 # The ``wave``/``spect`` handles print any selection changes and `win.on_closed`
-# notices a window close; `gui.pump()` dispatches them. When evaluating cells,
-# call these whenever you like.
+# notices a window close; the host's event loop delivers both, so nothing here
+# dispatches them. When evaluating cells, call these whenever you like.
 
 # %%
 _synth = None
-_closed = False
 
 
 def play_pass():
@@ -323,10 +323,9 @@ def on_wave(tag, *vals):
 
 win["wave"].on_event(on_wave)
 win["spect"].on_event(on_selection("spect"))
-win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window closed")))
+win.on_closed(lambda: print("window closed"))
 
 play_pass()
-gui.pump()
 
 # %% [markdown]
 # ## Edit the open window live
@@ -362,8 +361,8 @@ def teardown():
 # Run cell by cell in Jupyter / VS Code to keep the window open and drive the
 # handles between cells (``play_pass()``, ``win["wave"].set(...)``,
 # ``gui.close(win)``). Run as a plain script instead — ``python editor.py`` —
-# and this block follows the playhead for a while, honoring a window close, then
-# tears everything down.
+# and this block holds the window open until it is closed, then tears
+# everything down.
 
 # %%
 if __name__ == "__main__":
@@ -376,8 +375,7 @@ if __name__ == "__main__":
         # the window is being used to check -- an auditioned clipboard block,
         # most of all -- and a reader who wants it again has `play_pass()`.
         play_pass()
-        while not _closed:
-            gui.pump(timeout=0.05)
+        win.wait()
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))

@@ -44,7 +44,6 @@ import shutil
 import struct
 import sys
 import tempfile
-import time
 import wave
 
 from clausters import Session
@@ -143,7 +142,6 @@ win = view(
           label(name="log", text="drag a sample in the lane above"),
           layout="row", h=40),
     title="Bulk: mapped files, no OSC", w=900, h=800, layout="col").open()
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("three waveforms mapped from files (zero OSC for the samples), and a "
       "fourth lane drawing the RMS body inside the peak envelope of the same "
       "cache; zoom/pan with wheel/drag, close the window to stop")
@@ -223,28 +221,13 @@ win["mode"].on_click(toggle_mode)
 
 # %% [markdown]
 # ## Wait, then clean up
-# Nothing to drive -- the views are static. Pump events until the window closes.
-
-# %%
-_closed = False
-
-
-def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (three lanes are static; the last one edits).
-
-    Script-run there is no bound and the window is what ends it; the
-    ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back.
-    """
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.1)
-
+# Nothing to drive -- the views are static, and the edits arrive on the host's
+# own event loop. A script only has to stay alive until the window is closed.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         session.close()
         # Sweep the whole temp dir: besides the files written here, the host
@@ -253,4 +236,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         os.remove(wav)
         shutil.rmtree(tmp, ignore_errors=True)
 else:
-    print("bulk up - run(10) to keep it open, session.close() to end")
+    print("bulk up - win.wait() to hold it, session.close() to end")

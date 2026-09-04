@@ -235,6 +235,15 @@ class EventLoop:
         """Whether a thread of this loop's own is driving it."""
         return self._running
 
+    def is_current(self) -> bool:
+        """Whether the calling thread is this loop's own.
+
+        What a blocking call asks before it blocks: waiting on the loop *from*
+        the loop is a deadlock the caller cannot see, so the few doors that
+        wait (`clausters.gui.host.GuiHost.wait`) refuse it here rather than
+        hang. From anywhere else it is false, the main thread included."""
+        return self._thread is not None and self._thread is threading.current_thread()
+
     def start(self):
         """Drive the loop on a daemon thread of its own, and return it.
 

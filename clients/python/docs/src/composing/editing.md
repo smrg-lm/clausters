@@ -4,7 +4,7 @@ This page is the working rhythm the whole layer was built for, and it has two
 beats: **gesture** in the window, **`editor.play()`** to hear the piece as it
 now stands. The step in between — folding the gesture into the arrangement —
 happens by itself: opening an editor starts the host's [event
-loop](../gui.md#the-event-loop-when-nobody-pumps), and the loop applies every
+loop](../gui.md#the-event-loop-and-the-one-call-a-script-ends-with), and the loop applies every
 gesture as it arrives. Everything else here is detail on those two.
 
 ## The transport, from code
@@ -52,16 +52,18 @@ line* is anchored to the engine clock and moves with the audio; the *cursor*
 is where a stopped transport sits (where the next `play` starts). You never
 set either directly — the transport calls do.
 
-A pass also **ends by itself**. The playhead reports when its scan ran out, so
-one call per pass of a script's loop parks the cursor at the composition's end
-rather than letting the line sweep off past it. A scan runs out when it renders
-its **last item**, and the last clip is still sounding then — so the line goes
-on crossing it and the cursor parks only when it reaches the end:
+A pass also **ends by itself**, with nothing in the script asking. The playhead
+reports when its scan ran out, and the transport puts that question on the
+host's [application
+clock](../routines-and-clocks.md#the-applications-clock-appclock) for as long as
+the piece is sounding, so the cursor parks at the composition's end rather than
+letting the line sweep off past it. A scan runs out when it renders its **last
+item**, and the last clip is still sounding then — so the line goes on crossing
+it and the cursor parks only when it reaches the end. A script holding the
+window open is the whole of what it writes:
 
 ```python
-while editor.window is not None:
-    editor.transport.update()          # the piece ended: park the cursor
-    time.sleep(0.05)
+editor.wait()              # until the window is closed; the rest drives itself
 ```
 
 The end it parks at is `editor.extent()`, read from the arrangement each time —
@@ -109,8 +111,9 @@ and the three never disagree. A few mechanical notes:
 - The application of a gesture happens on the loop's thread. To touch a window
   from a **routine** — which must never block the clock thread — hand the work
   to [`app_clock().defer(...)`](../routines-and-clocks.md#the-applications-clock-appclock).
-- `editor.poll()` is still there for a script that would rather drain the socket
-  itself, and answers `False` while the loop is the one delivering.
+- `editor.poll()` and `editor.transport.update()` are still there for a script
+  that would rather deliver and tick by hand; `poll` answers `False` while the
+  loop is the one delivering.
 - The edit-back arrives in timeline samples; the editor converts to beats and
   snaps to `quant` — the same grid the lane snapped the drag to, so the round
   trip is exact. A drag that moved less than half a sample is not an edit.

@@ -35,8 +35,8 @@ Concretely, the rhythm you will fall into on the editor pages is:
 editor.play()      # hear the piece as it now stands
 ```
 
-No polling loop, no dispatch table, and no step in between: opening an editor
-starts the host's [event loop](gui.md#the-event-loop-when-nobody-pumps), which
+No polling loop, no dispatch table, and no step in between: opening a window
+starts the host's [event loop](gui.md#the-event-loop-and-the-one-call-a-script-ends-with), which
 applies each gesture to the arrangement as it arrives, so the only call left is
 the one that plays the result. (A self-contained *script* form of the very same
 piece — transport buttons on screen — is `examples/editors/composer.py`; the

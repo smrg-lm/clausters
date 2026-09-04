@@ -41,7 +41,6 @@ It self-launches the audio server and the GUI host (`Session.live` +
 # %%
 import json
 import sys
-import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
@@ -89,9 +88,6 @@ print(f"opened window {win} -- draw the envelope, then press play")
 
 # %%
 _points = env_to_points(START_ENV)
-_closed = False
-
-
 def play(*_):
     """One note shaped by the envelope as currently drawn."""
     env = points_to_env(_points)
@@ -122,7 +118,6 @@ def on_points(_tag, *values):
 win["env"].on_event(on_points)
 win["curve"].on_event(lambda index: set_curve(CURVES[int(index)]))
 win["play"].on_click(play)   # the completed press: slide off to cancel
-win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## Hear it now, and set it from the script
@@ -136,23 +131,16 @@ _points = env_to_points(Env.perc(0.01, 1.2))
 
 # %% [markdown]
 # ## Drive it
-# Cell-run: keep drawing and call `play()` between cells. Script-run: pump events
-# for a while -- editing is silent, the **play** button sends the note -- then
-# tear everything down.
-
-# %%
-def run(seconds: float | None = None) -> None:
-    """Dispatches editor events for ``seconds``."""
-    start = time.monotonic()
-    while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.05)
-
+# Cell-run: keep drawing and call `play()` between cells -- the edits arrive on
+# the host's event loop, between them and during them. Script-run: hold the
+# window open until you close it -- editing is silent, the **play** button sends
+# the note -- then tear everything down.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run()
+        win.wait()
     finally:
         session.close()
 else:
-    print("bpf up - run(10) to dispatch events, session.close() to end")
+    print("bpf up - draw and press play; session.close() to end")

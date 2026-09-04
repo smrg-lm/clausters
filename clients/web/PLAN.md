@@ -1675,6 +1675,21 @@ there, and what the page owes back is only the surface:
   but the two surfaces are one surface and the verb is where an edit's
   projection belongs in both. **Landed 2026-09-04 with the curve-axis fix**,
   ahead of the rest of `W29`.
+- **`wait` on everything that opens a window**, and this is where the two
+  clients genuinely differ in *shape* rather than in capability. Python grew
+  `GuiHost.wait` / `WindowHandle.wait` / `Editor.wait` / `FormEditor.wait` /
+  `PlotWindow.wait` / `PatchWindow.wait` / `ScopeWindow.wait` (plus a `closed`
+  beside each) because a **script** must not exit while a window is on screen. A
+  page never exits, so a blocking wait is meaningless and must not be
+  transliterated; what the page owes is the *other* half — `closed`, and a
+  promise-shaped `closed()`/`onClosed` so a caller can sequence on the close.
+  That is `idiom` in `docs/bindings.md`'s sense and is written there when the
+  port lands. `closed` itself is plain surface and is owed as-is.
+- **The transport ticks itself.** `Transport.update` stopped being "call it once
+  per pass of the script's loop" and is scheduled on the host's `AppClock` while
+  a pass is sounding. Same change here, on the page's own loop — it is the same
+  reason (a view's cursor parking at the end of the piece is not the caller's
+  errand), and until it lands the two clients disagree about who ticks.
 - **`clausters-core::tempoclock::Scheduler`** is the timer queue on both sides,
   bound here through wasm as `TempoClock` already binds it, keyed in seconds.
   It is the only part of this that is shared code rather than a shared contract.
@@ -1684,6 +1699,12 @@ timeline, and a reply stolen from `query` - **do not exist here**: one thread,
 and a subscription that already separates a reply from an event. Recording that
 is the point: they are the language's, not the design's, so the port must not
 grow a lock or a reply slot to look like the other client.
+
+One more thing the Python side settled and this client should be read against:
+**opening a window is what starts the loop** there, for every window and not
+only for an editor. That is the page's behaviour already and always was, which
+is the point - the asymmetry is gone, and a plain panel now delivers its
+callbacks the same way in both.
 
 *Acceptance:* the same program in both languages, verb by verb - build a curve,
 `edit` it, read it back after drawing, close the window - with no loop written

@@ -190,6 +190,17 @@ class _Recorder:
     def send_msg(self, target, *args):
         self.sent.append(args)
 
+    def fileno(self):
+        # An interface with no descriptor -- the loop waits on it "blind",
+        # through `recv`, exactly as `OscInterface` allows.
+        return None
+
+    def recv(self, timeout=0.0):
+        import time as _time
+
+        _time.sleep(timeout)            # a carrier that waits, and says nothing
+        return None
+
 
 # ---- what the hand did, as against what the widget is worth ----
 

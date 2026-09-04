@@ -35,7 +35,6 @@ Needs a display and a GPU adapter; the install bundles the GUI binary (see
 import os
 import sys
 import tempfile
-import time
 
 from clausters import Session
 from clausters.gui import samples_to_file, spectrogram, view, waveform
@@ -86,8 +85,6 @@ print(f"opened window {win} — wheel/drag on either lane drives both")
 win["spect"].set(sel_start=float(frames // 2), sel_len=float(frames // 4))
 win["wave"].set(view_start=float(frames // 4), view_len=float(frames // 2))
 
-_closed = False
-
 
 def on_group(name):
     """Print the single per-gesture event stream (no per-member duplicates),
@@ -100,7 +97,7 @@ def on_group(name):
 
 win["wave"].on_event(on_group("wave"))
 win["spect"].on_event(on_group("spect"))
-win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window closed")))
+win.on_closed(lambda: print("window closed"))
 
 
 # %% [markdown]
@@ -111,9 +108,20 @@ win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window clo
 
 # %%
 def demo_membership():
+    """Unlink, navigate the waveform alone, and rejoin a second and a half
+    later.
+
+    The pause is `clausters.base.appclock.AppClock.sched`, not a sleep: the
+    second half runs on the host's own event loop, so the call comes straight
+    back and the window keeps answering the mouse in between. A ``sleep`` here
+    would be a second and a half of a frozen window.
+    """
     win["spect"].set(link=-1)                        # unlink: keeps its view
     win["wave"].set(view_len=float(frames // 8))     # only the waveform zooms
-    time.sleep(1.5)
+    gui.clock.sched(1.5, _relink)
+
+
+def _relink():
     win["spect"].set(link=1)                         # rejoin: adopts the group
     win["wave"].set(view_len=0.0)                    # reset both to the whole file
 
@@ -122,17 +130,13 @@ def demo_membership():
 if __name__ == "__main__":
     try:
         # Interactive first: both lanes are linked — wheel/drag on either one
-        # drives both. The membership demo runs only near the end, so early
-        # gestures are not confused by a temporarily unlinked lane.
-        # The membership demo still fires on a timer; the run itself ends
-        # when you close the window.
-        demo_at = time.monotonic() + 75.0
-        while not _closed:
-            gui.pump(timeout=0.05)
-            if demo_at is not None and time.monotonic() >= demo_at:
-                demo_at = None
-                print("membership demo: unlink -> diverge -> relink")
-                demo_membership()
+        # drives both. The membership demo is scheduled near the end, so early
+        # gestures are not confused by a temporarily unlinked lane; the run
+        # itself ends when you close the window.
+        gui.clock.sched(75.0, lambda: (
+            print("membership demo: unlink -> diverge -> relink"),
+            demo_membership()))
+        win.wait()
         gui.close(win)
         session.close()
         # The host writes a sibling peaks cache beside the mapped raw file.

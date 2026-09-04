@@ -533,18 +533,20 @@ win["delete"].on_click(lambda: edit("delete"))
 win["undo"].on_click(undo)
 win["redo"].on_click(redo)
 win["score"].on_event(on_score)
-closed = [False]
-win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
+win.on_closed(lambda: print("window closed"))
 print("click a note to select and hear it, drag one up or down the staff, "
       "press empty staff to write a quarter; the buttons act on the selection")
 
 
 # %%
 def run():
-    """Pump the host until the window closes."""
-    while not closed[0]:
-        transport.update()
-        gui.pump(timeout=0.1)
+    """Hold the window open until it is closed.
+
+    Nothing is driven here: the host's event loop delivers every gesture, and
+    the transport asks about the end of its own pass on the application clock
+    over that same loop.
+    """
+    win.wait()
 
 
 # %%
@@ -554,4 +556,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("editor up - run() to pump, session.close() to end")
+    print("editor up - run() to hold the window, session.close() to end")

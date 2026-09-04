@@ -176,11 +176,14 @@ print("a frozen tempo would have said",
 # %%
 def run():
     """Play it and hold until the window is closed — a by-eye and by-ear test
-    ends when the person looking at it says so, not on a timer."""
+    ends when the person looking at it says so, not on a timer.
+
+    Nothing here drives the line or the transport: the host's event loop
+    delivers the gestures, and the transport asks about the end of its own pass
+    on the application clock over that same loop.
+    """
     editor.render(session.server, clock)
-    while editor.window is not None:
-        editor.transport.update()
-        editor.poll(0.05)
+    editor.wait()
 
 
 # %%

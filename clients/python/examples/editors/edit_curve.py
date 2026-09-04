@@ -38,7 +38,6 @@ server, because a curve is data and this example never plays it.
 
 # %%
 import sys
-import time
 
 from clausters import Session
 from clausters.gui import edit
@@ -104,8 +103,7 @@ def read_back() -> list:
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
     print("draw in the window; Ctrl+Z undoes. Close it when you are done.")
-    while not editor.closed:
-        time.sleep(0.05)
+    editor.wait()
     print("the curve, as it was left:")
     read_back()
 

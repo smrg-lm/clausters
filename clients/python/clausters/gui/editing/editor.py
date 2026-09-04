@@ -719,6 +719,20 @@ class Editor:
         """Whether this editor's window is gone."""
         return self._window is None
 
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until this editor's window is closed.
+
+        The call a **script** built around `clausters.gui.edit` ends with, and
+        the same one `clausters.gui.host.GuiHost.wait` and
+        `clausters.gui.handle.WindowHandle.wait` are: ``True`` when the window
+        closed, ``False`` when ``timeout`` ran out first. A ``# %%`` notebook
+        does not call it — the loop is already delivering and the next cell
+        reads the structure the hand has been editing.
+        """
+        if self._host is None:
+            return self.closed
+        return self._host._wait_while(lambda: not self.closed, timeout)
+
     def close(self):
         """Close this editor's window (``/gui_free``) and stop listening.
 

@@ -194,6 +194,54 @@ def test_the_end_of_a_pass_parks_the_cursor_at_the_extent():
     assert host.last("playhead_at") == -1.0
 
 
+class ClockedHost(FakeHost):
+    """A host with an application clock, recording what is scheduled on it."""
+
+    class Clock:
+        def __init__(self):
+            self.scheduled = []
+
+        def sched(self, delay, func):
+            self.scheduled.append((delay, func))
+            return func
+
+    def __init__(self):
+        super().__init__()
+        self.clock = self.Clock()
+
+
+def test_a_play_puts_the_end_of_the_pass_on_the_application_clock():
+    """`update` used to be "call it once per pass of the script's loop", which is
+    a hand-written pump by another name. A play schedules it on the host's own
+    clock instead, and it stops asking when the piece stops sounding."""
+    host = ClockedHost()
+    clock = TempoClock(TEMPO)
+    tp = transport(host, clock=clock, extent=lambda: 3.0)
+    tp.play(FakeServer(), at=0.0)
+
+    assert len(host.clock.scheduled) == 1, "one tick, scheduled by the play"
+    delay, tick = host.clock.scheduled[0]
+    assert delay > 0.0
+    assert tick() == delay, "a number keeps it going: the loop reschedules by it"
+
+    clock.render()                          # the pass runs out
+    assert tick() == delay, "the drained scan is what it is there to notice"
+    assert tp.position == pytest.approx(3.0), "so the cursor parks at the end"
+    assert tick() is None, "and having parked, it stops asking"
+
+    tp.play(FakeServer(), at=0.0)
+    assert len(host.clock.scheduled) == 2, "the next play starts it again"
+
+
+def test_a_transport_with_no_host_clock_keeps_update_manual():
+    """A view built before it is opened has no clock to schedule on, and `update`
+    is the plain call it always was."""
+    tp = transport(FakeHost(), clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)
+    tp.play(FakeServer(), at=0.0)
+    clock.render()
+    assert tp.update()
+
+
 def test_the_end_is_reported_once():
     clock = TempoClock(TEMPO)
     tp = transport(clock=clock, extent=lambda: 3.0)
