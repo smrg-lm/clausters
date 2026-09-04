@@ -105,12 +105,12 @@ the instrument, and everything else the author put on it.</div>
         // One verb. A `Timeline` opens as a NotesEditor — one `pianoroll`
         // widget, the crate's `events` vocabulary, and the timeline's own
         // editing context.
-        const editor = gui.edit(timeline, {
+        const editor = await gui.edit(timeline, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           tempo: session.clock.tempo,
           title: "notes",
+          stage: $("stage"),
         });
-        await editor.open(undefined, { stage: $("stage") });
         log("edit the notes; press play to hear the timeline as it stands");
 
         $("play").disabled = false;

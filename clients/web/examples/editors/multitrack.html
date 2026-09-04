@@ -545,17 +545,20 @@ it rather than on the next play.</div>
               .join("   ");
         };
 
-        // The script keeps the counter live inside its pump loop; a page has an
-        // event loop already, so this is the one thing left to schedule.
+        // A read-out is not an event -- the transport's position is *read*, not
+        // reported -- so it goes on the **application clock**, where a function
+        // returning a number is rescheduled by whatever it returns. Nothing
+        // parks the cursor here: the transport asks about the end of its own
+        // pass on the same clock.
         let last = null;
-        setInterval(() => {
-          transport.update();        // parks the cursor when the piece ends
+        (await gui.appClock()).sched(0.05, function tickCounter() {
           const text = readout();
           if (text !== last) {       // a stopped transport sends nothing
             win.widget("counter").set({ text });
             last = text;
           }
-        }, 50);
+          return 0.05;
+        });
 
         setUnit(0);
         showRuler(true);

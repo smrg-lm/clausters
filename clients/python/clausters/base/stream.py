@@ -66,6 +66,7 @@ class FunctionStream(Stream):
         self.func = func
         self.reset_func = reset_func
         self.clock = None
+        self.app_clock = None
         self._logical_beat = 0.0
         self.rng = rand.spawn_rng()   # own stream, seeded by the creating context
 
@@ -116,6 +117,12 @@ class Routine(Stream):
         #: the exact logical beat at which the clock last resumed this routine
         #: (yield-accumulated, not wall-clock); the Server emits timetags from it.
         self._logical_beat = 0.0
+        #: the `clausters.base.appclock.AppClock` driving this routine, when one
+        #: is. Kept **apart from** `clock`, which is the musical one: everything
+        #: that reads `clock` reads it for a beat, a tempo or a session, and a
+        #: clock keeping seconds has none of those to give. What both share is
+        #: that `pause` has to reach whichever is holding this routine.
+        self.app_clock = None
         #: the routine's own random generator, seeded from the creating context
         #: (sclang-style inheritance): everything random drawn while this
         #: routine runs comes from here, so a root ``main.seed`` reproduces it.
@@ -193,8 +200,12 @@ class Routine(Stream):
         very ``yield`` it was paused on -- the counterpart of `reset`, which
         throws that position away. Pausing a routine that is not scheduled does
         nothing."""
+        # Whichever is holding it: a routine plays on one clock at a time, but
+        # which one it is depends on what last scheduled it.
         if self.clock is not None:
             self.clock.unsched(self)
+        if self.app_clock is not None:
+            self.app_clock.unsched(self)
         if self.state == "running":
             self.state = "paused"
         return self
@@ -237,7 +248,7 @@ def _call(func, inval):
         return func()
 
 
-def resume(item, clock, logical=None):
+def resume(item, clock, logical=None, *, musical=True):
     """Resume ``item`` on ``clock`` and return the delay it asks for next, or
     ``None`` when it wants no more time.
 
@@ -246,6 +257,13 @@ def resume(item, clock, logical=None):
     the exact logical beat a ``yield`` fell on) and
     `clausters.base.appclock.AppClock` in seconds, where there is no logical
     beat to carry and ``logical`` is left out.
+
+    ``musical`` says which of the two is driving, and what it decides is where
+    the clock is **remembered**: a routine's ``clock`` is the musical one, and
+    everything that reads it -- a `clausters.base.moment.Moment`, the session a
+    random draw belongs to -- reads it for a beat or a tempo that a clock
+    keeping seconds does not have. The application's clock is remembered in
+    ``app_clock`` instead, and ``pause`` reaches both.
 
     ``item`` is a `Stream` or a plain callable; anything else is ignored. A
     raising routine **loses its place in the schedule and nothing else**: the
@@ -260,9 +278,12 @@ def resume(item, clock, logical=None):
     prev = main.current_routine
     main.current_routine = item
     if isinstance(item, Stream):
-        item.clock = clock             # the running thread carries its clock (sc3)
-        if logical is not None:
-            item._logical_beat = logical   # ...and its exact logical time
+        if musical:
+            item.clock = clock         # the running thread carries its clock (sc3)
+            if logical is not None:
+                item._logical_beat = logical   # ...and its exact logical time
+        else:
+            item.app_clock = clock
     try:
         if isinstance(item, Stream):
             delta = item.next(clock)

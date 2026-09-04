@@ -328,11 +328,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         win.widget("redo").onClick(() => report("redo", editor.redo()));
         editor.locate(0.0);                 // the cursor waits at the top
 
-        // A pass ends by itself; this is the one loop that has to notice. Where
-        // the Python example polls the window's stream, the editor here
-        // subscribes to it (`open` listens), so this is the transport's half of
-        // that loop and nothing else.
-        setInterval(() => editor.transport.update(), 100);
+        // A pass ends by itself, and nothing here has to notice: the editor
+        // subscribes to the window's stream (`open` listens) and the transport
+        // asks about the end of its own pass on the host's application clock.
         // What the *model* says after a gesture that changed something — the
         // point of the page: the numbers below are the arrangement's, not the
         // picture's. The host reports gestures that change nothing too (a

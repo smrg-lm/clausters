@@ -166,6 +166,52 @@ What a destination sends is standard OSC and nothing more: a message, or a bundl
 
 The page cannot open a UDP socket, so a destination here rides a `Connection` exactly as the server does: for an external application, its WebSocket bridge. The Python client, which can, defaults to UDP — the difference is the carrier, never the timing.
 
+## The application's clock: `appClock()`
+
+There are **two** clocks, and they are not two implementations of one thing.
+`TempoClock` keeps musical time: beats, a tempo, and a piece plays on it.
+`AppClock` keeps the **application's** time — seconds on the page's own loop —
+and it is where anything that touches a *window* belongs: an animation, a
+periodic read-out, a redraw, a follow-up to a gesture.
+
+```js
+const clock = await gui.appClock();          // the ambient host's
+clock.sched(0.5, () => win.widget("knob").set({ value: 1.0 }));
+clock.play(new clausters.Routine(function* () {
+    for (;;) {                                // an animation is a routine that waits
+        win.widget("lamp").set({ color: "red" });
+        yield 0.25;
+        win.widget("lamp").set({ color: "grey" });
+        yield 0.25;
+    }
+}));
+```
+
+That is the shape worth taking from sclang's three clocks: the loop's timer
+source *is* the clock, so an animation is a routine that waits rather than an
+animation API beside the routines you already have. A function scheduled here
+follows the same contract as one on the `TempoClock` — return a number and it is
+rescheduled by that many **seconds**, return nothing and it ran once.
+
+`defer` is the other half. It hands work to the loop and returns at once,
+landing *after* the current task rather than inside it:
+
+```js
+clock.defer(() => win.close());
+```
+
+In the reference client that door matters more than it does here, because there
+a routine on the musical clock runs on a thread it must never block. A page has
+one thread for everything, so the rule is stronger and simpler: **nothing may
+block**, and `defer` is how a piece of work says "not in the middle of this one".
+
+The reference client builds this clock over an `EventLoop` of its own — a
+thread, a selector and a wake channel — because a Python script's windows are
+drained by something the script started. A page *is* that loop, so there is no
+`EventLoop` here and none is missing: the class, the calls and what they mean
+are the same, and what is absent is only the part that made a thread behave like
+a page.
+
 ## See also
 
 - [The client, layer by layer](guide.md) — where routines, clocks and the server sit in the whole client.

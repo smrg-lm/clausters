@@ -162,6 +162,10 @@ export class Editor<S = unknown> implements Adopting {
      */
     protected applied: number = FIRST_VERSION;
     protected windowId: number | null = null;
+    /** The host subscription this editor is fed through, while it has one. */
+    protected unlisten: (() => void) | null = null;
+    /** The handle `open` answered, kept so opening twice answers the same one. */
+    protected windowHandle: WindowHandle | null = null;
     /**
      * The context to register in when the caller named one; otherwise the
      * structure's own, asked for on each use.
@@ -386,24 +390,106 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * `draw` the structure and open it on `host`, or on the **ambient** host when
-     * none is named.
+     * none is named — the same rule `guidef.View.open`, `plot` and `scope`
+     * follow.
+     *
+     * **It also listens.** From here the gestures reach the structure as the
+     * host reports them, with nothing routed by the caller; that is what makes
+     * {@link edit} one call.
+     *
+     * **One editor, one window.** Opening an open editor answers the window it
+     * already has rather than orphaning it: a second view of one structure is
+     * `edit(x)` a second time, which gives a second editor on one history.
      */
     async open(
         host?: GuiHost,
         { id, stage }: { id?: number; stage?: unknown } = {},
     ): Promise<WindowHandle> {
+        if (this.windowId !== null && this.windowHandle !== null) return this.windowHandle;
         const resolved = await resolveEditorHost(host);
         this.host = resolved;
         const handle = resolved.open(this.draw(), { id, element: stage as never });
         this.windowId = handle.id;
+        this.windowHandle = handle;
         this.editing.attach(this);
+        this.listen(resolved);
         this.announce();
         return handle;
+    }
+
+    /**
+     * Subscribe to the host's messages, so an edit-back reaches the structure.
+     * `open` does it; this is the door for a caller that opened the window
+     * itself. Answers the unsubscribe.
+     */
+    listen(host: GuiHost): () => void {
+        this.detach();
+        this.unlisten = host.onMessage((msg) => {
+            this.apply(msg.addr, msg.args);
+        });
+        return () => this.detach();
     }
 
     /** The open window's id, or `null`. */
     get window(): number | null {
         return this.windowId;
+    }
+
+    /** The open window's id, or `null` — the same number as {@link window}. */
+    get id(): number | null {
+        return this.windowId;
+    }
+
+    /** Whether this editor's window is gone. */
+    get closed(): boolean {
+        return this.windowId === null;
+    }
+
+    /**
+     * Close this editor's window (`/gui_free`) and stop listening.
+     *
+     * **The history is not closed with it.** An undo order belongs to the data
+     * ({@link Editing}), so editing the same structure again resumes the same
+     * order — closing a window is not an edit, and never was.
+     */
+    close(): this {
+        const window = this.windowId;
+        this.windowId = null;
+        this.windowHandle = null;
+        this.detach();
+        if (this.host !== null && window !== null) this.host.close(window);
+        this.editing.detach(this);
+        return this;
+    }
+
+    /**
+     * Call `handler()` when this editor's window is closed; `null` clears it.
+     *
+     * The same verb `PlotWindow.onClosed` and `WindowHandle.onClosed` carry,
+     * over the same registry — so a window opened by {@link edit} and one
+     * opened by `plot` are told about in one way.
+     */
+    onClosed(handler: (() => void) | null): this {
+        if (this.host === null || this.windowId === null) {
+            throw new Error("open() the editor before asking to be told it closed");
+        }
+        this.host.setClosedHandler(this.windowId, handler);
+        return this;
+    }
+
+    /**
+     * Resolves when this editor's window is closed, or on `timeout` seconds —
+     * `true` for the first, `false` for the second.
+     *
+     * The page's shape of the reference client's `Editor.wait`: there a script
+     * must not exit while the window is on screen and the call blocks a thread;
+     * here nothing exits and nothing may block, so it is a promise. What both
+     * say is the same — read the structure back *after* the hand is done with
+     * it.
+     */
+    wait(timeout?: number): Promise<boolean> {
+        if (this.host === null) return Promise.resolve(this.closed);
+        return this.host.waitWhile(() => !this.closed, timeout);
     }
 
     // ---- the edit-back ----
@@ -436,11 +522,12 @@ export class Editor<S = unknown> implements Adopting {
                 (rawArgs.length === 0 || Math.trunc(Number(rawArgs[0])) === this.windowId)
             ) {
                 this.windowId = null;
+                this.windowHandle = null;
                 // Closing a *view* is not an event of the history, so the
                 // context stays exactly as it is -- what goes is this window's
                 // place in the list of who to tell.
                 this.editing.detach(this);
-                this.closed();
+                this.onWindowGone();
             }
             return false;
         }
@@ -631,18 +718,25 @@ export class Editor<S = unknown> implements Adopting {
         return false;
     }
 
-    /** Unsubscribe from the host. Nothing to do until a subclass subscribes. */
-    detach(): void {}
+    /** Stop listening. The window stays open; nothing reaches the structure. */
+    detach(): void {
+        this.unlisten?.();
+        this.unlisten = null;
+    }
 
     /**
      * This editor's window went away: stop whatever it was driving.
      *
-     * Nothing here. {@link FormEditor} unsubscribes — unless a view it composed
-     * is still on screen and being fed from the same subscription, which is why
-     * this is a hook of its own rather than a call to {@link Editor.detach}: the
-     * public door means "stop listening" and must go on meaning it.
+     * Unsubscribing, here — an editor with no window has nothing to answer for,
+     * and the host holds an open editor so a script need not, which is where
+     * that stops. {@link FormEditor} overrides it, because a view *it* composed
+     * may still be on screen and fed from the same subscription; that is why
+     * this is a hook of its own rather than a call to {@link Editor.detach},
+     * whose public meaning is "stop listening" and must go on meaning it.
      */
-    protected closed(): void {}
+    protected onWindowGone(): void {
+        this.detach();
+    }
 
     /**
      * Another view of this structure edited it: bring this window in step. A

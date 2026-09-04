@@ -169,15 +169,32 @@ by holding one:
 | a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
 
 ```ts
-const editor = gui.edit(curve, { sampleRate: 48_000 });
-await editor.open(undefined, { stage: element });
+const editor = await gui.edit(curve, { sampleRate: 48_000, stage: element });
 
 curve.toPoints();      // the edited curve, out of the object you already held
 ```
 
+**It opens.** The window is up and listening when that resolves, so the
+structure you already hold is the edited one from that moment: read it whenever,
+and it says what the hand has left there. `{ open: false }` builds the editor
+without a window, for a caller composing one. It is `await`ed where the reference
+client's `edit` is not, for the reason `plot` and `View.open` are — resolving the
+ambient host may have to boot it.
+
 Nothing is handed back: the object passed in *is* the edited one. A composition
 is not one of the three — an arrangement is `FormEditor`'s, which knows a tree
 from a leaf and holds a document.
+
+Reading it back **after the hand is done** is `wait`:
+
+```ts
+await editor.wait();   // resolves when the window is closed
+curve.toPoints();      // the curve, as it was left
+```
+
+`editor.closed` is the same question asked without waiting, and `editor.close()`
+closes the window from the page — the history is not closed with it, since an
+undo order belongs to the data.
 
 **Two calls over one structure give two windows and one stack.** The editing
 context belongs to the data, so an undo in either window steps the one order both

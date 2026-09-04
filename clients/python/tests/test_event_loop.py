@@ -176,19 +176,32 @@ def test_a_routine_is_resumed_by_the_seconds_it_yields(loop):
     assert frames == [0, 1, 2]
 
 
-def test_a_routine_carries_the_clock_it_runs_on(loop):
+def test_a_routine_carries_the_app_clock_apart_from_the_musical_one(loop):
+    """Both are remembered, and they are not the same slot.
+
+    ``clock`` is the **musical** one, and everything that reads it reads it for a
+    beat, a tempo or a session -- a `Moment`, a random draw's session. A clock
+    keeping seconds has none of those to give, so it is remembered in
+    ``app_clock``, which is what `pause` also reaches.
+    """
     clock = AppClock(loop)
     seen = []
 
     def routine():
         from clausters.base.main import main
 
-        seen.append(main.current_routine.clock)
+        tt = main.current_routine
+        seen.append((tt.clock, tt.app_clock))
         yield 0.0
 
-    clock.play(Routine(routine))
+    item = Routine(routine)
+    clock.play(item)
     loop.iterate(0.0)
-    assert seen == [clock]
+    assert seen == [(None, clock)], "the app clock, and no musical clock at all"
+
+    # And `pause` reaches it: a routine on this clock comes off it.
+    item.pause()
+    assert loop.iterate(0.0) is False, "nothing left queued for it"
 
 
 def test_unsched_cancels_what_was_queued_for_an_item(loop):

@@ -22,6 +22,7 @@
 
 import type { Editing } from "./context.ts";
 import type { Editor } from "./editor.ts";
+import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import { SamplesEditor, isSamples } from "./samples.ts";
@@ -45,22 +46,21 @@ export interface EditOptions {
      * one order.
      */
     context?: Editing | null;
+    /** The host to open on. Absent: the ambient one, booted if it has to be. */
+    host?: GuiHost;
+    /** The element the window's canvas takes the box of. Absent: one of its own. */
+    stage?: Stage | null;
+    /**
+     * `false` to build the editor without opening it — for a caller that wants
+     * to inspect the picture, join a context, or hand the editor to a window it
+     * is composing.
+     */
+    open?: boolean;
 }
 
-/**
- * Opens `structure` in an editor of its own kind — a `Buffer` (its samples), an
- * `Automation` (its curve) or a `Timeline` (its notes).
- *
- * The editor is not opened: {@link Editor.open} is a separate step, so a caller
- * can inspect the picture, join a context or hand the editor to a window it is
- * composing.
- *
- * Throws for something none of the three domains reads, naming what they are —
- * an unopenable structure is a question about the data, and answering it with a
- * bare failure teaches nothing.
- */
-export function edit(structure: unknown, options: EditOptions = {}): Editor<never> {
-    const { sampleRate = 0, tempo = 1.0, ...rest } = options;
+/** Builds the editor `structure` asks for, without opening it. */
+function editorFor(structure: unknown, options: EditOptions): Editor<never> {
+    const { sampleRate = 0, tempo = 1.0, host: _h, stage: _s, open: _o, ...rest } = options;
     if (isSamples(structure)) {
         return new SamplesEditor(structure, {
             sampleRate,
@@ -87,4 +87,33 @@ export function edit(structure: unknown, options: EditOptions = {}): Editor<neve
             "`edit` opens a Buffer (its samples), an Automation (its curve) or a " +
             "Timeline (its notes). A composition is FormEditor's.",
     );
+}
+
+/**
+ * Opens `structure` in an editor of its own kind — a `Buffer` (its samples), an
+ * `Automation` (its curve) or a `Timeline` (its notes) — and answers the open
+ * editor.
+ *
+ * **It opens.** The window is up and listening when this resolves, so the
+ * structure the caller already holds is the edited one from that moment: read
+ * it whenever, and it says what the hand has left there. `{ open: false }`
+ * builds the editor without a window, for a caller composing one.
+ *
+ * Async where the reference client's `edit` is not, for the reason `plot` and
+ * `View.open` are: resolving the ambient host may have to boot it. The verb, the
+ * dispatch and what comes back are the same.
+ *
+ * Throws for something none of the three domains reads, naming what they are —
+ * an unopenable structure is a question about the data, and answering it with a
+ * bare failure teaches nothing.
+ */
+export async function edit(
+    structure: unknown,
+    options: EditOptions = {},
+): Promise<Editor<never>> {
+    const editor = editorFor(structure, options);
+    if (options.open !== false) {
+        await editor.open(options.host, { stage: options.stage });
+    }
+    return editor;
 }

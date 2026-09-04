@@ -336,3 +336,86 @@ test("GuiHost: a typeface a host cannot read leaves it drawing", {
         assert.equal((await gui.query(7)).type, "label");
     });
 });
+
+// ---- what a caller sequences on: `closed`, and `wait` ----------------------
+
+test("GuiHost: a window says whether it is closed, and wait resolves when it is", async () => {
+    // The page's half of the reference client's `wait`. There a *script* must
+    // not exit while a window is on screen and the call blocks a thread; a page
+    // never exits and must never block, so the same verb is a promise. What both
+    // say is "tell me when the window is gone".
+    let deliver: ((packet: Uint8Array) => void) | undefined;
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: (fn: (packet: Uint8Array) => void) => {
+                deliver = fn;
+            },
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+
+    const win = gui.open(window({}, button({ name: "go" })));
+    assert.equal(win.closed, false);
+
+    const waited = win.wait();
+    const all = gui.wait();
+    deliver!(encodeMessage("/gui_closed", [["i", win.id]]));
+    assert.equal(await waited, true);
+    assert.equal(await all, true, "the last window of the host went with it");
+    assert.equal(win.closed, true);
+
+    // Nothing open: it answers at once rather than waiting for a close that
+    // cannot come.
+    assert.equal(await gui.wait(), true);
+});
+
+test("GuiHost: a bounded wait answers false while the window is still there", async () => {
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const win = gui.open(window({}, button({ name: "go" })));
+    assert.equal(await win.wait(0.05), false);
+    assert.equal(win.closed, false);
+});
+
+test("GuiHost: closing a window from the page resolves what was waiting", async () => {
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const win = gui.open(window({}, button({ name: "go" })));
+    const waited = win.wait();
+    win.close();
+    assert.equal(await waited, true, "`close` is a close like any other");
+});
+
+test("GuiHost: an owner of data is handed a message before the widget handles", () => {
+    // The order the reference client's `deliver` fixes: an editor plugs in
+    // through `onMessage` and applies the edit, and a script's `onEvent` on the
+    // same widget must see the structure as the gesture left it.
+    let deliver: ((packet: Uint8Array) => void) | undefined;
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: (fn: (packet: Uint8Array) => void) => {
+                deliver = fn;
+            },
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const order: string[] = [];
+    const win = gui.open(window({}, button({ name: "go" })));
+    gui.onMessage(() => order.push("subscriber"));
+    win.widget("go").onEvent(() => order.push("handle"));
+    deliver!(encodeMessage("/gui_event",
+        [["i", win.widget("go").id], ["i", 1], ["i", 0], ["i", 1]]));
+    assert.deepEqual(order, ["subscriber", "handle"]);
+});

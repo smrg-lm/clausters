@@ -117,21 +117,33 @@ const blob = (values: number[]): Uint8Array => new Uint8Array(Float32Array.from(
 
 // ---- the verb ----
 
-test("the verb opens the editor the structure asks for", () => {
-    assert.ok(edit(aCurve(), { sampleRate: SR }) instanceof PointsEditor);
-    assert.ok(edit(aTimeline(), { sampleRate: SR }) instanceof NotesEditor);
-    assert.ok(edit(new FakeBuffer()) instanceof SamplesEditor);
+test("the verb opens the editor the structure asks for", async () => {
+    const off = { open: false } as const;
+    assert.ok((await edit(aCurve(), { sampleRate: SR, ...off })) instanceof PointsEditor);
+    assert.ok((await edit(aTimeline(), { sampleRate: SR, ...off })) instanceof NotesEditor);
+    assert.ok((await edit(new FakeBuffer(), off)) instanceof SamplesEditor);
 });
 
-test("something none of the three reads says what they are", () => {
-    assert.throws(() => edit({}), /edit` opens a Buffer/);
+test("something none of the three reads says what they are", async () => {
+    await assert.rejects(() => edit({}), /edit` opens a Buffer/);
+});
+
+test("the verb opens on the host it is given", async () => {
+    // `edit(x)` is one call: the window is up and listening when it resolves,
+    // so nothing has to be opened afterwards.
+    const host = new FakeHost();
+    const curve = aCurve();
+    const editor = await edit(curve, { sampleRate: SR, host: asHost(host) });
+    assert.equal(host.trees.length, 1, "one window, opened by the verb");
+    assert.equal(editor.closed, false);
+    assert.equal(typeof editor.id, "number");
 });
 
 // ---- a curve ----
 
 test("a curve is drawn, edited and read back with no composition", async () => {
     const curve = aCurve();
-    const editor = edit(curve, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
 
     assert.equal(
@@ -153,7 +165,7 @@ test("a segment's shape survives the round trip", async () => {
     // The crate carries a point's `data` and reads none of it, which is what
     // keeps an undo from putting the curve back straight.
     const curve = aCurve();
-    const editor = edit(curve, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 300.0, 5, -4.0, 2.0, 900.0, 1, 0.0]);
     assert.deepEqual(curve.toPoints().slice(2, 4), [5, -4.0], "the shape the hand drew");
@@ -167,7 +179,7 @@ test("a segment's shape survives the round trip", async () => {
 
 test("a resend of the curve is not an edit", async () => {
     const curve = aCurve();
-    const editor = edit(curve, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     assert.equal(
         editor.apply("/gui_event", [wid, 1, 0, "points", ...curve.toPoints()]),
@@ -180,7 +192,7 @@ test("a resend of the curve is not an edit", async () => {
 
 test("a roll edits the timeline the caller holds", async () => {
     const timeline = aTimeline();
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
 
     assert.equal(
@@ -203,7 +215,7 @@ test("a note keeps what the roll cannot draw", async () => {
     const timeline = new Timeline([
         [0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })],
     ]);
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 65, 100, 0]);
     const [, event] = [...timeline][0] as [number, SeqEvent];
@@ -215,7 +227,7 @@ test("what the roll does not draw is kept", async () => {
     const timeline = aTimeline();
     const marker = new OscItem("/mark");
     timeline.add(3.0, marker);
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
     assert.ok(
@@ -229,7 +241,7 @@ test("a marker dragged in the roll moves it on the timeline", async () => {
     // lane is an edit of the timeline, with an inverse like any other.
     const timeline = aTimeline();
     timeline.add(3.0, new OscItem("/hit", 7));
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
 
     assert.equal(editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"]), true);
@@ -257,7 +269,7 @@ test("a marker removed in the roll leaves its neighbours theirs", async () => {
         [1.0, new OscItem("/b", 2)],
         [2.0, new OscItem("/c", 3)],
     ]);
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
 
     assert.equal(
@@ -275,7 +287,7 @@ test("a marker added in the roll is refused and says why", async () => {
     // gesture is answered rather than half-applied: the reason, and the markers
     // as they still are.
     const timeline = new Timeline([[0.0, new OscItem("/a")]]);
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { host, wid } = await opened(editor);
 
     assert.equal(
@@ -292,7 +304,7 @@ test("a marker added in the roll is refused and says why", async () => {
 test("the notes gesture does not move the markers", async () => {
     const timeline = aTimeline();
     timeline.add(3.0, new OscItem("/hit"));
-    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const editor = await edit(timeline, { sampleRate: SR, tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
     assert.deepEqual(
@@ -305,7 +317,7 @@ test("the notes gesture does not move the markers", async () => {
 
 test("a stroke writes the server's buffer and undoes off the wire", async () => {
     const take = new FakeBuffer(8);
-    const editor = edit(take, { tempo: TEMPO });
+    const editor = await edit(take, { tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
 
     assert.equal(
@@ -324,7 +336,7 @@ test("a stroke writes the server's buffer and undoes off the wire", async () => 
 
 test("one dragged sample is the same edit one frame wide", async () => {
     const take = new FakeBuffer(8);
-    const editor = edit(take, { tempo: TEMPO });
+    const editor = await edit(take, { tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     assert.equal(editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]), true);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -337,7 +349,7 @@ test("one dragged sample is the same edit one frame wide", async () => {
 test("a stroke on one channel of a stereo take leaves the other alone", async () => {
     const take = new FakeBuffer(4, 2);
     take.data = [0.1, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.2];
-    const editor = edit(take, { tempo: TEMPO });
+    const editor = await edit(take, { tempo: TEMPO, open: false });
     const { wid } = await opened(editor);
     editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1, blob([0.7, 0.8]), blob([0.2, 0.2])]);
     // The interleaved splice is a read and a write, so it settles a turn later.
@@ -352,8 +364,8 @@ test("a stroke on one channel of a stereo take leaves the other alone", async ()
 
 test("edit called twice gives two windows and one stack", async () => {
     const curve = aCurve();
-    const left = edit(curve, { sampleRate: SR });
-    const right = edit(curve, { sampleRate: SR });
+    const left = await edit(curve, { sampleRate: SR, open: false });
+    const right = await edit(curve, { sampleRate: SR, open: false });
     const { wid } = await opened(left);
     const { host: rightHost } = await opened(right);
     rightHost.acks.length = 0;
@@ -372,8 +384,8 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     const context = new Editing();
     const curve = aCurve();
     const timeline = aTimeline();
-    const curveEditor = edit(curve, { sampleRate: SR, tempo: TEMPO, context });
-    const roll = edit(timeline, { sampleRate: SR, tempo: TEMPO, context });
+    const curveEditor = await edit(curve, { sampleRate: SR, tempo: TEMPO, context, open: false });
+    const roll = await edit(timeline, { sampleRate: SR, tempo: TEMPO, context, open: false });
     const { wid: curveWid } = await opened(curveEditor);
     const { wid: rollWid } = await opened(roll);
 

@@ -208,19 +208,6 @@ a person saw it work.
 Numbered milestones whose track is otherwise closed. Each is owned and written in
 its plan; the plan is where its acceptance is read.
 
-### Ready — no decision in front of them
-
-- ⬜ **`edit(x)` opens, and the `AppClock` the page already half has**, `W29`
-  *(`clients/web/PLAN.md`, `W29`)*. The web half of what the Python client
-  closed on 2026-09-04 (`C52` shipped the loop, `C53` the examples pass and the
-  decision that **opening a window starts it**). The page is the reference for
-  the loop itself -- nothing pumps there and never did -- so what is owed back
-  is the surface: `edit(x)` opening, `Editor`'s `id`/`closed`/`close`/
-  `onClosed`, an `AppClock` over the page's own loop, a transport that ticks
-  itself, and `closed` on everything that opens a window. The blocking `wait`
-  the scripts grew has no counterpart in a page and must not be transliterated;
-  the plan says which half crosses.
-
 ### Waiting on a decision
 
 - ⬜ **The `N` track's second half — notation: what a page lets a hand do**,

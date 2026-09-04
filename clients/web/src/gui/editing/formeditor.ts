@@ -448,7 +448,6 @@ export class FormEditor extends Editor<Element> implements Adopting {
     // arrangement or a second view would leave it describing a composition that
     // has moved on, and undo would then write a state nobody was ever in. The
     // accessors below read that context.
-    private unlisten: (() => void) | null = null;
     private destination: unknown = null;
     private clock: TempoClock | null = null;
 
@@ -639,11 +638,14 @@ export class FormEditor extends Editor<Element> implements Adopting {
         host?: GuiHost,
         { id, stage }: { id?: number; stage?: Stage | null } = {},
     ): Promise<WindowHandle> {
+        // One editor, one window: see `Editor.open`.
+        if (this.windowId !== null && this.windowHandle !== null) return this.windowHandle;
         host = await resolveEditorHost(host);
         this.host = host;
         this.transport.host = host;
         const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
+        this.windowHandle = handle;
         this.editing.attach(this);
         this.listen(host);
         this.announce();
@@ -651,11 +653,24 @@ export class FormEditor extends Editor<Element> implements Adopting {
     }
 
     /**
+     * Resolves when every window this editor is on screen through is closed, or
+     * on `timeout` seconds.
+     *
+     * {@link FormEditor.windows} rather than `window`, for the reason that
+     * property states: a multitrack may be on screen through a composed view
+     * alone.
+     */
+    override wait(timeout?: number): Promise<boolean> {
+        if (this.host === null) return Promise.resolve(true);
+        return this.host.waitWhile(() => this.windows.length > 0, timeout);
+    }
+
+    /**
      * Subscribe to the host's messages, so an edit-back reaches the arrangement.
      * `open` does it; this is the door for a caller that opened the window
      * itself.
      */
-    listen(host: GuiHost): () => void {
+    override listen(host: GuiHost): () => void {
         this.detach();
         this.unlisten = host.onMessage((msg) => {
             this.apply(msg.addr, msg.args);
@@ -668,18 +683,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
         return () => this.detach();
     }
 
-    /** Stop listening. The window stays open; nothing reaches the arrangement. */
-    detach(): void {
-        this.unlisten?.();
-        this.unlisten = null;
-    }
-
     /**
      * This window closed. The subscription goes with it — **unless a view this
      * editor composed is still on screen**: there is one `onMessage` for all of
      * them, and dropping it would leave a window open and dead.
      */
-    protected override closed(): void {
+    protected override onWindowGone(): void {
         if (this.windows.length === 0) this.detach();
     }
 

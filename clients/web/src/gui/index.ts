@@ -23,7 +23,7 @@
 // object either way.
 
 export { formatWidgetInfo, GuiHost, guiHost, newGuiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";
-export { ambientHost, setAmbientHost } from "./ambient.ts";
+export { ambientHost, appClock, setAmbientHost } from "./ambient.ts";
 export type {
     ClaustersGui, EventListener, PageGuiConnection, PropValue, WidgetInfo,
 } from "./host.ts";

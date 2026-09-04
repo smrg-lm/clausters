@@ -129,7 +129,7 @@ class AppClock:
         once, so the two clocks cannot come to mean different things by it.
         """
         def wake():
-            return resume(item, self)
+            return resume(item, self, musical=False)
 
         return wake
 

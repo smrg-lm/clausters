@@ -217,11 +217,9 @@ this directory and open the page.</div>
         // over the last two bars.
         await editor.render(server, clock);
 
-        // A pass ends by itself; this is the one loop that has to notice. Where
-        // the Python example polls the window's stream, the editor here
-        // subscribes to it (`open` listens), so this is the transport's half of
-        // that loop and nothing else.
-        setInterval(() => editor.transport.update(), 100);
+        // A pass ends by itself, and nothing here has to notice: the editor
+        // subscribes to the window's stream (`open` listens) and the transport
+        // asks about the end of its own pass on the host's application clock.
       }
 
       el("start").addEventListener("click", () => {

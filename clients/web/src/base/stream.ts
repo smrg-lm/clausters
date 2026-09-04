@@ -16,9 +16,11 @@
 // now" (`base/context.ts`) is only sound while a wake runs to completion.
 
 import { main } from "./main.ts";
+import { setCurrentRoutine } from "./context.ts";
 import { spawnRng } from "./rand.ts";
 import type { Rng } from "./rand.ts";
 import type { TempoClock } from "./clock.ts";
+import type { AppClock } from "./appclock.ts";
 
 /** Thrown (and caught by the clock) to end a stream normally. */
 export class StopStream extends Error {
@@ -65,6 +67,14 @@ export abstract class Stream {
      * time of what it is emitting.
      */
     clock: TempoClock | null = null;
+    /**
+     * The {@link AppClock} driving this stream, when one is. Kept **apart from**
+     * {@link Stream.clock}, which is the musical one: everything that reads
+     * `clock` reads it for a beat, a tempo or a session, and a clock keeping
+     * seconds has none of those to give. What both share is that `pause` has to
+     * reach whichever is holding this stream.
+     */
+    appClock: AppClock | null = null;
     /**
      * The exact logical beat at which the clock last resumed this stream
      * (yield-accumulated, never wall-clock). The Server stamps from it.
@@ -252,7 +262,10 @@ export class Routine extends Stream {
      * position away. Pausing a routine that is not scheduled does nothing.
      */
     pause(): this {
+        // Whichever is holding it: a routine plays on one clock at a time, but
+        // which one it is depends on what last scheduled it.
         this.clock?.unsched(this);
+        this.appClock?.unsched(this);
         if (this.state === "running") this.state = "paused";
         return this;
     }
@@ -278,4 +291,54 @@ export class Routine extends Stream {
  */
 function resolveClock(): TempoClock {
     return main.resolveClock() ?? main.getDefaultClock();
+}
+
+
+/**
+ * Drives `item` once and answers the delay it asks for next, or `undefined`
+ * when it wants no more time.
+ *
+ * The one resumption, so the two clocks cannot disagree about what driving a
+ * routine means: {@link TempoClock} calls it in beats (passing the exact logical
+ * beat a `yield` fell on) and `AppClock` in seconds, where there is no logical
+ * beat to carry.
+ *
+ * `musical` says which of the two is driving, and what it decides is where the
+ * clock is **remembered**: a stream's {@link Stream.clock} is the musical one,
+ * and everything that reads it -- a `Moment`, the session a random draw belongs
+ * to -- reads it for a beat or a tempo that a clock keeping seconds does not
+ * have. The application's clock is remembered in {@link Stream.appClock}
+ * instead, and `pause` reaches both.
+ *
+ * A stream that ends is caught; anything else it throws costs it its turn and
+ * nothing else, because the driver wakes every other routine and a dead one
+ * would leave a clock that reports itself running while waking nobody.
+ */
+export function resume(
+    item: Stream | (() => unknown),
+    clock: TempoClock | AppClock,
+    { logical, musical = true }: { logical?: number; musical?: boolean } = {},
+): number | undefined {
+    const isStream = item instanceof Stream;
+    const previous = setCurrentRoutine(isStream ? item : null);
+    if (isStream) {
+        if (musical) {
+            item.clock = clock as TempoClock; // the running stream carries its clock (sc3)
+            if (logical !== undefined) item.logicalBeat = logical; // ...and its logical time
+        } else {
+            item.appClock = clock as AppClock;
+        }
+    }
+    let delta: unknown;
+    try {
+        delta = isStream ? item.next(clock) : item();
+    } catch (error) {
+        if (error instanceof StopStream) return undefined;
+        if (item instanceof Routine) item.state = "done";
+        console.error("routine dropped after throwing:", error);
+        return undefined;
+    } finally {
+        setCurrentRoutine(previous);
+    }
+    return typeof delta === "number" && Number.isFinite(delta) ? delta : undefined;
 }

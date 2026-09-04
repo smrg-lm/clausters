@@ -85,8 +85,7 @@ key, and where the state lives is the client's.</div>
         // One verb. A `Buffer` opens as a SamplesEditor — one `waveform` widget
         // the host draws straight from the server's buffer, and the crate's
         // `samples` vocabulary.
-        const editor = gui.edit(take, { title: "take" });
-        await editor.open(undefined, { stage: $("stage") });
+        const editor = await gui.edit(take, { title: "take", stage: $("stage") });
 
         log("zoom in (wheel) until the samples are discs, then Alt+drag to draw");
         $("play").disabled = false;

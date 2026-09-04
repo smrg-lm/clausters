@@ -350,8 +350,8 @@ table rather than derived again. The arrangement layer in the next section is
 | beats → items, forward only | `Stream` / a pattern | a value |
 | a position that advances | `TempoClock` | a **process** over the others |
 | a position that does not | `Moment` | a value |
-| what is ready, and what is due | `EventLoop` (`base/loop.py`) | a **process** over sources and timers |
-| the application's own seconds | `AppClock` (`base/appclock.py`) | a **process**, the clock face over that loop |
+| what is ready, and what is due | `EventLoop` (`base/loop.py`); the page itself | a **process** over sources and timers |
+| the application's own seconds | `AppClock` (`base/appclock.py`, `base/appclock.ts`) | a **process**, the clock face over that loop |
 
 **There are two clocks, and they are not two implementations of one thing.**
 `TempoClock` keeps musical time (beats, on its own thread, a piece plays on it);
@@ -362,7 +362,12 @@ animation is a routine that waits, not an animation API. The two share what
 would otherwise be written twice — the queue is
 `clausters_core::tempoclock::Scheduler` in both (beats in one, seconds in the
 other) and resuming a routine is `base.stream.resume` in both — so what is
-per-clock is exactly the unit and the drive.
+per-clock is exactly the unit and the drive. What that shared resumption also
+fixes is **where the driving clock is remembered**: a routine's `clock` is the
+musical one, because everything that reads it (a `Moment`, the session a random
+draw belongs to) reads it for a beat or a tempo; the application's clock is
+remembered apart, in `app_clock`, and `pause` reaches whichever is holding the
+routine.
 
 `EventLoop` under it is the ordinary machine (sources, one wait bounded by the
 nearest timer, a wake pipe, fixed phases, `run` or `iterate`), and it is
@@ -370,8 +375,16 @@ deliberately ignorant of the GUI: a `GuiHost` registers itself as a source and
 gets a loop per host, since there is one inbound carrier per host. **What must
 not be re-derived per client is the schedule, not the loop**: the wait, the
 thread and the GIL are the language's, which is why the browser has no
-`EventLoop` at all — the page is one — and the web client's `AppClock` is the
-same surface over `setTimeout`.
+`EventLoop` at all — the page is one — and the web client's `AppClock`
+(`base/appclock.ts`) is the same surface over `setTimeout`.
+
+The same seam decides **how a caller waits for a window to close**. Opening a
+window starts the delivery in both, so what is left is the wait, and a wait is
+exactly where the two runtimes differ: a Python *script* must not exit while a
+window is on screen, so `wait` blocks its thread; a page never exits and must
+never block, so the same verb answers a promise. One verb, one meaning — "tell
+me when the window is gone" — and two shapes, which is the ordinary way a
+surface crosses.
 
 Three things this makes visible that no single type does:
 

@@ -91,17 +91,29 @@ lands.</div>
         // One verb. `edit` dispatches on **what the structure is**: an
         // `Automation` opens as a PointsEditor — one `bpf` widget, the `points`
         // vocabulary, and the curve's own editing context.
-        const editor = gui.edit(curve, { sampleRate: 48_000, title: "cutoff" });
-        await editor.open(undefined, { stage: $("stage") });
+        const editor = await gui.edit(curve, {
+          sampleRate: 48_000, title: "cutoff", stage: $("stage"),
+        });
 
         // Calling `edit` again over the **same** curve gives a second window.
         // It is not a copy and it does not get a history of its own.
-        const other = gui.edit(curve, { sampleRate: 48_000, title: "cutoff (again)" });
-        await other.open(undefined, { stage: $("other") });
+        const other = await gui.edit(curve, {
+          sampleRate: 48_000, title: "cutoff (again)", stage: $("other"),
+        });
 
         log("draw in either window; Ctrl+Z undoes, in either one");
         $("read").disabled = false;
         $("read").onclick = () => readBack();
+
+        // The same ending the Python script has, in the shape a page can take
+        // it: there a script *blocks* on `wait()` so it does not exit while the
+        // window is on screen; here nothing exits and nothing may block, so the
+        // same verb is a promise and this reads the curve back when the hand is
+        // done with it.
+        editor.wait().then(() => {
+          log("the curve, as it was left:");
+          readBack();
+        });
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

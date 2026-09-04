@@ -343,4 +343,22 @@ export class WindowHandle extends WidgetHandle {
         this.host.setClosedHandler(this.id, handler);
         return this;
     }
+
+    /** Whether this window is gone — closed by a hand or by `close`. */
+    get closed(): boolean {
+        return !this.host.isOpen(this.id);
+    }
+
+    /**
+     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * the first, `false` for the second.
+     *
+     * `GuiHost.wait` for one window rather than all of them. A page never has
+     * to be held open the way a script does, so this is not how a program stays
+     * alive; it is how one sequences on the close — read the structure back,
+     * tear something down, open the next thing.
+     */
+    wait(timeout?: number): Promise<boolean> {
+        return this.host.waitWhile(() => !this.closed, timeout);
+    }
 }

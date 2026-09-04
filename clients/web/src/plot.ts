@@ -100,6 +100,20 @@ export class PlotWindow {
         return this;
     }
 
+    /** Whether this window is gone — closed by a hand or by `close`. */
+    get closed(): boolean {
+        return !this.host.isOpen(this.id);
+    }
+
+    /**
+     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * the first, `false` for the second. The same verb
+     * {@link GuiHost.wait} and `WindowHandle.wait` carry.
+     */
+    wait(timeout?: number): Promise<boolean> {
+        return this.host.waitWhile(() => !this.closed, timeout);
+    }
+
     /** Closes the window (`/gui_free`). */
     close(): void {
         this.host.close(this.id);
@@ -139,6 +153,20 @@ export class PatchWindow {
     onClosed(handler: (() => void) | null): this {
         this.host.setClosedHandler(this.id, handler);
         return this;
+    }
+
+    /** Whether this window is gone — closed by a hand or by `close`. */
+    get closed(): boolean {
+        return !this.host.isOpen(this.id);
+    }
+
+    /**
+     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * the first, `false` for the second. The same verb
+     * {@link GuiHost.wait} and `WindowHandle.wait` carry.
+     */
+    wait(timeout?: number): Promise<boolean> {
+        return this.host.waitWhile(() => !this.closed, timeout);
     }
 
     /** Closes the window (`/gui_free`). */

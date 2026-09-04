@@ -24,10 +24,10 @@
 // the clock is as offline as before.
 
 import { Scheduler } from "../core/clausters_core_web.js";
-import { currentRoutine, setCurrentRoutine } from "./context.ts";
+import { currentRoutine } from "./context.ts";
 import { TempoMap, tempoEnv } from "./time.ts";
 import type { CurveSpec, TempoEnvelope, TimeUnit } from "./time.ts";
-import { Routine, Stream, StopStream } from "./stream.ts";
+import { Stream, resume } from "./stream.ts";
 import {
     MonotonicTimebase,
     SampleClockTimebase,
@@ -1052,31 +1052,12 @@ export class TempoClock {
 
     /** Resumes `item` at `beat`, rescheduling it by whatever delay it asks for. */
     private wake(item: Schedulable, beat: number): void {
-        const isStream = item instanceof Stream;
-        const previous = setCurrentRoutine(isStream ? item : null);
         this.logicalBeat = beat;
-        if (isStream) {
-            item.clock = this; // the running stream carries its clock (sc3)
-            item.logicalBeat = beat; // ...and its exact logical time
-        }
-        let delta: unknown;
-        try {
-            delta = isStream ? item.next(this) : item();
-        } catch (error) {
-            if (error instanceof StopStream) return;
-            // A raising routine loses its place in the schedule -- and only its
-            // own place. The driver must survive it: it wakes every other
-            // routine, and an error thrown from here would leave `pump` without
-            // arming the next wake, a clock that reports itself running and
-            // never fires again. Report it and drop this one.
-            if (item instanceof Routine) item.state = "done";
-            console.error("routine dropped after throwing:", error);
-            return;
-        } finally {
-            setCurrentRoutine(previous);
-        }
-        if (typeof delta === "number" && Number.isFinite(delta)) {
-            this.push(beat + delta, item);
-        }
+        // `resume` is the shared one, so the musical clock and the application's
+        // cannot come to mean different things by "drive a routine" -- including
+        // what a raising one costs, which is its own place in the schedule and
+        // nothing else.
+        const delta = resume(item, this, { logical: beat });
+        if (delta !== undefined) this.push(beat + delta, item);
     }
 }

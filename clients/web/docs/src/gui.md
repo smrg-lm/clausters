@@ -158,6 +158,22 @@ const info = await win.widget("cutoff").query();   // a round trip, so awaited
 Getting the host is the asynchronous part, since it loads wasm:
 `const host = await new GuiHost().boot();`.
 
+**Waiting for a window to close** is the one place the reference client's shape
+does not cross. There a *script* must not exit while a window is on screen, so
+`wait()` blocks its thread; a page never exits and must never block, so the same
+verb answers a promise — and it is not how a program stays alive, it is how one
+sequences on the close:
+
+```ts
+win.closed;                  // false until it goes
+await win.wait();            // true when it closed
+await win.wait(10);          // false if it is still there after ten seconds
+await host.wait();           // when every window this host opened is gone
+```
+
+`closed` and `wait` are on everything that opens a window — a `WindowHandle`,
+what `plot`, `scope` and `plotDef` answer, and an `Editor`.
+
 **Two ways to have a host, and one ambient rule.** `boot()` brings up a wasm host this handle
 owns; `attach()` connects to one it did not open — the host already up in this
 page, or, with `transport: "ws"`, a *native* `clausters-gui --ws` driven from

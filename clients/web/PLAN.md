@@ -1644,7 +1644,7 @@ being pumped. That is `idiom` in `docs/bindings.md`'s sense and is written there
 rather than being allowed to become a second shape.
 
 
-### ⬜ W29 - `edit(x)` opens, and the `AppClock` the page already half has
+### ✅ W29 - `edit(x)` opens, and the `AppClock` the page already half has *(done 2026-09-04)*
 
 The port of `clients/python/PLAN.md`'s `C52`/`C53`, where the analysis, the
 three measurements and the decisions are read. **Nothing here is decided
@@ -1709,6 +1709,40 @@ callbacks the same way in both.
 *Acceptance:* the same program in both languages, verb by verb - build a curve,
 `edit` it, read it back after drawing, close the window - with no loop written
 in either, and both example directories showing it.
+
+**Done**, and the reading of the two examples side by side is what the milestone
+was for: it found that a plain `Editor` here **was never fed at all**. Only
+`FormEditor.open` subscribed, so `edit-curve.html`, `edit-notes.html` and
+`edit-samples.html` opened windows whose gestures reached nothing and whose
+read-back answered the curve as the page had built it. `Editor.open` now listens,
+as the reference client's always did. That is the kind of thing only a verb-by-
+verb read finds, and it is why the rule says to do one.
+
+What landed, beyond the list above:
+
+- **`Editor` is a handle**: `id`, `closed`, `close()`, `onClosed()`, `wait()`,
+  and `open` is idempotent (one editor, one window). The protected `closed()`
+  hook it collided with is `onWindowGone()` now, and the base class does the
+  unsubscribing `FormEditor` used to do alone.
+- **`closed` and `wait` on everything that opens a window** —
+  `WindowHandle`, `PlotWindow`, `PatchWindow`, `ScopeWindow` (which also grew
+  the `onClosed` it was missing), `Editor`, `FormEditor` (over its composed
+  views). `GuiHost.wait()` is every window of the host, and `waitWhile` is the
+  shared body: it is woken by a close, never a poll.
+- **The subscribers are handed a message before the widget handles.** The
+  reference client's order, and this client had it the other way round: a
+  script's `onEvent` on an edited widget saw the structure as it was a moment
+  *before* the gesture it was being told about.
+- **One `resume`, as in the reference client.** `TempoClock`'s private `wake`
+  and the app clock's driving were two copies of the same eight lines; they are
+  `stream.resume` now. Writing it once surfaced a hole **both** clients had: the
+  app clock was remembered in a routine's `clock`, which everything else reads
+  for a beat, a tempo or a session. It is `appClock` now, apart from the musical
+  one, and `pause` reaches whichever is holding the routine — fixed on both
+  sides in the same commit.
+- **The examples lost their ticks**: `setInterval(() => transport.update())` in
+  five pages, and `multitrack.html`'s counter, which is on the application clock
+  now — the same call the Python example makes.
 
 ## Parity gaps carried from the Python client
 

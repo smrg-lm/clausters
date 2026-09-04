@@ -90,6 +90,14 @@ export interface TransportOptions {
  * `anchor` hand back promises; a script that does not await them still gets the
  * pass — what arrives late is the line, not the sound.
  */
+/**
+ * How often a rolling transport asks itself whether the pass has ended, in
+ * seconds. It is not the line's frame rate — the host sweeps that from the
+ * engine's clock without being told — only how sharply the cursor parks at the
+ * end of the piece.
+ */
+const TICK = 0.05;
+
 export class Transport {
     host: GuiHost | null;
     ids: TransportTargets;
@@ -117,6 +125,7 @@ export class Transport {
     private head: Playhead | null = null;
     private atBeat = 0.0; // the beat the cursor waits at while stopped
     private ended = false; // the end of a pass was already parked (send it once)
+    private ticking = false; // a self-driven `update` is scheduled
     /**
      * The **tail**: `[clock beat, timeline beat]` at the moment the scan
      * drained. A scan runs out when it renders its *last item*, not when the
@@ -265,6 +274,7 @@ export class Transport {
         this.ended = false;
         this.head = this.source(beat);
         this.cursor(null); // the clock's line takes over from the cursor
+        this.watch();
         await this.anchor(null, { at: beat });
         return this.head;
     }
@@ -310,6 +320,7 @@ export class Transport {
         await this.server?.transportPlay();
         this.clock?.thaw();
         this.ended = false;
+        this.watch();
         await this.anchor(null, { at: this.position });
         return this.head;
     }
@@ -340,8 +351,60 @@ export class Transport {
     }
 
     /**
-     * Park the cursor when the pass ends by itself. Call it once per pass of the
-     * script's loop; it answers whether the piece just ended.
+     * Have the end of the pass noticed, without anyone asking.
+     *
+     * {@link Transport.update} is the question "has it ended yet", and somebody
+     * has to ask it. That used to be the caller's own loop — which is how every
+     * example came to have one — and it is now the host's
+     * {@link AppClock}, the same loop the window's gestures arrive on. A
+     * transport with no host (a view built but never opened) simply keeps
+     * `update` as the manual call it always was.
+     */
+    private watch(): void {
+        if (this.ticking) return;
+        const clock = this.host?.clock;
+        if (clock === undefined) return;
+        this.ticking = true;
+        clock.sched(TICK, this.tick);
+    }
+
+    /**
+     * One look, then another in `TICK` seconds while there is still something to
+     * notice.
+     *
+     * Returning a number is how the clock reschedules, so this is a periodic
+     * task with no loop of its own; returning nothing ends it.
+     *
+     * "Still something to notice" is **not** `playing`: a scan that has just run
+     * out is not playing and is exactly the moment `update` exists for, so
+     * stopping there would leave the cursor sweeping off the end forever. It is
+     * the piece sounding, or a drained scan that has not been parked yet — and a
+     * `pause`, which keeps its playhead without ending it, stops the asking
+     * until the next `play`.
+     *
+     * A bound property rather than a method, because the clock keys what it has
+     * queued by identity and a fresh closure per schedule would be unreachable
+     * to `unsched`.
+     */
+    private readonly tick = (): number | undefined => {
+        const head = this.head;
+        if (head === null || this.ended || !(this.playing || head.finished)) {
+            this.ticking = false;
+            return undefined;
+        }
+        this.update();
+        return TICK;
+    };
+
+    /**
+     * Park the cursor when the pass ends by itself; it answers whether the piece
+     * just ended.
+     *
+     * **Nothing has to call this.** A `play` schedules it on the host's
+     * application clock for as long as the piece is sounding, so a caller
+     * neither loops nor ticks. It stays public because a transport built before
+     * its host exists has no clock to schedule on, and because asking the
+     * question once more is always legal.
      *
      * The playhead says when its scan ran out, so the end needs no timing here:
      * the cursor stops at the piece's extent rather than sweeping off the view,

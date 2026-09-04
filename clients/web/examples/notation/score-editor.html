@@ -496,7 +496,8 @@ B c d e | f2 e d | c B A B | G4 |
           sampleRate: SR,
         });
         transport.locate(0.0);
-        setInterval(() => transport.update(), 100);
+        // A pass ends by itself: the transport asks about the end of its own
+        // pass on the host's application clock, with no interval here.
 
         win.widget("score").onEvent(onScore);
         win.widget("play").onClick(() => transport.play(server));

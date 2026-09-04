@@ -322,3 +322,56 @@ test("the ids are read on each use", () => {
     tp.locate(2.0);
     assert.deepEqual(host.ids("playhead").slice(-3), [10, 11, 12]);
 });
+
+// ---- the end of a pass, noticed without anyone asking ----------------------
+
+/** A `FakeHost` with an application clock, recording what is scheduled on it. */
+class ClockedHost extends FakeHost {
+    readonly scheduled: [number, () => number | undefined][] = [];
+    readonly clock = {
+        sched: (delay: number, item: () => number | undefined) => {
+            this.scheduled.push([delay, item]);
+            return item;
+        },
+    };
+}
+
+test("a play puts the end of the pass on the application clock", async () => {
+    // `update` used to be "call it once per pass of the caller's loop", which is
+    // a hand-written tick by another name and is why every example had one. A
+    // play schedules it on the host's own clock instead, and it stops asking
+    // when the piece stops sounding.
+    const host = new ClockedHost();
+    const clock = makeClock();
+    const tp = new Transport(host as unknown as GuiHost, 7, {
+        source: (at) => new Playhead(arp(), clock, recorder as never).play({ at }),
+        tempo: TEMPO,
+        sampleRate: SR,
+        extent: () => 3.0,
+        clock,
+    });
+    await tp.play(fakeServer(), { at: 0.0 });
+
+    assert.equal(host.scheduled.length, 1, "one tick, scheduled by the play");
+    const [delay, tick] = host.scheduled[0]!;
+    assert.ok(delay > 0);
+    assert.equal(tick(), delay, "a number keeps it going: the clock reschedules by it");
+
+    clock.render();                          // the pass runs out
+    assert.equal(tick(), delay, "the drained scan is what it is there to notice");
+    assert.equal(tp.position, 3.0, "so the cursor parks at the piece's end");
+    assert.equal(tick(), undefined, "and having parked, it stops asking");
+
+    await tp.play(fakeServer(), { at: 0.0 });
+    assert.equal(host.scheduled.length, 2, "the next play starts it again");
+});
+
+test("a transport with no host clock keeps update manual", async () => {
+    // A view built before it is opened has no clock to schedule on, and `update`
+    // is the plain call it always was.
+    const clock = makeClock();
+    const tp = makeTransport(new FakeHost(), { clock, extent: () => 3.0 });
+    await tp.play(fakeServer(), { at: 0.0 });
+    clock.render();
+    assert.equal(tp.update(), true);
+});

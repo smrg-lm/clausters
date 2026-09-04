@@ -599,10 +599,11 @@ test("a page and a roll walk one order", {
     const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
     const timeline = new Timeline([[0.0, new Event({ midinote: 72, dur: 1.0 })]]);
     // One context for both — what a window drawing the two would build.
-    const editor = edit(timeline, {
+    const editor = await edit(timeline, {
         sampleRate: 48_000,
         tempo: 2.0,
         context: Editing.of(score),
+        open: false,
     });
     const step = () =>
         (score.sheet().staves as { voices: { items: { pitches: { step: string }[] }[] }[] }[])[0]

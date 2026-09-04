@@ -99,6 +99,8 @@ export {
     workerTicker } from "./base/clock.ts";
 export type {
     ManualTicker, Schedulable, SetTempoOptions, TempoClockOptions, Ticker } from "./base/clock.ts";
+export { AppClock } from "./base/appclock.ts";
+export type { AppItem } from "./base/appclock.ts";
 export {
     TempoMap,
     bar,
@@ -113,7 +115,7 @@ export {
     MonotonicTimebase,
     SampleClockTimebase } from "./base/timebase.ts";
 export type { Timebase } from "./base/timebase.ts";
-export { FunctionStream, Routine, StopStream, Stream, YieldAndReset } from "./base/stream.ts";
+export { FunctionStream, Routine, StopStream, Stream, YieldAndReset, resume } from "./base/stream.ts";
 export type { RoutineFunc, RoutineState } from "./base/stream.ts";
 export { currentRoutine } from "./base/context.ts";
 export { Moment } from "./base/moment.ts";

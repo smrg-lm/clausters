@@ -27,6 +27,7 @@ import type { MsgArg, OscMessage } from "../base/osc.ts";
 import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
+import { AppClock } from "../base/appclock.ts";
 import { ReplyTimeout } from "../errors.ts";
 import { formatNumber } from "../defs/info.ts";
 import { toJson, view, View } from "./guidef.ts";
@@ -254,6 +255,14 @@ export class GuiHost {
      */
     private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
+    /**
+     * What is waiting for a window to go away — see {@link GuiHost.waitWhile}.
+     * A set of checks rather than one promise, because several callers may be
+     * waiting on different windows of the same host.
+     */
+    private readonly waiters = new Set<() => void>();
+    /** This host's application clock, built by {@link GuiHost.clock}. */
+    private appClock: AppClock | null = null;
     private readonly handlers = new Set<(msg: OscMessage) => void>();
     private readonly pending = new Set<Pending>();
     private readonly listener: (packet: Uint8Array) => void;
@@ -739,6 +748,75 @@ export class GuiHost {
         this.fitted.delete(id);
         this.free(id);
         this.opened.delete(id);
+        this.notifyWaiters();
+    }
+
+    /** Whether `id` is a window this host opened and has not seen close. */
+    isOpen(id: number): boolean {
+        return this.opened.has(id);
+    }
+
+    /**
+     * The application's clock over the page's loop — seconds, and where
+     * anything that touches a window belongs: an animation, a periodic
+     * read-out, a follow-up to a gesture. `appClock()` reaches the ambient
+     * host's.
+     *
+     * One per host, built on first use. The reference client builds it over the
+     * `EventLoop` that host started; a page is that loop already, which is the
+     * whole of the difference.
+     */
+    get clock(): AppClock {
+        if (this.appClock === null) this.appClock = new AppClock();
+        return this.appClock;
+    }
+
+    /**
+     * Resolves when every window this host opened has been closed, or when
+     * `timeout` seconds pass — `true` for the first, `false` for the second.
+     * With nothing open it resolves at once.
+     *
+     * **The page's answer to the reference client's `wait`**, and the shape is
+     * where the two differ rather than the meaning. There a *script* must not
+     * exit while a window is on screen, so `wait` blocks a thread; a page never
+     * exits and has one thread it must never block, so the same verb is a
+     * promise. What both mean is "tell me when the windows are gone", and
+     * neither is something the caller has to poll for.
+     */
+    wait(timeout?: number): Promise<boolean> {
+        return this.waitWhile(() => this.opened.size > 0, timeout);
+    }
+
+    /**
+     * Resolves when `pred()` goes false, or on `timeout` seconds — the shared
+     * body of {@link GuiHost.wait} and of every `wait` on something that opens
+     * a window.
+     *
+     * It is **not** a poll: the checks run when a window actually goes away,
+     * which is the only thing any of these predicates depends on.
+     */
+    waitWhile(pred: () => boolean, timeout?: number): Promise<boolean> {
+        if (!pred()) return Promise.resolve(true);
+        return new Promise((resolve) => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const finish = (answer: boolean): void => {
+                this.waiters.delete(check);
+                if (timer !== undefined) clearTimeout(timer);
+                resolve(answer);
+            };
+            const check = (): void => {
+                if (!pred()) finish(true);
+            };
+            this.waiters.add(check);
+            if (timeout !== undefined) {
+                timer = setTimeout(() => finish(!pred()), timeout * 1000);
+            }
+        });
+    }
+
+    /** A window went away: let whoever was waiting for it look again. */
+    private notifyWaiters(): void {
+        for (const check of [...this.waiters]) check();
     }
 
     /** Closes every window still open through `open`. */
@@ -1005,8 +1083,13 @@ export class GuiHost {
                     p.resolve(msg);
                 }
             }
-            this.route(msg);
+            // **The subscribers first, then the handles.** An owner of data
+            // plugs in through `onMessage` -- an editor applies an edit there --
+            // and a script's `onEvent` on the same widget must see the structure
+            // as the gesture left it, not as it was a moment before. Same order
+            // as the reference client's `deliver`.
             for (const handler of [...this.handlers]) handler(msg);
+            this.route(msg);
         }
     }
 
@@ -1039,6 +1122,9 @@ export class GuiHost {
             const id = Number(msg.args[0]);
             this.opened.delete(id);
             this.onClosedHandlers.get(id)?.();
+            // Last, so an editor's own `windowId` (cleared by the subscription
+            // above) and this set agree before anybody waiting is woken.
+            this.notifyWaiters();
         }
     }
 

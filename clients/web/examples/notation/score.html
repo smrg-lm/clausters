@@ -224,8 +224,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           sampleRate: SR,
         });
         transport.locate(0.0);        // the cursor waits at the top
-        // A pass ends by itself; this is the one loop that has to notice.
-        setInterval(() => transport.update(), 100);
+        // A pass ends by itself, and nothing here has to notice: the transport
+        // asks about it on the host's own application clock.
 
         win.widget("page").onEvent(onScore);
         // Each button acts on its click -- the press completed on the button,
