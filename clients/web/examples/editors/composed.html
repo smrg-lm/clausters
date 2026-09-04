@@ -110,6 +110,10 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
         const sweep = seq.Automation.fromPoints(
           [[0.0, 400.0, 1, 0.0], [SECONDS / 2, 3000.0, 2, 0.0], [SECONDS, 600.0, 1, 0.0]],
           null, { name: "cutoff" });
+        // The curve has to be prepared before the piece plays: an `Automation`
+        // sounds through a control buffer and a bus, and allocating them waits
+        // on the server, which a routine may not.
+        await sweep.prepare(server);
 
         const piece = new form.Aggregate([
           [0.0, new form.Aggregate([[0.0, take]], "concrete", { name: "audio" })],

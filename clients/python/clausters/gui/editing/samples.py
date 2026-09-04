@@ -183,10 +183,21 @@ class SamplesView(View):
                       layout="col")
 
     def props(self, editor, widget_id: int) -> dict:
-        # A take's picture is the server's buffer, which the host re-reads on a
-        # generation bump rather than being told: what this view can correct is
-        # nothing, and saying so is what keeps a stale edit's answer honest.
-        return {}
+        # **The take's picture is the server's buffer, so what corrects it is
+        # "read it again".** A stroke needs nothing from here: the host wrote
+        # those cells itself and its picture moved with them. An undo is the
+        # case that needs it -- the write goes to the *server's* buffer from
+        # this side, and nothing in the host saw it, so the window kept drawing
+        # the stroke until some other reason (a zoom, a scroll) made it resolve
+        # the source again. That is what "the samples undo is slow to show up"
+        # was.
+        #
+        # `reload` is the verb for exactly this: the element forgets what it
+        # resolved and the loader reads its file, cache or server buffer on the
+        # next pass. The generation pairs `/gui_ack` carries would say the same
+        # thing more cheaply, but no client sends one and the host acts on
+        # none -- so this is the door that is actually open.
+        return {"reload": 1}
 
 
 class SamplesEditor(Editor):

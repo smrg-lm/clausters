@@ -105,6 +105,7 @@ take = Vector(buf, duration=SECONDS, instrument="take", name="phrase")
 sweep = Automation.from_points(
     [(0.0, 400.0, 1, 0.0), (SECONDS / 2, 3000.0, 2, 0.0), (SECONDS, 600.0, 1, 0.0)],
     target=None, name="cutoff")
+sweep.prepare(server)    # the control buffer + bus, off the clock thread
 
 piece = Aggregate([
     (0.0, Aggregate([(0.0, take)], name="audio")),
@@ -130,6 +131,7 @@ editor = FormEditor(piece, sample_rate=SR, tempo=TEMPO, quant=0.25,
                     extra=[bar], title="Composed", width=900, height=420)
 multitrack = editor.open(gui)
 signal = editor.open_signal(gui, take)
+session.start()          # the clock runs the routines -- play schedules onto it
 
 #: What the drag does in the signal window. A stroke is a gesture the widget has
 #: to be put into: the same drag that sweeps a selection cannot also draw, so the
