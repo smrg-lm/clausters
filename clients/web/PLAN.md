@@ -2810,6 +2810,51 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **Every page opened in a browser, and what that turned up** *(done
+  2026-09-05)*. The pair audit reads what a page **calls**; it cannot say
+  whether the page runs. Driving all 80 of them under headless Chrome — open,
+  press every button in the order they are laid out, read the page's own log and
+  the console — found eleven that did not, and nothing about them was visible to
+  a reader:
+
+  - **`registry_new` / `__wbindgen_free` / `scheduler_new` of `undefined`** in
+    eight pages: they reach the core before anything has fetched it. A `Session`
+    verb and `Server.boot`/`attach` await `loadCore` for you; a page that boots a
+    bare `GuiHost`, engraves a `Score` or builds a `Timeline` first does not, and
+    the failure named a wasm-bindgen symbol instead of the missing line. The
+    pages await it now, and `requireCore` — the guard written for exactly this,
+    and until now wired only into `time.ts` and `rand.ts` — is on all five
+    `Registry` constructions, so the message names the verb and the fix. The
+    guide's claim that "`boot()` and `attach()` load it themselves" was true of
+    the audio `Server` only, and is now written as the list it actually is.
+  - **`chans` imported from the wrong module** (`basics/multichannel`): the page
+    did not load at all.
+  - **A truthy `{}`** (`views/take`): the read-out on the application clock
+    guarded a selection the way the script does, but an empty selection is falsy
+    in Python and truthy here, so the routine threw on its first tick and was
+    dropped.
+  - **Arity taken for keywords** in two pages: `Bus.control({ server })` put the
+    options where `channels` goes and `fft(src, { fftSize })` where `active`
+    does. The script writes both as keyword arguments, which is why neither read
+    as wrong.
+  - **`session.play(take)` on a buffer** (`editors/edit-samples`, and its script
+    with it): `Session.play` is the pattern verb in **both** clients — the free
+    `play` is the one that sounds a buffer through the stock reader. The same
+    wrong call in both languages, which is what a faithful port looks like when
+    the call itself was never run.
+  - **A transport join that answered itself** (`io/responders`): a script's
+    receiver is a second socket, so the reply to its own `/transport_query` never
+    reaches the responder; a page has one carrier, so it did, and re-aligned
+    forever.
+  - **A double `close`** — `Session.close` closes the server it owns, which now
+    quits the engine it booted, and then the engine: the second
+    `AudioContext.close()` threw. The engine's `close` is idempotent now.
+
+  The one page that still reports an error under the sweep is `panels/host`,
+  which offers a button that attaches to a `clausters-gui --ws` host: nothing is
+  listening, and that is the page working. The engine panic the sweep also found
+  is the server's and is written in the root `PLAN.md`.
+
 - ✅ **A page cannot write a Faust constant that is *real* and integral**
   *(found 2026-08-27 porting the box API, measured and closed the same day)*. A def builder's numeric constant
   travels as a bare JSON number, and the server reads it back with
