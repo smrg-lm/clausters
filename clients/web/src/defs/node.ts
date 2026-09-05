@@ -21,7 +21,7 @@
 // it stays; reach for `globalThis.Node` in the rare page that needs both.)
 
 import { AllocationError } from "../errors.ts";
-import { Registry, nodeIdPartition } from "../base/core.ts";
+import { Registry, nodeIdPartition, requireCore } from "../base/core.ts";
 import { shareOf } from "../base/ids.ts";
 import type { IdShare } from "../base/ids.ts";
 import { busIndex } from "./bus.ts";
@@ -367,6 +367,7 @@ export class NodeIdAllocator {
 
     /** Bounded over `[base, base + capacity)`; open-ended with no `capacity`. */
     constructor(base: number, capacity?: number) {
+        requireCore("a node id allocator");
         this.registry = capacity === undefined
             ? Registry.unbounded(base)
             : new Registry(base, capacity);

@@ -15,7 +15,7 @@
 // of wrapping. The `Server` sizes it from its options (`maxBuffers`).
 
 import { AllocationError, CommandError } from "../errors.ts";
-import { Registry } from "../base/core.ts";
+import { Registry, requireCore } from "../base/core.ts";
 import { shareOf } from "../base/ids.ts";
 import type { IdShare } from "../base/ids.ts";
 import { blobToSamples, samplesToBlob } from "../base/bulk.ts";
@@ -996,6 +996,7 @@ export class BufferAllocator {
 
     constructor(size = NUM_BUFFERS, share?: IdShare) {
         this.size = size;
+        requireCore("a buffer allocator");
         this.registry = new Registry(...shareOf(0, size, share));
     }
 

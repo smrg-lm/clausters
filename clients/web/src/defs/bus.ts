@@ -23,7 +23,7 @@
 // whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
-import { Registry, graphBusReserved } from "../base/core.ts";
+import { Registry, graphBusReserved, requireCore } from "../base/core.ts";
 import { shareOf } from "../base/ids.ts";
 import type { IdShare } from "../base/ids.ts";
 import type { Server } from "./server/index.ts";
@@ -141,6 +141,7 @@ class Allocator {
         // the server's and belong to no client: two clients splitting the space
         // both stay clear of the output buses and of the GraphDef window.
         const [from, width] = shareOf(reserved, span, share);
+        requireCore("a bus allocator");
         this.registry = width > 0 ? new Registry(from, width) : null;
     }
 

@@ -372,6 +372,12 @@ export class GuiHost {
      * The reference client's `GuiHost.boot`, which starts a `clausters-gui`
      * process and connects to it. Pair it with {@link GuiHost.stop}, which lets
      * this client go — and, there, stops a process it started.
+     *
+     * **A host alone still needs the core.** Widget ids come out of the core's
+     * registry, so a page that boots a host and no server awaits
+     * {@link loadCore} first; one that opened a `Server` or went through
+     * `Session` already has it. The reference client has no such line — its
+     * core is in the process.
      */
     async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
         if (this.carrierKind === "ws" && !this.conn) {

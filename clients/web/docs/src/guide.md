@@ -10,13 +10,22 @@ Everything that is a *value* or a *time* comes from `clausters-core` compiled to
 
 This is not an optimization. It is what makes a page numerically **equal** to the server and to the other client rather than merely close: a seeded pattern replays identically in three languages, and a beat resolves to the same instant on both sides of a socket, because there is one implementation.
 
-`boot()` and `attach()` load it themselves, so a page that opens a server never
-names it. Only a caller that uses the core without opening one — encoding a
-packet by hand, authoring a bundle — awaits it:
+It is fetched **on demand**, which is the one thing a script's twin never has
+to think about: the wasm is a separate artifact and a page pays for it when it
+is going to use it, not on import. `Session`'s verbs and `Server`'s `boot()` /
+`attach()` await it for you, so a program that opens a server never names it.
+Everything else that reaches the core does:
 
 ```js
 await loadCore();      // the wasm, once; later calls reuse it
 ```
+
+That is a real list, not a footnote — encoding a packet by hand, authoring a
+bundle, building a `TempoMap` or drawing a curve, and **booting a `GuiHost`
+alone**, which is the one that surprises: a host with no server still names its
+widgets out of the core's id registry, so `new GuiHost().boot()` in a page that
+opened no server comes after a `loadCore()`. Forgetting it is not silent — the
+call throws saying which verb needed the core and that this line is missing.
 
 ## The connection seam
 

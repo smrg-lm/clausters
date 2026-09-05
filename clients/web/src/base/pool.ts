@@ -20,7 +20,7 @@
 // client's allocators to the mount rather than let the two pools overlap; the
 // mount takes them as an argument for exactly that.
 
-import { Registry } from "./core.ts";
+import { Registry, requireCore } from "./core.ts";
 
 /**
  * The widget-id window, matching the client's own (`gui/ids.ts`): ids below
@@ -80,6 +80,7 @@ export interface Pools {
  * programming error, not a value to carry.
  */
 export function pool(base: number, capacity: number, what: string): Pool {
+    requireCore(`the ${what} id pool`);
     const registry = new Registry(base, capacity);
     return {
         alloc(width = 1) {

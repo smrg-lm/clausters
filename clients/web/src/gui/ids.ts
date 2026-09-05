@@ -17,7 +17,7 @@
 //   subtree first).
 
 import { AllocationError } from "../errors.ts";
-import { Registry } from "../base/core.ts";
+import { Registry, requireCore } from "../base/core.ts";
 import { shareOf } from "../base/ids.ts";
 import type { IdShare } from "../base/ids.ts";
 
@@ -55,6 +55,7 @@ export class GuiIdAllocator {
         capacity: number = CAPACITY,
         share?: IdShare,
     ) {
+        requireCore("a widget id allocator");
         this.registry = new Registry(...shareOf(base, capacity, share));
     }
 
