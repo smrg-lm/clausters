@@ -57,124 +57,96 @@ verb is the same either way — that is the point of it.
 Everything sounds through the <b>in-page engine</b>: no server process, no
 socket.</div>
 
-      <div class="row">
-        <button id="start">start</button>
-        <button id="signal" disabled>oscilloscope</button>
-        <button id="phase" disabled>goniometer</button>
-        <button id="spectrum" disabled>spectrum</button>
-        <button id="closeAll" disabled>close them</button>
-      </div>
-      <label>spread <input id="spread" type="range" min="0" max="1" step="0.01"
-                           value="0" disabled />
-        <span id="spreadv">0.00 (mono)</span></label>
-      <div class="row">
-        <label>window <input id="windowMs" type="range" min="2" max="40"
-                             step="1" value="20" disabled />
-          <span id="windowv">20 ms</span></label>
-        <label><input id="overlay" type="checkbox" disabled /> overlay the lanes</label>
-      </div>
-      <label>spectrum scale
-        <select id="freqScale" disabled>
-          <option value="log">log</option>
-          <option value="linear">linear</option>
-          <option value="mel">mel</option>
-          <option value="bark">bark</option>
-        </select>
-      </label>
+      <button id="run">run the tour</button>
 
       <pre id="log"></pre>
     </main>
 
     <script type="module">
-      import { Session, Synth, SynthDef, scope } from "../../dist/index.js";
+      import { Server, Synth, SynthDef, scope } from "../../dist/index.js";
       import { control, lag, out, sine, sub } from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const wait = (secs) => new Promise((r) => setTimeout(r, secs * 1000));
+      const log = (line) => { $("log").textContent += line + "\n"; };
 
       // Left is a plain sine; right crossfades from a copy of the left to a
       // detuned one. Quiet on purpose.
-      const droneDef = () => {
+      function droneDef(name = "scoping_drone") {
         const freq = control("freq", 220.0);
         const spread = lag(control("spread", 0.0), 0.1);
         const amp = lag(control("amp", 0.1), 0.1);
         const left = sine(freq);
         const right = left.mul(sub(1.0, spread))
           .add(sine(freq.mul(1.02)).mul(spread));
-        return new SynthDef("web_scoping_drone",
-                            out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
-      };
-
-      let node = null;
-      const windows = new Map();
-
-      async function start() {
-        const session = (await Session.embed({ channels: 2 })).activate();
-        await droneDef().send(session.server);
-        await session.server.sync();
-        node = new Synth("web_scoping_drone");
-        log("drone on outs 0/1 — open a view");
-
-        el("start").disabled = true;
-        for (const id of ["signal", "phase", "spectrum", "spread", "windowMs",
-                          "overlay", "freqScale"]) {
-          el(id).disabled = false;
-        }
+        return new SynthDef(name, out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
       }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+      const PAUSE = 3.0;
 
-      // One window per view; opening the same one twice closes the first, so
-      // the tap behind it is given back rather than held twice.
-      const open = async (name, options) => {
-        windows.get(name)?.close();
-        const win = await scope(0, options);
-        windows.set(name, win);
-        el("closeAll").disabled = false;
-        log(`${name}: window ${win.id}, widget ${win.widgetId}, `
-          + `bus ${win.bus} × ${win.channels}`);
-      };
+      async function run() {
+        $("run").disabled = true;
+        // `boot` adopts the default session, so `scope(0)` below finds this
+        // server with nothing named -- the same resolution the script relies on.
+        const server = await new Server({ channels: 2 }).boot();
+        await droneDef().send(server);
+        await server.sync();
+        const node = new Synth("scoping_drone", {}, { server });
 
-      el("signal").onclick = () => open("signal", {
-        channels: 2,
-        windowMs: Number(el("windowMs").value),
-        overlay: el("overlay").checked,
-      }).catch((err) => log(`error: ${err}`));
+        // 1/3 -- the oscilloscope (view "signal"): both channels, phase-locked.
+        log("1/3 signal: outs 0/1 as two lanes; 'lock' + the trigger line at 0");
+        let win = await scope(0, { channels: 2 });
+        await wait(PAUSE);
+        log("    windowMs -> 5 (the ms ruler follows; a few cycles fill it)");
+        win.set({ windowMs: 5.0 });
+        await wait(PAUSE);
+        log("    overlay -> on (both channels as colored traces in one field)");
+        win.set({ overlay: 1, windowMs: 20.0 });
+        await wait(PAUSE);
+        log("    overlay -> off (round trip), and the window closes");
+        win.set({ overlay: 0 });
+        await wait(PAUSE);
+        win.close();
 
-      el("phase").onclick = () => open("phase", { view: "phase" })
-        .catch((err) => log(`error: ${err}`));
+        // 2/3 -- the phasescope (view "phase"): the stereo field of buses 0/1.
+        log("2/3 phase: mono reads as a vertical line (correlation ~ +1)");
+        win = await scope(0, { view: "phase" });
+        await wait(PAUSE);
+        log("    spread -> 1 (/node_set): the field opens, the correlation drops");
+        node.set({ spread: 1.0 });
+        await wait(PAUSE);
+        log("    spread -> 0 (round trip), and the window closes");
+        node.set({ spread: 0.0 });
+        await wait(PAUSE);
+        win.close();
 
-      el("spectrum").onclick = () => open("spectrum", {
-        view: "spectrum", channels: 2, freqScale: el("freqScale").value,
-      }).catch((err) => log(`error: ${err}`));
+        // 3/3 -- the live spectrum (view "spectrum"): one curve per channel,
+        // and the frequency scales in turn. The corner read-out names the FFT
+        // size and the active scale (e.g. "2048 LOG").
+        log("3/3 spectrum: outs 0/1, the 220 Hz peak — the corner reads '2048 LOG'");
+        node.set({ spread: 1.0 });   // detune R so the two curves differ
+        win = await scope(0, { view: "spectrum", channels: 2 });
+        await wait(PAUSE);
+        for (const scale of ["lin", "mel", "bark"]) {
+          log(`    freqScale -> ${scale} (watch the peak, the ruler and the tag)`);
+          win.set({ freqScale: scale });
+          await wait(PAUSE);
+        }
+        log("    back to log with fftSize -> 4096 ('4096 LOG'), and it closes");
+        win.set({ freqScale: "log", fftSize: 4096 });
+        await wait(PAUSE);
+        win.close();
 
-      el("closeAll").onclick = () => {
-        for (const win of windows.values()) win.close();
-        windows.clear();
-        el("closeAll").disabled = true;
-        log("closed — the host stops recording what nothing draws");
-      };
+        // Teardown: fade to silence before freeing, so the cut is inaudible too.
+        node.set({ amp: 0.0 });
+        await wait(0.3);
+        node.free();
+        server.close();
+        log("done — three scopes appeared, retuned live and closed; taps all freed");
+        $("run").disabled = false;
+      }
 
-      el("spread").oninput = () => {
-        const spread = Number(el("spread").value);
-        el("spreadv").textContent = `${spread.toFixed(2)} `
-          + `(${spread < 0.02 ? "mono" : spread > 0.98 ? "wide" : "opening"})`;
-        if (node) node.set({ spread });
-      };
-
-      // Every view prop is settable while the window is up.
-      el("windowMs").oninput = () => {
-        const windowMs = Number(el("windowMs").value);
-        el("windowv").textContent = `${windowMs} ms`;
-        windows.get("signal")?.set({ windowMs });
-        windows.get("phase")?.set({ windowMs });
-      };
-      el("overlay").onchange = () => {
-        windows.get("signal")?.set({ overlay: el("overlay").checked ? 1 : 0 });
-      };
-      el("freqScale").onchange = () => {
-        windows.get("spectrum")?.set({ freqScale: el("freqScale").value });
-      };
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>

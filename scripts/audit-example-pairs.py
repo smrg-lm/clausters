@@ -899,11 +899,16 @@ def web_surface() -> set[str]:
 
 
 def camel(name: str) -> str:
-    """`sample_rate` -> `sampleRate`; a name with no underscore is unchanged."""
-    if name.startswith("_") or "_" not in name:
+    """`sample_rate` -> `sampleRate`; a name with no underscore is unchanged.
+
+    A trailing underscore is not a word break: `in_` avoids a keyword and both
+    clients spell it that way, so it stays.
+    """
+    if name.startswith("_") or "_" not in name.strip("_"):
         return name
     head, *tail = name.split("_")
-    return head + "".join(part[:1].upper() + part[1:] for part in tail)
+    return head + "".join(part[:1].upper() + part[1:] if part else "_"
+                          for part in tail)
 
 
 # --------------------------------------------------------------------------

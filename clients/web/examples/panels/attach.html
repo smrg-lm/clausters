@@ -70,14 +70,6 @@ same ids and the second would silently take the first's widgets.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      /** One small window, so each handle has something of its own on screen. */
-      const panelFor = (tag) => gui.view(
-        { title: `${tag} handle`, w: 420, h: 260, layout: "col" },
-        gui.label(`opened by the ${tag} handle`),
-        gui.knob({ name: "amount", label: "amount", min: 0.0, max: 1.0, value: 0.5 }),
-        gui.toggle({ name: "on", label: "on", value: true }),
-      );
-
       let owner = null, attached = null;
 
       async function run() {
@@ -89,8 +81,7 @@ same ids and the second would silently take the first's widgets.</div>
         // they are disjoint by arithmetic and the handles need no channel to
         // agree.
         owner = await new GuiHost({ share: { index: 0, of: 2 } }).boot();
-        const winA = await panelFor("booted").open($("a"), { host: owner });
-        log(`booted: a host of this page's own, window ${winA.id}`);
+        log("booted a host of this page's own");
 
         // ---- the second handle: attach ----
         // It verifies that a host answers before sending anything, and it owns
@@ -108,10 +99,22 @@ same ids and the second would silently take the first's widgets.</div>
         attached = await new GuiHost({
           gui: owner.instanceOf, share: { index: 1, of: 2 },
         }).attach({ adoptAmbient: false });
-        const winB = await panelFor("attached").open($("b"), { host: attached });
-        log(`attached: a second handle on the same host, window ${winB.id}`);
-        log(`the ids do not collide: ${winA.widget("amount").id} and `
-          + `${winB.widget("amount").id}`);
+        log("attached a second handle; it owns no process");
+
+        // ---- one window from each ----
+        // The same host draws both. The ids come from disjoint shares, so the
+        // two handles never name the same widget.
+        const first = await gui.view(
+          { title: "owner", w: 420, h: 120 },
+          gui.label("opened by the handle that booted the host", { name: "caption" }),
+        ).open($("a"), { host: owner });
+
+        const second = await gui.view(
+          { title: "guest", w: 420, h: 120 },
+          gui.label("opened by the attached handle", { name: "caption" }),
+        ).open($("b"), { host: attached });
+        log(`window ids: owner ${first.id}, guest ${second.id} — `
+          + "two windows, one host");
 
         $("stop-attached").disabled = false;
         $("stop-owner").disabled = false;

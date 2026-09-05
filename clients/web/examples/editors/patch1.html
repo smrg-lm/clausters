@@ -148,14 +148,16 @@ not an <code>OUT</code>.</div>
         p.connect(b.trem, "out", b.dac, "in");
         log(`compiled: ${JSON.stringify(p.compile())}`);
 
+        const transport = gui.panel({ layout: "row", h: 48 },
+          gui.button({ name: "render", label: "render" }),
+          gui.button({ name: "stop", label: "stop" }));
+
         await session.gui();
         win = await gui.view(
           { title: "Patch — level 1", w: 720, h: 680, layout: "col" },
           gui.scroll({ name: "workspace" },
             gui.patch({ name: "patch", ...p.toWidget(), label: "patch" })),
-          gui.panel({ layout: "row", h: 48 },
-            gui.button({ name: "render", label: "render" }),
-            gui.button({ name: "stop", label: "stop" })),
+          transport,
         ).open($("stage"));
         session.start();
 
