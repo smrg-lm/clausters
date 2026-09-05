@@ -403,3 +403,21 @@ in the middle of an example.
 | web | `fromSamples` | the other half of the row above |
 | web | `play` | the other half of the row above |
 | web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
+
+### `io/osc_responder`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `send` ×2 | a receiver with a socket of its own sends from it: once to register `/server_notify`, once as the second socket standing in for an outside application. A page's receiver is the one connection it already has |
+| web | `notify` | the first half of the row above: registering for the server's notifications is the server's own verb here, since there is no second socket to register from |
+| python | `OscReceiver` | the feeder: a second socket the self-demo sends `/note` from. A tab has none |
+| python | `start` | the other half of the row above |
+| python | `stop` (first) | the feeder socket, stopped |
+| web | `SynthDef` | nothing outside a page can send into it, so the sender is the engine: a def whose only job is to report its own onsets |
+| web | `sendReply` | the other half of the row above |
+| web | `dust` | the other half of the row above |
+| web | `control` ×2 | the other half of the row above |
+| web | `send` | the reporter def, sent |
+| web | `Synth` | the reporter, instanced -- the script's `feeder.send("/note", ...)` loop |
+| web | `free` | the reporter, freed where the script stops its feeder socket |
+

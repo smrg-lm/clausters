@@ -621,7 +621,8 @@ _CONTAINER_PRODUCERS = {"split", "slice", "concat", "filter", "map", "flat",
 
 _CONTAINER_CTORS = {"Map", "Set", "Array", "WeakMap", "Float32Array",
                     "Float64Array", "Uint8Array", "Int16Array", "Int32Array",
-                    "Uint16Array", "Uint32Array", "Object", "Promise", "JSON"}
+                    "Uint16Array", "Uint32Array", "Object", "Promise", "JSON",
+                    "URLSearchParams", "Headers", "FormData"}
 
 
 def _js_on_container(tokens: list[tuple[int, str]], idx: int, containers: set[str]) -> bool:
