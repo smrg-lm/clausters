@@ -41,7 +41,6 @@ A pair is found by its path: `views/rulers.py` is `views/rulers.html`, with
 | Python example | Page | Why |
 |---|---|---|
 | `panels/standalone` | `panels/standalone.mjs` | the page beside it is not this example's other half: `standalone.html` is the counterpart of *running* `clausters-gui --standalone`, in a tab. Authoring a bundle is a node script's job, because a page never writes one |
-| `panels/piano` | `panels/piano/index.html` | the page is a bundle: its directory holds the authoring script (`make_bundle.mjs`) beside the page that boots it |
 | `io/osc_responder` | `io/responders.html` | the page is named for what it holds, since the other responder example a page can run (`io/midi-responder.html`) sits beside it |
 
 ## Examples with no twin
@@ -65,6 +64,8 @@ one. Each row says which.
 | `components/demo.html` | as above |
 | `components/lifecycle.html` | as above |
 | `editors/document/index.html` | the document host as a page application, with its own bundle |
+| `panels/piano/index.html` | the **other** mapping path: a bundle whose keyboard is bound to a `voice` the host instances, with no script between the key and the sound. `panels/piano.html` is the twin of `panels/piano.py`, which programs the voices from the `note` events |
+| `panels/piano/make_bundle.mjs` | the authoring half of the bundle above, the way `panels/standalone.mjs` authors its own |
 | `panels/graph-controls/index.html` | a bundle page, like `components/*`: the script side is the `make_bundle.mjs` beside it |
 | `panels/host.html` | the GUI host on a canvas in this page — what `editors/session.py` is on the other side |
 | `panels/standalone.html` | a standalone bundle booted with no server; `panels/standalone.py` authors one, and the two are a pair the audit reads through `panels/standalone.mjs` |

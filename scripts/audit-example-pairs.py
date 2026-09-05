@@ -771,8 +771,10 @@ def _js_containers(tokens: list[tuple[int, str]]) -> set[str]:
             elif depth == 0 and _is_ident(here) and tokens[j + 1][1] == "=":
                 first = tokens[j + 2][1] if j + 2 < len(tokens) else ""
                 second = tokens[j + 3][1] if j + 3 < len(tokens) else ""
+                # No aliasing rule (`const b = a`): one *element* of a
+                # container is not a container, and `const synth =
+                # voices.get(p)` would otherwise make `synth.set(...)` a Map's.
                 if (first in ("[", FILL) or first in _CONTAINER_CTORS
-                        or first in names
                         or (first == "new" and second in _CONTAINER_CTORS)):
                     names.add(here)
                 else:

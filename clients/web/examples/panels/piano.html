@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a piano keyboard driving server voices</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      #stage { width: 900px; max-width: 100%; height: 260px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>panels/piano.py</code>: <b>a piano keyboard, and the voices it plays</b>.
+
+The <code>piano</code> widget shows five octaves with the 88-key range marked;
+the strip above the keys is its navigation surface — drag it to pan, wheel over
+it to zoom. Playing emits <b>MIDI-shaped</b> events (<code>note</code> with
+pitch, velocity, state and channel), and this page maps each one to a server
+voice: <code>state 1</code> spawns a held synth, <code>state 0</code> closes its
+gate and the release tail frees it.
+
+That mapping is the point. The other path — the widget bound to a
+<code>voice</code> the host instances, with no script between the key and the
+sound — is what <code>examples/panels/piano/index.html</code> boots as a
+standalone bundle.</div>
+
+      <button id="run">open the keyboard</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/piano.py, call for call:
+      the same gated ADSR voice, the same keyboard, the same voice allocator
+      between the `note` events and the server.
+
+      The one argument a script has no counterpart for is `stage`: the host is
+      the tab's own and draws into an element, where a script gets an OS window.
+
+      Serve clients/web (the package root) and open /examples/panels/piano.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, SynthDef, gui } from "../../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, sine }
+        from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      // The voice a key plays: a gated ADSR sine. The note-on opens the gate,
+      // the note-off closes it and the release tail frees the synth
+      // (`FREE_SELF`) -- the conventional freq/amp/gate control surface both
+      // mapping paths drive.
+      function voice(name = "piano_voice") {
+        const freq = control("freq", 440.0);
+        const amp = control("amp", 0.2);
+        const gate = control("gate", 1.0);
+        const env = envGen(Env.adsr(0.005, 0.1, 0.7, 0.4),
+          { gate, doneAction: DoneAction.FREE_SELF });
+        const sig = sine(freq).mul(env).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      // Five octaves visible, panning enabled (the overview strip above the
+      // keys is the navigation surface), and a grayed region outside the 88-key
+      // piano range -- the active range is settable live.
+      //
+      // For the **host-voice** path instead, build it as
+      // `gui.piano({ name: "keys", ..., voice: "piano_voice" })` and skip the
+      // event loop below.
+      const scene = () => gui.view(
+        { title: "Piano -> server voices", w: 900, h: 260, layout: "col" },
+        gui.label("click/drag plays; drag the strip to pan, wheel to zoom"),
+        gui.piano({
+          name: "keys", min: 48, max: 84,
+          activeMin: 21, activeMax: 108, label: "keys",
+        }),
+      );
+
+      const voices = new Map();          // sounding pitch -> its Synth
+      const midiToHz = (note) => 440.0 * 2.0 ** ((note - 69.0) / 12.0);
+      let server = null;
+
+      /**
+       * One held synth per sounding pitch: `state 1` spawns it, `state 0` gates
+       * it off. The map is the whole voice allocator -- this is the
+       * "programmable like a GuiDef" path, plain client code between the event
+       * and the server.
+       */
+      function noteEvent(pitch, velocity, state, channel) {
+        if (state) {
+          // A re-press replaces the old voice (its gate closes first).
+          noteEvent(pitch, 0, 0, channel);
+          voices.set(pitch, new Synth("piano_voice", {
+            freq: midiToHz(pitch), amp: velocity / 127.0 * 0.3,
+          }, { server }));
+          log(`  note on  ${pitch} vel ${velocity} ch ${channel}`);
+        } else {
+          const synth = voices.get(pitch);
+          if (synth !== undefined) {
+            voices.delete(pitch);
+            synth.set({ gate: 0.0 });
+            log(`  note off ${pitch}`);
+          }
+        }
+      }
+
+      /**
+       * The `keys` handle answers every event the widget emits: a `note`
+       * becomes a server voice, a `range` reports the panned/zoomed visible
+       * window.
+       */
+      const onKeys = (tag, ...payload) => {
+        if (tag === "note" && payload.length >= 4) {
+          noteEvent(Number(payload[0]), Number(payload[1]),
+                    Number(payload[2]), Number(payload[3]));
+        } else if (tag === "range" && payload.length >= 2) {
+          log(`  visible range ${payload[0]}..${payload[1]}`);
+        }
+      };
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        server = session.server;
+        await session.gui();
+
+        await voice().send(server);
+
+        const win = await scene().open($("stage"));
+        log(`opened window ${win.id} — play the keys`);
+
+        win.widget("keys").onEvent(onKeys);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
