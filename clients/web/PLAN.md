@@ -1740,9 +1740,17 @@ What landed, beyond the list above:
   for a beat, a tempo or a session. It is `appClock` now, apart from the musical
   one, and `pause` reaches whichever is holding the routine — fixed on both
   sides in the same commit.
-- **The examples lost their ticks**: `setInterval(() => transport.update())` in
-  five pages, and `multitrack.html`'s counter, which is on the application clock
-  now — the same call the Python example makes.
+- **The examples lost their ticks, and their stopwatches**:
+  `setInterval(() => transport.update())` in five pages, and every page that
+  did *timed* work by hand. `multitrack.html`'s counter and
+  `two-windows.html`'s history read-out are `appClock().sched` returning a
+  number now; `text.html` and `style.html` schedule their timed changes on the
+  clock instead of a `setTimeout` per change; `linked.html`'s second-and-a-half
+  pause is a `sched` rather than a promise helper of its own. Read against
+  their scripts, those five were the same material by different calls — which
+  is the divergence the rule names, not a port — and the four beyond the
+  transport were found by reading the two directories side by side after the
+  milestone's own list was done.
 
 ## Parity gaps carried from the Python client
 

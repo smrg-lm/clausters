@@ -142,13 +142,16 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         ).open($("stage"));
         log("one window: sizes, the face's own alphabet, wrapped alignments, "
           + "and clipped controls");
-        // The page's clock stands in for the script's loop: same list, same
-        // order, same spacing.
+        // The **application clock**, in seconds -- the same call the script
+        // makes, with the same list, the same order and the same spacing. Each
+        // change runs on the page's loop when its moment comes, and nothing
+        // here keeps time.
+        const clock = await gui.appClock();
         for (const [after, name, props] of CHANGES) {
-          setTimeout(() => {
+          clock.sched(after, () => {
             win.widget(name).set(props);
             log(`set ${JSON.stringify(props)} on ${name}`);
-          }, after * 1000);
+          });
         }
       }
 

@@ -131,24 +131,29 @@ and at the end of the history both stay false and nothing redraws.</div>
         session.start();
         log("two windows up — drag a clip in one, then Ctrl+Z over the other");
 
-        // What each window says about the history after every event, so the
-        // agreement is legible without pressing anything twice.
+        // What each window says about the history, printed whenever it moves.
         //
         // Both directions, both windows. The **redo** side is what makes "one
         // order, not two" legible: undo in either window and `canRedo` turns
         // true in *both*, because there is one pile and both are standing at
         // the same place in it. It is also what says a step did nothing -- at
         // the end of the history both stay false, and no window redraws.
+        //
+        // A history label is not an event, so it is *read* rather than waited
+        // for: that is a periodic read-out, and it belongs on the **application
+        // clock**, which reschedules a function by the number it returns. The
+        // same call the script makes, at the same 50 ms.
         const pad = (v, n) => String(v).padEnd(n);
         let shown = null;
-        setInterval(() => {
+        (await gui.appClock()).sched(0.05, function showHistory() {
           const line = [["left ", left], ["right", right]]
             .map(([name, ed]) => `${name}: canUndo=${pad(ed.canUndo, 5)} `
               + `${pad(JSON.stringify(ed.undoLabel ?? null), 24)}`
               + ` canRedo=${pad(ed.canRedo, 5)} ${JSON.stringify(ed.redoLabel ?? null)}`)
             .join("\n");
           if (line !== shown) { log(line + "\n" + "-".repeat(72)); shown = line; }
-        }, 200);
+          return 0.05;
+        });
       }
 
       el("run").onclick = () => run().catch((e) => log(`error: ${e}`));

@@ -66,7 +66,6 @@ groups, a negative one unlinks it.</div>
         $("log").textContent += line + "\n";
         $("log").scrollTop = $("log").scrollHeight;
       };
-      const wait = (secs) => new Promise((r) => setTimeout(r, secs * 1000));
 
       const SR = 48000.0;
       let win = null, frames = 0;
@@ -118,12 +117,24 @@ groups, a negative one unlinks it.</div>
         $("membership").disabled = false;
       }
 
+      /**
+       * Unlink, navigate the waveform alone, and rejoin a second and a half
+       * later.
+       *
+       * The pause is the **application clock**, the same call the script makes:
+       * the second half runs on the page's own loop when its moment comes, so
+       * this returns straight away and the window keeps answering the mouse in
+       * between.
+       */
       async function membership() {
         $("membership").disabled = true;
         win.widget("spect").set({ link: -1 });        // unlink: keeps its view
         win.widget("wave").set({ viewLen: frames / 8 });  // only the waveform zooms
         log("unlinked: the waveform zoomed and the spectrogram stayed");
-        await wait(1.5);
+        (await gui.appClock()).sched(1.5, relink);
+      }
+
+      function relink() {
         win.widget("spect").set({ link: 1 });         // rejoin: adopts the group
         win.widget("wave").set({ viewLen: 0.0 });     // reset both to the whole take
         log("rejoined: one group again, both showing the whole take");
