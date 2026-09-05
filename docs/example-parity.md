@@ -80,7 +80,10 @@ The same capability, spelled the way each language spells it. A row pairs two
 names; a row with `—` on one side drops the other, because that side has
 nothing to pair it with. The verdicts read as they do in `bindings.md`:
 `idiom` (shaped for the language, nothing to do), `n/a` (deliberately absent,
-with the reason), `gap` (present on one side and nobody has decided).
+with the reason), `gap` (present on one side and nobody has decided). The audit
+applies every row whichever verdict it carries; the verdict is for the reader
+deciding what to do about it, and `gap` is the one that says somebody still has
+to.
 
 | Python | Web | Note |
 |---|---|---|

@@ -24,10 +24,11 @@ Two spellings of one call are reconciled two ways, in this order:
   counterpart, and says which of ``idiom`` / ``n/a`` / ``gap`` it is.
 
 An undeclared difference is a failure and prints as a diff of the two
-sequences. A row marked ``gap`` is a difference somebody decided to keep, so it
-is reported and does not fail; ``--strict`` fails on those too.
+sequences. Everything the tables declare is applied silently, whichever verdict
+it carries: the verdict is there for a reader deciding what to do about a row,
+and `gap` is the one that means somebody still has to.
 
-    scripts/audit-example-pairs.py [--strict] [--verbose] [pattern...]
+    scripts/audit-example-pairs.py [--verbose] [pattern...]
 
 A pattern is matched against the pair's name (``views/rulers``), so a single
 pair is audited with ``scripts/audit-example-pairs.py views/rulers``.
@@ -1163,8 +1164,6 @@ def filter_surface(names: list[str], surface: set[str]) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("patterns", nargs="*", help="audit only pairs whose name matches")
-    ap.add_argument("--strict", action="store_true",
-                    help="fail on a declared `gap` too, not only on an undeclared difference")
     ap.add_argument("--verbose", action="store_true",
                     help="print each pair's normalized sequence")
     args = ap.parse_args()
@@ -1183,7 +1182,6 @@ def main() -> int:
             surface.add(camel(row.python))
 
     failures = 0
-    gaps = 0
     for key, py_path, web_path in pairs:
         py_seq = filter_surface(apply_idioms(_py_calls(py_path), idioms, "python"), surface)
         web_seq = filter_surface(apply_idioms(_js_calls(web_path), idioms, "web"), surface)
@@ -1215,7 +1213,7 @@ def main() -> int:
         print(f"\n{rel}: no script twin, and no row in docs/example-parity.md")
         failures += 1
 
-    print(f"\n{len(pairs)} pairs audited, {failures} differing, {gaps} declared gaps")
+    print(f"\n{len(pairs)} pairs audited, {failures} differing")
     return 1 if failures else 0
 
 
