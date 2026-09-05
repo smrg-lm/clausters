@@ -23,7 +23,9 @@
   <body>
     <main>
       <div id="note">The web twin of the Python client's
-<code>recording.py</code>: <b>takes drawn while they record</b>, in a page.
+<code>recording_mapped.py</code>: <b>three pictures of one engine's audio</b> —
+takes drawn while they record, a finished take too big to download, and one
+peer's edit landing in a lane.
 
 Every other way audio reaches a picture announces itself — a client sends
 samples, a peer edits a span and says so. A <b>recording</b> does not: a
@@ -86,187 +88,176 @@ socket.</div>
 
       <div class="row">
         <button id="start">start</button>
-        <button id="record" disabled>record 4 takes</button>
-        <button id="edit" disabled>another peer silences the middle of take 1</button>
       </div>
 
       <div id="stage"></div>
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/views/recording_mapped.py,
+      call for call: the same four takes, the same finished take filled without
+      sending a sample, the same window, and the same two buttons.
+
+      The difference is the data path, and it is what both files are about: the
+      script's host maps the engine's memory and reads every picture locally; a
+      page maps nothing, so the server sends the overview instead
+      (`/buffer_stream`) and the host folds each report into the pyramid the
+      picture already holds. Nothing about the audio crosses back.
+
+      Serve clients/web (the package root) and open
+      /examples/views/recording.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Server,
-        Buffer, Synth, SynthDef, GuiHost, gui,
+        Buffer, Session, Synth, SynthDef, gui,
       } from "../../dist/index.js";
       import { control, line, out, recordBuf, sine } from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (text) => { $("log").textContent += text + "\n"; };
 
       const TAKES = 4;              // lanes recording at once
       const SECONDS = 8.0;          // how long each one runs
       const LONG_SECONDS = 60.0;    // the take that is too big to download
-      const RATE = 48000;
-      const LANES = 1;              // the navigation group the four takes share
-      const LONG = 2;               // the finished take's own: a different axis
-
-      let server, raw, win = null;
-      let takes = [], long = null, peer = null;
-
-      // One def, one node per take: a glissando, heard and recorded at once —
-      // `recordBuf` passes its input through, so the same signal reaches the
-      // buffer and the output. `doneAction: 2` frees the node when the
-      // recorder reaches the end of its buffer, which is what stops the
-      // pictures growing.
-      const glissando = () => {
-        const buf = control("buf", 0.0, "ir");
-        const from = control("from", 220.0, "ir");
-        const to = control("to", 880.0, "ir");
-        const tone = sine(line(from, to, SECONDS))
-          .mul(line(0.02, 0.2 / Math.sqrt(TAKES), SECONDS));
-        return new SynthDef("web_glissando",
-          out(0.0, recordBuf(buf, 0.0, tone, { doneAction: 2 })));
-      };
-
-      // One waveform per take, stacked, all in one navigation group so they
-      // zoom and pan together, and a `timeruler` of its own so no lane pays
-      // for the strip out of its own height.
-      //
-      // `fills: true` is the one thing the host cannot work out for itself: a
-      // lane stops at the write frontier and leaves the axis past it empty.
-      // Without it the buffer's own zeros are drawn — a flat line across the
-      // whole take before anything has been recorded into it — because past
-      // the frontier there is no silence, there is no samples yet.
-      const scene = () => gui.view(
-        { title: "recording", layout: "col", margin: 8.0, gap: 6.0 },
-        ...takes.map((take, i) => gui.waveform({
-          name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
-          fills: true, ruler: "off", rulerY: "off", link: LANES,
-        })),
-        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
-        // The last lane is not a recording at all: a minute of stereo that
-        // already exists. No `fills`, nothing streamed -- and nothing
-        // downloaded either, because 23 MB is not a download at any zoom.
-        //
-        // It is **eight times longer than the takes**, so it gets a navigation
-        // group and a ruler of its own rather than being squeezed into theirs:
-        // a group is one window in samples over every member, and the honest
-        // way to show two different lengths is two axes. Zoom and pan work on
-        // whichever ruler or lane the pointer is over.
-        gui.waveform({
-          name: "long", buffer: long.bufnum, sampleRate: RATE,
-          ruler: "off", rulerY: "off", link: LONG,
-        }),
-        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LONG, h: 22 }),
-      );
-
-      async function record() {
-        el("record").disabled = true;
-        // They all start on one pitch and fan out, so what is heard opens
-        // rather than beating against itself.
-        for (const take of takes) {
-          const octaves = (Math.random() * 3.5 - 1.75) || 1.0;
-          new Synth("web_glissando", {
-            buf: take.bufnum, from: 220.0, to: 220.0 * 2 ** octaves,
-          }, { server });
-        }
-        log(`recording ${TAKES} takes: the traces grow with the sound`);
-        setTimeout(async () => {
-          // The takes are finished, so `fills` is cleared: what was written is
-          // now all there is, and each lane draws the whole of its samples.
-          for (let i = 0; i < TAKES; i++) win?.widget(`take${i}`).set({ fills: false });
-          log("done — the lanes now draw the whole of what they hold");
-          el("record").disabled = false;
-          el("edit").disabled = false;
-        }, (SECONDS + 0.5) * 1000);
-      }
+      const RATE = 48000.0;
+      // The navigation groups: one axis for the takes, one for the long take.
+      const LANES = 1, LONG = 2;
 
       async function run() {
-        // The page both sounds and draws: the host is booted over the engine
-        // this server brought up, so a bound widget reaches the right nodes.
-        server = await new Server().boot();
-        raw = server.engine;
-        // The page's host, and the ambient one from here on: a view opens
-        // without being told which host, exactly as the script does after
-        // `session.gui()`.
-        await new GuiHost({ engine: raw }).boot();
+        $("start").disabled = true;
 
-        await glissando().send(server);
-        await server.sync();
-        // Empty buffers, allocated at their full length: a take's picture is
-        // the whole of the box it will fill, and the axis must not move while
-        // it fills.
-        takes = [];
+        // One server owning the engine and one host over it. Every buffer is
+        // the engine's; what a page cannot do is map it, which is why the
+        // pictures below are sent rather than read.
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        const takes = [];
         for (let i = 0; i < TAKES; i++) {
           takes.push(await Buffer.alloc(Math.round(SECONDS * RATE), 1, { server }));
         }
-        // **A take that is finished and too big to download.** The server
-        // fills it: `fill` says *how many* samples to write rather than
-        // carrying them, so a square wave across 23 MB is a dozen numbers on
-        // the wire. Not one sample of it crosses in either direction, which is
-        // the point the lane goes on to make about drawing it.
-        //
-        // Twelve constant runs and **nothing else** -- no fade over them. A
-        // trace is one quad per pixel column, from that column's lowest sample
-        // to its highest, so a constant run is a column of no height at all,
-        // inked at the trace's minimum weight. Slope that run by even a
-        // hundredth and each column sits a pixel below the last: the line
-        // reads as a staircase of its own, which is a true picture of a fade
-        // and a distraction from a lane that says "square wave".
-        long = await Buffer.alloc(Math.round(LONG_SECONDS * RATE), 2, { server });
-        // The steps land on **whole buckets** of the summary (256 frames), so
-        // each one is drawn from buckets that hold one value: a boundary
-        // falling inside a bucket would give that bucket both values, and the
-        // picture a full-height column at every step -- correct, and a
-        // distraction from what the lane is here to show.
-        const steps = 12;
-        const stepFrames = Math.floor(long.frames / steps / 256) * 256;
-        await long.fill(Array.from({ length: steps }, (_, i) => [
-          i * stepFrames * 2,
-          stepFrames * 2,
-          (i % 2 === 0 ? 1 : -1) * (0.2 + 0.7 * (i / (steps - 1))),
+        const longTake = await Buffer.alloc(
+          Math.round(LONG_SECONDS * RATE), 2, { server });
+
+        // Fill the long one without sending a sample. `fill` says *how many*
+        // samples to write rather than carrying them, so a square wave across
+        // 23 MB is a dozen numbers on the wire. The runs land on whole buckets
+        // of the summary (256 frames): a boundary falling inside a bucket gives
+        // that bucket both values, and the picture a full-height column at
+        // every step -- true, and a distraction here.
+        const STEPS = 12;
+        const stepFrames = Math.floor(longTake.frames / STEPS / 256) * 256;
+        await longTake.fill(Array.from({ length: STEPS }, (_, i) => [
+          i * stepFrames * longTake.channels,
+          stepFrames * longTake.channels,
+          (i % 2 === 0 ? 1 : -1) * (0.2 + 0.7 * (i / (STEPS - 1))),
         ]));
-        // Where a page draws is the document's say, and it is the one line
-        // the script has no counterpart for: the view opens into `#stage`, its
-        // canvas is made inside that element and follows its box.
-        win = await scene().open(el("stage"));
-        log(`${TAKES} empty takes of ${SECONDS} s — the lanes are empty, `
-          + "and `fills` is what makes that read as empty rather than as silence");
-        log(`the last lane is a finished take of ${LONG_SECONDS} s x 2 `
-          + `(${(LONG_SECONDS * RATE * 2 * 4 / 1e6).toFixed(0)} MB): drawn from its `
-          + "overview, about a hundredth of that, and the samples read back only "
-          + "where you zoom in");
-        el("record").disabled = false;
+
+        // The window. `fills` is the one thing the host cannot work out for
+        // itself: it says *these samples are being written*, so a lane stops at
+        // the frontier and leaves the axis past it empty rather than inking the
+        // buffer's own zeros. The finished take carries none -- it is written
+        // everywhere, and that is a different picture.
+        //
+        // The one argument the script has no counterpart for is where a page
+        // draws: the view opens into `#stage` and its canvas follows that box.
+        const win = await gui.view(
+          { title: "the page's window", w: 980, h: 560, layout: "col" },
+          gui.panel(
+            { layout: "row", gap: 8.0, h: 34 },
+            gui.button({ name: "record", label: "record 4 takes" }),
+            gui.button({ name: "edit",
+                         label: "another peer silences the middle of take 1" }),
+            gui.label("press record", { name: "log" }),
+          ),
+          ...takes.map((take, i) => gui.waveform({
+            name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
+            fills: true, ruler: "off", rulerY: "off", link: LANES,
+          })),
+          gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
+          gui.waveform({
+            name: "long", buffer: longTake.bufnum, sampleRate: RATE,
+            ruler: "off", rulerY: "off", link: LONG,
+          }),
+          gui.timeruler({ ruler: "time", sampleRate: RATE, link: LONG, h: 22 }),
+        ).open($("stage"));
+
+        // What the buttons do. **Record** plays four glissandi and records them
+        // at once; `recordBuf` passes its input through, so the same signal
+        // reaches the buffers and the output, and `doneAction: 2` frees each
+        // node at the end of its take -- which is what stops the pictures
+        // growing. **Silence** is the edit: the server writes the span in
+        // place, and this page announces it with `touch`, which the server
+        // broadcasts to every other client -- the host among them -- as the
+        // span and never the samples.
+        await new SynthDef(
+          "mapped_glissando",
+          out(0.0, recordBuf(
+            control("buf", 0.0, "ir"), 0.0,
+            sine(line(control("from", 220.0, "ir"),
+                      control("to", 880.0, "ir"), SECONDS))
+              .mul(line(0.02, 0.2 / Math.sqrt(TAKES), SECONDS)),
+            { doneAction: 2 },
+          )),
+        ).send(server);
+        await server.sync();
+
+        /** Puts a line in the window's own log and in the page's. */
+        const say = (text) => {
+          win.widget("log").set({ text });
+          log(text);
+        };
+
+        // What tells the lanes their takes are written, once the recorders
+        // have freed themselves. The script calls it from a cell when it likes;
+        // a page has no prompt, so `record` schedules it.
+        let onTakesDone = null;
+
+        /** Four takes at once, heard and recorded. */
+        const record = () => {
+          for (const take of takes) {
+            let octaves = Math.random() * 4.0 - 2.0;
+            while (Math.abs(octaves) < 0.25) {   // nothing that sits on the start
+              octaves = Math.random() * 4.0 - 2.0;
+            }
+            new Synth("mapped_glissando", {
+              buf: take.bufnum, from: 220.0, to: 220.0 * 2.0 ** octaves,
+            }, { server });
+          }
+          say("recording: the traces grow with the sound, and nothing is sent");
+          setTimeout(() => onTakesDone(), (SECONDS + 0.5) * 1000);
+        };
+
+        /** Silence the middle third of the first take, and say where. */
+        const peerEdit = async () => {
+          const start = Math.round(takes[0].frames / 3);
+          const frames = Math.round(takes[0].frames / 3);
+          await takes[0].silence({ start, frames });
+          takes[0].touch(0, start, frames);
+          say(`another peer silenced frames ${start}..${start + frames} of `
+            + "take 1 — the lane re-summarizes that span and nothing else");
+        };
+
+        win.widget("record").onClick(record);
+        win.widget("edit").onClick(() => peerEdit().catch((e) => log(`error: ${e}`)));
+
+        // Clear `fills` when a take is finished. A recorder frees itself at the
+        // end of its buffer, so the frontier stops moving and what was written
+        // is all there is. `fills` comes off then, and the lane goes back to
+        // drawing the whole of its samples -- the same lane, a different claim
+        // about what it holds.
+        const finished = () => {
+          for (let i = 0; i < TAKES; i++) {
+            win.widget(`take${i}`).set({ fills: false });
+          }
+          say("the lanes now draw the whole of what they hold");
+        };
+        onTakesDone = finished;
       }
 
-      // **The edit this page did not make.** A second connection over the same
-      // engine is a second *client*: the server broadcasts `/buffer_touched` to
-      // everyone registered but the writer, so the host hears about a span it
-      // knows nothing else about. The peer edits with the server's own verb
-      // (`/buffer_gain` at zero, which is what `silence` is) and then says
-      // where — the announcement carries the span and never the samples.
-      async function peerEdit() {
-        el("edit").disabled = true;
-        peer ??= await new Server({ engine: raw }).attach();
-        const take = takes[0];
-        const held = new Buffer(take.bufnum, take.frames, 1, RATE, peer);
-        const start = Math.round(take.frames / 3);
-        const frames = Math.round(take.frames / 3);
-        await held.silence({ start, frames });
-        held.touch(0, start, frames);
-        log(`another peer silenced frames ${start}..${start + frames} of take 1 `
-          + "(its middle third) and announced the span — that lane reads it back "
-          + "and redraws, and the others are untouched");
-      }
-
-      el("record").onclick = () => record();
-      el("edit").onclick = () => peerEdit().catch((e) => log(`error: ${e}`));
-
-      el("start").onclick = () => {
-        el("start").disabled = true;
-        run().catch((error) => log(`error: ${error}`));
-      };
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>

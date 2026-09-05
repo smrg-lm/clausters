@@ -41,6 +41,7 @@ A pair is found by its path: `views/rulers.py` is `views/rulers.html`, with
 | Python example | Page | Why |
 |---|---|---|
 | `panels/standalone` | `panels/standalone.mjs` | the page beside it is not this example's other half: `standalone.html` is the counterpart of *running* `clausters-gui --standalone`, in a tab. Authoring a bundle is a node script's job, because a page never writes one |
+| `views/recording_mapped` | `views/recording.html` | the same three pictures, by the two data paths: the script's host **maps** the engine's memory and reads everything locally; the page's is sent the overview instead. That difference is the whole of both files, so they are one example |
 | `io/osc_responder` | `io/responders.html` | the page is named for what it holds, since the other responder example a page can run (`io/midi-responder.html`) sits beside it |
 
 ## Examples with no twin
@@ -55,7 +56,7 @@ one. Each row says which.
 | `io/embedded` | the in-process embedded server through the bundled native library — the page's engine is that same server compiled to wasm, so every page is this example |
 | `io/live_udp` | a UDP socket to a server process; a tab has no UDP, and `io/servers.html` shows the same two-server split over its own carriers |
 | `io/osc_destination` | sends OSC to a **foreign** application over UDP; same reason |
-| `views/recording_mapped` | the same three pictures as `views/recording.html` on a host that **maps the segment**, so none of them crosses the wire. A page can map nothing — that is what the example is about, and it is the one thing a tab cannot do |
+| `views/recording` | the stress-test form of the first of `views/recording.html`'s three pictures: a take count and a follow-block off the command line, so the same file is a demonstration and a load test. The picture itself is in the pair above |
 | `views/bulk` | maps a multi-gigabyte take through the bulk cache with an mmap; a page fetches ranges instead, which `views/take.html` shows |
 | `basics/demand.html` | demand-rate UGens, written page-first while the def DSL was being ported; the script twin is named in `clients/python/PLAN.md` |
 | `basics/engine.html` | booting the wasm engine in an AudioWorklet — the page's half of `io/embedded.py`, with no script counterpart for the same reason |
@@ -420,4 +421,11 @@ in the middle of an example.
 | web | `send` | the reporter def, sent |
 | web | `Synth` | the reporter, instanced -- the script's `feeder.send("/note", ...)` loop |
 | web | `free` | the reporter, freed where the script stops its feeder socket |
+
+### `views/recording_mapped`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `ShmClient` | the two numbers the script prints for the finished take -- how many bytes of samples the region holds and how many its summary does -- are read off the mapped segment. A page maps nothing, which is the difference the whole pair is about |
+| python | `region_path` | the other half of the row above |
 

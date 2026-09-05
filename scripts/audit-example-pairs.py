@@ -1076,14 +1076,14 @@ def discover_pairs(declared: dict[str, tuple[str, str]], unpaired: dict[str, str
     for path in sorted(PY_EXAMPLES.rglob("*.py")):
         rel = path.relative_to(PY_EXAMPLES).with_suffix("")
         key = str(rel)
+        if key in unpaired:
+            continue        # declared as having none, whatever the paths say
         if key in declared:
             web = WEB_EXAMPLES / declared[key][1]
         else:
             web = WEB_EXAMPLES / (str(rel).replace("_", "-") + ".html")
         if web.exists():
             pairs.append((key, path, web))
-        elif key in unpaired:
-            continue
         else:
             lonely.append((key, path))
     return pairs, lonely
