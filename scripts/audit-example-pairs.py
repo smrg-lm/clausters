@@ -383,7 +383,10 @@ def _splice(
         for name, (start, end) in funcs.items():
             if ev[1] == "def" and name == ev[2]:
                 continue        # a definition marker sits outside its own body
-            if start < pos < end and (best is None or start > best[0]):  # type: ignore[operator]
+            # `<= end`: an event keyed on where it *ends* can land exactly on
+            # the end of the function holding it -- `return handler` is the
+            # last thing in its `def`, and both end at the same column.
+            if start < pos <= end and (best is None or start > best[0]):  # type: ignore[operator]
                 owner, best = name, (start, end)
         if owner is None:
             outside.append(ev)

@@ -278,7 +278,7 @@ it rather than on the next play.</div>
         $("run").disabled = true;
         session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
         server = session.server;
-        await session.gui();
+        const host = await session.gui();
         SR = (await server.queryInfo()).nominalSampleRate;
         // Timeline samples per beat: the axis unit is the audio sample, so a
         // take's frames place 1:1.
@@ -410,7 +410,7 @@ it rather than on the next play.</div>
         };
 
         transport = new gui.Transport(
-          await session.gui(),
+          host,
           () => LANES.map((name) => win.widget(name).id),
           {
             source: startPass, tempo: TEMPO, sampleRate: SR,
@@ -460,20 +460,20 @@ it rather than on the next play.</div>
         win.widget("t_laneh").onEvent((v) => setLaneH(Number(v)));
 
         // A clip's move/resize: `"clip" offset dur` in timeline samples.
-        for (const name of Object.keys(CLIPS)) {
-          win.widget(name).onEvent((tag, ...vals) => {
+        const onClip = (name) => (tag, ...vals) => {
+          {
             if (tag !== "clip" || vals.length < 2) return;
             CLIPS[name].at = Number(vals[0]) / BEAT;
             CLIPS[name].beats = Math.max(Number(vals[1]) / BEAT, 0.0);
             log(`clip ${name}: ${CLIPS[name].at.toFixed(2)} .. `
               + `${(CLIPS[name].at + CLIPS[name].beats).toFixed(2)} beats`);
             follow();
-          });
-        }
+          }
+        };
 
         // A lane's edit-backs: its header controls and its thickness.
-        for (const name of LANES) {
-          win.widget(name).onEvent((tag, ...vals) => {
+        const onLane = (name) => (tag, ...vals) => {
+          {
             if (vals.length === 0) return;
             if (tag === "height") {
               // The host resized the lane under the cursor; this stack wants
@@ -496,8 +496,11 @@ it rather than on the next play.</div>
             log(`lane ${name}: mute ${Number(st.mute)} solo ${Number(st.solo)} `
               + `level ${st.level.toFixed(2)} -> gain ${laneGain(name).toFixed(2)}`);
             follow();
-          });
-        }
+          }
+        };
+
+        for (const name of Object.keys(CLIPS)) win.widget(name).onEvent(onClip(name));
+        for (const name of LANES) win.widget(name).onEvent(onLane(name));
 
         win.widget("b_play").onClick(() => {
           if (transport.playing) transport.pause();
@@ -545,13 +548,18 @@ it rather than on the next play.</div>
               .join("   ");
         };
 
+        setUnit(0);
+        showRuler(true);
+        transport.locate(0.0);
+        win.widget("counter").set({ text: readout() });
+
         // A read-out is not an event -- the transport's position is *read*, not
         // reported -- so it goes on the **application clock**, where a function
         // returning a number is rescheduled by whatever it returns. Nothing
         // parks the cursor here: the transport asks about the end of its own
         // pass on the same clock.
         let last = null;
-        (await gui.appClock()).sched(0.05, function tickCounter() {
+        host.clock.sched(0.05, function tickCounter() {   // from here on the counter keeps itself
           const text = readout();
           if (text !== last) {       // a stopped transport sends nothing
             win.widget("counter").set({ text });
@@ -559,11 +567,6 @@ it rather than on the next play.</div>
           }
           return 0.05;
         });
-
-        setUnit(0);
-        showRuler(true);
-        transport.locate(0.0);
-        win.widget("counter").set({ text: readout() });
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

@@ -347,3 +347,18 @@ in the middle of an example.
 |---|---|---|
 | web | `stop` ×2 | the script hands each stop button the bound method (`on_click(editor.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
 
+### `editors/pianoroll_midi`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `requestMidiPorts` | a browser has no **virtual** port to create: the script opens one named `clausters-in` and asks the user to route into it, where a page must ask the browser for access and pick from the ports that already exist |
+| web | `stop` (first) | the port picker above re-listens, which stops the receiver it had. Only a page has that picker |
+| python | `free` ×2 | the script's ending: it frees the two `MidiFunc` responders before the process exits |
+| python | `stop` | the script's ending: it stops the receiver it opened |
+
+### `editors/multitrack`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `events` | a clip spec's event builder. The script keeps the specs as dicts and subscripts one (`spec["events"](...)`, no call of its own); an object literal reads it as a property, so the same builder is reached by name |
+

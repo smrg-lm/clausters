@@ -139,15 +139,6 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
         log(`opened window ${win.id} — choose a port and play`);
         session.start();
 
-        // The roll's edit-back: the flat "notes" quintuples become the take.
-        win.widget("roll").onEvent((tag, ...vals) => {
-          if (tag !== "notes") return;
-          notes = [];
-          for (let i = 0; i < vals.length; i += 5) notes.push(vals.slice(i, i + 4));
-          held.clear();                  // the indexes moved with the edit
-          log(`take: ${notes.length} notes`);
-        });
-
         const ports = await requestMidiPorts();
         const inputs = [...ports.inputs.values()];
         if (inputs.length === 0) {
@@ -161,16 +152,35 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
           return option;
         }));
         $("ports").disabled = false;
-        $("ports").onchange = () => listen(ports, $("ports").value);
         await listen(ports, inputs[0].id);
+
+        // The roll's edit-back: the flat "notes" quintuples become the take.
+        win.widget("roll").onEvent((tag, ...vals) => {
+          if (tag !== "notes") return;
+          notes = [];
+          for (let i = 0; i < vals.length; i += 5) notes.push(vals.slice(i, i + 4));
+          held.clear();                  // the indexes moved with the edit
+          log(`take: ${notes.length} notes`);
+        });
+
+        respond();
+        $("ports").onchange = async () => {
+          await listen(ports, $("ports").value);
+          respond();
+        };
       }
 
+      /** Open the chosen port, letting go of whichever one was open. */
       async function listen(ports, id) {
         recv?.stop();
         recv = await new MidiReceiver({ port: id, access: ports }).start();
+        log(`recording from "${recv.port}"`);
+      }
+
+      /** The two responders that write what arrives into the roll. */
+      function respond() {
         new MidiFunc(noteOn, "note_on", { recv });
         new MidiFunc(noteOff, "note_off", { recv });
-        log(`recording from "${recv.port}"`);
       }
 
       $("run").onclick = () => run().catch((err) => log(`error: ${err}`));
