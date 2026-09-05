@@ -25,4 +25,5 @@
 - [Architecture](architecture.md)
 - [Design decisions & findings](decisions.md)
 - [The node-tree model and DAWs](model-vs-daw.md)
+- [The example pairs](example-parity.md)
 - [Contributing](contributing.md)

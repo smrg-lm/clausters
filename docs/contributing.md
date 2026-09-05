@@ -128,6 +128,15 @@ is reproducible with the same line:
   `cargo run --release --example bench -- --json` and the same script. A change
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.
+- **example pairs** — *not a CI job*: `scripts/audit-example-pairs.py`, which
+  reads a Python example and its page twin and compares the **ordered sequence
+  of calls** each makes on the client surface. The non-divergence rule says the
+  two are one example in two languages; this is the only thing that checks it,
+  and every divergence found before it existed was found by accident. What is
+  left over after the case conventions are reconciled is declared in
+  `docs/example-parity.md` — the pair table, the idiom table and, per pair, what
+  one side says alone. The baseline is zero, so anything it prints is a
+  difference nobody declared. Run it after touching either example directory.
 - **python types** — *not a CI job*: `pyright` in `clients/python`, configured
   by `pyrightconfig.json` there. Nothing in the repo vendors it, so **run it
   with `npx pyright`** from `clients/python` — npm's own cache is the install,
