@@ -1325,6 +1325,32 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **Re-cueing a pass makes the engine reject the notes already in flight**
+  *(found 2026-09-04, in the log of a by-hand run of
+  `examples/editors/multitrack.py` during the `C53` acceptance pass; not a
+  regression -- the path is the same before and after that work)*. Press stop
+  and play, or play twice, and the server logs one line per pass:
+
+      WARN engine rejected node 1036 (duplicate ID, bad target or full table)
+
+  The cause is understood and is the *example's* `silence()` doing what it
+  says. A pass owns a group; the next pass frees it before starting its own, so
+  that a clip dragged away stops sounding where it used to be. But
+  `clausters.seq.Playhead.stop` only ends the **scan**: the `/synth_new`
+  bundles already emitted inside the emission headroom (`Server.latency`, a
+  quarter second) are in the engine's queue with a future timetag, aimed at the
+  group that has just been freed. They arrive at a dead target and are refused,
+  which is what the warning says.
+
+  So nothing is wrong with the sound -- those voices were the ones being
+  cancelled -- and what is wrong is that an ordinary transport gesture prints a
+  warning that reads like a defect. **The decision is whose job it is**: the
+  example's, to free the group a latency behind rather than at once; the
+  playhead's, to withdraw what it has emitted and not yet heard; or the
+  server's, to answer a freed target quietly when the node was scheduled
+  against it while it still existed. It is written here rather than fixed
+  because those are three different designs and only one of them is right.
+
 - ✅ **A curve opens on no axis at all: the values flatten and the time
   rescales** *(found 2026-09-04, by eye, while running the throwaway prototype
   for `C52` over `examples/editors/edit_curve.py`'s own curve; the second
