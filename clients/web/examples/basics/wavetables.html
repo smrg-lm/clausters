@@ -39,39 +39,44 @@ it: raising <code>drive</code> fades harmonics in — distortion with an exact,
 band-limited recipe instead of a clipped edge.</div>
 
       <div class="row">
-        <button id="start">start</button>
+        <button id="render">render the score</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
       </div>
-      <div class="row">
-        <button id="morph" disabled>play the morph voice</button>
-        <button id="morphOff" disabled>release</button>
-      </div>
-      <label>pos <input id="pos" type="range" min="0" max="1" step="0.01"
-                        value="0" disabled /><span id="posv">0.00 (sine)</span></label>
-      <div class="row">
-        <button id="shaped" disabled>play the shaped voice</button>
-        <button id="shapedOff" disabled>release</button>
-      </div>
-      <label>drive <input id="drive" type="range" min="0.05" max="1" step="0.01"
-                          value="0.1" disabled /><span id="drivev">0.10</span></label>
 
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/basics/wavetables.py, call for
+      call: the same three tables filled by the server, the same two defs over
+      them, and the same score of timed bundles, rendered offline.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
+      click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/wavetables.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Server, Buffer,
-        Synth, SynthDef,
+        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, shaper, sine, vosc } from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
 
       // /buffer_gen flags: normalize (1) | wavetable (2) | clear (4).
       const WT = 7;
 
       // ---- the defs ----
-      const morphDef = () => {
+      function morphDef(name = "wt_morph") {
         const pos = control("pos", 0.0, { lag: 0.5 });      // the morph itself
         const freq = control("freq", 110.0);
         const gate = control("gate", 1.0);
@@ -80,10 +85,10 @@ band-limited recipe instead of a clipped edge.</div>
           gate, doneAction: DoneAction.FREE_SELF,
         });
         const sig = vosc(pos, freq).mul(env).mul(amp);
-        return new SynthDef("web_wt_morph", out(0.0, sig), out(1.0, sig));
-      };
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
 
-      const shapedDef = () => {
+      function shapedDef(name = "wt_shaped") {
         const drive = control("drive", 0.1, { lag: 0.5 });
         const freq = control("freq", 165.0);
         const gate = control("gate", 1.0);
@@ -92,15 +97,16 @@ band-limited recipe instead of a clipped edge.</div>
           gate, doneAction: DoneAction.FREE_SELF,
         });
         const sig = shaper(2.0, sine(freq).mul(drive)).mul(env).mul(amp);
-        return new SynthDef("web_wt_shaped", out(0.0, sig), out(1.0, sig));
-      };
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
 
-      let server = null;
-      let morphVoice = null;
-      let shapedVoice = null;
+      let take = null;
 
-      async function start() {
-        server = await new Server().boot();   // or WsConnection
+      // ---- the score ----
+      // Timetagged bundles, as in every NRT routine: the beat stamps them.
+      async function renderScore() {
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const server = session.server;
 
         // 2048 frames hold a 1024-point table; the allocator hands out 0, 1, 2
         // in order, and `vosc` needs its two tables adjacent.
@@ -121,52 +127,77 @@ band-limited recipe instead of a clipped edge.</div>
         await morphDef().send(server);
         await shapedDef().send(server);
 
-        el("start").disabled = true;
-        for (const id of ["morph", "shaped", "pos", "drive"]) {
-          el(id).disabled = false;
-        }
+        new Routine(function* sequence() {
+          const voice = new Synth("wt_morph", { freq: 110.0, pos: 0.0 }, { server });
+          yield 1.0;
+          server.sendBundle([                                  // glide to saw
+            ["/node_set", ["i", voice.id], "pos", ["f", 1.0]],
+          ]);
+          yield 3.0;
+          server.sendBundle([
+            ["/node_set", ["i", voice.id], "gate", ["f", 0.0]],
+          ]);
+          yield 0.5;
+          const answer = new Synth("wt_shaped", { freq: 165.0, drive: 0.1 }, { server });
+          server.sendBundle([                                  // harmonics in
+            ["/node_set", ["i", answer.id], "drive", ["f", 0.9]],
+          ]);
+          yield 2.0;
+          server.sendBundle([
+            ["/node_set", ["i", answer.id], "gate", ["f", 0.0]],
+          ]);
+          // The score's closing event, a release after the last gate: a render
+          // ends at its last event, so without this one the take would stop
+          // where that gate closed and the release would be cut -- a click at
+          // the end.
+          yield 1.5;
+          server.sendBundle([["/node_free", ["i", 0]]]);
+        }).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
       }
 
-      const release = (node) => node.set({ gate: 0.0 });
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderScore();
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer);
+      }
 
-      el("morph").onclick = () => {
-        morphVoice = new Synth("web_wt_morph", {
-          freq: 110.0, pos: Number(el("pos").value),
-        }, { server });
-        el("morphOff").disabled = false;
-        log(`morph voice on node ${morphVoice.id} — drag pos to hear it glide`);
-      };
-      el("morphOff").onclick = () => {
-        if (morphVoice) release(morphVoice);
-        morphVoice = null;
-        el("morphOff").disabled = true;
-      };
-      el("pos").oninput = () => {
-        const pos = Number(el("pos").value);
-        el("posv").textContent =
-          `${pos.toFixed(2)} (${pos < 0.5 ? "toward sine" : "toward saw"})`;
-        if (morphVoice) morphVoice.set({ pos });
-      };
+      // The blob a click downloads -- a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "wavetables.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote wavetables.wav");
+      }
 
-      el("shaped").onclick = () => {
-        shapedVoice = new Synth("web_wt_shaped", {
-          freq: 165.0, drive: Number(el("drive").value),
-        }, { server });
-        el("shapedOff").disabled = false;
-        log(`shaped voice on node ${shapedVoice.id} — raise drive for harmonics`);
-      };
-      el("shapedOff").onclick = () => {
-        if (shapedVoice) release(shapedVoice);
-        shapedVoice = null;
-        el("shapedOff").disabled = true;
-      };
-      el("drive").oninput = () => {
-        const drive = Number(el("drive").value);
-        el("drivev").textContent = drive.toFixed(2);
-        if (shapedVoice) shapedVoice.set({ drive });
-      };
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
     </script>
   </body>
 </html>

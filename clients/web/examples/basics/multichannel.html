@@ -36,27 +36,45 @@ Everything sounds through the <b>in-page engine</b>: no server process, no
 socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>
 
       <div class="row">
-        <button id="start">start</button>
-        <button id="play" disabled>play the phrase</button>
+        <button id="render">render the phrase</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
       </div>
 
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/basics/multichannel.py, call
+      for call: the same unison bank, the same three events on the same clock,
+      rendered offline, and the same bare channel list rendered with no def and
+      no session at all.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
+      click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/multichannel.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Event, Session,
-        SynthDef, Routine,
+        Buffer, Event, Routine, Server, Session, SynthDef, chans, play, render,
+        wavBytes,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine } from "../../dist/defs/index.js";
+      import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine }
+        from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
 
+      const SR = 48000.0;
       const VOICES = 12;
 
       // ---- the def: a detuned unison bank around `freq` ----
-      const unison = () => {
+      function unison(name = "unison") {
         const freq = control("freq", 110.0);
         const gate = control("gate", 1.0);
         const amp = control("amp", 0.1);
@@ -66,54 +84,99 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         // The callable form: twelve evaluations, twelve `rand` draws.
         const bank = dup(() => sine(freq.add(rand(-3.0, 3.0))), VOICES);
         const sig = mix(bank).mul(env.mul(amp).div(VOICES));
-        return new SynthDef("web_unison", out(0.0, dup(sig)));
-      };
-
-      let session = null;
-
-      async function start() {
-        // The script opens `Session.nrt(tempo=2.0)` and renders the phrase to
-        // a file; this page plays it, so the factory is the live one --
-        // `Session.live(url)` would put the same phrase on a
-        // `clausters --ws` server. The clock is the session's, anchored to its
-        // server's sample counter, which is what the script's `session.clock`
-        // is too.
-        session = (await Session.embed({ tempo: 2.0 })).activate();
-
-        const def = unison();
-        await def.send();
-        log(`def '${def.name}' loaded: ${VOICES} sines mixed to one, `
-          + "fanned to two buses");
-
-        session.start();
-        el("start").disabled = true;
-        el("play").disabled = false;
+        return new SynthDef(name, out(0.0, dup(sig)));
       }
+
+      let take = null;
 
       const mtof = (midi) => 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
 
-      function play() {
-        new Routine(function* () {
+      // ---- the score ----
+      // Notes go out as events, not as `new Synth`. A message has no time, so
+      // from inside a routine it lands *now* and every voice would start at 0
+      // no matter what the yields say. An event rides the bundle path:
+      // `/synth_new` at the routine's exact logical beat and the gate release a
+      // `sustain` later, which is what makes this a sequence rather than a
+      // chord. `hasGate` releases by closing the gate, which is what this def's
+      // `envGen` waits for.
+      async function renderPhrase() {
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await unison().send();
+
+        new Routine(function* sequence() {
           for (const [midi, dur] of [[45, 3.0], [52, 3.0], [50, 4.0]]) {
-            // An event, not a `new Synth`: it rides the bundle path, so the
-            // `/synth_new` carries the routine's exact logical beat and the
-            // release goes out a `sustain` later, timed the same way. That is
-            // what makes this a sequence rather than a chord. `hasGate`
-            // releases by closing the gate, which is what this def's `envGen`
-            // waits for.
+            const freq = mtof(midi);
             new Event({
-              instrument: "web_unison", freq: mtof(midi), amp: 0.4,
+              instrument: "unison", freq, amp: 0.4,
               dur, sustain: dur - 0.5, hasGate: true,
             }).play();
-            log(`voice at MIDI ${midi}, sounding ${dur - 0.5} beats`);
             yield dur;
           }
-          log("phrase done — each voice freed itself when its release ended");
+          // The score's closing event, a release after the last gate: a render
+          // ends at its last event, so without this one the take would stop
+          // where that gate closed and the 1.2 s release would be cut -- a
+          // click at the end.
+          yield 3.0;
+          session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
+
+        // A channel list needs no def at all: no def, no session -- a channel
+        // list is an expression, so the verbs take it directly. Two different
+        // signals, one per channel. It sits here for the same reason it does in
+        // the script: there it is a cell of its own, between the score and the
+        // `run()` that renders it.
+        const pair = await render(
+          chans(sine(220.0).mul(0.2), sine(330.0).mul(0.2)),
+          { dur: 0.5, sampleRate: SR, channels: 2 },
+        );
+        log(`bare channel list: ${pair.channels} channels, `
+          + `peak ${Math.max(...pair.peak, 0.0).toFixed(3)}`);
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
       }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
-      el("play").onclick = play;
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderPhrase();
+
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer);
+      }
+
+      // The blob a click downloads -- a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "multichannel.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote multichannel.wav");
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
     </script>
   </body>
 </html>

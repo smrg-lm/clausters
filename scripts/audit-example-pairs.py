@@ -187,6 +187,18 @@ def _py_calls(path: Path) -> list[str]:
         visit_FunctionDef = _add
         visit_AsyncFunctionDef = _add
 
+        def visit_Assign(self, node: ast.Assign) -> None:
+            # `rms = lambda a: ...` is a named function, the same way
+            # `const rms = (a) => ...` is one on the other side.
+            if isinstance(node.value, ast.Lambda):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        start = (node.lineno, node.col_offset)
+                        end = (node.end_lineno or node.lineno,
+                               node.end_col_offset or 0)
+                        funcs.setdefault(target.id, (start, end))
+            self.generic_visit(node)
+
     Defs().visit(tree)
 
     # What each function's parameters bind, so a parameter named after a

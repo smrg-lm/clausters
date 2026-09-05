@@ -43,27 +43,43 @@ overloading, so it writes <code>sine(5).mul(freq.mul(0.01))</code>. The two
 emit the same spec JSON, which is exactly what the parity vectors assert.</div>
 
       <div class="row">
-        <button id="start">start</button>
-        <button id="play" disabled>play the phrase</button>
-        <button id="free" disabled>free the lead</button>
+        <button id="render">render the phrase</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
       </div>
 
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/basics/graph_maths.py, call for
+      call: the same def built out of the graph's own arithmetic, the same
+      sustained voice driven by the same routine of timed bundles, rendered
+      offline.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
+      click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/graph-maths.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Session, Synth,
-        SynthDef, Routine,
+        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine }
         from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
 
       // ---- the def: pitch, timbre and tremolo, all graph maths ----
-      const mathsLead = () => {
+      function mathsLead(name = "maths_lead") {
         const note = control("note", 60.0);
         const amp = control("amp", 0.3);
 
@@ -82,56 +98,88 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         // A short attack and release, on the same `.mul()` the rest of this
         // def is made of: without it the lead starts and ends on a step, which
         // is a click.
-        const fade = envGen(Env.asr(0.02, 1.0, 0.1), {
-          gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
-        });
+        const gate = control("gate", 1.0);
+        const fade = envGen(Env.asr(0.02, 1.0, 0.1),
+          { gate, doneAction: DoneAction.FREE_SELF });
 
         const sig = shaped.mul(trem).mul(amp).mul(fade);
-        return new SynthDef("web_maths_lead", out(0.0, sig), out(1.0, sig));
-      };
-
-      let session = null;
-      let lead = null;
-
-      async function start() {
-        // The script opens `Session.nrt(tempo=2.0)` and renders the phrase to a
-        // file; this page plays it, so the factory is the live one. Everything
-        // after this line is the same call in the same order -- including the
-        // clock, which is the session's own, anchored to its server's sample
-        // counter rather than built by hand.
-        session = (await Session.embed({ tempo: 2.0 })).activate();
-
-        await mathsLead().send();
-        session.start();
-
-        lead = new Synth("web_maths_lead", { note: 48.0, amp: 0.3 });
-        log(`the lead is node ${lead.id}, sounding a MIDI 48 already shaped`);
-
-        el("start").disabled = true;
-        for (const id of ["play", "free"]) el(id).disabled = false;
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
       }
 
-      function play() {
-        new Routine(function* () {
-          // MIDI notes go out as they are: the def turns them into Hz with
-          // .midicps(), so the client never converts a pitch by hand.
+      let take = null;
+
+      // ---- the score ----
+      // One sustained voice, its note set from a routine -- the def turns each
+      // MIDI number into Hz with `.midicps()`, so the score never computes a
+      // frequency.
+      async function renderPhrase() {
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await mathsLead().send();
+        const lead = new Synth("maths_lead", { note: 48.0, amp: 0.3 });
+
+        new Routine(function* sequence() {
           for (const midi of [48, 52, 55, 59, 60, 59, 55, 52]) {
-            session.server.sendBundle([["/node_set", ["i", lead.id], "note", ["f", midi]]]);
+            session.server.sendBundle([
+              ["/node_set", ["i", lead.id], "note", ["f", midi]],
+            ]);
             yield 0.5;
           }
-          log("phrase done");
+          yield 1.0;
+          // Closed, not freed: the gate lets the envelope fall to zero instead
+          // of cutting the lead mid-sample.
+          session.server.sendBundle([
+            ["/node_set", ["i", lead.id], "gate", ["f", 0.0]],
+          ]);
+          yield 0.5;
+          // The score's closing event, after the release: a render ends at its
+          // last event, so without this one the release would be cut off.
+          session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
       }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
-      el("play").onclick = play;
-      el("free").onclick = () => {
-        // The gate, not `free`: the envelope releases and the node frees
-        // itself, where a `/node_free` would cut the lead mid-sample.
-        lead.set({ gate: 0.0 });
-        log(`node ${lead.id} freed`);
-        for (const id of ["play", "free"]) el(id).disabled = true;
-      };
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderPhrase();
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer);
+      }
+
+      // The blob a click downloads -- a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "graph_maths.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote graph_maths.wav");
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
     </script>
   </body>
 </html>
