@@ -63,7 +63,7 @@ the instrument, and everything else the author put on it.</div>
       /examples/editors/edit-notes.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui } from "../../dist/index.js";
+      import { Session, gui, play } from "../../dist/index.js";
       import { Event, OscItem, Timeline } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -117,7 +117,11 @@ the instrument, and everything else the author put on it.</div>
         $("read").disabled = false;
         // The timeline is the one the page holds, so playing it needs nothing
         // from the editor.
-        $("play").onclick = () => session.play(timeline);
+        // The **free-standing** verb, not `session.play`: that one plays an
+        // event *pattern*, and this is a timeline. `play` dispatches on what the
+        // structure is -- the same question `edit` asked to open this window --
+        // and hands a `Timeline` to a `Playhead` over the ambient session.
+        $("play").onclick = () => play(timeline);
         $("read").onclick = () => readBack();
       }
 

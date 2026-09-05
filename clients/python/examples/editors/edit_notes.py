@@ -39,6 +39,7 @@ It self-launches the audio server and the GUI host: this one plays.
 # %%
 import sys
 
+import clausters
 from clausters import Session
 from clausters.gui import edit
 from clausters.seq import OscItem, Timeline
@@ -83,8 +84,16 @@ editor = edit(timeline,
 
 # %%
 def play():
-    """Play the timeline as it now stands."""
-    session.play(timeline)
+    """Play the timeline as it now stands.
+
+    The **free-standing** verb, not `clausters.Session.play`: that one plays an
+    event *pattern*, and this is a timeline. `clausters.play` dispatches on what
+    the structure is — the same question `clausters.gui.edit` asked to open this
+    window — and hands a `clausters.seq.Timeline` to a
+    `clausters.seq.timeline.Playhead` over the ambient session's clock and
+    server.
+    """
+    clausters.play(timeline)
 
 
 # %% [markdown]
