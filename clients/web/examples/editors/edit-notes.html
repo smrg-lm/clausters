@@ -105,6 +105,9 @@ the instrument, and everything else the author put on it.</div>
         // Building a session does not claim that role -- a page may hold
         // several.
         session = (await Session.embed()).activate();
+        // The clock the playhead runs on. An ambient play resolves this
+        // session's clock, and a stopped clock schedules what never fires.
+        session.start();
         await session.gui();
 
         // One verb. A `Timeline` opens as a NotesEditor — one `pianoroll`

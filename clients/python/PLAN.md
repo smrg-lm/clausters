@@ -1325,6 +1325,27 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
+  2026-09-05 by the user, pressing a button that did nothing)*.
+  `editors/edit_notes` opened a session with `activate()` and never started it,
+  so `play(timeline)` built a `Playhead`, scheduled the scan on a clock that was
+  not running, and returned a healthy handle. No exception, no log line,
+  nothing on the wire — the button simply did nothing, in both clients (the
+  examples are fixed; the surface is not).
+
+  The trap is in how the ambient clock is resolved. With **no** ambient session,
+  `resolve_clock` returns `None` and `get_default_clock` starts one, precisely
+  so an ambient play fires in real time. With a session activated, the same
+  resolution returns *that* session's clock in whatever state it is in — so
+  activating a session, which reads as claiming the ambient role, is what takes
+  the guarantee away.
+
+  Three answers, and the choice is a decision, not a fix: start the resolved
+  clock the way `get_default_clock` already does; refuse the play by name; or
+  leave it and have `TempoClock.play`/`Playhead.play` say once that the clock is
+  stopped. Whichever it is lands in both clients, since it is one resolution
+  rule in two languages.
+
 - ⬜ **A composed signal window goes mute after the multitrack redefines**
   *(found 2026-09-04, by hand, running `examples/editors/composed.py` in the
   `C53` acceptance pass; not a regression -- nothing in the event-loop work

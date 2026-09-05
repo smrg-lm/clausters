@@ -74,6 +74,7 @@ timeline = Timeline([
 # from here, the way `edit` resolves its host. Building a session does not claim
 # that role -- a page or a script may hold several.
 session = Session.live().activate()
+session.start()        # the clock the playhead runs on: a stopped one plays nothing
 session.gui()          # the host wired to this session's server
 editor = edit(timeline,
               sample_rate=session.server.query_info().nominal_sample_rate,
