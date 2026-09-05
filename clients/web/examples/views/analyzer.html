@@ -92,14 +92,13 @@ the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
         return new SynthDef(name, out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
       }
 
-      let win = null, sweeping = null, nyquist = 24000.0;
+      let win = null, sweeping = null;
 
       async function run() {
         $("run").disabled = true;
         const session = await Session.embed();
         const server = session.server;
         await session.gui();
-        nyquist = (await server.queryInfo()).nominalSampleRate / 2.0;
 
         await stereoDef().send(server);
         const synth = new Synth("stereo_image", { freq: 220.0 }, { server });
@@ -121,12 +120,20 @@ the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
             axes: { x: { ruler: "time" }, y: { ruler: "hz" } },
           }),
         ).open($("stage"));
+        // The sweep below runs on a timer of the page's own, so it is the
+        // window's closing that ends it — the same thing the script's
+        // `on_closed` says.
+        win.onClosed(() => clearInterval(sweeping));
 
         // The frequency window, reported as it is navigated — named in hertz,
         // since the normalized pair is a display coordinate and the reader is
         // looking at a frequency axis.
-        win.widget("spectrum").onEvent((tag, ...vals) => {
+        win.widget("spectrum").onEvent(async (tag, ...vals) => {
           if (tag === "view_x" && vals.length >= 2) {
+            // `queryInfo` rather than the launch options: it is the one
+            // spelling both clients have, so this page and its script twin ask
+            // the same question.
+            const nyquist = (await server.queryInfo()).nominalSampleRate / 2.0;
             const lo = 20.0 * (nyquist / 20.0) ** vals[0];
             const hi = 20.0 * (nyquist / 20.0) ** Math.min(vals[0] + vals[1], 1.0);
             log(`  spectrum: ${lo.toFixed(0)} Hz .. ${hi.toFixed(0)} Hz`);

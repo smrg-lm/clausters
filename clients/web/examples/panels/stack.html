@@ -43,6 +43,7 @@ view's.</div>
 
       <button id="run">open the window</button>
       <div id="stage"></div>
+      <button id="page" disabled>show the spectrogram from here</button>
       <pre id="log"></pre>
     </main>
 
@@ -136,8 +137,13 @@ view's.</div>
         // unbound view sends its new window as an event, which is the path the
         // slider replaced.
         win.widget("wave").onEvent((tag, ...payload) => {
-          if (tag === "view") log(`the axis moved by hand: ${tag} ${rest}`);
+          if (tag === "view") log(`the axis moved by hand: ${tag} ${payload}`);
         });
+
+        // The page can still set the stack itself -- a binding is another
+        // writer of the same prop, not an owner of it.
+        $("page").disabled = false;
+        $("page").onclick = () => win.widget("pages").set({ index: 1 });
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

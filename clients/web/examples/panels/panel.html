@@ -77,46 +77,46 @@ names, two independent panels.</div>
       // The named controls, so the page drives and listens to them by name.
       const CONTROLS = ["cutoff", "res", "gain", "mix", "bypass", "reset", "wave"];
 
-      // ---- the panel, as a view ----
-      // A row of knobs over a row of mixed controls. Every widget is *named*,
-      // not numbered -- nothing here picks an id. The builders return a `View`:
-      // a tree you compose and then open, the way a `SynthDef` is a graph you
-      // compose and then send.
-      const v = gui.view(
-        { title: "Filter", w: 560, h: 300, layout: "col" },
-        gui.panel(
-          { layout: "row" },
-          gui.knob({ name: "cutoff", label: "cutoff", min: 20.0, max: 20000.0,
-                     value: 800.0, curve: 4.0 }),
-          gui.knob({ name: "res", label: "res", min: 0.0, max: 1.0, value: 0.3 }),
-          gui.number({ name: "gain", label: "gain", min: -24.0, max: 24.0,
-                       value: 0.0, step: 1.0 }),
-        ),
-        gui.panel(
-          { layout: "row" },
-          gui.slider({ name: "mix", label: "mix", min: 0.0, max: 1.0, value: 0.5 }),
-          gui.toggle({ name: "bypass", label: "bypass", value: false }),
-          gui.button({ name: "reset", label: "reset" }),
-          gui.menu(["sine", "saw", "square"],
-                   { name: "wave", index: 1, label: "wave" }),
-        ),
-      );
-
-      // ---- how the travel becomes the value ----
-      // Two of those are not linear. The cutoff knob carries `curve: 4.0`, so
-      // half its travel is spent below 2.5 kHz instead of leaving 20..2000 Hz in
-      // a hairline -- the bend `lincurve` runs, read by the host out of the
-      // shared core. The gain number carries `step: 1.0`, so a drag lands on
-      // whole decibels and reports -3, never -3.0417. Turn `res` beside them to
-      // feel the difference: it is linear and continuous, which is the default.
-      //
-      // The step is a rule about the hand: the `set` below sends 2000 to a
-      // curved knob and it is drawn at 2000, because a control shows what it
-      // was told.
-
       async function run() {
         $("run").disabled = true;
         await new GuiHost().boot();
+
+        // ---- the panel, as a view ----
+        // A row of knobs over a row of mixed controls. Every widget is *named*,
+        // not numbered -- nothing here picks an id. The builders return a `View`:
+        // a tree you compose and then open, the way a `SynthDef` is a graph you
+        // compose and then send.
+        const v = gui.view(
+          { title: "Filter", w: 560, h: 300, layout: "col" },
+          gui.panel(
+            { layout: "row" },
+            gui.knob({ name: "cutoff", label: "cutoff", min: 20.0, max: 20000.0,
+                       value: 800.0, curve: 4.0 }),
+            gui.knob({ name: "res", label: "res", min: 0.0, max: 1.0, value: 0.3 }),
+            gui.number({ name: "gain", label: "gain", min: -24.0, max: 24.0,
+                         value: 0.0, step: 1.0 }),
+          ),
+          gui.panel(
+            { layout: "row" },
+            gui.slider({ name: "mix", label: "mix", min: 0.0, max: 1.0, value: 0.5 }),
+            gui.toggle({ name: "bypass", label: "bypass", value: false }),
+            gui.button({ name: "reset", label: "reset" }),
+            gui.menu(["sine", "saw", "square"],
+                     { name: "wave", index: 1, label: "wave" }),
+          ),
+        );
+
+        // ---- how the travel becomes the value ----
+        // Two of those are not linear. The cutoff knob carries `curve: 4.0`, so
+        // half its travel is spent below 2.5 kHz instead of leaving 20..2000 Hz in
+        // a hairline -- the bend `lincurve` runs, read by the host out of the
+        // shared core. The gain number carries `step: 1.0`, so a drag lands on
+        // whole decibels and reports -3, never -3.0417. Turn `res` beside them to
+        // feel the difference: it is linear and continuous, which is the default.
+        //
+        // The step is a rule about the hand: the `set` below sends 2000 to a
+        // curved knob and it is drawn at 2000, because a control shows what it
+        // was told.
 
         // ---- two panels from one view ----
         // `open` is what makes an *instance*: it allocates the widget ids and
@@ -150,13 +150,14 @@ names, two independent panels.</div>
           win.widget("reset").onClick(() => log(`${tag} reset: clicked`));
         }
 
+        // Say how many are left as each one goes.
         const open = new Set([a.id, b.id]);
-        for (const [tag, win] of [["1", a], ["2", b]]) {
-          win.onClosed(() => {
-            open.delete(win.id);
-            log(`window ${tag} closed (${open.size} left)`);
-          });
-        }
+        const closedOne = (win) => {
+          open.delete(win.id);
+          log(`window closed (${open.size} left)`);
+        };
+        a.onClosed(() => closedOne(a));
+        b.onClosed(() => closedOne(b));
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

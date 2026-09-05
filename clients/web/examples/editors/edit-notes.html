@@ -119,7 +119,6 @@ the instrument, and everything else the author put on it.</div>
         log("edit the notes; press play to hear the timeline as it stands");
 
         $("play").disabled = false;
-        $("read").disabled = false;
         // The timeline is the one the page holds, so playing it needs nothing
         // from the editor.
         // The **free-standing** verb, not `session.play`: that one plays an
@@ -127,6 +126,17 @@ the instrument, and everything else the author put on it.</div>
         // structure is -- the same question `edit` asked to open this window --
         // and hands a `Timeline` to a `Playhead` over the ambient session.
         $("play").onclick = () => play(timeline);
+
+        // The script's ending: there `wait()` blocks so the process stays alive
+        // while the window is on screen, and prints what was drawn when it
+        // closes. Here nothing exits and nothing may block, so the same verb is
+        // a promise.
+        editor.wait().then(() => {
+          log("the timeline, as it was left:");
+          readBack();
+        });
+
+        $("read").disabled = false;
         $("read").onclick = () => readBack();
       }
 

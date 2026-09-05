@@ -38,8 +38,9 @@ curve as it stands and comes back as the curve it now is <i>plus</i> the payload
 that puts it back — one call, because the inverse has to be read before the edit
 lands.</div>
 
-      <button id="run">open the editors</button>
+      <button id="run">open the editor</button>
       <div id="stage"></div>
+      <button id="second" disabled>open a second view</button>
       <div id="other"></div>
       <button id="read" disabled>read the curve back</button>
       <pre id="log"></pre>
@@ -50,9 +51,9 @@ lands.</div>
       call: the same four break points, the same `edit`, the same second window
       over one curve, and the same read-back out of the object the page holds.
 
-      The platform's differences are the usual two: the host is the wasm one in
-      this tab and draws into an element, and nothing is pumped — `open`
-      subscribes here where the script polls.
+      The platform's difference is the usual one: the host is the wasm one in
+      this tab and draws into an element. The script's `wait()` blocks its
+      thread; the page's is the same verb as a promise.
 
       Serve clients/web (the package root) and open
       /examples/editors/edit-curve.html. Build it first: ./build.sh
@@ -83,10 +84,20 @@ lands.</div>
         }
       }
 
+      /** Open a second view of the same curve. Edit in one, undo in the other. */
+      function secondWindow() {
+        return gui.edit(curve, {
+          sampleRate: 48_000, title: "cutoff (again)", stage: $("other"),
+        });
+      }
+
       async function run() {
         $("run").disabled = true;
+        // No `session.gui()`: `edit` resolves the ambient host and opens one if
+        // it has to, which is why the script names no host either. The session
+        // is here for the same reason it is there — a curve is data, and this
+        // example never plays it, so nothing boots.
         const session = await Session.embed({ boot: false });
-        await session.gui();
 
         // One verb. `edit` dispatches on **what the structure is**: an
         // `Automation` opens as a PointsEditor — one `bpf` widget, the `points`
@@ -94,19 +105,18 @@ lands.</div>
         const editor = await gui.edit(curve, {
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),
         });
+        log("draw in the window; Ctrl+Z undoes. Close it when you are done.");
 
         // Calling `edit` again over the **same** curve gives a second window.
-        // It is not a copy and it does not get a history of its own.
-        const other = await gui.edit(curve, {
-          sampleRate: 48_000, title: "cutoff (again)", stage: $("other"),
-        });
+        // It is not a copy and it does not get a history of its own: an undo
+        // stack belongs to the data, so Ctrl+Z in either window steps the one
+        // order both of them made. The script keeps it in a cell of its own for
+        // the same reason this page keeps it behind a button.
+        $("second").disabled = false;
+        $("second").onclick = () => secondWindow();
 
-        log("draw in either window; Ctrl+Z undoes, in either one");
-        $("read").disabled = false;
-        $("read").onclick = () => readBack();
-
-        // The same ending the Python script has, in the shape a page can take
-        // it: there a script *blocks* on `wait()` so it does not exit while the
+        // The same ending the script has, in the shape a page can take it:
+        // there a script *blocks* on `wait()` so it does not exit while the
         // window is on screen; here nothing exits and nothing may block, so the
         // same verb is a promise and this reads the curve back when the hand is
         // done with it.
@@ -114,6 +124,9 @@ lands.</div>
           log("the curve, as it was left:");
           readBack();
         });
+
+        $("read").disabled = false;
+        $("read").onclick = () => readBack();
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

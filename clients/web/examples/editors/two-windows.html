@@ -97,7 +97,10 @@ and at the end of the history both stay false and nothing redraws.</div>
 
       async function run() {
         el("run").disabled = true;
-        const session = await Session.embed({ tempo: TEMPO, channels: 2 });
+        // `activate` makes this the **ambient** session, which is what the
+        // free-standing verbs resolve against -- rendering an element reaches
+        // this server. Building one does not claim that role.
+        const session = (await Session.embed({ tempo: TEMPO, channels: 2 })).activate();
         const server = session.server;
         const host = await session.gui();
 
@@ -128,7 +131,6 @@ and at the end of the history both stay false and nothing redraws.</div>
         const right = new gui.FormEditor(piece, { ...options, title: "Composition (right)" });
         await left.open(host, { stage: el("left") });
         await right.open(host, { stage: el("right") });
-        session.start();
         log("two windows up — drag a clip in one, then Ctrl+Z over the other");
 
         // What each window says about the history, printed whenever it moves.
@@ -145,7 +147,7 @@ and at the end of the history both stay false and nothing redraws.</div>
         // same call the script makes, at the same 50 ms.
         const pad = (v, n) => String(v).padEnd(n);
         let shown = null;
-        (await gui.appClock()).sched(0.05, function showHistory() {
+        host.clock.sched(0.05, function showHistory() {
           const line = [["left ", left], ["right", right]]
             .map(([name, ed]) => `${name}: canUndo=${pad(ed.canUndo, 5)} `
               + `${pad(JSON.stringify(ed.undoLabel ?? null), 24)}`

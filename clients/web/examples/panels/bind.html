@@ -72,36 +72,6 @@ one block.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // The controls the panel drives. A control is a **name and a default** --
-      // what `/node_set` addresses and what the synth starts at -- and a widget
-      // built from one reads both, so the two cannot disagree about what "freq"
-      // is. The *range* is not here: a control is a signal in the graph and says
-      // nothing about how a knob should be drawn, so each widget spells its own.
-      const FREQ = control("freq", 220.0);
-      const AMP = control("amp", 0.2);
-
-      // The two shapes a control signal comes in, and the reason a button has a
-      // mode. `GATE` is an ordinary control the graph reads as a gate: the
-      // envelope sustains while it is held and releases when it falls, so a
-      // button must send both edges. `FIRE` is a **trigger** (`rate: "tr"`),
-      // which the server resets to zero after one block -- so a button that
-      // sends only the press is a bang against it, and could not be one against
-      // `GATE`, where the value would stand forever.
-      const GATE = control("gate", 0.0);
-      const FIRE = control("fire", 0.0, { rate: "tr" });
-
-      // A quiet stereo sine whose frequency and level are the `freq` and `amp`
-      // controls -- what the bindings `/node_set <node> <control> <value>`
-      // drive. Two envelopes over the same tone say what the two buttons do: a
-      // sustaining one the `gate` holds open, and a percussive one the `fire`
-      // trigger restarts from the top each time it arrives.
-      function beep(name = "bind_beep") {
-        const held = envGen(Env.asr(0.02, 1.0, 0.4), { gate: GATE });
-        const blip = envGen(Env.perc(0.005, 0.35), { gate: FIRE });
-        const sig = sine(FREQ).mul(held.add(blip)).mul(AMP);
-        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
-      }
-
       async function run() {
         $("run").disabled = true;
 
@@ -112,6 +82,36 @@ one block.</div>
         const session = await Session.embed();
         const server = session.server;
         await session.gui();
+
+        // The controls the panel drives. A control is a **name and a default** --
+        // what `/node_set` addresses and what the synth starts at -- and a widget
+        // built from one reads both, so the two cannot disagree about what "freq"
+        // is. The *range* is not here: a control is a signal in the graph and says
+        // nothing about how a knob should be drawn, so each widget spells its own.
+        const FREQ = control("freq", 220.0);
+        const AMP = control("amp", 0.2);
+
+        // The two shapes a control signal comes in, and the reason a button has a
+        // mode. `GATE` is an ordinary control the graph reads as a gate: the
+        // envelope sustains while it is held and releases when it falls, so a
+        // button must send both edges. `FIRE` is a **trigger** (`rate: "tr"`),
+        // which the server resets to zero after one block -- so a button that
+        // sends only the press is a bang against it, and could not be one against
+        // `GATE`, where the value would stand forever.
+        const GATE = control("gate", 0.0);
+        const FIRE = control("fire", 0.0, { rate: "tr" });
+
+        // A quiet stereo sine whose frequency and level are the `freq` and `amp`
+        // controls -- what the bindings `/node_set <node> <control> <value>`
+        // drive. Two envelopes over the same tone say what the two buttons do: a
+        // sustaining one the `gate` holds open, and a percussive one the `fire`
+        // trigger restarts from the top each time it arrives.
+        function beep(name = "bind_beep") {
+          const held = envGen(Env.asr(0.02, 1.0, 0.4), { gate: GATE });
+          const blip = envGen(Env.perc(0.005, 0.35), { gate: FIRE });
+          const sig = sine(FREQ).mul(held.add(blip)).mul(AMP);
+          return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+        }
 
         await beep().send(server);
         const synth = new Synth("bind_beep", {}, { server });   // the def's own defaults

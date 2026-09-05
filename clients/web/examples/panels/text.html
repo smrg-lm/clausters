@@ -133,7 +133,7 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
 
       async function run() {
         $("run").disabled = true;
-        await new GuiHost().boot();
+        const host = await new GuiHost().boot();
 
         win = await gui.view(
           { title: "Text", w: 980, h: 820, layout: "col" },
@@ -142,13 +142,19 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         ).open($("stage"));
         log("one window: sizes, the face's own alphabet, wrapped alignments, "
           + "and clipped controls");
+
+        // The props are live: retitle bigger and re-align the centered
+        // paragraph -- the same keys the GuiDef carried, pushed by name through
+        // the widget handles.
+        win.widget("title").set({ text: "TEXT_SIZE IS LIVE", textSize: 4.0 });
+        win.widget("center").set({ align: "end" });
+
         // The **application clock**, in seconds -- the same call the script
         // makes, with the same list, the same order and the same spacing. Each
         // change runs on the page's loop when its moment comes, and nothing
         // here keeps time.
-        const clock = await gui.appClock();
         for (const [after, name, props] of CHANGES) {
-          clock.sched(after, () => {
+          host.clock.sched(after, () => {
             win.widget(name).set(props);
             log(`set ${JSON.stringify(props)} on ${name}`);
           });

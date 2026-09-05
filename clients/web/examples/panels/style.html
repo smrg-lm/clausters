@@ -163,13 +163,21 @@ widget draws, clamped to half the shorter side of each.</div>
         log("host warm (its own table); one cool theme group, nested darker; "
           + "three per-widget accents; a rounded panel and a faded one. "
           + "Live restyles follow.");
+
+        // Live restyles, by name: turn the cool group violet, then one accent
+        // cyan -- each a `set` on a named widget.
+        win.widget("cool").set({
+          theme: '{"accent": "#b060e0", "accent_dim": "#6a3a8a", '
+               + '"hilite": "#d090f0", "panel": "#161020bf"}',
+        });
+        win.widget("accent_a").set({ color: "#40d0d0" });
+
         // The **application clock**, in seconds -- the same call the script
         // makes, with the same list, the same order and the same spacing. Each
         // restyle runs on the page's loop when its moment comes, and nothing
         // here keeps time.
-        const clock = await gui.appClock();
         for (const [after, name, props, what] of CHANGES) {
-          clock.sched(after, () => {
+          host.clock.sched(after, () => {
             win.widget(name).set(props);
             log(what);
           });

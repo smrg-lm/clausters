@@ -65,7 +65,7 @@ right one is switched live by the menu under it.</div>
       /examples/panels/gestures.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, render, seq } from "../../dist/index.js";
+      import { Session, gui, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {
@@ -85,14 +85,13 @@ right one is switched live by the menu under it.</div>
         $("run").disabled = true;
 
         // ---- the take, bounced offline ----
-        const take = await render(
-          new seq.Pbind({
-            degree: new seq.Pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
-            dur: 0.25,
-            amp: new seq.Pwhite(0.3, 0.7),
-          }),
-          { sampleRate: SR, channels: 1, tempo: TEMPO },
-        );
+        const nrt = await Session.nrt({ tempo: TEMPO });
+        nrt.play(new seq.Pbind({
+          degree: new seq.Pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
+          dur: 0.25,
+          amp: new seq.Pwhite(0.3, 0.7),
+        }));
+        const take = await nrt.render({ sampleRate: SR, channels: 1 });
         const frames = take.frames;
         log(`rendered ${frames} frames (${(frames / SR).toFixed(2)} s)`);
 

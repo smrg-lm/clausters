@@ -61,6 +61,7 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
       import { Session, bar, beatInBar, builtins, gui, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
       const log = (line) => {
         $("log").textContent += line + "\n";
         $("log").scrollTop = $("log").scrollHeight;
@@ -114,9 +115,13 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
         log(`rendered ${take.frames} frames (${(take.frames / SR).toFixed(2)} s, `
           + `${(take.frames / SR * TEMPO).toFixed(1)} beats) offline`);
 
+        // The samples as a **source**: what a page has instead of the `.f32`
+        // file the script writes for the host to map.
+        const phrase = gui.source(take.samples);
+
         const session = await Session.embed();
         await session.gui();
-        const win = await scene(gui.source(take.samples)).open($("stage"));
+        const win = await scene(phrase).open($("stage"));
         log(`opened window ${win.id} — click the menus to cycle each axis' unit`);
 
         win.widget("time").onEvent((index) => {
@@ -142,6 +147,16 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
           log(`vertical rulers -> ${on ? "on" : "off"}`);
         });
 
+        // The views themselves report their vertical window as a `view_y`
+        // edit-back when the wheel or a strip drag zooms them.
+        const onViewY = (tag, ...vals) => {
+          if (tag === "view_y" && vals.length >= 2) {
+            log(`vertical window: start=${vals[0].toFixed(3)} len=${vals[1].toFixed(3)}`);
+          }
+        };
+        win.widget("wave").onEvent(onViewY);
+        win.widget("spect").onEvent(onViewY);
+
         // The same reading the script prints: the grid a ruler draws is
         // `bar`/`beatInBar` and the perceptual scales are `cpsmel`/`cpsbark`,
         // so a client reads the identical numbers the window is drawing
@@ -152,13 +167,24 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
         log(`1 kHz is ${builtins.cpsmel(1000).toFixed(0)} mel, `
           + `${builtins.cpsbark(1000).toFixed(2)} bark`);
 
-        const onViewY = (tag, ...vals) => {
-          if (tag === "view_y" && vals.length >= 2) {
-            log(`vertical window: start=${vals[0].toFixed(3)} len=${vals[1].toFixed(3)}`);
-          }
-        };
-        win.widget("wave").onEvent(onViewY);
-        win.widget("spect").onEvent(onViewY);
+        // Everything is also settable directly: the menus are a convenience,
+        // and any client can retune an axis at any time.
+        log("demo: spectrogram -> mel, waveform -> beats + dBFS (3 s) ...");
+        win.widget("spect").set({ freqScale: "mel" });
+        win.widget("wave").set({ ruler: "beats", rulerY: "db" });
+        await sleep(3000);
+        win.widget("spect").set({ freqScale: "log" });
+        win.widget("wave").set({ ruler: "time", rulerY: "norm" });
+
+        // The same `yStart`/`yLen` window the wheel and the strip drag move is
+        // a plain live prop: zoom the waveform into its top half (watch the
+        // ticks refine) and the spectrogram into the low mids, then reset both.
+        log("demo: vertical zoom on both views (3 s), then back to the full axes ...");
+        win.widget("wave").set({ yStart: 0.5, yLen: 0.5 });     // the upper half
+        win.widget("spect").set({ yStart: 0.2, yLen: 0.35 });   // a low-mid band
+        await sleep(3000);
+        win.widget("wave").set({ yLen: 0.0 });                  // <= 0 resets
+        win.widget("spect").set({ yLen: 0.0 });
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

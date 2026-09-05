@@ -127,6 +127,9 @@ names the exact sample under the cursor.</div>
         log("    freqScale -> mel (watch the peak and the ruler move)");
         winSpec.set({ freqScale: "mel" });
         await wait(PAUSE);
+        log("    freqScale -> log (round trip), and the window closes");
+        winSpec.set({ freqScale: "log" });
+        await wait(PAUSE);
         winSpec.close();
         log("the tour is done");
         $("run").disabled = false;

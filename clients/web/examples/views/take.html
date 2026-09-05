@@ -122,7 +122,7 @@ exists.</div>
           gui.toggle({ name: "body", label: "rms", value: true }),
         );
 
-        await session.gui();
+        const host = await session.gui();
         const editor = new gui.FormEditor(take, {
           sampleRate: SR, tempo: TEMPO, extra: [bar], title: "Clausters take",
         });
@@ -154,6 +154,25 @@ exists.</div>
         } catch (err) {
           log(`a generator asked for a signal view: ${err.message}`);
         }
+
+        // The read-out. Nothing here drains anything: the gestures reach the
+        // editor on the host's own loop, and the transport parks its cursor
+        // there too. A selection is not an edit -- nothing in the composition
+        // changes -- so it is *read off* the editor rather than waited for,
+        // which is a periodic read-out and belongs on the application clock: a
+        // function returning a number is rescheduled by it, so this repeats
+        // with no loop of its own.
+        let last = null;
+        host.clock.sched(0.05, function watchSelection() {
+          const now = editor.selection;
+          if (now && JSON.stringify(now) !== JSON.stringify(last)) {
+            last = now;
+            log(`selection: ${last.start.toFixed(3)} .. `
+              + `${(last.start + last.len).toFixed(3)} beats `
+              + `of ${last.nodes ? "the take" : "the axis"}`);
+          }
+          return 0.05;
+        });
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

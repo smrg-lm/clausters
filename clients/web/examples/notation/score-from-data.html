@@ -184,7 +184,8 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
           win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
           log("stopped");
         });
-        log("press play — the cursor follows the sound");
+        win.onClosed(() => log("window closed"));
+        log("press play — the cursor follows the sound; close the window to stop");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

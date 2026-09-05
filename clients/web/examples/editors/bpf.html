@@ -64,11 +64,12 @@ a note: the drawn envelope shapes the tone you hear.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      const START_ENV = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"]);
+      // `Env`-style curve specs the menu offers: shape names plus two custom
+      // curvatures. "hold" is the constant lane (each point's value held until
+      // the next). `Env.step` builds SC's "step" sequences separately.
       const CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0];
 
-      let server = null, win = null;
-      let points = gui.envToPoints(START_ENV);
+      let server = null, win = null, points = null;
 
       /** One note shaped by the envelope as currently drawn. */
       async function play() {
@@ -99,17 +100,24 @@ a note: the drawn envelope shapes the tone you hear.</div>
         server = session.server;
         await session.gui();
 
+        // Seeded from a familiar `Env` (an ADSR played through) via
+        // `envToPoints`. Every widget is *named*, not numbered.
+        const START_ENV = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2],
+          ["exp", -4.0, "sin"]);
+
         win = await gui.view(
           { title: "BPF envelope -> EnvGen", w: 640, h: 460, layout: "col" },
           gui.label("drag points/segments; Ctrl+click adds/removes; play sends it",
             { name: "hint" }),
           gui.bpf({
-            name: "env", points, min: 0.0, max: 1.0, duration: 2.0, label: "amp env",
+            name: "env", points: gui.envToPoints(START_ENV),
+            min: 0.0, max: 1.0, duration: 2.0, label: "amp env",
           }),
           gui.menu(CURVES.map(String), { name: "curve", label: "curve (all segments)" }),
           gui.button({ name: "play", label: "play" }),
         ).open($("stage"));
         log(`opened window ${win.id} — draw the envelope, then press play`);
+        points = gui.envToPoints(START_ENV);
 
         // The edit-back payload (`"points"` then t v shape curve quads): keep
         // the latest breakpoints so `play` hears what is drawn.
@@ -119,6 +127,7 @@ a note: the drawn envelope shapes the tone you hear.</div>
 
         await play();
         win.widget("env").set({ points: JSON.stringify(gui.envToPoints(Env.perc(0.01, 1.2))) });
+        points = gui.envToPoints(Env.perc(0.01, 1.2));
         log("...and the editor now holds a percussive envelope instead");
       }
 

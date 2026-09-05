@@ -66,31 +66,31 @@ screen.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // The controls the sidebar drives, declared once. A widget built from one
-      // of these takes its **name** -- what `/node_set` addresses -- and its
-      // **default** off it, so the graph, the knob and the value this script
-      // remembers cannot drift apart. The range stays the widget's: a control is
-      // a signal and says nothing about how a knob is drawn.
-      const FREQ = control("freq", 220.0);
-      const AMP = control("amp", 0.08);
-      const GATE = control("gate", 1.0);
-
-      function voice(name = "shell_voice") {
-        const env = envGen(Env.asr(0.05, 1.0, 0.3), {
-          gate: GATE, doneAction: DoneAction.FREE_SELF,
-        });
-        const sig = sine(FREQ).mul(env).mul(AMP);
-        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
-      }
-
-      let synth = null;
-      let freq = FREQ.default, amp = AMP.default;
-
       async function run() {
         $("run").disabled = true;
         const session = await Session.embed();
         const server = session.server;
         await session.gui();
+
+        // The controls the sidebar drives, declared once. A widget built from one
+        // of these takes its **name** -- what `/node_set` addresses -- and its
+        // **default** off it, so the graph, the knob and the value this script
+        // remembers cannot drift apart. The range stays the widget's: a control is
+        // a signal and says nothing about how a knob is drawn.
+        const FREQ = control("freq", 220.0);
+        const AMP = control("amp", 0.08);
+        const GATE = control("gate", 1.0);
+
+        function voice(name = "shell_voice") {
+          const env = envGen(Env.asr(0.05, 1.0, 0.3), {
+            gate: GATE, doneAction: DoneAction.FREE_SELF,
+          });
+          const sig = sine(FREQ).mul(env).mul(AMP);
+          return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+        }
+
+        let synth = null;
+        let freq = FREQ.default, amp = AMP.default;
 
         await voice().send(server);
 

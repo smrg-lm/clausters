@@ -93,6 +93,11 @@ key, and where the state lives is the client's.</div>
         // stock reader — so playing after an edit is what makes the stroke
         // audible rather than only visible.
         $("play").onclick = () => session.play(take);
+
+        // The script's ending: there `wait()` blocks so the process stays alive
+        // while the window is on screen. Here nothing exits and nothing may
+        // block, so the same verb is a promise.
+        editor.wait().then(() => log("the window is closed; the take kept the stroke"));
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

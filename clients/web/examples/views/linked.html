@@ -38,7 +38,6 @@ groups, a negative one unlinks it.</div>
 
       <div class="row">
         <button id="run">open the lanes</button>
-        <button id="membership" disabled>unlink, zoom one, rejoin</button>
       </div>
       <div id="stage"></div>
       <pre id="log"></pre>
@@ -74,7 +73,15 @@ groups, a negative one unlinks it.</div>
        * a second and a half it reads as a flicker and the point is lost.
        */
       const DIVERGE = 3.0;
-      let win = null, frames = 0;
+
+      /**
+       * When the demo runs by itself, in seconds after the window opens. A
+       * manual check is somebody watching, so it happens while they are still
+       * looking.
+       */
+      const DEMO_AT = 8.0;
+
+      let host = null, win = null, frames = 0;
 
       async function run() {
         $("run").disabled = true;
@@ -94,7 +101,7 @@ groups, a negative one unlinks it.</div>
         const phrase = gui.source(take.samples);
 
         const session = await Session.embed();
-        await session.gui();
+        host = await session.gui();
         win = await gui.view(
           { title: "Linked lanes: one timeline, one selection", w: 960, h: 640 },
           gui.waveform({ name: "wave", data: phrase, channels: 2, sampleRate: SR, link: 1 }),
@@ -120,7 +127,14 @@ groups, a negative one unlinks it.</div>
         };
         win.widget("wave").onEvent(onGroup("wave"));
         win.widget("spect").onEvent(onGroup("spect"));
-        $("membership").disabled = false;
+        win.onClosed(() => log("window closed"));
+
+        // Interactive first: both lanes are linked — wheel/drag on either one
+        // drives both. The membership demo runs a few seconds in, near enough
+        // to be watched and late enough not to land on the first gesture.
+        log(`in ${DEMO_AT.toFixed(0)} s the spectrogram unlinks for `
+          + `${DIVERGE.toFixed(0)} s, then rejoins — nothing here drives it`);
+        host.clock.sched(DEMO_AT, membership);
       }
 
       /**
@@ -132,23 +146,20 @@ groups, a negative one unlinks it.</div>
        * this returns straight away and the window keeps answering the mouse in
        * between.
        */
-      async function membership() {
-        $("membership").disabled = true;
+      function membership() {
+        log("unlinking: watch the waveform zoom in and the spectrogram NOT follow");
         win.widget("spect").set({ link: -1 });        // unlink: keeps its view
         win.widget("wave").set({ viewLen: frames / 8 });  // only the waveform zooms
-        log("unlinking: watch the waveform zoom in and the spectrogram NOT follow");
-        (await gui.appClock()).sched(DIVERGE, relink);
+        host.clock.sched(DIVERGE, relink);
       }
 
       function relink() {
         win.widget("spect").set({ link: 1 });         // rejoin: adopts the group
         win.widget("wave").set({ viewLen: 0.0 });     // reset both to the whole take
         log("rejoined: the spectrogram snapped back, both show the whole take");
-        $("membership").disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("membership").onclick = () => membership().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>
