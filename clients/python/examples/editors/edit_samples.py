@@ -35,7 +35,7 @@ nothing has to be found on disk.
 import math
 import sys
 
-from clausters import Session
+from clausters import Session, play
 from clausters.defs import Buffer
 from clausters.gui import edit
 
@@ -73,21 +73,22 @@ editor = edit(take, title="take")
 # %% [markdown]
 # ## Hear the stroke
 #
-# A buffer is data: something has to read it, and `clausters.Session.play`
-# provides the stock reader — so playing after an edit is what makes the stroke
-# audible rather than only visible.
+# A buffer is data: something has to read it, and `clausters.play` provides the
+# stock reader — so playing after an edit is what makes the stroke audible
+# rather than only visible. (`clausters.Session.play` is the pattern verb; a
+# buffer goes through this one, on the session it resolves.)
 
 # %%
-def play():
+def hear():
     """Play the take as it now stands — the buffer the picture is drawing."""
-    session.play(take)
+    play(take, server=server)
 
 
 # %%
 def run():
     """Keep the window open until it is closed."""
     print("zoom in (wheel) until the samples are discs, then Alt+drag to draw.")
-    print("Ctrl+Z puts them back. Call play() to hear what you drew.")
+    print("Ctrl+Z puts them back. Call hear() to play what you drew.")
     editor.wait()
 
 
@@ -95,4 +96,4 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — draw on the take, play() to hear it")
+    print("up — draw on the take, hear() to play it")

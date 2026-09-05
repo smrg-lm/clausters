@@ -56,7 +56,7 @@ key, and where the state lives is the client's.</div>
       /examples/editors/edit-samples.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui } from "../../dist/index.js";
+      import { Session, gui, play } from "../../dist/index.js";
       import { Buffer } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -91,8 +91,9 @@ key, and where the state lives is the client's.</div>
         $("play").disabled = false;
         // A buffer is data: something has to read it, and `play` provides the
         // stock reader — so playing after an edit is what makes the stroke
-        // audible rather than only visible.
-        $("play").onclick = () => session.play(take);
+        // audible rather than only visible. (`Session.play` is the pattern
+        // verb; a buffer goes through this one, on the session it resolves.)
+        $("play").onclick = () => play(take, { server });
 
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen. Here nothing exits and nothing may
