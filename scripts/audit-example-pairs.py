@@ -173,6 +173,7 @@ def _py_calls(path: Path) -> list[str]:
     """The Python file's call names, in source order, callbacks inlined."""
     tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
     platform, elements = _py_platform_locals(tree)
+    aliases = _py_aliases(tree)
 
     # Every function bound to a name, with the span of its whole definition.
     funcs: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {}
@@ -240,7 +241,7 @@ def _py_calls(path: Path) -> list[str]:
                 # Keyed on where the *callee's name* ends, which is the order
                 # the page's tokens read in: `view(canvas())` is view then
                 # canvas, and `Server().boot()` is Server then boot.
-                events.append((_end(node.func), "call", name))
+                events.append((_end(node.func), "call", aliases.get(name, name)))
             self.generic_visit(node)
 
         def visit_Name(self, node: ast.Name) -> None:
@@ -279,6 +280,21 @@ def _py_callee(func: ast.expr) -> tuple[str | None, str | None]:
         receiver = func.value.id if isinstance(func.value, ast.Name) else ""
         return func.attr, receiver
     return None, None
+
+
+def _py_aliases(tree: ast.AST) -> dict[str, str]:
+    """`from ... import Event as SeqEvent` -> `{"SeqEvent": "Event"}`.
+
+    A file that renames an import to keep two `Event`s apart is still calling
+    the one the client declares, and that is the name the other side spells.
+    """
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.asname:
+                    out[alias.asname] = alias.name.split(".")[-1]
+    return out
 
 
 def _py_root(node: ast.expr) -> str | None:

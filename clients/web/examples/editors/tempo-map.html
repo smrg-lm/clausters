@@ -87,7 +87,7 @@ this directory and open the page.</div>
 
     <script type="module">
       import {
-        Session, Event, TempoMap, gui, form, loadCore,
+        Session, Event, TempoMap, gui, form, loadCore, tempoSegments,
       } from "../../dist/index.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
@@ -124,15 +124,6 @@ this directory and open the page.</div>
             new form.Clang(new Event({ freq: pitch, dur: 1.0, sustain: 0.9 }))),
         );
 
-      function compose() {
-        const song = new form.Aggregate(null, null, { name: "tempo" });
-        song.add(
-          new form.Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
-                            null, null, { name: "lead" }),
-          0.0,
-        );
-        return song;
-      }
 
       async function run() {
         el("start").disabled = true;
@@ -160,6 +151,13 @@ this directory and open the page.</div>
         log(`the average says  ${average} s   (wrong by ${(average - ramp).toFixed(4)} s)`);
         log(`closed form       ${Math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0))}`);
 
+        const song = new form.Aggregate(null, null, { name: "tempo" });
+        song.add(
+          new form.Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
+                            null, null, { name: "lead" }),
+          0.0,
+        );
+
         // One session, as the Python example opens one: it owns the server, the
         // clock and the GUI host. `embed` is this client's `live` — the engine
         // is the tab's own rather than a process this line started.
@@ -185,11 +183,9 @@ this directory and open the page.</div>
         // map keeps both, and every beat already played stays convertible.
         const clock = session.clock;
         clock.map = tempo;                    // the piece's tempo is the clock's
-        log(`the clock's map: ${JSON.stringify(
-          Array.from({ length: clock.map.len }, (_, i) => clock.map.segment(i)))}`);
+        log(`the clock's map: ${JSON.stringify(tempoSegments(clock.map))}`);
 
-        const host = await session.gui();
-        editor = new gui.FormEditor(compose(), {
+        editor = new gui.FormEditor(song, {
           sampleRate: SR,
           tempoMap: clock.map,               // drawn from the map
           quant: QUANT,
@@ -199,7 +195,7 @@ this directory and open the page.</div>
         // The one argument a script has no counterpart for: `stage` is where
         // this page draws — the editor's canvas is made inside that element and
         // follows its box. Everything else is the call the script makes.
-        win = await editor.open(host, { stage: el("stage") });
+        win = await editor.open(undefined, { stage: el("stage") });
 
         // The clip for beat 8 lands on the sample the clock plays beat 8 at, and
         // the sweeping line — which the host moves by engine samples — crosses it
@@ -207,8 +203,6 @@ this directory and open the page.</div>
         log(`beat 8 is drawn at sample ${editor.beatsToUnits(8.0)} = ${
           editor.beatsToUnits(8.0) / SR} s`);
         log(`a frozen tempo would have said ${(8.0 / TEMPO) * SR}`);
-
-        session.start();                      // the clock runs the routines
 
         // Play it, and watch the line. It sweeps by the engine's own clock, so if
         // the drawing and the sound disagreed you would see it: the line would

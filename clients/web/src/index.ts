@@ -108,7 +108,8 @@ export {
     quantDelay,
     samplesToSecs,
     secsToSamples,
-    tempoEnv } from "./base/time.ts";
+    tempoEnv,
+    tempoSegments } from "./base/time.ts";
 export type { CurveSpec, TempoEnvelope, TimeUnit } from "./base/time.ts";
 export {
     ManualTimebase,

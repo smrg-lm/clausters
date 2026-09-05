@@ -121,6 +121,7 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
                                    "concrete", { name: "filter" })],
         ], "concrete", { name: "composed" });
 
+        const host = await session.gui();
         const bar = gui.panel(
           { layout: "row", h: 34.0 },
           gui.button({ name: "play", label: "play" }),
@@ -128,7 +129,6 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
           gui.button({ name: "draw", label: "drag: select" }),
         );
 
-        const host = await session.gui();
         // One `FormEditor`. `open` draws the multitrack; `openSignal`
         // **composes** a `SamplesEditor` over the take and opens its window
         // beside it. The composed editor is reachable as `editor.composed` — its
@@ -156,21 +156,27 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
         };
 
         signal.widget("draw").onClick(toggleMode);
-        for (const win of [multitrack, signal]) {
-          win.widget("play").onClick(() => editor.play(server, session.clock));
-          win.widget("stop").onClick(() => editor.stop());
-        }
-        editor.locate(0.0);
+        signal.widget("play").onClick(() => editor.play(server, session.clock));
+        signal.widget("stop").onClick(() => editor.stop());
+        multitrack.widget("play").onClick(() => editor.play(server, session.clock));
+        multitrack.widget("stop").onClick(() => editor.stop());
 
-        // The history read-out: one label, whichever window is about to move it.
+        // The read-out. The host's event loop delivers to this editor **and to
+        // the editors it composed** -- one connection, so one loop, and it is
+        // the host's rather than this page's. Each editor answers only for the
+        // widgets it drew. The history's labels are not an event, so they are
+        // *read* rather than waited for: a periodic read-out, which is what the
+        // application clock is for -- a function returning a number is
+        // rescheduled by it.
         let shown = "";
-        host.onMessage(() => {
-          const state = `undo=${editor.canUndo} ${editor.undoLabel} ` +
-                        `redo=${editor.canRedo} ${editor.redoLabel}`;
+        host.clock.sched(0.05, function showHistory() {
+          const state = `undo=${editor.canUndo} ${editor.undoLabel} `
+            + `redo=${editor.canRedo} ${editor.redoLabel}`;
           if (state !== shown) {
             shown = state;
             log(state);
           }
+          return 0.05;
         });
         log("draw on the take, bend the curve, then Ctrl+Z over either window");
       }

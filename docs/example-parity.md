@@ -92,9 +92,11 @@ with the reason), `gap` (present on one side and nobody has decided).
 | `Score` | `open` | `idiom` — a score is engraved when it is built, and libverovio in a page is fetched asynchronously; a TypeScript constructor cannot await, so the same act is the static factory `Score.open` |
 | — | `call` | `idiom` — applying a Faust box to its inputs. Python's `Box` is callable, so an unapplied fragment is wired up by writing `box.faust("os.osc")(freq)`; TypeScript has no callable object and spells the same application `.call(freq)` |
 | `read` | `fromSamples` | `idiom` — loading a take into a server buffer. A script renders it to a `.wav` and the server reads the path (`/buffer_read`); a tab has no path, so the samples go straight in |
+| `segments` | `tempoSegments` | `idiom` — every segment of a tempo map, in order. Same reason as the row below: the wasm `TempoMap` cannot grow a method, so the wrapper takes the map |
 | `env` | `tempoEnv` | `idiom` — writing a tempo envelope onto a map. The Python client's `TempoMap` carries the method; the wasm one is a handle with no room for it, so the same act is the free function `tempoEnv(map, …)` |
 | — | `at` | `idiom` — the last element of a list. Python subscripts it (`upper[-1]`), which is no call at all; JavaScript has no negative index and spells the same reach `.at(-1)` |
 | — | `sub` | `idiom` — a number minus a signal. Python's `__rsub__` makes `1.0 - spread` an operator like any other; TypeScript has no reversed operator, so the free function takes both operands |
+| — | `keys` | `idiom` — looping over a mapping's keys. `for k in mapping` yields them in Python; a JavaScript `Map` yields entries, so the same loop says `.keys()` |
 | `IdShare` | — | `idiom` — the slice of an id space two clients divide. Python's is a class that validates its pair; TypeScript's is an **interface**, so the same value is the object literal it describes (`{ index: 0, of: 2 }`) and there is nothing to construct |
 | `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; a tab has no filesystem, so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
 
@@ -338,4 +340,10 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | python | `gui_is_up` | the launcher's probe: it asks whether a host **process** is still answering on a port after the guest handle let go. A page has neither a process nor a port -- its host is the tab, and the two windows on screen are the same answer |
+
+### `editors/composed`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `stop` ×2 | the script hands each stop button the bound method (`on_click(editor.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
 

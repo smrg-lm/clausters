@@ -274,6 +274,23 @@ export function tempoEnv(
 }
 
 /**
+ * **Every segment of `map`**, in order — the whole tempo function as the
+ * `[beat, second, tempo, shape, curve]` rows the map holds.
+ *
+ * The Python client spells this `TempoMap.segments()`; the map is a generated
+ * wasm class here, which cannot grow a method, so the wrapper is a function
+ * taking the map — the same shape {@link tempoEnv} takes, for the same reason.
+ */
+export function tempoSegments(map: TempoMap): number[][] {
+    const out: number[][] = [];
+    for (let i = 0; i < map.len; i += 1) {
+        const row = map.segment(i);
+        if (row) out.push(Array.from(row));
+    }
+    return out;
+}
+
+/**
  * The bar a beat position falls in, on a grid of `quant` beats per bar
  * (0-based; `quant <= 0` → bar 0).
  *
