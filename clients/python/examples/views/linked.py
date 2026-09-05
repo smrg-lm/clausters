@@ -102,40 +102,51 @@ win.on_closed(lambda: print("window closed"))
 
 # %% [markdown]
 # ## Live membership
-# Call this from a cell (or let the script run it near the end): it unlinks
+# Call this from a cell (or let the script run it a few seconds in): it unlinks
 # the spectrogram (which keeps its view and diverges), navigates the waveform
 # alone, then re-links — the spectrogram snaps back to the group.
 
 # %%
+#: How long the two lanes stay apart, in seconds. Long enough to *see* one
+#: move without the other, which is the whole thing this demonstrates — at a
+#: second and a half it reads as a flicker and the point is lost.
+DIVERGE = 3.0
+
+#: When the demo runs by itself, in seconds after the window opens. A manual
+#: check is somebody watching, so it happens while they are still looking.
+DEMO_AT = 8.0
+
+
 def demo_membership():
-    """Unlink, navigate the waveform alone, and rejoin a second and a half
-    later.
+    """Unlink, navigate the waveform alone, and rejoin `DIVERGE` seconds later.
 
     The pause is `clausters.base.appclock.AppClock.sched`, not a sleep: the
     second half runs on the host's own event loop, so the call comes straight
     back and the window keeps answering the mouse in between. A ``sleep`` here
-    would be a second and a half of a frozen window.
+    would be three seconds of a frozen window.
     """
+    print("unlinking: watch the waveform zoom in and the spectrogram NOT follow")
     win["spect"].set(link=-1)                        # unlink: keeps its view
     win["wave"].set(view_len=float(frames // 8))     # only the waveform zooms
-    gui.clock.sched(1.5, _relink)
+    gui.clock.sched(DIVERGE, _relink)
 
 
 def _relink():
     win["spect"].set(link=1)                         # rejoin: adopts the group
     win["wave"].set(view_len=0.0)                    # reset both to the whole file
+    print("rejoined: the spectrogram snapped back, both show the whole file")
 
 
 # %%
 if __name__ == "__main__":
     try:
         # Interactive first: both lanes are linked — wheel/drag on either one
-        # drives both. The membership demo is scheduled near the end, so early
-        # gestures are not confused by a temporarily unlinked lane; the run
-        # itself ends when you close the window.
-        gui.clock.sched(75.0, lambda: (
-            print("membership demo: unlink -> diverge -> relink"),
-            demo_membership()))
+        # drives both. The membership demo runs a few seconds in, near enough
+        # to be watched and late enough not to land on the first gesture; the
+        # run itself ends when you close the window.
+        print(f"in {DEMO_AT:.0f} s the spectrogram unlinks for {DIVERGE:.0f} s, "
+              "then rejoins — nothing here drives it")
+        gui.clock.sched(DEMO_AT, demo_membership)
         win.wait()
         gui.close(win)
         session.close()

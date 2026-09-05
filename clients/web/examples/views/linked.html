@@ -68,6 +68,12 @@ groups, a negative one unlinks it.</div>
       };
 
       const SR = 48000.0;
+      /**
+       * How long the two lanes stay apart, in seconds. Long enough to *see* one
+       * move without the other, which is the whole thing this demonstrates -- at
+       * a second and a half it reads as a flicker and the point is lost.
+       */
+      const DIVERGE = 3.0;
       let win = null, frames = 0;
 
       async function run() {
@@ -130,14 +136,14 @@ groups, a negative one unlinks it.</div>
         $("membership").disabled = true;
         win.widget("spect").set({ link: -1 });        // unlink: keeps its view
         win.widget("wave").set({ viewLen: frames / 8 });  // only the waveform zooms
-        log("unlinked: the waveform zoomed and the spectrogram stayed");
-        (await gui.appClock()).sched(1.5, relink);
+        log("unlinking: watch the waveform zoom in and the spectrogram NOT follow");
+        (await gui.appClock()).sched(DIVERGE, relink);
       }
 
       function relink() {
         win.widget("spect").set({ link: 1 });         // rejoin: adopts the group
         win.widget("wave").set({ viewLen: 0.0 });     // reset both to the whole take
-        log("rejoined: one group again, both showing the whole take");
+        log("rejoined: the spectrogram snapped back, both show the whole take");
         $("membership").disabled = false;
       }
 
