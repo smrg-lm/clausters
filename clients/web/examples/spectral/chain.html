@@ -31,22 +31,17 @@ synth-private scratch on the server — so the chain is just wired UGen to UGen,
 and only <code>fft</code> names the window size, which the server propagates
 down the chain.
 
-Where the Python example renders the effect offline, this one runs it
-<b>live</b>: <code>pvBrickWall</code>'s <code>wipe</code> is a lagged control,
-so dragging it band-limits the noise in the spectral domain while you listen —
-positive wipes zero the top fraction of the bins (a low pass), negative ones
-the bottom (a high pass), and 0 passes everything. Beside it,
-<code>pvMagFreeze</code> holds the magnitudes of whatever frame was passing
-when you press it, so the spectral envelope stands still while its phases keep
-running.
+The score is two seconds of both, freed by a routine that closes each gate --
+left is the raw noise, right is the spectral low-pass, so the difference is the
+whole point of listening to it.
 
-Everything sounds through the <b>in-page engine</b>: no server process, no
-socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>
+The render happens in the <b>in-page engine</b>: no server process, no socket,
+and nothing to unlock until you ask to hear it.</div>
 
       <div class="row">
-        <button id="start">start</button>
-        <button id="play" disabled>play the chain</button>
-        <button id="stop" disabled>stop</button>
+        <button id="render">render the score</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
       </div>
       <label>wipe <input id="wipe" type="range" min="-0.95" max="0.95"
                          step="0.01" value="0.75" disabled />
@@ -57,85 +52,136 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/spectral/chain.py, call for
+      call: the same two defs, the same two-second score with the same gates,
+      rendered offline.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
+      click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/spectral/chain.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Server, Synth, SynthDef,
+        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, control, envGen, fft, ifft, out, pvBrickWall,
-        pvMagFreeze, whiteNoise,
+        whiteNoise,
       } from "../../dist/defs/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // The chain: analyse, band-limit in the frequency domain, resynthesise.
-      // `wipe` and `freeze` are ordinary controls, so the whole thing is one
-      // def whose response moves while it sounds.
-      const chainDef = () => {
-        const wipe = control("wipe", 0.75, { lag: 0.05 });
-        const freeze = control("freeze", 0.0);
-        const amp = control("amp", 0.25);
-        let chain = fft(whiteNoise().mul(amp), 1.0,
-                        { fftSize: 1024, hop: 0.5, wintype: 0 });
-        chain = pvBrickWall(chain, wipe);
-        chain = pvMagFreeze(chain, freeze);
-        // A short attack and release, opened at birth and closed by the gate:
-        // noise switched on at full amplitude starts on a step and a bare
-        // `free` ends on one, and both are clicks. The stop button drops the
-        // gate, so the envelope frees the node when it reaches zero.
-        const fade = envGen(Env.asr(0.02, 1.0, 0.05), {
-          gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
-        });
-        const sig = ifft(chain).mul(fade);
-        return new SynthDef("web_spectral", out(0.0, sig), out(1.0, sig));
-      };
+      const SR = 48000.0;
 
-      let server = null;
-      let voice = null;
-
-      async function start() {
-        server = await new Server().boot();   // or WsConnection
-
-        await chainDef().send(server);
-        log("def sent — the frame is scratch, so nothing was allocated for it");
-
-        el("start").disabled = true;
-        for (const id of ["play", "wipe", "freeze"]) el(id).disabled = false;
+      /**
+       * A short attack and release, opened at birth and closed by the gate.
+       *
+       * Noise switched on at full amplitude starts the take on a step, which is
+       * a click -- audible on the first sample of a take meant to be listened
+       * to. Two hundredths of a second of ramp costs nothing and is not the
+       * subject here; the same envelope closes the take when the routine drops
+       * the gate.
+       */
+      function fade() {
+        const gate = control("gate", 1.0);
+        return envGen(Env.asr(0.02, 1.0, 0.05),
+          { gate, doneAction: DoneAction.FREE_SELF });
       }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+      /** Plain band-unlimited noise on the left channel (the reference). */
+      function noisy(name = "noisy") {
+        return new SynthDef(name, out(0.0, whiteNoise().mul(0.25).mul(fade())));
+      }
 
-      el("play").onclick = () => {
-        voice = new Synth("web_spectral", {
-          wipe: Number(el("wipe").value),
-          freeze: el("freeze").checked ? 1.0 : 0.0,
-        }, { server });
-        el("stop").disabled = false;
-        el("play").disabled = true;
-        log(`chain on node ${voice.id} — drag wipe to hear the bins go`);
-      };
+      /** White noise -> FFT -> PV_BrickWall (low pass) -> IFFT, on the right. */
+      function spectralLowpass(name = "spectral_lp") {
+        let chain = fft(whiteNoise().mul(0.25), { fftSize: 1024, hop: 0.5, wintype: 0 });
+        chain = pvBrickWall(chain, 0.75);      // keep the bottom 25% of bins
+        return new SynthDef(name, out(1.0, ifft(chain).mul(fade())));
+      }
 
-      el("stop").onclick = () => {
-        // The gate, not `free`: the envelope fades out and frees the node
-        // itself, where a `/node_free` would cut the noise mid-sample.
-        if (voice) voice.set({ gate: 0.0 });
-        voice = null;
-        el("stop").disabled = true;
-        el("play").disabled = false;
-      };
+      let take = null;
 
-      el("wipe").oninput = () => {
-        const wipe = Number(el("wipe").value);
-        const shape = wipe > 0.02 ? "low pass"
-          : wipe < -0.02 ? "high pass" : "everything through";
-        el("wipev").textContent = `${wipe.toFixed(2)} (${shape})`;
-        if (voice) voice.set({ wipe });
-      };
+      async function renderScore() {
+        const session = (await Session.nrt({ tempo: 1.0 })).activate();
+        await noisy().send();
+        await spectralLowpass().send();
 
-      el("freeze").onchange = () => {
-        if (voice) voice.set({ freeze: el("freeze").checked ? 1.0 : 0.0 });
-      };
+        // Both play for the whole render; a routine frees them at t = 2 beats
+        // (tempo 1 -> 2 s) so the offline render has a defined duration.
+        const raw = new Synth("noisy");
+        const lp = new Synth("spectral_lp");
+
+        new Routine(function* stop() {
+          yield 2.0;
+          // Closed, not freed: the gate lets each envelope fall to zero
+          // instead of cutting the noise mid-sample.
+          session.server.sendBundle([
+            ["/node_set", ["i", raw.id], "gate", ["f", 0.0]],
+          ]);
+          session.server.sendBundle([
+            ["/node_set", ["i", lp.id], "gate", ["f", 0.0]],
+          ]);
+          yield 0.25;
+          // The score's closing event, after the release: a render ends at its
+          // last event, so without this one the take would stop where the gate
+          // closed and the tail would be cut off -- the click again, at the
+          // other end.
+          session.server.sendBundle([["/node_free", ["i", 0]]]);
+        }).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        log("left = raw noise, right = spectral low-pass");
+        return stats;
+      }
+
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderScore();
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer);
+      }
+
+      // The blob a click downloads -- a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "chain.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote chain.wav");
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
     </script>
   </body>
 </html>

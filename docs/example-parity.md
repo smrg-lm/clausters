@@ -384,3 +384,22 @@ in the middle of an example.
 | web | `fromSamples` | the other half of the row above |
 | web | `play` | the other half of the row above |
 | web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
+
+### `views/meters`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `send_msg` | `/buffer_allocRead`: the script writes a WAV to a temp file and asks the server to read it. A tab has no filesystem, so the page makes the samples and writes them into the buffer it allocated |
+| web | `setSamples` | the other half of the row above |
+| web | `onClosed` | the script's animation loop asks `win.closed` on every turn, which is a property and no call at all; a page's interval has to be told when to stop |
+
+### `spectral/chain`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `fromSamples` | the other half of the row above |
+| web | `play` | the other half of the row above |
+| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |

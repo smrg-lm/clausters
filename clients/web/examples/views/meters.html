@@ -23,36 +23,18 @@
   </head>
   <body>
     <main>
-      <div id="note">The three <b>data paths</b> of a running server, each with
-the view that reads it: a <b>control bus</b> (an LFO) under a
-<code>meter</code>, an <b>audio bus</b> (a tone) under a <code>scope</code> and
-a <code>spectrum</code>, and a <b>buffer</b> under a <code>waveform</code>.
+      <div id="note">The web port of the Python client's
+<code>views/meters.py</code>: a <b>meter</b> and a <b>scope</b> over one
+control bus, above a <b>waveform</b> of a server buffer.
 
-<b>This script names what to look at and draws none of it.</b> A GuiDef says
-<code>gui.scope(bus)</code>, <code>gui.spectrum(bus)</code>,
-<code>gui.meter(bus)</code>, <code>gui.waveform({ buffer })</code> — a bus
-number and a buffer number — and the <b>GUI host</b> subscribes, measures and
-paints: the trigger that makes the trace stand still, the decibel curve, the
-peak columns and the join that inks an edge are all its, out of the same
-<code>clausters-core</code> the server computes with. There is no canvas in
-this page and no arithmetic over samples; the whole of the client's part is
-the tree below.
-
-The tone's <b>freq</b> knob is <b>bound</b>: its value goes from the host
-straight to the engine as a <code>/node_set</code>, never passing through this
-script. <b>freeze</b> is the other path — it comes back as a
-<code>/gui_event</code> and this code sets the scope's <code>hold</code>, so
-both directions are visible at once.
-
-<b>One reader per page.</b> Over the in-page carrier the script and the host
-reach the engine through one shared-memory ring, which the server sees as a
-single client — so a subscription the script opens and one the host opens
-displace each other. Here the host is the reader, which is the ordinary case:
-what a page wants of a live bus is almost always to see it.
-
-Everything runs on the <b>in-page engine</b>: no server process, no socket.
-Swapping to a <code>--ws</code> server (or to a native
-<code>clausters-gui --ws</code> host) is one line each, marked below.</div>
+<b>This page names what to look at and draws none of it.</b> A GuiDef says
+<code>gui.meter(bus)</code>, <code>gui.scope(bus)</code>,
+<code>gui.waveform({ buffer })</code> — a bus number and a buffer number — and
+the <b>GUI host</b> subscribes, measures and paints: the trigger that makes the
+trace stand still, the peak columns and the join that inks an edge are all its,
+out of the same <code>clausters-core</code> the server computes with. There is
+no canvas in this page and no arithmetic over samples; the whole of the client's
+part is the tree below and the <code>bus.set</code> that animates it.</div>
 
       <div class="row">
         <button id="start">start</button>
@@ -77,117 +59,84 @@ Swapping to a <code>--ws</code> server (or to a native
       examples/views/meters.html. A WebGPU-capable browser; the host falls back to
       WebGL2 where it must.
     -->
+    <!--
+      The web sibling of clients/python/examples/views/meters.py, call for call:
+      the same buffer of a sine, the same control bus, the same window, and the
+      same loop writing the bus.
+
+      The one difference is where the samples come from: the script writes a
+      WAV to a temp file and asks the server to read it, and a tab has no
+      filesystem, so the page makes the samples and writes them into the buffer.
+
+      Serve clients/web (the package root) and open /examples/views/meters.html.
+      Build it first: ./build.sh
+    -->
     <script type="module">
-      import {
-        Server,
-        Bus, Buffer, Synth, SynthDef, GuiHost, gui,
-      } from "../../dist/index.js";
-      import { control, out, outCtl, sine } from "../../dist/defs/index.js";
+      import { Bus, Buffer, Session, gui } from "../../dist/index.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
 
-      const BUFFER_FRAMES = 30000;
-      const RATE = 48000.0;
+      const SR = 48000;
 
-      // ---- the defs: something to look at ----
-      // Ordinary defs. Neither knows a view is watching — what makes them
-      // readable is the bus, not anything in the graph.
-      const tone = () =>
-        new SynthDef("scope_tone",
-          out(control("bus", 0.0),
-              sine(control("freq", 400.0)).mul(control("amp", 0.4))));
-
-      const lfo = () =>
-        new SynthDef("scope_lfo",
-          outCtl(control("bus", 0.0), sine(0.7).mul(0.5).add(0.5)));
-
-      // ---- the window: four views over three paths ----
-      // Each widget names its source and nothing else. `link` is not used
-      // here: the views watch different things, so they navigate apart.
-      const scene = (ctlBus, audioBus, buffer) => gui.view(
-        // No w/h: the layout takes the canvas the document supplies.
-        { title: "the data paths", layout: "col", margin: 8.0, gap: 8.0 },
-        gui.panel(
-          { layout: "row", h: 40, gap: 8.0 },
-          gui.knob({ name: "freq", label: "freq", min: 80.0, max: 1200.0,
-                     value: 400.0, w: 120 }),
-          gui.toggle({ name: "hold", label: "freeze the trace", w: 160 }),
-          gui.meter(ctlBus, { rate: "control", min: 0.0, max: 1.0,
-                              label: `control bus ${ctlBus}` }),
-        ),
-        gui.scope(audioBus, { name: "trace", windowMs: 20.0,
-                              label: `audio bus ${audioBus}`, h: 200 }),
-        gui.spectrum(audioBus, { name: "spectrum", fftSize: 1024,
-                                 freqScale: "log", dbFloor: -100.0, h: 200 }),
-        gui.waveform({ name: "wave", buffer, sampleRate: RATE,
-                       ruler: "time", rulerY: "db", h: 180 }),
-      );
-
-      async function run() {
-        // ---- the one line that names a carrier ----
-        // `boot` because a page's default carrier is an engine it can bring
-        // up; `new Server({ transport: "ws", url }).attach()` reaches a
-        // `clausters --ws` server instead, and nothing below changes.
-        const server = await new Server().boot();
-        const info = await server.queryInfo();
-        if (info.taps === 0) {
-          log("this server records no audio buses (--taps 0): no oscilloscope");
-          return;
+      /** A second of a 220 Hz sine — what the waveform draws. */
+      function sineSamples(freq = 220.0, secs = 1.0, sr = SR) {
+        const frames = Math.trunc(secs * sr);
+        const samples = new Float32Array(frames);
+        for (let i = 0; i < frames; i++) {
+          samples[i] = 0.8 * Math.sin(2 * Math.PI * freq * i / sr);
         }
-
-        // What is being watched: a tone on an audio bus, an LFO on a control
-        // bus. The tone is *not* routed to the hardware out — this example is
-        // about looking, so it stays on its own bus and the page is silent.
-        const audioBus = Bus.audio(1, { server });
-        const ctlBus = Bus.control(1, { server });
-        await tone().send(server);
-        await lfo().send(server);
-        const voice = new Synth("scope_tone", { bus: audioBus.index }, { server });
-        new Synth("scope_lfo", { bus: ctlBus.index }, { server });
-
-        // A buffer to look at. The samples are the server's and stay there:
-        // the host pulls them over its own client leg, reduces them once and
-        // draws the summary.
-        const buffer = await Buffer.alloc(BUFFER_FRAMES, 1, { server });
-        await buffer.gen("sine1", [["i", 7], 1.0, 0.6, 0.3]);
-        await server.sync();
-
-        // ---- the host ----
-        // A handle over this page's GUI carrier, `boot`ed: the wasm host in
-        // this tab comes up and becomes the ambient one, so the view below
-        // needs no host named. Over `WsConnection.open("ws://127.0.0.1:57220")`
-        // the verb would be `attach` and nothing below this line would change.
-        await new GuiHost({ engine: server.engine }).boot();
-        // The view opens itself, into the element that decides how wide it is
-        // — the canvas is made inside `#stage` and follows its box, so the
-        // layout has the say: full width here, and just as full on a phone.
-        const win = await scene(ctlBus.index, audioBus.index, buffer.bufnum)
-          .open(el("stage"));
-
-        // The bound control: the knob's value never passes through here.
-        win.widget("freq").bind("/node_set", voice.id, "freq");
-        // The scripted one: the event arrives and this code decides.
-        win.widget("hold").onEvent((down) => {
-          win.widget("trace").set({ hold: down ? 1 : 0 });
-          log(down ? "trace held" : "trace running");
-        });
-
-        log(`control bus ${ctlBus.index} under a meter, audio bus `
-          + `${audioBus.index} under a scope and a spectrum, buffer `
-          + `${buffer.bufnum} (${BUFFER_FRAMES} frames) under a waveform`);
-        log("turn `freq` (bound, no script) — the trace and the spectrum follow");
-
-        // Nothing is freed here on purpose: the page keeps drawing until it is
-        // closed. A view that comes and goes closes its window (`win.close()`,
-        // after which the host stops recording whatever nothing draws any
-        // more) and calls the disposer `fit` returns.
+        return samples;
       }
 
-      el("start").onclick = () => {
-        el("start").disabled = true;
-        run().catch((err) => log(`error: ${err}`));
-      };
+      async function run() {
+        $("start").disabled = true;
+
+        // `Session.embed()` opens the engine in this tab and `session.gui()`
+        // gives it the host with its client leg pointed at that server -- the
+        // meter and the scope read the control bus over that leg.
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        // A sine buffer on the server, and a control bus to animate. The
+        // samples are written into the buffer (async: barrier with
+        // `/server_sync`), which the host fetches over its client leg; the
+        // control bus is what the meter and scope read.
+        const buf = await Buffer.alloc(SR, 1, { server });
+        await buf.setSamples(sineSamples());
+        await server.sync();
+        const bus = Bus.control({ server });
+
+        // The window: a meter + scope on the control bus, over a waveform of
+        // the server buffer. All named, not numbered -- `open` hands back a
+        // handle that resolves the names.
+        const win = await gui.view(
+          { title: "Meters + server buffer", w: 640, h: 440, layout: "col" },
+          gui.panel(
+            { layout: "row" },
+            gui.meter(bus.index, { rate: "control", name: "level",
+                                   min: -1.0, max: 1.0, label: "bus" }),
+            gui.scope(bus.index, { rate: "control", name: "trace",
+                                   min: -1.0, max: 1.0, label: "bus" }),
+          ),
+          gui.waveform({ name: "buffer", buffer: buf.bufnum }),
+        ).open($("stage"));
+        log("watch the meter/scope move and the buffer waveform render; "
+          + "close the window to stop");
+
+        // Animate the bus with a 0.5 Hz sine. The host reads this bus over its
+        // own leg each frame -- these `/bus_set` messages go only to the audio
+        // server, never to the GUI.
+        const started = performance.now();
+        const tick = setInterval(() => {
+          const t = (performance.now() - started) / 1000;
+          bus.set(Math.sin(2 * Math.PI * 0.5 * t));
+        }, 30);
+        win.onClosed(() => clearInterval(tick));
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>
