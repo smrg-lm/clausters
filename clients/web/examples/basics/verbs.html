@@ -30,7 +30,14 @@ The carrier is the one line that knows about one. This page opens the session
 on the in-page engine; <code>Session.live(url)</code> would open the same
 session on a <code>clausters --ws</code> server and
 <code>Session.nrt()</code> one that never sounds — and nothing below would
-change. The tour ends on all three.</div>
+change. The tour ends on all three.
+
+One line here is the platform's and the script has no counterpart for it: an
+<b>automation</b> is prepared before it is played
+(<code>await sweep.prepare(server)</code>). Preparing allocates and fills a
+control buffer, which waits; a script's <code>play</code> can do that on the
+spot because it is off the clock thread, and a page's verb is synchronous, so
+it refuses an unprepared one by name instead.</div>
 
       <div class="row">
         <button id="open">open a session</button>
@@ -117,8 +124,14 @@ change. The tour ends on all three.</div>
 
         log("an automation sweeping a sounding node's freq, interrupted mid-sweep");
         node = play(sine(control("freq", 440.0)).mul(0.15));
-        const sweep = play(new seq.Automation(
-          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [node, "freq"]));
+        const sweep = new seq.Automation(
+          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [node, "freq"]);
+        // The platform's one extra line. Preparing allocates and fills a
+        // control buffer, which waits; the script's `play` does that on the
+        // spot because it is off the clock thread, and a page's verb is
+        // synchronous, so it refuses an unprepared automation by name.
+        await sweep.prepare(session.server);
+        play(sweep);
         await wait(1500);
         sweep.stop();          // interrupted at the top: the freq holds there
         await wait(1000);

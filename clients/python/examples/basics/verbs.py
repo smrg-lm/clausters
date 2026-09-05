@@ -107,8 +107,9 @@ long_note.free()                              # ...cut now
 # here means three seconds of sweep whatever any clock is doing.
 print("an automation sweeping a sounding node's freq, interrupted mid-sweep")
 node = play(sine(control("freq", 440.0)) * 0.15)
-sweep = play(Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),
-                        target=(node, "freq")))
+sweep = Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),
+                   target=(node, "freq"))
+play(sweep)
 time.sleep(1.5)
 sweep.stop()                # interrupted at the top: the freq holds there
 time.sleep(1.0)

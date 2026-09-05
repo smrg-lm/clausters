@@ -245,6 +245,12 @@ in the middle of an example.
 | web | `play` | the other half of the row above |
 | web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
+### `basics/verbs`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `prepare` | an automation is prepared before it is played. Preparing allocates and fills a control buffer, which waits; the script's `play` does it on the spot because it is off the clock thread, and a page's `play` is synchronous, so it refuses an unprepared automation by name (`clients/web/PLAN.md`, W13) |
+
 ### `spectral/convolution`
 
 | Only in | Call | Why |
