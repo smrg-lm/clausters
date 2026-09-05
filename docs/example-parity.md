@@ -442,3 +442,13 @@ in the middle of an example.
 |---|---|---|
 | web | `stop` | the script hands the stop button the bound method (`on_click(transport.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
 
+### `editors/composer`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `pause` | the script hands each of these four buttons the bound method (`on_click(editor.pause)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
+| web | `stop` | as above |
+| web | `undo` | as above |
+| web | `redo` | as above |
+| python | `exists` | the script asks whether its session **file** is there before reading it. A page keeps the same JSON in the browser's own store, where reading it back is the test |
+

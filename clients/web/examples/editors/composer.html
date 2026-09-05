@@ -97,10 +97,12 @@ grid a drag already lands on. An edge is always one clip's.
 <b>Ctrl+Shift+Z</b> over the window. The history is <b>not this editor's</b>: it
 lives with the document, in the same Rust crate both clients bind.
 
-<i>The one thing the Python example does and this does not:</i> save the session
-to a file and open it again. A page has no folder to write the takes' WAVs beside
-the document; the arrangement, the editing and the history are the same code
-either way.
+<b>Save</b> writes the composition and where its samples are, and <b>open</b>
+reads it back — the same document the Python example keeps beside its takes,
+kept in the browser's own store instead, because a page has no folder to write
+a WAV into. What the document names, this side supplies: the take comes back as
+a buffer, the curve is handed back by name, and the pattern lane comes back
+frozen, since a reference to code is not something a name can find.
 
 Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
 
@@ -133,6 +135,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const SWEEP_BEATS = SWEEP * TEMPO;  // ...and the same stretch in beats, for its voice
 
       let session, server, SR, editor = null, win = null;
+      // What the resolver answers with when a saved document is reopened: the
+      // takes as rendered, and the two leaves the document names rather than
+      // carries.
+      const SESSION_KEY = "clausters/composer.session";
+      const bounced = new Map();          // bufnum -> the take that filled it
+      let sweepCurve = null, bassline = null;
 
       // ---- the instrument that plays a buffer ----
       // The notes use the server's stock `default` def; the **take** needs an
@@ -189,7 +197,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         const stats = await offline.render({ sampleRate: SR, channels: 1 });
         offline.close();
         log(`bounced ${stats.frames} frames of take (midinote ${midinote})`);
-        return Buffer.fromSamples(stats.samples, 1, SR, { server });
+        return stats;
       }
 
       // ---- the composition ----
@@ -211,34 +219,36 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         ]));
         // A Function: a generator the editor bounces to draw and the render
         // bounces to play. Same tree, both times.
-        const bass = new Sequence(
+        bassline = new Sequence(
           new seq.Pbind({ midinote: new seq.Pseq([48, 48, 55, 53], 2), dur: 1.0, amp: 0.15 }),
           null, null, { name: "bassline" },
         );
 
-        const sweep = seq.Automation.fromPoints(
+        await drone().send(server);
+
+        sweepCurve = seq.Automation.fromPoints(
           [[0.0, 200.0, 1, 0.0],   // 200 Hz ...
            [2.0, 900.0, 2, 0.0],   // ... up to 900 (exponential) ...
            [4.0, 300.0, 1, 0.0]],  // ... back down (linear)
           null, { name: "freq" },
         );
-        await sweep.prepare(server);
+        await sweepCurve.prepare(server);
 
         // The envelope **attached to the voice it shapes**: an aggregate whose
         // members start and end together. Its temporal relation is
         // *simultaneous*, and the editor draws that as one clip with layered
         // bodies — the curve over the note — which drags as one.
         const voice = new Clang(new Event({
-          instrument: "drone", freq_bus: sweep.bus.index,
+          instrument: "drone", freq_bus: sweepCurve.bus.index,
           dur: SWEEP_BEATS, legato: 1.0, amp: 0.12, hasGate: true,
         }));
         const sweepClip = new Aggregate(
-          [[0.0, voice], [0.0, new Element(sweep, null, SWEEP)]],
+          [[0.0, voice], [0.0, new Element(sweepCurve, null, SWEEP)]],
           "concrete", { name: "sweep" });
 
         return new Aggregate([
           [0.0, new Aggregate([[0.0, take], [4.0, takeAgain]], "concrete", { name: "drums" })],
-          [0.0, new Aggregate([[0.0, bass]], "concrete", { name: "bass" })],
+          [0.0, new Aggregate([[0.0, bassline]], "concrete", { name: "bass" })],
           [2.0, new Aggregate([[0.0, melody]], "concrete", { name: "lead" })],
           [0.0, new Aggregate([[0.0, sweepClip]], "concrete", { name: "sweep" })],
         ], "concrete", { name: "song" });
@@ -257,6 +267,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         gui.button({ name: "rewind", label: "rewind" }),
         gui.button({ name: "undo", label: "undo" }),
         gui.button({ name: "redo", label: "redo" }),
+        gui.button({ name: "save", label: "save" }),
+        gui.button({ name: "open", label: "open" }),
         gui.label("", { name: "status", align: "start" }),
       );
 
@@ -282,36 +294,141 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         editor.play(server, session.clock);
       }
 
+      /** Every server buffer a `Vector` in `element` reads -- the save table. */
+      function takesOf(element) {
+        const found = new Map();
+        const stack = [element];
+        while (stack.length) {
+          const current = stack.pop();
+          if (current?.buffer?.bufnum !== undefined) {
+            found.set(current.buffer.bufnum, current.buffer);
+          }
+          for (const [, , child] of current?.members ?? []) stack.push(child);
+        }
+        return [...found.values()];
+      }
+
+      /**
+       * Write the composition and where its samples are.
+       *
+       * **The table is built from the composition being saved**, not from the
+       * samples this page started with: reopening resolves each take into a
+       * *new* server buffer, so a table naming the buffer made at startup stops
+       * covering the tree one save later -- and the document it writes reopens
+       * with the takes unresolved and nothing drawn. `toSession` refuses such a
+       * document, which is what turns a picture that quietly loses its
+       * waveforms into an error at the moment of saving.
+       *
+       * Where it is written is the one thing a tab does differently: the script
+       * keeps a session file beside its takes, and a page keeps the same JSON
+       * in the browser's own store. The location is `volatile` for the same
+       * reason -- there is no path to name.
+       */
+      function save() {
+        const sources = {};
+        for (const buffer of takesOf(editor.element)) {
+          sources[buffer.bufnum] = {
+            location: { at: "volatile" },
+            lifetime: "session",
+            generation: 0,
+            channels: 1,
+            frames: buffer.frames,
+            sample_rate: SR,
+          };
+        }
+        const document = form.toSession(editor.element, {
+          sources, provenance: { script: "composer.html" },
+        });
+        const text = JSON.stringify(document, null, 2);
+        localStorage.setItem(SESSION_KEY, text);
+        say(`saved the session (${text.length} bytes)`);
+      }
+
+      /**
+       * Read it back and show it -- the same piece, from the document this time.
+       *
+       * **What the document names, this side supplies**, and that is the point
+       * of the resolver rather than a limitation of it: a document carries a
+       * *reference* to samples and to algorithms, never the samples and never
+       * the algorithm, so what a leaf becomes depends on who is there to answer
+       * for it. The take is a source id this page reads back onto the server;
+       * the curve is named, so the recipe this page still holds is handed back
+       * and the lane plays again. The pattern lane is neither -- it is code,
+       * and the reference the document kept is not something a name can find --
+       * so it comes back **frozen**: drawn, placed, silent.
+       */
+      async function reopen() {
+        const text = localStorage.getItem(SESSION_KEY);
+        if (text === null) return say("nothing saved yet — press save first");
+        const raw = JSON.parse(text);
+        let frozen = 0;
+
+        const resolve = (kind, config) => {
+          config = config || {};
+          if (kind === "vector") {
+            const stats = bounced.get(Number(config.source ?? -1))
+              ?? [...bounced.values()][0];
+            return stats === undefined
+              ? null
+              : Buffer.fromSamples(stats.samples, 1, SR, { server });
+          }
+          if (kind === "generator" && config.generator === sweepCurve.name) {
+            return sweepCurve;
+          }
+          if (kind === "sequence" && config.sequence === "bassline") {
+            return bassline.wraps;
+          }
+          frozen += 1;
+          return null;
+        };
+
+        const { element, sources } = form.fromSession(raw, { resolve });
+        editor.load(element);
+        say(`opened the session: ${element.length} lanes, `
+          + `${sources.size ?? Object.keys(sources).length} source(s) resolved, `
+          + `${frozen} leaf/leaves frozen — history cleared, node ids kept`);
+      }
+
       async function run() {
         el("start").disabled = true;
         // One session, as the Python example opens one: it owns the server, the
-        // clock and the GUI host. `page` is this client's `live` — the engine is
-        // the tab's own rather than a process this line started.
+        // clock and the GUI host. `embed` is this client's `live` — the engine
+        // is the tab's own rather than a process this line started.
         session = await Session.embed({ tempo: TEMPO, latency: 0.1, channels: 2 });
         server = session.server;
-        // The same question the script asks, in the same place: a page's
-        // engine is not a process anyone launched with flags, so there are no
-        // launch options to read -- `queryInfo` is what both clients have.
+        await sampler().send(server);
+        // The same question the script asks, in the same place: a page's engine
+        // is not a process anyone launched with flags, so there are no launch
+        // options to read -- `queryInfo` is what both clients have.
         SR = (await server.queryInfo()).nominalSampleRate;
 
-        await sampler().send(server);
-        await drone().send(server);
-        const [buf, other] = [await bounce(60), await bounce(48)];
-        await server.sync();
+        // One octave under the melody rather than three: the take has to be
+        // *heard* moving when a clip is dragged.
+        const takeStats = await bounce(60);
+        const buf = await Buffer.fromSamples(takeStats.samples, 1, SR, { server });
+        const otherStats = await bounce(48);
+        const other = await Buffer.fromSamples(otherStats.samples, 1, SR, { server });
+        bounced.set(buf.bufnum, takeStats);
+        bounced.set(other.bufnum, otherStats);
+
+        const song = await compose(buf, other);
+        const barPanel = bar();
 
         const host = await session.gui();
-        editor = new gui.FormEditor(await compose(buf, other), {
+        editor = new gui.FormEditor(song, {
           sampleRate: SR,
           tempo: TEMPO,
           quant: QUANT,
+          autofit: false,
           follow: true,        // what is sounding follows the edit
-          extra: [bar()],
+          extra: [barPanel],
           title: "Composer",
         });
         // The one argument a script has no counterpart for: `stage` is where
         // this page draws — the editor's canvas is made inside that element and
         // follows its box. Everything else is the call the script makes.
         win = await editor.open(host, { stage: el("stage") });
+        log(`opened window ${win.id} — drag a clip to move it, an edge to resize it`);
 
         session.start();                    // the clock runs the routines
         // Each button acts on its click -- the press completed on the button,
@@ -324,34 +441,15 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // the shared crate, beside the document it inverts, so a script editing
         // the arrangement or a second view on the same composition steps back
         // through the same one.
-        win.widget("undo").onClick(() => report("undo", editor.undo()));
-        win.widget("redo").onClick(() => report("redo", editor.redo()));
+        win.widget("undo").onClick(() => editor.undo());
+        win.widget("redo").onClick(() => editor.redo());
+        win.widget("save").onClick(save);
+        win.widget("open").onClick(() => reopen().catch((e) => say(`error: ${e}`)));
         editor.locate(0.0);                 // the cursor waits at the top
-
-        // A pass ends by itself, and nothing here has to notice: the editor
-        // subscribes to the window's stream (`open` listens) and the transport
-        // asks about the end of its own pass on the host's application clock.
-        // What the *model* says after a gesture that changed something — the
-        // point of the page: the numbers below are the arrangement's, not the
-        // picture's. The host reports gestures that change nothing too (a
-        // press, a drag back to where it started), and those say nothing.
-        host.onMessage((msg) => {
-          if (msg.addr !== "/gui_event") return;
-          const tag = msg.args[3];
-          if (tag !== "clip" && tag !== "notes" && tag !== "points") return;
-          const before = editor.undoLabel;
-          queueMicrotask(() => {
-            if (editor.undoLabel === before && !editor.dirty) return;
-            say(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
-              + `${editor.canUndo ? `, undo: ${editor.undoLabel}` : ""}`);
-          });
-        });
-
-        say("press play — drag a clip to move it, an edge to trim it, and edit "
-          + "while it sounds");
+        log("press play — click a lane's ruler (or its empty space) to move the cursor");
+        log("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window");
       }
 
-      const report = (what, did) => say(did ? `  ${what}` : `  nothing to ${what}`);
 
       el("start").onclick = () => run().catch((error) => log(`error: ${error}`));
     </script>
