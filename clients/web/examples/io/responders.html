@@ -34,7 +34,9 @@ engine's connection — so <code>src</code> reads <code>page</code> rather than 
 host and a port. And nothing outside can send into it, so the sender is the
 engine itself: a def whose only job is to report its own onsets with
 <code>sendReply</code> stands in for the script's second socket. The transport
-half is the same on both sides, because the push comes from the server.
+half is the same call on both sides, because the push comes from the server —
+but one carrier means the responder also sees the reply to the query its own
+re-align sends, so this one asks whether the grid is new before joining it.
 
 Everything below runs on the <b>in-page engine</b>: no server process.
 </div>
@@ -102,10 +104,17 @@ Everything below runs on the <b>in-page engine</b>: no server process.
           log(`  /onset ${weight.toFixed(2)} -> freq ${freq.toFixed(1)} Hz`);
         };
 
+        // The grid this client is already aligned to. A script's receiver is a
+        // second socket, so the reply to `joinTransport`'s own query goes there
+        // and never past this responder; a page has one carrier, so the answer
+        // to the query comes back through here too -- and a join that re-joins
+        // on its own answer never stops.
+        let aligned = null;
         const onTransport = (msg, when, src) => {
           // msg == ["/transport_query.reply", originSample, tempo, defined]
           const [, origin, tempo, defined] = msg;
-          if (Number(defined)) {
+          if (Number(defined) && `${origin} ${tempo}` !== aligned) {
+            aligned = `${origin} ${tempo}`;
             log(`  transport changed: origin=${origin} tempo=${tempo} -> re-aligning`);
             session.clock.joinTransport(server);
           }
