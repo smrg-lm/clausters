@@ -452,3 +452,11 @@ in the middle of an example.
 | web | `redo` | as above |
 | python | `exists` | the script asks whether its session **file** is there before reading it. A page keeps the same JSON in the browser's own store, where reading it back is the test |
 
+### `views/editor`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `read_soundfile` | the script bounces to a WAV so the same file feeds two consumers -- the buffer the playhead sounds and the samples the views draw -- and reads it back for the second. A tab has no file, so the render's own samples do both |
+| python | `peaks_cache_file` | a peak cache written beside the take, for a host that **maps** it. A page's host maps nothing: it is sent the overview instead, and builds its pyramid from that |
+| python | `free` ×3 | the script's ending: it frees the clipboard voice, the clipboard buffer and the take before closing the session |
+

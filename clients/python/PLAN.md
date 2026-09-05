@@ -2790,7 +2790,7 @@ work, where a pending item reads as done.)*
   it: `secs_to_samples`/`samples_to_secs` **are** general — a caller holds a
   sample rate — and both clients publish them.
 
-- ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
+- ✅ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(found 2026-08-31, trying to answer "corregilos
   todos")*. 61 Python examples have a page twin and the non-divergence rule says
   each pair is one example in two languages — same calls, same order — but the
@@ -2824,8 +2824,32 @@ work, where a pending item reads as done.)*
   core's `hz_to_*`, which stays because it is what the host's ruler calls. They
   are the one builtin family in **f64** — no UGen computes a mel, so there is no
   f32 result to match — and the wasm binding grew the four exports the C ABI
-  already had, which closes four `gap` rows in `docs/bindings.md`. The pair
-  audit itself is what stays open.
+  already had, which closes four `gap` rows in `docs/bindings.md`.
+
+  **Done** *(2026-09-05)*. `scripts/audit-example-pairs.py` reads both files of
+  a pair and diffs their ordered call sequences; `docs/example-parity.md`
+  carries the three tables it is read against — the pairs whose paths do not
+  match, the examples with no twin, the idiom table, and per pair what one side
+  says alone. The naive checker's cost above is what the script's length buys
+  off: platform receivers and bare builtins never enter a sequence, list and
+  string methods drop when the receiver is something the file built as a list,
+  and the arithmetic TypeScript spells as `.mul()` drops **by arity on both
+  sides** — a rule that can miss a difference but cannot invent one. TypeScript
+  7 ships no JavaScript compiler API and this repository vendors no parser, so
+  the page half is read by a scanner that knows just enough syntax to place a
+  call.
+
+  **What the sweep found, over 68 pairs**: five `basics` pages and three others
+  were a *different program* from their script (live where the script renders a
+  score offline, a control panel where it runs a timed tour, two examples in one
+  page); `views/recording.html` was being read against the wrong script;
+  `panels/piano.py` had no page at all and now has one; `editors/composer.html`
+  gained the save/open its own note said it lacked; `panels/stack.html` logged an
+  undefined name left by the `rest` → `payload` rename; `editors/bpf.html` played
+  the curve it had replaced. Two client defects came out of it: the web
+  `Server.close` left a booted engine running where the reference client's stops
+  the process it launched, and the wasm `TempoMap` had no `segments()`
+  (`tempoSegments`, beside `tempoEnv`, for the same reason).
 
 - ✅ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.

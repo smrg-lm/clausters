@@ -93,18 +93,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   two placements stop being addressable. A defect of the picture, not a question
   about drops -- which is what it was filed as until 2026-09-03.
 
-- ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
-  audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
-  examples have a page twin and the non-divergence rule says each pair is one
-  example in two languages, but the only thing enforcing it is somebody reading
-  both files — every divergence so far was found by accident. The entry records
-  what a naive checker costs (it reports 59 of the 61, nearly all platform
-  noise) and what a usable one needs: the ordered call sequence plus a declared
-  table of idiom pairs, which is what `docs/bindings.md` already does for the
-  ABI. *(The missing surface the same entry named is closed: `cpsmel`/`melcps`
-  and `cpsbark`/`barkcps` are public in both clients. The audit is what is
-  left.)*
-
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
