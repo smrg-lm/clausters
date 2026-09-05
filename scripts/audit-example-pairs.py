@@ -91,6 +91,9 @@ PLATFORM_CALLEES = {
     "Int16Array", "Int32Array", "Uint16Array", "Uint32Array", "ArrayBuffer",
     "DataView", "BigInt", "Symbol", "Proxy", "AbortController", "Blob",
     "FileReader", "Image", "Audio", "Worker", "URLSearchParams", "Promise",
+    # node, for the example generators that author a bundle
+    "writeFile", "readFile", "mkdir", "readdir", "stat", "unlink", "dirname",
+    "basename", "resolve", "fileURLToPath",
 }
 
 # Container and promise methods: the language's, whatever they are called on.
@@ -330,6 +333,16 @@ def _py_platform_locals(tree: ast.AST) -> tuple[set[str], set[str]]:
     names: set[str] = set()
     elements: set[str] = set()
     for node in ast.walk(tree):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            # `with open(path, "w") as f` binds a file object, so `f.write(...)`
+            # is the standard library's.
+            for item in node.items:
+                target = item.optional_vars
+                if (isinstance(target, ast.Name)
+                        and _py_root(item.context_expr)
+                        in PLATFORM_RECEIVERS | PLATFORM_CALLEES):
+                    names.add(target.id)
+            continue
         if isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
             iterable = node.iter
             if (_py_root(iterable) in PLATFORM_RECEIVERS | PLATFORM_CALLEES

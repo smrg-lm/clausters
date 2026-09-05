@@ -40,6 +40,7 @@ A pair is found by its path: `views/rulers.py` is `views/rulers.html`, with
 
 | Python example | Page | Why |
 |---|---|---|
+| `panels/standalone` | `panels/standalone.mjs` | the page beside it is not this example's other half: `standalone.html` is the counterpart of *running* `clausters-gui --standalone`, in a tab. Authoring a bundle is a node script's job, because a page never writes one |
 | `panels/piano` | `panels/piano/index.html` | the page is a bundle: its directory holds the authoring script (`make_bundle.mjs`) beside the page that boots it |
 | `io/osc_responder` | `io/responders.html` | the page is named for what it holds, since the other responder example a page can run (`io/midi-responder.html`) sits beside it |
 
@@ -362,3 +363,12 @@ in the middle of an example.
 |---|---|---|
 | web | `events` | a clip spec's event builder. The script keeps the specs as dicts and subscripts one (`spec["events"](...)`, no call of its own); an object literal reads it as a property, so the same builder is reached by name |
 
+### `transport/automation_lane`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints where the WAV went; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `fromSamples` | the other half of the row above |
+| web | `play` | the other half of the row above |
+| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
