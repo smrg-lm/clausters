@@ -20,7 +20,11 @@ What to do, and what to watch:
 
 1. **Draw on the take** in the signal window (the button puts the drag into draw
    mode; a plain drag sweeps a selection). The waveform changes where you drew
-   it, and the clip in the multitrack draws the same buffer.
+   it, and the clip in the multitrack draws the same buffer. **Zoom in first**,
+   with the wheel over the waveform: a stroke writes one sample per pixel, so
+   the host refuses one while a pixel is worth more than a sample -- and it says
+   so, in the read-out below. This take is three seconds in a 900-pixel window,
+   so the pencil does nothing until the trace shows discs, one per sample.
 2. **Bend the curve** over the take in the multitrack — drag a break-point of
    the filter sweep.
 3. **Ctrl+Z over the multitrack.** The *stroke* comes back first, undone by a
@@ -147,6 +151,24 @@ def toggle_mode() -> None:
         gui.set(wid, gestures={"drag": _mode})
     signal["draw"].set(label=f"drag: {_mode}")
 
+
+#: **What the host refuses, and why.** A stroke writes one sample per pixel, so
+#: the host refuses one where a pixel is worth more than a sample -- and says so
+#: in a ``"refused"`` event rather than doing nothing, because a pencil that
+#: sometimes does nothing teaches that it sometimes does not work. This take is
+#: three seconds in a 900-pixel window (about 170 samples a pixel), so the
+#: **wheel over the waveform comes first**: zoom until the trace shows discs,
+#: one per sample, and the stroke lands. Subscribing is how a script hears a
+#: statement the editor has no edit to make of.
+
+
+def watch_refusals(addr: str, args) -> None:
+    """Print a refusal the host announced: ``<id> <seq> <version> "refused" …``."""
+    if addr == "/gui_event" and len(args) > 3 and args[3] == "refused":
+        print("the host refused:", ", ".join(str(arg) for arg in args[4:]))
+
+
+gui.subscribe(watch_refusals)
 
 signal["draw"].on_click(toggle_mode)
 signal["play"].on_click(lambda: editor.play(server, session.clock))

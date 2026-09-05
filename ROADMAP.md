@@ -77,6 +77,95 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
+- **The visual review's first sitting, 2026-09-05** — what the user found by
+  opening the pages and using them. Listed together because they came out of one
+  pass and are read together; the fixed ones keep their line here only until this
+  sitting is closed, so the next one starts from what is still open. Everything
+  the sitting turned up is now fixed, the mechanical pass's own list included,
+  so this entry goes on the next rewrite. Three of the fixes left a *general*
+  gap standing behind them — a play onto a stopped clock, a refusal an editor
+  has no door for, a time axis that holds one tempo — and each is written into
+  its own plan and named on the line that found it.
+
+  **Which client each was seen in** is written on every line, because it decides
+  where the work is: *both* means the user reproduced it in the page **and** in
+  the script, which puts the defect in what the two share — the host, the shared
+  crate, or the pair of examples — and never in one client's port. *Page only*
+  means nobody has run the script yet, so where it lives is still open; it is
+  not a claim that the script is fine.
+
+  - ✅ **both** — `editors/edit_notes`, **play did nothing and reported
+    nothing.** Reported for the page; the script had the same two lines. The
+    program activated a session and never started it, so the ambient play
+    scheduled onto a stopped clock. Both twins start it now; what the *surface*
+    should do about a play onto a stopped clock is an open question in
+    `clients/python/PLAN.md`, "Found by use".
+  - ✅ **page only, and it could only be the page** — `editors/tempo_map`
+    stopped at `failed: unknown aggregate kind: null`. It passed `null` where
+    the script leaves the default, and JavaScript takes a default only for
+    `undefined`, which is a mistake the script cannot make.
+  - ✅ **both** — `editors/edit_samples`, **the take sounded edited and the
+    waveform kept the old samples.** Reported in the page and in the script, and
+    it was the server's: it announced a write only when a peer stored it in
+    place, so a write that arrives as samples reached no picture. It announces
+    itself the same way now.
+  - ✅ **both** — `editors/tempo_map` **did not sound, and the picture was an
+    unreadable clip.** They were one thing, in the arrangement both clients
+    share: a `Sequence` advanced its cursor by each item's stated `duration`,
+    and a `Sequence` states none — so the four bars, themselves sequences, all
+    landed on the first beat. The piece was one chord and three seconds long
+    instead of sixteen beats. An item that states no length is now as long as
+    what it lays down, measured **unmixed**, since mute and solo say what is
+    heard and never where anything is. What is left of the picture is the
+    ruler, and it is written down: "A time axis is labelled by one tempo, and a
+    piece can have several" in `clients/gui/PLAN.md`, "Found by use".
+  - ✅ **both** — `editors/composed`, **`drag: draw` neither drew nor
+    sounded.** The host was right and nobody listened: while one pixel is worth
+    more than one sample it refuses the stroke and *says so*, and this take is
+    three seconds in a 900-pixel window — 168 samples a pixel, so the pencil was
+    dead at the zoom the window opens at. Both twins now subscribe to the host
+    and print the refusal, and both say a zoom comes first. Measured after:
+    refused at the opening zoom with the reason, and the stroke lands once the
+    wheel has been over the trace.
+    **Related:** "A refused edit springs back and says nothing" in section 2 is
+    the general version — an editor still has no door a refusal arrives at, so
+    an example has to listen to the wire to hear one.
+  - ✅ **page only, and it was the page's** — `editors/multitrack`, **the clips
+    of the `takes` and `spectrum` lanes were not drawn.** Their `dur` came from
+    `Source.length`, which neither client has — a `Source` is a handle on a
+    payload, not the payload — so every one of those clips was a clip of
+    `undefined` samples and drew nothing. The page keeps the takes it built and
+    reads the length off them, the way the script reads it off its own list.
+  - ✅ **both, by construction** — `notation/score_editor`, **selecting a note
+    to give it a dynamic or an articulation reported an id the model does not
+    own.** It was the host's hit test, so it was every client's: a press took
+    the **smallest box** under it, and a staff line is a hairline the width of
+    the system whose box is thinner than a notehead's. Every note written *on* a
+    line rather than in a space answered with the staff — measured on the
+    example's own page, 24 of its 48 noteheads. The page already says which ids
+    sound, so a sounding element now wins over anything drawn across it and the
+    tightest box only decides between those; 0 of 48 after.
+  - ✅ **the sweep's own fault** — **buttons that seemed to change nothing when
+    pressed**, from a mechanical pass over all 80 pages. All five drive their
+    page correctly; what could not see them was the pass, which read a canvas
+    with `toDataURL` — empty on a WebGL surface unless it was made with
+    `preserveDrawingBuffer`, so every host window read as inert and the five
+    that wrote no log line were the ones left standing. Driven again with the
+    pixels captured as screenshots: `panels/stack` flips to the spectrogram,
+    `panels/two-hosts` boots both and A stops answering its knob while B goes
+    on, `editors/patch2` opens the FaustDef, `components/authored` sounds,
+    removes and mounts again.
+
+    Two things the re-check did find, both fixed with it: `panels/two-hosts`
+    drew host B's knob at 220 under a heading saying it plays 330 (the panel
+    hard-coded the value), and closed the host by reaching past the instance to
+    its bridge, which leaves the event drain running; and `editors/patch2`
+    refused the second view in silence while the first was open — the line
+    saying to close it first had been printed earlier, which is not where a
+    reader is looking. **What both pages also say now**: a closed view leaves
+    its last frame on the canvas, because the canvas is the document's and
+    nothing clears it — the reason a working close reads as nothing happening.
+
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --

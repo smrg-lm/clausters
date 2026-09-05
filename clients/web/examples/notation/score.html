@@ -166,7 +166,7 @@ C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
         log("loading the engraver …");
         const score = await notation.Score.open(PHRASE, { pageWidth: 1100 });
         let dl = score.displayList();
-        log(`engraved: ${dl.glyphs.length} glyph outlines, `
+        log(`engraved: ${Object.keys(dl.glyphs).length} glyph outlines, `
           + `${dl.prims.length} primitives, ${dl.cursors.length} cursor stops, `
           + `${dl.notes.length} notes, page ${JSON.stringify(dl.vb)}`);
 

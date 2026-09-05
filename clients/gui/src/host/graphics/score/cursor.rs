@@ -23,6 +23,11 @@ use super::tess::staff_distance;
 use super::{Affine, Bounds, Entry, HitBox, HitShape, Prim, ScoreData, Staff, is_notehead};
 use crate::host::layout::Rect;
 
+/// The tightest of a set of overlapping boxes.
+fn smallest<'a>(boxes: impl Iterator<Item = &'a HitBox>) -> Option<&'a HitBox> {
+    boxes.min_by(|a, b| a.bounds.area().total_cmp(&b.bounds.area()))
+}
+
 impl ScoreData {
     /// Rebuild the hit-testing index from the placed primitives: one page-unit
     /// box per identified primitive, so a click can name the element under it.
@@ -236,21 +241,27 @@ impl ScoreData {
     }
 
     /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the
-    /// page fitted into `rect` — the smallest box containing it, so a notehead
-    /// wins over the staff line it sits on. `None` when the click lands on blank
-    /// paper.
+    /// page fitted into `rect`. `None` when the click lands on blank paper.
+    ///
+    /// **A sounding element wins over anything drawn across it**, and only then
+    /// does the smallest box decide. The order matters because area is a bad
+    /// proxy for "innermost" on an engraved page: a staff line is a hairline
+    /// the width of the system, so its box is *thinner* than a notehead's and area
+    /// alone hands it every note written on a line rather than in a space —
+    /// half the page, and the half a hand reaches for first. The page already
+    /// says which ids are notes and rests ([`ScoreData::elements`]), so the
+    /// question is answered by what a thing *is* and not by how big it is; the
+    /// same order keeps a note under a beam, a slur or a hairpin reachable.
     pub fn hit(&self, rect: Rect, x: f32, y: f32) -> Option<&str> {
         let inv = self.fit(rect).invert()?;
         let [px, py] = inv.apply(x, y);
-        self.hits
-            .iter()
-            .filter(|h| h.bounds.holds(h.shape, px, py))
-            .min_by(|a, b| {
-                a.bounds
-                    .area()
-                    .partial_cmp(&b.bounds.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+        let under = || {
+            self.hits
+                .iter()
+                .filter(move |h| h.bounds.holds(h.shape, px, py))
+        };
+        smallest(under().filter(|h| self.elements.contains(&h.id)))
+            .or_else(|| smallest(under()))
             .map(|h| h.id.as_str())
     }
 

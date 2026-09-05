@@ -262,7 +262,8 @@ fn indexed_page() -> ScoreData {
             "prims": [
                 {"k": "line", "pts": [[0, 200], [1000, 200]], "w": 13, "id": "staff"},
                 {"k": "glyph", "cp": "E0A4", "xf": [500, 200, 0.72, -0.72], "id": "n1"}
-            ]
+            ],
+            "elements": ["n1"]
         }"#,
     )
     .unwrap();
@@ -270,7 +271,7 @@ fn indexed_page() -> ScoreData {
 }
 
 #[test]
-fn a_click_names_the_smallest_element_under_it() {
+fn a_click_names_the_element_under_it() {
     let data = indexed_page();
     assert_eq!(data.hits.len(), 2);
     // fitted 1:1 (a 1000x400 page into a 1000x400 rect), so page == screen
@@ -282,6 +283,59 @@ fn a_click_names_the_smallest_element_under_it() {
     assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
     // blank paper names nothing
     assert_eq!(data.hit(rect, 100.0, 380.0), None);
+}
+
+/// A staff line with a notehead written **on** it — the box that traps the
+/// tightest-box rule, since a hairline the width of the system covers less area
+/// than the oval sitting on it.
+fn note_on_a_line() -> ScoreData {
+    let props: Map<String, Value> = serde_json::from_str(
+        r#"{
+            "vb": [1000, 400],
+            "glyphs": {"E0A4": "M-100 -80 L100 -80 L100 80 L-100 80 Z"},
+            "prims": [
+                {"k": "line", "pts": [[0, 200], [1000, 200]], "w": 13, "id": "staff"},
+                {"k": "glyph", "cp": "E0A4", "xf": [500, 200, 1, -1], "id": "n1"}
+            ],
+            "elements": ["n1"]
+        }"#,
+    )
+    .unwrap();
+    ScoreData::parse(&props)
+}
+
+/// **A note written on a line is still the note.** The staff line's box is a
+/// hairline the width of the system, so its *area* is smaller than the
+/// notehead's and the tightest box is the wrong answer for half the page: every
+/// note on a line rather than in a space. The page says which ids sound, and
+/// that is what decides — which is also what keeps a note under a beam, a slur
+/// or a hairpin reachable.
+#[test]
+fn a_note_on_a_staff_line_wins_over_the_line() {
+    let data = note_on_a_line();
+    let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+    let (staff, note) = (&data.hits[0], &data.hits[1]);
+    assert_eq!((staff.id.as_str(), note.id.as_str()), ("staff", "n1"));
+    assert!(
+        staff.bounds.area() < note.bounds.area(),
+        "the line is the thinner box, which is the whole trap"
+    );
+    // the notehead's own centre, which is exactly on the line it is written on
+    assert_eq!(data.hit(rect, 500.0, 200.0), Some("n1"));
+    // and away from it the line is still selectable
+    assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+}
+
+/// A page whose client named no elements still answers something: the tightest
+/// box, as before. Nothing this project engraves comes that way, but a display
+/// list from before the walk named them should degrade rather than stop
+/// selecting.
+#[test]
+fn a_page_that_names_no_elements_falls_back_to_the_tightest_box() {
+    let mut data = note_on_a_line();
+    data.elements.clear();
+    let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+    assert_eq!(data.hit(rect, 500.0, 200.0), Some("staff"));
 }
 
 /// **A notehead is an oval, and the corners of the box around it are paper.**

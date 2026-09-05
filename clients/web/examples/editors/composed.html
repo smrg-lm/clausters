@@ -41,7 +41,13 @@ hold. Neither knows what the other did. What they share is the composition's
 the curve over it in the multitrack, then <b>Ctrl+Z over the multitrack</b>: the
 stroke comes back first, undone by a window that cannot read a samples edit at
 all — it hands that leg to the editor that can. Again, and the curve goes back;
-<b>Ctrl+Shift+Z over the signal window</b> replays both, in order.</div>
+<b>Ctrl+Shift+Z over the signal window</b> replays both, in order.
+
+<b>Zoom in before you draw</b>, with the wheel over the waveform: a stroke writes
+one sample per pixel, so the host refuses one while a pixel is worth more than a
+sample — and it says so, in the log below. This take is three seconds in a
+900-pixel window, so the pencil does nothing until the trace shows discs, one per
+sample.</div>
 
       <button id="run">bounce and open</button>
       <div id="multitrack" class="stage"></div>
@@ -155,6 +161,21 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
           signal.widget("draw").set({ label: `drag: ${mode}` });
         };
 
+        // **What the host refuses, and why.** A stroke writes one sample per
+        // pixel, so the host refuses one where a pixel is worth more than a
+        // sample — and says so in a `"refused"` event rather than doing
+        // nothing, because a pencil that sometimes does nothing teaches that it
+        // sometimes does not work. This take is three seconds in a 900-pixel
+        // window (about 170 samples a pixel), so the **wheel over the waveform
+        // comes first**: zoom until the trace shows discs, one per sample, and
+        // the stroke lands. Subscribing is how a program hears a statement the
+        // editor has no edit to make of.
+        host.onMessage((msg) => {
+          if (msg.addr === "/gui_event" && msg.args[3] === "refused") {
+            log(`the host refused: ${msg.args.slice(4).join(", ")}`);
+          }
+        });
+
         signal.widget("draw").onClick(toggleMode);
         signal.widget("play").onClick(() => editor.play(server, session.clock));
         signal.widget("stop").onClick(() => editor.stop());
@@ -170,8 +191,11 @@ all — it hands that leg to the editor that can. Again, and the curve goes back
         // rescheduled by it.
         let shown = "";
         host.clock.sched(0.05, function showHistory() {
-          const state = `undo=${editor.canUndo} ${editor.undoLabel} `
-            + `redo=${editor.canRedo} ${editor.redoLabel}`;
+          // The label of a history with nothing in it: the script prints
+          // Python's `None`, and this prints JavaScript's spelling of the same
+          // absence rather than the bare word `undefined`.
+          const state = `undo=${editor.canUndo} ${editor.undoLabel ?? null} `
+            + `redo=${editor.canRedo} ${editor.redoLabel ?? null}`;
           if (state !== shown) {
             shown = state;
             log(state);

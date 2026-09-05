@@ -146,7 +146,13 @@ and no audio server is involved either way.</div>
       let open = null;
 
       async function show(aDef, kind) {
-        if (open !== null) return;
+        // **A button that does nothing says why.** One canvas holds one view at
+        // a time here, so the other def's button is refused while this one is
+        // up — and a refusal that prints nothing teaches that the button
+        // sometimes does not work.
+        if (open !== null) {
+          return log(`close the view first — this page draws one at a time`);
+        }
         log(`\nthe ${kind} (level 2) — close the view to open the other`);
         // `element` is the one argument the script has no counterpart for: it
         // is where this page draws, and the canvas inside it is made for you.
@@ -155,9 +161,14 @@ and no audio server is involved either way.</div>
         $("close").disabled = false;
       }
 
+      // The canvas is the **document's**, not the view's, so what is on it
+      // when a view closes stays on it: the last frame it drew. That reads as
+      // "nothing happened", which is why the closing says so.
       function release() {
         open = null;
         $("close").disabled = true;
+        log("the view is closed — its last frame is still on the canvas, "
+          + "which belongs to the page");
       }
 
       $("synth").onclick = () => show(synthDef, "SynthDef");

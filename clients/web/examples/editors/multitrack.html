@@ -284,11 +284,20 @@ it rather than on the next play.</div>
         // take's frames place 1:1.
         BEAT = Math.trunc(SR / TEMPO);
 
-        const samples = {};
+        // The takes themselves, and the sources the lane draws them through.
+        // Both, because a `Source` is a **handle on a payload** and not the
+        // payload: it is what a later `set` writes through, and it is not
+        // something to ask how long it is. The frames are the take's, so the
+        // clip's `dur` is read off the array the way the script reads it off
+        // its own list.
+        const samples = {}, frames = {};
         for (const [name, freq, beats, , decay] of TAKES) {
-          samples[name] = gui.source(tone(freq, beats, decay));
+          const take = tone(freq, beats, decay);
+          frames[name] = take.length;
+          samples[name] = gui.source(take);
         }
-        const sweepSamples = gui.source(sweep(SWEEP_LO, SWEEP_HI, SWEEP_BEATS));
+        const sweepTake = sweep(SWEEP_LO, SWEEP_HI, SWEEP_BEATS);
+        const sweepSamples = gui.source(sweepTake);
         log(`built ${TAKES.length} takes and a ${SWEEP_BEATS.toFixed(0)}-beat sweep`);
 
         await voice().send(server);
@@ -358,7 +367,7 @@ it rather than on the next play.</div>
             gui.track(
               { name: "takes", label: "takes", h: LANE_H, ...laneChrome },
               ...TAKES.map(([name, , , at]) => gui.clip({
-                name, offset: at * BEAT, dur: samples[name].length,
+                name, offset: at * BEAT, dur: frames[name],
                 data: samples[name], label: name,
               })),
             ),
@@ -373,7 +382,7 @@ it rather than on the next play.</div>
             gui.track(
               { name: "spectrum", label: "spectrum", h: LANE_H, ...laneChrome },
               gui.clip({
-                name: "sweep", offset: SWEEP_AT * BEAT, dur: sweepSamples.length,
+                name: "sweep", offset: SWEEP_AT * BEAT, dur: sweepTake.length,
                 data: sweepSamples, view: "spectrogram", sampleRate: SR,
                 windowSize: 1024, freqScale: "log", colormap: 0, label: "sweep",
               }),

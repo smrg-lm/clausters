@@ -71,6 +71,14 @@ time — assembled from more than one window):
 | `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
 | `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
 
+A `Sequence` of elements is laid out **one after another**, and what it advances
+by is each item's own `duration` — its stated length in its own unit. An item
+that states none is as long as *what it lays down*, which is what a `Sequence`
+of `Sequence`s relies on: a bar says nothing about its length, and the four
+notes in it say everything. (Mute and solo do not enter: they say what is
+heard, never where anything is, so silencing one member leaves the ones after
+it where they were.)
+
 A `Vector` is *data*, so it has no sound of its own: it sounds through the
 **instrument** named to play it — a def whose `buf` control takes the buffer
 number. That is the whole rule for an audio clip. A `Segments` is the same rule

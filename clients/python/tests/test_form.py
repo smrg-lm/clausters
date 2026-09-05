@@ -223,6 +223,29 @@ def test_a_sequence_of_elements_is_laid_out_successively():
     assert [beat for beat, _ in flat] == [0.0, 2.0, 5.0]
 
 
+def test_a_sequence_of_sequences_advances_by_what_each_one_reaches():
+    """An item that states no length is as long as what it lays down.
+
+    Read as zero, every member of a `Sequence` of `Sequence`s landed on the
+    first beat -- four bars played at once, which is what "the piece is drawn as
+    an unreadable clip" was.
+    """
+    def bar(pitch):
+        return Sequence([Clang({"dur": 1.0, "freq": pitch}) for _ in range(4)])
+
+    flat = flatten(Sequence([bar(220.0), bar(330.0)]))
+    assert [beat for beat, _ in flat] == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+
+
+def test_a_sequence_lays_a_muted_member_out_where_it_would_have_been():
+    """Mute says what is heard, never where anything is: silencing one member
+    must not pull the ones after it forward."""
+    quiet = Sequence([Clang({"dur": 1.0}), Clang({"dur": 1.0})])
+    quiet.mute = True
+    flat = flatten(Sequence([quiet, Clang({"dur": 1.0})]))
+    assert [beat for beat, _ in flat] == [2.0]
+
+
 def test_an_abstract_element_yields_no_clang():
     flat = flatten(Aggregate([(0.0, Element()), (1.0, Clang({"dur": 1.0}))]))
     assert [beat for beat, _ in flat] == [1.0]

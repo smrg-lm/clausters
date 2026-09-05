@@ -415,8 +415,36 @@ function emitElement(
 }
 
 /**
+ * The **place in time** a flattened item takes, in beats: an event's `dur`,
+ * which is its slot and not its sounding length (`sustain`), so a detached note
+ * still occupies the beat it was written on. Anything that is not an event is
+ * punctual.
+ */
+function slot(item: unknown): number {
+    if (!(item instanceof SeqEvent)) return 0.0;
+    const dur = Number(item.get("dur") ?? 0.0);
+    return Number.isFinite(dur) ? dur : 0.0;
+}
+
+/**
+ * How far an element with **no stated duration** reaches, in beats: the end of
+ * the last thing it lays down, from its own zero.
+ *
+ * Laid down **unmixed**, and that is the point rather than an economy: mute and
+ * solo say what is heard, never where anything is. Measuring what a mix let
+ * through would make soloing one lane re-time the sequence in another, which is
+ * the one thing a reader would never look for.
+ */
+function reaches(element: Element, tempoMap: TempoMap): number {
+    const laid: Flat[] = [];
+    emitElement(element, 0.0, laid, tempoMap, Mix.over(element, false));
+    return laid.reduce((end, [beat, item]) => Math.max(end, beat + slot(item)), 0.0);
+}
+
+/**
  * A List/Function backed by an event pattern is bounced; a list of elements is
- * laid out successively by their durations.
+ * laid out successively — each by its own duration, or by what it lays down
+ * when it states none.
  */
 function emitSequence(
     wrapped: unknown,
@@ -466,8 +494,13 @@ function emitSequence(
             }
             emit(item, cursor, out, null, tempoMap, mix);
             // Laid out successively on the beat axis, so each length crosses
-            // from whatever unit its own data is in.
-            cursor = endBeat(cursor, item.duration ?? 0.0, item.durationUnit, tempoMap);
+            // from whatever unit its own data is in. An item that states no
+            // length is as long as **what it lays down** — a `Sequence` of
+            // `Sequence`s says nothing about its members' lengths, and reading a
+            // missing one as zero stacked every one of them on the first beat.
+            cursor = item.duration === null || item.duration === undefined
+                ? cursor + reaches(item, tempoMap)
+                : endBeat(cursor, item.duration, item.durationUnit, tempoMap);
         }
     }
 }

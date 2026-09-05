@@ -151,7 +151,7 @@ this directory and open the page.</div>
         log(`the average says  ${average} s   (wrong by ${(average - ramp).toFixed(4)} s)`);
         log(`closed form       ${Math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0))}`);
 
-        const song = new form.Aggregate(null, null, { name: "tempo" });
+        const song = new form.Aggregate(null, "concrete", { name: "tempo" });
         song.add(
           new form.Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
                             null, null, { name: "lead" }),

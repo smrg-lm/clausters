@@ -92,8 +92,11 @@
 
       <p>
         Drag a knob and only its own tone follows. Close host A and B keeps
-        drawing and sounding — an instance owns its canvases, its GPU surfaces,
-        its animation tick and its audio leg, and takes them with it.
+        drawing and sounding — an instance owns its GPU surfaces, its animation
+        tick and its audio leg, and takes them with it. A closed host's canvas
+        keeps the last frame it drew: the canvas is the <em>document's</em>, and
+        nothing clears it. What tells you A is gone is that its knob stops
+        answering while B's still does.
       </p>
     </main>
 
@@ -128,7 +131,7 @@
       // Deliberately identical for both hosts: same window id, same widget
       // ids. Two instances never have to agree on an id range, which is the
       // whole reason to have instances rather than one shared host.
-      const panel = (title) =>
+      const panel = (title, freq) =>
         JSON.stringify({
           type: "window",
           id: 1000,
@@ -146,7 +149,9 @@
               name: "freq",
               min: 50.0,
               max: 2000.0,
-              value: 220.0,
+              // The tone this host is playing, so the knob reads what its
+              // engine is doing rather than a number the panel made up.
+              value: freq,
               h: 130,
             },
             {
@@ -191,7 +196,7 @@
         bridge.attach(1000, canvas);
         bridge.resize(1000, canvas.width, canvas.height, scale);
         bridge.feed(
-          encodeMessage("/gui_def", [["i", 1000], ["s", panel(title)]]),
+          encodeMessage("/gui_def", [["i", 1000], ["s", panel(title, freq)]]),
         );
 
         // Both controls drive this host's own engine directly: the value goes
@@ -208,7 +213,12 @@
             ]),
           );
         }
-        return bridge;
+        // The **instance**, not its bridge: closing goes through the object
+        // `newGuiHost` handed back, which stops the event drain and gives up
+        // the canvases it holds as well as releasing the wasm host. Reaching
+        // past it to `bridge.close()` releases the host and leaves the drain
+        // running.
+        return gui;
       }
 
       let hostA = null;

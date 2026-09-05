@@ -323,9 +323,39 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
         raise TypeError(f"not an Element: {element!r}")
 
 
+def _slot(item) -> float:
+    """The **place in time** a flattened item takes, in beats: an event's
+    ``dur``, which is its slot and not its sounding length (``sustain``), so a
+    detached note still occupies the beat it was written on. Anything that is
+    not an event is punctual."""
+    from ..seq.event import Event as SeqEvent
+
+    if isinstance(item, SeqEvent):
+        try:
+            return float(item.get("dur") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _reaches(element, tempo_map) -> float:
+    """How far an element with **no stated duration** reaches, in beats: the end
+    of the last thing it lays down, from its own zero.
+
+    Laid down **unmixed**, and that is the point rather than an economy: mute
+    and solo say what is heard, never where anything is. Measuring what a mix
+    let through would make soloing one lane re-time the sequence in another,
+    which is the one thing a reader would never look for.
+    """
+    laid: list = []
+    _emit_element(element, 0.0, laid, tempo_map, _Mix.over(element, False))
+    return max((beat + _slot(item) for beat, item in laid), default=0.0)
+
+
 def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
     """A List/Function backed by an event pattern is bounced; a list of elements
-    is laid out successively by their durations."""
+    is laid out successively — each by its own duration, or by what it lays
+    down when it states none."""
     from ..seq.pattern import Pattern
     from ..seq.timeline import Timeline
 
@@ -370,6 +400,10 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
                 )
             _emit(item, cursor, out, tempo_map=tempo_map, mix=mix)
             # Laid out successively on the beat axis, so each length crosses
-            # from whatever unit its own data is in.
-            cursor = end_beat(cursor, item.duration or 0.0,
-                              item.duration_unit, tempo_map)
+            # from whatever unit its own data is in. An item that states no
+            # length is as long as **what it lays down** -- a `Sequence` of
+            # `Sequence`s says nothing about its members' lengths, and reading a
+            # missing one as zero stacked every one of them on the first beat.
+            cursor = (end_beat(cursor, item.duration, item.duration_unit, tempo_map)
+                      if item.duration is not None
+                      else cursor + _reaches(item, tempo_map))

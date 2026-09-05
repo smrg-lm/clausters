@@ -3143,6 +3143,24 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A time axis is labelled by one tempo, and a piece can have several**
+  *(found 2026-09-05, reading `editors/tempo_map` after its clip was put right)*.
+  A lane's `x` axis and a `timeruler` take `tempo` (beats per second) and
+  `beat_at`, which is one segment and an offset — so a page whose tempo changes
+  is ruled by whatever tempo held at its start. The clips are placed correctly,
+  because a client converts each onset through the piece's `TempoMap` before it
+  sends it; only the **labels** are wrong, and they are wrong from the first bar
+  after the change: `tempo_map`'s piece is sixteen beats and its ruler counts to
+  eight.
+
+  It is not a client's to work around: the ticks are chosen by the host, at the
+  spacing the zoom leaves room for, so the client has nothing to convert. What
+  is missing is a way to hand the axis the **map** — the segments a
+  `TempoMap` already is, which both clients hold and the shared crate already
+  converts with. Until then the honest reading of a `tempo` prop is "the tempo,
+  if there is only one", and `editors/tempo_map` is the example that shows the
+  gap rather than hiding it.
+
 - ⬜ **A generation is carried, stored, and read by nothing** *(found 2026-09-04
   in the review, fixing the samples window's lag behind its own undo)*.
   `/gui_ack` takes `source generation` pairs, `ack::Outbox` keeps the last one

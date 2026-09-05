@@ -179,6 +179,30 @@ test("a sequence of elements is laid out successively by their durations", () =>
     assert.deepEqual(flatten(sequence).map(([beat]) => beat), [0.0, 1.0, 1.5]);
 });
 
+test("a sequence of sequences advances by what each one reaches", () => {
+    // An item that states no length is as long as what it lays down. Read as
+    // zero, every member of a `Sequence` of `Sequence`s landed on the first
+    // beat — four bars played at once, which is what "the piece is drawn as an
+    // unreadable clip" was.
+    const bar = (pitch: number) =>
+        new Sequence([0, 1, 2, 3].map(() => new Clang(note(pitch, 1.0))));
+    assert.deepEqual(
+        flatten(new Sequence([bar(60), bar(64)])).map(([beat]) => beat),
+        [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+    );
+});
+
+test("a sequence lays a muted member out where it would have been", () => {
+    // Mute says what is heard, never where anything is: silencing one member
+    // must not pull the ones after it forward.
+    const quiet = new Sequence([new Clang(note(60, 1.0)), new Clang(note(62, 1.0))]);
+    quiet.mute = true;
+    assert.deepEqual(
+        flatten(new Sequence([quiet, new Clang(note(64, 1.0))])).map(([beat]) => beat),
+        [2.0],
+    );
+});
+
 test("a flattened timeline comes out sorted", () => {
     const piece = new Aggregate();
     piece.add(new Clang(note(60)), 4.0);
