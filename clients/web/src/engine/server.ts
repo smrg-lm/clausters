@@ -178,6 +178,11 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         resume: () => raw.context.resume(),
         suspend: () => raw.context.suspend(),
         close: async () => {
+            // Idempotent on purpose: a session closes the server it owns (which
+            // quits the engine it booted) and then the engine itself, so this
+            // runs twice for one shutdown. An `AudioContext` already closed
+            // throws rather than shrugging, and there is nothing to report.
+            if (raw.context.state === "closed") return;
             listeners.clear();
             raw.dispose();
             await raw.context.close();
