@@ -106,7 +106,7 @@ part is the tree below and the <code>bus.set</code> that animates it.</div>
         const buf = await Buffer.alloc(SR, 1, { server });
         await buf.setSamples(sineSamples());
         await server.sync();
-        const bus = Bus.control({ server });
+        const bus = Bus.control(1, { server });
 
         // The window: a meter + scope on the control bus, over a waveform of
         // the server buffer. All named, not numbered -- `open` hands back a

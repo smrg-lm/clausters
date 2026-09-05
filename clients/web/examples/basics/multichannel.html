@@ -61,11 +61,11 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
     -->
     <script type="module">
       import {
-        Buffer, Event, Routine, Server, Session, SynthDef, chans, play, render,
-        wavBytes,
+        Buffer, Event, Routine, Server, Session, SynthDef, play, render, wavBytes,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine }
-        from "../../dist/defs/index.js";
+      import {
+        DoneAction, Env, chans, control, dup, envGen, mix, out, rand, sine,
+      } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

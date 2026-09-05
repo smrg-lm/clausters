@@ -164,8 +164,10 @@ exists.</div>
         // with no loop of its own.
         let last = null;
         host.clock.sched(0.05, function watchSelection() {
+          // An editor with nothing swept holds `{}` — falsy where the script
+          // reads it, truthy here, so the emptiness is asked for by name.
           const now = editor.selection;
-          if (now && JSON.stringify(now) !== JSON.stringify(last)) {
+          if (now.start !== undefined && JSON.stringify(now) !== JSON.stringify(last)) {
             last = now;
             log(`selection: ${last.start.toFixed(3)} .. `
               + `${(last.start + last.len).toFixed(3)} beats `

@@ -102,7 +102,8 @@ and nothing to unlock until you ask to hear it.</div>
 
       /** White noise -> FFT -> PV_BrickWall (low pass) -> IFFT, on the right. */
       function spectralLowpass(name = "spectral_lp") {
-        let chain = fft(whiteNoise().mul(0.25), { fftSize: 1024, hop: 0.5, wintype: 0 });
+        let chain = fft(whiteNoise().mul(0.25), 1.0,
+          { fftSize: 1024, hop: 0.5, wintype: 0 });
         chain = pvBrickWall(chain, 0.75);      // keep the bottom 25% of bins
         return new SynthDef(name, out(1.0, ifft(chain).mul(fade())));
       }
