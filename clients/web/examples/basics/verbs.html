@@ -49,11 +49,9 @@ change. The tour ends on all three.</div>
     -->
     <script type="module">
       import {
-        Buffer, Event, Session, Synth, SynthDef, play, render, seq,
+        Buffer, Event, Session, SynthDef, play, render, seq,
       } from "../../dist/index.js";
-      import {
-        DoneAction, Env, control, envGen, out, sine,
-      } from "../../dist/defs/index.js";
+      import { Env, boxes as box, control, out, sine } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -67,37 +65,9 @@ change. The tour ends on all three.</div>
       // `Event` looks for an `instrument` and defaults to "default"; this def
       // takes that name, so every event below sounds without naming one. Its
       // envelope frees the synth, which is what makes a note a note.
-      function defaultInstrument() {
-        const freq = control("freq", 440.0);
-        const amp = control("amp", 0.2);
-        const gate = control("gate", 1.0);
-        const sig = sine(freq).mul(amp).mul(
-          envGen(Env.asr(0.01, 1.0, 0.3), {
-            gate, doneAction: DoneAction.FREE_SELF,
-          }));
-        return new SynthDef("default", out(0.0, sig), out(1.0, sig));
-      }
-
-      // ---- opening the environment ----
-      //
-      // One call gives a server, a clock anchored to that server's own sample
-      // counter, and a random root of this session's own. `activate` makes it
-      // the ambient session — server, clock and random root — which is what
-      // makes the ambient verbs below resolve without naming anything. It is
-      // the unscoped form of `use()`, and the one a page wants: a block cannot
-      // span a button's handler.
       async function open() {
-        // The AudioContext needs the gesture that got us here, which is why
-        // this is a button.
-        // No tempo: the script opens a bare `Session.embed()` too, so the
-        // clock is at 1.0 on both sides and the same material runs at the same
-        // speed. `start()` because the clock an ambient `play` resolves is now
-        // *this* session's, and a generator below would otherwise be queued on
-        // a clock that never wakes -- the default session starts its own on
-        // first use; a session you hold is yours to start.
         session = (await Session.embed()).activate();
         session.start();
-        await defaultInstrument().send();
         log(`session open: tempo ${session.clock.tempo}, `
           + `${session.server.sizing.audioBuses} audio buses`);
         log("adopted as the page's default — nothing below names a server");
@@ -106,120 +76,68 @@ change. The tour ends on all three.</div>
         $("open").disabled = true;
       }
 
-      // ---- the tour ----
       async function tour() {
         $("tour").disabled = true;
 
-        // An Event — and a plain object, which coerces to one.
         log("an Event, then the same note as a bare object");
         play(new Event({ degree: 0, dur: 0.5 }));
         await wait(PAUSE);
         play({ degree: 4, dur: 0.5, amp: 0.15 });
         await wait(PAUSE);
 
-        // A generator function — coerced to a Routine on the default clock.
-        // Each yield is the gap in beats to the next wake.
         log("a generator, three notes up the scale");
-        play(function* () {
+        play(function* arpeggio() {
           for (const degree of [0, 2, 4]) {
             play(new Event({ degree, dur: 0.3 }));
             yield 0.35;
           }
         });
-        await wait(PAUSE * 2);
+        await wait(PAUSE + 1000);
 
-        // An event pattern — an EventStreamPlayer on the same clock.
-        log("a Pbind, a phrase");
-        const player = play(new seq.Pbind({
-          degree: new seq.Pseq([0, 2, 4, 7], 2),
-          dur: 0.25,
-          amp: 0.15,
-        }));
-        await wait(PAUSE * 2);
-        player.stop();
-
-        // A bare expression — no def, no name. `play` wraps it in an
-        // ephemeral def (`tmp_*`, which the server never persists) and
-        // instances that, so a signal is playable directly.
-        log("a bare expression, wrapped in an ephemeral def");
-        const bare = play(sine(330.0).mul(0.15));
+        log("a bare UGen expression, sounding until freed");
+        let node = play(sine(330.0).mul(0.15));
         await wait(PAUSE);
-        bare.free();
+        node.free();
 
-        // A def — sent and instanced. It plays until you free it, so this one
-        // is a drone with no envelope of its own to end it.
-        log("a def, instanced as a drone (freed by hand)");
-        const droneSig = sine(control("freq", 110.0)).mul(0.15);
-        const drone = play(
-          new SynthDef("verbs_drone", out(0.0, droneSig), out(1.0, droneSig)),
-        );
+        log("a Faust box expression (os.osc from the Faust library)");
+        node = play(box.faust("os.osc")
+          .call(box.hslider("freq", 440.0, 20.0, 2000.0, 0.01)).mul(0.15));
         await wait(PAUSE);
-        drone.free();
+        node.free();
 
-        // A timeline — a Playhead over the ambient clock and server.
-        log("a Timeline, its items placed on beats");
-        const timeline = new seq.Timeline([
-          [0.0, new Event({ degree: 0, dur: 0.3 })],
-          [0.5, new Event({ degree: 3, dur: 0.3 })],
-          [1.0, new Event({ degree: 7, dur: 0.3 })],
-        ]);
-        const playhead = play(timeline);
-        await wait(PAUSE * 2);
-        playhead.stop();
+        log("a named def with controls; a long note, released early");
+        const beep = new SynthDef("verbs_beep",
+          out(0.0, sine(control("freq", 440.0)).mul(0.15)));
+        node = play(beep, { controls: { freq: 660.0 } });
+        await wait(PAUSE);
+        node.free();
+        const longNote = play(new Event({ degree: 0, dur: 30.0 }));  // would sustain ~24 s...
+        await wait(PAUSE);
+        longNote.free();                                             // ...cut now
 
-        // An automation coupled to a sounding node: the curve is written to a
-        // control bus and /node_map-ed onto the control, so the node follows
-        // it and then keeps the last value. Outside a clock the curve's beats
-        // read as seconds. `prepare` is the half that waits — this verb is
-        // the one kind `play` refuses to start unprepared.
-        log("an Automation sweeping a node's freq, interrupted mid-sweep");
-        const swept = play(new SynthDef(
-          "verbs_swept",
-          out(0.0, sine(control("freq", 440.0)).mul(0.15)),
-          out(1.0, sine(control("freq", 440.0)).mul(0.15)),
-        ));
-        const sweep = new seq.Automation(
-          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [swept, "freq"]);
-        await sweep.prepare();
-        play(sweep);
+        log("an automation sweeping a sounding node's freq, interrupted mid-sweep");
+        node = play(sine(control("freq", 440.0)).mul(0.15));
+        const sweep = play(new seq.Automation(
+          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [node, "freq"]));
         await wait(1500);
         sweep.stop();          // interrupted at the top: the freq holds there
-        await wait(PAUSE);
-        sweep.free();
-        swept.free();
+        await wait(1000);
+        node.free();
 
-        // A buffer — sounded through the stock playbuf instrument the verb
-        // provides. A buffer sounds *through* an instrument; here the verb
-        // supplies the default one and frees it when the take ends.
-        log("a Buffer, sounded through the stock instrument");
-        const buffer = await Buffer.alloc(48_000, 1);
-        // A one-second sine table, so there is something to hear.
-        await buffer.gen("sine1", [["i", 7], ["f", 1.0], ["f", 0.5], ["f", 0.25]]);
-        await buffer.info();
-        play(buffer, { controls: { rate: 1.0, amp: 0.2 } });
-        await wait(PAUSE * 2);
+        log("a timeline, two placed notes");
+        const tl = new seq.Timeline();
+        tl.add(0.0, new Event({ degree: 0, dur: 0.5 }));
+        tl.add(0.5, new Event({ degree: 7, dur: 0.5 }));
+        play(tl);
+        await wait(PAUSE + 1000);
 
-        // And the surface under the verbs: a bare constructor, which resolves
-        // the same ambient server.
-        log("a bare `new Synth(…)`, on the ambient server");
-        const note = new Synth("default", { freq: 330.0, amp: 0.2 });
-        await wait(PAUSE);
-        note.set({ gate: 0.0 });
+        log("rendering a phrase (offline, no audio device)");
+        const rendered = await render(new seq.Pbind({
+          instrument: "default",
+          degree: new seq.Pseq([0, 4, 7, 12]),
+          dur: 0.25,
+        }));
 
-        // The verb the tour ends on is not `play` at all. `render` takes the
-        // same samples and *evaluates* it instead of sounding it: an
-        // offline session, faster than real time, and what comes back is
-        // samples plus what the take measured.
-        log("\nand the same expression rendered instead of played:");
-        const stats = await render(sine(330.0).mul(0.15), { dur: 0.5, channels: 1 });
-        log(`  render -> ${stats.frames} frames, ${stats.duration.toFixed(2)} s, `
-          + `peak ${stats.peak[0].toFixed(3)}, seed ${stats.seed}`);
-
-        // A session can be offline, too. `render` above bounces *one* playable
-        // through a server nobody holds; `Session.nrt()` is the same change of
-        // state as an **environment** — several things played into one score
-        // and rendered together, with no audio device anywhere. The verbs
-        // inside it are the verbs above: only the carrier differs.
         log("a session that never sounds: the same verbs, rendered");
         const offline = await Session.nrt({ tempo: 2.0 });
         offline.play(new seq.Pbind({
@@ -227,9 +145,18 @@ change. The tour ends on all three.</div>
           degree: new seq.Pseq([0, 4, 7]),
           dur: 0.25,
         }));
-        const take = await offline.render({ channels: 1 });
-        log(`  offline session -> ${take.frames} frames, `
-          + `${take.duration.toFixed(2)} s, peak ${take.peak[0].toFixed(3)}`);
+        const stats = await offline.render({ channels: 1 });
+        log(`  offline session -> ${stats.frames} frames, `
+          + `${stats.duration.toFixed(2)} s, peak ${stats.peak[0].toFixed(3)}`);
+
+        log("playing the rendered take back as a buffer");
+        // The script renders to a WAV and reads the path back; a tab has none,
+        // so the samples the render answered with go straight into a buffer.
+        const take = await Buffer.fromSamples(
+          rendered.samples, rendered.channels, rendered.sampleRate);
+        play(take, { controls: { amp: 0.8 } });
+        await wait(2000);
+        log("done");
         $("tour").disabled = false;
       }
 
