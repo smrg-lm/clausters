@@ -99,7 +99,12 @@ the instrument, and everything else the author put on it.</div>
 
       async function run() {
         $("run").disabled = true;
-        session = await Session.embed();
+        // `activate` is what makes this session the **ambient** one, and the
+        // free-standing verbs are what need it: `play(timeline)` below resolves
+        // its clock and server from here, the way `edit` resolves its host.
+        // Building a session does not claim that role -- a page may hold
+        // several.
+        session = (await Session.embed()).activate();
         await session.gui();
 
         // One verb. A `Timeline` opens as a NotesEditor — one `pianoroll`

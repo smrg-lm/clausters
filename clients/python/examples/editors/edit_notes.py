@@ -69,7 +69,11 @@ timeline = Timeline([
 # context.
 
 # %%
-session = Session.live()
+# `activate` is what makes this session the **ambient** one, and the free-standing
+# verbs are what need it: `play(timeline)` below resolves its clock and server
+# from here, the way `edit` resolves its host. Building a session does not claim
+# that role -- a page or a script may hold several.
+session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 editor = edit(timeline,
               sample_rate=session.server.query_info().nominal_sample_rate,
