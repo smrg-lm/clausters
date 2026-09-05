@@ -91,19 +91,6 @@ a chosen attack, decay, sustain and release.</div>
         return new SynthDef(name, out(0.0, sig), out(1.0, sig));
       }
 
-      // ---- the phrase ----
-      // `hasGate` makes each note release its envelope (`gate 0`) after
-      // `sustain` rather than being freed outright; `sustain` < `dur` leaves a
-      // gap so the release tail is audible before the next note.
-      const phrase = () => new seq.Pbind({
-        instrument: "adsr_pad",
-        hasGate: true,
-        degree: new seq.Pseq([0, 2, 4, 7], 2),
-        dur: 0.5,
-        sustain: 0.35,
-        amp: 0.2,
-      });
-
       let take = null;
 
       // ---- the render ----
@@ -116,9 +103,22 @@ a chosen attack, decay, sustain and release.</div>
       const TAIL = 1.5;      // the release (0.5 s at 2 beats/s), and room
 
       async function renderPhrase() {
+        // The phrase. `hasGate` makes each note release its envelope
+        // (`gate 0`) after `sustain` rather than being freed outright;
+        // `sustain` < `dur` leaves a gap so the release tail is audible before
+        // the next note.
+        const phrase = new seq.Pbind({
+          instrument: "adsr_pad",
+          hasGate: true,
+          degree: new seq.Pseq([0, 2, 4, 7], 2),
+          dur: 0.5,
+          sustain: 0.35,
+          amp: 0.2,
+        });
+
         const session = (await Session.nrt({ tempo: 2.0 })).activate();
         await adsrPad().send();                 // /def_send synth at time 0
-        session.play(phrase());
+        session.play(phrase);
 
         // A render ends at the score's **last event**, and the last one the
         // phrase writes is the gate closing on its final note — so without a

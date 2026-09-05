@@ -214,6 +214,7 @@ refused by name.</div>
           win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
           log("stopped");
         });
+        win.onClosed(() => log("window closed"));
         log("press play — the cursor follows the sound");
       }
 

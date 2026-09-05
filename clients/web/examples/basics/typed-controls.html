@@ -40,67 +40,71 @@ notes</b>, which is what one persistent node driven by a routine gives, rather
 than an <code>/synth_new</code> per note.</div>
 
       <div class="row">
-        <button id="start">start</button>
-        <button id="play" disabled>play the melody</button>
-        <button id="free" disabled>free the lead</button>
+        <button id="render">render the melody</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
       </div>
-      <label>tempo <input id="tempo" type="range" min="1" max="4" step="0.5"
-                          value="2" disabled /><span id="tempov">2 beats/s</span></label>
 
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/basics/typed_controls.py, call
+      for call: the same def with its three control types, the same persistent
+      lead driven by the same routine of timed bundles, rendered offline.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
+      click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/typed-controls.html. Build it first: ./build.sh
+    -->
     <script type="module">
       import {
-        Session, Synth,
-        SynthDef, Routine,
+        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine } from "../../dist/defs/index.js";
       import { midicps } from "../../dist/base/builtins.js";
 
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // ---- the def: three control types in one lead ----
-      const glideLead = () => {
-        const freq = control("freq", 220.0, { lag: 0.12 });   // portamento
-        const gate = control("gate", 0.0, { rate: "tr" });    // re-trigger
+      const SR = 48000.0;
+
+      // ---- the def ----
+      // A sine lead: `freq` glides (lag), `gate` re-triggers a pluck (tr),
+      // `detune` is a fixed random offset (ir).
+      function glideLead(name = "glide_lead") {
+        const freq = control("freq", 220.0, { lag: 0.12 });    // portamento
+        const gate = control("gate", 0.0, { rate: "tr" });     // one-block re-trigger
         const amp = control("amp", 0.2);
-        const detune = control("detune", 0.0, { rate: "ir" }); // frozen at init
-        const env = envGen(Env.perc(0.005, 0.2), {
-          gate, doneAction: DoneAction.NONE // never terminal
-        });
+        const detune = control("detune", 0.0, { rate: "ir" }); // read at init, then frozen
+        const env = envGen(Env.perc(0.005, 0.2),
+          { gate, doneAction: DoneAction.NONE });
         const sig = sine(freq.add(detune)).mul(env).mul(amp);
-        return new SynthDef("web_glide_lead", out(0.0, sig), out(1.0, sig));
-      };
-
-      let session = null;
-      let lead = null;
-
-      async function start() {
-        // The script opens `Session.nrt(tempo=2.0)` and renders the melody to
-        // a file; this page plays it, so the factory is the live one. The
-        // clock is the session's own -- anchored to its server's sample
-        // counter -- which is the `session.clock` the script plays on, and the
-        // slider below retunes that one.
-        session = (await Session.embed({
-          tempo: Number(el("tempo").value),
-        })).activate();
-
-        await glideLead().send();
-        session.start();
-
-        lead = new Synth("web_glide_lead", {
-          amp: 0.2, freq: midicps(48), detune: -4.0 + 8.0 * Math.random(),
-        });
-        log(`the lead is node ${lead.id}, silent until a gate arrives`);
-
-        el("start").disabled = true;
-        for (const id of ["play", "free", "tempo"]) el(id).disabled = false;
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
       }
 
-      function play() {
-        new Routine(function* () {
+      let take = null;
+
+      // ---- one persistent synth, driven by a routine ----
+      // The lag and the trigger only make sense on a synth that outlives its
+      // notes, which is what a routine gives -- not one `/synth_new` per note.
+      // In an NRT score the control changes must be *timetagged* to spread over
+      // time, so they go out as `sendBundle` (stamped with the routine's logical
+      // beat) rather than the immediate `set`/`free`, which would collapse onto
+      // time 0 and free the synth before it ever sounded.
+      async function renderMelody() {
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await glideLead().send();          // /def_send synth at time 0
+        const lead = new Synth("glide_lead", {
+          amp: 0.2, freq: midicps(48), detune: -4.0 + 8.0 * Math.random(),
+        });
+
+        new Routine(function* sequence() {
           const melody = [48, 55, 60, 63, 60, 55, 51, 48];
           for (let i = 0; i < melody.length; i++) {
             // freq and gate in one timed bundle: the pitch starts gliding and
@@ -115,24 +119,58 @@ than an <code>/synth_new</code> per note.</div>
                 ["/node_set", ["i", lead.id], "detune", ["f", 200.0]],
               ]);
             }
-            yield 0.5;
+            yield 0.5;                     // beats between notes
           }
-          log("melody done — the lead is still there, waiting for a gate");
+          yield 1.0;
+          session.server.sendBundle([["/node_free", ["i", lead.id]]]);
         }).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
       }
 
-      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
-      el("play").onclick = play;
-      el("free").onclick = () => {
-        lead.free();
-        log(`node ${lead.id} freed`);
-        for (const id of ["play", "free"]) el(id).disabled = true;
-      };
-      el("tempo").oninput = () => {
-        const tempo = Number(el("tempo").value);
-        el("tempov").textContent = `${tempo} beats/s`;
-        session?.clock.setTempo(tempo);
-      };
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderMelody();
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        // `boot` adopted this server as the default session's, so the ambient
+        // verb finds it: a buffer is one of the kinds `play` sounds.
+        play(buffer);
+      }
+
+      // The blob a click downloads -- a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "typed_controls.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote typed_controls.wav");
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
     </script>
   </body>
 </html>

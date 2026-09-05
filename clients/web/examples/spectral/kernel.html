@@ -84,9 +84,11 @@ between bins, reading another chain — stays with the dedicated
        * subject here; the same envelope closes the take when the routine
        * drops the gate.
        */
-      const fade = () => envGen(Env.asr(0.02, 1.0, 0.05), {
-        gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
-      });
+      const fade = () => {
+        const gate = control("gate", 1.0);
+        return envGen(Env.asr(0.02, 1.0, 0.05),
+          { gate, doneAction: DoneAction.FREE_SELF });
+      };
 
       /** The unprocessed reference: plain noise on the left channel. */
       const raw = (name = "raw") =>

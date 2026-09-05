@@ -94,9 +94,9 @@ between the stages; the spectral frames are synth-private scratch.</div>
         // noise switched on at full amplitude starts the take on a step, and a
         // `/node_free` mid-sample ends it on one. Both are clicks, and this
         // take is meant to be listened to.
-        const fade = envGen(Env.asr(0.02, 1.0, 0.05), {
-          gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
-        });
+        const gate = control("gate", 1.0);
+        const fade = envGen(Env.asr(0.02, 1.0, 0.05),
+          { gate, doneAction: DoneAction.FREE_SELF });
         return new SynthDef(name, out(0.0, mod.mul(0.05).mul(fade)),
                             out(1.0, sig.mul(0.01).mul(fade)));
       }

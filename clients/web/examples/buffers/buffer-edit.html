@@ -151,6 +151,21 @@ between editing a table and editing a five-minute take.</div>
         yield 0.5;
       }
 
+      /**
+       * Proof the server's own edits landed, read back once the routine is
+       * done -- a read is a round trip, so it belongs here and not inside the
+       * routine, which must never block the clock on a reply.
+       */
+      async function readBack() {
+        const after = await buf.getSamples();
+        const quarter = after.slice(0, FRAMES / 4);
+        const head = Math.max(...[...quarter].map(Math.abs));
+        const peak = Math.max(...[...after].map(Math.abs));
+        log(`after the server's edits: peak ${peak.toFixed(3)}, `
+          + `silenced quarter ${head.toFixed(3)}`);
+        buf.free();
+      }
+
       async function refusal() {
         const tail = await buf.getSamples({ start: FRAMES - 4, count: 100 });
         log(`a read past the end returned ${tail.length} samples, not 100`);
@@ -165,7 +180,12 @@ between editing a table and editing a five-minute take.</div>
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
       $("edits").onclick = () => new Routine(sequence).play();
       $("refusal").onclick = () => refusal().catch((e) => log(`error: ${e}`));
-      $("server").onclick = () => new Routine(editedByTheServer).play();
+      $("server").onclick = () => {
+        new Routine(editedByTheServer).play();
+        // The script sleeps out the routine here and then reads back; a page
+        // waits the same span without blocking anything.
+        setTimeout(() => readBack().catch((e) => log(`error: ${e}`)), 8000);
+      };
     </script>
   </body>
 </html>

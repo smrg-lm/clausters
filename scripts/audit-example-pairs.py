@@ -52,7 +52,10 @@ PARITY_DOC = ROOT / "docs" / "example-parity.md"
 
 # Receivers whose methods belong to the language, never to a client: a call on
 # one of them is dropped before the surface filter is consulted, which is what
-# keeps `Math.round` from colliding with the client's own `round`.
+# keeps `Math.round` from colliding with the client's own `round`. A name the
+# file binds to something one of these built counts too (`_py_platform_locals`),
+# so `rng = random.Random(2026)` makes `rng.uniform(...)` the standard
+# library's and not the client's generator of the same name.
 PLATFORM_RECEIVERS = {
     # JavaScript
     "Math", "Number", "String", "Object", "Array", "JSON", "Date", "console", "document", "window", "navigator", "performance", "globalThis",
@@ -135,7 +138,21 @@ OPERATOR_METHODS = {
 # arguments they were given -- `bus.get()` reads a control bus, `d.get(k)` and
 # `d.get(k, default)` read a mapping. Dropped on both sides, like the operator
 # methods above, so the rule can never invent a difference.
-ARITY_CONTAINER_METHODS = {"get": (1, 2)}
+ARITY_CONTAINER_METHODS = {"get": (1, 2), "map": (1, 1)}
+
+# Methods no client defines on anything: whatever they are called on, they are
+# the language's, so a receiver the scanner cannot name does not save them.
+# (`map` and `at` are *not* here -- a node maps a control to a bus and a moment
+# has an `at` -- which is what the arity table above is for.)
+LANGUAGE_METHODS = {
+    "filter", "join", "slice", "concat", "includes", "split", "match", "count",
+    "sort", "some", "every", "forEach", "reduce", "indexOf", "lastIndexOf",
+    "flatMap", "padStart", "padEnd", "trim", "replace", "repeat", "startsWith",
+    "endsWith", "toLowerCase", "toUpperCase", "charAt", "toFixed", "toString",
+    "then", "catch", "finally", "splice", "subarray", "pop", "shift",
+    "unshift", "strip", "encode", "decode", "lower", "upper", "startswith",
+    "endswith", "readlines", "tobytes",
+}
 
 JS_KEYWORDS = {
     "if", "for", "while", "switch", "catch", "return", "typeof", "new",
@@ -155,7 +172,7 @@ JS_KEYWORDS = {
 def _py_calls(path: Path) -> list[str]:
     """The Python file's call names, in source order, callbacks inlined."""
     tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-    platform = _py_platform_locals(tree)
+    platform, elements = _py_platform_locals(tree)
 
     # Every function bound to a name, with the span of its whole definition.
     funcs: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {}
@@ -202,8 +219,12 @@ def _py_calls(path: Path) -> list[str]:
                     and not (receiver is None and name in PLATFORM_CALLEES)
                     and not (name in OPERATOR_METHODS and argc <= 1)
                     and not (argc in range(*_span(ARITY_CONTAINER_METHODS.get(name))))
+                    and receiver not in platform
+                    and not (receiver is not None and name in LANGUAGE_METHODS)
                     and not (name in PY_CONTAINER_METHODS
-                             and root in platform | PLATFORM_RECEIVERS | PLATFORM_CALLEES)):
+                             and (receiver in elements
+                                  or root in platform | PLATFORM_RECEIVERS
+                                  | PLATFORM_CALLEES))):
                 # Keyed on where the *callee's name* ends, which is the order
                 # the page's tokens read in: `view(canvas())` is view then
                 # canvas, and `Server().boot()` is Server then boot.
@@ -267,24 +288,27 @@ def _py_root(node: ast.expr) -> str | None:
             return None
 
 
-def _py_platform_locals(tree: ast.AST) -> set[str]:
-    """Names the script binds to something the standard library built.
+def _py_platform_locals(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """Names the script binds to something the standard library built, and the
+    names a loop over one of those binds.
 
-    A list, a dict, a `pathlib.Path` -- whatever a later ``.get`` or ``.append``
-    on them is, it is not a client verb.
+    The first set is trusted for **any** method (`rng.uniform(...)` is the
+    standard library's generator, not the client's); the second only for the
+    container methods, because a loop variable is one element of something and
+    what that element *is* the scanner cannot say. Neither is scoped -- a name
+    is a name here -- so the rules stay narrow on purpose: an inference that
+    leaked would silently drop a client call.
     """
     names: set[str] = set()
+    elements: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
-            # What a loop over a standard container yields is one of its
-            # elements, so `box.get(...)` in the body is a dict's `get`.
             iterable = node.iter
-            if (_py_root(iterable) in PLATFORM_RECEIVERS | PLATFORM_CALLEES | names
+            if (_py_root(iterable) in PLATFORM_RECEIVERS | PLATFORM_CALLEES
                     or isinstance(iterable, (ast.List, ast.Tuple, ast.Dict,
                                              ast.ListComp, ast.SetComp))):
-                target = node.target
-                names.update(n.id for n in ast.walk(target)
-                             if isinstance(n, ast.Name))
+                elements.update(n.id for n in ast.walk(node.target)
+                                if isinstance(n, ast.Name))
             continue
         if not isinstance(node, ast.Assign):
             continue
@@ -296,11 +320,9 @@ def _py_platform_locals(tree: ast.AST) -> set[str]:
             names.update(targets)
         elif isinstance(value, ast.Constant) and isinstance(value.value, str):
             names.update(targets)
-        else:
-            root = _py_root(value)
-            if root in PLATFORM_RECEIVERS or root in PLATFORM_CALLEES or root in names:
-                names.update(targets)
-    return names
+        elif _py_root(value) in PLATFORM_RECEIVERS | PLATFORM_CALLEES:
+            names.update(targets)
+    return names, elements
 
 
 def _splice(
@@ -513,6 +535,12 @@ def _js_calls(path: Path) -> list[str]:
             nxt = tokens[idx + 1][1] if idx + 1 < len(tokens) else ""
             prev = tokens[idx - 1][1] if idx else ""
             spread = prev == "." and idx >= 2 and tokens[idx - 2][1] == "."
+            # The name in `function f`, `function* f` or `const f = ...` is
+            # the declaration: neither a call nor a use of one.
+            if (prev in ("function", "const", "let", "var")
+                    or (prev == "*" and idx >= 2
+                        and tokens[idx - 2][1] == "function")):
+                continue
             if (tok in funcs and (prev != "." or spread)
                     and not _js_is_param(tokens, idx)
                     and not any(start <= pos < end and tok in bound
@@ -529,6 +557,7 @@ def _js_calls(path: Path) -> list[str]:
                                  and _js_argc(tokens, idx + 1) <= 1)
                         and not (_js_argc(tokens, idx + 1)
                                  in range(*_span(ARITY_CONTAINER_METHODS.get(tok))))
+                        and not (receiver is not None and tok in LANGUAGE_METHODS)
                         and not (tok in CONTAINER_METHODS
                                  and _js_on_container(tokens, idx, containers))):
                     events.append(((pos, 0), "call", tok))
@@ -581,7 +610,7 @@ def _js_on_container(tokens: list[tuple[int, str]], idx: int, containers: set[st
     if j <= 0 or not _is_ident(tokens[j - 1][1]):
         return False
     previous = tokens[j - 1][1]
-    if previous in _CONTAINER_PRODUCERS:
+    if previous in _CONTAINER_PRODUCERS or previous in containers:
         return True                     # a list, whatever it was made from
     return (previous in CONTAINER_METHODS
             and _js_on_container(tokens, j - 1, containers))
@@ -666,31 +695,54 @@ def _js_argc(tokens: list[tuple[int, str]], paren: int) -> int:
 
 
 def _js_containers(tokens: list[tuple[int, str]]) -> set[str]:
-    """Names the script binds to a list, a string or a standard container."""
-    names: set[str] = {"]", FILL}
+    """Names the script binds to a list, a string or a standard container.
+
+    Every declarator of a statement, not only its first: `const pitches = [],
+    durs = [], amps = []` binds three lists, and a `push` on any of them is the
+    language's, not a tempo map's.
+    """
+    names: set[str] = {"]", FILL} | _CONTAINER_CTORS
     for idx, (_pos, tok) in enumerate(tokens):
-        if tok not in ("const", "let", "var") or idx + 3 >= len(tokens):
-            continue
-        name, eq, first = tokens[idx + 1][1], tokens[idx + 2][1], tokens[idx + 3][1]
-        if eq != "=" or not _is_ident(name):
-            continue
-        if first in ("[", FILL) or first in _CONTAINER_CTORS:
-            names.add(name)
-        elif first == "new" and idx + 4 < len(tokens) and tokens[idx + 4][1] in _CONTAINER_CTORS:
-            names.add(name)
-        elif first in names:
-            names.add(name)
+        # A declaration, or a plain assignment to a name declared elsewhere --
+        # `let samples` at the top and `samples = Array.from(...)` inside a
+        # function is one list, and the audit has no scopes to tell it apart.
+        if tok not in ("const", "let", "var"):
+            if not (_is_ident(tok) and idx + 1 < len(tokens)
+                    and tokens[idx + 1][1] == "="
+                    and (idx == 0 or tokens[idx - 1][1] not in (".", "=", "!", "<", ">"))
+                    and (idx + 2 >= len(tokens) or tokens[idx + 2][1] != "=")):
+                continue
+            j = idx
         else:
-            # A chain that ends in a container method builds a container:
-            # `const tokens = line.split(/\s+/).filter(Boolean)` is a list,
-            # whatever `line` was.
-            end = idx + 3
-            while end < len(tokens) and tokens[end][1] != ";":
-                if (tokens[end][1] in _CONTAINER_PRODUCERS
-                        and tokens[end - 1][1] == "."):
-                    names.add(name)
+            j = idx + 1
+        depth = 0
+        while j + 1 < len(tokens) and tokens[j][1] != ";":
+            here = tokens[j][1]
+            if here in "([{":
+                depth += 1
+            elif here in ")]}":
+                depth -= 1
+                if depth < 0:
                     break
-                end += 1
+            elif depth == 0 and _is_ident(here) and tokens[j + 1][1] == "=":
+                first = tokens[j + 2][1] if j + 2 < len(tokens) else ""
+                second = tokens[j + 3][1] if j + 3 < len(tokens) else ""
+                if (first in ("[", FILL) or first in _CONTAINER_CTORS
+                        or first in names
+                        or (first == "new" and second in _CONTAINER_CTORS)):
+                    names.add(here)
+                else:
+                    # A chain that ends in a container method builds a
+                    # container: `line.split(...).filter(Boolean)` is a list,
+                    # whatever `line` was.
+                    k = j + 2
+                    while k < len(tokens) and tokens[k][1] not in (";", ","):
+                        if (tokens[k][1] in _CONTAINER_PRODUCERS
+                                and tokens[k - 1][1] == "."):
+                            names.add(here)
+                            break
+                        k += 1
+            j += 1
     return names
 
 

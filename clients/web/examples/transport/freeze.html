@@ -137,9 +137,14 @@ different pieces.</div>
         // freezes the subtree and its transport clock.
         session.clock.freeze();
         await session.server.transportStop();
+        log("FREEZE (3 s of silence) - the state is held, not discarded");
         const held = (await session.server.transportState()).transportSample;
-        log(`FREEZE - transport clock held at ${held} samples, `
-          + `beat ${session.clock.beats().toFixed(3)} held with it`);
+        log(`  transport clock held at ${held} samples`);
+        // The script sleeps three seconds here and reads the same number back.
+        setTimeout(async () => {
+          const still = (await session.server.transportState()).transportSample;
+          log(`  still ${still} - it did not advance`);
+        }, 3000);
         $("pause").disabled = true;
         $("resume").disabled = false;
       }
@@ -149,8 +154,7 @@ different pieces.</div>
         // start.
         await session.server.transportPlay();
         session.clock.thaw();
-        log(`RESUME - the same texture carries on mid-gesture, from beat `
-          + `${session.clock.beats().toFixed(3)}`);
+        log("RESUME - the same texture carries on mid-gesture");
         $("resume").disabled = true;
         $("pause").disabled = false;
       }
