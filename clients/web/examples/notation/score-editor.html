@@ -100,8 +100,7 @@ server process, no socket.</div>
     -->
     <script type="module">
       import {
-        Server,
-        Event, GuiHost, gui, seq, TempoClock,
+        Event, Session, gui, play, seq,
       } from "../../dist/index.js";
 
       const { notation } = gui;
@@ -405,8 +404,8 @@ B c d e | f2 e d | c B A B | G4 |
             + (entry.tie ? ", tied" : ""));
           for (const note of notation.toNotes(score.sheet())) {
             if (note.id === selected.item) {
-              new Event({ midinote: note.pitch, dur: note.sustain, amp: 0.15 })
-                .play(server);
+              play(new Event({ midinote: note.pitch, dur: note.sustain, amp: 0.15 }),
+                   { server });
               break;
             }
           }
@@ -443,15 +442,6 @@ B c d e | f2 e d | c B A B | G4 |
 
       async function run() {
         el("start").disabled = true;
-        server = await new Server().boot();
-        raw = server.engine;
-        // The rate the beats->samples conversion is expressed in, asked of the
-        // running engine -- the same call, in the same place, as the script's
-        // `query_info().nominal_sample_rate`. The audio context's own rate is
-        // the same number reached by a different door, which is how this pair
-        // came to ask one question two ways.
-        SR = (await server.queryInfo()).nominalSampleRate;
-        host = await new GuiHost({ engine: raw }).boot();
 
         // Opening the score is the one asynchronous step of the layer, and only
         // because the engraver module is fetched the first time a page engraves.
@@ -487,10 +477,21 @@ B c d e | f2 e d | c B A B | G4 |
         score.apply({ op: "set_marks", id: top[0], marks: notation.marks({ dynamic: "p" }) });
         score.apply({ op: "set_marks", id: top[8], marks: notation.marks({ dynamic: "f" }) });
 
-        engraved = gui.source(undefined, { displayList: score.displayList() });
-        win = await scene(engraved, SR).open(el("stage"));
+        // One session: it owns the server, the clock and the GUI host.
+        const session = await Session.embed({ tempo: TEMPO });
+        server = session.server;
+        // `queryInfo` rather than the launch options: it is the one spelling
+        // both clients have, so this page and its script twin ask the same
+        // question.
+        SR = (await server.queryInfo()).nominalSampleRate;
+        host = await session.gui();
+        const dl = score.displayList();
+        engraved = gui.source(undefined, { displayList: dl });
 
-        clock = new TempoClock(TEMPO).start();
+        win = await scene(engraved, SR).open(el("stage"));
+        session.start();
+        clock = session.clock;
+
         transport = notation.transport(host, win.widget("score").id, {
           source: pass, tempo: TEMPO, extent,
           sampleRate: SR,
@@ -499,7 +500,6 @@ B c d e | f2 e d | c B A B | G4 |
         // A pass ends by itself: the transport asks about the end of its own
         // pass on the host's application clock, with no interval here.
 
-        win.widget("score").onEvent(onScore);
         win.widget("play").onClick(() => transport.play(server));
         win.widget("stop").onClick(() => transport.stop());
         win.widget("up").onClick(() => edit("move_steps", { steps: 1 }));
@@ -520,6 +520,8 @@ B c d e | f2 e d | c B A B | G4 |
         win.widget("delete").onClick(() => edit("delete"));
         win.widget("undo").onClick(step("undo", () => score.undo()));
         win.widget("redo").onClick(step("redo", () => score.redo()));
+        win.widget("score").onEvent(onScore);
+        win.onClosed(() => log("window closed"));
         log("click a note to select and hear it, drag one up or down the staff, "
           + "press empty staff to write a quarter; the buttons act on the "
           + "selection");

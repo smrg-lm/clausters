@@ -61,191 +61,265 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of clients/python/examples/notation/score.py, call for
+      call: the same six bars typed in ABC, the same transport bar over the
+      engraved page, and the same two edit-backs -- a click that selects and
+      sounds a note, a drag that transposes it and re-engraves.
+
+      The one argument the script has no counterpart for is where a page draws:
+      the view opens into `#stage` and its canvas follows that box.
+
+      Serve clients/web (the package root) and open
+      /examples/notation/score.html. Build it first: ./build.sh
+    -->
     <script type="module">
-      import {
-        Server,
-        Event, GuiHost, gui, seq, TempoClock,
-      } from "../../dist/index.js";
+      import { Event, Session, gui, play, seq } from "../../dist/index.js";
 
       const { notation } = gui;
-      const el = (id) => document.getElementById(id);
-      const log = (line) => { el("log").textContent += line + "\n"; };
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
 
-      const TEMPO = 2.0;     // beats per second (120 bpm), so a beat is 500 ms
+      // Six bars in ABC -- the readable way to type a score by hand; verovio
+      // reads MEI and MusicXML through the same loader, which is what a score
+      // usually arrives as. The header is the whole grammar you need here: `M:`
+      // the meter, `L:` the length a bare letter means (a quarter), `K:` the key
+      // (G, so every F is sharp). Then a letter is a note (`C` is middle C, `c`
+      // the one above), `/` halves it and a digit multiplies it, `[CEG]` is a
+      // chord, and `|` bars it. Each bar fills its 4/4 exactly -- verovio drops
+      // what overflows a measure, so an over-full bar would be drawn short and
+      // sound short.
+      const PHRASE = `X:1
+T:Six bars
+M:4/4
+L:1/4
+K:G
+C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
+`;
 
-      let server, win = null;
-      let score = null;      // the open document: engraved, editable, undoable
-      let byId = new Map();  // MEI id -> the note it draws, rebuilt per page
-      let dl = null;         // the page as it stands, what a pass is built from
-      let engraved = null;   // the same page as a `source`, so an edit reaches
-                             // the definition and every window at once
-      let clock = null, transport = null, selected = null;
-      let host = null, raw = null, SR = 0;   // the page's GuiHost, the engine it draws over, its rate
+      // One beat per second, so the engraving's milliseconds are beats/1000:
+      // score time and clock time become the same axis, which is what lets one
+      // anchor tie the cursor to the sound.
+      const TEMPO = 1.0;
 
-      // The melody, written as the client's own events — the inverse
-      // direction, data to score: `fromNotes` reduces them to a voice and the
-      // shared encoder lays that out into barred, tied MEI.
-      const MELODY = [
-        [67, 1.0], [69, 0.5], [71, 0.5], [72, 1.0], [71, 1.0],
-        [69, 1.5], [67, 0.5], [64, 2.0],
-        [65, 1.0], [67, 1.0], [69, 1.0], [67, 2.0],
-      ].map(([midinote, dur]) => new Event({ midinote, dur }));
-
-      // ---- the window ----
-      // `scoreView` wraps the page in a scroll sized to it, so a multi-system
-      // score scrolls down the systems and the wheel zooms into a dense bar.
-      // `editable` is what opts the page into pitch dragging; without it the
-      // view is read-only, which is what a plain plot of a score wants.
-      // `engraved` is a `source` holding the display list, not the list itself:
-      // an edit re-engraves the score and calls `engraved.set(...)`, which
-      // reaches this definition *and* every window drawing it. Handed the raw
-      // object the view would draw the same page and the definition would go
-      // stale the first time a note moved.
-      const scene = (engraved) => gui.view(
-        { title: "score", layout: "col", margin: 8.0, gap: 8.0 },
+      /**
+       * A transport bar over a scrollable, zoomable view of the engraved score.
+       *
+       * Every widget is *named* -- the seven transport buttons and the `score`
+       * page -- so the page drives each by name and never picks an id. The bar
+       * is chrome: a fixed height, so the page takes all the rest however the
+       * window is resized.
+       *
+       * `engraved` is a `source` holding the display list, not the list itself:
+       * an edit re-engraves the score and calls `engraved.set(...)`, which
+       * reaches this definition *and* every window drawing it. Handed the raw
+       * object the view would draw the same page and the definition would go
+       * stale the first time a note moved.
+       */
+      const scene = (engraved, sampleRate) => gui.view(
+        { title: "Engraved score (verovio -> GPU)", w: 920, h: 420, layout: "col" },
         gui.panel(
-          { layout: "row", h: 34, gap: 8.0 },
+          { layout: "row", h: 34.0 },
+          gui.button({ name: "rewind", label: "|<" }),
           gui.button({ name: "play", label: "play" }),
           gui.button({ name: "pause", label: "pause" }),
           gui.button({ name: "stop", label: "stop" }),
-          gui.button({ name: "rewind", label: "rewind" }),
           gui.button({ name: "fromNote", label: "from note" }),
           gui.button({ name: "undo", label: "undo" }),
           gui.button({ name: "redo", label: "redo" }),
         ),
         notation.scoreView(engraved, {
-          name: "page", editable: true, width: 1000.0,
+          name: "score", width: 880.0, sampleRate, editable: true,
         }),
       );
 
-      // Every edit ends here: re-engrave, replace the drawn page in place and
-      // rebuild the id index. The host keeps its own chrome across the swap,
-      // which is what leaves the edited note selected.
-      const refresh = () => {
-        dl = score.displayList();
-        // `engraved.set` is the whole of it: the source rewrites the definition
-        // and pushes the drawing layers to every window already showing them,
-        // so a second window (or a re-open of this one) shows the score as
-        // edited rather than as engraved.
-        engraved.set(dl);
-        byId = new Map(dl.notes.map((note) => [note.id, note]));
-      };
-
-      const sound = (note) => {
-        new Event({
-          midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.15,
-        }).play(server);
-      };
-
-      // One playback pass: the engraved notes on a fresh Timeline, played from
-      // beat `at`. Built per play, so a note transposed meanwhile simply sounds
-      // at the pitch it now has. Score milliseconds are beats/1000 at this
-      // tempo, which is the whole of the conversion.
-      const pass = (at) => {
+      /**
+       * Place the engraved notes on a `Timeline` (see `TEMPO`: score ms are
+       * beats/1000). Built per play, so a transposed note is played at the
+       * pitch it now has.
+       */
+      function phraseTimeline(notes, clock, server) {
         const timeline = new seq.Timeline();
-        for (const note of dl.notes) {
+        for (const note of notes) {
           timeline.add(note.t / 1000.0, new Event({
             midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.12,
           }));
         }
-        return new seq.Playhead(timeline, clock, server).play({ at });
-      };
-
-      // Where the piece ends, in beats: the last note's onset plus its length.
-      // The transport parks the cursor there when a pass runs out.
-      const extent = () => {
-        const last = dl.notes[dl.notes.length - 1];
-        return last ? (last.t + last.dur) / 1000.0 : 0.0;
-      };
-
-      const onScore = (tag, ...payload) => {
-        if (tag === "element" && payload.length) {
-          selected = payload[0] || null;
-          const note = byId.get(payload[0]);
-          if (note === undefined) return log(`  clicked ${payload[0] || "(blank paper)"}`);
-          log(`  clicked note ${payload[0]}: MIDI ${note.pitch} at ${note.t.toFixed(0)} ms`);
-          sound(note);
-        } else if (tag === "transpose" && payload.length >= 2) {
-          // The host drew the drag; this side makes it true. The payload is a
-          // position and not a displacement, which is what makes it safe to
-          // arrive late or twice: the step count is computed against the
-          // engraving this side has right now.
-          const [element, position] = [payload[0], Math.round(payload[1])];
-          if (!score.transposeTo(element, position)) {
-            return log(`  refused to transpose ${element}`);
-          }
-          refresh();
-          const note = byId.get(element);
-          log(`  moved ${element} to staff position ${position}`
-            + (note ? ` -> MIDI ${note.pitch}` : ""));
-          if (note) sound(note);
-        }
-      };
-
-      const step = (name, act) => () => {
-        if (act()) { refresh(); log(`  ${name}`); }
-        else log(`  nothing to ${name}`);
-      };
+        return timeline;
+      }
 
       async function run() {
-        el("start").disabled = true;
-        // The page sounds and draws, so the host goes over the engine this
-        // server brought up rather than one of its own.
-        server = await new Server().boot();
-        raw = server.engine;
-        // The rate the beats->samples conversion is expressed in, asked of the
-        // running engine -- the same call, in the same place, as the script's
-        // `query_info().nominal_sample_rate`. The audio context's own rate is
-        // the same number reached by a different door, which is how this pair
-        // came to ask one question two ways.
-        SR = (await server.queryInfo()).nominalSampleRate;
-        // The page's host, and the ambient one from here on.
-        host = await new GuiHost({ engine: raw }).boot();
+        $("start").disabled = true;
 
-        // Opening the score is the one asynchronous step of the layer, and
-        // only because the engraver module is fetched the first time a page
-        // engraves. Everything after it — drawing, editing, undo — is direct.
+        // `Score.open` rather than `engrave`: it keeps the document open, so
+        // the page the window shows can be edited and re-engraved against it (a
+        // narrow page, so the phrase wraps into a few systems and the view
+        // scrolls).
         log("loading the engraver …");
-        score = await notation.Score.fromNotes(MELODY, { meter: "4/4", key: "G" });
-        log(`verovio ${score.engraverVersion()}`);
+        const score = await notation.Score.open(PHRASE, { pageWidth: 1100 });
+        let dl = score.displayList();
+        log(`engraved: ${dl.glyphs.length} glyph outlines, `
+          + `${dl.prims.length} primitives, ${dl.cursors.length} cursor stops, `
+          + `${dl.notes.length} notes, page ${JSON.stringify(dl.vb)}`);
 
-        dl = score.displayList();
-        byId = new Map(dl.notes.map((note) => [note.id, note]));
-        engraved = gui.source(undefined, { displayList: dl });
-        // Where this page draws — the one argument the script has none of.
-        win = await scene(engraved).open(el("stage"));
+        // The session is the ambient one for the whole block, so a bare `play`
+        // below resolves to its server and clock.
+        const session = await Session.embed({ tempo: TEMPO });
+        const server = session.server;
+        // `queryInfo` rather than the launch options: it is the one spelling
+        // both clients have, so this page and its script twin ask the same
+        // question.
+        const sr = (await server.queryInfo()).nominalSampleRate;
+        const host = await session.gui();
+        const engraved = gui.source(undefined, { displayList: dl });
+        const win = await scene(engraved, sr).open($("stage"));
 
-        // The clock the pass runs on, and the transport over the page's widget.
-        clock = new TempoClock(TEMPO).start();
-        transport = notation.transport(host, win.widget("page").id, {
-          // The rate the anchor's beats→samples conversion is expressed in
-          // is the engine's own — in a page, its audio context's.
-          source: pass, tempo: TEMPO, extent,
-          sampleRate: SR,
+        session.start();                 // the clock runs the routines
+
+        // Both round trips run off the same id: the widget reports the MEI id
+        // under the cursor, and that id indexes this page's own engraving.
+        let byId = new Map(dl.notes.map((note) => [note.id, note]));
+        let selected = null;
+
+        /**
+         * One playback pass: the engraved notes on a fresh `Timeline`, played
+         * from beat `at`. The transport calls this on every play, so a note
+         * transposed meanwhile simply sounds at the pitch it now has.
+         */
+        const passFrom = (at) => new seq.Playhead(
+          phraseTimeline(dl.notes, session.clock, server), session.clock, server,
+        ).play({ at });
+
+        /**
+         * Where the piece ends, in beats: the last note's onset plus its
+         * length. The transport parks the cursor there when a pass runs out.
+         */
+        const phraseEnd = () => {
+          const last = dl.notes[dl.notes.length - 1];
+          return (last.t + last.dur) / 1000.0;
+        };
+
+        // The transport is the shared one (`gui.Transport`), the same object
+        // the multitrack editor drives its lanes with; `notation.transport`
+        // only fills in the page's unit -- a score cursor is placed in score
+        // milliseconds, not samples.
+        const transport = notation.transport(host, win.widget("score").id, {
+          source: passFrom, tempo: TEMPO, sampleRate: sr, extent: phraseEnd,
         });
-        transport.locate(0.0);        // the cursor waits at the top
-        // A pass ends by itself, and nothing here has to notice: the transport
-        // asks about it on the host's own application clock.
+        transport.locate(0.0);           // the cursor waits at the top
+        log("press play -- click a note to hear it and to select it, drag one "
+          + "up or down to transpose it, 'from note' plays from the selected "
+          + "one, undo/redo walk the edits; close the window to stop");
 
-        win.widget("page").onEvent(onScore);
-        // Each button acts on its click -- the press completed on the button,
-        // so sliding off before letting go cancels it.
+        /**
+         * Play from the selected note: the click round trip put its id in
+         * `selected`, and this page's own engraving says when it sounds.
+         */
+        const fromNote = () => {
+          const note = byId.get(selected);
+          if (note === undefined) return log("  no note selected: click one first");
+          transport.play(server, { at: note.t / 1000.0 });
+        };
+
+        /**
+         * Re-engrave the score and replace the drawn page in place, rebuilding
+         * the id index. Every edit ends here -- a drag, an undo, a redo -- since
+         * all the host needs is the new display list; the host keeps the
+         * playhead and selection across the swap.
+         *
+         * `engraved.set` is the whole of it: the source rewrites the definition
+         * and pushes the drawing layers to every window already showing them,
+         * so a second window (or a re-open of this one) shows the score as
+         * edited rather than as engraved.
+         */
+        const refreshPage = () => {
+          dl = score.displayList();
+          engraved.set(dl);
+          byId = new Map(dl.notes.map((note) => [note.id, note]));
+        };
+
+        /**
+         * Step back one edit. `Score` owns the undo stack (a stack of MEI
+         * snapshots) -- the host holds no score, so undo is the client's, and
+         * it answers false rather than throwing when there is nothing to undo.
+         */
+        const undo = () => {
+          if (score.undo()) { refreshPage(); log("  undo"); }
+          else log("  nothing to undo");
+        };
+
+        const redo = () => {
+          if (score.redo()) { refreshPage(); log("  redo"); }
+          else log("  nothing to redo");
+        };
+
+        /**
+         * The page's two edit-backs, wired to the `score` handle. A click
+         * reports the MEI id under the cursor (`"element"`) -- this side
+         * selects it and sounds it; a drag reports a `"transpose"` naming the
+         * staff position reached -- this side makes it true, re-engraves and
+         * sends the page back. The handlers read `dl`/`byId` when they run, so
+         * an edit made meanwhile is simply played.
+         */
+        const onScore = (tag, ...payload) => {
+          if (tag === "element" && payload.length) {
+            selected = payload[0] || null;
+            const note = byId.get(payload[0]);
+            if (note === undefined) {
+              return log(`  clicked ${payload[0] || "(blank paper)"}`);
+            }
+            log(`  clicked note ${payload[0]}: MIDI ${note.pitch} `
+              + `at ${note.t.toFixed(0)} ms`);
+            play(new Event({
+              midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.15,
+            }), { server });
+          } else if (tag === "transpose" && payload.length >= 2) {
+            // The host drew the drag; this side makes it true -- move the note
+            // **to** the staff position the payload names, re-engrave, and send
+            // the page back, which is what retires the preview. The ids survive
+            // the edit, so `byId` keeps indexing the same notes (at their new
+            // pitches) and the note stays selected.
+            //
+            // The payload is a position and not a displacement, which is what
+            // makes it safe to arrive late or twice: `transposeTo` computes the
+            // step count against the engraving it has right now.
+            const element = payload[0];
+            const position = Math.round(Number(payload[1]));
+            if (!score.transposeTo(element, position)) {
+              return log(`  refused to transpose ${element}: this verovio has `
+                + "no working editor");
+            }
+            refreshPage();
+            const note = byId.get(element);
+            log(`  moved ${element} to staff position ${position}`
+              + (note ? ` -> MIDI ${note.pitch}` : ""));
+            if (note) {
+              play(new Event({
+                midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.15,
+              }), { server });
+            }
+          }
+        };
+
+        // Wire every widget by name: each button acts on its **click** -- the
+        // press completed on the button, so sliding off before letting go
+        // cancels it -- and `locate` doubles as rewind, so playing it starts a
+        // fresh pass from the top. The score page answers its own edit-backs.
         win.widget("play").onClick(() => transport.play(server));
         win.widget("pause").onClick(() => transport.pause());
         win.widget("stop").onClick(() => transport.stop());
         win.widget("rewind").onClick(() => transport.locate(0.0));
-        win.widget("fromNote").onClick(() => {
-          const note = byId.get(selected);
-          if (!note) return log("  no note selected: click one first");
-          transport.play(server, { at: note.t / 1000.0 });
-        });
-        win.widget("undo").onClick(step("undo", () => score.undo()));
-        win.widget("redo").onClick(step("redo", () => score.redo()));
-        log(`${dl.notes.length} notes engraved — press play, click a note to `
-          + "hear it and select it, drag one up or down to transpose");
+        win.widget("fromNote").onClick(fromNote);
+        win.widget("undo").onClick(undo);
+        win.widget("redo").onClick(redo);
+        win.widget("score").onEvent(onScore);
+        win.onClosed(() => log("window closed"));
       }
 
-      el("start").onclick = () => run().catch((error) => log(`error: ${error}`));
+      $("start").onclick = () => run().catch((error) => log(`error: ${error}`));
     </script>
   </body>
 </html>

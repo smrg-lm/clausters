@@ -154,7 +154,7 @@ LANGUAGE_METHODS = {
     "endsWith", "toLowerCase", "toUpperCase", "charAt", "toFixed", "toString",
     "then", "catch", "finally", "splice", "subarray", "pop", "shift",
     "unshift", "strip", "encode", "decode", "lower", "upper", "startswith",
-    "endswith", "readlines", "tobytes",
+    "endswith", "readlines", "tobytes", "items",
 }
 
 JS_KEYWORDS = {
@@ -209,6 +209,26 @@ def _py_calls(path: Path) -> list[str]:
     # module-level function is not read as a reference to it.
     shadowed = []
     for node in ast.walk(tree):
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith,
+                             ast.ListComp, ast.SetComp, ast.DictComp,
+                             ast.GeneratorExp)):
+            # A loop variable or a `with ... as` name binds inside its own
+            # statement: `[item["id"] for item in ...]` is not the file's
+            # `def item()`.
+            targets = []
+            if isinstance(node, (ast.For, ast.AsyncFor)):
+                targets = [node.target]
+            elif isinstance(node, (ast.With, ast.AsyncWith)):
+                targets = [i.optional_vars for i in node.items if i.optional_vars]
+            else:
+                targets = [gen.target for gen in node.generators]
+            bound = {n.id for target in targets for n in ast.walk(target)
+                     if isinstance(n, ast.Name)}
+            if bound:
+                shadowed.append(((node.lineno, node.col_offset),
+                                 (node.end_lineno or node.lineno,
+                                  node.end_col_offset or 0), bound))
+            continue
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             args = node.args
             bound = {a.arg for a in
