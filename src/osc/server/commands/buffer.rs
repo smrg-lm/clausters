@@ -92,6 +92,42 @@ impl OscServer {
         Ok(())
     }
 
+    /// **Tells every picture but the writer's that a span went stale**
+    /// (`/buffer_touched bufnum channel start frames`).
+    ///
+    /// The span and not the samples: whoever cares re-reads it. `channel` is
+    /// `-1` because a write that arrives as samples has already been resolved
+    /// to frames by the time it lands -- a reader re-reads every channel of
+    /// the span, which is what it would have done for a strided write anyway.
+    ///
+    /// The writer is left out: it knows, and telling it would make an editor
+    /// re-read what it just sent.
+    pub(in crate::osc::server) fn announce_write(
+        &mut self,
+        index: i32,
+        start: usize,
+        frames: usize,
+        from: ClientId,
+    ) {
+        let (Ok(start), Ok(frames)) = (i32::try_from(start), i32::try_from(frames)) else {
+            return;
+        };
+        if frames <= 0 {
+            return;
+        }
+        let payload = vec![
+            OscType::Int(index),
+            OscType::Int(-1),
+            OscType::Int(start),
+            OscType::Int(frames),
+        ];
+        for client in self.clients.clone() {
+            if client != from {
+                self.reply(client, "/buffer_touched", payload.clone());
+            }
+        }
+    }
+
     /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
     /// (scsynth pairs this with `DiskIn`/`DiskOut`). Clausters has no streaming
     /// buffers yet — every `/buffer_read`/`/buffer_write` reads or writes the whole file

@@ -764,11 +764,12 @@ impl App {
     /// a page) would have to fetch the span back, which is the fetch machine's
     /// work and not this one's.
     fn resummarize(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) -> usize {
-        let (Ok(channel), Ok(start), Ok(frames)) = (
-            usize::try_from(channel),
-            u64::try_from(start),
-            usize::try_from(frames),
-        ) else {
+        // A channel of -1 is every channel of the span: what a write that
+        // arrived as samples announces, since it was resolved to frames before
+        // it landed. A peer that mapped the buffer names the channel it stored
+        // into, and that one is refreshed alone.
+        let channel = usize::try_from(channel).ok();
+        let (Ok(start), Ok(frames)) = (u64::try_from(start), usize::try_from(frames)) else {
             return 0;
         };
         let mut touched = Vec::new();

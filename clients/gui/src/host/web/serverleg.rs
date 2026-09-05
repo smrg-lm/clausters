@@ -279,7 +279,9 @@ impl WebApp {
                             refreshed += crate::host::refresh_buffer_views(
                                 tree,
                                 *bufnum,
-                                (*channel).max(0) as usize,
+                                // -1 is every channel of the span: what a
+                                // write that arrived as samples announces.
+                                usize::try_from(*channel).ok(),
                                 (*start).max(0) as u64,
                                 (*frames).max(0) as usize,
                             );

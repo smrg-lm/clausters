@@ -213,9 +213,19 @@ impl OscServer {
                 // **A write in place, and the span it covered.** Nothing is
                 // installed -- the cells the engine reads are already the new
                 // ones -- so all this owes is the summary over them: the
-                // overview beside the region follows the span, and every
-                // *client* holding a picture is told by whoever asked for the
-                // write, exactly as a peer's own edit is announced.
+                // overview beside the region follows the span, and everyone
+                // holding a picture of these samples is told which span went
+                // stale.
+                //
+                // That announcement is the server's, not the writer's, and the
+                // reason is that a picture cannot tell the two kinds of write
+                // apart. A peer with the buffer mapped stores into the cells
+                // and says so (`/buffer_touch`); a client with no mapping --
+                // every page, and every script editing a take over a socket --
+                // sends the samples instead, and a picture drawn by some
+                // *other* client had no way to hear about it. Leaving that to
+                // whoever wrote means every client has to remember, and the
+                // one that forgets shows a stale take that sounds edited.
                 NrtAction::Wrote { start, frames } => {
                     if let Some(buffer) = self
                         .translator
@@ -225,6 +235,7 @@ impl OscServer {
                     {
                         self.overviews.wrote(index, &buffer, start, frames);
                     }
+                    self.announce_write(result.index, start, frames, result.client);
                     None
                 }
                 NrtAction::None => None,

@@ -2670,14 +2670,14 @@ fn element_with_samples(widget: &widget::Widget) -> Option<&dyn widget::element:
 pub(crate) fn refresh_buffer_views(
     widget: &mut widget::Widget,
     bufnum: i32,
-    channel: usize,
+    channel: Option<usize>,
     start: u64,
     frames: usize,
 ) -> usize {
     let mut refreshed = 0;
     if let Some(el) = widget.kind.as_element_mut()
         && el.source_buffer() == Some(bufnum)
-        && el.resummarize(Some(channel), start, frames)
+        && el.resummarize(channel, start, frames)
     {
         refreshed += 1;
     }
