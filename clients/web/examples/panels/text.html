@@ -61,7 +61,13 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui } from "../../dist/index.js";
+      import { GuiHost, gui, loadCore } from "../../dist/index.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand, so a page that boots a host of
+      // its own -- with no `Session` bringing the core along -- asks for it
+      // first. In Python the same code is already in the process.
+      await loadCore();
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

@@ -56,7 +56,13 @@ just scans forward.</div>
       /examples/transport/timeline.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, seq } from "../../dist/index.js";
+      import { Event, Session, loadCore, seq } from "../../dist/index.js";
+
+      // The one line the script has no counterpart for: a timeline is built
+      // on the core's scheduler, and here the core is wasm fetched on demand
+      // -- so it comes before the first call into it, and this program builds
+      // its timeline before it opens a session.
+      await loadCore();
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

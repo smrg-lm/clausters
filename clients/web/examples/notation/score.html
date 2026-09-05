@@ -74,7 +74,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       /examples/notation/score.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, play, seq } from "../../dist/index.js";
+      import { Event, Session, gui, loadCore, play, seq }
+        from "../../dist/index.js";
 
       const { notation } = gui;
       const $ = (id) => document.getElementById(id);
@@ -153,6 +154,10 @@ C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
 
       async function run() {
         $("start").disabled = true;
+        // The core carries the model, and in a page it is a wasm module that
+        // has to be there before the first call into it -- the one line a
+        // script does not need, because ctypes loads its library on first use.
+        await loadCore();
 
         // `Score.open` rather than `engrave`: it keeps the document open, so
         // the page the window shows can be edited and re-engraved against it (a

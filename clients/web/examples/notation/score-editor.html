@@ -100,7 +100,7 @@ server process, no socket.</div>
     -->
     <script type="module">
       import {
-        Event, Session, gui, play, seq,
+        Event, Session, gui, loadCore, play, seq,
       } from "../../dist/index.js";
 
       const { notation } = gui;
@@ -442,6 +442,10 @@ B c d e | f2 e d | c B A B | G4 |
 
       async function run() {
         el("start").disabled = true;
+        // The core carries the model, and in a page it is a wasm module that
+        // has to be there before the first call into it -- the one line a
+        // script does not need, because ctypes loads its library on first use.
+        await loadCore();
 
         // Opening the score is the one asynchronous step of the layer, and only
         // because the engraver module is fetched the first time a page engraves.
