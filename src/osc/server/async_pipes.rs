@@ -90,10 +90,20 @@ impl OscServer {
         // temp directory instead, so replaying the same expression still skips
         // the recompile without leaving a record behind.
         let cache = if defstore::is_ephemeral(&name) {
-            let dir = defstore::ephemeral_dir();
-            std::fs::create_dir_all(&dir)
-                .is_ok()
-                .then(|| Box::new(CacheJob { dir, restore: None }))
+            // A page has no filesystem to cache into, and asking it for a temp
+            // directory is a panic rather than an empty answer -- so the
+            // in-tab engine simply compiles an ephemeral def every time.
+            #[cfg(target_arch = "wasm32")]
+            {
+                None::<Box<CacheJob>>
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let dir = defstore::ephemeral_dir();
+                std::fs::create_dir_all(&dir)
+                    .is_ok()
+                    .then(|| Box::new(CacheJob { dir, restore: None }))
+            }
         } else {
             self.store.as_ref().map(|s| {
                 Box::new(CacheJob {

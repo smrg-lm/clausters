@@ -2113,6 +2113,21 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A page's engine died on any ephemeral Faust def** *(found 2026-09-05 by
+  driving the web examples in a browser; fixed the same day)*. `play(expr)`
+  builds a def named `tmp_…`, and `/def_send faust` sends an ephemeral def's
+  bitcode speed-cache to the OS temp directory rather than to the store
+  (`handle_def_send_faust`, `defstore::ephemeral_dir`). On wasm
+  `std::env::temp_dir()` does not return an empty answer — it **panics**, and a
+  panic in a release wasm build is `unreachable`, so the whole in-tab engine
+  stopped answering: the page that played one Faust box expression lost its
+  server, and every later command timed out with nothing said about why. The
+  cache is a speed optimization and a page has no filesystem to keep one in, so
+  that branch is now `#[cfg(not(target_arch = "wasm32"))]` and a page recompiles
+  the expression each time. The rule this belongs to is the standing one: the
+  host and the server are the same Rust compiled twice, so a behavior that
+  differs between the two builds is a defect, never the platform's quirk.
+
 - ✅ **Three quarters of the wheel was an LLVM nobody called**
   *(found and fixed 2026-08-27, from a question about artifact weight)*. The
   wheel bundled libfaust plus the distro's monolithic `libLLVM.so` — 137 MB of
