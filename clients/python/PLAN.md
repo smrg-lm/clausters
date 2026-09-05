@@ -1325,6 +1325,43 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **A composed signal window goes mute after the multitrack redefines**
+  *(found 2026-09-04, by hand, running `examples/editors/composed.py` in the
+  `C53` acceptance pass; not a regression -- nothing in the event-loop work
+  touches this path)*. Press the example's `draw` button, draw on the take, go
+  back to `select`, edit the curve in the multitrack, walk the history, drag a
+  clip, then press `draw` again: the drag no longer draws.
+
+  **What it is not.** The button's label still flips, so the click arrives and
+  the handler runs to the end. The `gestures` prop it sets is *kept* by the
+  host -- measured, with a `/gui_query` before and after an `adopt` and an
+  `undo`, both answering `{"drag": "draw"}`. The widget ids are stable
+  (`View.widgets` is rebuilt only by `draw`, and a plain `Editor` never
+  redefines), and `FormEditor.composed` only ever grows, so `composed[-1]` is
+  the same editor throughout.
+
+  **What it is.** Traced with a subscription printing every inbound event, the
+  waveform widget **stops emitting anything at all** -- not a refused stroke, no
+  `selection`, no `view`. The last events from it are before the multitrack's
+  structural edits (`clip`, `layer`), which are what make a `FormEditor`
+  redefine *its own* window through `GuiHost.define`:
+
+      1010 view x35, 1010 'draw'      <- drawing worked here
+      1010 selection x32
+      1002 'layer', 1002 'points'     <- the curve, in the other window
+      1004 undo x4, redo x4
+      1000 'clip', 1002 'layer', 1002 'clip'
+      1015 press/release/click        <- `draw` pressed again
+      1000 'clip'                     <- and 1010 never speaks again
+
+  **Where to look first**, and it is one query away: whether the host still has
+  a widget under that id after the redefine (`GuiHost.query(1010)` answering an
+  empty type would say the id was recycled out from under the composed window).
+  One thing makes that plausible in this example specifically: the **same
+  `extra` panel object** is handed to both windows (`extra=[bar]` on the
+  `FormEditor`, `extra=self.extra` on the editor `open_signal` composes), so one
+  tree is stamped twice and a redefine re-stamps it.
+
 - ✅ **Re-cueing a pass makes the engine reject the notes already in flight**
   *(found 2026-09-04, in the log of a by-hand run of
   `examples/editors/multitrack.py` during the `C53` acceptance pass; not a
