@@ -339,10 +339,9 @@ export class Server {
 
     /**
      * Whether {@link Server.boot} brought this server up — ownership, the way
-     * the reference client remembers the process it started. `close` leaves a
-     * booted server standing exactly as it leaves an attached one; what reads
-     * this is {@link Server.quit}'s message and anything asking whether this
-     * page owns what it is talking to.
+     * the reference client remembers the process it started. It is what makes
+     * {@link Server.close} stop the engine rather than only let go of it, and
+     * what anything asking whether this page owns what it is talking to reads.
      */
     booted = false;
 
@@ -1171,8 +1170,9 @@ export class Server {
      * process listening for anything — it *is* the server, so stopping it is
      * closing its `AudioContext`, and nothing restarts it.
      *
-     * {@link Server.close} is the other end: it lets this handle go and leaves
-     * the server standing.
+     * {@link Server.close} is the other end **for a server this page does not
+     * own**: it lets the handle go and leaves the server standing. On one this
+     * handle booted, `close` stops it too.
      */
     async quit(): Promise<void> {
         this.sendMsg("/server_quit");
@@ -1183,8 +1183,20 @@ export class Server {
     /**
      * Detaches this server from its connection (the connection itself, and
      * any shared in-page engine, keep running). Pending requests reject.
+     *
+     * **And, if this handle {@link Server.boot}-ed the server, stops it** —
+     * the same rule the reference client's `Server.close` follows for the
+     * process it launched. Ownership is what separates the two endings: an
+     * attached handle lets go and the server stands, a booted one takes its
+     * engine with it. {@link Server.quit} is the verb that stops a server this
+     * page does not own.
      */
     close(): void {
+        if (this.booted) {
+            this.booted = false;
+            this.sendMsg("/server_quit");
+            void this.connection.quit?.();
+        }
         this.releaseSampleClock();   // the reader every locked clock shared
         this.recycling?.free();
         this.recycling = null;

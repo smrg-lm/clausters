@@ -39,7 +39,7 @@ each.</div>
         <button id="run">boot both</button>
         <button id="attach" disabled>attach a second handle to b</button>
         <button id="freeall" disabled>b: free every node</button>
-        <button id="quit" disabled>quit both</button>
+        <button id="stopboth" disabled>stop both</button>
       </div>
       <pre id="log"></pre>
     </main>
@@ -91,7 +91,7 @@ each.</div>
         low = await play(sine(220.0).mul(0.12), { server: a });
         await play(sine(330.0).mul(0.12), { server: b });
         log("both servers sounding — a fifth, one note from each");
-        for (const id of ["attach", "freeall", "quit"]) $(id).disabled = false;
+        for (const id of ["attach", "freeall", "stopboth"]) $(id).disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
@@ -110,24 +110,26 @@ each.</div>
         $("attach").disabled = true;
       };
 
-      $("freeall").onclick = () => {
+      $("freeall").onclick = async () => {
         (other ?? b).freeAll();
         log("b freed every node: the fifth drops to a single note");
         if (other) {
           other.close();
-          log("the attached handle closed, and b is still up (its note was "
-            + "freed by the command, not by the handle going away)");
+          log("the attached handle closed, and b is still up: "
+            + `${(await b.queryInfo()) !== null}`);
         }
         $("freeall").disabled = true;
       };
 
-      $("quit").onclick = async () => {
+      $("stopboth").onclick = () => {
         low.free();
-        // Each handle booted its engine, so quitting stops it.
-        await a.quit();
-        await b.quit();
+        // Each handle booted its engine, so closing it stops that engine --
+        // ownership, the same rule the script's `close` follows for the
+        // process it started.
+        a.close();
+        b.close();
         log("both servers stopped");
-        $("quit").disabled = true;
+        $("stopboth").disabled = true;
       };
     </script>
   </body>
