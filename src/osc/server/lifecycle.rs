@@ -509,7 +509,7 @@ impl OscServer {
                         warn!("engine rejected a timed bundle (schedule queue full)");
                     }
                 }
-                Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
+                Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID. The rejected
                     // id never became a node — return it to its registry, and
@@ -517,13 +517,17 @@ impl OscServer {
                     // there is no requester to reply to): a client registry
                     // reconciles its in-flight id off this `/fail`, since no
                     // `/node_end` will ever come for it.
+                    //
+                    // The `/fail` goes out either way, because a client's
+                    // in-flight id has to come back whichever way the node
+                    // died. What the reason changes is the **log**: a target
+                    // freed inside the emission headroom is a re-cued pass, not
+                    // a fault, and it used to warn on every press of stop.
                     self.translator.release_node_id(id);
-                    warn!("engine rejected node {id} (duplicate ID, bad target or full table)");
+                    report_rejected(id, why, "engine");
                     let args = vec![
                         OscType::String("/synth_new".into()),
-                        OscType::String(format!(
-                            "engine rejected node {id}: duplicate ID, bad target or full table"
-                        )),
+                        OscType::String(format!("engine rejected node {id}: {}", why.as_str())),
                         OscType::Int(id),
                     ];
                     for client in &self.clients {

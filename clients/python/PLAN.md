@@ -1325,7 +1325,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **Re-cueing a pass makes the engine reject the notes already in flight**
+- ✅ **Re-cueing a pass makes the engine reject the notes already in flight**
   *(found 2026-09-04, in the log of a by-hand run of
   `examples/editors/multitrack.py` during the `C53` acceptance pass; not a
   regression -- the path is the same before and after that work)*. Press stop
@@ -1343,13 +1343,22 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   which is what the warning says.
 
   So nothing is wrong with the sound -- those voices were the ones being
-  cancelled -- and what is wrong is that an ordinary transport gesture prints a
-  warning that reads like a defect. **The decision is whose job it is**: the
-  example's, to free the group a latency behind rather than at once; the
-  playhead's, to withdraw what it has emitted and not yet heard; or the
-  server's, to answer a freed target quietly when the node was scheduled
-  against it while it still existed. It is written here rather than fixed
-  because those are three different designs and only one of them is right.
+  cancelled -- and what was wrong is that an ordinary transport gesture printed
+  a warning that reads like a defect.
+
+  **Fixed on the server's side, and none of the three ways first listed here.**
+  Freeing the group a latency behind would let a clip dragged away sound for a
+  quarter second, which is the thing `silence()` exists to prevent; withdrawing
+  an emitted bundle needs a command the protocol does not have. What was
+  actually wrong is the **message**: `NodeTree::insert` answered one `Err` for
+  six unrelated refusals and the log lumped three of them into one sentence, so
+  a race nobody could act on was indistinguishable from a fault. It returns a
+  `clausters::node::Reject` now, and the log splits on it: a **vanished
+  target** is `debug` ("the target is gone"), because the client aimed at a
+  live group and the free won; a duplicate id, a full table, a full group, a
+  non-group target and the root keep their warning, because each is somebody's
+  mistake. The `/fail` broadcast is unchanged in shape and now names the reason,
+  since a client's in-flight id has to come back either way.
 
 - ✅ **A curve opens on no axis at all: the values flatten and the time
   rescales** *(found 2026-09-04, by eye, while running the throwaway prototype

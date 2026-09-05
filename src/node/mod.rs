@@ -140,6 +140,53 @@ pub enum Place {
     Tail,
 }
 
+/// Why `NodeTree::insert` refused a node.
+///
+/// The three causes the one message used to lump together are not the same
+/// kind of event, and a log that cannot tell them apart makes an ordinary race
+/// read as a fault: a node **scheduled** against a group that is freed before
+/// it lands is what re-cueing a pass looks like from here, and dropping it is
+/// the right answer rather than a failure. The rest are the caller's mistakes
+/// or a real limit reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reject {
+    /// A node already lives under this id (or it is the root's).
+    DuplicateId,
+    /// The target is not in the tree. Ordinary for a timed bundle whose target
+    /// was freed inside the emission headroom, which is why it is the one this
+    /// enum exists to name.
+    TargetGone,
+    /// No free slot in the node table.
+    TableFull,
+    /// The target of a head/tail insert is a synth, not a group.
+    TargetNotAGroup,
+    /// The parent group cannot hold another child.
+    GroupFull,
+    /// The root group has no siblings and cannot be replaced.
+    TargetIsRoot,
+}
+
+impl Reject {
+    /// The reason, as the log and the `/fail` write it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DuplicateId => "the id is already a node",
+            Self::TargetGone => "the target is gone",
+            Self::TableFull => "the node table is full",
+            Self::TargetNotAGroup => "the target is not a group",
+            Self::GroupFull => "the target group is full",
+            Self::TargetIsRoot => "the target is the root group",
+        }
+    }
+
+    /// Whether this is somebody's mistake rather than a race the protocol
+    /// allows. A vanished target is the second: the client aimed at a live
+    /// group and the free won, which is exactly what stopping a pass does.
+    pub fn is_fault(self) -> bool {
+        !matches!(self, Self::TargetGone)
+    }
+}
+
 pub enum NodeKind {
     Synth {
         node: Box<dyn SynthNode>,
@@ -488,9 +535,9 @@ impl NodeTree {
 
     /// Inserts a node relative to `target` according to `action`. On success
     /// returns the parent group's node ID (for `/node_start`). On failure
-    /// (duplicate ID, unknown target, full slab/group, type mismatch) returns
-    /// the node back so the caller can dispose of it RT-safely. A `Replace`
-    /// frees the target's subtree through `sink`.
+    /// returns the node back — with the `Reject` saying which failure it was —
+    /// so the caller can dispose of it RT-safely and report it for what it is.
+    /// A `Replace` frees the target's subtree through `sink`.
     pub fn insert(
         &mut self,
         id: i32,
@@ -498,25 +545,25 @@ impl NodeTree {
         target: i32,
         action: AddAction,
         sink: &mut dyn FnMut(FreedNode),
-    ) -> Result<i32, NodeKind> {
+    ) -> Result<i32, (NodeKind, Reject)> {
         if id == ROOT_NODE_ID || self.find(id).is_some() {
-            return Err(kind);
+            return Err((kind, Reject::DuplicateId));
         }
         let Some(tidx) = self.find(target) else {
-            return Err(kind);
+            return Err((kind, Reject::TargetGone));
         };
         let Some(free) = (0..self.slots.len()).find(|&i| self.slot(i).is_none()) else {
-            return Err(kind);
+            return Err((kind, Reject::TableFull));
         };
 
         // Resolve parent and position, validating capacity before mutating.
         let (parent_idx, pos, replaces) = match action {
             AddAction::Head | AddAction::Tail => {
                 let Some(g) = self.group_of(tidx) else {
-                    return Err(kind); // target is not a group
+                    return Err((kind, Reject::TargetNotAGroup));
                 };
                 if g.children.len() >= g.children.capacity() {
-                    return Err(kind);
+                    return Err((kind, Reject::GroupFull));
                 }
                 let pos = match action {
                     AddAction::Head => 0,
@@ -527,11 +574,11 @@ impl NodeTree {
             AddAction::Before | AddAction::After => {
                 let parent = self.slot(tidx).map(|s| s.parent).unwrap();
                 if parent == NO_PARENT {
-                    return Err(kind); // target is the root group
+                    return Err((kind, Reject::TargetIsRoot));
                 }
                 let g = self.group_of(parent).unwrap();
                 if g.children.len() >= g.children.capacity() {
-                    return Err(kind);
+                    return Err((kind, Reject::GroupFull));
                 }
                 let at = g.children.iter().position(|&c| c == tidx).unwrap();
                 let pos = match action {
@@ -543,7 +590,7 @@ impl NodeTree {
             AddAction::Replace => {
                 let parent = self.slot(tidx).map(|s| s.parent).unwrap();
                 if parent == NO_PARENT {
-                    return Err(kind); // the root group cannot be replaced
+                    return Err((kind, Reject::TargetIsRoot));
                 }
                 let g = self.group_of(parent).unwrap();
                 let pos = g.children.iter().position(|&c| c == tidx).unwrap();
@@ -1172,6 +1219,21 @@ mod tests {
         tree.find(id).is_some()
     }
 
+    /// The `Reject` a failed insert answers, for the tests that check the
+    /// reason rather than the failure.
+    fn refuse(tree: &mut NodeTree, id: i32, target: i32, action: AddAction) -> Reject {
+        let kind = NodeKind::Synth {
+            node: Box::new(MockSynth {
+                done: DoneAction::None,
+            }),
+            usage: BusUsage::default(),
+        };
+        match tree.insert(id, kind, target, action, &mut |_| {}) {
+            Ok(_) => panic!("insert {id} was supposed to fail"),
+            Err((_, why)) => why,
+        }
+    }
+
     fn is_paused(tree: &NodeTree, id: i32) -> bool {
         tree.find(id)
             .and_then(|idx| tree.slot(idx))
@@ -1371,6 +1433,52 @@ mod tests {
         let t = tree_with_group_2_holding_synth_3();
         assert!(!t.is_descendant_of(999, 2));
         assert!(!t.is_descendant_of(3, 999));
+    }
+
+    #[test]
+    fn a_refused_insert_says_which_refusal_it_was() {
+        // One message for three unrelated causes made an ordinary race read as
+        // a fault: a node scheduled against a group that is freed before it
+        // lands is what re-cueing a pass looks like from the engine, and it is
+        // the only one of these that is nobody's mistake.
+        let mut t = tree_1_2_3();
+        assert_eq!(
+            refuse(&mut t, 1, ROOT_NODE_ID, AddAction::Tail),
+            Reject::DuplicateId
+        );
+        assert_eq!(refuse(&mut t, 9, 404, AddAction::Tail), Reject::TargetGone);
+        assert_eq!(
+            refuse(&mut t, 9, 2, AddAction::Tail),
+            Reject::TargetNotAGroup
+        );
+        assert_eq!(
+            refuse(&mut t, 9, ROOT_NODE_ID, AddAction::Before),
+            Reject::TargetIsRoot
+        );
+
+        assert!(!Reject::TargetGone.is_fault(), "a lost target is a race");
+        assert!(Reject::DuplicateId.is_fault());
+        assert!(Reject::TableFull.is_fault());
+    }
+
+    #[test]
+    fn a_full_table_and_a_full_group_say_so() {
+        let mut t = NodeTree::with_capacity(2); // the root, and room for one
+        add_synth(&mut t, 1, ROOT_NODE_ID);
+        assert_eq!(
+            refuse(&mut t, 2, ROOT_NODE_ID, AddAction::Tail),
+            Reject::TableFull
+        );
+
+        let mut t = NodeTree::new();
+        let kind = NodeKind::Group(Group::with_capacity(1));
+        assert!(
+            t.insert(2, kind, ROOT_NODE_ID, AddAction::Tail, &mut |_| {})
+                .is_ok(),
+            "the group goes in"
+        );
+        add_synth(&mut t, 3, 2);
+        assert_eq!(refuse(&mut t, 4, 2, AddAction::Tail), Reject::GroupFull);
     }
 
     #[test]

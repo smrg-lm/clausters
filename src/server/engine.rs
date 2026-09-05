@@ -26,7 +26,7 @@ use crate::dsp::{
     Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, ReplyMsg,
     TransportCtx,
 };
-use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
+use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, Reject, SynthNode};
 use crate::server::clock_axis::{DeviceSample, PiecePosition, PositionAnchor, TransportSample};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -184,6 +184,23 @@ pub enum Cmd {
     },
 }
 
+/// Logs one rejected node at the level its reason deserves.
+///
+/// A node whose **target is gone** is not a fault: the client aimed at a group
+/// that was alive when the bundle was emitted and freed before it landed, which
+/// is what re-cueing a pass does — the emission headroom is a quarter second,
+/// and everything queued inside it is aimed at the arrangement being replaced.
+/// Dropping it is the right answer, so this says so at `debug` rather than
+/// warning about an ordinary transport gesture. Everything else is somebody's
+/// mistake or a real limit, and keeps its warning.
+pub(crate) fn report_rejected(id: i32, why: Reject, who: &str) {
+    if why.is_fault() {
+        tracing::warn!("{who} rejected node {id}: {}", why.as_str());
+    } else {
+        tracing::debug!("{who} dropped node {id}: {}", why.as_str());
+    }
+}
+
 /// Heap memory leaving the audio thread to be dropped on the network side.
 pub enum Garbage {
     FreedSynth {
@@ -194,15 +211,17 @@ pub enum Garbage {
         id: i32,
         group: Group,
     },
-    /// Command the engine could not apply (duplicate ID, unknown target,
-    /// full node table or full group).
+    /// Command the engine could not apply, and **why** — a vanished target is
+    /// a race the protocol allows, the rest are faults (see `Reject`).
     RejectedSynth {
         id: i32,
         synth: Box<dyn SynthNode>,
+        why: Reject,
     },
     RejectedGroup {
         id: i32,
         group: Group,
+        why: Reject,
     },
     /// A buffer replaced or removed from the pool; this clone is dropped on
     /// the network side so the deallocation (if it is the last `Arc`) never
@@ -1303,11 +1322,11 @@ fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Optio
                         is_group: false,
                     });
                 }
-                Err(NodeKind::Synth { node: synth, .. }) => {
-                    sink.push(Garbage::RejectedSynth { id, synth });
+                Err((NodeKind::Synth { node: synth, .. }, why)) => {
+                    sink.push(Garbage::RejectedSynth { id, synth, why });
                 }
-                Err(NodeKind::Group(group)) => {
-                    sink.push(Garbage::RejectedGroup { id, group });
+                Err((NodeKind::Group(group), why)) => {
+                    sink.push(Garbage::RejectedGroup { id, group, why });
                 }
             }
         }
@@ -1333,11 +1352,11 @@ fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Optio
                         is_group: true,
                     });
                 }
-                Err(NodeKind::Synth { node: synth, .. }) => {
-                    sink.push(Garbage::RejectedSynth { id, synth });
+                Err((NodeKind::Synth { node: synth, .. }, why)) => {
+                    sink.push(Garbage::RejectedSynth { id, synth, why });
                 }
-                Err(NodeKind::Group(group)) => {
-                    sink.push(Garbage::RejectedGroup { id, group });
+                Err((NodeKind::Group(group), why)) => {
+                    sink.push(Garbage::RejectedGroup { id, group, why });
                 }
             }
         }
@@ -1416,10 +1435,10 @@ impl EngineHandle {
     pub fn collect_garbage(&mut self) -> usize {
         let mut n = 0;
         while let Some(g) = self.pop_garbage() {
-            if let Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } = &g {
-                tracing::warn!(
-                    "engine rejected node {id} (duplicate ID, bad target or full table)"
-                );
+            if let Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } =
+                &g
+            {
+                report_rejected(*id, *why, "engine");
             }
             drop(g);
             n += 1;

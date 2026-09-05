@@ -572,11 +572,9 @@ impl Renderer {
                         self.dropped = true;
                     }
                 }
-                Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
+                Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     self.translator.release_node_id(id);
-                    tracing::warn!(
-                        "nrt render: engine rejected node {id} (duplicate ID, bad target or full table)"
-                    );
+                    crate::server::engine::report_rejected(id, why, "nrt render");
                 }
                 Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) => {}
             }
