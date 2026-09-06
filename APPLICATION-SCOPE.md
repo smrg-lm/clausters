@@ -458,6 +458,33 @@ it loses no decision.
 
 ## Found by use
 
+- ✅ **Screen state was keyed by an address, so a new thing inherited a freed
+  one's** *(found 2026-09-06 auditing AP3's premise; fixed the same day)*. Four
+  tables kept screen state under `id(object)`: a curve's held axis and its span
+  (`PointsView`), a patch's box placements and which elements are expanded
+  (`FormEditor`), and — added by AP1 the same session — an application's
+  per-drawer id table. CPython reuses an address the moment an object is freed,
+  **196 times out of 200** in a straight loop, so each of them hands its state
+  to whatever lands there next. Reproduced end to end: expand an aggregate, let
+  it go, make another, and the new one draws expanded. **Fixed** by keying on the
+  object, weakly — the guard the tree already used one level down, where
+  `Editing._structures` keeps a structure beside its number "so its `id` cannot
+  be reused". Weak keys also let the state go when the thing goes, which is what
+  screen state should do. What made it findable was asking what "keyed by the
+  derived key" meant literally; what made it invisible is that every one of the
+  four reads correctly and fails only after a free.
+
+- ✅ **An `Application` built with no version callable read its editors before
+  it had any** *(found 2026-09-06 writing AP2's tests; fixed the same day)*.
+  `__init__` created the `Echo` — which asks for the version immediately — before
+  assigning `self._editors`, and the version is read *through* that list when no
+  callable was given. Every editor passes one, which is why 935 tests never
+  touched it and why it surfaced only when a test constructed an application on
+  its own. **Fixed** by making the list first. Worth keeping because it is the
+  ordinary shape of a constructor defect: the object was correct for every
+  caller that existed, and the seam had just been widened to admit one that did
+  not.
+
 - ⬜ **The routing table's tag list is written twice** *(found 2026-09-06,
   auditing what AP5 had left)*. `NOT_AN_EDIT` — which event tags are screen
   state rather than edits — is eight strings duplicated verbatim in
