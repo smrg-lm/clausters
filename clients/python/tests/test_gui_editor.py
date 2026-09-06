@@ -2293,6 +2293,55 @@ def test_editing_one_clip_in_a_piece_of_many_emits_no_definition():
     assert clips(lead)[0]["id"] == roll["id"], "and the clip is the same widget"
 
 
+def test_moving_a_clip_that_reports_its_window_is_a_move_and_not_a_trim():
+    """A host states the **window** a clip reads alongside the placement, on
+    every drag — moving one and trimming one are the same message with a
+    different fifth argument. So the threshold that tells them apart has to be
+    real: it was `units_to_beats(0.5)`, which rounds to a whole sample first, so
+    half of one rounded to none and the threshold came out **zero**. `>= 0.0` is
+    true of everything, and every clip measured in beats — every track, every
+    roll — went down the trim road on an ordinary move: the label said "trim the
+    clip" for a gesture the hand cannot make, and undoing it put back a window
+    nobody had moved.
+
+    Nothing caught it because every test's `clip_event` sends four arguments and
+    no window at all, which is the one case that never trimmed.
+    """
+    ed = editor(quant=0.0)
+    ed.open(_FakeHost())
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    placed = ed._clips[roll["id"]]
+    was = placed.member.offset
+
+    # The whole message a host sends for a drag: offset, length, and the window
+    # unchanged — the clip reads its element from the beginning, as it did.
+    assert ed.apply("/gui_event", [roll["id"], SEQ, UNSTATED, "clip",
+                                   float(1 * BEAT), float(placed.dur), 0.0]) is True
+    assert ed.undo_label == "move the clip"
+    assert placed.member.offset == pytest.approx(1.0)
+
+    assert ed.undo() is True
+    assert placed.member.offset == pytest.approx(was), "and it goes back"
+
+
+def test_a_clip_whose_window_really_moved_is_still_a_trim():
+    """The other side of the threshold: a drag on the **edge** states a window
+    that is not the one the element reads, and that is the gesture the trim road
+    is for."""
+    song, take = _take_song()
+    ed = editor(song, quant=0.0)
+    ed.open(_FakeHost())
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    placed = ed._clips[clip["id"]]
+
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "clip",
+                                   float(placed.offset), float(placed.dur) / 2,
+                                   float(SEC) / 2]) is True
+    assert ed.undo_label == "trim the clip"
+
+
 def test_a_freed_aggregate_does_not_leave_a_new_one_drawn_expanded():
     """Expand/collapse is screen state **about an element**, and an element is
     not its address. CPython reuses one the moment an object is freed, so a set

@@ -1433,7 +1433,17 @@ class FormEditor(Editor):
             return False
         # Half a frame, in whatever the element addresses itself in -- the axis
         # is samples either way, so the threshold crosses with the value.
-        floor = 0.5 if element.duration_unit == SECONDS else self.units_to_beats(0.5)
+        #
+        # **Not through `units_to_beats`**, which rounds to a whole sample
+        # first: half of one rounds to none, so the threshold came out exactly
+        # zero and `>= 0.0` is true of everything. Every clip event carrying a
+        # window then read as a trim, which is what a **move** of any clip
+        # measured in beats -- every track, every roll -- became: the placement
+        # went down the trim road, undoing it put back a window nobody had
+        # moved, and the label said "trim the clip" for a gesture the hand had
+        # no way to make. Half a sample in beats is the ratio, not a conversion.
+        floor = (0.5 if element.duration_unit == SECONDS
+                 else 0.5 / max(self.units_per_beat, 1e-9))
         return abs(self._window_units(element, start) - float(held)) >= floor
 
     def _window_units(self, element, start: float) -> float:
