@@ -504,10 +504,17 @@ it loses no decision.
   handle instead of replacing them, and frees only that subtree's ids — and it
   was left out of AP2 deliberately rather than missed.
 
-  Until it lands, this is the honest boundary of "a redraw is a difference": a
-  **prop** change costs nothing, and a **structural** change still costs the
-  window. That is already better than every redraw costing it, which is what it
-  replaced.
+  **This is not an accepted boundary** *(the user, 2026-09-06: it is
+  unacceptable, and the multitrack view's implementation changes for it)*. "A
+  prop change costs nothing and a structural change costs the window" is better
+  than what it replaced and is still wrong at the first gesture a hand makes:
+  moving a clip between lanes is the ordinary edit, not a corner. So the work is
+  **AP6's**, and it is a change of implementation rather than a tuning — the
+  narrow redefine above, and whatever the multitrack has to become for its
+  shape to stop moving under an ordinary edit.
+
+  Everything this turns up is recorded **here**, in this file, because all of it
+  is to be dealt with — including by changing the design.
 
 - ⬜ **Dropping a clip where another one already sits makes the lane draw as
   one layered clip, so both appear to vanish into one** *(found 2026-09-06 by
