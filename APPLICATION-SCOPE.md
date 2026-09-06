@@ -381,18 +381,10 @@ for.
 
 **What AP5 still owes, and why each is where it is.**
 
-- **The routing table.** `NOT_AN_EDIT` is a vocabulary list — which tags are
-  screen state rather than edits — duplicated verbatim in both clients. The two
-  agree today, checked; it is the shape of thing that drifts, and lowering it is
-  a core module and two ABI symbols to save eight strings. Filed rather than
-  done, because the failure it prevents (a tag one client treats as an edit and
-  the other does not) is a routed gesture that does nothing, which the pair
-  audit catches, and because a module invented to hold one list is the machinery
-  AP4 refused.
-- **The undo/redo walk.** `Application.step` orchestrates *client objects* — it
-  asks the context for the legs and hands them round the registered editors, each
-  projecting through its own domain. Lowering it means inverting the control
-  flow, which is a design step of its own rather than a move.
+- **The routing table** and **the undo/redo walk** are both open, and both are
+  in "Found by use" below with a checkbox — this list says what the milestone
+  did not do, and a pending item filed only among the reasons for not doing it
+  is a pending item that reads as closed.
 - **The catalogue views.** Building `waveform`, `bpf`, `pianoroll` and the
   multitrack's lanes through `tree.rs` is what gives the standalone host the same
   function from the same code, and it is entangled with AP6's convergence: the
@@ -465,6 +457,33 @@ The milestone that makes deleting this file legal.
 it loses no decision.
 
 ## Found by use
+
+- ⬜ **The routing table's tag list is written twice** *(found 2026-09-06,
+  auditing what AP5 had left)*. `NOT_AN_EDIT` — which event tags are screen
+  state rather than edits — is eight strings duplicated verbatim in
+  `clients/python/clausters/gui/editing/editor.py` and
+  `clients/web/src/gui/editing/editor.ts`. **The two agree today**, read side by
+  side and checked; what makes it worth writing down is that nothing keeps them
+  agreeing, and the failure is quiet: a tag one client treats as screen state
+  and the other hands to a domain is a gesture that reaches a vocabulary which
+  does not know it, answers nothing, and looks like a widget that does nothing.
+  It was not done with AP5 because lowering it is a core module and two ABI
+  symbols to hold one list, which is the machinery AP4 refused on the same
+  grounds — so what this entry is waiting for is either a second reason to open
+  such a module (a second GUI vocabulary constant that has to be shared) or a
+  cheaper place to put it, and it should be settled *there* rather than by
+  whichever milestone next reads the list.
+
+- ⬜ **The undo/redo walk is still each client's, and lowering it is a design
+  step rather than a move** *(found 2026-09-06, scoping AP5)*.
+  `Application.step` asks the editing context for a step's legs and hands them
+  round the registered editors, each projecting the ones it owns through its own
+  domain. Every part of that orchestrates **client objects**, so it cannot be
+  lowered the way the difference was: the crate would have to drive the clients
+  rather than answer them, which is an inversion of control and a decision about
+  what a binding may call back into — not a function to move. It is the last
+  thing in the application core that is written twice once AP6 has taken the
+  views, so it wants a milestone of its own and does not have one.
 
 - ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
   it** *(found 2026-09-06, auditing AP4's premise)*. The crate's `samples`
