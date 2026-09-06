@@ -21,8 +21,8 @@ as the data does and dies with it, which is what the crate's own rule asks for â
 a history is session state, never serialized, and it goes when the data goes.
 
 **The arrangement's context is a subclass**, not this one: a held `Document`, the
-node index and the id to mint next are the tree's and live with `FormEditor`
-(`clausters.gui.editing.formeditor.FormEditing`). What is here is what is true
+node index and the id to mint next are the tree's and live with whoever holds a
+tree. What is here is what is true
 of editing anything.
 """
 

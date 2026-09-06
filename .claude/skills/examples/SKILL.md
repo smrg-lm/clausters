@@ -96,8 +96,8 @@ with the loop it bounded; keep one only where a cell genuinely wants a bounded
 hold. Work that used to ride in the drain loop — an animation, a periodic
 read-out, a timed sequence of `set` calls — goes on the **application clock**
 (`gui.clock.sched`, which reschedules a function by the number it returns), not
-into a `while` loop with a stopwatch in it. `views/linked.py`, `panels/text.py`
-and `editors/two_windows.py` are the shape.
+into a `while` loop with a stopwatch in it. `views/linked.py` and `panels/text.py`
+are the shape.
 
 A few older examples end with plain top-level teardown and no guard
 (`verbs.py`, `scoping.py`). That is the earlier form, not a second idiom: the
@@ -151,9 +151,9 @@ impulse response rendered to be loaded back) — that is scratch, not a product.
 
 ## An example that exists twice is **one example in two languages**
 
-`clients/python/examples/editors/composer.py` and
-`clients/web/examples/editors/composer.html` are not two examples about the same topic:
-they are the same example, and the pair carries the non-divergence rule the way
+`clients/python/examples/editors/multitrack.py` and
+`clients/web/examples/editors/multitrack.html` are not two examples about the same
+topic: they are the same example, and the pair carries the non-divergence rule the way
 the clients do. So the second one is **ported, not re-invented**:
 
 - **Same composition, same material, same names.** The lanes, the defs, the

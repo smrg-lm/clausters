@@ -15,6 +15,36 @@ This plan covers the **Python** client, the reference client. It was written to 
 
 Net: each milestone is built and finished on the reference client, but always factored so that only the thin language-specific shell remains to write per platform.
 
+
+## `FormEditor` was removed (2026-09-06)
+
+The multitrack driver written over `clausters.form` is gone, with its examples,
+its tests and the book chapter built on it. Every `FormEditor` mention below
+sits inside a **closed** milestone and is left as the record of what shipped;
+nothing there is a pointer to code that exists.
+
+`clausters.form` itself is retained, frozen: a small set of client-side data
+structures for placing elements in time, with no view, taking no new work.
+
+**`Editor` and `Editing` are untouched and stay**, along with `View`, `Domain`,
+`Echo`, `edit(x)` and the three editors it opens (`SamplesEditor`,
+`PointsEditor`, `NotesEditor`). What was removed is the *arrangement* driver
+above them, not the seam. **They now have other priorities to adapt to**: the
+three classic applications are built over the session in `clausters-document`,
+so what `Editor` has to serve is an application that holds a document rather than
+a client tree — `O23` (the host reconciles rather than frees) and `O24` (the
+three applications) are where that adaptation is decided, and it should not be
+guessed at from this side first.
+
+The reason is structural rather than a defect count. A multitrack's own state -
+which track a thing is on, its order within the track, its placement and its
+identity - is authored, durable and undoable; projected out of a general tree it
+had nowhere to live but the widget tree, which is drawn, and drawing frees. It
+is being rebuilt as a **session** in `crates/clausters-document` - source,
+region, lane, track, automation - with three classic applications over it
+(audio editor, multitrack editor, score editor). See that crate's `PLAN.md`,
+"The turn: the arrangement stops being a projection" (`O21`-`O24`).
+
 ## Context
 
 Clausters is the Rust audio server (scsynth-style) controlled over OSC. Today the only client in the repo is `clients/python/clausters.py`: the **low-level transport layer** (embed cdylib / shm / render), stdlib-only, with the boundary rule "only flat data crosses" (bytes in, `array('f')`/floats/ints out). There is no high-level layer: building defs, resources, events and sequencing is currently left to the user.
@@ -1403,7 +1433,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   So the map is a fundamental structure in its own right -- `TempoMap` is a pure
   function of a beat, meaningful for a piece nobody is playing -- and the two
   things that *keep* one are a view (`Editor`) and a running clock
-  (`TempoClock`). `FormEditor._adopt_map` is the visible cost: the clock's map
+  (`TempoClock`). The removed `FormEditor._adopt_map` was the visible cost (the
+  entry outlives it: the tempo map still has no owner among the fundamental
+  structures, and the session in `clausters-document` is where `O21` gives it
+  one): the clock's map
   wins over the editor's on `play` and on `render`, with a redraw where they
   differ, and that reconciliation exists only because two non-owners each hold a
   copy.
@@ -1450,7 +1483,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 - ⬜ **A composed signal window goes mute after the multitrack redefines**
   *(found 2026-09-04, by hand, running `examples/editors/composed.py` in the
   `C53` acceptance pass; not a regression -- nothing in the event-loop work
-  touches this path)*. Press the example's `draw` button, draw on the take, go
+  touches this path. **That example was deleted with `FormEditor` on 2026-09-06**,
+  so the steps below cannot be run as written; they are kept because the
+  mechanism is what `O23` must answer.)*. Press the example's `draw` button, draw on the take, go
   back to `select`, edit the curve in the multitrack, walk the history, drag a
   clip, then press `draw` again: the drag no longer draws.
 
@@ -1483,6 +1518,15 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   `extra` panel object** is handed to both windows (`extra=[bar]` on the
   `FormEditor`, `extra=self.extra` on the editor `open_signal` composes), so one
   tree is stamped twice and a redefine re-stamps it.
+
+  **Moot as a bug from 2026-09-06, kept as evidence.** `FormEditor` was removed
+  with the arrangement's turn (`crates/clausters-document/PLAN.md`), so nothing
+  reaches this path any more. The entry stays because the *mechanism* is the one
+  `O23` has to answer: a redefine frees a subtree and a window composed beside it
+  goes on addressing ids inside it. Under a host that **reconciles** rather than
+  frees, a widget whose identity persisted is never freed and the composed window
+  never loses its id — which is the acceptance to write, and this is the case to
+  write it against.
 
 - ✅ **Re-cueing a pass makes the engine reject the notes already in flight**
   *(found 2026-09-04, in the log of a by-hand run of

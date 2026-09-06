@@ -86,12 +86,8 @@ session.close()      # stops the clock, the GUI host and a server it booted
 
 ## Where to go from here
 
-- The finished, self-contained **script form** of this piece — on-screen
-  transport buttons, the same four lanes — is
-  `clients/python/examples/editors/composer.py`. Read it next to this section and
-  you will recognize every line.
-- [Composition: the arrangement and the multitrack editor](../composition.md) — the
-  concepts, argued rather than exercised.
+- [Composition: the arrangement](../composition.md) — the concepts, argued
+  rather than exercised.
 - [The glossary](glossary.md) — every term this section used, pinned in one
   place.
 - The [API reference](../api.md) for `clausters.form`, `clausters.gui` and

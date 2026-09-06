@@ -88,6 +88,16 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **What this leaves to build, which is why it stays an open decision until the shape exists rather than closing as an answer:** a stable identity for a member (the document has none today), the instance/function distinction on a leaf, where an evaluation's arguments live, and what a *copy* is as an explicit act — copying an instance forks it, copying a function's placement does not. It is the vocabulary, both clients and the host, and it is a one-tree question: a member has no identity to name while the client keeps a parallel tree and re-derives the document from it.
 
+  **Answered 2026-09-06 by "The turn: the arrangement stops being a projection"
+  below, and answered with the option this entry had already argued was the only
+  survivor.** A **region** is the placement with a name: its own identity,
+  separate from the source's, so an intent naming a region names one appearance
+  and a source referenced from six places is referenced, not copied. The
+  instance/function typing this entry asked for lands on the **source**, and a
+  region carries the arguments of its own evaluation. What kept it open was that
+  the shape did not exist; O21 is that shape, and the entry closes into it rather
+  than being restated there.
+
   **The visual layer is already on the right side of this and is not what needs fixing.** A widget has its own id and the editor maps widget id -> node, so the picture is independent of the model by construction. What is missing is one level down: the *placement* has no identity in the document, so the node plays both parts.
 
   **Settled 2026-08-17 by O14**, which is the shape this decision was waiting for: the id moved to the member handle, so each placement is its own node and an intent naming one is unambiguous — and what may be placed twice is what the node *references*. The crate needed no change at all.
@@ -185,7 +195,7 @@ The eight that opened with this file were taken one at a time and are in the sec
 
 ## The milestones
 
-- ✅ **O1 - The document: the tree, and a leaf is opaque.** The crate's types and their serde form: elements with their placements (`onset`, `duration`), aggregates with their two kinds (**concrete** - members relate in time; **logical** - they relate by processing), and a leaf as `(id, kind, opaque config)`. A **source reference** carries its **lifetime** (external / session / temporary) from the start rather than gaining it later, since it is what a save has to read. No client objects, no widget, no OSC, no I/O. **Two properties the shape has to admit, because they are the arrangement's and not the document's to invent.** A generator's *code* is the opaque leaf; **its output is ordinary tree** - a generator may produce any element, generators included - so nothing about being generated makes a subtree a second kind of thing. And a **clang may reference a generator** to fire it live, which means the document expresses structure resolved at run time and not only at render time: a reference that no flattening pass will ever expand. **The tree stays general, and the views carry their own restrictions** - a multitrack lane is a *projection* that may decline to show what its shape does not admit, exactly as an unknown widget is laid out and not painted; nothing here grows a lane, a vertical position or a type-per-container so that a view is easier to write. The arrangement's own vocabulary (the Aggregate and the other primitives, the temporal traits) is unchanged by this milestone and is refined by iteration in `clausters.form`, which is why the shape has to stay versatile rather than final: the document need not know the model, but it must not be what blocks its refinement. **Acceptance:** a tree round-trips through serde unchanged; an unknown body kind and an unread config blob both survive a load/save cycle **losslessly**, and writing is **deterministic** (the two are the properties that matter, and byte-identity is not one of them: `serde_json` sorts an object's keys, key order in JSON carries no information, and buying its preservation would mean turning `preserve_order` on for every crate in the workspace since features are additive); the Python `clausters.form` tree converts in and out with no loss.
+- ✅ **O1 - The document: the tree, and a leaf is opaque.** The crate's types and their serde form: elements with their placements (`onset`, `duration`), aggregates with their two kinds (**concrete** - members relate in time; **logical** - they relate by processing), and a leaf as `(id, kind, opaque config)`. A **source reference** carries its **lifetime** (external / session / temporary) from the start rather than gaining it later, since it is what a save has to read. No client objects, no widget, no OSC, no I/O. **Two properties the shape has to admit, because they are the arrangement's and not the document's to invent.** A generator's *code* is the opaque leaf; **its output is ordinary tree** - a generator may produce any element, generators included - so nothing about being generated makes a subtree a second kind of thing. And a **clang may reference a generator** to fire it live, which means the document expresses structure resolved at run time and not only at render time: a reference that no flattening pass will ever expand. **The tree stays general, and the views carry their own restrictions** - a multitrack lane is a *projection* that may decline to show what its shape does not admit, exactly as an unknown widget is laid out and not painted; nothing here grows a lane, a vertical position or a type-per-container so that a view is easier to write. **[Withdrawn 2026-09-06 - see "The turn: the arrangement stops being a projection". A projection is not free of structure: the lane, the order within it and the placement's identity are durable and undoable, and with nowhere to live they fell into the widget tree, which is where every multitrack defect of the `application-scope` branch comes from. O1's types are not deleted - they become what a region may contain - but the arrangement stops being derived from a general tree.]** The arrangement's own vocabulary (the Aggregate and the other primitives, the temporal traits) is unchanged by this milestone and is refined by iteration in `clausters.form`, which is why the shape has to stay versatile rather than final: the document need not know the model, but it must not be what blocks its refinement. **Acceptance:** a tree round-trips through serde unchanged; an unknown body kind and an unread config blob both survive a load/save cycle **losslessly**, and writing is **deterministic** (the two are the properties that matter, and byte-identity is not one of them: `serde_json` sorts an object's keys, key order in JSON carries no information, and buying its preservation would mean turning `preserve_order` on for every crate in the workspace since features are additive); the Python `clausters.form` tree converts in and out with no loss.
 - ✅ **O2 - The intent vocabulary, and the one applier.** The intent enum - absolute only - and `apply(document, intent) -> Outcome`, where the outcome carries the **effective** value and therefore *is* the acknowledgement's content. Every transformation the owner performs (snap, clamp, a refusal on read-only material) happens here and is reported here, so no caller can apply an intent by hand. **The vocabulary has no relative form and that is the whole of the rule here**; the one payload that violates it is the host's `"transpose" <xml:id> <steps>` on an engraved page (`clients/gui/src/host/elements/score.rs`), and converting *that* is host work rather than the crate's, so it rides with H1, which is already the milestone that passes over every payload the host emits. The absolute form is available to it: the host re-derives staff position from the engraving in order to draw ledger lines, so it can name the position a note reaches instead of the steps it moved. **Acceptance:** applying the same intent twice leaves the same document (idempotence); a refusal reports the unchanged value rather than an error; every outcome names an effective value, and a test enumerates the vocabulary so a new intent cannot be added without one.
 - ✅ **O3 - The acknowledgement across the three legs.** The wire half of O2: the host stamps each intent with a `seq`, the owner answers with the state push plus `/gui_ack <seq> <doc_version> [<source> <generation>...] [<reason>]` in the same bundle, always - the versions ride from the first message, since O4 reads them and a second pass over four ends costs more than carrying the field early. Host side: the pending set keyed by `seq` and the one drop-and-adopt rule - the mechanism, not the picture; what a pending edit *looks like* on a given widget is that widget's milestone (the GUI track's D1 for a signal element). Python: `GuiHost` gains bundle sending (it has none - `set()` emits loose messages) and `ack()`; the TypeScript builder ports in the same commit; `docs/gui-protocol.md` gets the verb. **Acceptance:** the generator-note case in "Found by use" below draws the note back where it was, with no redefine and no second message; two gestures in flight resolve independently and in either order.
 - ✅ **O4 - The version, and staleness.** The document carries a monotonic version and every source its own generation; an intent names both; the owner reports staleness instead of applying blind. This is what closes the case the log alone cannot see - the document moving under the host by a route that is not a gesture (a script editing the arrangement, a second editor, a `follow` re-render). **Its granularity is settled** (see the decisions above): the document's version and a per-source generation, with an intent naming both. **Acceptance:** an intent made against a superseded version is reported as stale and the host re-syncs rather than losing the edit silently.
@@ -502,6 +512,311 @@ The eight that opened with this file were taken one at a time and are in the sec
   **The ABI grew one symbol, and it is the coalesce key again.** Everything else a domain needs crosses as JSON and costs no row; the key does not, because "the same thing done the same way" is a sentence *in* a vocabulary, so the pile cannot compute it and a caller recording its own entry has to state it. Left alone, four vocabularies' rules would have been spelled once in ctypes and again in TypeScript. So `domain` is the crate's table of its own vocabularies — the names in one place, `coalesce_key(domain, payload)` answering for any of them — behind `clausters_domain_coalesce_key` / `domainCoalesceKey`, with `clausters_document_coalesce_key` left exactly as it was, since the arrangement's sentence belongs on the arrangement's surface. A domain the crate does not speak answers nothing, which is also what catches a misspelled name that `register` would take in silence. `CORE_ABI_VERSION` 34 → 35 — additive, and the counter moves for the reason v31 records: the ctypes binding declares every symbol eagerly, so a stale library fails at load with a version mismatch rather than an `AttributeError` on a name nobody was looking at.
 
   **The two clients bind the same one and are checked on it**: the domain names are constants in both, and `document-vectors.json` now carries a row per vocabulary (plus the two answers that are not a key) which `document-parity.test.ts` reads — the project's own idiom for a rule that exists once and is spoken in two languages.
+
+
+## The turn: the arrangement stops being a projection
+
+*(Taken 2026-09-06, by the user, after a day of defects in the multitrack view
+and a reading of how the field builds one. It changes O1's central premise, so
+it is written here rather than inside the milestone that would carry it.)*
+
+O1 settled that **the tree stays general and a view carries its own
+restrictions** - *"nothing here grows a lane, a vertical position or a
+type-per-container so that a view is easier to write"* - and that a multitrack
+editor is a **projection**. That was a defensible reading of what a document is,
+and it is now withdrawn, for a reason the branch discovered rather than argued:
+
+**A projection is not free of structure.** The multitrack's projection carries
+real, durable, undoable state - which lane a thing is on, its order within the
+lane, its placement, its identity - and none of it was in the document, in the
+crate or anywhere else. So it fell, by elimination, into **the widget tree**,
+which is the one place it may not live, because a widget tree is drawn and
+drawing frees. Every defect the `application-scope` branch turned up is a
+consequence: a clip that changes lane is a re-parent of a UI object; a clip that
+appears is a change of shape on a wire; and a lane's zoom dies because the only
+way to say *a clip arrived* was to rebuild the lane.
+
+The evidence that this is structural and not a bug is the **piano roll**, which
+never has any of these defects. Its contents are **data inside one widget**
+(`Vec<Note>`, five numbers, contiguous, selected by index) rather than widgets
+inside a tree, so the whole class - identity, staleness, lost screen state -
+cannot occur in it. The host already knows the two are one thing where it counts
+(`placement.rs`: *"one geometry for every box that lives on a time axis"*; a lane
+and a semitone row are one `Bands`), and deliberately keeps the storage apart
+because a `Widget` is 13.5x a `Note`. What was missing is the lane's own
+equivalent of `Vec<Note>`.
+
+**One correction, so this is not over-read** *(2026-09-06, from a pass over open
+implementations)*. **A widget per clip is not the defect.** LMMS has exactly
+that - a `Clip` model and a `ClipView` widget per clip, the model emitting
+`dataChanged` and the views following - and it is ordinary MVC that works. What
+makes ours fail is narrower and worth stating precisely: **the widget tree is the
+only copy of the structure, and it lives on the far side of a wire.** LMMS can
+afford a widget per clip because the model is authoritative and in-process, so
+the widget is a view *of* something. So `O23` does not have to stop drawing a
+clip as a widget; it has to stop the widget tree being the only place the
+structure exists.
+
+**So the arrangement becomes a first-class structure in this crate**, modelled on
+what the field has converged on over forty years, and the three classic
+applications - the **audio editor**, the **multitrack editor** and the **score
+editor** - become what the project is *for*, each an application over this one
+document rather than a view over a client's private model.
+
+**`clausters.form` is not that model and stops being treated as one.** It is
+retained as a small set of client-side data structures, frozen, with no GUI and
+no milestone; `FormEditor` is removed outright. It was the arrangement's
+iteration surface while there was nothing else, and it did that job; what it is
+not is the shape a professional multitrack is built on, and continuing to project
+one out of it is what this turn ends. The documentation stops giving it
+prominence.
+
+### What the model is
+
+Named as the field names it, because the vocabulary is settled prior art and
+inventing our own would cost every reader the translation.
+
+- **Source** - the material, immutable, with the `Lifetime` and the generation it
+  already carries. Audio samples, an event sequence, or an **opaque leaf** (a
+  generator: a def, a pattern, a routine). Unchanged from O1 except that it is
+  now referenced by regions rather than placed directly.
+- **Region** - a **window onto a source**: its own identity, a reference to what
+  it plays, `position` on the timeline, `length`, and `start` (the source frame
+  its own zero reads). Plus what a professional region carries and ours does
+  not: **fades** (in, out, and the crossfade with a neighbour), **gain**, and its
+  **layer** where regions overlap. Several regions may reference one source; that
+  is the whole of non-destructive editing.
+- **Lane** - the ordered regions that **are a track's contents**. A track holds
+  **several** and plays one, which is what takes, comping and alternate versions
+  are, and which this project has never had. Ardour calls this a *playlist* and
+  the structure is its; the name is not, because in ordinary use a playlist is a
+  list of songs and the word has to be decoded before it means anything here.
+  `Lane` says what it is, and a track with three lanes **draws as three rows**
+  when expanded, so the model word and the view word are one word about one
+  thing. *(Decided 2026-09-06; the reasoning and the cost - `lane` is used 1596
+  times in the host in two senses, one of which has to be renamed to `channel` -
+  are in `APPLICATION-SCOPE.md`, "The name: `Lane`, not `Playlist`".)*
+- **Track** - identity, name, colour, kind (audio / MIDI / bus / folder /
+  master), its lanes, its **automation** curves, its routing (inputs, outputs,
+  sends) and its authored state (gain, pan, mute, solo, arm). A **folder** track
+  contains tracks, which is the only recursion at the top level.
+- **Automation** - a curve per addressable target (a track's parameter, a
+  region's, a plugin's), holding break points. Authored and undoable, never
+  derived. **Three attachment levels is right**: REAPER's envelopes name a track,
+  an item or a take as their parent, which confirms this rather than leaving it a
+  guess (see the design reference).
+- **The session** - the tracks in order, the **tempo map** and **meter map**,
+  **markers**, **ranges**, the loop, and the routing graph.
+
+**Where the general tree survives, and it is not deleted.** O1's recursion moves
+inside a region: a region may reference a **composite** rather than a flat
+source - a nested timeline, which is OTIO's `Stack` and which Ardour lacks. That
+keeps every property O1 argued for (a generator may produce any element,
+generators included; a clang may reference a generator; an unknown body survives
+a round trip) and stops the top level from paying for them. The top level is a
+DAW session, because that is what a DAW session is good at.
+
+### The decisions this turn takes, and what each replaces
+
+- **A region has its own identity, distinct from the source's.** This **answers
+  the open decision above** ("May one element be placed twice, and what does an
+  intent name if it is?"), and answers it with the third option, *name the
+  placement* - which that decision had already argued was the only survivor once
+  read against what a multitrack is. A region is the placement, given a name.
+  The instance/function typing it also asked for lands on the **source**: an
+  instance is a thing two regions may fork, a function is an algorithm two
+  regions evaluate, possibly with different arguments, and a region carries the
+  arguments of *its* evaluation.
+- **A track's contents are a list it owns, not children of a widget.** A region
+  changing track is *remove from lane A, insert into lane B* - two list edits in
+  one transaction, which the log already expresses (O17). **No widget is created
+  or destroyed**, so a track's zoom, scroll and selection survive by construction
+  rather than by a redefine narrow enough to spare them.
+- **The document holds the session; the host binds it.** This changes nothing in
+  the four-layer table and is the `standalone` mode the crate was designed for
+  from the start. The host holds no *durable* data: it holds the session the way
+  it already holds a roll's `Vec<Note>` - editing it, drawing it, reporting what
+  the hand did - and the durable copy is the document's. Screen state stays the
+  host's and stays out of the document.
+- **What the field does that we will not copy.** OTIO makes empty space an object
+  (`Gap`) so a track is a sequence with derived positions; we keep **absolute
+  positions**, as Ardour does. That is the NLE family against the DAW family, and
+  we are building a DAW. Recorded so the choice is known to be one.
+
+### The milestones
+
+- ⬜ **O21 - The session: the types and their format.** Source, Region,
+  Lane, Track, Automation, Session, and the tempo/meter maps, markers and
+  ranges - serde, round-trip, unknown-field preservation, and the same
+  determinism O1 accepted. The composite region carries O1's tree unchanged. No
+  intents yet, no wire, no host. **Acceptance:** a session with several tracks,
+  alternate lanes, overlapping layered regions, crossfades and automation
+  round-trips losslessly; a document written by a newer writer survives a
+  load/save. *(An earlier acceptance line also asked that "an O1 document
+  converts into a session"; withdrawn 2026-09-06 - see (c) below, which decides
+  whether such a conversion exists at all.)*
+
+  **The contradiction this milestone actually resolves, named because nothing
+  else in this file names it** *(raised 2026-09-06 by the user)*: **the only
+  document that ever existed is `form`'s.** `Body`'s variants are `Clang`,
+  `Sequence`, `Vector`, `Track`, `Generator` - `clausters.form`'s five
+  primitives, given a serde form - and the only door into the crate from either
+  client is `form/document.py` and `form/document.ts` (`to_document`,
+  `from_document`, `to_session`, `from_session`). So the crate is complete, and
+  the model it is complete *for* is the one just relegated, reached only through
+  a frozen module. Three things sit on that door today and none of them is
+  `form`'s: the standalone host opening a session, `editors/session.py`, and the
+  whole save/reopen loop.
+
+  **What that means concretely, and it is bigger than a rename.** An earlier
+  draft of this entry asked *"what is a `Sequence` of `Clang`s as a session?"* -
+  a lane of regions, one region per clang; one region over the whole sequence;
+  nothing at all, since a generator has no source to window. **That question is
+  withdrawn** *(2026-09-06, by the user)*, and it was the wrong one to ask:
+  answering it is precisely how the new model would inherit the old one's shape.
+  `form` is not a source of design here. It is not part of any structure of the
+  GUI - `FormEditor` is gone, and nothing the host draws is shaped by it - and it
+  is not the thing `O21` converts from. **The session types replace `Body`; they
+  are not added beside it.**
+
+  What `form` leaves behind is one asset and three tasks:
+
+  **(c) `form`'s document is discarded; what is reused is its round trip, and
+  reused means for the other documents.** `form/document.py` (1268 lines) and
+  its TypeScript twin are a working round trip through the crate's format: id
+  stamping, opaque payloads,
+  generators by reference, unknown-field survival, the version reservation. That
+  machinery is general and the *vocabulary* it carries is not. The file goes
+  either way - see (e) - so what is decided here is only whether the round trip
+  is **lifted before it goes and reused as the shape for the several documents
+  this project now has**, or written again from nothing: the multitrack
+  editor's session, the audio editor's, the analysis layers of the audio editor
+  (Sonic Visualiser's panes and layers are a document too, see `O24`), the score
+  editor's. Nothing about that reuse keeps `form`'s five primitives; what is
+  reused is the round trip.
+
+  **(d) The door moves out of `form` entirely** *(decided 2026-09-06 by the
+  user)*. Not a second door beside the old one, not a re-export, not a
+  compatibility shim: `form` ends this milestone with no path into the crate.
+  Today the crate's whole client surface - `edit(x)`, the document, undo,
+  selection, the clipboard, save and reopen - is reachable only through
+  `form/document.py` / `.ts`. Three callers sit on that
+  door and none of them is `form`'s: the standalone host opening a session,
+  `editors/session.py`, and the save/reopen loop. The session types have nobody
+  to talk to until this module exists on its own, in both clients, so it is part
+  of `O21` and not a follow-up. A Python change, a TypeScript change and a book
+  page in each - the pass over the packages, in the same milestone.
+
+  **(e) `form` keeps no door, and leaves no residue** *(decided 2026-09-06 by the
+  user)*. It does not write a session, not even one way out. `form/document.py`
+  and `form/document.ts` are deleted, `ID_ATTR` and the id stamping go with them,
+  and `form` ends with no relation to the crate at all - which is what "frozen,
+  relegated, secondary" already implied. Whatever of the round trip is worth
+  keeping is lifted first, under (c), and lands in the new module as its own
+  code; nothing is left behind in `form` as a forwarding stub or a deprecated
+  alias. `clients/python/docs/src/form.md` and its web twin say the module has
+  no document, rather than saying where the document went.
+
+  **Strong types per timebase, and they are cheap.** Zrythm's 2026 arrangement
+  overhaul added a `Position` primitive plus **strong `ContentTick` /
+  `TimelineTick` types** for exactly the confusion we have: a session carries
+  **three** time axes - beats (musical), timeline samples (the view's), and the
+  frame of a source a region's `start` reads - and today nothing but a comment
+  says which is which. It has already cost us once: a threshold computed on the
+  wrong axis turned every clip move into a trim. Newtypes make that a compile
+  error, and this is the milestone that mints the types.
+
+  **Two things it has to settle rather than assume.** **(a) Is a region one
+  object or two?** REAPER splits the slot in time (`MediaItem`: position, length,
+  fades) from what fills it (`MediaItem_Take`: the source reference, its offset,
+  its playrate, its own envelopes), and that is the same distinction the open
+  decision above closed as *name the placement*. Splitting gives comping by
+  construction - swap what fills the slot, keep the slot - and costs a level in
+  the format and in every intent. **(b) `lane` means two things in the host
+  today** - a track's row, and a *channel* row inside a multichannel clip body -
+  and the second has to be renamed to `channel` here, because the first is what
+  this milestone makes the model's word.
+- ⬜ **O22 - The intents the session admits.** The vocabulary extended to what a
+  DAW does: place, move, trim, split, join, fade, crossfade, set layer, move
+  between lanes **and between tracks**, switch a track's active lane,
+  add/remove/reorder tracks, edit an automation lane, set a marker or a range.
+  Absolute, idempotent, applied only here, each reporting its effective value -
+  O2's rules unchanged, its vocabulary widened. **Acceptance:** every intent
+  enumerated by a test; a region moved between tracks is one transaction that
+  undoes in one step; a trim reports the effective placement after snapping.
+- ⬜ **O23 - The host binds the session and reconciles.** The host holds the
+  session, derives its presentation from it, and answers a change by
+  reconciling - matching regions by identity within a lane - rather than by
+  freeing and rebuilding. `/gui_def` comes to mean *make it look like this*
+  rather than *free this and build that*. **This is what
+  `APPLICATION-SCOPE.md`'s AP5 was reaching for**, and it lands here because
+  reconciling needs something to reconcile against, which is O21.
+  **Prerequisite**: what is the host's and survives a reconcile. It was scoped as
+  *a list, written before the work starts*; Live answers it better and by
+  construction. In the Live Object Model, `Song.View`, `Track.View` and
+  `Application.View` are **objects parallel to the model objects, not children**:
+  the model holds functional data, the View holds presentation, and a script can
+  read and write both. So the prerequisite becomes a **structure rather than a
+  list** - a named view object per model object, whose fields *are* the things
+  that survive - and it answers a second question we had not asked, since screen
+  state stops being an anonymous blob inside the host and becomes something a
+  script can save with a session, restore, and set. That also makes the four-layer
+  table's "presentation" row an addressable thing rather than a policy.
+- ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
+  editor** and the **score editor**, each an application over this document,
+  programmable from the GUI host and driven identically from every client. This
+  is what replaces `FormEditor`, and it is where the project's shape stops being
+  "a client's model with a view over it".
+
+  **The audio editor is also an analysis tool, and Sonic Visualiser is the shape
+  for it** *(wanted 2026-09-06 by the user)*. Its model is two words. A **pane**
+  is a scrollable canvas over a time axis; a **layer** is one of a set of things
+  shown on that pane, stacked like layers in a graphics application. Every layer
+  on a pane shares its horizontal zoom and time alignment, and their **vertical
+  scales need not match** - aligned by default only when their units agree - and
+  panes stacked in a window align on the same sample frame at their centres.
+
+  What that buys, and it is the reason it is wanted here: the layers that
+  **display audio** (waveform, spectrogram, spectrum, colour 3D plot) and the
+  layers that **annotate it** (time instants, time values, notes, regions, text,
+  images) are the same kind of thing on the same axis, and the difference is only
+  that the first are read-only because they *are* the audio and the second are
+  drawn, edited and erased by hand. An analysis result and a hand annotation are
+  then indistinguishable in kind, which is what lets a plugin's output be edited
+  and a hand's marks be measured.
+
+  We already have most of the pieces and none of the frame: `waveform`,
+  `spectrogram`, `scope`, `bpf` and `pianoroll` are layer types by another name,
+  the clip's **edit layer** is a narrow version of the stack, and `Selection`
+  (O6) already spans time, value and spectral region - which is exactly what an
+  annotation layer is a set of. What is missing is that **the axis belongs to the
+  pane and not to the content**: our clip is the box, the axis and the contents at
+  once, so two things cannot be laid over one axis without one of them owning it.
+  That is the design question this milestone opens, and it is what makes the
+  audio editor more than a waveform with a selection.
+
+**None of this starts from nothing on the Rust side.** About 8000 lines of
+multitrack behaviour are already implemented in the GUI host - the shared box
+geometry (`host/placement.rs`, whose own module doc says a lane and a semitone
+row are one structure, which is the observation this turn rests on), the lane and
+clip drawing, the gesture machine, the rulers, the layers and the playhead -
+plus this crate under them. The turn deleted a Python/TypeScript driver and
+deleted nothing in Rust. What has to be read again is not the arithmetic but
+**what each of those files takes as its input**: today the structure *is* the
+widget tree (`reparent_clip` moves a `Widget` between two `children` vectors),
+and under a session those become list operations on a lane. The inventory,
+file by file, is in `APPLICATION-SCOPE.md`, "What is already in Rust, and must be
+read again against the new design" - and the rule it ends with holds here: the
+host's multitrack code is the most eye-tested part of the project and it is the
+half that was right, so when it changes the question is what its input is, never
+whether the behaviour was correct.
+
+**What this turn does not settle**, and will not be settled in passing: whether
+plugins/processors are in the document at all (the leaf is opaque, and a plugin
+is a leaf - but a *send* is routing and routing is authored); and how a
+region's contents are addressed when the source is a function whose arguments
+differ per region - which is `O21`(a) asked from the other side, since REAPER's
+take is exactly *a reference plus the arguments of this appearance*.
 
 
 ## What stays out of the crate

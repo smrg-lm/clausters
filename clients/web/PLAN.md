@@ -10,6 +10,31 @@ The browser GUI host (`clients/gui`, milestones G11-G16) runs the `/gui_*` widge
 
 So the web client is one more consumer of the exact same wires the Python client uses: OSC-in-JSON GuiDefs to the GUI host, OSC to the audio server, the same `decode_packet` framing - only the carrier (browser `WebSocket`), the binding technology (wasm, not ctypes) and the host language (TS, not Python) differ.
 
+
+## `FormEditor` was removed (2026-09-06)
+
+The multitrack driver written over `clausters.form` is gone, with its examples,
+its tests and the book chapter built on it. Every `FormEditor` mention below
+sits inside a **closed** milestone and is left as the record of what shipped;
+nothing there is a pointer to code that exists.
+
+`clausters.form` itself is retained, frozen: a small set of client-side data
+structures for placing elements in time, with no view, taking no new work.
+
+**`Editor` and `Editing` are untouched and stay**, with `View`, `Domain`, `Echo`,
+`edit(x)` and the three editors it opens. What was removed is the *arrangement*
+driver above them, not the seam - and they now have other priorities to adapt to,
+decided in `O23`/`O24` rather than guessed at from this side.
+
+The reason is structural rather than a defect count. A multitrack's own state -
+which track a thing is on, its order within the track, its placement and its
+identity - is authored, durable and undoable; projected out of a general tree it
+had nowhere to live but the widget tree, which is drawn, and drawing frees. It
+is being rebuilt as a **session** in `crates/clausters-document` - source,
+region, lane, track, automation - with three classic applications over it
+(audio editor, multitrack editor, score editor). See that crate's `PLAN.md`,
+"The turn: the arrangement stops being a projection" (`O21`-`O24`).
+
 ## Guiding principles
 
 - **Maximum reuse; the browser only adds its I/O.** What is value or time transformation is shared, not re-implemented: OSC assembly/decode, TempoClock arithmetic, the numeric builtins and the analysis kernels (peaks/FFT) come from **`clausters-core` compiled to wasm** (via wasm-bindgen), so the client is **numerically equivalent to the Python client and to the server by construction**. The GuiDef/`/gui_*` protocol and the def specs are the same JSON the Python builders emit. New TS code is confined to: the language-side control flow (generators/async routines), the browser carriers (`WebSocket`, Web MIDI, Web Audio clock, `fetch`), and the ergonomic builder/typed API.

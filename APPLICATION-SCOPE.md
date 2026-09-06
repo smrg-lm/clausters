@@ -81,6 +81,268 @@ well, and a pass over this code will otherwise "fix" them:
 - **`clausters.form` keeps its surface.** Users of the arrangement API should
   not be able to tell this happened, except that ids stop appearing.
 
+## Design reference: what the field does, and where we differ
+
+Read 2026-09-06, after AP5's conclusion was already reached, to check it against
+prior art rather than to derive it. Sources at the end. It is here and not in a
+milestone because it is **context the milestones are read against**, and because
+none of it is work: an entry that turns into work goes to "Found by use" or into
+a milestone, named.
+
+**Item and Composition — one hierarchy, two categories.** OpenTimelineIO splits
+`Composable` into an **Item** (a leaf: clip, gap, transition) and a
+**Composition** (a container: track, stack, timeline). A `Track` orders its
+children **sequentially in time**; a `Stack` orders them **in parallel**, over
+the same range.
+
+*Ours is a different axis.* `Aggregate`'s two kinds are **concrete** (its members
+relate in time) and **logical** (they relate by processing) — sequence-versus-
+layer is not the distinction we drew, and we do not have it. Worth knowing we
+chose one axis and not the other; not worth changing on this evidence.
+
+**Empty space is an object.** In OTIO a `Gap` is a real item, so a track is a
+**sequence** whose positions derive from the order. We use absolute offsets, as
+Ardour does. That is the NLE family (sequence plus gaps, ripple editing falls
+out) against the DAW family (free placement). **We are in the right family for
+what this is**; the entry exists so the choice is known to be a choice.
+
+**Source -> Region -> Playlist -> Track: four levels, not two.** Ardour's is the
+model this branch most lacks a piece of. A **Source** is the immutable file; a
+**Region** is a window onto a source, shareable, so one region may appear in
+several places; a **Playlist** is the ordered list of regions that **is a
+track's contents**; a **Track** plays a playlist, and playlists are
+**swappable** on a track — which is what takes and comping are.
+
+*The playlist is the indirection we do not have.* In Ardour a clip changing
+track is *remove from playlist A, add to playlist B* — a list operation — and
+the track keeps its identity and its state with no regard to its contents. Here
+a lane's contents **are its children in the widget tree**, so the same gesture is
+`reparent_clip`. That is the difference between the roll and the multitrack,
+arrived at from the other side: the roll's contents are data in one widget, and
+that is why the whole class of id and screen-state defects cannot occur in it.
+
+**A clip's three numbers are the same three.** OTIO carries `source_range` and
+derives `trimmed_range`/`visible_range`. Our `offset`/`dur`/`start` are those,
+with `start` the source range. **We match**; nothing to do.
+
+**The model is authoritative and the view is generated and reconciled.**
+kdenlive keeps the truth in a C++ `TimelineModel` and draws with QML
+(`Track.qml`, `Clip.qml`), and between them each track holds a **`DelegateModel`**
+which binds the visual representation to the model and *"eliminates manual view
+synchronization"* — the framework decides which delegate appears, which goes, and
+which merely updates. Ardour does the same by hand: the canvas's `RegionView`s
+are built **from** the playlist, and the view owns them.
+
+*This is AP5's conclusion under its industry name.* Reconciliation is the
+standard answer, Qt hands it over for free, and we would be building it. The
+agreement is worth recording precisely because we got there from a bug report
+rather than from a book.
+
+**The split of state ownership is the one we already drew.** kdenlive: model =
+positions, durations, structure; view and controller = selection highlight, drag
+previews, the selected ids, the active track. That is our four-layer rule, and
+this is a **confirmation, not a finding**.
+
+**Identity by id, order by index, both.** Tracktion's `ClipTrack` finds a clip by
+matching id *and* indexes by position. That is AP1's direction, and it is
+ordinary.
+
+**The one thing nobody does is what we do.** Every system here keeps model and
+view in one process, so none of them sends a view tree over a wire per redraw.
+Our nearest analogue is not a DAW at all — it is the DOM with a reconciler, or
+Qt's `DelegateModel`. Both are reconcilers, which is the second time the same
+answer arrives by a different road.
+
+**What the reading adds that we had not said.** The open question at the end of
+AP5 — whether a lane could carry its placements as a **prop**, a list of
+`(id, offset, dur, start)`, with bodies as children only where there is one to
+draw — has a name and forty years of use: it is a **playlist**. And it brings two
+things this project does not have and has never designed: playlists swappable
+over one track (takes, comping, alternate versions) and a clip appearing in more
+than one place without the data being copied. *(We take the structure and not the
+name — it is `Lane` here; see "The name: `Lane`, not `Playlist`" below.)* Whether we want either is not
+settled here. What is settled is that the shape was not invented in this
+conversation.
+
+### REAPER, read through its public surface (2026-09-06)
+
+REAPER is **not open source** - it is proprietary, and no source was read. What is
+public and is better for this anyway: the **ReaScript API**, the **extension
+SDK**, and the **`.rpp` project format**, which is plain text and has several
+independent parsers. The model reads more clearly there than it would in source.
+
+**Its object model is five levels, not four.**
+
+    Project -> Track -> MediaItem -> Take -> PCM_source
+
+**Two confirmations, from a third independent system.** The item carries
+`POSITION`, `LENGTH` and a **source offset**, manipulable separately - which is
+what makes slip editing possible, and is our `offset`/`dur`/`start` again after
+OTIO's `source_range` and Ardour's region. And **automation attaches at three
+levels, not one**: `GetEnvelopeInfo_Value` exposes `P_TRACK`, `P_ITEM` and
+`P_TAKE` as an envelope's possible parents. `O21`'s "a lane per addressable
+target (a track's parameter, a region's, a plugin's)" was a guess when it was
+written and is now confirmed.
+
+**The real difference: the take lives on the item, not on the track.** A
+`MediaItem` holds several `MediaItem_Take`s with one active, where Ardour puts
+the alternatives on the *track*. The extra level splits two things our `Region`
+holds together:
+
+| | what it is |
+|---|---|
+| **Item** | the **slot in time** - where it starts, how long, its fades |
+| **Take** | **what fills it** - the source reference, its offset, its playrate, its own envelopes |
+
+That is the same distinction the crate's open decision closed as *name the
+placement*: the placement given an identity, and a reference to what it places
+with the arguments of that evaluation. REAPER has it as two objects; we wrote it
+as one object with a reference inside. **Whether to split it is an open question
+for `O21`** - splitting gives comping by construction (swap the take, keep the
+slot) and costs a level in the format and in every intent.
+
+**And the finding that is worth more than any structure: REAPER changed its
+mind.** REAPER 7 added **Fixed Item Lanes**, with an action named, literally,
+*"Track properties: Fixed item lanes (convert takes to lanes)"* - and the lanes
+are **separate items in parallel layers, not takes stacked inside one item**. So
+after twenty years of takes-inside-the-item, doing real comping needed the lane
+model added **on top**, and the old one could not be removed; both now coexist
+and a user has to know which they are in.
+
+**The lesson, and it decides one of our questions.** Takes-inside-the-item
+answers *an alternative take* and does not scale to *assembling a composite from
+several*. We design once and from nothing, so we take the lane shape - Ardour's,
+and the one REAPER ended up needing - and not takes inside the item. That is
+evidence rather than preference, and it is why this entry exists.
+
+**A smaller difference, in the format.** In `.rpp` the `<SOURCE WAVE FILE "...">`
+is written **inside the item**. Our session format does the opposite - a source
+table plus references, as Ardour does. REAPER's is simpler to read and cannot
+express *these six items share one source* without repeating the path, which is
+the thing that makes non-destructive editing cheap. We keep ours, now with the
+reason written down.
+
+**Sources (REAPER).**
+[ReaScript API](https://www.reaper.fm/sdk/reascript/reascripthelp.html) *
+[`reaper_plugin_functions.h`](https://github.com/juliansader/js_ReaScriptAPI/blob/master/reaper_plugin_functions.h) *
+[`rppp`, an RPP parser](https://github.com/CharlesHolbrow/rppp) *
+[`rpp`, RPP in Python](https://github.com/Perlence/rpp) *
+[Fixed Item Lanes and swipe comping](https://forums.cockos.com/showthread.php?t=283665) *
+[Recording with Fixed Item Lanes](https://reaper.blog/2023/10/record-track-lanes/)
+
+### The open implementations, read for how the picture relates to the logic (2026-09-06)
+
+A second pass, over programs picked for what they do about *the view* rather than
+about the model: LMMS, Zrythm, Sonic Visualiser, Ardour's canvas, and - through
+their documented object models rather than source, since both are closed -
+Ableton Live and Bitwig. Three of the findings became work and are recorded in
+`crates/clausters-document/PLAN.md` (`O21`'s timebase types, `O23`'s view object,
+`O24`'s panes and layers). The rest is here.
+
+**A widget per clip is not the defect, and saying otherwise would have made us
+over-correct.** LMMS has a `Clip` model and a `ClipView` widget per clip, the
+model emitting `dataChanged`/`propertiesChanged` and the views following; it is
+ordinary MVC and it works. What fails here is narrower: **the widget tree is the
+only copy of the structure and it lives across a wire.** LMMS affords a widget
+per clip because the model is authoritative and in-process. So `O23` does not
+have to stop drawing a clip as a widget - it has to stop the widget tree being
+the only place the structure exists. *(The correction is written into the turn
+itself, where the claim was made.)*
+
+**Zrythm is doing this same turn, now, and its layering matches ours.** Five
+layers - UI (Qt/QML), application logic (undo through `QUndoCommand`), data
+model, audio, plugins - plus **object registries: runtime lookup tables for
+arranger objects**, which is `AP1`'s derived id under another name. Its 2026
+overhaul renamed `Region` to `Clip`, unified a `Clip` base absorbing
+`BoundedObject`/`LoopableObject`, and added `Position`/`Timebase` primitives with
+strong `ContentTick`/`TimelineTick` types. Two things follow: the vocabulary is
+still moving in the field, so ours being deliberate is not eccentric; and the
+strong timebase types are the cheapest thing on this page, which is why they went
+into `O21`.
+
+**Live keeps view objects parallel to model objects.** `Song.View`, `Track.View`,
+`Application.View` are separate objects beside their model objects rather than
+children - presentation on one side, functional data on the other, both readable
+and writable by a script. That is the four-layer table with the presentation row
+made **addressable**, and it is what `O23`'s prerequisite becomes.
+
+**And Live has two views over one model**: the same track is a column of
+`ClipSlot`s in Session and a timeline of clips in Arrangement, with a `Scene` as
+the horizontal grouping across tracks. Bitwig separates them by intent - arranger
+clips sound at a designated time, launcher clips must be available whenever - and
+nests with **group tracks and sub-scenes**, which is `O21`'s folder track. For us
+this is the proof that *a view is configured by what it holds* scales to two
+radically different pictures of one model, and an argument that the presentation
+model is **per view** rather than one global thing.
+
+**Ardour's canvas, for the day the timeline is long in earnest.** A custom
+retained scenegraph: `Item`s with a `render()`, `Container`s that draw nothing
+and render children, and `ScrollGroup`s that scroll independently (rulers
+horizontally only, headers vertically only) through an O(1) pointer to the scroll
+parent. Three coordinate spaces - Window, Canvas (about +/-1e307) and Item -
+because Cairo is only reliable to about 32767 px, so everything converts to
+window space before drawing; with a 64-bit timeline that problem is ours too.
+And **no dirty-region tracking at all**: they lean on the window system's expose
+events, and a change entirely off screen queues no redraw.
+
+Worth keeping for the rule it states in someone else's words: they built it
+without scaling, rotation or 3D because *"single pixels have semantic content
+inherent in their existence and placement"* - which is this project's own
+never-resolve-finer-than-the-screen rule, arrived at independently.
+
+**Sources (this pass).**
+[The Ardour Canvas](https://ardour.org/canvas.html) *
+[LMMS architecture](https://github.com/LMMS/lmms/wiki/LMMS-Architecture) *
+[LMMS `ClipView.cpp`](https://github.com/LMMS/lmms/blob/master/src/gui/clips/ClipView.cpp) *
+[Zrythm architecture](https://deepwiki.com/zrythm/zrythm) *
+[Zrythm MR !27, Region to Clip and the timebases](https://gitlab.zrythm.org/zrythm/zrythm/-/merge_requests/27) *
+[Sonic Visualiser: A Brief Reference](https://www.sonicvisualiser.org/doc/reference/3.1.1/en/) *
+[The Live Object Model](https://docs.cycling74.com/legacy/max8/vignettes/live_object_model) *
+[Bitwig: the clip launcher](https://www.bitwig.com/userguide/latest/the_clip_launcher/)
+
+### The name: `Lane`, not `Playlist`
+
+**Decided 2026-09-06 by the user, and the reasoning is kept because the name is
+in the format, in every intent and in both clients once it is written.**
+
+Ardour's **playlist** is *the ordered regions on one track* - its contents, not a
+list of tracks - and a track holds several and plays one, which is what takes,
+comping and alternate versions are. The structure is right and **the name is
+not**: in ordinary use a playlist is a list of songs, so the word has to be
+decoded before it means anything here. Ardour inherited it from Pro Tools, where
+it is equally opaque.
+
+That runs straight into the project's own rules - *name the structure, not the
+category*, and *a metaphor that has to be decoded is not an explanation*.
+Adopting the field's vocabulary buys recognition for a reader who comes from a
+DAW; here it would have imported that field's worst name.
+
+**So the structure is Ardour's and the name is ours: `Lane`.** A track holds
+several lanes and plays one; a lane is an ordered list of regions.
+
+**The cost, stated rather than discovered.** `lane` is already used about
+**1596 times across 70 files** in the host and 60 times in `docs/gui-protocol.md`,
+in **two** senses: a track's row in the multitrack, and a *channel* row inside a
+multichannel clip body (`graphics/track.rs`: *"stacks its lanes: a clip is a
+picture of the contents and a stereo take..."*). Neither is the new one.
+
+The first collision resolves rather than fights: a track with three lanes **draws
+as three rows** when expanded and one when collapsed, which is exactly REAPER 7's
+picture, so the model word and the view word become the same word about the same
+thing. The second does not and has to be renamed - a channel row is a
+**channel**, and calling it a lane was always a stretch. **That rename is part of
+`O21`, not something to leave for whoever trips on it**, and until it happens
+`lane` means two things in the host.
+
+**Sources.**
+[OpenTimelineIO, timeline data model](https://deepwiki.com/AcademySoftwareFoundation/OpenTimelineIO/2.2-timeline-data-model) *
+[kdenlive, timeline UI](https://deepwiki.com/KDE/kdenlive/3.2-timeline-ui) *
+[Ardour manual, working with regions](https://manual.ardour.org/working-with-regions/) *
+[Ardour, `route_time_axis.h`](https://community.ardour.org/files/doxygen/route__time__axis_8h_source.html) *
+[Tracktion Engine, `tracktion_ClipTrack.h`](https://github.com/Tracktion/tracktion_engine/blob/master/modules/tracktion_engine/model/tracks/tracktion_ClipTrack.h) *
+[Tracktion Engine, `Edit`](https://tracktion.github.io/tracktion_engine/classtracktion_1_1engine_1_1Edit.html)
+
+
 ## The milestones
 
 ### AP0 - The seam, in Python only, with nothing moved
@@ -379,6 +641,103 @@ conversion per widget per draw. The **echo's** staleness test is one comparison
 written twice; both are the same rule called twice, which is what a binding is
 for.
 
+**What AP5 turned out to be about: the picture has one owner.**
+
+The difference landed and the flicker went, and then a day of use turned up a
+row of defects that all sit under one premise nobody had written down.
+`Application.publish` computes the difference between the tree it has just
+derived and `_published`, and sends the result to the host's tree. **That is
+correct only if `_published` equals what the host holds.** It does not, and it
+cannot:
+
+- **The host mutates on its own.** `reparent_clip` moves a clip between lanes
+  while the hand is still holding it, the drag writes an offset per frame,
+  `set_y_view` and `scroll_set_view` write a lane's window, and the selection
+  and the header controls write too. Some of those report at the release; the
+  ones that are **screen state report nothing, correctly**, because screen state
+  is the host's by the four-layer rule. So the equality the difference depends on
+  is not merely lost sometimes — it is not reachable.
+- **A `/gui_def` can fail in silence.** `define_node` answers a widget it cannot
+  build with `warn!` and nothing else, and the protocol has no reply to a def.
+  The client records the tree in `_published` as though it had landed, and every
+  later difference is computed against a picture the host never built.
+
+**Versioning the picture was tried on paper and does not work.** If the host
+stamps a picture generation and the client names the one it computed against, a
+disagreement leaves the client redefining whole — the flicker this branch
+removed, now on **every** drag, since the host mutates every frame. Narrowing it
+means the host reporting its mutations and the client applying them to
+`_published`, which is the client modelling the host's rules in two languages:
+precisely what the non-divergence rule forbids, and the kind of drift no compiler
+finds. Every option that keeps a picture on the client ends there.
+
+**So the client stops keeping one.** It sends the tree; the host compares it with
+what it holds — the only copy that is true — and decides what to rebuild. This is
+the convergence with the DOM that the design conversation was reaching for, and
+it is **reconciliation, not addressing**: paths were considered and rejected,
+since a path encodes a position and re-parenting a clip is the multitrack's most
+common gesture, so a path would go stale exactly where a derived id does not.
+
+`/gui_def` stops meaning *free this and build that* and comes to mean *make it
+look like this*. The host, which is the only thing that knows which widget kept
+its identity, is what decides what survives — and that kills the complaint this
+branch opened with at the root: **the zoom is not restored, it is never
+destroyed.** Today the client has to guess a redefine narrow enough to spare a
+state it cannot see.
+
+The division that falls out of it, and the reason it belongs to this milestone
+rather than to the protocol: **the client says what it redrew; the host decides
+what that costs.** The client decides both today, and the second is a drawing
+decision it was never meant to have — choosing how much of the screen is rebuilt
+is drawing.
+
+**AP1 is what makes it possible, and it has already landed.** Reconciling means
+matching an old child to a new one by identity, which is exactly the id derived
+from `(structure, role, key)`. The branch's first milestone turns out to be the
+enabler for the fix to the branch's worst problem; that is not how it was
+planned, and it is why this is written here rather than re-derived later.
+
+**What it costs, unpainted.**
+
+1. **Bandwidth.** A tree per redraw instead of a delta. Mitigated by publishing
+   the smallest subtree the client knows it touched rather than the window —
+   **not measured**, and it wants measuring at drag rates before anything is
+   built on it.
+2. **Which props are the host's and survive a reconcile.** Implicit today in "a
+   redefine destroys everything"; it has to become explicit, per widget kind —
+   zoom, scroll, selection, focus, expanded, the overlays for what is in flight.
+   **This is the part to expect to have underestimated**, and it is the real
+   work. Keeping too much is worse than today's defect: a zoom that survives a
+   lane which is no longer the same lane.
+3. **The blobs.** A tree with blobs goes whole today because a `/gui_set` carries
+   no blob index. Reconciling, a widget whose blob did not change must not have
+   to re-send it, so there has to be a way to say *keep the one you have*. For
+   the editor-grade waveform that is not a detail.
+4. `guidiff` moves into the host — a move rather than a rewrite, its tests with
+   it — and the FFI and wasm exports go. **Both clients lose surface**, which for
+   the non-divergence rule is the right direction, and the ABI counter moves for
+   it.
+
+**What does not change.** The acknowledgement and the version stay as they are.
+They are about the **document**, the document is the client's, and they are used
+correctly (audited 2026-09-06; the three defects that audit found are in "Found
+by use" and none of them is in the mechanism). The picture needs no version
+because there comes to be one picture.
+
+This was checked against prior art after the fact, not derived from it - see
+"Design reference: what the field does, and where we differ" above, which names
+the reconciliation as the field's standard answer and gives the track's-contents
+question its forty-year-old structure (under our own name, `Lane`).
+
+**What is not settled**: the list in (2). Without it a reconcile keeps too much
+or too little, and there is no way to write the acceptance below until it exists.
+
+**Acceptance, for this half:** `Application._published` is gone; a client holds
+no picture; the host answers a def by reconciling against what it draws; a lane
+whose identity persists keeps its zoom, its scroll and its selection across any
+edit anywhere else in the window, and that is true from Python, from the web
+client and from a standalone host because it is one piece of code.
+
 **What AP5 still owes, and why each is where it is.**
 
 - **The routing table** and **the undo/redo walk** are both open, and both are
@@ -389,6 +748,10 @@ for.
   multitrack's lanes through `tree.rs` is what gives the standalone host the same
   function from the same code, and it is entangled with AP6's convergence: the
   lanes and clips are the view that has to be named first. It lands there.
+- **The reconciliation itself** — everything the section above describes — is
+  the milestone's remaining half and has not been started. It is ordered after
+  the prop list of (2) exists, because that list is what its acceptance is
+  written against.
 
 **The standing reason for this milestone**, said by the user on 2026-09-06 while
 reading the day's defects: *the editing logic has to be in Rust so that it is in
@@ -401,17 +764,28 @@ would have to be written a second time for the web client and a third for the
 standalone host. That is the argument, and it is recorded here so it is not
 re-derived from the next defect.
 
-### AP6 - `FormEditor` converges
+### AP6 - `FormEditor` converges - **closed by removal, 2026-09-06**
 
-It is ported to the seam, not ported to Rust as it stands.
+**The milestone is void and its subject is deleted.** `FormEditor` was removed
+that day - source, examples, tests and the book chapter - and `clausters.form`
+was frozen as a small set of client-side data structures with no view. What
+replaces it is not a converged `FormEditor` but a **session** in
+`crates/clausters-document` (source, region, lane, track, automation) with
+three classic applications over it; the design is that crate's `PLAN.md`, "The
+turn: the arrangement stops being a projection", milestones `O21`-`O24`.
 
-- `FormEditor` becomes an application whose structure is a document; `FormEditing`
-  keeps what is genuinely the tree's (the held document, the node index) and
-  loses what AP0 took.
-- The lanes/clips projection is a view built through AP5's path.
-- The mapping rule (root aggregate -> lanes, members -> clips, a nested
-  aggregate as its summary until expanded) is unchanged; expand/collapse becomes
-  screen state under AP3.
+**Why converging it was the wrong target, said once so it is not re-attempted.**
+This milestone assumed the multitrack's structure was a *projection* of a general
+tree and that porting the projection onto a better seam would fix it. It would
+not have. A multitrack's own state - which track a thing is on, its order within
+the track, its placement and its identity - is authored, durable and undoable,
+and a projection has nowhere to keep it, so it kept it in the widget tree. Every
+defect this branch found follows from that, and no seam under the projection
+reaches it.
+
+**What survives is the measurement below**, which is what proved the id work and
+which stands whatever draws the lanes.
+
 - ✅ **The multitrack's widgets are named** *(AP2's acceptance, moved here on
   2026-09-06 with the measurement that forced it; done the same day)*. A lane, a
   clip, a patch, its workspace and the ruler stop taking leased ids and ask for
@@ -434,12 +808,11 @@ It is ported to the seam, not ported to Rust as it stands.
   zero sets**; and dragging a clip in a piece of many, then redrawing, costs
   **zero definitions** and leaves the clip the same widget.
 
-**Acceptance:** `composer.py` and the web client's equivalent page do the same
-things by the same calls in the same order, read side by side, verb by verb; the
-whole loop still works - built in Python, drawn, edited by hand, heard, undone,
-redone, saved, reopened. **And AP2's, which is this milestone's now:** editing
-one clip in a piece of many emits no definition and no free, and a scroll
-position and a selection survive a redraw of the window they are in.
+**Acceptance: withdrawn with the milestone.** It named `composer.py`, which is
+deleted. **AP2's half of it moves to `O23`**, where it is the right shape rather
+than a narrower redefine: editing one thing in a piece of many emits no
+definition and no free, and a scroll position and a selection survive because
+the host **reconciles** and never frees a widget whose identity persisted.
 
 ### AP7 - A second application, to prove the abstraction
 
@@ -453,6 +826,12 @@ with one real consumer has not been tested.
 the clients to make it possible; the two versions are one program in two
 languages; an undo walks the interleaving of what was done in each subview.
 
+**Still wanted, and now cheaper to judge** *(2026-09-06)*. The multitrack is no
+longer the abstraction's first consumer - `O24`'s three applications are - so
+this milestone stops being "prove it against the one thing we have". Whether it
+is still a milestone of its own or is absorbed by `O24`'s audio editor is
+decided there.
+
 ### AP8 - The pass over the packages, and the plans keep what is worth keeping
 
 The milestone that makes deleting this file legal.
@@ -460,8 +839,10 @@ The milestone that makes deleting this file legal.
 - **Docs:** `docs/architecture.md` gains the application scope and its place in
   the four layers; `docs/gui-protocol.md` takes whatever the diff and the derived
   id change on the wire; the Python book's composition chapter and the web
-  book's equivalent follow; `docs/bindings.md` and the parity tests take every
-  new symbol. `scripts/check-docs.sh` before committing anything a book reads.
+  book's equivalent follow **- both of those are gone, deleted 2026-09-06 with
+  `FormEditor`, and what replaces them is `form.md` in each book plus whatever
+  `O24` writes** ; `docs/bindings.md` and the parity tests take every new
+  symbol. `scripts/check-docs.sh` before committing anything a book reads.
 - **Decisions:** `docs/decisions.md` records the two worth recording - the
   application as the unit that owns the id space and the screen state, and a
   widget id derived from a structure's identity rather than leased.
@@ -469,8 +850,10 @@ The milestone that makes deleting this file legal.
   `clients/gui/PLAN.md` (the seam, the derived id, the diff, the screen state),
   a pointer in `clients/python/PLAN.md` and `clients/web/PLAN.md`, and - in
   `crates/clausters-document/PLAN.md` - the answer this branch gives to the open
-  question about the second document, or an honest statement of what it still
-  does not settle.
+  question about the second document. **That last one is done**: the question
+  ("may one element be placed twice, and what does an intent name if it is?")
+  closed on 2026-09-06 into `O21`'s **region**, which is the placement given an
+  identity of its own.
 - **Checks:** `cargo fmt`, `cargo clippy --all-targets` clean,
   `.claude/skills/feature-matrix/check.sh`, `npx pyright` in `clients/python`,
   `./build.sh && ./test.sh` in `clients/web` with the parity vectors regenerated,
@@ -478,6 +861,65 @@ The milestone that makes deleting this file legal.
 
 **Acceptance:** nothing in this file is the only copy of anything, and deleting
 it loses no decision.
+
+## What is already in Rust, and must be read again against the new design
+
+**Written 2026-09-06, when the arrangement stopped being a projection.** The
+turn deleted `FormEditor` — a Python/TypeScript driver — and it deleted nothing
+in Rust. **Roughly 8000 lines of multitrack behaviour are already implemented in
+the host**, plus the whole document crate under them, and none of it was
+reviewed against a design that did not exist when it was written. This section
+exists so that is not mistaken either for "the multitrack has to be built from
+nothing" or for "the Rust half is fine and only the clients changed". Neither is
+true.
+
+| Where | Lines | What it already does |
+|---|---|---|
+| `host/placement.rs` | 473 | **one geometry for every box on a time axis** — a note in a roll and a clip on a lane are the same span, grabbed by the same three parts, snapped by the same grid, moved as a block, quantized, hit-tested in a rect |
+| `host/graphics/track.rs` | 1702 | the lane and its clips as drawn: the body, the header, the grips, the three clip bodies (waveform, roll, curve) |
+| `host/gestures/nav.rs` | 1003 | the lane `Stack` and its bands, `reparent_clip`, edge-scroll while dragging, the vertical view |
+| `host/interact/*` | 1071 | the hit-tests, the drag arithmetic, and every edit-back payload a lane or a clip emits |
+| `host/ruler.rs` | 2267 | the beats/bars/seconds rulers and the tempo map they read |
+| `host/layers.rs`, `scroll.rs`, `play.rs` | 963 | the edit layer of a layered clip, the shared time axis, the playhead |
+| `crates/clausters-document` | 5861 | the document, the intent vocabulary and its one applier, the log and its inverses, the typed selection and clipboard, the session format |
+
+**What that means for `O21`-`O24`.** The behaviour is not the problem and mostly
+survives: `placement.rs`'s own module doc already says a lane and a semitone row
+are one structure, which is the observation the whole turn rests on. What has to
+be read again is **what each of those files takes as its input**, because that
+is what changes:
+
+- **The structure is the widget tree, everywhere.** `reparent_clip` moves a
+  `Widget` between two `children` vectors; `clips_event_args` walks a lane's
+  children; `Stack` is built from widget ids at press time. Under a session those
+  become list operations on a **lane**, and the widget tree becomes something
+  derived. That is the same code doing the same arithmetic against a different
+  owner — a real change, and not a rewrite.
+- **`WidgetKind::Clip` is three numbers and a label**, built from a `field` node
+  with an `offset`. A **region** is more (its own identity, a source reference,
+  fades, gain, a layer) and the extra fields have to come from somewhere the
+  host holds rather than from a GuiDef prop per redraw.
+- **Nothing in the host holds a track's identity across a redefine** except the
+  derived id `AP1` gave it. `O23`'s reconcile is what turns that from a
+  convenience into the mechanism.
+- **The only document that ever existed is `form`'s.** `Body`'s five variants
+  are `form`'s five primitives given a serde form, and the only door into the
+  crate from either client is `form/document.py` / `form/document.ts`. So the
+  module just relegated is the one every writer goes through - including the
+  standalone host's own save/reopen loop, which has nothing to do with `form`.
+  `O21` names this and has to move the door; it is written up there rather than
+  here because it is that milestone's work and not this branch's.
+- **The document crate is complete for the premise it was written under**
+  (`O1`-`O20` all closed) and its premise is the one that moved. Its types are
+  not deleted — `O21` says they become what a region may contain — but every
+  milestone that read "the tree" has to be re-read as "the session, whose
+  regions may hold a tree".
+
+**The rule to keep while doing it**: the host's multitrack code is the most
+exercised, most eye-tested part of this project, and it is the half that was
+right. When something has to change there, the question is what its **input** is,
+not whether the behaviour was correct. Rewriting the arithmetic because the
+owner moved is how a working editor becomes a new set of defects.
 
 ## Found by use
 
@@ -558,6 +1000,24 @@ it loses no decision.
   set names a widget under any redefined id, over a generated pair of trees.
   This is very likely the cause of "everything started failing at once", since a
   set to a freed id leaves the client believing it drew something it did not.
+
+  **A candidate cause arrived later the same day, from AP5's audit, and it is
+  the third possibility rather than one of the two above**: the walk may be
+  correct *and* the two halves may come from one picture - and the set still
+  land on nothing, because the picture both halves came from is the **client's**
+  (`Application._published`) and the widget was freed in the **host's**. `1005`
+  would then be present in both trees the difference compared, which is exactly
+  why a set was emitted for it, and absent only where it mattered. See "What AP5
+  turned out to be about: the picture has one owner" - the premise that the two
+  are equal is not merely violated here, it is unreachable.
+
+  **It does not change the first thing to do, it sharpens what the answer
+  means.** Write the generated-trees assertion anyway: if it **passes**, the
+  walk is exonerated and this entry is evidence for AP5's premise rather than a
+  bug of its own; if it fails, there is a hole in the walk to fix regardless of
+  what AP5 later does to the picture. Either way the test is cheap and answers a
+  question that is currently open. What must not happen is this entry being
+  closed by assumption because AP5 has an explanation that fits.
 
 - ⬜ **The window closes and the process spins at 100% CPU** *(found 2026-09-06
   by the user, twice; one earlier instance was a `composer.py` still running 55
@@ -695,6 +1155,74 @@ it loses no decision.
   already put it in - has to answer what an extra field does to the coalesce key
   and to what the log records, which is more than a rename.
 
+- ✅ **A publish that redefines widgets does not always tell the host what
+  version it is now drawing** — *moot 2026-09-06 with `FormEditor`'s removal, and
+  the observation kept.* The one offending site was `FormEditor._adopt_map` and
+  it is gone; the single publishing site left (`Editor.open`) pairs the two. What
+  survives is the reason it was worth an entry rather than a one-line fix: **the
+  pairing is a convention and not a mechanism.** `publish` already answers
+  whether it redefined anything, so the announcement belongs where the
+  redefinition is decided. `O23` rebuilds that path and should close it by
+  construction rather than by remembering. *(found 2026-09-06, auditing whether the multitrack
+  uses the acknowledgement protocol correctly)*.
+  `FormEditor._adopt_map` is the one publishing site of five that is not followed
+  by `_announce()` — `open`, `load`, `update` and the editor's own `open` all
+  pair the two. A tempo map that changed redraws the multitrack, the host frees
+  the widgets the redefine names, and nothing retires the `Pending` entries in
+  its `Outbox` that name them.
+
+  **It is worse since AP1, not better.** An id is now derived from what it draws,
+  so the rebuilt lane gets **the same id back** — which is the point of AP1 and
+  is also what turns a stale pending entry into a live wrong answer:
+  `Outbox::is_pending(def_id, widget_id)` reports an edit in flight on a widget
+  that was built a moment ago, and nothing ever clears it, because the stamp that
+  would retire it was never sent. A front that draws a pending value differently
+  from an owner's draws that lane wrong from then on.
+
+  **The first thing to do** is not to add the missing call — that is one line —
+  but to ask why the pairing is a convention rather than a mechanism: `publish`
+  knows it redefined something (it answers exactly that), so the announcement
+  belongs where the redefinition is decided rather than at each of five call
+  sites, four of which happen to remember.
+
+- ⬜ **`Echo.raise_floor` is called by nothing** *(found 2026-09-06, same audit;
+  narrowed the same day)*. The floor rose at three places — `Editor.apply`,
+  `FormEditor.rederive` and `FormEditor.load` — and all three assigned
+  `self._floor = self._version` through the property rather than calling the
+  method written for it. Two of the three went with `FormEditor`, so **one site
+  is left** (`editor.py:461`) and the method is still dead. The documented verb
+  and the mechanism in use are two spellings of one act, and it is now a
+  one-line decision rather than a three-way one.
+
+  What makes it worth an entry rather than a tidy-up is what it does to the
+  tests. `Echo`'s own module doc says it is *"exercised by a test that never
+  builds a structure, which is what a protocol should cost to check"* — and that
+  test exercises a method no editor calls. The protocol is checked; the path the
+  multitrack actually takes is not. Either the three sites call the verb, or the
+  verb goes and the property carries the documentation — but the test has to end
+  up on the road that is travelled.
+
+- ✅ **`FormEditor.load` lowers the floor instead of raising it** *(found
+  2026-09-06, same audit; **moot the same day** — `load` went with `FormEditor`,
+  and no path left lowers the floor. Kept because the question it opened is
+  still open and `O21` has to answer it: **what does a version mean across a
+  load?** Whatever holds a session will have the same choice to make.)*. `load`
+  set `self._floor = FIRST_VERSION`, and a floor that can go down is not a floor: everywhere else it only rises, which is what
+  makes `Echo.stale` a monotone test rather than a race. Loading a composition
+  whose version is below the one in hand leaves edits in flight from the piece
+  that was just replaced applying **unchecked**, which is the exact case the
+  floor exists to catch — the picture a gesture was made against is not merely
+  older, it is a different composition.
+
+  It is narrow: it needs a `load` with an edit in flight, and `load` is a session
+  reopening. But the fix is not obviously `max(...)` either, because the two
+  versions count different histories, and a counter from the previous piece is
+  not a lower bound for this one. What the entry is waiting for is the answer to
+  *what a version means across a load* — whether the context's counter is
+  per-composition (in which case the floor should be the new context's version,
+  not `FIRST_VERSION`) or per-session, which is a question about `Editing` and not
+  about this line.
+
 ## The order, and why it is this one
 
 1. **AP0 before anything**, because moving the seam in Python is cheap and
@@ -703,11 +1231,21 @@ it loses no decision.
 3. **AP1-AP4 before AP5**, and this is the load-bearing one: lowering the core
    before the seam exists freezes the wrong unit in Rust, with the id lease
    inside it.
-4. **AP6 after AP5**, because converging `FormEditor` onto a seam that is still
-   moving is converging twice.
-5. **AP7 after AP6**, because the second consumer is only evidence if the first
+4. **AP5 is two halves, and the second waits on a list rather than on a
+   milestone.** The difference went down first because it was written in one
+   language and about to be ported into two. The reconciliation - the client
+   holding no picture at all - is ordered behind the one thing it cannot be
+   specified without: **which props are the host's and survive a reconcile**,
+   per widget kind. Writing that list is host knowledge and depends on no other
+   milestone, so it can be done at any point before the work starts; starting
+   the work without it means guessing what a reconcile keeps, and keeping too
+   much is worse than the defect being fixed.
+5. **AP6 after AP5**, because converging `FormEditor` onto a seam that is still
+   moving is converging twice - and because the reconciliation changes the shape
+   of every publishing path `FormEditor` has.
+6. **AP7 after AP6**, because the second consumer is only evidence if the first
    one is already on the abstraction.
-6. **AP8 last**, and the open question about the application document is
+7. **AP8 last**, and the open question about the application document is
    answered there or explicitly left open - never decided in passing by a
    milestone that only needed somewhere to put a file.
 
@@ -731,7 +1269,8 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the difference is down; the rest is scoped below it)*
-- [~] AP6 - `FormEditor` converges *(its widgets are named; the seam itself is open)*
+- [~] AP5 - the application core moves to Rust *(the difference is down; the picture's single owner is the remaining half, and it is scoped)*
+- [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
+      *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application
 - [ ] AP8 - the pass over the packages

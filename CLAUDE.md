@@ -279,49 +279,37 @@ on trust, so that is where drift accumulates:
   - `clausters-cliente` / "clausters cliente" / "clausters client" — **an
     unspecified client** of the clausters server (a protocol consumer in
     general, not the Python one specifically).
-- **The arrangement model / multitrack editor** — the client-side layer that
-  places elements in time, groups them recursively and renders them
-  (`clausters.form`), and its DAW-style view (`track`/`clip` widgets +
-  `clausters.gui.Editor`). **The module name is dissociated from the prose**:
-  `form` is a code name only — the documentation never says "the form". In prose
-  the layer is *"the arrangement"* (or *"the arrangement model"* when naming the
-  layer as such) / "el arreglo", "el modelo de arreglo", and its view is *"the
-  multitrack editor"* / "el editor multipista"; the work itself is *"the
-  composition"* / *"the piece"*, and the data is *"the tree"* / *"the elements"*.
-  Never the bare "the model" (it reads as the node tree or a def).
-  The layer's **internal vocabulary** for its contents is the **element**
-  (`Element`), deliberately general — it spans both a **generated element** (the
-  rendered thing: an audio file, a bounced timeline — random-access, so it can be
-  read backwards, sliced, edited in place) and a **generator element** (the
-  algorithm that renders it: a def, a pattern — forward-only, it can just be
-  evaluated), with the *change of state* between them. The verb for that change of
-  state to sound is **render** (`Element.render`, `Editor.render`), never
-  "realize"; the editor's *graphic* direction is **draw** (`Editor.draw`, the
-  GuiDef). An `Aggregate` has two **kinds**: **concrete** (its members relate in
-  time) and **logical** (they relate by processing). Its documentation:
-  - **User** — the composition chapter of the Python client's book
-    (`clients/python/docs/src/composition.md`): elements, grouping, rendering,
-    and how the editor maps and edits them.
-  - **Wire** — `docs/gui-protocol.md` (the `/gui_*` reference: widgets, props,
-    edit-back payloads).
-  - **Development** — `docs/architecture.md` ("The arrangement layer: where it
-    lives", and the GUI host's structure + how to add a widget).
-  - **Rationale** — `docs/decisions.md` (the framework itself; the beats↔samples
-    unit bridge; a buffer sounds through an instrument; the patcher shows a
-    connection, not a direction).
-  The framework's own record is `docs/decisions.md` — there is no source document
-  behind it to consult.
+- **The three applications, and where the arrangement lives.** The project is
+  built around three classic applications over **one document**: the **audio
+  editor**, the **multitrack editor** and the **score editor**. The document is
+  `crates/clausters-document` and its vocabulary is the field's settled one —
+  **source**, **region** (a window onto a source, with its own identity),
+  **lane** (a track's contents, and a track holds several), **track**,
+  **automation**, **session**. The GUI host binds that document, which is what
+  makes an application programmable from the host and identical from every
+  client. The design is in `crates/clausters-document/PLAN.md` ("The turn: the
+  arrangement stops being a projection", milestones `O21`-`O24`).
+  In prose the layer is *"the arrangement"* / "el arreglo"; the work itself is
+  *"the composition"* / *"the piece"*. Never the bare "the model" (it reads as
+  the node tree or a def). The verb for a generator becoming material is
+  **render**, never "realize"; the *graphic* direction is **draw**.
 
-  **`form` is a secondary, specific module, and the visual abstractions are
-  independent of it.** What is fundamental is the **data structures** — samples,
-  notes, events, curves, segments — and the verbs they admit; `clausters.form`
-  is one client-side way of *placing* them in time, not the norm the rest of the
-  system is read against. A clip, a lane, a roll, a waveform are **views**, and
-  **a view is configured by what it holds**, never by which class built it: what
-  a hand may do to a clip (move, trim, split, join) is asked of the structure
-  inside it — does it have an addressable time axis — and never of `form`'s type
-  list. An `isinstance` against an arrangement class deciding whether an *edit
-  exists* is the defect, and it is how one action comes to be implemented once
+- **`clausters.form` is a frozen, secondary module and is not that model.** It is
+  a small client-side algebra for placing elements in time (`Element`, the five
+  primitives, `Aggregate` with its **concrete**/**logical** kinds) with **no
+  view** — `FormEditor` was removed on 2026-09-06 along with its examples, its
+  tests and the book chapter built on it. It takes no new work and nothing is
+  designed around it; `clients/python/docs/src/form.md` is its whole
+  documentation and says why. Do not extend it, do not project a view out of it,
+  and do not treat its shape as the arrangement's.
+
+- **A view is configured by what it holds, never by which class built it.** What
+  is fundamental is the **data structures** — samples, notes, events, curves,
+  segments — and the verbs they admit. A clip, a lane, a roll, a waveform are
+  **views**, and what a hand may do to a clip (move, trim, split, join) is asked of the
+  structure inside it — does it have an addressable time axis — and never of a
+  type list. An `isinstance` against an arrangement class deciding whether an
+  *edit exists* is the defect, and it is how one action comes to be implemented once
   per type instead of once. The wire already gets this right (a `field` with a
   placement is a clip; nothing on it names an "audio clip" or a "midi clip"),
   and so do the structures an edit produces — a cut yields `Segment`/`Segments`,

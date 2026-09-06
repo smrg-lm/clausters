@@ -45,7 +45,31 @@ A few things worth knowing:
 - `clock.set_tempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
 - `clock.set_tempo(bps, over=beats)` is the same verb writing a **shape over a stretch**: an accelerando or a ritardando, from the tempo now to `bps` across `over` beats, holding it after. `unit="seconds"` gives the stretch in wall clock instead, solved exactly rather than searched for, and `curve=` picks the shape — `"linear"`, `"exponential"` or a numeric curvature, `Env`'s own vocabulary. Both are plain strings, like every other small option in the client: there is nothing to import. Hand it an `Env` of tempos and the whole shape is written in one call; it must be of finite duration, since a piece's tempo has no gate to sustain on. The formulas behind all of it are in `clausters.base.time`, whose grid conversions (`bar`, `beat_in_bar`, `quant_delay`, `secs_to_samples`, `samples_to_secs`) are also at the top level.
 - Both write on the clock's **tempo map** (`clock.map`), the function that says which second a beat falls on. A beat is a logical coordinate, so that answer depends on the whole tempo history before it, not on the tempo in force now — which is why a tempo change is *recorded* rather than replacing what came before, and why the beats *before* one still convert correctly afterwards. Under a single tempo the map is the plain line `seconds = beats / tempo` it always was.
-- The map is a plain function of a beat, so it also answers questions with nothing playing — how long an accelerando lasts, how many beats fit in thirty seconds, when bar 40 arrives. Those live in [`clausters.base.time`](api.md), and a piece can hold a map that no clock ever read. Hand it to a multitrack editor (`tempo_map=clock.map`) so the line on screen and the sound come from one function.
+- The map is a plain function of a beat, so it also answers questions with nothing playing — how long an accelerando lasts, how many beats fit in thirty seconds, when bar 40 arrives. A piece can hold a map that no clock ever read, and a view drawing a piece is handed the same one (`tempo_map=clock.map`) so the line on screen and the sound come from one function.
+
+### The map as an object
+
+`clausters.TempoMap` is that function, and it can be built before there is a clock at all:
+
+```python
+from clausters import TempoMap
+
+tempo = TempoMap(1.0)            # one beat a second, to begin with
+tempo.push(2.0, 2.0)             # doubled from beat 2 on
+tempo.ramp(8.0, 16.0, 2.0, 4.0)  # then accelerating over the next two bars
+
+tempo.secs_at(8.0)               # 5.0 — not 8.0, and that is the point
+tempo.beats_at(5.0)              # 8.0 — the inverse, which a playhead asks per frame
+```
+
+`push` writes a **step** at a beat and `ramp` a stretch between two; both are **recorded on top of** what came before, which is why the beats *before* a change still convert correctly after it. Hand the finished map to a clock with `clock.map = tempo` and there is one function: the one that answered the questions, and the one the notes are played by.
+
+Two of its answers are worth knowing by name, because the arithmetic people reach for instead is wrong:
+
+- **`span_secs(b0, b1)` — a length in beats is not a duration.** The same eight beats last eight seconds early in that piece and 2.77 s once the tempo has doubled and ramped. So seconds always come from **two positions**, never from a beat count times a tempo, and every conversion in the client takes a position for this reason. `span_beats(b0, secs)` is the same question the other way: how many beats fit in the next thirty seconds, starting here.
+- **An accelerando is a logarithm.** Over beats 8 to 16, from 2 to 4 beats per second, the true length is `ln(T1/T0) / k`. Averaging the two tempos says 2.67 s against the real 2.77 — out by a tenth of a second, which is audible and, drawn, visible.
+
+`segments()` reads the whole recorded history back, and `dump()`/`load()` carry it as JSON. `examples/basics/tempo_map.py` runs all of it and then plays the piece, so the acceleration is heard rather than asserted; `examples/basics/tempo_canon.py` is its sibling about one gesture — ten ramps in wall clock, landing together.
 - A routine optionally receives the clock as its argument (`def melody(clock):`) if it needs it, but for playing events you rarely do — the Server finds the logical beat itself.
 - This clock paces against wall-clock OSC time, the default. To make the same routine drift-free and sample-accurate, or to phase-align several clients, lock it to the server — see [Timing models](timing-models.md).
 

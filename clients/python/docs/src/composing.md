@@ -1,17 +1,25 @@
 # Composing a piece, step by step
 
-This section builds one short piece from nothing, using the **arrangement**
-(`clausters.form`) and its **multitrack editor** (`clausters.gui.FormEditor`), and it
-builds it the way the pair is meant to be used: **interactively**. You keep one Python interpreter open from the first
+This section builds one short piece from nothing with the **arrangement**
+(`clausters.form`), and it builds it the way the module is meant to be used:
+**interactively**. You keep one Python interpreter open from the first
 page to the last — IPython, or an editor that evaluates `# %%` cells — and
 every block below assumes the names defined by the blocks before it. Evaluate
 a block, hear (or see) its result, move on.
 
-[Composition: the arrangement and the multitrack editor](composition.md) is the
-companion chapter: it explains *why* the layer is shaped the way it is. This
+[Composition: the arrangement](composition.md) is the companion chapter: it explains *why* the layer is shaped the way it is. This
 section is the *doing* — each concept appears when the piece needs it, with a
 way to probe it on the spot. When you want the deeper reasoning behind a rule,
 follow the links back to that chapter.
+
+> **`clausters.form` is a relegated module, and it has no view.** It is retained
+> as a self-contained set of client-side data structures for placing elements in
+> time, and this section documents exactly that. The multitrack editor once
+> projected out of it was removed on 2026-09-06 — a multitrack's own state is
+> authored and undoable, and a projection has nowhere to keep it. The
+> arrangement an application is built on now lives as a **session** in
+> `crates/clausters-document` (source, region, playlist, track, automation);
+> `form` takes no new work and nothing else is designed around it.
 
 ## The one loop
 
@@ -71,17 +79,13 @@ what you heard.
    `Aggregate`, placements, and the song tree.
 4. [Rendering: hearing the arrangement](composing/render.md) — flattening,
    the playhead, and why every play re-reads the tree.
-5. [The multitrack editor: the arrangement on screen](composing/editor.md) — the
-   window, the mapping rules, and the unit bridge.
-6. [Editing on screen: the loop closed](composing/editing.md) — the transport,
-   the gesture → `poll()` → `play()` rhythm, and `follow`.
-7. [Automation: a curve as an element](composing/automation.md) — the sweep, the
-   layered clip, and editing the curve in place.
-8. [The logical side: groups as signal graphs](composing/logical.md) — the
-   other grouping kind, and the patcher.
-9. [Bouncing: the piece as a file](composing/bounce.md) — the same tree,
+5. [Automation: a curve as an element](composing/automation.md) — the sweep and
+   the layered clip.
+6. [The logical side: groups as signal graphs](composing/logical.md) — the
+   other grouping kind, and the patch it draws as.
+7. [Bouncing: the piece as a file](composing/bounce.md) — the same tree,
    offline.
-10. [Glossary](composing/glossary.md) — every term this section uses, pinned.
+8. [Glossary](composing/glossary.md) — every term this section uses, pinned.
 
 ## Two units, stated up front
 

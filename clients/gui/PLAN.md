@@ -3244,8 +3244,10 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   editor now answers a history step with `reload`, which makes the element
   forget what it resolved and read its server buffer again. It is correct and
   it is the door that is open, but it re-reads a **whole take** for a stroke of
-  a thousand samples -- fine for the two-second take in `composed.py`, wrong
-  for the minutes-long one the bulk path exists for.
+  a thousand samples -- fine for a two-second take, wrong for the minutes-long
+  one the bulk path exists for. *(The example this was measured in,
+  `editors/composed.py`, was deleted with `FormEditor` on 2026-09-06; the
+  measurement stands and wants a new example under `O24`.)*
 
   **What the work is**: a client sends `(source, generation)` for samples it
   wrote; `settle` compares it with what the host holds for that source and, on

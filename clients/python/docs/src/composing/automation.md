@@ -33,6 +33,16 @@ drone().send(server)
 
 ## The curve: an `Automation`
 
+What an `Automation` **is** — a break-point curve driving `(node, control)`
+targets, rendered through a control buffer onto a control bus, and the two-phase
+`prepare` / play rule it obeys — belongs to `clausters.seq` and is documented
+with the rest of that module in
+[Timelines and the playhead](../timelines.md#automation-a-curve-as-a-timeline-item).
+It is not the arrangement's, and nothing here changes it.
+
+What this page adds is what happens when one is **placed** — an element like any
+other, on the same beat axis as the notes and the takes:
+
 ```python
 from clausters.seq import Automation
 
@@ -47,21 +57,12 @@ sweep.prepare(server)            # allocate + fill its buffer and bus, once
 print(sweep.duration(), sweep.bus.index)
 ```
 
-Break-points are `(time, value, shape, curve)` — times in beats, values in the
-control's real units (Hertz here); the stored curve is an `Env`, the same
-object the envelope editor round-trips. How it is rendered is worth knowing,
-because it is all server machinery you already have: the curve is discretized
-into a **control buffer** on the server (`/buffer_gen "env"`, evaluated through the
-same envelope math the `EnvGen` UGen plays — what is drawn is what is heard),
-and at play time a small internal synth reads that buffer onto a **control
-bus** over the curve's duration. A target node would follow the bus via
-`/node_map`; our drone simply reads the bus itself, so `target=None` — the
-automation just writes its bus.
+Our drone reads the bus itself, so `target=None`: the automation just writes it.
 
-The two-phase shape is deliberate: **`prepare(server)` blocks** (it allocates
-and fills the buffer), so it runs here, at the top level, once. Playing —
-which happens on the clock thread — only *schedules*, and never blocks. The
-same golden rule as everywhere else in the client.
+**Its length is in seconds and the arrangement's placements are in beats**,
+which is the one thing to know before placing it — `duration_unit` is what says
+so, and it is why an element wrapping a curve is measured the way the curve is
+rather than the way the piece is.
 
 ## One clip: the envelope attached to the voice it shapes
 

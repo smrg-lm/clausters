@@ -20,12 +20,35 @@ the plan wins and this file is stale, which is the normal way for it to be
 wrong. When what it holds is exhausted the file goes away; nothing is ever
 written here first.
 
-**The destination this order serves**, stated so an entry can be judged against
-it rather than against taste: **a functionally complete example of the
-arrangement, the document and the GUI together** — a composition built in
-Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
-saved and reopened — on a model that is **usable and correct at real sizes**,
-not only at an example's.
+**The destination this order serves**, restated 2026-09-06 when the arrangement
+stopped being a projection: **the three classic applications over one document**
+— an **audio editor**, a **multitrack editor** and a **score editor**, each
+built on the session in `crates/clausters-document` (source, region, lane,
+track, automation), each programmable from the GUI host and driven identically
+from every client, on a model **usable and correct at real sizes** rather than
+at an example's.
+
+**What that replaced**, so the change is not silently absorbed: the destination
+used to be "a composition built in Python, drawn as a multitrack editor". The
+model under it was `clausters.form`, a client-side tree with the multitrack
+*projected* out of it, and a projection has nowhere to keep the state a
+multitrack actually has — which track a thing is on, its order, its placement,
+its identity. That state ended up in the widget tree, which is drawn, and
+drawing frees. `FormEditor` was removed on 2026-09-06 with its examples, its
+tests and the book chapter built on it; `clausters.form` is retained frozen as a
+small set of data structures with no view. The design that replaces it is
+`crates/clausters-document/PLAN.md`, "The turn: the arrangement stops being a
+projection" (`O21`-`O24`).
+
+**Taken first, and everything below is read against it**: `O21` (the session's
+types and format), `O22` (the intents a DAW admits), `O23` (the host binds the
+session and reconciles), `O24` (the three applications). `O23` is where
+`APPLICATION-SCOPE.md`'s `AP5` lands, and its prerequisite is **design, not a
+note**: it was scoped as a list of props that are the host's and survive a
+reconcile, and became a **structure** — a named view object per model object, on
+the Live Object Model's shape — which decides whether screen state is something
+a script can save with a session. It is still not a milestone, but it is no
+longer something written at any time before `O23` starts.
 
 Where the work lives:
 
@@ -36,6 +59,7 @@ Where the work lives:
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
+| `APx` | `APPLICATION-SCOPE.md` (root) | the application scope: ids, the diff, screen state, the core's move to Rust — **temporary, like this file**, and it goes when the branch lands |
 
 Entries that carry no label are **plan entries, not milestones** — they are named
 by their own title and by the plan that holds them. **A pointer names the plan
@@ -187,14 +211,43 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   alternative to the windows the split now cuts (a split that clones needs no
   crate change, at the price of a cut that deletes instead of hiding), and that
   half is decided and recorded in `docs/decisions.md`; what is left here is the
-  verb itself, whose three shapes are named in the plan.
+  verb itself, whose three shapes are named in the plan. **`O21`(a) asks it from
+  the model's side**: if a region is two objects rather than one, swapping what
+  fills a slot while keeping the slot is a copy by construction, and the verb's
+  shape follows that answer.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
   are legal and ordinary; the lane draws coincident members as a single clip with
   layered bodies, which is the piano roll's logic over placements it does not fit, and the
   two placements stop being addressable. A defect of the picture, not a question
-  about drops -- which is what it was filed as until 2026-09-03.
+  about drops -- which is what it was filed as until 2026-09-03. **The same
+  subject from the branch's side:** "Dropping a clip where another one already
+  sits makes the lane draw as one layered clip, so both appear to vanish into
+  one" (`APPLICATION-SCOPE.md`, Found by use) is this rule seen while using it,
+  reduced to two lanes and one drag. One question, two entries, and it is
+  `O21`'s layered regions that decide it.
+
+- **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
+  together because they came out of one branch and are read against it; each is
+  written in full there and only named here.
+  - ⬜ **A set is addressed to a widget the redefine beside it just removed** —
+    the two halves of one publish disagree. Three candidate causes, the third
+    being `AP5`'s premise itself; a cheap test decides which, and a passing test
+    exonerates the walk rather than closing the entry.
+  - ⬜ **The window closes and the process spins at 100% CPU** — nothing is known
+    beyond the shape. Two places to look and neither has been.
+  - ⬜ **A clip dragged past the first or last lane oscillates back to the start
+    of the track** — no event reaches the client for those frames, so it is the
+    host's own drag.
+  - ⬜ **The playhead draws behind the clips** — not missing, behind; the
+    client's half survives a redefine, the host's paint order has not been read.
+  - ⬜ **A clip cannot be moved between lanes once a split has happened** — the
+    host stops emitting `'lane'` rather than the client refusing it.
+  - ⬜ **The routing table's tag list is written twice** — eight strings verbatim
+    in both clients; they agree today and nothing keeps them agreeing.
+  - ⬜ **`Echo.raise_floor` is called by nothing** — one site left after
+    `FormEditor` went, and it assigns through the property instead.
 
 ## 2. Fixes that need a decision first
 
@@ -207,8 +260,8 @@ on each one; none of them is being taken by this file.
   is a reading of it, every beats/units conversion goes through it, and the
   `tempo_map` axis prop the host draws its beat ruler from is the editor's. A
   view holding content is the wrong shape, but the editor is the symptom rather
-  than the site: `form` is a secondary module over the fundamental structures,
-  so the map cannot land in an `Aggregate` either. What is missing is what a
+  than the site: `form` is a frozen secondary module over the fundamental
+  structures, so the map cannot land in an `Aggregate` either. What is missing is what a
   **fundamental** structure asks when it crosses beats and seconds. Today each
   answers differently -- `Timeline` has no tempo and takes a map as an argument,
   `form.element` invents a constant one per call, `clausters-document` refuses
@@ -222,9 +275,10 @@ on each one; none of them is being taken by this file.
   three. The host needs no change either way: it takes the map as an axis prop
   and does not care who sent it.
   **Found while wiring the map to the host** (2026-09-05), which is the fix that
-  made the ownership visible: `FormEditor._adopt_map`, where the clock's map
-  wins over the editor's, is a reconciliation that exists only because two
-  non-owners each keep a copy.
+  made the ownership visible: the removed `FormEditor._adopt_map`, where the
+  clock's map won over the editor's, was a reconciliation that existed only
+  because two non-owners each kept a copy. `O21`'s session is the fourth
+  candidate owner and probably the answer, which the entry should now weigh.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
@@ -273,6 +327,24 @@ generator's output in an ignored `out/`. Their plans' checkboxes, the
 `examples` skill and `docs/decisions.md` carry the record — the example rule
 being the skill's, since that is where the three directories and their forms
 are written down.
+
+- ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
+  it** *(`APPLICATION-SCOPE.md`, Found by use)*. The crate's `samples` vocabulary
+  has no field for "what this replaced", so the previous run waits in a private
+  attribute between `payload` and `current`, and the interface never says the two
+  must be called in that order, once. **The decision:** whether the inverse is a
+  field of the vocabulary or stays the client's bookkeeping - which is `AP4`
+  asked again about the one payload that did not fit it.
+
+- ⬜ **The undo/redo walk is still each client's, and lowering it is a design
+  step rather than a move** *(`APPLICATION-SCOPE.md`, Found by use)*. `AP5`
+  lowered the difference; the walk resisted, because it orchestrates **client
+  objects** - the editing context's legs, handed round the registered editors,
+  each projecting through its own domain. So it cannot be lowered the way the
+  difference was. **The decision:** whether the crate drives the clients through
+  a callback, or the walk is restated over something the crate already owns -
+  which is `O22`'s intents and `O23`'s reconcile, and it wants a milestone of its
+  own that it does not have.
 
 ## 3. Tests and reviews pending
 
@@ -387,6 +459,25 @@ its plan; the plan is where its acceptance is read.
   UMP-over-our-own-transport direction has no date. It is listed so that
   "unscheduled" reads as a decision rather than an oversight.
 
+### The branch's own, and they are the near work
+
+- ⬜ **`AP5`'s remaining half - the picture's single owner**
+  *(`APPLICATION-SCOPE.md`, marked `[~]`)*. The difference and the mapping went
+  down to Rust; what did not is the half the milestone was named for, and it
+  **lands in `O23`** rather than here - reconciling needs a session to reconcile
+  against. The entry stays open on the branch so the half that shipped is not
+  read as the whole.
+
+- ⬜ **`AP7` - a second application, to prove the abstraction**
+  *(`APPLICATION-SCOPE.md`)*. Written before the turn, and the turn gives it its
+  subject: the second application is one of the three, not an invented one, so it
+  is read against `O24` before it starts.
+
+- ⬜ **`AP8` - the pass over the packages, and the plans keep what is worth
+  keeping** *(`APPLICATION-SCOPE.md`)*. The branch's closing milestone: what of
+  this file and of `APPLICATION-SCOPE.md` survives into the standing plans, and
+  what goes with the branch.
+
 ## 5. Tracks not started, or incomplete
 
 Whole tracks, and one design the user has asked for that is a track's worth.
@@ -434,7 +525,11 @@ into this file is exactly the migration the rules forbid.
   entries in the same list are part of the same design and are read with it: "The
   layer stack is one container's, and an audio editor's view has one too", and
   "Many channels are drawn and not yet readable, and a take cannot be created
-  empty".
+  empty". **`O24` now designs the same thing from the document's side**, on
+  Sonic Visualiser's pane/layer shape - layers that display audio and layers
+  that annotate it as one kind on one axis, with the rule that *the axis belongs
+  to the pane, not to the content*. The two entries are one design and the host's
+  is the view half; read them together before either starts.
 
 - ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
   Future directions)*. A **second kind of multitrack**, explicitly not a milestone
@@ -483,7 +578,12 @@ into this file is exactly the migration the rules forbid.
   "A clip's body and a composed view edit the same data by two roads" in the
   same list — the generic-editor track closed leaving a note's edit spelled
   twice, once as the tree's `SetMembers` and once as the events domain, and
-  which of the two is the real model is this question.
+  which of the two is the real model is this question. **What changed under it on
+  2026-09-06:** the entry names "the bridge that writes the document" as part of
+  its reach, and that bridge is `form/document.py` / `.ts`, which `O21`(d)/(e)
+  delete outright - `form` ends with no path into the crate and leaves no
+  forwarding stub. So the bridge is no longer a thing to redesign; what the entry
+  still owns is which model a note's edit belongs to.
 
 ### The larger questions, and the plans' own Future directions
 
@@ -495,6 +595,12 @@ Named, not enumerated: each is written where it belongs and is read there.
   what it stores, and it is not work to schedule. Nothing above waits on it; it is
   named so its absence reads as a decision. The `Session`/`Document` naming pass
   waits on it, and so does where a widget's left-behind value is saved.
+  **Restated 2026-09-06, because the turn changed the question without answering
+  it:** there is no longer one document with a second beside it. `O24` names
+  three applications and `O21`(c) names their documents - the multitrack's
+  session, the audio editor's, the analysis layers of the audio editor, the score
+  editor's - so what is open is now *what they share*, which is the same decision
+  seen from the other end.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (the

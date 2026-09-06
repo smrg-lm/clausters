@@ -51,13 +51,13 @@ one. Each row says which.
 
 | Example | Why |
 |---|---|
-| `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |
 | `editors/session` | drives the GUI host as a **separate process** over the session's transport, which is what a page has instead of, not as well as: its host is a canvas in the same page |
+| `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |
 | `io/embedded` | the in-process embedded server through the bundled native library — the page's engine is that same server compiled to wasm, so every page is this example |
 | `io/live_udp` | a UDP socket to a server process; a tab has no UDP, and `io/servers.html` shows the same two-server split over its own carriers |
 | `io/osc_destination` | sends OSC to a **foreign** application over UDP; same reason |
 | `views/recording` | the stress-test form of the first of `views/recording.html`'s three pictures: a take count and a follow-block off the command line, so the same file is a demonstration and a load test. The picture itself is in the pair above |
-| `views/bulk` | maps a multi-gigabyte take through the bulk cache with an mmap; a page fetches ranges instead, which `views/take.html` shows |
+| `views/bulk` | maps a multi-gigabyte take through the bulk cache with an mmap; a page fetches ranges instead |
 | `basics/demand.html` | demand-rate UGens, written page-first while the def DSL was being ported; the script twin is named in `clients/python/PLAN.md` |
 | `basics/engine.html` | booting the wasm engine in an AudioWorklet — the page's half of `io/embedded.py`, with no script counterpart for the same reason |
 | `basics/synth.html` | the smallest page there is: one def, one node, one slider. It is the web book's opening example and has no script twin by design |
@@ -229,12 +229,6 @@ in the middle of an example.
 |---|---|---|
 | python | `set` | the script's ending: it closes the gate on whatever voice is still sounding before the session goes. Closing the tab takes the engine with it |
 
-### `views/take`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `stop` (first) | the script hands the button the bound method (`on_click(editor.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
-
 ### `basics/envelope`
 
 | Only in | Call | Why |
@@ -354,12 +348,6 @@ in the middle of an example.
 |---|---|---|
 | python | `gui_is_up` | the launcher's probe: it asks whether a host **process** is still answering on a port after the guest handle let go. A page has neither a process nor a port -- its host is the tab, and the two windows on screen are the same answer |
 
-### `editors/composed`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `stop` ×2 | the script hands each stop button the bound method (`on_click(editor.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
-
 ### `editors/pianoroll_midi`
 
 | Only in | Call | Why |
@@ -451,16 +439,6 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `stop` | the script hands the stop button the bound method (`on_click(transport.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
-
-### `editors/composer`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `pause` | the script hands each of these four buttons the bound method (`on_click(editor.pause)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
-| web | `stop` | as above |
-| web | `undo` | as above |
-| web | `redo` | as above |
-| python | `exists` | the script asks whether its session **file** is there before reading it. A page keeps the same JSON in the browser's own store, where reading it back is the test |
 
 ### `views/editor`
 

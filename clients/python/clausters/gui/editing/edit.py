@@ -17,10 +17,10 @@ break-point curve, a timeline of events — each of which is a
 else. It dispatches on **what the structure is** rather than on a keyword,
 because that is the question a caller has already answered by holding one.
 
-What it deliberately does not open is a composition: an arrangement is edited by
-`clausters.gui.editing.FormEditor`, which knows a tree from a leaf and holds a
-document. `edit` over a piece would be a second door to the same place with a
-worse answer.
+What it deliberately does not open is a whole arrangement. A multitrack is an
+application over a document rather than an editor over a structure, and it is
+built in `crates/clausters-document` (the `O21`-`O24` track); `edit` over a piece
+would be a second door to a place this verb does not reach.
 
 Two calls over one structure give **two windows and one stack**: the editing
 context is the data's (`clausters.gui.editing.Editing`), so an undo in either
@@ -84,7 +84,7 @@ def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
             f"(its samples), an Automation (its curve) or a Timeline (its notes). "
-            f"A composition is FormEditor's."
+            f"An arrangement is a multitrack application's, not this verb's."
         )
     if open:
         editor.open(host)

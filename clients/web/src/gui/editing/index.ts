@@ -22,14 +22,7 @@
  * - {@link Editing} — the editing context: the history, the version, and the
  *   views to tell. An editor **asks for it and never builds one**, which is what
  *   makes two windows over one thing walk one undo order.
- * - {@link FormEditor} — the arrangement's editor: `Editor` plus a held document,
- *   the node index, several views of one composition, the lanes and clips, and
- *   the transport. {@link FormEditing} is its context.
- *
- * The two names are the point of the split: `Editor` is what a person calls to
- * edit a buffer, a curve or a timeline, and `FormEditor` is what edits a piece.
- *
- * And {@link edit} is how a person calls it: one verb over the three fundamental
+ * {@link edit} is how a person calls it: one verb over the three fundamental
  * structures, dispatching on what the structure is — {@link SamplesEditor} over
  * a `Buffer`, {@link PointsEditor} over an `Automation`, {@link NotesEditor}
  * over a `Timeline`. Each is `Editor` with its own domain and view in it and
@@ -59,6 +52,4 @@ export { Echo } from "./echo.ts";
 export type { Correction } from "./echo.ts";
 export { Editor, NOT_AN_EDIT, resolveEditorHost } from "./editor.ts";
 export type { GenericEditorOptions, Leg } from "./editor.ts";
-export { FormEditing, FormEditor } from "./formeditor.ts";
-export type { EditorOptions, Indexed } from "./formeditor.ts";
 export { View } from "./view.ts";

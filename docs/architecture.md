@@ -540,19 +540,27 @@ state it is.
 
 **The editor is four collaborators, and the split is what the names say.**
 `clausters.gui.editing` holds `Editor` — the generic one, over a single
-structure, importing nothing from the arrangement — and `FormEditor`, which is
-that class plus what only a tree has (a held document and the node index,
-several views of one composition, the lanes and clips, and the transport).
-Around them: `View` (the `GuiDef` of one structure, and the registry from widget
+structure, importing nothing from the arrangement. Around it: `View` (the `GuiDef` of one structure, and the registry from widget
 id to what it shows — the only per-domain thing on the graphic side), `Domain`
 (gesture → payload, payload → the client object, the label and the coalesce key
 — it does not know how an edit inverts, which is `history::Editable` in the
 crate, and it does not draw), `Echo` (the acknowledgement protocol: the stamp,
 the version, the floor, the corrections and the reason — generic enough to be
 tested with no structure at all) and `Editing`, the editing context, which the
-editor **asks the data for and never builds**. `FormEditing` is the arrangement's
-context: the generic one plus the held document and the node index. The
-TypeScript side is the same six files at `clients/web/src/gui/editing/`.
+editor **asks the data for and never builds**. The TypeScript side is the same
+files at `clients/web/src/gui/editing/`.
+
+**A multitrack is not among them, and that is recent.** It was, as a `FormEditor`
+projected out of the client's own `clausters.form` tree, and it was removed on
+2026-09-06 with the module demoted to a frozen set of data structures. The
+reason is structural rather than a defect count: a multitrack's own state — which
+track a thing is on, its order within the track, its placement and its identity —
+is authored, durable and undoable, and projecting it out of a general tree left
+it nowhere to live but the widget tree, which is drawn, and drawing frees. It is
+being rebuilt as a **session** in `clausters-document` — source, region,
+lane, track, automation — with the three classic applications (audio editor,
+multitrack editor, score editor) over that one document. See
+`crates/clausters-document/PLAN.md`.
 
 **`edit(x)` is the verb, and the three domains under it are where the seam pays
 for itself.** `clausters.gui.edit` dispatches on what the structure is —
@@ -571,23 +579,15 @@ the crate: a `points::Point` grew a `data` field, because a client's curve
 carries a shape per segment and a vocabulary that dropped it made an undo put
 back a straight line.
 
-**And the arrangement's editor composes those same editors rather than
-reimplementing them.** `open_pianoroll` and `open_signal` are not modes with
-private draws: each builds the editor `edit(x)` would build over that part of the
-composition — a `NotesEditor` over the element's timeline, a `SamplesEditor` over
-the take's buffer — and joins it to the piece's `Editing` context, holding it in
-`FormEditor.composed`. What that buys is the thing a mode could not have: **one
-undo order across vocabularies**. A history step is handed round the context
+**Composing editors rather than reimplementing them is the pattern that
+survives.** A view over part of a structure is not a mode with a private draw:
+it builds the editor `edit(x)` would build over that part — a `NotesEditor` over
+a timeline, a `SamplesEditor` over a buffer — and joins it to the same `Editing`
+context. What that gives is the thing a mode could not have: **one undo order
+across vocabularies**. A history step is handed round the context
 (`Editor.project_legs` / `reflect_step`), so an entry naming several structures
-is projected by whoever holds each — the multitrack applies the tree's legs to
-its document, the samples editor writes the buffer — and Ctrl+Z in any window
-walks the one order. The other direction is the same machine: an edit in a
-composed view reaches the multitrack as an intent in a vocabulary it cannot
-read, which is exactly the case `refresh` exists for (the held document is
-derived again and the clip over that part is resynced, without a redefine). A
-composed view also has no piece of its own, so a click on its ruler is the
-composition's seek and a marquee swept there is a selection *of the element it
-draws* — both handed up through `composed_in`.
+is projected by whoever holds each, and Ctrl+Z in any window walks the one
+order.
 
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`

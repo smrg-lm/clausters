@@ -28,14 +28,7 @@ whole design:
   recorded, a step of the pile, a publish, an acknowledgement. Silent unless
   asked (`CLAUSTERS_EDIT_LOG=1`, or `watch()`), because what a window in front
   of a person does wrong is otherwise visible to nobody.
-- `FormEditor` — the arrangement's editor: `Editor` plus a held document, the
-  node index, several views of one composition, the lanes and clips, and the
-  transport. `FormEditing` is its context.
-
-The two names are the point of the split: `Editor` is what a person calls to
-edit a buffer, a curve or a timeline, and `FormEditor` is what edits a piece.
-
-And `edit(x)` is how a person calls it: one verb over the three fundamental
+`edit(x)` is how a person calls it: one verb over the three fundamental
 structures, dispatching on what the structure is — `SamplesEditor` over a
 `clausters.defs.Buffer`, `PointsEditor` over a `clausters.seq.Automation`,
 `NotesEditor` over a `clausters.seq.Timeline`. Each is `Editor` with its own
@@ -55,7 +48,6 @@ from .echo import Echo
 from .edit import edit
 from .editor import NOT_AN_EDIT, Editor
 from .events import NotesDomain, NotesEditor, NotesView
-from .formeditor import FormEditing, FormEditor
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
                       measures)
@@ -71,8 +63,6 @@ __all__ = [
     "Editing",
     "Editor",
     "FIRST_VERSION",
-    "FormEditing",
-    "FormEditor",
     "MEASURES",
     "NOT_AN_EDIT",
     "NotesDomain",

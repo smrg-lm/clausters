@@ -14,8 +14,7 @@ tree and knows nothing of the arrangement.
 
 **arrangement** — the client-side layer that places [elements](#element) in
 time, groups them recursively and renders them: `clausters.form`. Pure and
-transport-agnostic; the server knows nothing of it. Its DAW-style view is the
-[multitrack editor](#multitrack-editor). Called *the arrangement* (or *the
+transport-agnostic; the server knows nothing of it. It has no view of its own. Called *the arrangement* (or *the
 arrangement model* when naming the layer as such) — never "the model" bare,
 which reads as the node tree or a def.
 
@@ -23,11 +22,6 @@ which reads as the node tree or a def.
 that drives controls: `clausters.seq.Automation`. Stored as an
 [`Env`](#env); rendered as a [control vector](#control-vector) read onto a
 [control bus](#control-bus). ([Automation](automation.md))
-
-**base level** — the zoom at which a nested aggregate is *summarized* (one
-labeled rectangle) or *resolved* (lanes of its own): `FormEditor.expand` /
-`collapse`. The same structure, seen coarser or finer — a view state, not data.
-([The editor](editor.md))
 
 **beats** — the arrangement's unit of time: musical, tempo-relative. Everything
 in `clausters.form` — onsets, durations, placements, `extent` — is in beats.
@@ -49,11 +43,6 @@ piece rendered to a file. The compositional act [rendering](#render--rendering)
 performs — it turns something you can only *produce* into something you can
 *manipulate*. ([Elements](elements.md))
 
-**clip** — the editor's graphic unit: a placed rectangle spanning
-`[offset, offset + dur]` on the shared axis — *its length is its duration*.
-Draws the body (or layered bodies) its element calls for: a take, a
-piano-roll, a curve. ([The editor](editor.md))
-
 **concrete (aggregate kind)** — see [aggregate](#aggregate): an aggregate whose
 members relate *in time* (a section, a lane), as opposed to a **logical** one,
 whose members relate by *processing*. It is the default kind, and the one the
@@ -70,21 +59,11 @@ is what is heard). ([Automation](automation.md))
 
 **cursor** — the *static* transport line: where a located, stopped transport
 sits, and where the next `play` starts. Set by `locate` or a ruler click.
-Compare [playhead](#playhead-sweeping). ([Editing](editing.md))
-
-**dirty** — `FormEditor.dirty`: the arrangement changed since the last render. An
-edit never interrupts what is sounding; the next transport action re-reads the
-composition. ([Editing](editing.md))
+Compare [playhead](#playhead-sweeping).
 
 **duration** — an element's own length in beats (`Element.duration`),
 optional. Distinct from a [placement](#placement)'s `dur`, which overrides and
 [trims](#placement-length-trim) it. ([Elements](elements.md))
-
-**edit-back** — the GUI-to-data direction of the loop: the window's gestures
-(`"clip"` move/resize, `"points"` curve edits, `"wire"` rewiring, `"locate"`)
-applied onto the arrangement by `FormEditor.apply`, which the host's event
-loop calls as each gesture arrives.
-([Editing](editing.md))
 
 **element** — the arrangement's unit: any bounded thing that produces a unit of
 meaning and can be decomposed or combined — in one of the two modes,
@@ -97,10 +76,6 @@ shapes): the stored form of an automation curve, round-tripped to and from
 break-points by `env_to_points` / `points_to_env` — the picture, the data and
 the server buffer all read the same object. ([Automation](automation.md))
 
-**extent** — the composition's length in beats, *read from the arrangement* (the
-end of its last placed element): `FormEditor.extent()`. Not a constant — move a clip
-past the end and the piece is longer. ([The editor](editor.md))
-
 **five primitives** — the five element kinds, each a thin adornment over an
 object the client already has, with their conceptual names: `Clang`
 (*event/clip*), `Sequence` (*List*), `Vector` (*buffer*), `Track` (*Set*),
@@ -110,10 +85,6 @@ object the client already has, with their conceptual names: `Clang`
 absolute beats, producing a flat timeline of playable items; contained
 patterns are bounced in the same pass. `clausters.form.flatten` /
 `to_timeline` — also available as pure inspection. ([Grouping](grouping.md))
-
-**follow** — `FormEditor.follow`: re-render on every applied edit (the *live
-editor*). Off, an edit marks [dirty](#dirty) and waits for the next transport
-action. ([Editing](editing.md))
 
 **generated / generator** — the two modes of an element, the axis the layer
 turns on. *Generated*: the rendered thing — random-access data you can edit,
@@ -142,24 +113,14 @@ action, internally simultaneous — the sonority sense of the word. Wraps a
 `clausters.seq.Event`; element and event keep distinct names so that neither
 reads as the other. ([Elements](elements.md))
 
-**lane** — one `track` row of the multitrack window. The root aggregate's
-members are the lanes; a lane's members are its [clips](#clip).
-([The editor](editor.md))
-
 **locate** — seek: put the transport at a beat. Stopped, it moves the
 [cursor](#cursor); playing, it re-renders from there. A click on a lane's
-ruler or empty space is the same locate. ([Editing](editing.md))
+ruler or empty space is the same locate.
 
 **logical (aggregate kind)** — see [aggregate](#aggregate): an aggregate whose
 members relate by *processing* — wired to each other through buses — rather than
 in time. It does not flatten; it renders to a [GraphDef](#graphdef), and it
 draws as a [patch](#patch--patcher). ([The logical side](logical.md))
-
-**multitrack editor** — the arrangement's DAW-style view and driver:
-`clausters.gui.FormEditor` plus the `track`/`clip`/`patch` widgets. Draws the
-tree, applies edits back onto it, owns the transport, and is the *only*
-converter between [beats](#beats) and [timeline samples](#timeline-samples).
-([The editor](editor.md))
 
 **onset** — where an element starts, in beats, relative to its context;
 optional. Usually supplied by a [placement](#placement) rather than the
@@ -173,7 +134,7 @@ so the picture reads as signal flow. ([The logical side](logical.md))
 
 **piano-roll** — the clip body an element of events draws: one bar per note,
 high pitches up. A pattern's roll is *bounced to be drawn* — a generator lane
-shows the notes it is about to play. ([The editor](editor.md))
+shows the notes it is about to play.
 
 **placement** — one member's position in an aggregate: an `offset` (beats,
 relative to the aggregate) and an optional `dur`. An element's concrete place
@@ -185,25 +146,15 @@ event is shortened — on a copy; the element is never rewritten. The DAW rule:
 a clip's length is what you hear of it. ([Grouping](grouping.md))
 
 **playhead (sweeping)** — the moving transport line, anchored to the engine's
-sample clock so it tracks the audio (`FormEditor.anchor`). Also the
-`clausters.seq.Playhead` object itself: what a render returns. Compare
-[cursor](#cursor). ([Rendering](render.md), [Editing](editing.md))
+sample clock so it tracks the audio. Also the `clausters.seq.Playhead` object
+itself: what a render returns. Compare [cursor](#cursor).
+([Rendering](render.md))
 
 **event loop** — what drains a host and delivers its messages: the editors that
 subscribed to it (each applies the gestures naming its own widgets) and then the
 widget callbacks. Started by opening a **window**, and it is why an edit lands
 with nothing written in the script. What a script writes instead is
-[wait](#wait). ([The GUI](../gui.md), [Editing](editing.md))
-
-**poll** — `FormEditor.poll()`: drain the window's pending events into the
-arrangement by hand, for a script that would rather deliver them itself. It
-answers `False` while the event loop is the one delivering; never call it from
-the clock thread. ([Editing](editing.md))
-
-**quant** — the one musical grid, in beats: the editor converts it once and
-hands it to the lanes as their drag grid, and snaps edit-backs to it — so the
-grid a clip is dropped on is the grid the arrangement re-schedules on.
-([The editor](editor.md))
+[wait](#wait). ([The GUI](../gui.md))
 
 **render / rendering** — the change of state to sound, `Element.render`. What
 it does depends on the [aggregate](#aggregate) **kind**. For a **concrete**
@@ -212,12 +163,6 @@ aggregate (a relation in time): flatten to a timeline and play it through a
 relation of processing): translate to a [GraphDef](#graphdef), send it, instance
 it. RT or NRT purely by destination. ([Rendering](render.md))
 
-**rerender** — `FormEditor.rerender()`: re-schedule the (edited) composition from
-the playhead's position, reusing the destination and clock the last `render`
-remembered — stop, re-flatten, play. Honest semantics: *re-schedule from here*,
-not a sample-exact splice; a synth already sounding keeps sounding.
-([Editing](editing.md))
-
 **RT / NRT** — real-time (a live server, timetagged bundles) versus
 non-real-time (an offline score, `Session.nrt` + `render`). The same client
 code and the same flattening either way — which is why a bounce is
@@ -225,7 +170,7 @@ code and the same flattening either way — which is why a bounce is
 
 **take** — an audio clip: a `Vector` element's recorded/bounced content, drawn
 from the server buffer itself (fetched and decimated host-side).
-([Setup](setup.md), [The editor](editor.md))
+([Setup](setup.md))
 
 **temporal character** — what a single element's `onset`/`duration` presence
 makes it: **segment** (both), **punctual** (onset only), **relative**
@@ -237,15 +182,14 @@ makes it: **segment** (both), **punctual** (onset only), **relative**
 together — one thing on the timeline, drawn as one layered clip), **mixed**
 (anything else). Derived, never declared. ([Grouping](grouping.md))
 
-**timeline samples** — the view's unit: one unit per audio sample, so a take
-sits 1:1 on the axis. Clips, rulers and edit-backs speak it; the editor
+**timeline samples** — a view's unit: one unit per audio sample, so a take
+sits 1:1 on the axis. Clips, rulers and edit-backs speak it; whoever draws
 converts (one beat = `sample_rate / tempo` units) and nothing else does.
-([The editor](editor.md))
 
 **unit bridge** — the single conversion between [beats](#beats) and
-[timeline samples](#timeline-samples), owned entirely by the editor
-(`units_per_beat`, `beats_to_units`, `units_to_beats`), through the core's own
-time arithmetic. ([The editor](editor.md))
+[timeline samples](#timeline-samples) (`units_per_beat`, `beats_to_units`,
+`units_to_beats`), through the core's own time arithmetic. It belongs to
+whoever draws, and to nothing else.
 
 **vector (element)** — the `Vector` primitive: a list at constant time
 (samples). Wraps a `clausters.defs.Buffer` — the server buffer holds the

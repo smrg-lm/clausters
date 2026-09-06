@@ -46,7 +46,7 @@ drums.move(member, 4.0)          # and back
 
 `members` reads the placements as `(offset, dur, element)` triples; `handles`
 returns the stable member objects that `move`/`remove` take. This handle is
-exactly what the multitrack editor will hold on to per clip — a dragged clip
+exactly what a view holds on to per placement — a dragged clip
 becomes a `move` on its handle, nothing more.
 
 Note the placement `dur` is `None` above: the take is *its own* length (its

@@ -24,7 +24,7 @@
  *
  * **The arrangement's context is a subclass**, not this one: a held `Document`,
  * the node index and the id to mint next are the tree's and live with
- * `FormEditor` ({@link FormEditing}). What is here is what is true of editing
+ * whoever holds a tree. What is here is what is true of editing
  * anything.
  *
  * @module

@@ -24,7 +24,7 @@ So the boundaries are:
   seconds ↔ timeline samples) is here because it is the same bridge for every
   structure, and a view that computed its own would be a second answer.
 
-`clausters.gui.editing.FormEditor` is this class plus what only a tree has: a
+A multitrack application is this class plus what only a tree has: a
 held document, several views of one composition, the lanes and clips, and a
 transport. **Transport and render are not here** — a bare structure at most
 sounds; it has no piece to move over.
@@ -81,7 +81,7 @@ class Editor:
                  title: str = "Editor", extra=(),
                  width: int = 1000, height: int = 520, base_id: int = BASE_ID,
                  app=None):
-        #: What is edited. `FormEditor` calls it `element`, which is the
+        #: What is edited. A view over an arrangement calls it `element`, which is the
         #: arrangement's word for the same slot.
         self.structure = structure
         self.sample_rate = float(sample_rate)
@@ -557,7 +557,7 @@ class Editor:
 
     def adopt_selection(self, editor: "Editor") -> None:
         """A view composed inside this one swept a marquee. Nothing by default;
-        `clausters.gui.editing.FormEditor` names what it is a selection *of*."""
+        a view over an arrangement names what it is a selection *of*."""
 
     def _edit(self, payload: dict, label: str, *, coalesce: bool = False) -> bool:
         """Apply one payload to the structure and record how to put it back.
@@ -598,7 +598,7 @@ class Editor:
     def _restructure(self) -> bool:
         """Redefine the window when the last edit changed **which widgets
         exist**, and say whether it did. A structure edited in place changes
-        none, which is why this is nothing here and something in `FormEditor`.
+        none, which is why this is nothing here and something in a tree's view.
         """
         return False
 

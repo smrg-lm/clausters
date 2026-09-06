@@ -1,17 +1,18 @@
-# Composition: the arrangement and the multitrack editor
+# Composition: the arrangement, and the document under it
 
 A `Timeline` places items at beats and a `Playhead` plays them. That is enough to
 sequence, but not enough to *compose*: a composition is not a flat list of events,
 it is an element inside an element — a phrase inside a section inside a piece, a
 take placed against a melody, a generator that has not been evaluated yet.
 
-The `form` namespace is that layer — the **arrangement model**. It is the same
-layer the Python client has, in this language: the two write the same document
-and flatten to the same timeline, and a parity suite holds them to it.
+The `form` namespace is one such layer — a small, self-contained set of
+client-side data structures for placing elements in time. It is the same layer the
+Python client has, in this language: the two write the same document and flatten
+to the same timeline, and a parity suite holds them to it.
 
-`gui.FormEditor` puts it on screen as a multitrack view you can edit. The point of
-the pair is that the graphic is not a picture of the music: dragging a clip moves
-the *element*, and the sound follows.
+It is **relegated**: it has no view, it takes no new work, and the arrangement an
+application is built on lives in the **document** described in the second half of
+this chapter.
 
 ## Elements
 
@@ -142,14 +143,12 @@ client awaits one rather than blocking the page's single thread.
 An element is *rendered*, never played: `play` is for what already sounds
 directly, and a flat `Timeline`, being already generated, is playable.
 
-## Two editors, and which one is which
+## What an editor is
 
 `gui.Editor` edits **one structure** — a buffer's samples, a break-point curve, a
-timeline of events — and it knows nothing about the arrangement.
-`gui.FormEditor` is that class plus what only a tree has: a held document,
-several views of one composition, the lanes and clips, and a transport. The names
-say which is which, and the general one has the plain name because editing a
-curve is the plain case.
+timeline of events — and it knows nothing about any arrangement. That is the whole
+of it, and it is deliberately the plain case: editing a curve is what an editor is
+for.
 
 An editor orchestrates rather than performs, and it is four collaborators
 (`gui/editing/`):
@@ -190,8 +189,9 @@ client's `edit` is not, for the reason `plot` and `View.open` are — resolving 
 ambient host may have to boot it.
 
 Nothing is handed back: the object passed in *is* the edited one. A composition
-is not one of the three — an arrangement is `FormEditor`'s, which knows a tree
-from a leaf and holds a document.
+is not one of the three: a whole arrangement is an **application** over a
+document rather than an editor over a structure, which is what the second half of
+this chapter is about.
 
 Reading it back **after the hand is done** is `wait`:
 
@@ -221,193 +221,28 @@ run it replaced. The page's buffer calls are asynchronous, so a stroke's write i
 **queued in order** rather than awaited; the Python client writes synchronously,
 and that is the only difference between the two.
 
-## The multitrack editor
+## The view it had, and where the multitrack went
 
-`FormEditor` draws that tree as the multitrack view and applies its edits back onto
-the tree. The mapping is one rule, not a heuristic per case:
+The `form` namespace had a multitrack editor projected out of it, and it does not
+any more: `FormEditor` was removed on 2026-09-06 in both clients, with its
+examples and this chapter's pages about it. The namespace itself stays,
+self-contained, as the data structures described above — it simply has no view.
 
-- the root aggregate's members are the **lanes**; a lane's members are its
-  **clips**;
-- a `Vector` clip names its **server buffer** and spans its frames — the host
-  fetches and decimates it, so a real take never rides the wire as JSON;
-- an element of events draws a **piano roll**, and a contained generator is
-  bounced in the same pass, so a pattern lane shows the notes it is about to
-  play;
-- an `Automation` draws its **curve** as the clip body, editable in place;
-- a nested aggregate draws as the labeled rectangle that summarizes it, until
-  `expand` resolves it into lanes of its own — the arrangement's *base level*;
-- a **logical** aggregate draws as a directed `patch` instead of a lane: a box
-  per member, its ports typed from the def it wraps, and a cord drawn there
-  rewrites the members onto a shared bus.
+The reason is structural rather than a defect count. A multitrack's own state —
+which track a thing is on, its order within the track, its placement and its
+identity — is **authored, durable and undoable**, and a projection has nowhere to
+keep it: it ended up in the widget tree, which is drawn, and drawing frees.
 
-The same patcher draws a def **on its own**, as a way to *look at its
-structure*. `someDef.plotDef()` opens one window per call showing the def as a
-directed patch — distinct from `plot(someDef)`, which shows the def's *sound*
-(its rendered waveform). It reads at **two levels**: a `GraphDef` draws as its
-member nodes wired by buses (the same picture the logical aggregate shows); a
-`SynthDef` or `FaustDef` draws one level deeper, as its **internal graph** —
-every UGen (or Faust signal op) a box, every input a cord, the def's controls the
-source boxes and its literals small value boxes. A cord is coloured by rate —
-contrasting primaries at one width, audio red, control blue, and level 2's third,
-**init** (`ir`, yellow and dashed), a scalar read once at init time. The host lays
-the boxes out on its own. The Def view is **read-only** — the faithful picture of
-what the def is (`DefPatch.fromSynthdef(sdef).toSynthdef(name)` reproduces the
-original spec); it needs no audio server.
+What replaces it is a **session** in the same document crate the rest of this
+chapter is about — source, region, playlist, track, automation — with three
+classic applications built over it: an audio editor, a multitrack editor and a
+score editor, each programmable from the GUI host and driven identically from
+every client. `crates/clausters-document/PLAN.md` carries that design.
 
-```ts
-const editor = new gui.FormEditor(song, {
-    sampleRate: engine.context.sampleRate,
-    tempo: clock.tempo,
-    quant: 0.5,              // the musical drag grid
-    follow: true,            // what is sounding follows the edit
-});
-const win = editor.open(host);       // draw, open, and listen
-await editor.render(server, clock);  // play the composition as it now stands
-```
+**What did not change** is everything below: the document, where undo lives, and
+what a saved session is. Those are the crate's, they were never `form`'s, and
+they are what the three applications are built on.
 
-`open` **subscribes** — a page has an event loop, so every `/gui_event` reaches
-the editor as it arrives, where a script in the Python client drains a queue
-itself. `detach()` stops it.
-
-**Beats meet samples here, and only here.** The arrangement places elements in
-beats and measures each one's length in the unit of its own data; the view places
-clips in timeline samples, because a clip's body is audio data. A length in
-seconds crosses on `unitsPerSecond` (the rate itself) and an onset crosses on the
-piece's **time map**, so a take is drawn exactly as wide as it sounds whatever the
-tempo is and only its placement follows the grid.
-
-The map is what makes the placement side right when the tempo changes. A beat is
-a logical coordinate: what second it falls on depends on the whole tempo history
-before it, not on the tempo in force now, so the same four beats are a different
-stretch of the axis at the start of the piece and after an accelerando. That is
-why the editor holds a `TempoMap` rather than a number, why `beatsToUnits` takes
-a position, and why `lengthToUnits` takes the onset a length starts at. Under a
-single tempo it is the plain ratio `sampleRate / tempo`, which is what
-`unitsPerBeat` still names.
-
-Hand the editor the clock's map when the piece changes tempo, so the line and the
-sound are one function rather than two readings of it:
-
-```js
-clock.setTempo(2.0);                       // or clock.setTempo(2.0, { over: 8 })
-const editor = new FormEditor(song, { sampleRate, tempoMap: clock.map });
-```
-
-`editor.render(server, clock)` adopts the clock's map anyway and redraws if it
-moved, so the two cannot silently disagree — but passing it up front means the
-first draw is already right.
-
-**Where an edit is decided is not here either.** A drag leaves the host as an
-intent — where the hand put it, absolute — and the shared crate applies it: the
-`quant` grid snaps it *there*, and what comes back is the value that actually
-holds, which the editor projects onto the arrangement and answers the host with.
-So a clip lands on the grid although nothing in this client snapped anything, and
-`undo()`/`redo()` walk the crate's pile rather than a history a view kept for
-itself.
-
-That pile belongs to the **arrangement**, so two windows over one piece find the
-same one:
-
-```ts
-const multitrack = new FormEditor(piece, { sampleRate });
-const roll = new FormEditor(piece, { sampleRate });   // a second window, same piece
-
-await multitrack.open(host);
-await roll.open(host);             // `open` listens, so nothing is pumped here
-
-roll.canUndo;                      // true after a drag in the other window
-roll.undo();                       // and the clip springs back in both
-```
-
-An edit in one window **reaches** the others, which nothing else would do: an
-acknowledgement goes to the window whose gesture it answered. It arrives as
-props — the placement, the length, the notes — and only a structural edit (a
-split, a cut, an undo of one) redraws them whole, for the same reason a redefine
-is not what answers a drag. (This is where the
-two clients differ in shape and not in surface: `open` subscribes here, while a
-script feeds one poll loop to every editor it opened.)
-
-A history an editor kept would see only the gestures *that* editor made, so a
-script editing the arrangement or a second view would leave it describing a
-composition that has moved on — and undoing then writes a state nobody was ever
-in. It holds for a window over a *part* of the piece too: a dedicated roll of
-one track edits through the composition's history rather than opening a second
-one over the same notes. What each window keeps for itself is what a window can
-see — its selection, its zoom, which layer the hand is on (`editor.editLayerOf`)
-— and none of that is ever an entry in a history. What a view keeps is asked for
-by the **placement**, the way every other route is: a widget id is the picture's
-name for a widget and is minted afresh every time the window is redrawn, so
-nothing that has to outlive a redraw is keyed by one.
-
-A trim, a split and a join are the same round trip in the same one edit each: a
-placement is a **window onto** an element, so shortening a clip over its own
-notes plays fewer of them and keeps them all — lengthen it again and they come
-back.
-
-**Splitting and joining.** With the pointer over a clip, `e` cuts it in two at
-the time cursor (at the pointer when no cursor is inside it) and `j` joins it
-with the clips that touch it on its lane. Neither is a menu item or an
-affordance: they are the clip's own verbs, addressed by the pointer like every
-other verb over a view. A split gives each half a window over the same samples,
-which is why a join can put back exactly what the cut separated.
-
-A **structural** edit redraws itself: a split, a join or a cut changes which
-clips exist, and a widget that was not there cannot travel as a property, so the
-editor redefines the window — for the edit and for an undo of it. A placement, a
-length or a curve travels with the acknowledgement instead.
-
-An intent states the **whole** value, and **absence is a value**: a `place`
-carrying no `dur` is a placement with *no length*, and the element's own is what
-plays. That is what an undo of the first resize of a clip hands back — before it
-there was no length to restore — and the same holds one level down, where a
-member with no configuration is a leaf configured as it was made.
-
-A note edited in a roll is **updated, not rebuilt**: the event keeps its
-instrument and everything else the roll cannot show, and the length a drag on
-its edge sets is the note's `sustain` — which is what the bar draws — so its
-`dur` and `legato` stay as they were written.
-
-An **OSC marker** is edited the same way, in its own lane: dragged or removed,
-it is written onto the timeline like a note, and matched back to its item by its
-*label* — which is the address it sends — so a marker keeps its message across a
-drag, and removing one does not hand its neighbour's message to the wrong
-marker. **Adding** one there is refused, and says why: a marker *is* the message
-it sends and the lane has no way to type an address, so it is added from the
-page (`timeline.add(beat, new OscItem("/addr", ...))`) and dragged here.
-
-**Cut, copy and paste are one mechanism.** A block of notes copied out of a roll
-(`Ctrl+C`) is written onto the roll a paste addresses as an ordinary edit of its
-notes — the same call a drag on a note goes through — so it is one entry on the
-pile, and one undo takes the whole block back. The position a paste names is on
-the *timeline's* axis while a roll's notes are in its clip's own time, so a clip
-placed at beat 2 holds its own note 0 there: the editor converts, and the block
-keeps the spread it was copied with. A cut whose selection covers a clip removes
-that placement, undoably; a cut running across one, and a paste of a block of
-*samples*, are refused with the reason — audio with neither a source nor a
-source's owner is not something an editor of placements may invent.
-
-Two dedicated views open on one element **beside** the multitrack, not instead
-of it: `openPianoroll(host, element)` for an editable note grid, and
-`openSignal(host, element)` for the editor-grade waveform of a rendered element
-(its `layers` — `["peak", "rms"]` — is a live prop, not a pile of widgets).
-
-Each **composes an editor of its own** — the `NotesEditor` `edit(timeline)`
-opens, the `SamplesEditor` `edit(buffer)` opens — joined to *this* composition's
-editing context, and reachable as `editor.composed`. So the windows step **one**
-history: a note moved in a roll reaches the clip drawing it as props, without
-either window being redefined, and a stroke drawn on a take is this piece's edit
-in the crate's `samples` vocabulary. The multitrack cannot read a samples leg at
-all; it hands that leg to the editor that can, which is what one editing context
-over several structures is for — so a stroke and a clip's move undo in the order
-your hand made them, from whichever window has focus.
-
-A generator has no samples until it is rendered, so `openSignal` refuses one and
-says what to do; `openPianoroll` bounces what it produced onto a timeline of its
-own and opens the roll **read-only**, telling the widget so rather than refusing
-each drag after the hand has made it.
-
-The examples are `examples/editors/composer.html` and
-`examples/editors/composed.html`.
 
 ## The document: what the composition *is*
 

@@ -8,7 +8,7 @@
  * caller has already answered by holding one.
  *
  * What it deliberately does not open is a composition: an arrangement is edited
- * by {@link FormEditor}, which knows a tree from a leaf and holds a document.
+ * by a multitrack application over a document, not by this verb.
  * `edit` over a piece would be a second door to the same place with a worse
  * answer.
  *
@@ -85,7 +85,7 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
             "`edit` opens a Buffer (its samples), an Automation (its curve) or a " +
-            "Timeline (its notes). A composition is FormEditor's.",
+            "Timeline (its notes). An arrangement is a multitrack application's.",
     );
 }
 

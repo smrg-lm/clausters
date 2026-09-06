@@ -20,7 +20,7 @@
  *   seconds ↔ timeline samples) is here because it is the same bridge for every
  *   structure, and a view that computed its own would be a second answer.
  *
- * {@link FormEditor} is this class plus what only a tree has: a held document,
+ * A multitrack application is this class plus what only a tree has: a held document,
  * several views of one composition, the lanes and clips, and a transport.
  * **Transport and render are not here** — a bare structure at most sounds; it
  * has no piece to move over.
@@ -99,7 +99,7 @@ export interface GenericEditorOptions<S> {
 /** One structure on screen, editable back into it. */
 export class Editor<S = unknown> implements Adopting {
     /**
-     * What is edited. {@link FormEditor} calls it `element`, which is the
+     * What is edited. A view over an arrangement calls it `element`, which is the
      * arrangement's word for the same slot.
      */
     structure: S;
@@ -664,7 +664,7 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * A view composed inside this one swept a marquee. Nothing by default;
-     * {@link FormEditor} names what it is a selection *of*.
+     * a view over an arrangement names what it is a selection *of*.
      */
     adoptSelection(_editor: Editor): void {}
 
@@ -712,7 +712,7 @@ export class Editor<S = unknown> implements Adopting {
     /**
      * Redefine the window when the last edit changed **which widgets exist**, and
      * say whether it did. A structure edited in place changes none, which is why
-     * this is nothing here and something in {@link FormEditor}.
+     * this is nothing here and something in a tree's view.
      */
     protected restructure(): boolean {
         return false;
@@ -729,8 +729,9 @@ export class Editor<S = unknown> implements Adopting {
      *
      * Unsubscribing, here — an editor with no window has nothing to answer for,
      * and the host holds an open editor so a script need not, which is where
-     * that stops. {@link FormEditor} overrides it, because a view *it* composed
-     * may still be on screen and fed from the same subscription; that is why
+     * that stops. An editor that composed other views overrides it, because a
+     * view *it* composed may still be on screen and fed from the same
+     * subscription; that is why
      * this is a hook of its own rather than a call to {@link Editor.detach},
      * whose public meaning is "stop listening" and must go on meaning it.
      */

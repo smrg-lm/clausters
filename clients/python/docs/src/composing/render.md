@@ -81,4 +81,4 @@ piece does not need it yet.
 You now have the whole loop in code: build elements, place them, play them,
 edit, play again. Time to put it on screen.
 
-Next: [The multitrack editor: the arrangement on screen](editor.md).
+Next: [Automation: a curve as an element](automation.md).

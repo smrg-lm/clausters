@@ -76,7 +76,6 @@ loaders:
       - clausters.gui.editing.domain
       - clausters.gui.editing.echo
       - clausters.gui.editing.editor
-      - clausters.gui.editing.formeditor
       - clausters.gui.editing.view
       - clausters.gui.host
       - clausters.gui.notation

@@ -77,6 +77,50 @@ A pass **ends on its own** when the scan reaches the end of the timeline: `playi
 
 Under the hood the playhead is a thin cursor over the static structure: the random access happens at the boundaries (`play`, `locate`, loop wrap), and between them it is a forward scan — exactly how a DAW's playback engine reads its arrangement. Because it rides the clock's logical time like everything else in the client, it **inherits the timing models for free**: `quant` starts it on a bar, `clock.lock_to(server)` makes its events sample-exact, and `clock.join_transport(server)` aligns its bars with other clients (see [Timing models](timing-models.md) and [A DAW-style transport](transport.md)).
 
+## Automation: a curve as a timeline item
+
+A `clausters.seq.Automation` is the other static structure this module has: a
+**break-point curve driving one or more `(node, control)` targets**, and it is
+played by a `Playhead` exactly as an event is, because it is a timeline item.
+
+```python
+from clausters.seq import Automation
+
+sweep = Automation.from_points(
+    [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
+     (2.0, 900.0, 2, 0.0),      # ... up to 900 (segment shape 2: exponential)
+     (4.0, 300.0, 1, 0.0)],     # ... back down (shape 1: linear)
+    target=(synth, "cutoff"), name="cutoff")
+
+sweep.prepare(server)           # allocate and fill its buffer and bus, once
+timeline.add(0.0, sweep)        # and it plays like anything else on the line
+```
+
+Break-points are `(time, value, shape, curve)` — values in the control's **real
+units** (Hertz here, not a normalized 0–1), and the stored curve is an `Env`, the
+same object a `bpf` editor round-trips through `to_points` / `from_points`. So a
+drawn envelope and a played automation are one object, and
+[`edit(curve)`](gui.md) opens it.
+
+**How it is rendered is machinery you already have.** The curve is discretized on
+the server into a **control buffer** (`/buffer_gen "env"`, evaluated through the
+same envelope math the `EnvGen` UGen plays, so what is drawn is what is heard),
+and at play time a small control synth reads that buffer onto a **control bus**
+over the curve's duration. A target follows the bus via `/node_map`; with
+`target=None` the automation simply writes its bus and whoever wants it reads it.
+
+**The two phases are the client's standing rule, not this class's quirk.**
+`prepare(server)` **blocks** — it allocates and fills the buffer — so it runs at
+setup, off the clock thread. Playing only *schedules*, and never blocks.
+
+**An edit does not reach a sweep already running.** What a synth reads is the
+control buffer, filled once; after editing the curve, `refill()` writes the new
+shape and the next play reads it. That is one command the server applies ahead
+of the synth that reads it, so it is safe from a UI loop.
+
+Its length is in **seconds**, because an envelope's segment times are real time —
+which is what `duration_unit` reports, and what anything measuring it has to ask.
+
 ## Capturing a pattern into a timeline
 
 The two meet here: run a pattern offline and record what it plays into a timeline — "bounce a pattern to a clip" — then edit and seek the result.

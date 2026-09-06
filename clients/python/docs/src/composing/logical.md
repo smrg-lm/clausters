@@ -75,73 +75,22 @@ is not placed inside the concrete song and flattened with it — the two
 kinds answer different questions (*what sounds when* versus *what is wired to
 what*), and `render` routes each to its own path.
 
-## The patcher
+## The view it has
 
-A logical aggregate has a view too, and it is not a lane — its shape is not
-time.
-Open an editor on the chain itself:
+A logical aggregate has a view, and it is not a lane — its shape is not time. It
+is a **patch**: a box per member, drawn directed and typed (inlets on the box's
+top edge, outlets on the bottom, each a wirable control of the def) with a cord
+per `outlet -> inlet` connection. The buses are not drawn: a cord *is* a bus.
 
-```python
-patcher = FormEditor(chain, sample_rate=SR, tempo=TEMPO, title="chain")
-pwin = patcher.open(gui)
-```
-
-A **patch**: a box per member, drawn **directed and typed** — inlets on the box's
-top edge, outlets on the bottom (each a wirable control of the def), and a **cord**
-per `outlet -> inlet` connection. The buses are not drawn: a cord *is* a bus (the
-client names one per net of cords).
-
-Notice the patch is **directed and typed** — a cord runs `outlet -> inlet`, and its
-weight shows the rate (audio heavy, control thin). The direction is not guessed: it
-is structural, read from each def — a control feeding an `In` is an inlet, one
-feeding an `Out` an outlet — so the picture reads as signal flow, top to bottom,
-and cannot lie about it.
-
-## Rewire it
-
-The wires are live, and the rhythm is the one you know:
-
-- **drag an outlet onto an inlet** — draws a cord (a rate mismatch is refused);
-- **drag a port onto empty space** — unwired.
-
-Re-instance the chain so you can hear the difference, then unplug the gain
-stage's input on screen (drag its `in` port to empty space), and:
-
-```python
-inst = chain.render(server)
-```
-
-```python
-# the edit lands on the aggregate as the wire is dropped
-print(chain.members[2][2].controls)   # {} — 'in' no longer names a bus
-```
-
-The edit rewrote the member `Generator`'s controls — the data again, nothing
-else. And exactly as with a moved clip, what is *running* does not rewire
-itself; the next render sends the graph as drawn:
-
-```python
-inst.free()
-inst = chain.render(server)       # silent: the gain stage reads nothing
-```
-
-Wire `in` back to `mix` on screen, then:
-
-```python
-inst.free()
-inst = chain.render(server)       # and it sounds again, wired as drawn
-```
-
-Clean up the demo:
-
-```python
-inst.free()
-gui.close(pwin)
-```
+The direction is not guessed — it is structural, read from each def (a control
+feeding an `In` is an inlet, one feeding an `Out` an outlet), so the picture
+reads as signal flow, top to bottom, and cannot lie about it. The `patch` widget
+and how a script builds one are in
+[The visual elements](../gui.md); what belongs on this page is the structure it
+draws, which is the aggregate above.
 
 The piece itself never needed the logical side — but a real composition grows
 one the moment two nodes share a bus: a send, a master chain, a layered
-instrument. It is the same `Aggregate`, the same five primitives, and the same
-loop: build in code, see it drawn, edit either side, render.
+instrument. It is the same `Aggregate` and the same five primitives.
 
 Next: [Bouncing: the piece as a file](bounce.md).
