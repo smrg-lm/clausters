@@ -483,7 +483,7 @@ class FormEditor(Editor):
         # only the first has a time axis to rule: `track` builds the two-axis
         # `field`, `patch` the locked-scale `plane`.
         ruler = [timeruler(ruler="beats", sample_rate=self.sample_rate,
-                           tempo=self.tempo)] if any(
+                           tempo=self.tempo, tempo_map=self._map_prop())] if any(
             lane.get("type") == "field" for lane in lanes) else []
         return window(*lanes, *ruler, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
@@ -2895,6 +2895,7 @@ class FormEditor(Editor):
         wid = self._new_id()
         lane = track(*clips, id=wid, label=_name(element),
                      sample_rate=self.sample_rate, tempo=self.tempo,
+                     tempo_map=self._map_prop(),
                      snap=self.beats_to_units(self.quant) if self.quant > 0 else None,
                      autofit=self.autofit,
                      **_lane_mixing(element))
@@ -2963,6 +2964,17 @@ class FormEditor(Editor):
         if "notes" in body and roll is not None:
             self._rolls[wid] = roll
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
+
+    def _map_prop(self):
+        """The piece's tempo map as the axis prop, or ``None`` while there is
+        nothing a scalar tempo cannot say.
+
+        A map of one segment **is** ``tempo``, so sending it would put a list on
+        the wire to state a number the def already carries. It goes only where
+        the piece's tempo actually moves — which is also what keeps a
+        one-tempo def the same def it was.
+        """
+        return self.tempo_map if len(self.tempo_map) > 1 else None
 
     def _axis_for(self, auto, points) -> tuple:
         """The value axis this curve is drawn against — the one it was **first**

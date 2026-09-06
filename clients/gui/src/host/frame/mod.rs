@@ -712,13 +712,14 @@ pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
 }
 
 /// The time-ruler unit of `editor` (the beats grid rides its props).
-fn time_unit(editor: &EditorProps) -> TimeUnit {
+fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
     match editor.ruler {
         Ruler::Samples => TimeUnit::Samples,
         Ruler::Beats => TimeUnit::Beats {
             tempo: editor.tempo,
             beat_at: editor.beat_at,
             quant: editor.quant,
+            map: editor.tempo_map.as_deref(),
         },
         _ => TimeUnit::Seconds,
     }
@@ -1330,6 +1331,7 @@ mod tests {
             sample_rate: 0.0,
             bit_depth: 16,
             tempo: 1.0,
+            tempo_map: None,
             beat_at: 0.0,
             quant: 4.0,
             autofit: true,

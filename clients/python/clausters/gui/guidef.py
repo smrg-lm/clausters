@@ -1397,7 +1397,7 @@ def waveform(*, autofit: bool | None = None,
              ruler: str | None = None,
              ruler_y: str | None = None, bit_depth: int | None = None,
              min: float | None = None, max: float | None = None,
-             sample_rate: float | None = None, tempo: float | None = None,
+             sample_rate: float | None = None, tempo: float | None = None, tempo_map=None,
              beat_at: float | None = None, quant: float | None = None,
              sel_start: float | None = None, sel_len: float | None = None,
              sel_min: float | None = None, sel_max: float | None = None,
@@ -1515,7 +1515,8 @@ def waveform(*, autofit: bool | None = None,
                        color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        min=min, max=max, autofit=autofit,
-                       sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
+                       sample_rate=sample_rate, tempo=tempo,
+                       tempo_map=_tempo_map(tempo_map), beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
                        playhead_at=playhead_at, playhead=playhead,
@@ -1536,7 +1537,7 @@ def spectrogram(*, autofit: bool | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
                 db_ceil: float | None = None, freq_scale: str | None = None,
                 log_freq: bool | None = None, colormap: int | None = None,
-                ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None,
+                ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None, tempo_map=None,
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
                 sel_min: float | None = None, sel_max: float | None = None,
@@ -1586,7 +1587,8 @@ def spectrogram(*, autofit: bool | None = None,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
-                       tempo=tempo, beat_at=beat_at, quant=quant, autofit=autofit,
+                       tempo=tempo, tempo_map=_tempo_map(tempo_map),
+                       beat_at=beat_at, quant=quant, autofit=autofit,
                        sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
                        playhead_at=playhead_at, playhead=playhead,
@@ -2081,7 +2083,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 def track(*clips, label: str | None = None, height: float | None = None, snap: float | None = None,
           header_w: float | None = None, mute: bool | None = None, solo: bool | None = None,
           level: float | None = None, autofit: bool | None = None,
-          ruler: str | None = None, sample_rate: float | None = None, tempo: float | None = None,
+          ruler: str | None = None, sample_rate: float | None = None, tempo: float | None = None, tempo_map=None,
           beat_at: float | None = None, quant: float | None = None,
           playhead_at: float | None = None, playhead: float | None = None,
           playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
@@ -2165,6 +2167,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     extra = _drop_none(label=label, height=height, snap=snap, header_w=header_w,
                        mute=mute, solo=solo, level=level, theme=theme, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+                       tempo_map=_tempo_map(tempo_map),
                        beat_at=beat_at, quant=quant, playhead_at=playhead_at,
                        playhead=playhead, playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len, link=link,
@@ -2174,7 +2177,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
 
 def timeruler(*, h: float = 20.0, autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
-              tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
+              tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
               markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """A free-standing **time ruler**: the shared axis drawn as a strip the
@@ -2234,6 +2237,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     """
     extra = _drop_none(theme=theme, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+                       tempo_map=_tempo_map(tempo_map),
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
@@ -2374,7 +2378,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               osc_lane: bool | None = None, midi_in: bool | None = None, link: int | None = None,
               autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
-              tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
+              tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
               sel_start: float | None = None, sel_len: float | None = None,
               sel_min: float | None = None, sel_max: float | None = None,
               playhead_at: float | None = None, playhead: float | None = None,
@@ -2443,7 +2447,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         snap=snap, label=label, color=color)
     extra.update(_axes(
         axes, min=min, max=max, link=link, ruler=ruler,
-        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
+        sample_rate=sample_rate, tempo=tempo, tempo_map=_tempo_map(tempo_map),
+        beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len,
         sel_min=sel_min, sel_max=sel_max, playhead_at=playhead_at,
         playhead=playhead, playhead_loop_start=playhead_loop_start,
@@ -2778,7 +2783,8 @@ def _drop_none(**kwargs) -> dict:
 #: axis pair packs its flat keywords through.
 _X_AXIS = {
     "ruler": "unit", "view_start": "start", "view_len": "len",
-    "tempo": "tempo", "beat_at": "beat_at", "quant": "quant",
+    "tempo": "tempo", "tempo_map": "tempo_map",
+    "beat_at": "beat_at", "quant": "quant",
     "sample_rate": "sample_rate", "link": "link", "autofit": "autofit",
     "sel_start": "sel_start", "sel_len": "sel_len",
     "playhead": "playhead", "playhead_at": "playhead_at",
@@ -2791,6 +2797,20 @@ _Y_AXIS = {
     "min": "min", "max": "max", "bit_depth": "bit_depth",
     "sel_min": "sel_min", "sel_max": "sel_max",
 }
+
+
+def _tempo_map(value):
+    """A ``tempo_map`` keyword as the wire carries it: the JSON breakpoint list
+    a `TempoMap` writes with ``dumps``.
+
+    A map or the string are both accepted because a script has one and a stored
+    def has the other, and the axis means the same thing either way. Every
+    structural prop travels as a string — OSC carries no arrays, so a
+    ``/gui_set`` of one could not be spelled otherwise.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    return value.dumps()
 
 
 def _axes(_axes_given: dict | None = None, **flat) -> dict:

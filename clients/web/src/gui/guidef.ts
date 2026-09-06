@@ -30,6 +30,7 @@
 import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
 import type { Curve } from "../defs/ugens/index.ts";
 import { samplesToBlob } from "../base/bulk.ts";
+import type { TempoMap } from "../base/time.ts";
 import type { GuiHost, PropValue, Stage } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
 
@@ -739,6 +740,21 @@ export interface TimelineOptions extends WidgetOptions {
     sampleRate?: number;
     /** Musical time: beats per second, the beat at sample 0, beats per bar. */
     tempo?: number;
+    /**
+     * **The piece's beat-to-second map**, where its tempo changes along it.
+     *
+     * A beat is a logical coordinate, and `tempo` is the answer for a piece
+     * that keeps one: with a map the ruler places every tick by asking where
+     * that beat actually falls, so the marks crowd through an accelerando and
+     * spread through a ritardando over an axis that goes on measuring samples.
+     * A map of one segment says exactly what `tempo` says, so pass one only
+     * where the tempo moves.
+     *
+     * Takes the map itself or the JSON its `dump` writes — a script holds one
+     * and a stored def the other, and every structural prop travels as a
+     * string since OSC carries no arrays.
+     */
+    tempoMap?: TempoMap | string;
     beatAt?: number;
     quant?: number;
     /**
@@ -2763,10 +2779,20 @@ export function canvas(
 
 // ---- the shared prop groups ----
 
+/**
+ * A `tempoMap` option as the wire carries it: the JSON breakpoint list a
+ * {@link TempoMap} writes with `dump`. A map or that string are both accepted,
+ * because a script has one and a stored def has the other.
+ */
+function tempoMapProp(map: TempoMap | string | undefined): string | undefined {
+    if (map === undefined || typeof map === "string") return map;
+    return map.dump();
+}
+
 /** The timeline chrome (and the generic options riding with it) as wire props. */
 function timelineProps(options: TimelineOptions, y: Props = {}): Props {
     const {
-        ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
+        ruler, sampleRate, tempo, tempoMap, beatAt, quant, selStart, selLen,
         selMin, selMax, markers,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
         yStart, yLen, link, autofit, axes: pair, ...rest
@@ -2778,6 +2804,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
                 ["unit", ruler],
                 ["sample_rate", sampleRate],
                 ["tempo", tempo],
+                ["tempo_map", tempoMapProp(tempoMap)],
                 ["beat_at", beatAt],
                 ["quant", quant],
                 ["sel_start", selStart],

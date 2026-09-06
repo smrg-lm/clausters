@@ -337,17 +337,15 @@ pub(super) fn draw_editor_overlay(
         let editor = &item.editor;
         let time = match editor.ruler {
             Ruler::Samples => ruler::readout_samples(s),
-            Ruler::Beats => {
-                let beats_per_px = nav.len / rate * editor.tempo / body.w.max(1.0) as f64;
-                ruler::readout_beats(
-                    s,
-                    rate,
-                    editor.tempo,
-                    editor.beat_at,
-                    editor.quant,
-                    beats_per_px,
-                )
-            }
+            Ruler::Beats => ruler::readout_beats(
+                s,
+                rate,
+                editor.tempo,
+                editor.beat_at,
+                editor.quant,
+                editor.tempo_map.as_deref(),
+                nav.len / rate / body.w.max(1.0) as f64,
+            ),
             _ => ruler::readout_time(s, rate, nav.len / rate / body.w.max(1.0) as f64),
         };
         let lane = lane_rect(body, lanes.max(1), lane_at(body, lanes.max(1), cy));

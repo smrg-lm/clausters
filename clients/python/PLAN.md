@@ -1325,6 +1325,98 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **An automation's lane is freed on a beat length computed from one tempo**
+  *(found 2026-09-05, reading the fundamental structures after the tempo-map
+  ownership question was raised)*. `Automation.play` schedules the curve's
+  `/node_free` with `delay_beats=dur_beats`, and computes that length as
+  `dur_beats = dur_secs * clock.tempo` -- the tempo the clock reads **now**,
+  multiplied by a wall-clock duration. Across a tempo change during the curve
+  the two disagree: the free lands early under an accelerando and late under a
+  ritardando, so the lane synth is cut off the curve's tail or left running
+  past it.
+
+  An `Automation` is a curve whose length is a wall-clock fact
+  (`duration_unit = "seconds"`) and whose synth sweeps on wall clock -- the
+  `/synth_new` already carries `dur_secs`, correctly. Only the *scheduling* of
+  the free crosses into beats, which is the clock's own arithmetic and not the
+  curve's: `TempoClock.beats2secs`/`secs2beats` both go through the map, so the
+  truthful span is
+  `clock.secs2beats(clock.beats2secs(at) + dur_secs) - at` -- a length in beats
+  is never a duration times a tempo, it comes from two positions. That is the
+  same rule `form.element.end_beat` states one layer up, and the same one the
+  take-length fix above landed for a `Vector`.
+
+  Small and blocked by nothing; it lands in both clients, since it is one
+  conversion in two languages. It is **not** the ownership question below --
+  that one asks where a map should live, this one uses the map that is already
+  there.
+
+- ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
+  it reaches for a scalar** *(found 2026-09-05 by the user, reading the
+  tempo-map prop that had just been wired through to the host: "que el tempo lo
+  tenga el editor es un problema. El editor representa acciones de edición
+  sobre el contenido, no el contenido" -- and, on the first draft of this entry,
+  "Form es un módulo secundario que se hace sobre las estructuras fundamentales:
+  TempoClock, Timeline, Env, Automation")*.
+
+  `Editor.tempo_map` is where a piece's tempo actually lives today: the
+  constructor takes one or builds `TempoMap(tempo)`, `Editor.tempo` is a reading
+  of it rather than a field, every beats/units conversion the view makes goes
+  through it, and the `tempo_map` axis prop the host now draws its beat ruler
+  from is the **editor's**. A view holding content is the wrong shape -- an
+  editor is the acts a hand performs on a piece, and a tempo map is as much the
+  composition as an onset is.
+
+  **But the editor is a symptom, not the site.** The fix is not to move the
+  field into the arrangement: `clausters.form` is a secondary module built *on*
+  the fundamental structures, so a map living in an `Aggregate` would put the
+  answer one layer above the structures that need it. The question is what a
+  **fundamental** structure asks when it has to cross beats and seconds, and
+  today each one answers differently:
+
+  - `seq.Automation`, which manages no time at all, converts one inline with a
+    scalar -- `dur_secs * clock.tempo` -- and gets it wrong. **That is a
+    separate bug and has its own entry below**; it belongs here only as
+    evidence, because a structure with no business converting time did so
+    anyway, and the reason it reached for a scalar is that there was nothing
+    else in reach.
+  - `seq.Timeline` is a `(beat, item)` sequence with no tempo at all, and
+    `follow_transport` takes `tempo_map=` as an argument -- correct, and it
+    shows that the caller is expected to carry the map to the structure.
+  - `form.element.tempo_map_of` invents a constant map wherever none was
+    handed in, at every call site that converts (`to_event`, `to_events`,
+    `end_beat`).
+  - `crates/clausters-document` refuses it on purpose and says so: `SecsToBeats`
+    is a converter the caller supplies, because "the conversion needs the
+    piece's tempo map and a position, and the document transports references
+    without interpreting them".
+
+  So the map is a fundamental structure in its own right -- `TempoMap` is a pure
+  function of a beat, meaningful for a piece nobody is playing -- and the two
+  things that *keep* one are a view (`Editor`) and a running clock
+  (`TempoClock`). `FormEditor._adopt_map` is the visible cost: the clock's map
+  wins over the editor's on `play` and on `render`, with a redraw where they
+  differ, and that reconciliation exists only because two non-owners each hold a
+  copy.
+
+  Three answers, and the choice is a decision:
+
+  1. **The clock owns it and everything reaches it.** `clock.map` is already the
+     real one; the work is removing every scalar path (`Automation.play` asks the
+     map at a position, `Editor` reads rather than keeps). Cheapest, and it
+     leaves a piece nobody is playing with nowhere to put its tempo -- which the
+     map's own docstring says is a case worth supporting.
+  2. **`Timeline` owns it.** The closest fundamental structure to "the piece":
+     it holds `(beat, item)` and is the thing a `Playhead` plays, so a map on it
+     makes it the beat-to-second authority for what it holds, with no clock
+     needed to ask. It also means a piece can be analyzed, drawn and rendered
+     before anything runs.
+  3. **The session owns it**, one map per piece, read by the clock and by every
+     view without either owning it.
+
+  Whichever it is lands in both clients, and the host needs no change: it takes
+  the map as an axis prop and does not care who sent it.
+
 - ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
   2026-09-05 by the user, pressing a button that did nothing)*.
   `editors/edit_notes` opened a session with `activate()` and never started it,

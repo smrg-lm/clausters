@@ -66,6 +66,7 @@ const X_AXIS: &[(&str, &str)] = &[
     ("ruler", "ruler"),
     ("unit", "ruler"),
     ("tempo", "tempo"),
+    ("tempo_map", "tempo_map"),
     ("beat_at", "beat_at"),
     ("quant", "quant"),
     ("autofit", "autofit"),

@@ -26,6 +26,7 @@
 
 use clausters_core::scale::{bark_to_hz, hz_to_bark, hz_to_mel, mel_to_hz};
 use clausters_core::tempoclock;
+use clausters_core::tempomap::TempoMap;
 
 use crate::spectrogram::FreqScale;
 use crate::waveform::AMP_MARGIN;
@@ -46,7 +47,7 @@ pub(crate) struct Tick {
 
 /// How the time ruler labels its ticks.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TimeUnit {
+pub(crate) enum TimeUnit<'a> {
     /// `h:mm:ss.mmm`-style clock time (needs the sample rate).
     Seconds,
     /// Plain sample counts (the fallback when no rate is known).
@@ -55,10 +56,19 @@ pub(crate) enum TimeUnit {
     /// (the client `Clock` convention), `beat_at` the beat position of sample
     /// 0, `quant` the beats per bar (`<= 0` = no bar grid). Falls back to
     /// sample counts when the rate or tempo is unknown.
+    ///
+    /// **A beat is not a length of time**, and `map` is what says where each
+    /// one falls. With no map the axis is one tempo, so beats are evenly
+    /// spaced and `tempo`/`beat_at` are the whole answer. With one, they are
+    /// not: the piece's [`TempoMap`] places every tick through `secs_at`, so
+    /// the marks crowd where it is fast and spread where it is slow, over an
+    /// axis that never stopped measuring samples. The map also supplies its
+    /// own anchoring, so `beat_at` says nothing where it is present.
     Beats {
         tempo: f64,
         beat_at: f64,
         quant: f64,
+        map: Option<&'a TempoMap>,
     },
 }
 
@@ -138,11 +148,12 @@ fn fit_step(
     axis_start: f64,
     axis_len: f64,
     width_px: f64,
+    pos: &dyn Fn(f64) -> f64,
     fmt: &dyn Fn(f64, f64) -> String,
     g: Gaps,
 ) -> f64 {
     for &step in candidates {
-        if labels_fit(step, axis_start, axis_len, width_px, fmt, g) {
+        if labels_fit(step, axis_start, axis_len, width_px, pos, fmt, g) {
             return step;
         }
     }
@@ -153,11 +164,17 @@ fn fit_step(
 /// `[axis_start, axis_start + axis_len]`, measured at the ruler font scale
 /// and edge-clamped exactly as the renderer draws them, keep at least the
 /// `label` gap of clear space between neighbours.
+///
+/// It walks **every** pair rather than dividing the axis by the tick count,
+/// which is what makes it right on an axis whose ticks are not evenly spaced:
+/// under a tempo map the rung that fits is the one the *closest* pair leaves
+/// room for, and that pair is found by looking rather than by averaging.
 fn labels_fit(
     step: f64,
     axis_start: f64,
     axis_len: f64,
     width_px: f64,
+    pos: &dyn Fn(f64) -> f64,
     fmt: &dyn Fn(f64, f64) -> String,
     g: Gaps,
 ) -> bool {
@@ -168,7 +185,7 @@ fn labels_fit(
         if t > axis_start + axis_len + step * 1e-9 {
             return true;
         }
-        let x = (t - axis_start) / axis_len * width_px;
+        let x = pos(t) * width_px;
         let w = font::width(&fmt(t, step), g.scale) as f64;
         let lx = (x - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
         if lx < prev_end + g.label {
@@ -202,11 +219,22 @@ pub(crate) fn time_ticks(
         tempo,
         beat_at,
         quant,
+        map,
     } = unit
         && sample_rate > 0.0
-        && tempo > 0.0
+        && (tempo > 0.0 || map.is_some())
     {
-        return beat_ticks(start, len, width_px, sample_rate, tempo, beat_at, quant, g);
+        return beat_ticks(
+            start,
+            len,
+            width_px,
+            sample_rate,
+            tempo,
+            beat_at,
+            quant,
+            map,
+            g,
+        );
     }
     let seconds = unit == TimeUnit::Seconds && sample_rate > 0.0;
     let (axis_start, axis_len) = if seconds {
@@ -221,16 +249,33 @@ pub(crate) fn time_ticks(
             fmt_samples(t)
         }
     };
+    let pos = |t: f64| (t - axis_start) / axis_len;
     let min_step = if seconds { 0.0 } else { 1.0 }; // samples are integral
     let candidates = decimal_steps(axis_len, width_px, min_step, g);
-    let step = fit_step(&candidates, axis_start, axis_len, width_px, &fmt, g);
-    emit_time_ticks(axis_start, axis_len, width_px, step, step / 5.0, &fmt, g)
+    let step = fit_step(&candidates, axis_start, axis_len, width_px, &pos, &fmt, g);
+    emit_time_ticks(
+        axis_start,
+        axis_len,
+        width_px,
+        step,
+        step / 5.0,
+        &pos,
+        &fmt,
+        g,
+    )
 }
 
 /// The `beats` form of the time ruler: the axis converted to beat positions,
 /// the step fit on the musical ladder (binary fractions of a beat, whole
 /// beats, bars and powers-of-two bars), majors labeled `bar:beat` (1-based)
 /// off the quant grid, minors on the binary subdivision.
+///
+/// **The axis is still samples, and only the marks move.** Without a map a
+/// beat is worth a fixed number of them, so the ticks are evenly spaced and
+/// the placement is a straight line. With one, each tick is placed by asking
+/// the map what second its beat falls on — majors and minors alike, which is
+/// what makes a subdivision inside a ramp land where it sounds instead of
+/// halfway between two beats that are themselves moving.
 #[allow(clippy::too_many_arguments)]
 fn beat_ticks(
     start: f64,
@@ -240,17 +285,35 @@ fn beat_ticks(
     tempo: f64,
     beat_at: f64,
     quant: f64,
+    map: Option<&TempoMap>,
     g: Gaps,
 ) -> Vec<Tick> {
-    let b0 = beat_at + start / rate * tempo;
-    let blen = len / rate * tempo;
+    let (b0, b1) = match map {
+        Some(m) => (m.beats_at(start / rate), m.beats_at((start + len) / rate)),
+        None => (
+            beat_at + start / rate * tempo,
+            beat_at + (start + len) / rate * tempo,
+        ),
+    };
+    let blen = b1 - b0;
     if blen <= 0.0 {
         return Vec::new();
     }
+    // Where a beat lands on the strip. Through the map it is the piece's own
+    // answer, run the one way the ruler needs it: beat to second to sample.
+    let mapped = |b: f64| (m_secs(map, b) * rate - start) / len;
+    let linear = |b: f64| (b - b0) / blen;
+    let pos: &dyn Fn(f64) -> f64 = if map.is_some() { &mapped } else { &linear };
     let fmt = |b: f64, step: f64| fmt_bar_beat(b, quant, step);
     let candidates = beat_steps(blen, width_px, quant, g);
-    let step = fit_step(&candidates, b0, blen, width_px, &fmt, g);
-    emit_time_ticks(b0, blen, width_px, step, step / 2.0, &fmt, g)
+    let step = fit_step(&candidates, b0, blen, width_px, pos, &fmt, g);
+    emit_time_ticks(b0, blen, width_px, step, step / 2.0, pos, &fmt, g)
+}
+
+/// The second a beat falls on, per the map (0 without one — a caller that has
+/// no map never reaches this).
+fn m_secs(map: Option<&TempoMap>, b: f64) -> f64 {
+    map.map_or(0.0, |m| m.secs_at(b))
 }
 
 /// The ascending musical ladder for a `blen`-beat axis: binary fractions of a
@@ -283,19 +346,50 @@ fn beat_steps(blen: f64, width_px: f64, quant: f64, g: Gaps) -> Vec<f64> {
     out
 }
 
-/// Emits the ticks of a linear horizontal axis: majors (labeled by `fmt`) at
+/// The narrowest gap, in device pixels, between two neighbouring ticks at
+/// multiples of `step` — the axis' own spacing rather than its length divided
+/// by a count, which are the same number only while `pos` is a straight line.
+fn min_gap_px(
+    step: f64,
+    axis_start: f64,
+    axis_len: f64,
+    width_px: f64,
+    pos: &dyn Fn(f64) -> f64,
+) -> f64 {
+    let mut narrowest = f64::INFINITY;
+    let mut prev = f64::NAN;
+    let mut k = (axis_start / step).ceil() as i64;
+    loop {
+        let t = k as f64 * step;
+        if t > axis_start + axis_len + step * 1e-9 {
+            break;
+        }
+        let x = pos(t) * width_px;
+        if prev.is_finite() {
+            narrowest = narrowest.min(x - prev);
+        }
+        prev = x;
+        k += 1;
+    }
+    narrowest
+}
+
+/// Emits the ticks of a horizontal axis: majors (labeled by `fmt`) at
 /// multiples of `step`, minors at multiples of `minor` when they clear the
-/// minimum tick gap.
+/// minimum tick gap. `pos` places an axis value as a fraction of the strip —
+/// a straight line for every unit but the mapped beat.
+#[allow(clippy::too_many_arguments)]
 fn emit_time_ticks(
     axis_start: f64,
     axis_len: f64,
     width_px: f64,
     step: f64,
     minor: f64,
+    pos: &dyn Fn(f64) -> f64,
     fmt: &dyn Fn(f64, f64) -> String,
     g: Gaps,
 ) -> Vec<Tick> {
-    let draw_minors = minor / axis_len * width_px >= g.tick;
+    let draw_minors = min_gap_px(minor, axis_start, axis_len, width_px, pos) >= g.tick;
     let fine = if draw_minors { minor } else { step };
     let mut out = Vec::new();
     let mut k = (axis_start / fine).ceil() as i64;
@@ -306,7 +400,7 @@ fn emit_time_ticks(
         }
         let major = (t / step - (t / step).round()).abs() < 1e-6;
         out.push(Tick {
-            frac: ((t - axis_start) / axis_len).clamp(0.0, 1.0),
+            frac: pos(t).clamp(0.0, 1.0),
             label: major.then(|| fmt(t, step)),
         });
         k += 1;
@@ -422,22 +516,36 @@ fn readout_decimals(step: f64, floor: usize, cap: usize) -> usize {
 
 /// The cursor-readout form of a sample position on the beat grid:
 /// `bar:beat` (plain beats without a grid) with two decimals, refined to the
-/// view's pixel resolution (`beats_per_px`) up to the ruler labels' own
-/// four-decimal cap, falling back to the sample count when the rate or tempo
-/// is unknown.
+/// view's pixel resolution up to the ruler labels' own four-decimal cap,
+/// falling back to the sample count when the rate or tempo is unknown.
+///
+/// It reads the axis' `map` where there is one, for the reason the ticks do:
+/// a read-out naming a different beat from the tick under it would be two
+/// answers about one pixel. It takes `secs_per_px` rather than beats per
+/// pixel because **under a map that is a local rate** — how much of a beat a
+/// pixel is worth depends on the tempo where the cursor is, not on an average
+/// of the piece — and deriving it here is what keeps the two read-outs (the
+/// waveform's and the roll's) from each doing that conversion their own way.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn readout_beats(
     sample: f64,
     sample_rate: f64,
     tempo: f64,
     beat_at: f64,
     quant: f64,
-    beats_per_px: f64,
+    map: Option<&TempoMap>,
+    secs_per_px: f64,
 ) -> String {
-    if sample_rate <= 0.0 || tempo <= 0.0 {
+    if sample_rate <= 0.0 || (tempo <= 0.0 && map.is_none()) {
         return readout_samples(sample);
     }
-    let decimals = readout_decimals(beats_per_px, 2, 4);
-    let beats = beat_at + sample.max(0.0) / sample_rate * tempo;
+    let secs = sample.max(0.0) / sample_rate;
+    let beats = match map {
+        Some(m) => m.beats_at(secs),
+        None => beat_at + secs * tempo,
+    };
+    let here = map.map_or(tempo, |m| m.tempo_at(beats));
+    let decimals = readout_decimals(secs_per_px * here, 2, 4);
     if quant <= 0.0 {
         return format!("{beats:.decimals$}");
     }
@@ -1402,6 +1510,125 @@ mod tests {
         assert_no_h_collisions(&ticks, 800.0, "zoomed 1s/800px");
     }
 
+    /// A ritardando, drawn: the piece your hand writes as
+    /// `d=60 --> d=30` spreads its beat ticks as it slows, over an axis that
+    /// never stopped measuring samples. The marks move; the axis does not.
+    #[test]
+    fn a_slowing_piece_spreads_its_beat_ticks() {
+        // Eight beats at 1 beat/s, decelerating to half that over the last
+        // four -- one bar at tempo, then a bar of ritardando.
+        let mut map = TempoMap::new(1.0);
+        map.ramp(4.0, 8.0, 1.0, 0.5).unwrap();
+        let secs = map.secs_at(8.0);
+        let unit = TimeUnit::Beats {
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            map: Some(&map),
+        };
+        let ticks = time_ticks(
+            0.0,
+            secs * 48_000.0,
+            900.0,
+            48_000.0,
+            unit,
+            &Metrics::default(),
+        );
+        let labelled: Vec<f64> = ticks
+            .iter()
+            .filter(|t| t.label.is_some())
+            .map(|t| t.frac)
+            .collect();
+        assert!(labelled.len() >= 8, "a tick a beat: {labelled:?}");
+        let gaps: Vec<f64> = labelled.windows(2).map(|w| w[1] - w[0]).collect();
+        // The first bar is at one tempo, so its beats are evenly spaced...
+        for g in &gaps[..3] {
+            assert!((g - gaps[0]).abs() < 1e-9, "even before the ramp: {gaps:?}");
+        }
+        // ...and every beat of the ritardando is wider than the one before it.
+        for w in gaps[3..].windows(2) {
+            assert!(w[1] > w[0] + 1e-9, "spreading through the ramp: {gaps:?}");
+        }
+        // And each one is worth exactly the seconds the map gives that beat --
+        // which is the whole claim, and the reason the last gap is not twice
+        // the first: the ramp is linear in tempo, so the eighth beat is played
+        // *through* the deceleration rather than after it.
+        for (i, gap) in gaps.iter().enumerate() {
+            let want = map.span_secs(i as f64, i as f64 + 1.0) / secs;
+            assert!((gap - want).abs() < 1e-9, "beat {i}: {gap} vs {want}");
+        }
+    }
+
+    /// The placement is the map's own answer, not a proportion of the window:
+    /// with the tempo doubled at beat 2, beat 8 falls at 5 seconds, and that is
+    /// the sample its tick sits on. This is the example's own arithmetic.
+    #[test]
+    fn a_beat_tick_sits_on_the_sample_the_map_puts_it_on() {
+        let mut map = TempoMap::new(1.0);
+        map.push(2.0, 2.0).unwrap();
+        assert_eq!(map.secs_at(8.0), 5.0, "2 s of slow, then 6 beats at 2/s");
+        let len = 10.0 * 48_000.0; // a ten-second window
+        let unit = TimeUnit::Beats {
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            map: Some(&map),
+        };
+        let ticks = time_ticks(0.0, len, 900.0, 48_000.0, unit, &Metrics::default());
+        // Bar 3 beat 1 is beat 8: half way across a ten-second window.
+        let bar3 = ticks
+            .iter()
+            .find(|t| t.label.as_deref() == Some("3:1"))
+            .expect("beat 8 is labelled");
+        assert!(
+            (bar3.frac - 0.5).abs() < 1e-9,
+            "beat 8 at 5 s: {}",
+            bar3.frac
+        );
+        // A frozen tempo would have drawn it at 8 s, four fifths across --
+        // the defect this fixes, and three seconds of it.
+        let frozen = TimeUnit::Beats {
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            map: None,
+        };
+        let was = time_ticks(0.0, len, 900.0, 48_000.0, frozen, &Metrics::default());
+        let then = was
+            .iter()
+            .find(|t| t.label.as_deref() == Some("3:1"))
+            .expect("beat 8 is labelled either way");
+        assert!((then.frac - 0.8).abs() < 1e-9, "{}", then.frac);
+    }
+
+    /// Every tick goes through the map, minors included. Inside a ramp the
+    /// tempo moves *within* a beat, so the half-beat mark is not the midpoint
+    /// of the two beats around it -- placing the majors and halving between
+    /// them would put it where nothing sounds.
+    #[test]
+    fn a_subdivision_inside_a_ramp_is_placed_by_the_map_too() {
+        let mut map = TempoMap::new(1.0);
+        map.ramp(0.0, 4.0, 1.0, 4.0).unwrap();
+        let unit = TimeUnit::Beats {
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            map: Some(&map),
+        };
+        let len = map.secs_at(4.0) * 48_000.0;
+        let ticks = time_ticks(0.0, len, 1400.0, 48_000.0, unit, &Metrics::default());
+        assert!(ticks.len() > ticks.iter().filter(|t| t.label.is_some()).count());
+        // The tick between beat 0 and beat 1 is where beat 0.5 sounds, which
+        // in an accelerando is later than half way between them.
+        let half = map.secs_at(0.5) / map.secs_at(4.0);
+        let midpoint = map.secs_at(1.0) / map.secs_at(4.0) / 2.0;
+        assert!(half > midpoint + 1e-6, "the ramp bends inside the beat");
+        assert!(
+            ticks.iter().any(|t| (t.frac - half).abs() < 1e-9),
+            "the half-beat mark is the map's"
+        );
+    }
+
     #[test]
     fn beat_ticks_label_bars_and_beats_on_the_quant_grid() {
         // 8 beats visible over 800 px at 48 kHz, 2 beats/s (tempo 2.0):
@@ -1410,6 +1637,7 @@ mod tests {
             tempo: 2.0,
             beat_at: 0.0,
             quant: 4.0,
+            map: None,
         };
         let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -1431,6 +1659,7 @@ mod tests {
             tempo: 2.0,
             beat_at: 0.0,
             quant: 4.0,
+            map: None,
         };
         let ticks = time_ticks(0.0, 192_000.0, 120.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -1465,6 +1694,7 @@ mod tests {
             tempo: 0.0,
             beat_at: 0.0,
             quant: 4.0,
+            map: None,
         };
         let ticks = time_ticks(0.0, 100_000.0, 500.0, 48_000.0, unit, &Metrics::default());
         assert_eq!(labels(&ticks)[0], "0");
@@ -1478,6 +1708,7 @@ mod tests {
             tempo: 2.0,
             beat_at: 2.0,
             quant: 4.0,
+            map: None,
         };
         let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -1489,27 +1720,30 @@ mod tests {
     fn readout_beats_reads_bar_beat() {
         // 48k samples at 2 beats/s = 2 beats in; quant 4 -> bar 1, beat 3.
         assert_eq!(
-            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 0.01),
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, None, 0.005),
             "1:3.00"
         );
         assert_eq!(
-            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 0.0, 0.01),
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 0.0, None, 0.005),
             "2.00"
         );
-        assert_eq!(readout_beats(48_000.0, 0.0, 2.0, 0.0, 4.0, 0.01), "48000");
+        assert_eq!(
+            readout_beats(48_000.0, 0.0, 2.0, 0.0, 4.0, None, 0.005),
+            "48000"
+        );
         // Deep zoom (a pixel spans well under a hundredth of a beat): the
         // decimals refine with the view, up to the ruler's four-decimal cap.
         assert_eq!(
-            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 1e-3),
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, None, 5e-4),
             "1:3.000"
         );
         assert_eq!(
-            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 1e-6),
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, None, 5e-7),
             "1:3.0000"
         );
         // No pixel resolution known: the two-decimal floor.
         assert_eq!(
-            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 0.0),
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, None, 0.0),
             "1:3.00"
         );
     }
@@ -1787,6 +2021,7 @@ mod tests {
                     TimeUnit::Seconds,
                     TimeUnit::Samples,
                     TimeUnit::Beats {
+                        map: None,
                         tempo: 2.5,
                         beat_at: 1.0,
                         quant: 3.0,

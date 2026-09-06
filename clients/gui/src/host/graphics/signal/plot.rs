@@ -248,7 +248,7 @@ pub(crate) fn value_range(p: &PlotParams) -> (f32, f32) {
 
 /// The x-axis time unit: sample counts unless the ruler asks for clock time
 /// and a rate is known (`Beats` has no grid here and reads as samples).
-fn x_unit(p: &PlotParams) -> TimeUnit {
+fn x_unit(p: &PlotParams) -> TimeUnit<'static> {
     if p.ruler == Ruler::Time && p.sample_rate > 0.0 {
         TimeUnit::Seconds
     } else {

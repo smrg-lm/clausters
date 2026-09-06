@@ -16,6 +16,9 @@
 //! model should not walk 800 lines of them to reach it. Each one owns its own
 //! `apply`/`parse` where it has one, so a new prop on a bundle is one edit.
 
+use std::sync::Arc;
+
+use clausters_core::tempomap::TempoMap;
 use clausters_core::warp;
 use serde_json::Value;
 
@@ -349,6 +352,19 @@ pub struct EditorProps {
     pub sample_rate: f64,
     pub bit_depth: u32,
     pub tempo: f64,
+    /// **The piece's beat-to-second map**, when the axis has one.
+    ///
+    /// `tempo` is the same statement with one segment in it, and the pair is
+    /// not a duplication: a beat is a logical coordinate, and what turns one
+    /// into a second is a function that a piece may change along its length.
+    /// Held behind an `Arc` because the chrome is cloned per frame and a map
+    /// is a list, not a number; shared rather than copied, so the ruler reads
+    /// the same one the clip placements were computed from.
+    ///
+    /// Where it is present it **wins over `tempo` and `beat_at`**: it answers
+    /// the same question with more of the piece in it, and it carries its own
+    /// anchoring ([`TempoMap::anchored`]).
+    pub tempo_map: Option<Arc<TempoMap>>,
     pub beat_at: f64,
     pub quant: f64,
     pub sel_start: f64,
@@ -414,6 +430,7 @@ impl EditorProps {
                 .map(|n| (n as u32).clamp(2, 32))
                 .unwrap_or(16),
             tempo: number_f64(props, "tempo", 1.0),
+            tempo_map: props.get("tempo_map").and_then(parse_tempo_map),
             beat_at: number_f64(props, "beat_at", 0.0),
             quant: number_f64(props, "quant", 4.0),
             sel_start: number_f64(props, "sel_start", 0.0),
@@ -508,6 +525,13 @@ impl EditorProps {
                 .map(|n| self.bit_depth = (n as u32).clamp(2, 32))
                 .is_some(),
             "tempo" => set_f64(&mut self.tempo, v),
+            // A map arriving live replaces the axis' own; `null` (or any
+            // malformed value) takes it away, which is how a piece goes back
+            // to one tempo without the view being rebuilt.
+            "tempo_map" => {
+                self.tempo_map = parse_tempo_map(v);
+                true
+            }
             "beat_at" => set_f64(&mut self.beat_at, v),
             "quant" => set_f64(&mut self.quant, v),
             "autofit" => truthy(v).map(|b| self.autofit = b).is_some(),

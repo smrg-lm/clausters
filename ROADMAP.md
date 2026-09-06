@@ -77,6 +77,17 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
+- ⬜ **An automation's lane is freed on a beat length computed from one tempo**
+  *(`clients/python/PLAN.md`, Found by use)*. `Automation.play` schedules the
+  curve's `/node_free` with `dur_secs * clock.tempo` — a wall-clock length times
+  the tempo read *now* — so across a tempo change during the curve the free
+  lands early (an accelerando) or late (a ritardando), cutting the lane synth
+  off the tail or leaving it running past it. A length in beats never comes
+  from a duration times a tempo; it comes from two positions, and the clock
+  already has the verbs (`beats2secs`/`secs2beats`, both through the map). One
+  line in each client. **Distinct from the ownership question in section 2**:
+  this one uses the map that is already there.
+
 - **The visual review's first sitting, 2026-09-05** — what the user found by
   opening the pages and using them. Listed together because they came out of one
   pass and are read together; the fixed ones keep their line here only until this
@@ -186,6 +197,31 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
+
+- ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
+  it reaches for a scalar** *(`clients/python/PLAN.md`, Found by use)*.
+  `Editor.tempo_map` is where a piece's tempo actually lives -- `Editor.tempo`
+  is a reading of it, every beats/units conversion goes through it, and the
+  `tempo_map` axis prop the host draws its beat ruler from is the editor's. A
+  view holding content is the wrong shape, but the editor is the symptom rather
+  than the site: `form` is a secondary module over the fundamental structures,
+  so the map cannot land in an `Aggregate` either. What is missing is what a
+  **fundamental** structure asks when it crosses beats and seconds. Today each
+  answers differently -- `Timeline` has no tempo and takes a map as an argument,
+  `form.element` invents a constant one per call, `clausters-document` refuses
+  it on purpose, and `Automation`, which manages no time at all, converts one
+  inline with a scalar — **its own bug, listed in section 1**, and evidence
+  here only because a structure with no business converting time did so anyway,
+  for want of anything else in reach.
+  **The decision**: who owns it -- the `TempoClock` (cheapest; leaves a piece
+  nobody plays with nowhere to put its tempo), `Timeline` (the closest
+  fundamental structure to "the piece"), or the session. The entry weighs the
+  three. The host needs no change either way: it takes the map as an axis prop
+  and does not care who sent it.
+  **Found while wiring the map to the host** (2026-09-05), which is the fix that
+  made the ownership visible: `FormEditor._adopt_map`, where the clock's map
+  wins over the editor's, is a reconciliation that exists only because two
+  non-owners each keep a copy.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`

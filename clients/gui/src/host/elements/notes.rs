@@ -1007,7 +1007,8 @@ impl Notes {
                 self.editor.tempo,
                 self.editor.beat_at,
                 self.editor.quant,
-                nav.len / rate * self.editor.tempo / grid.w.max(1.0) as f64,
+                self.editor.tempo_map.as_deref(),
+                nav.len / rate / grid.w.max(1.0) as f64,
             ),
             _ => ruler::readout_time(s, rate, nav.len / rate / grid.w.max(1.0) as f64),
         };

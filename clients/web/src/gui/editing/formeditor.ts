@@ -593,7 +593,10 @@ export class FormEditor extends Editor<Element> implements Adopting {
         // wire, and only the first has a time axis to rule.
         const ruler =
             lanes.some((lane) => lane.type === "field")
-                ? [timeruler({ ruler: "beats", sampleRate: this.sampleRate, tempo: this.tempo })]
+                ? [timeruler({
+                    ruler: "beats", sampleRate: this.sampleRate,
+                    tempo: this.tempo, tempoMap: this.mapProp(),
+                })]
                 : [];
         return guiWindow(
             { title: this.title, w: this.size[0], h: this.size[1], layout: "col" },
@@ -3197,6 +3200,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
                 label: nameOf(element),
                 sampleRate: this.sampleRate,
                 tempo: this.tempo,
+                tempoMap: this.mapProp(),
                 snap: this.quant > 0 ? this.beatsToUnits(this.quant) : undefined,
                 autofit: this.autofit,
                 mute: Boolean(element.mute),
@@ -3337,6 +3341,19 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * up leaves the drawing where it was. What is this editor's is only *which*
      * curve the axis is kept for.
      */
+    /**
+     * The piece's tempo map as the axis prop, or `undefined` while there is
+     * nothing a scalar tempo cannot say.
+     *
+     * A map of one segment **is** `tempo`, so sending it would put a list on
+     * the wire to state a number the def already carries. It goes only where
+     * the piece's tempo actually moves — which is also what keeps a one-tempo
+     * def the same def it was.
+     */
+    private mapProp(): TempoMap | undefined {
+        return this.tempoMap.len > 1 ? this.tempoMap : undefined;
+    }
+
     private axisFor(
         auto: Automation,
         points: readonly [number, number, number, number][],

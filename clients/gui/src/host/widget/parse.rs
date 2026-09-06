@@ -7,6 +7,7 @@
 //! element in [`elements`](crate::host::elements) parses the same props from
 //! outside the module; those are `pub(crate)`.
 
+use clausters_core::tempomap::TempoMap;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -38,6 +39,20 @@ pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
         Value::Object(o) => Some(o.clone()),
         _ => None,
     }
+}
+
+/// Parse an axis' `tempo_map` — the piece's beat-to-second function, as the
+/// breakpoint list [`TempoMap`] serializes to. Takes the array as it stands or
+/// a JSON string of one, the same two forms every structural prop arrives in,
+/// since OSC carries no arrays. `None` for anything a map cannot be built
+/// from, which leaves the axis on its scalar `tempo` rather than on a broken
+/// map.
+pub(crate) fn parse_tempo_map(v: &Value) -> Option<Arc<TempoMap>> {
+    let parsed = match v {
+        Value::String(s) => serde_json::from_str::<TempoMap>(s).ok(),
+        other => serde_json::from_value::<TempoMap>(other.clone()).ok(),
+    };
+    parsed.map(Arc::new)
 }
 
 /// Parse a `piano`'s `voice_args` — a flat `[name, value, name, value, …]`
