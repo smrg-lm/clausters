@@ -48,6 +48,7 @@
 //! ([`Node::character`], [`Body::relation`]), exactly as they are in the
 //! client, so no edit can leave them stale.
 
+pub mod arrangement;
 pub mod clipboard;
 pub mod domain;
 pub mod events;
