@@ -167,6 +167,15 @@ pub enum RulerY {
     Percent,
     /// Frequency in hertz (the spectrogram default).
     Hz,
+    /// **The element's own value range** (`min`/`max`), on the plain 1-2-5
+    /// ladder — beats per minute, a cutoff, a pan position, a controller.
+    ///
+    /// The other units are all *amplitude* or *frequency*, and they are units
+    /// of full scale: a rung at -6 dB or at 2^15 says nothing over `[30, 90]`.
+    /// This one names no unit at all, which is the point — a break-point
+    /// function's values are its parameter's, and only the element knows what
+    /// they mean.
+    Value,
 }
 
 impl RulerY {
@@ -193,6 +202,7 @@ impl RulerY {
             "bits" | "samples" => RulerY::Bits,
             "percent" => RulerY::Percent,
             "hz" => RulerY::Hz,
+            "value" => RulerY::Value,
             _ => return None,
         })
     }

@@ -1268,3 +1268,44 @@ fn a_container_declares_nothing_and_reads_nothing() {
     // one of each, so a variant added without a case here is caught too.
     assert_eq!(tree.descendants().count(), 7);
 }
+
+/// **The whole path a tempo map takes into the ruler**, which the unit tests on
+/// either side of it do not cover: a def's `axes.x.tempo_map` string, flattened
+/// at the door, parsed into the chrome, and read by the tick layout. Each half
+/// worked while the join did not, which is a defect no test of a half can see.
+#[test]
+fn a_defs_tempo_map_reaches_the_ruler_and_bends_it() {
+    use crate::host::frame::time_unit;
+    use crate::host::metrics::Metrics;
+    use crate::host::ruler::time_ticks;
+
+    let mut node = GuiNode::parse(
+        br#"{"id":1,"type":"field","h":24.0,"axes":{"x":{
+             "unit":"beats","tempo":1.0,"quant":4.0,"sample_rate":48000.0,
+             "tempo_map":"[{\"beats\":0.0,\"tempo\":1.0},{\"beats\":2.0,\"tempo\":2.0}]"}}}"#,
+    )
+    .unwrap();
+    axes::flatten_tree(&mut node);
+    let editor = EditorProps::parse(&node.props, RulerY::Norm);
+    assert!(editor.tempo_map.is_some(), "the map survived the door");
+
+    // Ten seconds at 48 kHz. With the tempo doubled at beat 2, beat 8 falls at
+    // 5 s -- half way -- and a frozen tempo would have drawn it four fifths in.
+    let ticks = time_ticks(
+        0.0,
+        480_000.0,
+        900.0,
+        48_000.0,
+        time_unit(&editor),
+        &Metrics::default(),
+    );
+    let bar3 = ticks
+        .iter()
+        .find(|t| t.label.as_deref() == Some("3:1"))
+        .expect("beat 8 is labelled");
+    assert!(
+        (bar3.frac - 0.5).abs() < 1e-9,
+        "beat 8 at 5 s, not at 8: {}",
+        bar3.frac
+    );
+}

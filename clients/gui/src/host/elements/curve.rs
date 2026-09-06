@@ -24,7 +24,9 @@ use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take, TimeSpace};
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
-use crate::host::{font, metrics::Metrics};
+use crate::host::widget::{EditorProps, Ruler, RulerY};
+use crate::host::{font, metrics::Metrics, ruler};
+use crate::viewport::View;
 
 /// A break-point function over `[min, max]`, using the server's own envelope
 /// shape numbers — what it draws is what an `EnvGen` plays.
@@ -45,6 +47,35 @@ pub struct Curve {
     /// picture must not follow a hand that cannot edit, so the refusal happens
     /// at the press rather than when an owner declines the edit afterwards.
     editable: bool,
+    /// The axis chrome of a curve **standing on its own**: its rulers, and the
+    /// navigation group it shares them with.
+    ///
+    /// Both units default **off**, unlike every other timeline view, because a
+    /// break-point function is drawn far more often as a bare envelope than as
+    /// a measured figure -- and because a curve that grew a ruler nobody asked
+    /// for would move the picture in every window that already draws one. A
+    /// **body** carries [`EditorProps::body`], which is no chrome at all: a
+    /// clip's automation is drawn against the clip's axes and rules nothing.
+    editor: EditorProps,
+    /// Whether this curve is a **container's body** rather than a view of its
+    /// own — the one thing the placement cannot be asked, now that a standalone
+    /// curve is a navigation-group member too and so is handed a
+    /// [`TimeSpace`] exactly like a body is.
+    ///
+    /// The distinction is what the two doors mean: a body fills the rectangle
+    /// its clip drew and rules nothing; a view draws its own field, its label
+    /// and its strips, and shares only the *axis* with the group it is on.
+    body: bool,
+}
+
+/// The parts of a standalone curve's rectangle ([`Curve::regions`]).
+struct Regions {
+    /// Where the curve itself is drawn.
+    field: Rect,
+    /// The time strip under the field, when one is asked for.
+    time: Option<Rect>,
+    /// The left edge of the value strip, when one is asked for.
+    value: Option<f32>,
 }
 
 /// What a held press is moving: a breakpoint, or a segment's curvature.
@@ -93,6 +124,8 @@ pub(crate) fn body(props: &Map<String, Value>) -> Option<Curve> {
         // notes are a rendering; the curve shaping them is not), and one key
         // for both bodies made the curve inherit a refusal meant for the roll.
         editable: super::body_editable(props, "points_editable"),
+        editor: EditorProps::body(),
+        body: true,
     })
 }
 
@@ -107,6 +140,8 @@ pub(crate) fn empty_body() -> Curve {
         label: None,
         grab: None,
         editable: true,
+        editor: EditorProps::body(),
+        body: true,
     }
 }
 
@@ -127,24 +162,47 @@ fn from_props(props: &Map<String, Value>) -> Curve {
         label: label(props),
         grab: None,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
+        editor: standalone_chrome(props),
+        body: false,
     }
 }
 
+/// The chrome of a curve standing on its own, with **both rulers off** unless
+/// the props ask for one: an envelope is a picture before it is a measurement,
+/// and the views that already draw one must not move because the element
+/// learned to rule itself.
+fn standalone_chrome(props: &Map<String, Value>) -> EditorProps {
+    let mut editor = EditorProps::parse(props, RulerY::Off);
+    editor.ruler = Ruler::parse_with(props, Ruler::Off);
+    editor
+}
+
 impl Curve {
-    /// The display mapping for this placement: the container's axis when it was
-    /// given one, else its own domain across its own field.
+    /// The display mapping for this placement: **which rectangle** the picture
+    /// is drawn in, and **which window** of time it is drawn over.
     ///
-    /// This is the whole of what "the same element in two places" costs — one
-    /// branch, in the one function every draw and every hit goes through.
+    /// The two questions are independent, which is the whole of what "the same
+    /// element in two places" costs. A **body** fills the rectangle its clip
+    /// drew; a **view** draws inside its own field, with the strips and the
+    /// label outside it. Either one follows the group's window when it is on a
+    /// navigation group ([`Ctx::time`]) and its own domain when it is on none —
+    /// so a curve stacked with a ruler shows the ruler's time, and a curve
+    /// standing alone shows all of itself.
     fn axes(
         &self,
         rect: Rect,
+        indent: f32,
         m: &Metrics,
         time: Option<crate::host::widget::element::TimeSpace>,
     ) -> Axes {
+        let field = if self.body {
+            rect
+        } else {
+            self.regions(rect, indent, m).field
+        };
         match time {
             Some(t) => Axes {
-                body: rect,
+                body: field,
                 view: t.view,
                 dom: t.span,
                 lo: self.min,
@@ -152,12 +210,113 @@ impl Curve {
                 exp: self.exp,
             },
             None => Axes::spanning(
-                controls::body_rect(rect, self.label.is_some(), m),
+                field,
                 bpf::domain(&self.points, self.duration),
                 self.min,
                 self.max,
                 self.exp,
             ),
+        }
+    }
+
+    /// **The three rectangles a curve standing on its own is made of**: the
+    /// field its picture is drawn in, the time strip under it and the value
+    /// strip left of it.
+    ///
+    /// The height is settled before the width, as in every ruled view: how
+    /// tall the field ends up is what decides how finely the value axis steps,
+    /// and therefore how wide the labels the left strip must hold are.
+    /// `indent` is the **group's** gutter rather than this curve's own wish, so
+    /// a ruler stacked with it starts its ticks at the same pixel.
+    fn regions(&self, rect: Rect, indent: f32, m: &Metrics) -> Regions {
+        let outer = controls::body_rect(rect, self.label.is_some(), m);
+        let ruled = self.editor.ruler != Ruler::Off && outer.h > m.ruler_h * 2.0;
+        let strip_h = if ruled { m.ruler_h } else { 0.0 };
+        let gutter = if self.editor.ruler_y == RulerY::Off {
+            0.0
+        } else {
+            indent.min((outer.w * 0.5).max(0.0))
+        };
+        let field = Rect::new(
+            outer.x + gutter,
+            outer.y,
+            (outer.w - gutter).max(0.0),
+            (outer.h - strip_h).max(0.0),
+        );
+        Regions {
+            field,
+            time: ruled.then(|| Rect::new(field.x, field.y + field.h, field.w, strip_h)),
+            value: (gutter > 0.0).then_some(outer.x),
+        }
+    }
+
+    /// The window this curve draws: its group's when it is on one, else the
+    /// whole of its own domain.
+    fn view(&self, time: Option<TimeSpace>) -> View {
+        match time {
+            Some(t) => t.view,
+            None => {
+                let dom = bpf::domain(&self.points, self.duration);
+                View {
+                    start: 0.0,
+                    len: dom.max(1e-9),
+                }
+            }
+        }
+    }
+
+    /// Whether a **whole-field** gesture (bending a segment) is this curve's to
+    /// take right now.
+    ///
+    /// A body only owns the rectangle while it is the container's active edit
+    /// layer — inactive, the rectangle means the clip's own drag. A **view**
+    /// owns its field always: sharing an axis with a ruler is not being layered
+    /// under anything, and a group hands out no active layer for a member to be.
+    fn active(&self, time: Option<TimeSpace>) -> bool {
+        !self.body || time.is_none_or(|t| t.active)
+    }
+
+    /// The sample rate its time ruler labels with: its own, else the world's.
+    fn rate(&self, world_rate: f64) -> f64 {
+        if self.editor.sample_rate > 0.0 {
+            self.editor.sample_rate
+        } else {
+            world_rate
+        }
+    }
+
+    /// **The two strips of a curve standing on its own**, drawn only where the
+    /// props asked for them.
+    ///
+    /// The horizontal one is the ordinary time ruler, so a curve laid over a
+    /// piece can be read in seconds, samples or `bar:beat` -- through the axis'
+    /// tempo map where it has one, which is what lets an envelope of tempo be
+    /// read against the beats it produces. The vertical one is the plain value
+    /// axis over `[min, max]`, the same one a plot draws: a break-point
+    /// function's values are its own parameter's, so the amplitude ladders say
+    /// nothing about them.
+    fn draw_rulers(&self, d: &mut Draw, ctx: &Ctx) {
+        let r = self.regions(ctx.rect, ctx.indent, ctx.metrics);
+        if let Some(strip) = r.time {
+            let nav = self.view(ctx.time);
+            let ticks = ruler::time_ticks(
+                nav.start,
+                nav.len,
+                strip.w as f64,
+                self.rate(ctx.world.sample_rate),
+                crate::host::frame::time_unit(&self.editor),
+                ctx.metrics,
+            );
+            ruler::draw_ticks_h(d, strip, &ticks);
+        }
+        if let Some(strip_x) = r.value {
+            let ticks = ruler::value_ticks(
+                self.min as f64,
+                self.max as f64,
+                r.field.h as f64,
+                ctx.metrics,
+            );
+            ruler::draw_ticks_v(d, r.field.x, strip_x, r.field, &ticks);
         }
     }
 
@@ -198,10 +357,10 @@ impl Element for Curve {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        let ax = self.axes(ctx.rect, ctx.metrics, ctx.time);
+        let ax = self.axes(ctx.rect, ctx.indent, ctx.metrics, ctx.time);
         // The field and whatever names it are the *view's*: a body is drawn
         // against the container's axes, inside a rectangle the container drew.
-        if ctx.time.is_none() {
+        if !self.body {
             let (mesh, m, theme) = d.parts();
             if let Some(text) = &self.label {
                 font::text(
@@ -218,6 +377,7 @@ impl Element for Curve {
             }
             mesh.rect(ax.body, theme.field);
             mesh.border(ax.body, m.divider_w, theme.accent);
+            self.draw_rulers(d, ctx);
         }
         // What a bend would take: the segment being held, or the one under the
         // pointer when nothing is. Only where the curve can be edited at all —
@@ -228,7 +388,7 @@ impl Element for Curve {
         // layer in hand, and a press there moved the clip, which is exactly the
         // promise a lit affordance must not make. Active, the bend *is* the
         // gesture, so the mark and the press agree again.
-        let lit = if !self.editable || !ctx.time.is_none_or(|t| t.active) {
+        let lit = if !self.editable || !self.active(ctx.time) {
             None
         } else {
             match self.grab {
@@ -251,6 +411,47 @@ impl Element for Curve {
             "points".into(),
             Value::from(bpf::points_json(&self.points).to_string()),
         )]
+    }
+
+    fn editor(&self) -> Option<&EditorProps> {
+        Some(&self.editor)
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        Some(&mut self.editor)
+    }
+
+    /// How far this curve's own content reaches, so a ruler stacked with it
+    /// rules the span the picture actually covers. It is what makes the axis
+    /// **shared**: without it a window holding only a curve has no extent at
+    /// all, and a `timeruler` over it would label one sample.
+    fn content_span(&self) -> Option<f64> {
+        Some(bpf::domain(&self.points, self.duration))
+    }
+
+    /// The wish, from the props alone: the ruler role's own width. What the
+    /// band actually needs depends on the labels, which depend on how tall the
+    /// curve ended up -- that is [`Element::measured_gutter`], one pass later.
+    fn gutter(&self, m: &Metrics) -> f32 {
+        if self.editor.ruler_y == RulerY::Off {
+            0.0
+        } else {
+            m.ruler_w
+        }
+    }
+
+    /// The value strip measured against its **own** labels, once the placement
+    /// is known: a BPM axis over `[30, 90]` formats three characters where an
+    /// amplitude axis formats six, and the step it labels at follows the
+    /// height. `None` while the role-sized wish already covers it, so the
+    /// second layout pass is taken only when one is owed.
+    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
+        if self.editor.ruler_y == RulerY::Off {
+            return None;
+        }
+        let field = self.regions(rect, 0.0, m).field;
+        let want = ruler::value_strip_w(self.min as f64, self.max as f64, field.h, m);
+        (want > m.ruler_w).then_some(want)
     }
 
     fn body_role(&self) -> Option<BodyRole> {
@@ -276,7 +477,7 @@ impl Element for Curve {
     fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
         let ax = {
             let (_mesh, m, _theme) = d.parts();
-            self.axes(rect, m, Some(*time))
+            self.axes(rect, 0.0, m, Some(*time))
         };
         bpf::draw_with(d, &ax, &self.points, None);
     }
@@ -292,7 +493,7 @@ impl Element for Curve {
         if !self.editable {
             return false;
         }
-        let ax = self.axes(input.rect, input.metrics, input.time);
+        let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
         ax.body.contains(at.0, at.1)
             && (ax
                 .hit_point(&self.points, at.0, at.1, input.metrics)
@@ -313,7 +514,7 @@ impl Element for Curve {
                 ..Take::default()
             });
         }
-        let ax = self.axes(input.rect, input.metrics, input.time);
+        let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
         let hit = ax.hit_point(&self.points, at.0, at.1, input.metrics);
         // Ctrl+click on a point removes it; elsewhere it adds one at the cursor
         // (which then drags until release).
@@ -336,7 +537,7 @@ impl Element for Curve {
         // segment says is on offer. Inactive, the rectangle means the
         // container's own drag (moving a clip, resizing it), so the press goes
         // back to it.
-        if input.time.is_none_or(|t| t.active)
+        if self.active(input.time)
             && let Some(index) = ax.hit_segment(&self.points, at.0)
         {
             self.grab = Some(Grab::Segment {
@@ -362,7 +563,7 @@ impl Element for Curve {
     /// answer of the first frame, over and over — a curve trembling under the
     /// hand editing it.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
-        let ax = self.axes(input.rect, input.metrics, input.time);
+        let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
         match &mut self.grab {
             Some(Grab::Point(i)) => ax.move_point(&mut self.points, *i, at.0, at.1),
             Some(Grab::Segment {
@@ -548,7 +749,7 @@ mod tests {
         // ...and Ctrl on the point it just added takes it away again.
         c.grab = None;
         let on_point = (c.points[1].time, 0.0);
-        let ax = c.axes(rect, &m, None);
+        let ax = c.axes(rect, 0.0, &m, None);
         assert!(matches!(
             c.press(
                 (ax.x(on_point.0) as f64, ax.y(c.points[1].value) as f64),
@@ -685,6 +886,11 @@ mod tests {
         );
     }
 
+    /// The chrome belongs to the **view**, not to "nobody handed me an axis":
+    /// a standalone curve stacked with a ruler is given the group's window and
+    /// still draws its label, its field and its strips, while a clip's body,
+    /// given the same kind of window, draws only the line. Reading the two
+    /// apart from the `TimeSpace` alone is what left the example's curve bare.
     #[test]
     fn a_body_draws_without_the_view_s_chrome() {
         let m = Metrics::default();
@@ -710,8 +916,27 @@ mod tests {
             },
         );
         let mut body = Mesh::new();
-        c.draw(
+        let b = super::body(&props(
+            r#"{"min":0.0,"max":1.0,"points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0]}"#,
+        ))
+        .unwrap();
+        b.draw(
             &mut Draw::new(&mut body, &m, &theme),
+            &Ctx {
+                world: &World::default(),
+                metrics: &m,
+                rect,
+                indent: 0.0,
+                scale: 1.0,
+                time: Some(TimeSpace::of(View::full(100), 100.0)),
+                clip: None,
+                focused: false,
+            },
+        );
+        // And the view keeps its chrome when it *is* handed one.
+        let mut grouped = Mesh::new();
+        c.draw(
+            &mut Draw::new(&mut grouped, &m, &theme),
             &Ctx {
                 world: &World::default(),
                 metrics: &m,
@@ -729,6 +954,12 @@ mod tests {
             "no label, no field, no border: {} vs {}",
             body.vertex_count(),
             alone.vertex_count()
+        );
+        assert!(
+            grouped.vertex_count() > body.vertex_count(),
+            "a view on a group is still a view: {} vs {}",
+            grouped.vertex_count(),
+            body.vertex_count()
         );
     }
 }

@@ -712,7 +712,7 @@ pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
 }
 
 /// The time-ruler unit of `editor` (the beats grid rides its props).
-fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
+pub(crate) fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
     match editor.ruler {
         Ruler::Samples => TimeUnit::Samples,
         Ruler::Beats => TimeUnit::Beats {

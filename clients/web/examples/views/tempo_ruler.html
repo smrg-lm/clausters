@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a tempo envelope and its beat ruler</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 66rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 1000px; max-width: 100%; height: 460px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A tempo envelope you can drag, and the beat ruler it
+produces.
+
+One figure with three rulers, and the point is what the top one does when you
+move the curve:
+
+<b>left</b>, the value axis: beats per minute, the curve's own range. It is the
+plain 1-2-5 value ladder (<code>unit: "value"</code>) rather than an amplitude
+one, because a break-point function's values belong to whatever parameter it
+drives. <b>bottom</b>, seconds: the axis itself, evenly spaced, because time is
+what the axis measures. <b>top</b>, beats: <i>not</i> an axis. A beat is a
+<b>logical coordinate</b>, so those marks say where the beats fall — they crowd
+where the piece is fast and spread where it is slow, over an axis that never
+stopped measuring samples. It counts in ones (<code>quant: 1</code>), so every
+mark is a beat and its label reads <code>4:1</code> — the fourth of them, on its
+first beat.
+
+<b>Drag a break-point and the top ruler re-rules under your hand.</b> That is
+the whole example. The curve reports its new shape
+(<code>/gui_event id "points" …</code>), this page rebuilds the piece's
+<code>TempoMap</code> from it — one <code>tempoEnv</code> call, extents in
+seconds — and sets it back on the ruler, which redraws. Nothing else moves: the
+seconds do not change, because seconds are not what a tempo edit changes.
+
+Drag a corner <b>up</b> and watch the marks on top narrow; drag it <b>down</b>
+and they open out. Bend a segment (drag it vertically between two corners) and
+the crowding follows the bend. The piece gets longer or shorter <i>in beats</i>
+as you work, which is what changing a tempo means, so the top ruler renumbers
+itself.
+
+The starting shape is the plainest one that shows the whole apparatus: two
+break-points over sixty seconds, the first at the bottom of the value axis and
+the last at the top — 30 BPM accelerating in a straight line to 90. Everything is
+in reach from there: drag either corner, bend the segment between them, or
+Ctrl+click to add a third.
+
+One thing the picture only approximates: the curve interpolates each segment in
+<b>seconds</b>, the axis it is drawn on, and a <code>TempoMap</code> interpolates
+its segments in <b>beats</b>. They agree exactly at every corner and part between
+them — on this envelope by at most 1.2 BPM out of a 25 BPM excursion — so the
+corners, and the ruler above them, are right, and the line between two corners is
+close.
+
+Two corners cannot be dragged onto one instant (an envelope needs every extent
+positive), and the first corner stays at zero: the map is written from there.
+Both are refused quietly — the ruler simply does not move.</div>
+
+      <button id="run">open the figure</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/tempo_ruler.py, call for
+      call: the same envelope, the same map built with the same arguments in the
+      same order, the same three widgets in the same order, and the same handler
+      rebuilding the map from the edit and setting it back on the ruler.
+
+      Three differences, and they are the platform's:
+
+      - the script boots its own server with `Session.live()`; a page has no
+        process to boot, so it opens the embedded one (`Session.embed()`). The
+        example sounds nothing either way — it is the GUI host it is after;
+      - `TempoMap.env(...)` is a method in Python and the free function
+        `tempoEnv(map, ...)` here, because the map is a generated wasm class
+        that cannot grow one (docs/bindings.md). Same arguments, same order;
+      - the script holds itself open with `win.wait()` and tears down; the
+        window here lives in the page, so there is nothing to wait for;
+      - one line the script does not have: `await loadCore()`. The shared core
+        is in the Python process already and is wasm to be fetched here, and
+        this example builds a `TempoMap` before it opens a session — which is
+        the call that would otherwise have loaded it.
+
+      Serve clients/web (the package root) and open
+      /examples/views/tempo_ruler.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, TempoMap, gui, loadCore, tempoEnv } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const SR = 48000.0;
+      const QUANT = 1.0;   // what the top ruler counts on: one mark, one beat
+
+      // The envelope, in beats per minute against seconds: the corners and the
+      // stretches between them, so there is one more tempo than extent. A
+      // finite shape, which is what a piece's tempo is — no sustain, no loop, a
+      // tempo has no gate.
+      const BPM = [30.0, 90.0];
+      const EXTENTS = [60.0];                                  // seconds
+      // One shape per stretch. A **negative** curvature rises fast and
+      // flattens, a **positive** one holds low and then climbs.
+      const SHAPES = ["lin"];
+      const SECONDS = EXTENTS.reduce((a, b) => a + b, 0);
+      const SPAN = SECONDS * SR;                               // the axis, in samples
+      // 0, 60
+      const CORNERS = BPM.map((_, i) => EXTENTS.slice(0, i).reduce((a, b) => a + b, 0));
+      const BPM_LO = 30.0, BPM_HI = 90.0;
+
+      /**
+       * The piece's tempo, from an envelope written in **seconds**.
+       *
+       * `tempoEnv` takes the tempos and the stretches between them, and
+       * `"seconds"` reads those stretches as wall clock — so each segment's
+       * width in beats is solved exactly rather than searched for, which is
+       * what lets a shape drawn against seconds be a tempo at all.
+       */
+      const tempoOf = (corners, bpm, shapes) => {
+        const extents = corners.slice(1).map((b, i) => b - corners[i]);
+        const tempo = new TempoMap(bpm[0] / 60.0);
+        tempoEnv(tempo, 0.0, bpm.map((b) => b / 60.0), extents, shapes, "seconds");
+        return tempo;
+      };
+
+      /**
+       * A wire shape number as a tempo curve. A tempo segment holds a step, a
+       * straight line, an exponential or a curvature; anything else the
+       * envelope editor can draw is read as a straight line rather than
+       * refused, since the shape is the drawing's and the tempo is what it is
+       * being read *as*.
+       */
+      const shapeOf = (shape, curvature) =>
+        ({ 0: "step", 1: "lin", 2: "exp" })[Math.trunc(shape)]
+        ?? (Math.trunc(shape) === 5 ? Number(curvature) : "lin");
+
+      async function run() {
+        $("run").disabled = true;
+        await loadCore();   // the wasm core, fetched — see the note above
+
+        // ---- the map, before there is a window ----
+        // `TempoMap` is a pure function of a beat: it answers about a piece
+        // nobody is playing. Ask it where each beat falls and the drawing is
+        // already decided.
+        const tempo = tempoOf(CORNERS, BPM, SHAPES);
+        const beats = tempo.beatsAt(SECONDS);
+        log(`${SECONDS.toFixed(0)} s of music is ${beats.toFixed(2)} beats`);
+        for (let beat = 0; beat < Math.trunc(beats); beat += 8) {
+          log(`  beat ${String(beat + 1).padStart(3)} falls at `
+            + `${tempo.secsAt(beat).toFixed(2).padStart(6)} s and lasts `
+            + `${tempo.spanSecs(beat, beat + 1).toFixed(2)} s `
+            + `(${(tempo.tempoAt(beat) * 60).toFixed(1)} BPM there)`);
+        }
+
+        // ---- the figure: one curve, three rulers ----
+        // The curve and the ruler share a navigation group (`link`), so the
+        // group's gutter is the value axis' width and the beat ticks start at
+        // the same pixel the curve does. The curve is what gives the group its
+        // extent — without it the ruler above would have nothing to rule. What
+        // the curve's values *are* is said once, above the beat ruler, rather
+        // than inside the field it labels.
+        const session = await Session.embed();
+        await session.gui();
+
+        const points = CORNERS.map((secs, i) => [secs * SR, BPM[i], [...SHAPES, "lin"][i]]);
+
+        const win = await gui.view(
+          { title: "A tempo envelope, and the beat ruler it makes", w: 1000, h: 460 },
+          gui.label("tempo (BPM)"),
+          gui.timeruler({
+            name: "beats", ruler: "beats", h: 24.0, link: 1,
+            sampleRate: SR, tempo: BPM[0] / 60.0, tempoMap: tempo, quant: QUANT,
+          }),
+          gui.bpf({
+            name: "tempo", points, min: BPM_LO, max: BPM_HI, duration: SPAN,
+            weight: 1.0,
+            axes: { x: { unit: "time", sample_rate: SR, link: 1 },
+                    y: { unit: "value" } },
+          }),
+        ).open($("stage"));
+        log(`opened window ${win.id} — drag a corner and watch the top ruler`);
+
+        // ---- the edit, and what it re-rules ----
+        // The curve owns nothing: it reports the whole break-point list in its
+        // own units and this page decides what that means. Here it means the
+        // piece's tempo, so the map is rebuilt and handed back to the ruler — a
+        // `/gui_set` value is a scalar, hence the JSON the map writes with
+        // `dump`.
+        const onPoints = (tag, ...payload) => {
+          if (tag !== "points") return;
+          const quads = [];
+          for (let i = 0; i < payload.length; i += 4) quads.push(payload.slice(i, i + 4));
+          const corners = quads.map((q) => Number(q[0]) / SR);
+          // the map is written from zero, forward
+          if (corners[0] !== 0.0 || corners.some((b, i) => i > 0 && b <= corners[i - 1])) return;
+          let moved;
+          try {
+            moved = tempoOf(corners, quads.map((q) => Number(q[1])),
+                            quads.slice(0, -1).map((q) => shapeOf(q[2], q[3])));
+          } catch {
+            return;   // a tempo the envelope cannot be read as
+          }
+          win.widget("beats").set({ tempoMap: moved.dump() });
+          log(`re-ruled: ${moved.beatsAt(corners[corners.length - 1]).toFixed(2)} beats `
+            + `in ${corners[corners.length - 1].toFixed(1)} s`);
+        };
+
+        win.widget("tempo").onEvent(onPoints);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -1766,6 +1766,14 @@ def bpf(*, points=None, min: float | None = None, max: float | None = None,
     (requires ``0 < min < max``). Times span ``[0, duration]`` (omitting
     ``duration`` fits the last point).
 
+    It is a **view** as well as a picture. Given an axis pair it draws its own
+    field with a time strip under it and a value strip left of it
+    (``axes={"y": {"unit": "value"}}`` is the plain 1-2-5 ladder a parameter's
+    values want, as against the amplitude ones), and it joins the navigation
+    group ``link`` names — so a curve stacked with a `timeruler` shares that
+    ruler's window and gutter, and the ruler rules the curve. Both strips
+    default **off**, so a bare ``bpf`` is the bare envelope it has always been.
+
     Editing (drag a point — times stay monotonic; drag a segment vertically to
     bend its curvature; Ctrl+click adds a point, Ctrl+click on one removes it)
     flows back per the **edit-back pattern**:

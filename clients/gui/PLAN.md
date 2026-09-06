@@ -3143,7 +3143,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A time axis is labelled by one tempo, and a piece can have several**
+- ✅ **A time axis is labelled by one tempo, and a piece can have several**
   *(found 2026-09-05, reading `editors/tempo_map` after its clip was put right)*.
   A lane's `x` axis and a `timeruler` take `tempo` (beats per second) and
   `beat_at`, which is one segment and an offset — so a page whose tempo changes
@@ -3157,9 +3157,80 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   spacing the zoom leaves room for, so the client has nothing to convert. What
   is missing is a way to hand the axis the **map** — the segments a
   `TempoMap` already is, which both clients hold and the shared crate already
-  converts with. Until then the honest reading of a `tempo` prop is "the tempo,
-  if there is only one", and `editors/tempo_map` is the example that shows the
-  gap rather than hiding it.
+  converts with.
+
+  **Fixed 2026-09-05.** `axes.x.tempo_map` carries the breakpoint list a
+  `TempoMap` serializes to, and `TimeUnit::Beats` holds it. The tick math stopped
+  assuming a straight line: `fit_step`, `labels_fit` and `emit_time_ticks` take a
+  placement function, so every tick -- majors and minors alike -- is placed by
+  asking the map what second its beat falls on. Two things fell out rather than
+  needing rules of their own: the rung that fits is decided by the closest pair
+  (because `labels_fit` already walked every pair measuring labels instead of
+  dividing the axis by a count), and the minors appear or not by `min_gap_px`,
+  the narrowest gap on the axis. The cursor read-out goes through the map too,
+  and takes seconds per pixel instead of beats per pixel, since under a map that
+  is a local rate. Without a map nothing changed. `views/tempo_ruler` is the
+  example: a tempo curve with the seconds ruler under it and the beat ruler it
+  makes above.
+
+- ✅ **A curve over a parameter span has no vertical ruler**
+  *(found 2026-09-05, writing `views/tempo_ruler`, whose curve is beats per
+  minute)*. `RulerY` is `Off`, `Norm`, `Db`, `Bits`, `Percent`, `Hz` -- every
+  unit an *amplitude* or a *frequency*. But the `bpf` body is general on
+  purpose, and says so: "values live in `[min, max]` -- unipolar, bipolar, or
+  any parameter span". So a curve over a cutoff in hertz can be ruled and a
+  curve over beats per minute, a pan position, a mix or a MIDI controller cannot
+  -- the numbers are on the widget (`min`/`max`, `points_min`/`points_max`) and
+  there is no way to draw them beside it.
+
+  The arithmetic exists and is already used: `ruler::value_ticks(lo, hi, ...)`
+  is the generic value axis a `plot` draws with, on the same 1-2-5 ladder and
+  the same measured-label fit. What is missing is a `ruler_y` that names it --
+  a unit that says *these are the numbers `min`/`max` are in*, optionally with a
+  suffix a script supplies, since "BPM" and "Hz" are the widget's to know and not
+  the host's to guess. `views/tempo_ruler` states its 30-90 BPM range in prose
+  because it cannot state it on screen.
+
+  **Fixed** (2026-09-05). `RulerY::Value` names that ladder -- `y.unit:
+  "value"`, straight onto `ruler::value_ticks` over the element's own
+  `min`/`max`, with no suffix: the number is the widget's and a unit string
+  would be the host guessing at it. The unit was the smaller half. The `curve`
+  element had **no editor chrome at all**, so there was nowhere to hang a value
+  strip: it now carries an `EditorProps`, draws a time strip under its field and
+  a value strip left of it (both defaulting off, so every window that already
+  draws a bare envelope keeps its picture), reports a `content_span` and a
+  `gutter`/`measured_gutter`, and joins the navigation group `link` names --
+  which is what lets a `timeruler` above a curve rule the curve.
+
+  **And the trap that came with it**, which is the part worth keeping: giving
+  the element an `EditorProps` made the frame hand it a `TimeSpace`, and
+  `Curve::draw` had been reading exactly that to decide "I am a clip's body" --
+  so the first build drew the envelope bare, over the whole rect and against the
+  group's window instead of its own field, with neither strip and with its
+  edit-back reporting times that were off. Body-or-view is a fact about **which
+  door built the element** (`body()`/`empty_body()` against `from_props`), not
+  about whether an axis was handed in: sharing an axis with a ruler is not being
+  layered under anything. It is now a field, and `a_body_draws_without_the_view_s_chrome`
+  drives a real body against a real view rather than one object through two
+  branches.
+
+- ⬜ **Nothing draws a tempo map as such, because a break-point body bends in
+  its own x** *(found 2026-09-05, writing `views/tempo_ruler`)*. A `bpf` body
+  interpolates each segment in the axis it is placed on -- seconds here, or
+  samples -- and a `TempoMap` interpolates its segments **in beats**. So a
+  curve given the map's own breakpoints and the map's own shape numbers agrees
+  with it exactly at every corner and parts from it between: measured on that
+  example's envelope, at most 1.17 BPM out of a 25 BPM excursion, worst at
+  about 14.8 s, which is some eight pixels on a 400-pixel lane.
+
+  Drawing the map densely instead is not a way out: the `bpf` draws a disc per
+  point, so a sampled curve reads as a string of beads rather than as the five
+  statements the piece actually makes. What is missing is a body that knows it
+  is drawing a tempo map -- one that places its corners in seconds and bends
+  between them in beats, which is a conversion the shared crate already does.
+  Until then `views/tempo_ruler` names the gap in its own prose, which is the
+  honest form: the picture is right where it matters (every corner, and the
+  ruler above it) and approximate where it does not.
 
 - ⬜ **A generation is carried, stored, and read by nothing** *(found 2026-09-04
   in the review, fixing the samples window's lag behind its own undo)*.

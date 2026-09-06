@@ -96,7 +96,9 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   so this entry goes on the next rewrite. Three of the fixes left a *general*
   gap standing behind them — a play onto a stopped clock, a refusal an editor
   has no door for, a time axis that holds one tempo — and each is written into
-  its own plan and named on the line that found it.
+  its own plan and named on the line that found it. **The third of those is
+  since fixed** (2026-09-05): a beat ruler places its ticks by the piece's tempo
+  map, and `views/tempo_ruler` is the example that shows it.
 
   **Which client each was seen in** is written on every line, because it decides
   where the work is: *both* means the user reproduced it in the page **and** in
@@ -128,8 +130,9 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     instead of sixteen beats. An item that states no length is now as long as
     what it lays down, measured **unmixed**, since mute and solo say what is
     heard and never where anything is. What is left of the picture is the
-    ruler, and it is written down: "A time axis is labelled by one tempo, and a
-    piece can have several" in `clients/gui/PLAN.md`, "Found by use".
+    ruler, and it was written down as "A time axis is labelled by one tempo,
+    and a piece can have several" in `clients/gui/PLAN.md`, "Found by use" —
+    fixed the same day, where its ✅ carries the record.
   - ✅ **both** — `editors/composed`, **`drag: draw` neither drew nor
     sounded.** The host was right and nobody listened: while one pixel is worth
     more than one sample it refuses the stroke and *says so*, and this take is

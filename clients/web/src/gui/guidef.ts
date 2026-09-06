@@ -2277,6 +2277,14 @@ export function nodetree(
  * The widget is general on purpose (the automation-lane shape): values live
  * in `[min, max]` — unipolar, bipolar or any parameter span — and `exp` gives
  * a frequency-like range a geometric display scale.
+ *
+ * It is a **view** as well as a picture. Given an axis pair it draws its own
+ * field with a time strip under it and a value strip left of it
+ * (`axes: { y: { unit: "value" } }` is the plain 1-2-5 ladder a parameter's
+ * values want, as against the amplitude ones), and it joins the navigation
+ * group `link` names — so a curve stacked with a {@link timeruler} shares
+ * that ruler's window and gutter, and the ruler rules the curve. Both strips
+ * default **off**, so a bare `bpf` is the bare envelope it has always been.
  */
 export function bpf(
     options: WidgetOptions & {
