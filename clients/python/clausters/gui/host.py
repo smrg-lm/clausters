@@ -485,6 +485,73 @@ class GuiHost:
         self._handles[id] = handle
         return handle
 
+    def redefine(self, id: int, tree: dict, *blobs: bytes,
+                 window: "int | None" = None) -> None:
+        """``/gui_def <id> <json>`` on a widget **inside** an open window: build
+        that subtree again and leave the rest of the window exactly as it is.
+
+        `define` redefines a widget too — the host frees the old subtree either
+        way — but it is written for a **window**: it replaces the handle's whole
+        name map with the names of the tree it was handed, which for a subtree
+        would leave the window resolving only that subtree's names. So this is
+        the same message with the bookkeeping a part needs: the names under the
+        old subtree go, the new ones join what the window already had, and the
+        handle a script is holding stays the one it holds.
+
+        Why it exists at all: a widget that appeared or went can only arrive by
+        a definition, and doing that to the **window** rebuilds every widget in
+        it — so a clip dropped on one lane took the zoom, the scroll and the
+        selection of every other lane with it. `/gui_def` names any widget, so
+        the answer is to name the smallest one that changed.
+        """
+        id = int(id)
+        held = self._handles.get(int(window)) if window is not None else None
+        gone = self._subtree_ids(id)
+        inherited = {name: self._on_event[wid]
+                     for name, wid in (held._names.items() if held else ())
+                     if wid in gone and wid in self._on_event}
+        inherited_hand = {name: self._on_interface[wid]
+                          for name, wid in (held._names.items() if held else ())
+                          if wid in gone and wid in self._on_interface}
+        root_handler = self._on_event.get(id)
+        root_hand = self._on_interface.get(id)
+        self._recycle_subtree(id, keep_root=True)
+        names: dict = {}
+        controls: dict = {}
+        doc = self._stamp(tree, id, names, controls)
+        if root_handler is not None:
+            self._on_event[id] = root_handler
+        if root_hand is not None:
+            self._on_interface[id] = root_hand
+        for name, func in inherited.items():
+            wid = names.get(name)
+            if wid is not None:
+                self._on_event[wid] = func
+        for name, table in inherited_hand.items():
+            wid = names.get(name)
+            if wid is not None:
+                self._on_interface[wid] = table
+        self._send("/gui_def", id, to_json(doc), *blobs)
+        if held is not None:
+            # **Merged, not replaced**: what the window knows about the rest of
+            # itself is not this subtree's to state.
+            for name, wid in list(held._names.items()):
+                if wid in gone:
+                    held._names.pop(name, None)
+            for wid in list(held._controls):
+                if wid in gone:
+                    held._controls.pop(wid, None)
+            held._names.update(names)
+            held._controls.update(controls)
+
+    def _subtree_ids(self, id: int) -> set:
+        """Every widget id under ``id``, itself included — what a redefine is
+        about to replace, read before it is replaced."""
+        found = {int(id)}
+        for cid in self._children.get(int(id), ()):
+            found |= self._subtree_ids(cid)
+        return found
+
     def load(self, name: str):
         """``/gui_load <name>`` — instantiate a **persisted** GuiDef by name, the
         host replaying it as its saved ``/gui_def`` (it must have been started

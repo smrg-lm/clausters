@@ -265,7 +265,16 @@ pub use time::*;
 /// walk deciding when that is necessary is a rule, not a convenience, which is
 /// why it is here rather than once per client. Additive, and the counter moves
 /// for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 40;
+///
+/// **v41 a change of shape costs a subtree, not the window.**
+/// `clausters_gui_difference` answers `{whole, redefine, sets}` where it
+/// answered `{define}` or `{sets}`: `/gui_def` names any widget, so a clip that
+/// appeared in one lane is that lane's definition and every other lane keeps
+/// the zoom, the scroll and the selection it had. **Not additive** — the same
+/// symbol answers a different document — which is exactly why the counter has
+/// to move: a staged library one version behind would otherwise be read as
+/// saying "nothing changed" for every redraw.
+pub const CORE_ABI_VERSION: u32 = 41;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

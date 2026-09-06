@@ -77,8 +77,10 @@ class FakeHost:
     def __init__(self):
         self.acks: list = []
         self.pushes: list = []
-        #: What was redefined whole, and what was told one prop at a time.
+        #: What was redefined whole, what was redefined in part, and what was
+        #: told one prop at a time.
         self.defines: list = []
+        self.redefines: list = []
         self.sets: list = []
         #: The widget-id namespace, as a real host has one: the editors drawing
         #: on this double name their widgets in it, so two of them cannot pick
@@ -99,6 +101,11 @@ class FakeHost:
 
     def push(self, seq, *corrections, doc_version=0, reason=None):
         self.pushes.append((seq, list(corrections), doc_version, reason))
+
+    def redefine(self, wid, tree, *blobs, window=None):
+        #: The subtrees this host was handed, and the window each belonged to —
+        #: what says a change of shape cost one widget rather than the window.
+        self.redefines.append((wid, window))
 
     def define(self, wid, tree, *blobs):
         #: The whole trees this host was handed — what says a redefine happened,

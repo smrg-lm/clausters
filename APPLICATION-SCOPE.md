@@ -481,8 +481,8 @@ it loses no decision.
 
 ## Found by use
 
-- ⬜ **A change of shape redefines the whole window, so an edit in one lane
-  costs every other lane its screen state** *(found 2026-09-06 by the user, by
+- ✅ **A change of shape redefined the whole window, so an edit in one lane
+  cost every other lane its screen state** *(found 2026-09-06 by the user, by
   eye, in `composer.py`: splitting a clip works and the **vertical zoom of every
   lane** goes back to where it started; the same on **moving a clip to another
   lane**, which is the case a hand meets first — a drag **within** a lane costs
@@ -504,14 +504,26 @@ it loses no decision.
   handle instead of replacing them, and frees only that subtree's ids — and it
   was left out of AP2 deliberately rather than missed.
 
-  **This is not an accepted boundary** *(the user, 2026-09-06: it is
+  **It was not an accepted boundary** *(the user, 2026-09-06: it is
   unacceptable, and the multitrack view's implementation changes for it)*. "A
-  prop change costs nothing and a structural change costs the window" is better
-  than what it replaced and is still wrong at the first gesture a hand makes:
-  moving a clip between lanes is the ordinary edit, not a corner. So the work is
-  **AP6's**, and it is a change of implementation rather than a tuning — the
-  narrow redefine above, and whatever the multitrack has to become for its
-  shape to stop moving under an ordinary edit.
+  prop change costs nothing and a structural change costs the window" was better
+  than what it replaced and still wrong at the first gesture a hand makes.
+
+  **Fixed the same day, in the core.** `guidiff` answers `{whole, redefine,
+  sets}` instead of "the whole tree or nothing": it walks down to the smallest
+  subtree whose shape moved and names *that* widget, and a node that cannot be
+  patched is redefined by its **parent** rather than by the window. The window
+  goes whole only when the root's own shape moved, which is the one case with no
+  parent to name. `GuiHost.redefine` is the bookkeeping a part needs — the names
+  under the old subtree go, the new ones **merge** into what the window already
+  had, and the handle a script is holding stays the one it holds — which is what
+  `define` could not do, since it replaces the handle's whole name map.
+
+  Measured: moving a clip between two lanes now sends **two** `/gui_def`s, one
+  per lane it crossed, and **zero** window rebuilds. Every other lane keeps its
+  zoom, its scroll and its selection. The ABI counter moved for it (v41): the
+  same symbol answers a different document, so a staged library one version
+  behind would have been read as "nothing changed" on every redraw.
 
   Everything this turns up is recorded **here**, in this file, because all of it
   is to be dealt with — including by changing the design.

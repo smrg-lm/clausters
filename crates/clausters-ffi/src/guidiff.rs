@@ -4,7 +4,7 @@ use clausters_core::guidiff::{self, Update};
 
 use crate::document::{fill, text};
 
-// --- The redraw difference (ABI v40) ------------------------------------
+// --- The redraw difference (ABI v40, reshaped in v41) ------------------------------------
 //
 // A pure read over two JSON documents, so it takes and gives text and holds
 // nothing: the caller keeps the picture the host is drawing, hands it here with
@@ -12,12 +12,13 @@ use crate::document::{fill, text};
 // that says the tree has to go whole.
 
 /// What to send so a host drawing `old` draws `new` instead, as JSON:
-/// `{"define": true}` when the shape changed, else
-/// `{"sets": [[<id>, {<prop>: <value>, …}], …]}` in tree order (an empty list
-/// meaning the two are identical and nothing need be sent).
+/// `{"whole": <bool>, "redefine": [<id>, …], "sets": [[<id>, {<prop>: <value>,
+/// …}], …]}`, all in tree order. Read together: send the tree whole if
+/// `whole`; else redefine each id, then apply the sets. All three empty means
+/// the two pictures are identical.
 ///
 /// Sizes with a null `out` and fills with a second call, like the rest of the
-/// JSON surface. Unreadable input answers `{"define": true}` rather than
+/// JSON surface. Unreadable input answers `{"whole": true}` rather than
 /// failing: a caller that cannot be diffed can always send the tree.
 ///
 /// # Safety
@@ -43,19 +44,23 @@ pub unsafe extern "C" fn clausters_gui_difference(
         serde_json::from_str::<serde_json::Value>(&new),
     ) {
         (Ok(old), Ok(new)) => guidiff::difference(&old, &new, root_id),
-        _ => Update::Define,
+        _ => Update::everything(),
     };
-    let payload = match answer {
-        Update::Define => serde_json::json!({"define": true}),
-        Update::Sets(sets) => serde_json::json!({
-            "sets": sets
-                .into_iter()
-                .map(|(id, props)| serde_json::json!([id, props]))
-                .collect::<Vec<_>>()
-        }),
-    };
-    let text = payload.to_string();
+    let text = encode(answer).to_string();
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
     unsafe { fill(text.as_bytes(), out, out_cap, || {}) }
+}
+
+/// The answer as the JSON both bindings hand back.
+fn encode(update: Update) -> serde_json::Value {
+    serde_json::json!({
+        "whole": update.whole,
+        "redefine": update.redefine,
+        "sets": update
+            .sets
+            .into_iter()
+            .map(|(id, props)| serde_json::json!([id, props]))
+            .collect::<Vec<_>>(),
+    })
 }

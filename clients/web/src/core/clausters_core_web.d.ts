@@ -903,9 +903,10 @@ export function graph_bus_reserved(): Uint32Array;
  * JS face: what to send so a host drawing `old` draws `new` instead.
  *
  * Both pictures go in as their JSON text and the answer comes back the same
- * way — `{"define": true}` when the shape changed, else
- * `{"sets": [[id, props], …]}` in tree order, an empty list meaning the two
- * are identical. Text rather than objects for the reason `TempoMap.dump` is:
+ * way — `{"whole": bool, "redefine": [id, …], "sets": [[id, props], …]}`, all
+ * in tree order: send the tree whole if `whole`, else redefine each id and
+ * then apply the sets. Text rather than objects for the reason `TempoMap.dump`
+ * is:
  * the document is JSON already, and crossing it as a structure would mean a
  * converter on both sides of a boundary that has one. Unreadable input answers
  * `{"define": true}`: a caller that cannot be diffed can always send the tree.

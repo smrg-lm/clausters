@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 40
+CORE_ABI_VERSION = 41
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -2428,17 +2428,19 @@ class Registry:
             pass
 
 
-def gui_difference(old: dict, new: dict, root_id: int) -> "list | None":
+def gui_difference(old: dict, new: dict, root_id: int) -> tuple:
     """What to send so a host drawing ``old`` draws ``new`` instead.
 
-    A list of ``(widget id, props)`` — one ``/gui_set`` each, in tree order, and
-    empty when the two pictures are identical — or ``None`` when the **shape**
-    changed and the tree has to go whole.
+    Answers ``(whole, redefine, sets)``, read in that order: send the tree whole
+    when ``whole``; else ``/gui_def`` each id in ``redefine`` (the smallest
+    subtrees whose shape moved, in tree order), then ``/gui_set`` each
+    ``(widget id, props)`` in ``sets``. All three empty means the two pictures
+    are identical and there is nothing to send.
 
     The walk is the core's because it is a rule rather than a convenience: a
-    redefine frees the old subtree, so it takes every widget's screen state with
-    it and drops what the host had pending, and two clients deciding differently
-    when that is unavoidable is two clients redrawing differently.
+    redefine frees the subtree it names, so it takes the screen state of every
+    widget in it, and two clients deciding differently how much of the window
+    that has to be is two clients redrawing differently.
     """
     _lib = lib()
     old_p, old_n, _o = _u8(json.dumps(old))
@@ -2446,13 +2448,13 @@ def gui_difference(old: dict, new: dict, root_id: int) -> "list | None":
     args = (old_p, old_n, new_p, new_n, int(root_id))
     need = _lib.clausters_gui_difference(*args, None, 0)
     if need == 0:
-        return None
+        return True, [], []
     out = (ctypes.c_ubyte * need)()
     n = _lib.clausters_gui_difference(*args, out, need)
     answer = json.loads(ctypes.string_at(out, n).decode("utf-8"))
-    if answer.get("define"):
-        return None
-    return [(int(wid), props) for wid, props in answer.get("sets", ())]
+    return (bool(answer.get("whole")),
+            [int(wid) for wid in answer.get("redefine", ())],
+            [(int(wid), props) for wid, props in answer.get("sets", ())])
 
 
 def _u8(text: str):

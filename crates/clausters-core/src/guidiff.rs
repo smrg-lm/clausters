@@ -8,9 +8,13 @@
 //! the host had pending is dropped. Doing that because one number changed is
 //! what makes a window flicker under a hand that is not even in it.
 //!
-//! So a redraw is sent as a difference when the two pictures have the same
-//! **shape**: one `/gui_set` per widget whose props moved, and nothing freed or
-//! built. Only a change of shape redefines.
+//! So a redraw is sent as a difference: one `/gui_set` per widget whose props
+//! moved, and nothing freed or built. Where the **shape** did move, only the
+//! smallest subtree that holds the change is redefined — `/gui_def` names any
+//! widget, not only a window, so a clip appearing in one lane costs that lane
+//! and leaves every other one exactly as the hand left it. Redefining the whole
+//! window for it is the same failure one size up: an edit in one lane taking
+//! the screen state of every other.
 //!
 //! # What counts as shape
 //!
@@ -33,7 +37,7 @@
 //! redefine — which is exactly what this is here to stop.
 //!
 //! ```
-//! use clausters_core::guidiff::{difference, Update};
+//! use clausters_core::guidiff::difference;
 //! use serde_json::json;
 //!
 //! let was = json!({"type": "window", "children": [
@@ -41,10 +45,9 @@
 //! let now = json!({"type": "window", "children": [
 //!     {"id": 10, "type": "knob", "value": 0.5}]});
 //!
-//! match difference(&was, &now, 1) {
-//!     Update::Sets(sets) => assert_eq!(sets[0].0, 10),
-//!     Update::Define => panic!("one prop moving is not a shape change"),
-//! }
+//! let update = difference(&was, &now, 1);
+//! assert!(!update.whole && update.redefine.is_empty());
+//! assert_eq!(update.sets[0].0, 10);
 //! ```
 
 use serde_json::{Map, Value};
@@ -54,14 +57,39 @@ use serde_json::{Map, Value};
 const STRUCTURE: [&str; 4] = ["type", "id", "name", "children"];
 
 /// How to make a host draw the new picture.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Update {
-    /// Send the tree whole: the shape changed, and `/gui_set` cannot say so.
-    Define,
-    /// Send one `/gui_set` per entry, in tree order: the widget's id and the
-    /// props that moved. Empty means the two pictures are identical and there
-    /// is nothing to send at all.
-    Sets(Vec<(i64, Map<String, Value>)>),
+///
+/// The three fields are read together and in this order: send the whole tree if
+/// `whole`; otherwise redefine each id in `redefine`, then apply `sets`. All
+/// three empty means the two pictures are identical.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Update {
+    /// The root itself has to go whole — its own shape moved, or the two
+    /// documents are not comparable at all.
+    pub whole: bool,
+    /// Widgets whose **subtree** changed shape, in tree order and never nested
+    /// inside one another: one `/gui_def` of that widget each, and nothing
+    /// under it needs a set.
+    pub redefine: Vec<i64>,
+    /// One `/gui_set` per widget whose props moved, in tree order — only for
+    /// widgets outside every redefined subtree, since a redefine already
+    /// carries what those draw.
+    pub sets: Vec<(i64, Map<String, Value>)>,
+}
+
+impl Update {
+    /// The answer that sends everything: what an incomparable pair of documents
+    /// gets, and what a caller falls back to.
+    pub fn everything() -> Self {
+        Self {
+            whole: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether there is nothing at all to send.
+    pub fn is_empty(&self) -> bool {
+        !self.whole && self.redefine.is_empty() && self.sets.is_empty()
+    }
 }
 
 /// What to send so a host drawing `old` draws `new` instead.
@@ -70,23 +98,25 @@ pub enum Update {
 /// no id of its own, because it is the `/gui_def` argument.
 pub fn difference(old: &Value, new: &Value, root_id: i64) -> Update {
     let (Some(old), Some(new)) = (old.as_object(), new.as_object()) else {
-        return Update::Define;
+        return Update::everything();
     };
-    let mut sets = Vec::new();
-    if walk(old, new, Some(root_id), &mut sets) {
-        Update::Sets(sets)
-    } else {
-        Update::Define
+    let mut update = Update::default();
+    if !walk(old, new, Some(root_id), &mut update) {
+        return Update::everything();
     }
+    update
 }
 
-/// One node and its children, collecting what moved. `false` the moment
-/// anything is not expressible as a set.
+/// One node and its children, collecting what moved.
+///
+/// `false` means **this node cannot be patched** and whoever called has to
+/// redefine it — which its parent answers by putting this node's id in
+/// `redefine`, or, at the root, by sending the whole tree.
 fn walk(
     old: &Map<String, Value>,
     new: &Map<String, Value>,
     id: Option<i64>,
-    sets: &mut Vec<(i64, Map<String, Value>)>,
+    update: &mut Update,
 ) -> bool {
     if old.get("type") != new.get("type") || old.get("name") != new.get("name") {
         return false;
@@ -95,14 +125,23 @@ fn walk(
     let Some(changed) = props(old, new) else {
         return false;
     };
-    if !changed.is_empty() {
-        sets.push((id, changed));
-    }
     let old_kids = children(old);
     let new_kids = children(new);
     if old_kids.len() != new_kids.len() {
+        // A widget appeared or went. There is no insert on the wire, so this
+        // node goes whole — and its own props ride with it, which is why the
+        // set collected above is dropped rather than sent.
         return false;
     }
+    // Held until the children are known to be patchable: a set for a node that
+    // turns out to need redefining is a message about a widget that is about to
+    // be rebuilt.
+    let mine = if changed.is_empty() {
+        None
+    } else {
+        Some((id, changed))
+    };
+    let mut below = Update::default();
     for (was, is_now) in old_kids.iter().zip(new_kids.iter()) {
         let (Some(was), Some(is_now)) = (was.as_object(), is_now.as_object()) else {
             return false;
@@ -111,14 +150,18 @@ fn walk(
             return false;
         }
         match node_id(is_now) {
-            Some(id) => {
-                if !walk(was, is_now, Some(id), sets) {
-                    return false;
+            Some(child) => {
+                if !walk(was, is_now, Some(child), &mut below) {
+                    // **The child goes whole, and this node does not.** That is
+                    // the difference between an edit costing one lane and an
+                    // edit costing the window.
+                    below.redefine.push(child);
                 }
             }
             // An id-less widget may stay, as long as it did not move: it cannot
             // be addressed, but a node identical in both pictures needs no
-            // message and the picture around it is still a difference.
+            // message and the picture around it is still a difference. One that
+            // moved has no id to redefine either, so its parent is what goes.
             None => {
                 if was != is_now {
                     return false;
@@ -126,6 +169,11 @@ fn walk(
             }
         }
     }
+    if let Some(mine) = mine {
+        update.sets.push(mine);
+    }
+    update.sets.extend(below.sets);
+    update.redefine.extend(below.redefine);
     true
 }
 
@@ -174,69 +222,120 @@ mod tests {
             {"id": 11, "type": "number", "value": right}]})
     }
 
-    fn sets(update: Update) -> Vec<(i64, Map<String, Value>)> {
-        match update {
-            Update::Sets(sets) => sets,
-            Update::Define => panic!("expected a difference, got a redefine"),
-        }
+    /// A window of two lanes, each holding its own clips — the shape the
+    /// multitrack draws, and the one the narrow redefine is for.
+    fn stack(left: Vec<Value>, right: Vec<Value>) -> Value {
+        json!({"type": "window", "children": [
+            {"id": 20, "type": "field", "children": left},
+            {"id": 21, "type": "field", "children": right}]})
+    }
+
+    fn clip(id: i64, offset: f64) -> Value {
+        json!({"id": id, "type": "clip", "offset": offset})
     }
 
     #[test]
     fn the_same_picture_twice_sends_nothing() {
-        assert!(sets(difference(&tree(0.0, 0.0), &tree(0.0, 0.0), 1)).is_empty());
+        assert!(difference(&tree(0.0, 0.0), &tree(0.0, 0.0), 1).is_empty());
     }
 
     #[test]
     fn one_prop_moving_is_one_set_on_the_widget_that_moved() {
-        let out = sets(difference(&tree(0.0, 0.0), &tree(0.0, 0.5), 1));
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].0, 11);
-        assert_eq!(out[0].1.get("value"), Some(&json!(0.5)));
+        let out = difference(&tree(0.0, 0.0), &tree(0.0, 0.5), 1);
+        assert_eq!(out.sets.len(), 1);
+        assert_eq!(out.sets[0].0, 11);
+        assert_eq!(out.sets[0].1.get("value"), Some(&json!(0.5)));
+        assert!(out.redefine.is_empty() && !out.whole);
     }
 
     #[test]
-    fn a_widget_that_was_not_there_can_only_arrive_whole() {
-        let mut grown = tree(0.0, 0.0);
-        grown["children"]
+    fn a_widget_that_appears_in_one_lane_costs_that_lane_and_no_other() {
+        // The whole point. An edit in one lane used to redefine the window,
+        // which took the screen state of every other lane with it -- the zoom,
+        // the scroll, the selection -- for a clip that arrived somewhere else.
+        let was = stack(vec![clip(30, 0.0)], vec![clip(40, 0.0)]);
+        let now = stack(vec![clip(30, 0.0)], vec![clip(40, 0.0), clip(41, 4.0)]);
+        let out = difference(&was, &now, 1);
+        assert!(!out.whole, "the window stays");
+        assert_eq!(out.redefine, vec![21], "only the lane that grew");
+        assert!(out.sets.is_empty());
+    }
+
+    #[test]
+    fn a_clip_moving_between_lanes_costs_both_lanes_and_no_other() {
+        let was = stack(vec![clip(30, 0.0), clip(31, 4.0)], vec![clip(40, 0.0)]);
+        let now = stack(vec![clip(30, 0.0)], vec![clip(40, 0.0), clip(31, 4.0)]);
+        let out = difference(&was, &now, 1);
+        assert!(!out.whole);
+        assert_eq!(out.redefine, vec![20, 21], "both, in tree order");
+    }
+
+    #[test]
+    fn a_lane_that_only_moved_a_clip_is_a_set_while_its_neighbour_is_redefined() {
+        let was = stack(vec![clip(30, 0.0)], vec![clip(40, 0.0)]);
+        let now = stack(vec![clip(30, 2.0)], vec![clip(40, 0.0), clip(41, 4.0)]);
+        let out = difference(&was, &now, 1);
+        assert_eq!(out.redefine, vec![21]);
+        assert_eq!(out.sets.len(), 1);
+        assert_eq!(out.sets[0].0, 30, "the clip that moved, not its lane");
+    }
+
+    #[test]
+    fn nothing_under_a_redefined_widget_is_also_set() {
+        // A redefine carries what its subtree draws, so a set for a widget
+        // inside it is a message about something about to be rebuilt.
+        let was = stack(vec![], vec![clip(40, 0.0)]);
+        let now = stack(vec![], vec![clip(40, 9.0), clip(41, 4.0)]);
+        let out = difference(&was, &now, 1);
+        assert_eq!(out.redefine, vec![21]);
+        assert!(out.sets.is_empty(), "40 moved, and 21 carries it");
+    }
+
+    #[test]
+    fn a_prop_that_went_away_redefines_the_widget_that_held_it() {
+        // There is no value on the wire that means "unset".
+        let was = stack(vec![clip(30, 0.0)], vec![]);
+        let mut now = stack(vec![clip(30, 0.0)], vec![]);
+        now["children"][0]["children"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("offset");
+        let out = difference(&was, &now, 1);
+        assert_eq!(out.redefine, vec![30]);
+    }
+
+    #[test]
+    fn a_changed_type_or_name_redefines_that_widget() {
+        let was = stack(vec![clip(30, 0.0)], vec![]);
+        let mut retyped = was.clone();
+        retyped["children"][0]["children"][0]["type"] = json!("knob");
+        assert_eq!(difference(&was, &retyped, 1).redefine, vec![30]);
+
+        let mut renamed = was.clone();
+        renamed["children"][0]["children"][0]["name"] = json!("cutoff");
+        assert_eq!(difference(&was, &renamed, 1).redefine, vec![30]);
+    }
+
+    #[test]
+    fn the_root_growing_a_lane_is_the_one_case_that_costs_the_window() {
+        let was = stack(vec![], vec![]);
+        let mut now = stack(vec![], vec![]);
+        now["children"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"id": 12, "type": "number", "value": 1.0}));
-        assert_eq!(difference(&tree(0.0, 0.0), &grown, 1), Update::Define);
+            .push(json!({"id": 22, "type": "field", "children": []}));
+        let out = difference(&was, &now, 1);
+        assert!(out.whole, "the root has no parent to be redefined by");
     }
 
     #[test]
-    fn a_widget_that_went_can_only_go_whole() {
-        let mut shrunk = tree(0.0, 0.0);
-        shrunk["children"].as_array_mut().unwrap().pop();
-        assert_eq!(difference(&tree(0.0, 0.0), &shrunk, 1), Update::Define);
-    }
-
-    #[test]
-    fn a_prop_that_went_away_redefines() {
-        // There is no value on the wire that means "unset".
-        let mut bare = tree(0.0, 0.0);
-        bare["children"][0].as_object_mut().unwrap().remove("value");
-        assert_eq!(difference(&tree(0.0, 0.0), &bare, 1), Update::Define);
-    }
-
-    #[test]
-    fn a_changed_type_or_name_redefines() {
-        let mut retyped = tree(0.0, 0.0);
-        retyped["children"][0]["type"] = json!("knob");
-        assert_eq!(difference(&tree(0.0, 0.0), &retyped, 1), Update::Define);
-
-        let mut renamed = tree(0.0, 0.0);
-        renamed["children"][0]["name"] = json!("cutoff");
-        assert_eq!(difference(&tree(0.0, 0.0), &renamed, 1), Update::Define);
-    }
-
-    #[test]
-    fn moved_ids_are_a_shape_change() {
-        // Against leased ids this is every redraw, which is why a widget id has
-        // to name what it draws for any of this to be worth anything.
-        let mut moved = tree(0.0, 0.0);
-        moved["children"][0]["id"] = json!(99);
-        assert_eq!(difference(&tree(0.0, 0.0), &moved, 1), Update::Define);
+    fn moved_ids_redefine_the_parent() {
+        // Against leased ids this was every redraw, which is why a widget id
+        // has to name what it draws for any of this to be worth anything.
+        let was = stack(vec![clip(30, 0.0)], vec![]);
+        let mut moved = was.clone();
+        moved["children"][0]["children"][0]["id"] = json!(99);
+        assert_eq!(difference(&was, &moved, 1).redefine, vec![20]);
     }
 
     #[test]
@@ -246,28 +345,25 @@ mod tests {
                 {"id": 10, "type": "number", "value": value},
                 {"type": "timeruler", "ruler": "beats"}]})
         };
-        let out = sets(difference(&with_ruler(0.0), &with_ruler(0.5), 1));
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].0, 10);
+        let out = difference(&with_ruler(0.0), &with_ruler(0.5), 1);
+        assert_eq!(out.sets.len(), 1);
+        assert_eq!(out.sets[0].0, 10);
 
         let mut moved = with_ruler(0.5);
         moved["children"][1]["ruler"] = json!("time");
-        assert_eq!(difference(&with_ruler(0.5), &moved, 1), Update::Define);
+        assert!(
+            difference(&with_ruler(0.5), &moved, 1).whole,
+            "it has no id to redefine, so its parent goes -- here, the root"
+        );
     }
 
     #[test]
     fn the_root_is_addressed_by_the_id_it_was_defined_under() {
         let was = json!({"type": "window", "title": "one"});
         let now = json!({"type": "window", "title": "two"});
-        let out = sets(difference(&was, &now, 7));
-        assert_eq!(
-            out,
-            vec![(7, {
-                let mut props = Map::new();
-                props.insert("title".into(), json!("two"));
-                props
-            })]
-        );
+        let out = difference(&was, &now, 7);
+        assert_eq!(out.sets.len(), 1);
+        assert_eq!(out.sets[0].0, 7);
     }
 
     #[test]
@@ -277,14 +373,14 @@ mod tests {
                 {"id": 10, "type": "col", "children": [
                     {"id": 11, "type": "number", "value": value}]}]})
         };
-        let out = sets(difference(&nest(0.0), &nest(1.0), 1));
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].0, 11);
+        let out = difference(&nest(0.0), &nest(1.0), 1);
+        assert_eq!(out.sets.len(), 1);
+        assert_eq!(out.sets[0].0, 11);
     }
 
     #[test]
-    fn anything_that_is_not_a_pair_of_objects_redefines() {
-        assert_eq!(difference(&json!([]), &json!({}), 1), Update::Define);
-        assert_eq!(difference(&json!({}), &json!("window"), 1), Update::Define);
+    fn anything_that_is_not_a_pair_of_objects_goes_whole() {
+        assert!(difference(&json!([]), &json!({}), 1).whole);
+        assert!(difference(&json!({}), &json!("window"), 1).whole);
     }
 }

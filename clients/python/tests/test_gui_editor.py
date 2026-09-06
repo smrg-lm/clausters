@@ -976,8 +976,10 @@ class _FakeHost:
         #: learns about the state its next gesture will name back.
         self.answers = []
         self._ids = itertools.count(10_000)
-        #: The whole trees `define` was handed -- one per redefine.
+        #: The whole trees `define` was handed -- one per window rebuild.
         self.defines = []
+        #: The subtrees `redefine` was handed -- one per widget whose shape moved.
+        self.redefines = []
         #: Messages `poll` hands out, and what `dispatch` was asked to route.
         self.inbox = []
         self.dispatched = []
@@ -1009,10 +1011,14 @@ class _FakeHost:
         self.answers.append((seq, doc_version, reason))
 
     def define(self, id, tree):
-        #: How many whole trees this host was handed -- what says a redefine
-        #: happened, since a redefine is the only channel a widget that was not
-        #: there can arrive by.
+        #: How many whole trees this host was handed -- what says the *window*
+        #: was rebuilt, which is the cost a change of shape used to carry.
         self.defines.append((id, tree))
+
+    def redefine(self, id, tree, *blobs, window=None):
+        #: The subtrees it was handed instead: which widget changed shape, and
+        #: which window it belongs to.
+        self.redefines.append((id, window))
 
     def poll(self, timeout=0.0):
         return self.inbox.pop(0) if self.inbox else None
@@ -2291,6 +2297,35 @@ def test_editing_one_clip_in_a_piece_of_many_emits_no_definition():
     assert len(host.defines) == defines, "no definition"
     (_, lead) = lanes(ed.draw())
     assert clips(lead)[0]["id"] == roll["id"], "and the clip is the same widget"
+
+
+def test_moving_a_clip_to_another_lane_costs_those_lanes_and_no_other():
+    """The edit a hand makes first, and what it used to cost.
+
+    A clip leaving one lane and joining another changes the **shape** of both,
+    and a widget that appeared can only arrive by a definition. Sending that
+    definition for the *window* rebuilds every widget in it, so every other
+    lane lost its vertical zoom, its scroll and its selection for an edit that
+    happened somewhere else. `/gui_def` names any widget, so what goes is the
+    smallest subtree that changed.
+    """
+    song, _take = _take_song()
+    other = Vector(_FakeTake(frames=8), duration=1.0, instrument="other")
+    song.add(Aggregate([(0.0, other)], name="spare"), 0.0)
+    ed = editor(song, quant=0.0)
+    host = _host_with_a_namespace()
+    ed.open(host)
+    ls = lanes(ed.draw())
+    (target, spare) = ls[0], ls[-1]
+    travelling = clips(spare)[0]["id"]
+    defines, redefines = len(host.defines), len(host.redefines)
+
+    assert ed.apply("/gui_event", [travelling, SEQ, UNSTATED, "lane",
+                                   target["id"], float(4 * BEAT)]) is True
+    assert len(host.defines) == defines, "the window was not rebuilt"
+    moved = [wid for wid, _window in host.redefines[redefines:]]
+    assert set(moved) == {target["id"], spare["id"]}, (
+        f"the two lanes the clip crossed, and no other: {moved}")
 
 
 def test_moving_a_clip_that_reports_its_window_is_a_move_and_not_a_trim():

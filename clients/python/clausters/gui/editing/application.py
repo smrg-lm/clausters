@@ -390,46 +390,63 @@ class Application:
 
     def publish(self, window_id: int, tree: dict, *blobs: bytes) -> bool:
         """Make the host draw ``tree`` for ``window_id``, **as a difference when
-        it can be**. Answers whether it was a redefine.
+        it can be**. Answers whether anything had to be rebuilt.
 
-        A redefine is expensive in a way that has nothing to do with bytes: the
-        host frees the old subtree and builds a new one, so every widget's
-        screen state goes with it — a scroll position, a zoom, a selection in
-        flight — and everything the host had pending is dropped. Doing that
-        because one number changed is what makes a window flicker under a hand
-        that is not even in it.
+        A definition is expensive in a way that has nothing to do with bytes:
+        the host frees the subtree it names and builds a new one, so the screen
+        state of every widget in it goes too — a scroll position, a zoom, a
+        selection in flight — and everything the host had pending there is
+        dropped. Doing that to the **window** because one number changed is what
+        makes it flicker under a hand that is not even in it; doing it to the
+        window because a clip arrived in one lane is the same failure one size
+        up.
 
-        So when the two pictures have the **same shape** — the same widgets, in
-        the same places, with the same names — what goes out is one `/gui_set`
-        per widget whose props moved, and nothing is freed or built. Only a
-        change of shape redefines, and that is also what `open` does.
+        So what goes out is one `/gui_set` per widget whose props moved, and
+        where the **shape** did move, a `/gui_def` of the smallest subtree that
+        holds the change — a clip appearing in one lane costs that lane and
+        leaves every other one where the hand left it. Only a change of shape at
+        the root costs the window, and that is also what `open` does.
 
-        **What counts as a shape change is the core's** (`gui_difference`), not
-        this module's: a redefine costs every widget's screen state, and two
-        clients deciding differently when that is unavoidable is two clients
-        redrawing differently.
+        **How much of the window a change costs is the core's**
+        (`gui_difference`), not this module's: two clients deciding differently
+        is two clients redrawing differently.
         """
         host = self.host
         if host is None:
             return False
         window_id = int(window_id)
         previous = self._published.get(window_id)
-        # A tree with blobs goes whole: a blob is referenced by index from a
-        # `/gui_def`'s trailing arguments, and a `/gui_set` has no such index.
-        sets = (None if blobs or previous is None
-                else _native.gui_difference(previous, tree, window_id))
-        if sets is None:
-            log.debug("publish window %s REDEFINED (the shape changed)", window_id)
+        if blobs or previous is None:
+            # A tree with blobs goes whole: a blob is referenced by index from a
+            # `/gui_def`'s trailing arguments, and a `/gui_set` has no such
+            # index. So does a window nobody is drawing yet.
+            whole, redefine, sets = True, [], []
+        else:
+            whole, redefine, sets = _native.gui_difference(previous, tree, window_id)
+        if whole:
+            log.debug("publish window %s WHOLE (the root's shape moved)", window_id)
             host.define(window_id, tree, *blobs)
             self._published[window_id] = tree
             return True
-        log.debug("publish window %s as %d set(s)%s", window_id, len(sets),
+        log.debug("publish window %s as %d redefine(s)%s and %d set(s)%s",
+                  window_id, len(redefine),
+                  "" if not redefine else " " + str(redefine), len(sets),
                   "" if not sets else ": " + ", ".join(
                       f"{wid}({' '.join(sorted(props))})" for wid, props in sets))
+        for wid in redefine:
+            subtree = _subtree(tree, wid)
+            if subtree is None:
+                # The core named a widget this tree does not hold, which cannot
+                # happen from a walk of this very tree — but a caller that
+                # somehow got here sends the window rather than nothing.
+                host.define(window_id, tree)
+                self._published[window_id] = tree
+                return True
+            host.redefine(wid, subtree, window=window_id)
         for wid, props in sets:
             host.set(wid, **props)
         self._published[window_id] = tree
-        return False
+        return bool(redefine)
 
     # ---- the loop ----
 
@@ -477,3 +494,21 @@ class Application:
         if host is None:
             return not until()
         return host._wait_while(until, timeout)
+
+
+def _subtree(tree: dict, widget_id: int) -> "dict | None":
+    """The node ``widget_id`` names, anywhere under ``tree``.
+
+    Plumbing rather than a rule: *which* widget is redefined is the core's
+    answer (`clausters._native.gui_difference`); this only reaches into the
+    caller's own document to hand that widget's subtree to the host.
+    """
+    for child in tree.get("children") or ():
+        if not isinstance(child, dict):
+            continue
+        if child.get("id") == widget_id:
+            return child
+        found = _subtree(child, widget_id)
+        if found is not None:
+            return found
+    return None
