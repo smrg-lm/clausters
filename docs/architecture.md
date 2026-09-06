@@ -559,7 +559,9 @@ is authored, durable and undoable, and projecting it out of a general tree left
 it nowhere to live but the widget tree, which is drawn, and drawing frees. It is
 being rebuilt as a **session** in `clausters-document` — source, region,
 lane, track, automation — with the three classic applications (audio editor,
-multitrack editor, score editor) over that one document. See
+multitrack editor, score editor) over that one document. **The model landed on
+2026-09-06** (`clausters_document::arrangement`); what has not is the host
+binding it, which is where the picture gets its single owner. See
 `crates/clausters-document/PLAN.md`.
 
 **`edit(x)` is the verb, and the three domains under it are where the seam pays
@@ -628,6 +630,21 @@ reasoning:
   be placed twice is what the node *references* (a buffer, a generator, a
   pattern); an element carrying its samples inside the node is refused, because
   two of those are two copies that diverge.
+- **The arrangement is beside the tree, not projected out of it.** *(New
+  2026-09-06.)* `arrangement::Arrangement` holds what a multitrack actually is —
+  tracks, each with several `Lane`s and playing one, each lane an ordered list
+  of `Region`s — plus the timeline they sit on: the tempo map, the meter map,
+  the markers, the loop and punch spans, which are the **piece's** and which no
+  two tracks can therefore disagree about. A `Region` is **one object**, its
+  span on the timeline (position, length, fades, layer, mute) with a typed
+  `Content` for what fills it — a window onto a source with its playrate and the
+  arguments of its own evaluation, or a **composite** carrying the general tree
+  unchanged. REAPER splits that into an item and a take; we do not, because a
+  track holding several lanes is already the comping mechanism, and REAPER 7
+  itself grew fixed item lanes beside its takes. The three timebases are types
+  now (`timebase::Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat`) with no
+  conversion between them, because a beat becomes a frame only through a tempo
+  map and a rate, and both belong to whoever holds them.
 - **A window is onto samples or onto a node, and the second is why
   `Document::content` exists.** The rule above holds for contents the document
   does not carry — samples live outside it, so two windows are two references

@@ -645,7 +645,9 @@ DAW session, because that is what a DAW session is good at.
 
 ### The milestones
 
-- ⬜ **O21 - The session: the types and their format.** Source, Region,
+- ⬜ **O21 - The session: the types and their format.** *(The Rust half landed
+  2026-09-06; the entry stays open for the three client-side items (c), (d) and
+  (e) below, which are part of this milestone and not a follow-up.)* Source, Region,
   Lane, Track, Automation, Session, and the tempo/meter maps, markers and
   ranges - serde, round-trip, unknown-field preservation, and the same
   determinism O1 accepted. The composite region carries O1's tree unchanged. No
@@ -655,6 +657,28 @@ DAW session, because that is what a DAW session is good at.
   load/save. *(An earlier acceptance line also asked that "an O1 document
   converts into a session"; withdrawn 2026-09-06 - see (c) below, which decides
   whether such a conversion exists at all.)*
+
+  **What landed, 2026-09-06.** `clausters_document::timebase` mints one type per
+  axis - `Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat` - with the
+  arithmetic that stays on an axis and **no conversion between axes**, since a
+  beat becomes a frame only through a tempo map and a rate and both belong to
+  whoever holds them. `clausters_document::arrangement` holds `Region`, `Lane`,
+  `Track`, `Automation` and the timeline they sit on (`Tempo`, `Meter`,
+  `Marker`, `Span`, `Arrangement`), and `Session` carries an arrangement beside
+  the general tree, written only when there is one so every session saved before
+  this reads back unchanged. Unknown fields survive on every struct, which serde
+  does not do by default. The acceptance is one test - three tracks, a vocal
+  comped from three takes playing the second, two guitar regions overlapping
+  with a crossfade and a layer order, a composite region placing the general
+  tree, over a ramping tempo map, a meter change, markers, a loop and a punch,
+  with an automation curve whose point shapes this crate does not read - and it
+  reopens equal. The tempo map has an owner at last: the **piece**, which is the
+  fourth candidate the roadmap's ownership entry named and the one it expected.
+
+  **What is left, and it is the client half:** (c), (d) and (e) below - lift or
+  discard `form`'s round trip, move the crate's client surface out of `form` in
+  both clients, and leave `form` with no door. Until those land, the model
+  exists and nothing outside Rust can reach it.
 
   **The contradiction this milestone actually resolves, named because nothing
   else in this file names it** *(raised 2026-09-06 by the user)*: **the only
