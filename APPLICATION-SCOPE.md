@@ -309,11 +309,22 @@ It is ported to the seam, not ported to Rust as it stands.
 - The mapping rule (root aggregate -> lanes, members -> clips, a nested
   aggregate as its summary until expanded) is unchanged; expand/collapse becomes
   screen state under AP3.
+- **The multitrack's widgets are named** (AP2's acceptance, moved here on
+  2026-09-06 with the measurement that forced it). A lane, a clip, a roll, a
+  patch and the ruler stop taking leased ids and ask for one by name, so two
+  draws of one composition line up and AP2's difference has something to match.
+  A clip's stable key is the **placement**, which is its document node id
+  (`Ox` O14) - and reaching one derives the document, so what this milestone
+  settles is not the naming but what `draw` is allowed to do: today its
+  docstring says it is pure, and a held document (`Ox` O13) is what makes
+  asking cheap.
 
 **Acceptance:** `composer.py` and the web client's equivalent page do the same
 things by the same calls in the same order, read side by side, verb by verb; the
 whole loop still works - built in Python, drawn, edited by hand, heard, undone,
-redone, saved, reopened.
+redone, saved, reopened. **And AP2's, which is this milestone's now:** editing
+one clip in a piece of many emits no definition and no free, and a scroll
+position and a selection survive a redraw of the window they are in.
 
 ### AP7 - A second application, to prove the abstraction
 
