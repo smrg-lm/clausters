@@ -525,6 +525,22 @@ it loses no decision.
   same symbol answers a different document, so a staged library one version
   behind would have been read as "nothing changed" on every redraw.
 
+  **And the host had to learn to receive it** *(found the same day by the user,
+  by eye: the zoom survived and a **split did not show** — the client sent the
+  lane's new tree and the picture did not change)*. The wire has always said a
+  def names any id, and the host only ever built a **renderable** document for a
+  `window`: a def of anything else was recorded in the registry, logged, and
+  invisible. So the narrow redefine was, for one commit, a message nobody drew —
+  and the zoom "surviving" was partly nothing being redrawn at all. `define_node`
+  now splices a non-window def into the typed tree the front draws, at the widget
+  it names, and answers `Redraw` rather than `OpenWindow`. The window this widget
+  belongs to is read **before** the registry re-roots it, which is the one thing
+  the fix turns on.
+
+  Worth keeping as the lesson: the client half measured perfectly — two defs,
+  zero window rebuilds — and proved nothing about what a person sees. What
+  caught it was an eye on the window.
+
   Everything this turns up is recorded **here**, in this file, because all of it
   is to be dealt with — including by changing the design.
 

@@ -1184,6 +1184,14 @@ impl Host {
         // acknowledgement that is never coming holds the outbox open forever,
         // and the new tree is authoritative by definition.
         self.outbox.borrow_mut().forget(id);
+        // **Which window this widget belongs to, read before it is redefined.**
+        // Defining an id makes it a root of the registry's own tree, so asking
+        // afterwards answers the widget itself and the window is lost.
+        let inside = if node.kind == "window" {
+            None
+        } else {
+            self.registry.root_of(id)
+        };
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
         info!(
@@ -1213,6 +1221,39 @@ impl Host {
                     effects.push(HostEffect::OpenWindow(id));
                 }
                 Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
+            }
+        } else if let Some(root) = inside {
+            // **A widget inside an open window is redefined in place.** The
+            // wire has always said a def names any id — "re-sending an existing
+            // id redefines it" — and until now only a `window` reached the
+            // typed tree the front draws, so a def of anything else was
+            // recorded, logged, and invisible.
+            //
+            // It is the one channel a widget that was not there can arrive by,
+            // and doing it to the **window** rebuilds every widget in it: a
+            // clip appearing in one lane took the zoom, the scroll and the
+            // selection of every other lane with it. Splicing the subtree keeps
+            // all of that, because everything outside it is the same object it
+            // was.
+            match Widget::from_node(id, &node, blobs) {
+                Ok(mut subtree) => {
+                    widget::resolve_style(&mut subtree, &Arc::new(self.theme.clone()));
+                    if let Some(tree) = self.window_defs.get_mut(&root)
+                        && let Some(held) = tree.find_mut(id)
+                    {
+                        *held = subtree;
+                        self.sync_bus_watches();
+                        self.sync_buffer_streams();
+                        self.sync_timeline_groups(Some(root));
+                        effects.push(HostEffect::Redraw(root));
+                    } else {
+                        warn!(
+                            "{from}: {GUI_DEF} {id}: no widget by that id in the \
+                             window it belongs to"
+                        );
+                    }
+                }
+                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build widget: {e}"),
             }
         }
         // A redefine frees the old subtree first; drop any binding whose widget
@@ -2924,6 +2965,53 @@ mod tests {
     const TREE: &str = r#"{"type":"window","title":"Filter","children":[
         {"id":10,"type":"knob","label":"cutoff","min":20.0,"max":20000.0,"value":800.0}
     ]}"#;
+
+    /// A def names **any** widget, not only a window, and until now only a
+    /// window reached the typed tree the front draws — so a def of anything
+    /// else was recorded, logged and invisible.
+    ///
+    /// It is the one channel a widget that was not there can arrive by. Sending
+    /// it for the *window* rebuilds every widget in it, which is how a clip
+    /// appearing in one lane came to take the zoom, the scroll and the
+    /// selection of every other lane; splicing the subtree keeps all of that,
+    /// because everything outside it is the same object it was.
+    #[test]
+    fn a_def_of_a_widget_inside_a_window_is_spliced_into_what_the_front_draws() {
+        const STACK: &str = r#"{"type":"window","children":[
+            {"id":20,"type":"layout","flow":"col",
+             "children":[{"id":30,"type":"knob","value":1.0}]},
+            {"id":21,"type":"layout","flow":"col",
+             "children":[{"id":40,"type":"knob","value":2.0}]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, STACK), from());
+
+        // One column grows a second knob: a widget that was not there.
+        let grown = r#"{"type":"layout","flow":"col","id":21,"children":[
+            {"id":40,"type":"knob","value":2.0},
+            {"id":41,"type":"knob","value":3.0}
+        ]}"#;
+        let effects = host.handle_packet(def_msg(21, grown), from());
+        let tree = host.window_def(1).expect("the window is still open");
+        assert!(
+            tree.find(41).is_some(),
+            "the new widget reached the tree the front draws"
+        );
+        assert!(
+            tree.find(30).is_some(),
+            "and the other column was not rebuilt out from under it"
+        );
+        assert!(
+            effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))),
+            "the window it belongs to repaints: {effects:?}"
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, HostEffect::OpenWindow(_))),
+            "and the window itself is not rebuilt: {effects:?}"
+        );
+    }
 
     /// A face this host cannot use is **not an error**: the embedded bitmap
     /// face is the floor every build draws on, so `/gui_font` never fails a
