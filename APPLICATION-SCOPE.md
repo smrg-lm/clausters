@@ -470,6 +470,32 @@ it loses no decision.
 
 ## Found by use
 
+- ⬜ **A change of shape redefines the whole window, so an edit in one lane
+  costs every other lane its screen state** *(found 2026-09-06 by the user, by
+  eye, splitting a clip in `composer.py`: the split works and the **vertical
+  zoom of every lane** goes back to where it started)*. `Application.publish`
+  has two answers, the difference and `/gui_def` on the window, and a widget
+  that appeared can only arrive by the second — there is no insert on the wire.
+  But the shape changed in **one lane**, and redefining the window frees and
+  rebuilds every other one, taking the screen state the host held for each with
+  it.
+
+  **The wire already allows the narrow answer**: `/gui_def <id> <json>`
+  redefines *any* widget, not only a window ("re-sending an existing id
+  redefines it"), so the fix is to walk down to the smallest subtree whose shape
+  moved and redefine that. What it needs is on this side: `GuiHost.define`
+  collects the names of the tree it is handed and replaces the **window
+  handle's** whole name map with them, so redefining a subtree through it today
+  would leave the window resolving only that subtree's names. So the work is
+  host-client bookkeeping — a define that merges a subtree's names into the
+  handle instead of replacing them, and frees only that subtree's ids — and it
+  was left out of AP2 deliberately rather than missed.
+
+  Until it lands, this is the honest boundary of "a redraw is a difference": a
+  **prop** change costs nothing, and a **structural** change still costs the
+  window. That is already better than every redraw costing it, which is what it
+  replaced.
+
 - ✅ **Screen state was keyed by an address, so a new thing inherited a freed
   one's** *(found 2026-09-06 auditing AP3's premise; fixed the same day)*. Four
   tables kept screen state under `id(object)`: a curve's held axis and its span
