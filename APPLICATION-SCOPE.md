@@ -390,6 +390,17 @@ for.
   function from the same code, and it is entangled with AP6's convergence: the
   lanes and clips are the view that has to be named first. It lands there.
 
+**The standing reason for this milestone**, said by the user on 2026-09-06 while
+reading the day's defects: *the editing logic has to be in Rust so that it is in
+one place and consistent across clients*. Every defect found by eye that day was
+in a rule the **view** applies and only Python holds — the threshold that told a
+move from a trim, the rule that collapses a simultaneous aggregate into one
+layered clip, the decision of what counts as a change of shape. None of them is
+about the arrangement's model, all of them decide what a hand sees, and each
+would have to be written a second time for the web client and a third for the
+standalone host. That is the argument, and it is recorded here so it is not
+re-derived from the next defect.
+
 ### AP6 - `FormEditor` converges
 
 It is ported to the seam, not ported to Rust as it stands.
@@ -472,8 +483,10 @@ it loses no decision.
 
 - ⬜ **A change of shape redefines the whole window, so an edit in one lane
   costs every other lane its screen state** *(found 2026-09-06 by the user, by
-  eye, splitting a clip in `composer.py`: the split works and the **vertical
-  zoom of every lane** goes back to where it started)*. `Application.publish`
+  eye, in `composer.py`: splitting a clip works and the **vertical zoom of every
+  lane** goes back to where it started; the same on **moving a clip to another
+  lane**, which is the case a hand meets first — a drag **within** a lane costs
+  nothing, which is what says the difference is doing its job)*. `Application.publish`
   has two answers, the difference and `/gui_def` on the window, and a widget
   that appeared can only arrive by the second — there is no insert on the wire.
   But the shape changed in **one lane**, and redefining the window frees and
@@ -495,6 +508,30 @@ it loses no decision.
   **prop** change costs nothing, and a **structural** change still costs the
   window. That is already better than every redraw costing it, which is what it
   replaced.
+
+- ⬜ **Dropping a clip where another one already sits makes the lane draw as
+  one layered clip, so both appear to vanish into one** *(found 2026-09-06 by
+  the user, by eye — "the curve's clip moved by itself back to where it was" —
+  and reduced to two lanes and one drag)*. The mapping rule says a **concrete**
+  aggregate whose members are `SIMULTANEOUS` is *one thing on the timeline*, so
+  it draws as one clip with layered bodies rather than a lane of clips
+  (`_lanes_for`). That is right for a piece an author wrote that way — a voice
+  and the envelope over it drag as one — and it is a surprise as the outcome of
+  a **drag**: drop a clip on a lane at the offset the clip already there has,
+  the destination's two members are now simultaneous, the threshold
+  (`len(element) > 1`) is crossed, and the lane redraws as a single summary clip
+  carrying both.
+
+  Reproduced with two lanes of one clip each, both at offset 0 and the same
+  length: after the `"lane"` event the model reads `audio [(0.0 take), (0.0
+  other)]` and `other []` — exactly right — and the picture reads one clip
+  labelled with the *lane's* name.
+
+  **It is not a defect of the rule but of where the rule is applied**: the rule
+  says what a composition *is*, and it is being asked what a gesture
+  *produced*. It is filed rather than fixed because the choice — refuse the
+  drop, offset it, expand the destination, or keep the collapse and say so — is
+  the multitrack's design and belongs with AP6.
 
 - ✅ **Screen state was keyed by an address, so a new thing inherited a freed
   one's** *(found 2026-09-06 auditing AP3's premise; fixed the same day)*. Four
