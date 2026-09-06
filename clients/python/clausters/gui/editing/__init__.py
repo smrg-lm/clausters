@@ -24,6 +24,10 @@ whole design:
 - `Editing` — the editing context: the history, the version, and the views to
   tell. An editor **asks for it and never builds one**, which is what makes two
   windows over one thing walk one undo order.
+- `trace` — the path said out loud, at five points: an event routed, an entry
+  recorded, a step of the pile, a publish, an acknowledgement. Silent unless
+  asked (`CLAUSTERS_EDIT_LOG=1`, or `watch()`), because what a window in front
+  of a person does wrong is otherwise visible to nobody.
 - `FormEditor` — the arrangement's editor: `Editor` plus a held document, the
   node index, several views of one composition, the lanes and clips, and the
   transport. `FormEditing` is its context.
@@ -55,6 +59,7 @@ from .formeditor import FormEditing, FormEditor
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
                       measures)
+from .trace import watch
 from .view import View
 
 __all__ = [
@@ -81,5 +86,6 @@ __all__ = [
     "SamplesView",
     "View",
     "edit",
+    "watch",
     "measures",
 ]

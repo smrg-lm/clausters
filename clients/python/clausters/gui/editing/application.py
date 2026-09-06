@@ -38,6 +38,7 @@ from ... import _native
 from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
 from .echo import Echo
+from .trace import log
 
 #: The base a host-less draw counts widget ids from. Above the hand-picked range
 #: and above `clausters.gui.ids.BASE_ID`, so a tree drawn with no host does not
@@ -356,9 +357,14 @@ class Application:
         context = self.context
         if context is None:
             return False
+        history = context.history
+        before = None if history is None else (history.undo_label, history.redo_label)
         legs = context.step(direction)
         if legs is None or not context.distribute(legs, walker):
+            log.debug("%s   nothing stepped (at %s)", direction, before)
             return False
+        log.debug("%s   %s -> %s", direction, before,
+                  None if history is None else (history.undo_label, history.redo_label))
         # **Once for the walk, not once per window.** The version is the
         # context's, and every view reports the same one.
         context.version += 1
@@ -413,9 +419,13 @@ class Application:
         sets = (None if blobs or previous is None
                 else _native.gui_difference(previous, tree, window_id))
         if sets is None:
+            log.debug("publish window %s REDEFINED (the shape changed)", window_id)
             host.define(window_id, tree, *blobs)
             self._published[window_id] = tree
             return True
+        log.debug("publish window %s as %d set(s)%s", window_id, len(sets),
+                  "" if not sets else ": " + ", ".join(
+                      f"{wid}({' '.join(sorted(props))})" for wid, props in sets))
         for wid, props in sets:
             host.set(wid, **props)
         self._published[window_id] = tree

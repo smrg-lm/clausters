@@ -60,6 +60,7 @@ from ..transport import Transport
 from .context import ATTR, Editing
 from .application import BASE_ID, _resolve_host
 from .editor import Editor
+from .trace import log
 from .events import NotesEditor
 from .samples import MEASURES, SamplesEditor, is_samples, measures
 
@@ -950,6 +951,14 @@ class FormEditor(Editor):
         """One `/gui_event` payload onto the arrangement, with the stamp already
         taken off. Returns whether the composition changed; `apply` is what
         answers the host."""
+        changed = self._routed(args)
+        log.debug("event  %s %r -> %s", args[0], args[1],
+                  "changed" if changed else "no change")
+        return changed
+
+    def _routed(self, args) -> bool:
+        """`_route` without the trace around it: what the message actually
+        does."""
         if args[1] == "locate":
             # A click on a lane's ruler (or its empty space): seek. A transport
             # action, not an edit — the composition did not change (and another
@@ -2253,9 +2262,13 @@ class FormEditor(Editor):
 
         Returns the outcome, or ``None`` when there is no document to apply to
         (an arrangement whose elements carry no ids yet)."""
-        log, document = self._history()
-        outcome = log.apply(document, intent, against={"version": self._version},
-                            quant=self.quant, label=label)
+        pile, document = self._history()
+        outcome = pile.apply(document, intent, against={"version": self._version},
+                             quant=self.quant, label=label)
+        log.debug("record [%s] %s node=%s -> %s", label, intent.get("intent"),
+                  intent.get("node"),
+                  "refused" if outcome is None or not outcome.get("applied")
+                  else "applied")
         return outcome
 
     def _project(self, intent: dict) -> set:

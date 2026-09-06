@@ -13,6 +13,9 @@ protocol should cost to check.
 """
 
 
+from .trace import log
+
+
 class Echo:
     """One view's end of the acknowledgement protocol.
 
@@ -110,6 +113,11 @@ class Echo:
             return
         if not seq and not self.corrections:
             return
+        log.debug("ack    seq=%s version=%s%s%s", seq, self.version,
+                  "" if not self.corrections else " correcting " + ", ".join(
+                      f"{wid}({' '.join(sorted(props))})"
+                      for wid, props in self.corrections),
+                  "" if reason is None else f" reason={reason!r}")
         # A stamp of zero retires nothing, which is exactly what an **unasked**
         # push needs: an undo answers no gesture, so it carries values and a
         # version and takes no pending edit with it.

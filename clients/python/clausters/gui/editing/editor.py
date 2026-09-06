@@ -34,6 +34,7 @@ from ... import _native
 from ...base.time import TempoMap
 from .application import BASE_ID, Application, _resolve_host
 from .context import FIRST_VERSION, Editing
+from .trace import log
 
 #: The tags that are **not** edits: what a view is looking at, and where the
 #: hand is. They are answered generically and never reach a domain, because the
@@ -497,10 +498,13 @@ class Editor:
         """
         wid, tag, values = int(args[0]), str(args[1]), args[2:]
         if tag in NOT_AN_EDIT:
+            log.debug("event  %s %r -> screen state", wid, tag)
             return self._observe(wid, tag, values)
         if self.domain is None:
             return False
         payload = self.domain.payload(self.structure, tag, values)
+        log.debug("event  %s %r -> %s", wid, tag,
+                  "no payload" if payload is None else payload.get("intent"))
         if payload is None:
             # Nothing, or a refusal. A refusal says why and hands the widget
             # back what it should be drawing, so the picture stops agreeing
@@ -569,6 +573,7 @@ class Editor:
         before = self.domain.current(self.structure, payload)
         if not self.domain.project(self.structure, payload):
             return False
+        log.debug("record [%s] %s", label, payload.get("intent"))
         if before is not None:
             self._editing.history.record(
                 [{"structure": self._registered(),
