@@ -363,7 +363,11 @@ class Editor:
             # window it already has rather than orphaning it.
             return self._window
         self.app.resolve(host)
-        self._window = self._host.open(self.draw(), id=id)
+        tree = self.draw()
+        self._window = self._host.open(tree, id=id)
+        # The first picture is a definition by nature; what it buys is that the
+        # *next* one can be a difference.
+        self.app.published(self._window, tree)
         self._editing.attach(self)
         self._announce()
         self._host.subscribe(self.apply)
@@ -397,6 +401,7 @@ class Editor:
             # composed view -- would otherwise read every close as its own and
             # take itself out of the context that is still drawing.
             if self._window is not None and (not args or int(args[0]) == self._window):
+                self.app.forget_window(self._window)
                 self._window = None
                 # Closing a *view* is not an event of the history, so the
                 # context stays exactly as it is -- what goes is this window's
@@ -749,6 +754,8 @@ class Editor:
         resumes the same order — closing a window is not an edit, and never was.
         """
         window, self._window = self._window, None
+        if window is not None:
+            self.app.forget_window(window)
         if self._host is not None:
             self._host.unsubscribe(self.apply)
             if window is not None:

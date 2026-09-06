@@ -208,6 +208,40 @@ free; a scroll position and a selection survive a redraw of the window they are
 in; the fallback path is still exercised by a test, since it is what `open`
 uses.
 
+**Mechanism done 2026-09-06; the acceptance is AP6's to finish, and the reason
+is measured.** `Application.publish(window, tree)` sends the difference between
+the tree the host is drawing and the one it would draw now: one `/gui_set` per
+widget whose props moved, and a `/gui_def` only when the **shape** changed — a
+widget that appeared or went, one that changed type or name, a prop that was
+removed (the wire has no value meaning "unset"), or a tree carrying blobs. A
+node with no id may stay as long as it is identical in both pictures, so the
+chrome that carries none (a ruler, a spacer) does not make every tree holding
+one a redefine. `published`/`forget_window` are the two bookkeeping doors, and
+every redraw path now goes through them.
+
+**What it does not yet buy, with the number.** Its only consumer is
+`FormEditor`, whose widget ids are still **leased** — AP1 named the three
+generic views and deliberately left the multitrack to AP6. On a real host two
+draws of one composition therefore give different lane ids (measured: 20005,
+20007 -> 20009, 20011), the shapes never line up, and a redraw of the *same*
+piece still costs one whole redefine. Give the same editor a stable namespace
+and the same redraw costs **zero definitions and zero sets**. So the mechanism
+is right and idle, and what turns it on is naming the multitrack's widgets.
+
+**That is a plan ordering error, recorded rather than worked around.** AP2's
+acceptance sentence says "one clip in a piece of many", which is `FormEditor` —
+so this milestone was always going to close inside AP6, and naming those ids
+here would have meant doing AP6's convergence under AP2's name, including
+changing what `draw` is allowed to do (a clip's stable key is its document node
+id, and reaching one derives the document). AP6 takes the acceptance sentence
+with it.
+
+**One defect found on the way**, from AP0 and worth naming because nothing else
+would have: an `Application` built with no `version` callable read its context
+through `_editors` before `__init__` had made that list, so constructing one
+standalone raised. Every editor passes a callable, which is why 935 tests never
+touched it.
+
 ### AP3 - Screen state belongs to the host, keyed by the derived key
 
 - Selection, zoom/`view_x`/`view_y`, layer and the hand's position stop being
@@ -352,7 +386,7 @@ Written down so it can be checked rather than felt:
 
 - [x] AP0 - the seam, in Python only
 - [x] AP1 - a widget id is named, not leased
-- [ ] AP2 - a redraw is a diff
+- [~] AP2 - a redraw is a diff *(mechanism landed; acceptance rides with AP6)*
 - [ ] AP3 - screen state to the host
 - [ ] AP4 - by value or by reference
 - [ ] AP5 - the application core moves to Rust

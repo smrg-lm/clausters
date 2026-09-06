@@ -1779,6 +1779,15 @@ What landed, beyond the list above:
   and `"roll"` respectively, and those spellings are part of the name: two
   clients drawing one structure must ask for the same id.
 
+  **The difference, instead of the rebuild.** `Application.publish(window,
+  tree)` sends a redraw as one `/gui_set` per widget whose props moved, and
+  `/gui_def` only when the shape changed — a widget that appeared or went, a
+  changed type or name, a prop that was removed, or a tree with blobs; an
+  id-less node may stay if it is identical in both pictures. It is written in
+  Python today and is **client logic that belongs in Rust** by the project's own
+  rule, so the port to expect is not a second implementation of the walk but the
+  binding of the one the branch lowers.
+
   It is a **recorded** divergence rather than an accidental one — the branch
   lowers this machinery to Rust before porting it, so writing it twice in
   TypeScript first would be writing what is about to be deleted — and it closes

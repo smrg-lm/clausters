@@ -517,7 +517,9 @@ class FormEditor(Editor):
             return self._window            # one editor, one window: see `Editor.open`
         host = _resolve_host(host)
         self._host = self.transport.host = host
-        self._window = host.open(self.draw(), id=id)
+        tree = self.draw()
+        self._window = host.open(tree, id=id)
+        self.app.published(self._window, tree)
         self._editing.attach(self)
         self._announce()
         # The same two lines the generic `Editor.open` ends with: the host's
@@ -666,7 +668,7 @@ class FormEditor(Editor):
         self.dirty = True
         if self._host is not None and self._window is not None:
             self._reset_ids()
-            self._host.define(self._window, self.draw())
+            self.app.publish(self._window, self.draw())
             self._announce()
 
     # ---- the views this editor composes ----
@@ -928,7 +930,7 @@ class FormEditor(Editor):
         # `refresh` does, and a redefine is the case that most needs it (the
         # tree it redraws is usually one the log did not make).
         self._rederive = True
-        self._host.define(self._window, self.draw())
+        self.app.publish(self._window, self.draw())
         # The host drops what it had in flight on a redefine, so what it needs
         # from here is the version the new picture is at.
         self._announce()
@@ -2664,7 +2666,7 @@ class FormEditor(Editor):
         self.tempo_map = tempo_map.copy()
         self.transport.tempo_map = self.tempo_map
         if self._host is not None and self._window is not None:
-            self._host.define(self._window, self.draw())
+            self.app.publish(self._window, self.draw())
         return True
 
     def _render_pass(self, at: float, quant=None):

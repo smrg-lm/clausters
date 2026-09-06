@@ -86,14 +86,18 @@ class Application:
         self._owners: dict = {}
         #: How this application answers a version, when it was given a way.
         self._version_of = version
-        #: The end of the acknowledgement protocol — the stamp, the floor, the
-        #: corrections and the reason. **One per application, not one per
-        #: editor**: it answers a host, and there is one host.
-        self.echo = Echo(host=None, version=self._version)
+        #: The last tree sent for each window, so the next one can be sent as
+        #: the **difference**. A window absent here has never been published and
+        #: is defined whole.
+        self._published: dict = {}
         #: The editors drawing in this window set, in the order they registered.
         #: Held strongly, the way the host holds an open editor: an application
         #: is what a script keeps, and its editors go when it does.
         self._editors: list = []
+        #: The end of the acknowledgement protocol — the stamp, the floor, the
+        #: corrections and the reason. **One per application, not one per
+        #: editor**: it answers a host, and there is one host.
+        self.echo = Echo(host=None, version=self._version)
 
     # ---- who is in it ----
 
@@ -332,6 +336,54 @@ class Application:
         walker.reflect_step()
         return True
 
+    # ---- publishing a picture: the difference, when there is one ----
+
+    def published(self, window_id: int, tree: dict) -> None:
+        """Record ``tree`` as what the host is now drawing for ``window_id``.
+
+        Called by whoever sent it, so that the *next* picture can be sent as a
+        difference. `open` goes through here rather than through `publish`: the
+        first tree is a definition by nature.
+        """
+        self._published[int(window_id)] = tree
+
+    def forget_window(self, window_id: int) -> None:
+        """Drop what is remembered about a window that closed, so a window that
+        opens again is defined whole rather than diffed against a picture
+        nobody is drawing."""
+        self._published.pop(int(window_id), None)
+
+    def publish(self, window_id: int, tree: dict, *blobs: bytes) -> bool:
+        """Make the host draw ``tree`` for ``window_id``, **as a difference when
+        it can be**. Answers whether it was a redefine.
+
+        A redefine is expensive in a way that has nothing to do with bytes: the
+        host frees the old subtree and builds a new one, so every widget's
+        screen state goes with it — a scroll position, a zoom, a selection in
+        flight — and everything the host had pending is dropped. Doing that
+        because one number changed is what makes a window flicker under a hand
+        that is not even in it.
+
+        So when the two pictures have the **same shape** — the same widgets, in
+        the same places, with the same names — what goes out is one `/gui_set`
+        per widget whose props moved, and nothing is freed or built. Only a
+        change of shape redefines, and that is also what `open` does.
+        """
+        host = self.host
+        if host is None:
+            return False
+        window_id = int(window_id)
+        previous = self._published.get(window_id)
+        sets = None if blobs else _difference(previous, tree, window_id)
+        if sets is None:
+            host.define(window_id, tree, *blobs)
+            self._published[window_id] = tree
+            return True
+        for wid, props in sets:
+            host.set(wid, **props)
+        self._published[window_id] = tree
+        return False
+
     # ---- the loop ----
 
     def poll(self, timeout: float = 0.0) -> bool:
@@ -378,3 +430,76 @@ class Application:
         if host is None:
             return not until()
         return host._wait_while(until, timeout)
+
+
+# ---- the difference between two pictures ----
+
+#: Keys of a node that are not props to be `/gui_set`: what the node *is*
+#: rather than what it shows. A change in any of them is a change of shape.
+_STRUCTURE = ("type", "id", "name", "children")
+
+
+def _difference(old, new, root_id: int):
+    """The `/gui_set`s that turn ``old`` into ``new``, or ``None`` when the two
+    are not the same picture and the tree has to be defined whole.
+
+    ``None`` is the ordinary answer for anything the wire cannot express as a
+    set: a widget that appeared or went, one that changed type or name, a prop
+    that was removed rather than changed, or a node with no id to address. There
+    is no insert or remove on the protocol, and a name is what a handle resolves
+    by — so both are shape, and shape is what `/gui_def` is for.
+    """
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return None
+    sets: list = []
+    if not _walk(old, new, root_id, sets):
+        return None
+    return sets
+
+
+def _walk(old: dict, new: dict, node_id, sets: list) -> bool:
+    """One node and its children, collecting what changed. ``False`` the moment
+    anything is not expressible as a set."""
+    if old.get("type") != new.get("type") or old.get("name") != new.get("name"):
+        return False
+    changed = _props(old, new)
+    if changed is None:
+        return False
+    if changed:
+        sets.append((int(node_id), changed))
+    old_kids = old.get("children") or ()
+    new_kids = new.get("children") or ()
+    if len(old_kids) != len(new_kids):
+        return False
+    for was, is_ in zip(old_kids, new_kids):
+        if not isinstance(was, dict) or not isinstance(is_, dict):
+            return False
+        if was.get("id") != is_.get("id"):
+            # The ids are stable across a redraw (`id_for`), so two pictures of
+            # one thing line up by id. They differing *is* the shape changing.
+            return False
+        if is_.get("id") is None:
+            # **An id-less widget may stay, as long as it did not move.** The
+            # host stamps such a node inside the copy it sends, so this client
+            # does not know what number it got and cannot `/gui_set` it — but a
+            # node that is identical in both pictures needs no set, and the
+            # picture around it is still a difference. Chrome that never changes
+            # (a ruler, a spacer) is exactly this case, and refusing it would
+            # make every tree holding one a redefine.
+            if was != is_:
+                return False
+            continue
+        if not _walk(was, is_, is_.get("id"), sets):
+            return False
+    return True
+
+
+def _props(old: dict, new: dict):
+    """What of ``new``'s props differ from ``old``'s, or ``None`` when a prop
+    was **removed** — which a set cannot express, since there is no value that
+    means "unset"."""
+    was = {k: v for k, v in old.items() if k not in _STRUCTURE}
+    is_ = {k: v for k, v in new.items() if k not in _STRUCTURE}
+    if was.keys() - is_.keys():
+        return None
+    return {k: v for k, v in is_.items() if k not in was or was[k] != v}

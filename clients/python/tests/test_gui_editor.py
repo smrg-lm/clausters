@@ -2226,6 +2226,10 @@ def test_a_redefine_leaves_the_editor_able_to_edit():
     # once there is a document holding one.
     assert ed.apply(*clip_event(roll["id"], 3 * BEAT, 2 * BEAT)) is True
 
+    # A redefine is what `publish` does when the shape moved; forgetting the
+    # picture the host is drawing is how a test asks for one without inventing a
+    # structural edit it is not about.
+    ed.app.forget_window(ed.window)
     ed.update()
     assert host.defines, "the window was redefined"
 
