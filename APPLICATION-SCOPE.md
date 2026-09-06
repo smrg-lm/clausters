@@ -544,6 +544,33 @@ it loses no decision.
   Everything this turns up is recorded **here**, in this file, because all of it
   is to be dealt with — including by changing the design.
 
+- ⬜ **A set is addressed to a widget the redefine beside it just removed**
+  *(found 2026-09-06 in the log, with the narrow redefine running: the host
+  warns `/gui_set 1005: no such widget` immediately after
+  `publish ... 1 redefine(s) [1002] and 2 set(s): 1003(offset), 1005(offset)`)*.
+  The two halves of one publish disagree: a widget is redefined whole **and** a
+  set is sent for something that was inside it, so the set lands on a number the
+  host has already freed. `guidiff::walk` is written to make that impossible — a
+  node that cannot be patched contributes nothing but its own id, and its
+  `below` is discarded — so either that reasoning has a hole or the ids in the
+  two halves come from different pictures. **The first thing to do is not to
+  read the walk again but to catch it**: assert, in the core's tests, that no
+  set names a widget under any redefined id, over a generated pair of trees.
+  This is very likely the cause of "everything started failing at once", since a
+  set to a freed id leaves the client believing it drew something it did not.
+
+- ⬜ **The window closes and the process spins at 100% CPU** *(found 2026-09-06
+  by the user, twice; one earlier instance was a `composer.py` still running 55
+  minutes after its window was gone, at ~19% of a core)*. Nothing is known about
+  it yet beyond the shape: the window goes and the process does not. Two places
+  to look, and neither has been: the front's loop after a window is dropped
+  (`gui/app.rs`, `drop_window`) — a redraw requested for a window that is gone
+  would spin — and the client's own wait (`Application.wait` /
+  `GuiHost._wait_while`), which holds a thread until the window closes and may
+  never learn that it did. It matters more than it looks: it is the failure that
+  ends a session, and it leaves a stale host holding the port, which then makes
+  the *next* run fail for an unrelated reason.
+
 - ⬜ **A clip dragged past the first or last lane oscillates back to the start
   of the track** *(found 2026-09-06 by the user, by eye, twice)*. Holding a
   vertical drag against the top or bottom of the stack makes the clip jump to
@@ -563,6 +590,17 @@ it loses no decision.
   redefine; what has not been read is the host's paint order for a lane whose
   subtree was spliced. It appeared with the narrow redefine, which is the first
   thing that ever rebuilt a widget *inside* an open window.
+
+- ⬜ **A clip cannot be moved between lanes once a split has happened**
+  *(found 2026-09-06 by the user, by eye: the split now draws — the previous
+  defect — and after it, dragging a clip to another lane does nothing)*. The
+  session's log carries exactly **one** `'lane'` event in the whole run, so the
+  host stops emitting them rather than the client refusing them. What changed
+  under it is that a lane is now rebuilt in place, so the suspicion is the
+  gesture state a lane carries across a redefine — `LaneStack` is read at the
+  press, and `reparent_clip` names a lane id the stack captured. Whether the
+  set-to-a-freed-id defect above is the same bug wearing another face has not
+  been checked, and should be first.
 
 - ⬜ **Dropping a clip where another one already sits makes the lane draw as
   one layered clip, so both appear to vanish into one** *(found 2026-09-06 by
