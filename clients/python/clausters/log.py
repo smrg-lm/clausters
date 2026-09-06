@@ -55,6 +55,13 @@ def watch(area: str = "", stream=None, level: int = logging.DEBUG) -> logging.Lo
     ``"server"``, ``"gui.editing"``. Idempotent per logger.
     """
     named = log if not area else logging.getLogger(f"clausters.{area}")
+    if _already_watched(named):
+        # **An ancestor is already printing this.** A record propagates up, so a
+        # handler here as well would print every line of this area twice — which
+        # is what `CLAUSTERS_LOG=gui,gui.editing` did, and a doubled log is one
+        # a reader stops trusting.
+        named.setLevel(level)
+        return named
     if not any(getattr(h, _MARK, False) for h in named.handlers):
         handler = logging.StreamHandler(stream)
         handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
@@ -62,6 +69,16 @@ def watch(area: str = "", stream=None, level: int = logging.DEBUG) -> logging.Lo
         named.addHandler(handler)
     named.setLevel(level)
     return named
+
+
+def _already_watched(named: logging.Logger) -> bool:
+    """Whether this logger or one above it already carries our handler."""
+    walking: "logging.Logger | None" = named
+    while walking is not None:
+        if any(getattr(h, _MARK, False) for h in walking.handlers):
+            return True
+        walking = walking.parent if walking.propagate else None
+    return False
 
 
 def _armed_by_environment() -> None:
@@ -72,8 +89,11 @@ def _armed_by_environment() -> None:
     if asked.lower() in ("1", "true", "yes", "all"):
         watch()
         return
-    for area in asked.split(","):
-        area = area.strip().removeprefix("clausters.")
+    # Shortest first, so an area that contains another arms the ancestor and the
+    # narrower one finds it already watched instead of doubling it.
+    areas = sorted({a.strip().removeprefix("clausters.") for a in asked.split(",")},
+                   key=len)
+    for area in areas:
         if area:
             watch(area)
 

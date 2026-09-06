@@ -1245,7 +1245,19 @@ impl Host {
                         self.sync_bus_watches();
                         self.sync_buffer_streams();
                         self.sync_timeline_groups(Some(root));
-                        effects.push(HostEffect::Redraw(root));
+                        // **The window is brought up to the tree, not merely
+                        // repainted.** A `Redraw` asks the front for another
+                        // frame of what it already measured, and a subtree that
+                        // changed shape has not been measured at all — its new
+                        // widgets came out with no size, drew nothing and could
+                        // not be hit, which reads as a window that stopped
+                        // working. `OpenWindow` on an open window keeps the
+                        // shell (the surface, the cursor, the gestures) and
+                        // rebuilds the def's state over the tree as it now is —
+                        // and the tree as it now is holds every widget outside
+                        // this subtree, unchanged, with the zoom and the scroll
+                        // it had.
+                        effects.push(HostEffect::OpenWindow(root));
                     } else {
                         warn!(
                             "{from}: {GUI_DEF} {id}: no widget by that id in the \
@@ -3002,14 +3014,10 @@ mod tests {
             "and the other column was not rebuilt out from under it"
         );
         assert!(
-            effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))),
-            "the window it belongs to repaints: {effects:?}"
-        );
-        assert!(
-            !effects
+            effects
                 .iter()
-                .any(|e| matches!(e, HostEffect::OpenWindow(_))),
-            "and the window itself is not rebuilt: {effects:?}"
+                .any(|e| matches!(e, HostEffect::OpenWindow(1))),
+            "the window it belongs to is brought up to the tree: {effects:?}"
         );
     }
 
