@@ -105,6 +105,8 @@ to.
 | — | `keys` | `idiom` — looping over a mapping's keys. `for k in mapping` yields them in Python; a JavaScript `Map` yields entries, so the same loop says `.keys()` |
 | `IdShare` | — | `idiom` — the slice of an id space two clients divide. Python's is a class that validates its pair; TypeScript's is an **interface**, so the same value is the object literal it describes (`{ index: 0, of: 2 }`) and there is nothing to construct |
 | `subscribe` | `onMessage` | `idiom` — listening to every inbound host message, ahead of the per-widget callbacks. A script hands over a function of `(addr, args)`, the decoded pair its OSC layer already carries; a page's host carries whole `OscMessage` objects and hands one over, so the same seam takes the message rather than its two halves |
+| `dumps` | `dump` | `idiom` — a tempo map or a clock written out as JSON. Python names it after `json.dumps`, the convention its readers already have; TypeScript names it after the wasm core's own `dump`, which is what its `TempoMap` is a handle to. The reading half is `loads` / `load` |
+| `loads` | `load` | `idiom` — the other half of the row above |
 | `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; a tab has no filesystem, so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
 
 ## What one side of a pair says alone

@@ -180,6 +180,37 @@ What this rule is *for*: an example is the manual test surface, so a pair that
 diverges silently stops testing the same thing — and the client that is not the
 reference stops being checked at all.
 
+### The audit reads the pair for you
+
+Reading the two files against each other by hand is what used to catch a
+divergence, and it caught them by accident. `scripts/audit-example-pairs.py`
+reads both instead: it extracts each file's **ordered sequence of calls on the
+client surface** — every call whose name one of the clients declares, in source
+order, with a named callback inlined where it is handed over — and diffs the
+two. Everything else (`mkdir`, `getElementById`, `toFixed`, a local helper)
+never enters the sequence.
+
+```sh
+scripts/audit-example-pairs.py                 # every pair
+scripts/audit-example-pairs.py views/rulers    # one pair, by name
+scripts/audit-example-pairs.py --verbose io    # with both sequences printed
+```
+
+Two spellings of one call are reconciled automatically when the difference is
+only the language's case convention (`on_event` is `onEvent`). When it is not,
+it is reconciled **by declaration**: `docs/example-parity.md` carries the pairs
+that are not spelled alike, the examples with no twin, and the idiom table
+pairing `Session.live` with `Session.embed`. An undeclared difference fails.
+
+So a difference the port made on purpose is a row you add to that file, with its
+reason and its verdict (`idiom`, `n/a`, `gap`) — and a difference you cannot
+write a reason for is the defect the audit exists to find. Never quiet one by
+declaring it; the tables are decisions, not an ignore list.
+
+The audit is not a CI job and it does not run either example — it reads them, so
+it is no substitute for running the pair. `docs/contributing.md` lists it with
+the other checks a person runs by hand.
+
 ## The idiom rules
 
 These are what a generated example gets wrong, every time.
@@ -301,6 +332,9 @@ family; a topic page may point at *one* example that shows what it explains.
 
 - **Run it.** Nothing in CI does. A signature change breaks examples at a call
   site no build ever reaches.
+- **Audit the pair** if the example has a twin:
+  `scripts/audit-example-pairs.py <pair>`. Nothing in CI does that either, and a
+  port that drifted stops testing what its other half tests.
 - **Refresh the binaries first** for anything launched through Python
   (`scripts/refresh-bin.sh`) — the package is installed editable, so the copy
   bundled in `clients/python/clausters/_bin` wins over `target/` and goes stale

@@ -2810,6 +2810,16 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **A page spelled with an underscore had no twin at all** *(found and fixed
+  2026-09-05)*. `views/tempo_ruler.html` was named the way its script is, and a
+  pair is found by path with `_` becoming `-`, so the audit saw two examples
+  with no counterpart rather than one pair — and reported it as two missing
+  twins, which reads like a gap in the port instead of a typo in a filename.
+  Renamed to `views/tempo-ruler.html`; the pair then differed by one call, the
+  map's `dumps` against `dump`, which is the `json` module's spelling against
+  the wasm core's and is now a row in `docs/example-parity.md` with its `loads`
+  / `load` half.
+
 - ✅ **Every page opened in a browser, and what that turned up** *(done
   2026-09-05)*. The pair audit reads what a page **calls**; it cannot say
   whether the page runs. Driving all 80 of them under headless Chrome — open,
