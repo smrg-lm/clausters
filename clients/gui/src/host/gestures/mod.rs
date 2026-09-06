@@ -89,7 +89,7 @@ pub struct GestureCtx {
     /// id — a waveform's channels, a spectrogram's analysis lanes: what is
     /// actually on the card, which is the only half of the answer the front
     /// has. How a widget *arranges* them is the widget's
-    /// ([`WidgetKind::lanes`]), and a widget missing here counts as one lane.
+    /// ([`WidgetKind::rows`]), and a widget missing here counts as one row.
     pub slot_channels: HashMap<i32, usize>,
     /// The server's sample rate (`0.0` when this front does not know it) — the
     /// same one the frame draws with. A gesture over a *measured* axis needs

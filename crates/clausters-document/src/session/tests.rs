@@ -421,3 +421,161 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
     let back = serde_json::to_value(&session).unwrap();
     assert_eq!(back["mixer"]["buses"][0]["name"], "reverb");
 }
+
+/// **The milestone's acceptance, in one test.** A session with several tracks,
+/// alternate lanes, overlapping layered regions, crossfades and automation
+/// round-trips losslessly.
+///
+/// Written as one piece rather than as six assertions because the thing being
+/// checked is that they survive *together*: a format can round-trip each of
+/// these alone and still lose the layer order when two regions share a beat, or
+/// drop the fade on the one that is not on top.
+#[test]
+fn a_whole_session_round_trips_losslessly() {
+    use crate::arrangement::{
+        Arrangement, Automation, Content, Fade, Lane, Marker, Meter, Region, Span, Tempo, Track,
+    };
+    use crate::timebase::Beat;
+    use crate::{Lifetime, Point, SegmentRef, SegmentSource, SourceRef};
+
+    let window = |source: u64, from: f64| SegmentRef {
+        source: SegmentSource::Samples(SourceRef {
+            source: SourceId(source),
+            lifetime: Lifetime::Session,
+            generation: 0,
+            range: None,
+        }),
+        start: from,
+        duration: 4.0,
+    };
+
+    let mut arrangement = Arrangement::new();
+    arrangement.set_tempo(Tempo::at(Beat(0.0), 96.0));
+    arrangement.set_tempo(Tempo::at(Beat(32.0), 120.0).ramping());
+    arrangement.set_meter(Meter::at(Beat(0.0), 4, 4));
+    arrangement.set_meter(Meter::at(Beat(32.0), 7, 8));
+    arrangement.add_marker(Marker::new(NodeId(1), Beat(0.0)).named("intro"));
+    arrangement.add_marker(Marker::new(NodeId(2), Beat(32.0)).named("B"));
+    arrangement.loop_span = Some(Span::new(Beat(0.0), Beat(32.0)));
+    arrangement.punch = Some(Span::new(Beat(8.0), Beat(16.0)));
+
+    // A track comped from three takes, playing the second.
+    let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
+    vocals.lanes[0].name = Some("take 1".into());
+    vocals.lanes.push(Lane::new(NodeId(12)).named("take 2"));
+    vocals.lanes.push(Lane::new(NodeId(13)).named("comp"));
+    vocals.active = 1;
+    for (lane, source) in [(0, 100), (1, 101), (2, 102)] {
+        vocals.lanes[lane].place(
+            Region::new(
+                NodeId(20 + lane as u64),
+                Beat(0.0),
+                Beat(16.0),
+                Content::window(window(source, 0.0)),
+            )
+            .named(format!("vox {lane}")),
+        );
+    }
+
+    // A track whose two regions overlap, crossfaded, with the layer order
+    // saying which is on top.
+    let mut guitars = Track::new(NodeId(30), NodeId(31)).named("guitars");
+    let mut first = Region::new(
+        NodeId(32),
+        Beat(0.0),
+        Beat(20.0),
+        Content::window(window(200, 0.0)),
+    );
+    first.fade_out = Some(Fade::of(Beat(4.0)));
+    let mut second = Region::new(
+        NodeId(33),
+        Beat(16.0),
+        Beat(16.0),
+        Content::window(window(201, 2.0)),
+    );
+    second.fade_in = Some(Fade::of(Beat(4.0)));
+    second.layer = 1;
+    second.muted = true;
+    guitars.lanes[0].place(first);
+    guitars.lanes[0].place(second);
+    let mut level = Automation::new(
+        NodeId(34),
+        crate::Opaque(serde_json::json!({"ctl": "level"})),
+    );
+    level.points = vec![
+        Point {
+            at: 0.0,
+            value: 0.0,
+            data: crate::Opaque::none(),
+        },
+        Point {
+            at: 16.0,
+            value: 1.0,
+            data: crate::Opaque(serde_json::json!({"shape": "exp"})),
+        },
+    ];
+    level.visible = true;
+    guitars.automation.push(level);
+    guitars.soloed = true;
+
+    // A track placing the general tree, which is what a composite region is
+    // for: everything the five primitives can build, given a position.
+    let mut sections = Track::new(NodeId(40), NodeId(41)).named("sections");
+    sections.lanes[0].place(Region::new(
+        NodeId(42),
+        Beat(32.0),
+        Beat(16.0),
+        Content::Composite {
+            node: Box::new(Node::new(
+                NodeId(43),
+                Body::Aggregate {
+                    grouping: Grouping::Concrete,
+                    members: vec![placed(
+                        0.0,
+                        Node::new(
+                            NodeId(44),
+                            Body::Clang {
+                                config: crate::Opaque::none(),
+                                fires: None,
+                            },
+                        ),
+                    )],
+                    config: crate::Opaque::none(),
+                },
+            )),
+        },
+    ));
+
+    arrangement.tracks.push(vocals);
+    arrangement.tracks.push(guitars);
+    arrangement.tracks.push(sections);
+
+    let session = saved().with_arrangement(arrangement);
+    let opened = reopen(&session);
+    assert_eq!(opened, session, "the whole session, unchanged");
+
+    // ...and the details a whole-value comparison would not name if it failed.
+    let a = &opened.arrangement;
+    assert_eq!(a.tracks.len(), 3);
+    assert_eq!(a.end(), Beat(48.0));
+    assert_eq!(
+        a.tracks[0].active_lane().unwrap().name.as_deref(),
+        Some("take 2")
+    );
+    assert_eq!(
+        a.tracks[0].lanes.len(),
+        3,
+        "the takes nobody chose are kept"
+    );
+    let guitars = &a.tracks[1].lanes[0];
+    assert!(guitars.regions[0].overlaps(&guitars.regions[1]));
+    assert_eq!(guitars.regions[1].layer, 1, "which one is on top");
+    assert_eq!(
+        guitars.regions[0].fade_out.as_ref().unwrap().length,
+        Beat(4.0)
+    );
+    assert_eq!(a.tracks[1].automation[0].points[1].data.0["shape"], "exp");
+    assert!(a.tracks[2].lanes[0].regions[0].content.as_node().is_some());
+    assert_eq!(a.tempo_at(Beat(40.0)).unwrap().bpm, 120.0);
+    assert_eq!(a.meter_at(Beat(40.0)).unwrap().beats, 7);
+}

@@ -354,7 +354,7 @@ impl WidgetKind {
     /// y gesture. A widget with no slot was given nothing and is one lane.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::lanes`]).
+    /// ([`Element::rows`]).
     pub fn rows(&self, uploaded: usize) -> usize {
         self.as_element()
             .map_or_else(|| uploaded.max(1), |el| el.rows(uploaded))
