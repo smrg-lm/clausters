@@ -29,6 +29,7 @@ if TYPE_CHECKING:                       # `render` returns one; importing it at
 
 from ... import _native
 from ...config import client_config
+from ...log import log as _package_log
 from ...base import _osclib
 from ...errors import CommandError, ReplyTimeout, ServerError
 from ...base.main import main
@@ -37,6 +38,10 @@ from ...base.netaddr import NetAddr
 from ...base._oscinterface import (OscNrtInterface, OscTcpInterface, OscUdpInterface,
                                    OscWsInterface)
 from ...base.timebase import SampleClockTimebase
+
+#: What this client sent the audio server and what came back
+#: (`clausters.log`). Silent unless asked.
+log = _package_log.getChild("server")
 from ..bus import AudioBusAllocator, ControlBusAllocator
 from ..buffer import BufferAllocator
 from ..node import NodeIdAllocator, ROOT_NODE_ID
@@ -340,6 +345,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         something that behaves differently offline. Use it for what has no place
         in a timeline: sending defs, allocating buffers, opening the groups a
         piece is built on."""
+        log.debug("-> %s %s", addr, args)
         self.interface.send_msg(self.target, addr, *args)
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None, at=None):
@@ -358,6 +364,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         other application, `clausters.base.OscDestination` sends standard
         bundles with the same logical timing."""
         when = (at if at is not None else Moment.current(clock)).at(delay_beats)
+        log.debug("-> bundle at beat %s: %s", getattr(when, "beat", when),
+                  [m[0] if m else m for m in messages])
 
         if getattr(self.interface, "time_mode", "unix") == "score":
             # NRT: seconds from render start (logical, timebase-independent).
@@ -438,6 +446,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             if packet is None:
                 continue
             raddr, rargs = _osclib.decode(packet)
+            log.debug("<- %s %s", raddr, rargs)
             if expect is None or raddr in expect:
                 return raddr, rargs
         raise ReplyTimeout(f"no reply to {addr}")
@@ -458,6 +467,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             if packet is None:
                 continue
             raddr, rargs = _osclib.decode(packet)
+            log.debug("<- %s %s", raddr, rargs)
             if raddr == "/done" and rargs and str(rargs[0]) == addr:
                 return out
             if raddr == "/fail" and rargs and str(rargs[0]) == addr:

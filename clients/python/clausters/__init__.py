@@ -27,6 +27,11 @@ The layers:
   ``Server.shm`` rather than built by hand. The top-level ``render`` is the
   dispatching verb (`clausters.render`), whose ``bytes`` branch is exactly
   `clausters.ipc.render`.
+- `clausters.log` — what the client did, said out loud: every command sent to
+  the audio server and to the GUI host, every reply, and the editing path's own
+  joints. Silent unless asked (`clausters.log.watch`, or ``CLAUSTERS_LOG=1``),
+  because the library is one half of a conversation and a traceback says
+  nothing about the other half.
 - `clausters._native` — the ctypes binding over the shared native core
   (``clausters-ffi``): builtins, seeded white noise and clock/sample math, all
   matching the server by construction.
@@ -79,6 +84,7 @@ The layers:
 """
 
 from . import _native
+from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
 from . import base, data, defs, errors, form, gui, ipc, launch, segments, seq
 from .base import builtins
 from .errors import ClaustersError

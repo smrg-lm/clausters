@@ -23,41 +23,22 @@ So the path says what it did, at five points and no more:
 Those five are the joints. Everything between them is derivable from what they
 say, and a sixth would be a running commentary rather than a trace.
 
-**Silent unless asked.** The logger has no handler of its own, so a library
-caller sees nothing and a script can route it wherever it routes the rest of its
-logging. `CLAUSTERS_EDIT_LOG=1` is the convenience for the case this exists
-for — a person running an example, watching a window, about to do the thing that
-breaks — and it prints to stderr so it does not land in whatever the example is
-printing on purpose.
+**Silent unless asked**, like every other area of `clausters.log`, of which
+this is one: a library caller sees nothing, and a script routes it wherever it
+routes the rest of its logging. `CLAUSTERS_LOG=gui.editing` arms this one alone,
+`CLAUSTERS_LOG=1` arms everything, and `watch()` is the same door from a script.
 """
 
 import logging
-import os
 
-#: The one logger. Named for the subpackage, so `logging.getLogger` reaches it
-#: by the name the module already has and a caller can raise or silence it with
-#: everything else in `clausters.gui`.
+from ...log import watch as _watch_area
+
+#: This area's logger — a child of the package's, so arming `clausters` catches
+#: it and arming this one leaves the rest quiet.
 log = logging.getLogger("clausters.gui.editing")
 
-#: The environment variable that arms it, for a script that would rather not
-#: configure logging to watch one window.
-ENV = "CLAUSTERS_EDIT_LOG"
 
-
-def watch(stream=None) -> None:
-    """Print the editing path to ``stream`` (stderr by default).
-
-    Idempotent: calling it twice does not double every line, which matters
-    because the convenience below calls it on import.
-    """
-    if any(getattr(h, "_clausters_edit_log", False) for h in log.handlers):
-        return
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter("edit: %(message)s"))
-    handler._clausters_edit_log = True       # type: ignore[attr-defined]
-    log.addHandler(handler)
-    log.setLevel(logging.DEBUG)
-
-
-if os.environ.get(ENV, "").strip() not in ("", "0", "false", "no"):
-    watch()
+def watch(stream=None) -> logging.Logger:
+    """Print the editing path to ``stream`` (stderr by default) — the whole of
+    `clausters.log.watch` narrowed to this area."""
+    return _watch_area("gui.editing", stream)

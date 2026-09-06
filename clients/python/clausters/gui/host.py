@@ -25,10 +25,15 @@ from dataclasses import dataclass, field
 
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
+from ..log import log as _package_log
 from .guidef import to_json, view as _view
 from .handle import WindowHandle
 from .ids import GuiIdAllocator
 from ..errors import ReplyTimeout
+
+#: What this client sent the GUI host and what came back (`clausters.log`).
+#: Silent unless asked.
+log = _package_log.getChild("gui")
 
 __all__ = ["GuiHost", "WidgetInfo", "DEFAULT_PORT"]
 
@@ -317,6 +322,17 @@ class GuiHost:
         from the same pool). A freed subtree's ids return to the pool."""
         return self._alloc.alloc()
 
+    def _send(self, addr: str, *args):
+        """Every command this client sends the host goes out here.
+
+        One door so the wire can be watched (`clausters.log`): the library is
+        one half of a conversation, and when a widget does not do what a script
+        asked, what actually went out is the first thing worth knowing and the
+        one thing nothing else says.
+        """
+        log.debug("-> %s %s", addr, args)
+        self._osc.send_msg(self.target, addr, *args)
+
     @property
     def ids(self):
         """This host client's widget-id namespace
@@ -456,7 +472,7 @@ class GuiHost:
             wid = names.get(name)
             if wid is not None:
                 self._on_interface[wid] = table
-        self._osc.send_msg(self.target, "/gui_def", id, to_json(doc), *blobs)
+        self._send("/gui_def", id, to_json(doc), *blobs)
         if previous is not None:
             # Refreshed **in place**: one window is one handle, so every
             # reference the caller kept goes on resolving names correctly.
@@ -479,7 +495,7 @@ class GuiHost:
         WindowHandle` comes back — address its widgets with `set` / `free` by
         the ids the def declares.
         """
-        self._osc.send_msg(self.target, "/gui_load", name)
+        self._send("/gui_load", name)
 
     def font(self, face: bytes):
         """``/gui_font <blob>`` — draw text with this typeface from now on.
@@ -502,7 +518,7 @@ class GuiHost:
         ``font=`` (the host's ``--font``), for a face that should be in place
         before the first window opens.
         """
-        self._osc.send_msg(self.target, "/gui_font", bytes(face))
+        self._send("/gui_font", bytes(face))
 
     def theme(self, table: dict):
         """``/gui_theme <json>`` — draw the chrome from these colors from now on.
@@ -520,7 +536,7 @@ class GuiHost:
         ``--theme <file.toml>`` (``[gui.theme]`` in the shared config), for a
         look that should be in place before the first window opens.
         """
-        self._osc.send_msg(self.target, "/gui_theme", json.dumps(dict(table)))
+        self._send("/gui_theme", json.dumps(dict(table)))
 
     def metrics(self, table: dict):
         """``/gui_metrics <json>`` — lay out with these sizes from now on.
@@ -534,7 +550,7 @@ class GuiHost:
         rules for what the host does not understand, and the launch-time spelling
         is the ``[gui.metrics]`` config table.
         """
-        self._osc.send_msg(self.target, "/gui_metrics", json.dumps(dict(table)))
+        self._send("/gui_metrics", json.dumps(dict(table)))
 
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
@@ -620,7 +636,7 @@ class GuiHost:
         ``set(fills=False)`` is what a reader of ``fills=True`` in a `guidef`
         builder will type, so it means the same thing here.
         """
-        self._osc.send_msg(self.target, "/gui_set", id, *_prop_args(props))
+        self._send("/gui_set", id, *_prop_args(props))
 
     def ack(self, seq: int, doc_version: int = 0, generations=(), reason=None):
         """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` —
@@ -652,7 +668,7 @@ class GuiHost:
             args += [int(source), int(generation)]
         if reason is not None:
             args.append(str(reason))
-        self._osc.send_msg(self.target, "/gui_ack", *args)
+        self._send("/gui_ack", *args)
 
     def push(self, seq: int, *sets, doc_version: int = 0, generations=(),
              reason=None):
@@ -696,7 +712,7 @@ class GuiHost:
     def free(self, id: int):
         """``/gui_free <id>`` — free a widget and its subtree, returning its ids
         to the pool (the client-side mirror of the host freeing the subtree)."""
-        self._osc.send_msg(self.target, "/gui_free", id)
+        self._send("/gui_free", id)
         self._recycle_subtree(int(id), keep_root=False)
 
     def bind(self, id: int, address: str, *prefix):
@@ -712,7 +728,7 @@ class GuiHost:
         The host must have been started with ``--server`` for the value to reach
         the audio server. ``prefix`` items keep their type (an ``int`` rides as an
         OSC int, a ``str`` as a string)."""
-        self._osc.send_msg(self.target, "/gui_bind", id, "server", address, *prefix)
+        self._send("/gui_bind", id, "server", address, *prefix)
 
     def bind_widget(self, id: int, target: int, prop: str):
         """``/gui_bind <id> "widget" <target> <prop>`` — apply this widget's value
@@ -730,12 +746,12 @@ class GuiHost:
         instead of cascading. Nothing detects a cycle, because the chain is one
         hop by construction.
         """
-        self._osc.send_msg(self.target, "/gui_bind", id, "widget", int(target), prop)
+        self._send("/gui_bind", id, "widget", int(target), prop)
 
     def unbind(self, id: int):
         """``/gui_bind <id>`` (no target) — remove a widget's binding, so its value
         flows back to this script as ``/gui_event`` again."""
-        self._osc.send_msg(self.target, "/gui_bind", id)
+        self._send("/gui_bind", id)
 
     def query(self, id: int, timeout: float = 1.0):
         """``/gui_query <id>`` -> the ``/gui_info`` reply as a `WidgetInfo`.
@@ -756,7 +772,7 @@ class GuiHost:
         event loop. An empty ``type`` (``""``) means the host has no such
         widget: it still answers, the way the server replies even on a miss.
         """
-        self._osc.send_msg(self.target, "/gui_query", id)
+        self._send("/gui_query", id)
         if self.looping:
             # The loop owns the socket, so the answer comes back through the
             # slot it puts replies in rather than off the wire here. This is
@@ -1019,7 +1035,9 @@ class GuiHost:
         data = self._osc.recv(timeout)
         if data is None:
             return None
-        return _osclib.decode(data)
+        addr, args = _osclib.decode(data)
+        log.debug("<- %s %s", addr, args)
+        return addr, args
 
     def listen(self, duration: float, handler):
         """Polls events for ``duration`` seconds, calling ``handler(addr, args)``
