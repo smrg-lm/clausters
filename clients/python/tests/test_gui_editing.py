@@ -10,7 +10,8 @@ data at all.
 
 import pytest
 
-from clausters.gui.editing import Domain, Echo, Editing, Editor, View
+from clausters.gui.editing import (Application, Domain, Echo, Editing,
+                                   Editor, View)
 
 SR = 48_000.0
 
@@ -95,6 +96,9 @@ class FakeHost:
     def define(self, wid, tree):
         return wid
 
+    def close(self, wid):
+        self.closed = wid
+
     def poll(self, timeout=0.0):
         return None
 
@@ -117,9 +121,24 @@ class FakeHost:
     loop = None
 
 
-def an_editor(structure=None):
+def an_editor(structure=None, app=None):
     return Editor(structure or Dial(), sample_rate=SR, tempo=2.0,
-                  domain=DialDomain(), view=DialView())
+                  domain=DialDomain(), view=DialView(), app=app)
+
+
+class QueueHost(FakeHost):
+    """A host with messages to hand out, so a drain can be watched."""
+
+    def __init__(self, *messages):
+        super().__init__()
+        self.pending = list(messages)
+        self.dispatched: list = []
+
+    def poll(self, timeout=0.0):
+        return self.pending.pop(0) if self.pending else None
+
+    def dispatch(self, *msg):
+        self.dispatched.append(msg)
 
 
 # ---- the acceptance: an editor with no arrangement anywhere ----
@@ -224,6 +243,70 @@ def test_an_editor_with_no_window_still_shares_the_history():
     wid = host.tree["children"][0]["id"]
     open_one.apply("/gui_event", [wid, 1, 0, "dial", 0.4])
     assert silent.can_undo, "it has no picture; it still shares the pile"
+
+
+# ---- the application: what a window set owns, as against one structure ----
+
+def test_an_editor_makes_an_application_of_one_and_registers_in_it():
+    # Nothing a script writes changes: an editor handed no application is an
+    # application of one, which is what it always was before there was a name.
+    ed = an_editor()
+    assert isinstance(ed.app, Application)
+    assert ed.app.editors == [ed]
+    assert ed.app.context is ed._editing
+
+
+def test_the_application_owns_the_host_and_the_widget_id_space():
+    left, right = an_editor(), None
+    right = an_editor(app=left.app)
+    host = FakeHost()
+    left.open(host)
+
+    # One host for the window set: the second editor did not have to be told.
+    assert right._host is host
+    # And one id space, so two pictures in one application cannot collide.
+    assert left.draw()["children"][0]["id"] != right.draw()["children"][0]["id"]
+
+
+def test_an_application_adopts_a_host_once():
+    # The rule the multitrack learned the hard way: an application already open
+    # answers *its* host, and a second window opened on another one does not
+    # take the acknowledgements with it.
+    ed = an_editor()
+    first, second = FakeHost(), FakeHost()
+    ed.open(first)
+    ed.app.resolve(second)
+    assert ed._host is first
+
+
+def test_one_application_is_one_drain_and_each_editor_answers_for_its_own():
+    # One socket, one loop: both editors are offered every message, and each
+    # answers only for the widget it drew -- which is what makes a bundle of
+    # subviews one application rather than two loops racing each other.
+    left_dial, right_dial = Dial(), Dial()
+    left = an_editor(left_dial)
+    right = an_editor(right_dial, app=left.app)
+    host = QueueHost()
+    left.open(host)
+    right._window = 998                       # a second window on the one host
+    left_wid = left.draw()["children"][0]["id"]
+    right_wid = right.draw()["children"][0]["id"]
+    host.pending = [("/gui_event", [left_wid, 1, 0, "dial", 0.3]),
+                    ("/gui_event", [right_wid, 2, 0, "dial", 0.7])]
+
+    assert left.app.poll() is True
+    assert (left_dial.value, right_dial.value) == (0.3, 0.7)
+    # And the window's own handlers still see everything the drain took off the
+    # socket, which is the half a data-only drain used to swallow.
+    assert len(host.dispatched) == 2
+
+
+def test_an_editor_that_closes_leaves_the_drain():
+    left = an_editor()
+    right = an_editor(app=left.app)
+    left.open(FakeHost())
+    left.close()
+    assert left.app.editors == [right]
 
 
 def test_the_context_is_the_structures_and_is_asked_for_not_built():

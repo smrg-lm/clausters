@@ -4,13 +4,17 @@
 timeline of events — and it imports nothing from the arrangement. What makes
 that possible is that it performs almost nothing itself: it opens a window
 through a `clausters.gui.editing.View`, turns a gesture into a payload through a
-`clausters.gui.editing.Domain`, answers the host through a
-`clausters.gui.editing.Echo`, and records what happened in the
-`clausters.gui.editing.Editing` context the **data** owns rather than one of its
-own.
+`clausters.gui.editing.Domain`, answers the host through the
+`clausters.gui.editing.Application` it draws in, and records what happened in
+the `clausters.gui.editing.Editing` context the **data** owns rather than one of
+its own.
 
 So the boundaries are:
 
+- an editor owns **nothing that is true of a window set**. The host, the
+  widget-id space, the acknowledgement, the socket drain and the walk of the undo
+  order are the application's, because several editors can share one and none of
+  them is about the structure being edited;
 - an editor owns **neither the data nor the history**. It asks the structure for
   its context (`Editing.of`) and never builds one, which is what makes two
   windows over one thing walk one undo order;
@@ -26,30 +30,16 @@ transport. **Transport and render are not here** — a bare structure at most
 sounds; it has no piece to move over.
 """
 
-import itertools
-
 from ... import _native
 from ...base.time import TempoMap
+from .application import BASE_ID, Application, _resolve_host
 from .context import FIRST_VERSION, Editing
-from .echo import Echo
 
 #: The tags that are **not** edits: what a view is looking at, and where the
 #: hand is. They are answered generically and never reach a domain, because the
 #: crate is explicit that screen state is never part of what is edited.
 NOT_AN_EDIT = ("selection", "view", "view_x", "view_y", "layer", "focus",
                "locate", "height")
-
-
-def _resolve_host(host):
-    """The host an ``open`` acts on: the one named, else the ambient one — the
-    same resolution `clausters.gui.guidef.View.open`, `clausters.plot` and
-    `clausters.scope` share, so an editor is not the one resource that has to be
-    handed a host."""
-    if host is not None:
-        return host
-    from ...plot import _ambient_host
-
-    return _ambient_host()
 
 
 class Editor:
@@ -76,13 +66,20 @@ class Editor:
         base_id: the first widget id a **host-less** draw counts from (tests and
             tree inspection). Once `open`ed, the ids come from the host's own
             recycling pool instead, so the two never collide and a redraw's ids
-            return to the pool.
+            return to the pool. Ignored when ``app`` is given, since the id space
+            is the application's.
+        app: the `clausters.gui.editing.Application` this editor draws in — the
+            window set it shares a host, an id space, an acknowledgement and a
+            socket drain with. ``None`` — the ordinary case — makes one for this
+            editor alone, which is what every editor was before there was a name
+            for it.
     """
 
     def __init__(self, structure=None, *, sample_rate: float, tempo: float = 1.0,
                  tempo_map=None, domain=None, view=None, context=None,
                  title: str = "Editor", extra=(),
-                 width: int = 1000, height: int = 520, base_id: int = 10_000):
+                 width: int = 1000, height: int = 520, base_id: int = BASE_ID,
+                 app=None):
         #: What is edited. `FormEditor` calls it `element`, which is the
         #: arrangement's word for the same slot.
         self.structure = structure
@@ -124,10 +121,6 @@ class Editor:
         #: which is the crate's own line: a selection is screen state, never
         #: persisted and never logged.
         self.selection: dict = {}
-        #: The base a host-less draw counts ids from; once `open`ed the ids come
-        #: from the host's recycling pool instead (`_new_id`).
-        self._base_id = int(base_id)
-        self._fallback_ids = itertools.count(self._base_id)
         #: The version this editor was at when it last answered a host event --
         #: what turns "the version moved" into "it moved *by someone else*".
         self._applied: int = FIRST_VERSION
@@ -135,11 +128,16 @@ class Editor:
         #: The context to register in when the caller named one; otherwise the
         #: structure's own, asked for on each use.
         self._context = context
-        #: This view's end of the acknowledgement protocol — the stamp, the
-        #: floor, the corrections and the reason. It reads the version out of
-        #: the context rather than keeping one, because two windows over one
-        #: structure report one counter.
-        self._echo = Echo(host=None, version=lambda: self._version)
+        #: The **application** this editor draws in: the host, the widget-id
+        #: space, the acknowledgement and the loop — everything true of a window
+        #: set rather than of this structure. Handed one, several editors share
+        #: a window set and an undo order; given none, this editor is an
+        #: application of one, which is what every editor was before there was a
+        #: name for it.
+        self.app = (app if app is not None
+                    else Application(context=context, base_id=base_id,
+                                     version=lambda: self._version))
+        self.app.register(self)
         #: The identity this structure was registered in the history under,
         #: minted on the first edit — a structure you built has no id and is not
         #: going to be given a stable one for this.
@@ -211,68 +209,66 @@ class Editor:
         resized something measured in seconds."""
         return _native.samples_to_secs(int(round(units)), self.sample_rate)
 
-    # ---- widget ids: the host's recycling pool, or a host-less fallback ----
+    # ---- what the application owns, reached from here ----
+    #
+    # The host, the widget ids and the acknowledgement are the window set's and
+    # not this structure's, so they live in `clausters.gui.editing.Application`
+    # and these are the names an editor reads them by. They stay private and
+    # stay spelled as they were: what changed is where the state is, not what an
+    # editor is allowed to ask for.
 
     def _new_id(self) -> int:
-        """A widget id for the tree being drawn. Once `open`ed, it comes from the
-        host's recycling pool (`clausters.gui.host.GuiHost.alloc_id`); host-less
-        (a test, or inspecting `draw`), it counts from ``base_id``."""
-        return self._host.alloc_id() if self._host is not None else next(self._fallback_ids)
+        """A widget id for the tree being drawn (`Application.new_id`)."""
+        return self.app.new_id()
 
     def _reset_ids(self):
-        """Start a fresh draw's id numbering. Host-less, the fallback counter
-        restarts at ``base_id``; on a host nothing resets — the ids come from its
-        pool, and re-defining the window returns the previous tree's ids there
-        (`GuiHost.define`), so the churn recycles instead of climbing."""
-        if self._host is None:
-            self._fallback_ids = itertools.count(self._base_id)
-
-    # ---- the acknowledgement, delegated to the `Echo` ----
+        """Start a fresh draw's id numbering (`Application.reset_ids`)."""
+        self.app.reset_ids()
 
     @property
     def _host(self):
         """The host this editor answers, or ``None`` before it is opened."""
-        return self._echo.host
+        return self.app.host
 
     @_host.setter
     def _host(self, host):
-        self._echo.host = host
+        self.app.host = host
 
     @property
     def _corrections(self) -> list:
-        return self._echo.corrections
+        return self.app.corrections
 
     @_corrections.setter
     def _corrections(self, value):
-        self._echo.corrections = list(value)
+        self.app.corrections = value
 
     @property
     def _floor(self) -> int:
-        return self._echo.floor
+        return self.app.floor
 
     @_floor.setter
     def _floor(self, value):
-        self._echo.floor = int(value)
+        self.app.floor = value
 
     @property
     def _reason(self) -> "str | None":
-        return self._echo.reason
+        return self.app.reason
 
     @_reason.setter
     def _reason(self, value):
-        self._echo.reason = value
+        self.app.reason = value
 
     def _announce(self):
-        self._echo.announce()
+        self.app.announce()
 
     def _stale(self, against: int) -> bool:
-        return self._echo.stale(against)
+        return self.app.stale(against)
 
     def _correct(self, widget_id: int, **props):
-        self._echo.correct(widget_id, **props)
+        self.app.correct(widget_id, **props)
 
     def _acknowledge(self, seq: int, reason: "str | None" = None):
-        self._echo.acknowledge(seq, reason)
+        self.app.acknowledge(seq, reason)
 
     # ---- the history: the data's, not this editor's ----
 
@@ -341,7 +337,7 @@ class Editor:
             # gives a second editor on the same history -- so this answers the
             # window it already has rather than orphaning it.
             return self._window
-        self._host = _resolve_host(host)
+        self.app.resolve(host)
         self._window = self._host.open(self.draw(), id=id)
         self._editing.attach(self)
         self._announce()
@@ -384,6 +380,7 @@ class Editor:
                 # **lifetime**: the host holds an open editor so a script need
                 # not, and this is where it stops.
                 self._editing.detach(self)
+                self.app.forget(self)
                 if self._host is not None:
                     self._host.unsubscribe(self.apply)
             return False
@@ -611,28 +608,16 @@ class Editor:
             return stepped
 
     def _step(self, direction: str) -> bool:
-        """One step of the pile, **handed round the context**.
+        """One step of the pile (`Application.step`), with this editor as the
+        one that draws afterwards.
 
-        The history holds structures the crate cannot reach, so it applies
-        nothing: what comes back is an ordered list of legs, each naming the
-        structure it belongs to. One entry can name several — a stroke over a
-        take and a bend of the curve over it are one order — so the step is
-        offered to **every editor in this context**, and each projects the legs
-        it owns. An editor that walked only its own legs would step the cursor
-        over somebody else's edit and undo nothing, which looks exactly like a
-        dead button.
+        The walk is the application's because an entry can name several
+        structures — a stroke over a take and a bend of the curve over it are one
+        order — so it is offered to every editor in the context and each projects
+        the legs it owns. What is this editor's is `project_legs` and
+        `reflect_step`, below.
         """
-        legs = self._editing.step(direction)
-        if legs is None or not self._editing.distribute(legs, self):
-            return False
-        # **Once for the walk, not once per window.** The version is the
-        # context's, and every view reports the same one — and only this one
-        # draws from here: the others are told on the way out of the turn, the
-        # way they are told about any edit, so a step is one answer per window
-        # rather than two.
-        self._version += 1
-        self.reflect_step()
-        return True
+        return self.app.step(direction, self)
 
     def project_legs(self, legs: list) -> bool:
         """Project the legs of a history step that name **this** editor's
@@ -729,9 +714,7 @@ class Editor:
         does not call it — the loop is already delivering and the next cell
         reads the structure the hand has been editing.
         """
-        if self._host is None:
-            return self.closed
-        return self._host._wait_while(lambda: not self.closed, timeout)
+        return self.app.wait(lambda: not self.closed, timeout)
 
     def close(self):
         """Close this editor's window (``/gui_free``) and stop listening.
@@ -746,6 +729,7 @@ class Editor:
             if window is not None:
                 self._host.close(window)
         self._editing.detach(self)
+        self.app.forget(self)
         return self
 
     def on_closed(self, func):
@@ -775,17 +759,4 @@ class Editor:
         that only fed the data swallowed them — the button was pressed, the host
         reported it, and nothing happened.
         """
-        if self._host is None:
-            raise RuntimeError("open(host) the editor first")
-        if self._host.looping:
-            # The loop drains this host and hands every message to `apply`
-            # already. Answering `False` rather than raising is deliberate: a
-            # script written around this call keeps running unchanged, it has
-            # simply stopped being the thing that delivers.
-            return False
-        changed = False
-        while (msg := self._host.poll(timeout)) is not None:
-            changed |= self.apply(*msg)
-            self._host.dispatch(*msg)
-            timeout = 0.0  # only the first wait blocks
-        return changed
+        return self.app.poll(timeout)

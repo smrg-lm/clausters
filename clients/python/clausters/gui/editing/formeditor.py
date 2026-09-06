@@ -58,7 +58,8 @@ from ..guidef import (_flat_notes, _flat_points, clip, patch, signal,
                       scroll, timeruler, track, window)
 from ..transport import Transport
 from .context import ATTR, Editing
-from .editor import Editor, _resolve_host
+from .application import BASE_ID, _resolve_host
+from .editor import Editor
 from .events import NotesEditor
 from .samples import MEASURES, SamplesEditor, is_samples, measures
 
@@ -252,7 +253,7 @@ class FormEditor(Editor):
                  quant: float = 0.0, follow: bool = False,
                  autofit: bool = False, extra=(),
                  title: str = "Composition",
-                 width: int = 1000, height: int = 520, base_id: int = 10_000):
+                 width: int = 1000, height: int = 520, base_id: int = BASE_ID):
         super().__init__(element, sample_rate=sample_rate, tempo=tempo,
                          tempo_map=tempo_map, title=title, extra=extra,
                          width=width, height=height, base_id=base_id)

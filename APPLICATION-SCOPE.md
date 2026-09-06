@@ -94,8 +94,8 @@ prove it with the editors that already exist before a line of Rust is written.
   the poll/wait/close surface, and the undo/redo stepping that walks composed
   views (`_step`, `project_legs`, `reflect_step`).
 - `Editing` becomes reachable **from** an application as well as from a
-  structure: an application has one editing context, and registering a structure
-  in it is what an `Editor` does on construction rather than on first edit.
+  structure: an application has one editing context, read off the editors
+  registered in it when it was not handed one.
 - `Editor` keeps `structure`, `domain`, `view`, the unit bridge, and `_route` /
   `_observe`. It no longer holds a host, mints an id or answers a host.
 - `composed_in` / `composed_over` disappear as a mechanism: a composed editor is
@@ -105,6 +105,24 @@ prove it with the editors that already exist before a line of Rust is written.
 buffer, a curve and a timeline all work unchanged from a script's point of view;
 two windows over one structure still walk one undo order; the existing Python
 tests pass with no change to their assertions. No TypeScript in this milestone.
+
+**Done 2026-09-06.** `clausters.gui.editing.Application` holds the host and its
+adoption rule, the widget-id space, the `Echo`, the socket drain and the walk of
+the pile; `Editor` keeps the structure, the domain, the view and the unit
+bridge, and reads the rest through `self.app` under the names it always used.
+An editor handed no application makes one of its own, so nothing a script writes
+changed - and `FormEditor` still works untouched, which is what lets AP6 converge
+it rather than port it under pressure. 930 Python tests pass, `npx pyright` is
+clean, `scripts/check-docs.sh python` builds, and `examples/editors/edit_curve.py`
+opens and holds through the new `wait`.
+
+**One deviation from the milestone as written, and why.** Registering a
+structure at construction rather than on first edit was dropped: `Editor` admits
+`structure=None` (a view inspected with no data behind it), and `Editing.of`
+caches the context **on the object**, which `None` cannot carry. Minting stays
+lazy in `_registered`, exactly as it was. What the milestone actually wanted -
+that an application know its context without being told - is answered by reading
+it off the registered editors, which costs nothing and has no such hole.
 
 ### AP1 - A widget id is derived, not leased
 
@@ -288,7 +306,7 @@ Written down so it can be checked rather than felt:
 
 ## Status
 
-- [ ] AP0 - the seam, in Python only
+- [x] AP0 - the seam, in Python only
 - [ ] AP1 - a widget id is derived
 - [ ] AP2 - a redraw is a diff
 - [ ] AP3 - screen state to the host

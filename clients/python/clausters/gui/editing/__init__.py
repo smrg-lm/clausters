@@ -1,14 +1,18 @@
 """Editing: the subdomain of the GUI where a picture writes back.
 
 Everything that turns a gesture into a change of the data, and the change back
-into a picture. It is a subpackage rather than a module because it is four
+into a picture. It is a subpackage rather than a module because it is five
 collaborators and two editors, and because the boundaries between them are the
 whole design:
 
+- `Application` — the window set: the host, the widget-id space, the
+  acknowledgement, the socket drain and the walk of the undo order. Everything
+  true of a **session on screen** rather than of one structure, so several
+  editors can share one — and an editor handed none is an application of one.
 - `Editor` — the generic one. It edits **one structure** and imports nothing
   from the arrangement: it opens a window through its `View`, turns a gesture
-  into a payload through its `Domain`, answers the host through its `Echo`, and
-  records in the `Editing` context the data owns.
+  into a payload through its `Domain`, answers the host through its
+  `Application`, and records in the `Editing` context the data owns.
 - `View` — the `GuiDef` of one structure, and the registry from widget id to
   what it shows. The only per-domain thing on the graphic side.
 - `Domain` — the data adapter: gesture → payload, payload → the client object,
@@ -40,6 +44,7 @@ it. `clausters.gui` goes on exporting the guidef `View`, so nothing a script
 writes changes.
 """
 
+from .application import BASE_ID, Application
 from .context import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -54,6 +59,8 @@ from .view import View
 
 __all__ = [
     "ATTR",
+    "Application",
+    "BASE_ID",
     "Domain",
     "Echo",
     "Editing",
