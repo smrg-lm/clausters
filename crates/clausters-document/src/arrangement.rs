@@ -459,6 +459,239 @@ impl Track {
     }
 }
 
+// ---- the timeline the tracks are placed on ----
+
+/// One entry of the tempo map: from here on, this tempo.
+///
+/// **The map is the piece's, not a track's and not a clock's.** Everything
+/// placed here is placed on the musical axis, so the map is what relates the
+/// whole arrangement to seconds — and it has been homeless until now, which is
+/// why every structure that needed it reached for a scalar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tempo {
+    /// Where the change happens.
+    pub at: Beat,
+    /// Beats per minute from here on.
+    pub bpm: f64,
+    /// Whether the tempo **ramps** from here to the next entry rather than
+    /// stepping. A ritardando is a ramp; a section change is a step.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ramp: bool,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Extra,
+}
+
+impl Tempo {
+    /// A step to `bpm` at `at`.
+    pub fn at(at: Beat, bpm: f64) -> Self {
+        Self {
+            at,
+            bpm,
+            ramp: false,
+            extra: Extra::new(),
+        }
+    }
+
+    /// The same, ramping to whatever comes next.
+    pub fn ramping(mut self) -> Self {
+        self.ramp = true;
+        self
+    }
+}
+
+/// One entry of the meter map: from here on, this time signature.
+///
+/// It says how beats make **bars**, which is what a ruler draws and what a
+/// snap-to-bar means. It never moves a beat: a meter change does not shift what
+/// is placed, it re-bars it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Meter {
+    /// Where the change happens.
+    pub at: Beat,
+    /// Beats per bar.
+    pub beats: u32,
+    /// Which note value gets the beat — 4 for a quarter, 8 for an eighth.
+    pub unit: u32,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Extra,
+}
+
+impl Meter {
+    /// `beats`/`unit` from `at` on.
+    pub fn at(at: Beat, beats: u32, unit: u32) -> Self {
+        Self {
+            at,
+            beats,
+            unit,
+            extra: Extra::new(),
+        }
+    }
+}
+
+/// A named point on the timeline.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Marker {
+    /// Its identity, so an intent can move or rename one.
+    pub id: NodeId,
+    /// What it is called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Where it sits.
+    pub at: Beat,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Extra,
+}
+
+impl Marker {
+    /// A marker at `at`.
+    pub fn new(id: NodeId, at: Beat) -> Self {
+        Self {
+            id,
+            name: None,
+            at,
+            extra: Extra::new(),
+        }
+    }
+
+    /// Names it.
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+}
+
+/// A span of the timeline: the loop, the punch, a named region of the piece.
+///
+/// Half-open, like [`crate::Range`] and for the same reason: two ranges that
+/// meet do not overlap, so a piece cut into sections has no ambiguous frame.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Span {
+    /// Where it starts.
+    pub start: Beat,
+    /// Where it ends, exclusive.
+    pub end: Beat,
+}
+
+impl Span {
+    /// The span from `start` to `end`.
+    pub fn new(start: Beat, end: Beat) -> Self {
+        Self { start, end }
+    }
+
+    /// How long it is.
+    pub fn length(&self) -> Beat {
+        (self.end - self.start).clamp_positive()
+    }
+
+    /// Whether it covers nothing.
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
+}
+
+/// The arrangement: the tracks, and the timeline they are placed on.
+///
+/// What is here rather than on a track is what the **piece** has one of: the
+/// tempo map, the meter map, the markers, the loop. A track has none of them
+/// and never disagrees with another track about them, which is the whole
+/// argument for where they live.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Arrangement {
+    /// The tracks, in the order they are shown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tracks: Vec<Track>,
+    /// The tempo map, in position order. Empty means the reader's own default,
+    /// which the document does not name: a piece that never said a tempo did
+    /// not say one, and inventing 120 here would be this crate deciding a
+    /// musical question.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tempo: Vec<Tempo>,
+    /// The meter map, in position order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meter: Vec<Meter>,
+    /// The named points, in position order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<Marker>,
+    /// The loop span, when one is set. Whether looping is *on* is the
+    /// transport's, not the document's; what the piece holds is where.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_span: Option<Span>,
+    /// The punch span, when one is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub punch: Option<Span>,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Extra,
+}
+
+impl Arrangement {
+    /// An empty arrangement: no tracks, and a timeline that says nothing.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The track with this id.
+    pub fn track(&self, id: NodeId) -> Option<&Track> {
+        self.tracks.iter().find(|t| t.id == id)
+    }
+
+    /// The track with this id, to be edited.
+    pub fn track_mut(&mut self, id: NodeId) -> Option<&mut Track> {
+        self.tracks.iter_mut().find(|t| t.id == id)
+    }
+
+    /// Where the last region ends, across every track and every lane — how long
+    /// the piece is.
+    pub fn end(&self) -> Beat {
+        self.tracks
+            .iter()
+            .map(Track::end)
+            .fold(Beat::ZERO, Beat::max)
+    }
+
+    /// The tempo in force at `at`, or `None` when the map says nothing.
+    ///
+    /// **The entry, not a converted position.** Turning a beat into seconds
+    /// needs the whole map walked and a ramp integrated, and that is the
+    /// client's or the host's to do with the map this hands them — the same
+    /// division of labour as [`crate::SecsToBeats`], and for the same reason:
+    /// this crate transports the map without deciding what a ramp's shape is.
+    pub fn tempo_at(&self, at: Beat) -> Option<&Tempo> {
+        self.tempo.iter().rev().find(|t| t.at <= at)
+    }
+
+    /// The meter in force at `at`, or `None` when the map says nothing.
+    pub fn meter_at(&self, at: Beat) -> Option<&Meter> {
+        self.meter.iter().rev().find(|m| m.at <= at)
+    }
+
+    /// Adds a tempo entry, keeping the map in position order and replacing any
+    /// entry already at that beat — two tempos at one position is a state the
+    /// map should not be able to hold.
+    pub fn set_tempo(&mut self, tempo: Tempo) {
+        self.tempo.retain(|t| t.at != tempo.at);
+        let at = self.tempo.partition_point(|t| t.at < tempo.at);
+        self.tempo.insert(at, tempo);
+    }
+
+    /// Adds a meter entry, on the same rule.
+    pub fn set_meter(&mut self, meter: Meter) {
+        self.meter.retain(|m| m.at != meter.at);
+        let at = self.meter.partition_point(|m| m.at < meter.at);
+        self.meter.insert(at, meter);
+    }
+
+    /// Adds a marker, keeping them in position order. Several markers may share
+    /// a beat: unlike a tempo, two names for one moment is a thing people do.
+    pub fn add_marker(&mut self, marker: Marker) {
+        let at = self.markers.partition_point(|m| m.at <= marker.at);
+        self.markers.insert(at, marker);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,5 +847,98 @@ mod tests {
         assert!(matches!(content, Content::Unknown(_)));
         let back = serde_json::to_value(&content).unwrap();
         assert_eq!(back["clip"], "take1.mov");
+    }
+
+    // ---- the timeline the tracks are placed on ----
+
+    #[test]
+    fn the_map_answers_the_entry_in_force_and_nothing_before_the_first() {
+        let mut a = Arrangement::new();
+        a.set_tempo(Tempo::at(Beat(8.0), 90.0));
+        a.set_tempo(Tempo::at(Beat(0.0), 120.0));
+        a.set_tempo(Tempo::at(Beat(16.0), 60.0).ramping());
+        let at: Vec<_> = a.tempo.iter().map(|t| t.at).collect();
+        assert_eq!(at, vec![Beat(0.0), Beat(8.0), Beat(16.0)]);
+        assert_eq!(a.tempo_at(Beat(0.0)).unwrap().bpm, 120.0);
+        assert_eq!(a.tempo_at(Beat(7.9)).unwrap().bpm, 120.0);
+        assert_eq!(a.tempo_at(Beat(8.0)).unwrap().bpm, 90.0);
+        assert!(a.tempo_at(Beat(20.0)).unwrap().ramp);
+    }
+
+    #[test]
+    fn a_piece_that_never_said_a_tempo_says_nothing() {
+        // No 120 invented here: naming a default would be this crate deciding
+        // a musical question it has no business in.
+        assert!(Arrangement::new().tempo_at(Beat(0.0)).is_none());
+        assert!(Arrangement::new().meter_at(Beat(0.0)).is_none());
+    }
+
+    #[test]
+    fn two_tempos_at_one_beat_is_a_state_the_map_cannot_hold() {
+        let mut a = Arrangement::new();
+        a.set_tempo(Tempo::at(Beat(4.0), 120.0));
+        a.set_tempo(Tempo::at(Beat(4.0), 90.0));
+        assert_eq!(a.tempo.len(), 1);
+        assert_eq!(a.tempo_at(Beat(4.0)).unwrap().bpm, 90.0);
+    }
+
+    #[test]
+    fn a_meter_re_bars_and_a_marker_may_share_a_beat_with_another() {
+        let mut a = Arrangement::new();
+        a.set_meter(Meter::at(Beat(0.0), 4, 4));
+        a.set_meter(Meter::at(Beat(16.0), 7, 8));
+        assert_eq!(a.meter_at(Beat(20.0)).unwrap().beats, 7);
+        a.add_marker(Marker::new(NodeId(1), Beat(16.0)).named("B"));
+        a.add_marker(Marker::new(NodeId(2), Beat(16.0)).named("chorus"));
+        a.add_marker(Marker::new(NodeId(3), Beat(0.0)).named("A"));
+        let names: Vec<_> = a.markers.iter().map(|m| m.name.clone().unwrap()).collect();
+        assert_eq!(names, vec!["A", "B", "chorus"]);
+    }
+
+    #[test]
+    fn a_span_that_meets_the_next_one_covers_no_frame_twice() {
+        let first = Span::new(Beat(0.0), Beat(8.0));
+        let then = Span::new(Beat(8.0), Beat(16.0));
+        assert_eq!(first.length(), Beat(8.0));
+        assert_eq!(first.end, then.start);
+        assert!(Span::new(Beat(4.0), Beat(4.0)).is_empty());
+    }
+
+    #[test]
+    fn an_arrangement_round_trips_and_spans_every_track() {
+        let mut a = Arrangement::new();
+        a.set_tempo(Tempo::at(Beat(0.0), 96.0));
+        a.set_meter(Meter::at(Beat(0.0), 3, 4));
+        a.loop_span = Some(Span::new(Beat(0.0), Beat(12.0)));
+        let mut one = Track::new(NodeId(1), NodeId(10)).named("drums");
+        one.active_lane_mut().unwrap().place(region(100, 0.0, 4.0));
+        let mut two = Track::new(NodeId(2), NodeId(20)).named("bass");
+        two.active_lane_mut().unwrap().place(region(200, 8.0, 24.0));
+        a.tracks.push(one);
+        a.tracks.push(two);
+        assert_eq!(a.end(), Beat(32.0));
+        assert_eq!(a.track(NodeId(2)).unwrap().name.as_deref(), Some("bass"));
+        let json = serde_json::to_string(&a).unwrap();
+        assert!(!json.contains("punch"), "an unset span stays out: {json}");
+        assert_eq!(serde_json::from_str::<Arrangement>(&json).unwrap(), a);
+    }
+
+    #[test]
+    fn an_empty_arrangement_writes_an_empty_object() {
+        // Nothing derived, nothing defaulted, nothing invented: a piece with
+        // nothing in it says nothing rather than saying zero of everything.
+        assert_eq!(serde_json::to_string(&Arrangement::new()).unwrap(), "{}");
+    }
+
+    #[test]
+    fn a_timeline_field_a_newer_writer_added_survives() {
+        let json = r#"{"tempo":[{"at":0.0,"bpm":120.0,"swing":0.62}],
+                       "groove":{"name":"mpc60"}}"#;
+        let a: Arrangement = serde_json::from_str(json).unwrap();
+        assert!(a.extra.contains_key("groove"));
+        assert!(a.tempo[0].extra.contains_key("swing"));
+        let back = serde_json::to_value(&a).unwrap();
+        assert_eq!(back["groove"]["name"], "mpc60");
+        assert_eq!(back["tempo"][0]["swing"], 0.62);
     }
 }
