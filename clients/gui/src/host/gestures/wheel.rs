@@ -295,7 +295,7 @@ impl Gestures {
         }
         if let Some(sole) =
             interact::sole_time_axis(host, def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
-                ctx.lanes(id, kind)
+                ctx.rows(id, kind)
             })
         {
             if ctx.ctrl {

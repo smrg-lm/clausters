@@ -36,7 +36,7 @@ impl SignalElement {
     /// Two things it deliberately does not measure. A **hertz** axis stays on
     /// the role: its labels are short and bounded (`20K`, `1.5k`, `440`) and
     /// the frequency they run to is the analysis', not the tree's. And the
-    /// element is measured as **one lane**: a stacked view's lanes are shorter
+    /// element is measured as **one row**: a stacked view's rows are shorter
     /// than its body and so step more coarsely, so this asks for at most what a
     /// multichannel element needs and never for less — a gutter is a
     /// reservation, and reserving a character wide costs pixels where reserving

@@ -726,16 +726,68 @@ DAW session, because that is what a DAW session is good at.
   wrong axis turned every clip move into a trim. Newtypes make that a compile
   error, and this is the milestone that mints the types.
 
-  **Two things it has to settle rather than assume.** **(a) Is a region one
-  object or two?** REAPER splits the slot in time (`MediaItem`: position, length,
-  fades) from what fills it (`MediaItem_Take`: the source reference, its offset,
-  its playrate, its own envelopes), and that is the same distinction the open
-  decision above closed as *name the placement*. Splitting gives comping by
-  construction - swap what fills the slot, keep the slot - and costs a level in
-  the format and in every intent. **(b) `lane` means two things in the host
-  today** - a track's row, and a *channel* row inside a multichannel clip body -
-  and the second has to be renamed to `channel` here, because the first is what
-  this milestone makes the model's word.
+  **Two things it has to settle rather than assume.**
+
+  **(a) Is a region one object or two?** *(Settled 2026-09-06.)* REAPER splits
+  the slot in time (`MediaItem`: position, length, fades) from what fills it
+  (`MediaItem_Take`: the source reference, its offset, its playrate, its own
+  envelopes), and that is the same distinction the open decision above closed as
+  *name the placement*. Splitting gives comping by construction - swap what fills
+  the slot, keep the slot - and costs a level in the format and in every intent.
+  **The answer is one object**, and the argument that settles it is not the cost:
+  **we already took Ardour's lane, and takes are how REAPER does what a lane
+  does.** A track holding several lanes *is* the comping mechanism, so the split
+  would give us a second one at a different level, for the same job. The field
+  itself says so - REAPER 7 (2023) added **fixed item lanes**, described by its
+  own users as the alternative to recording into takes, and shipped an action
+  named *convert takes to lanes*. Adopting the split now would be adopting the
+  thing its author has since grown a lane model beside.
+
+  A second reason, and it is this crate's own: the decision above spent itself
+  establishing that **the placement has one identity**. Splitting reintroduces
+  exactly the question it closed - which of the two an intent names - one level
+  down, and the *placed twice* defect is what that ambiguity cost the last time.
+
+  **So a region is one object with a typed `content`**, not a level: the timeline
+  span is the region's (position, length, fades, layer), and what fills it is a
+  field on it that carries the source reference, the window into the source, the
+  playrate and the arguments of its own evaluation. That is the same split
+  REAPER draws, expressed as **types rather than as a nesting** - which is where
+  the timebase newtypes below do their work, since the two halves of a region are
+  measured on two different axes and today nothing says so.
+
+  **What this costs, said plainly rather than discovered later.** Swapping what
+  fills a region does not keep the fades, because there is no slot to keep them
+  in - the fades are the region's, and a swap is an edit of the region. And
+  alternatives to one span live in alternate lanes, never inside one region. If a
+  case ever appears that lanes genuinely cannot express, it reopens **here**,
+  with that case named.
+
+  **`Region` is the model's word and `clip` is the picture's, and both stay.**
+  The project's rule already says a clip, a lane, a roll and a waveform are
+  *views*; the wire already gets it right, since a `field` with a placement is a
+  clip and nothing on it names an "audio clip". Zrythm made this same turn and
+  **merged** the two, renaming `Region` to `Clip`; we keep them apart on purpose,
+  because the thing the host draws and the thing an intent names are not the same
+  thing and the multitrack's defects came from treating them as one.
+
+  **(b) `lane` means two things in the host today** - a track's row, and a
+  *channel* row inside a multichannel clip body - and the second has to be
+  renamed here, because the first is what this milestone makes the model's word.
+  **Done 2026-09-06, before any type was written**, so the model's `Lane` lands
+  in a host where `lane` already means one thing. What the rename found is that
+  the second sense was **two** senses, not one, and they took different words:
+  `channel_rect` / `channel_at` / `stft_channels` / `channel_divider` where the
+  thing really is a channel, and **`rows`** where the count is generic - an
+  element states how many rows it stacks (`Element::rows`, `ValueAxis::rows`,
+  `YAxis::rows`/`row_h`), which is one per channel for a signal view and one for
+  an overlaid one, and would be a semitone row for a roll. `Element::channels`
+  already existed and meant *how many channels the data holds*; the two are not
+  the same number the moment a view overlays, which is exactly the confusion the
+  shared name was hiding. The one surface that moved is the theme role
+  `lane_divider` -> `channel_divider` (it only ever drew between stacked
+  channels), with its book table. `lane` now appears in the host only where a
+  track's row is meant.
 - ⬜ **O22 - The intents the session admits.** The vocabulary extended to what a
   DAW does: place, move, trim, split, join, fade, crossfade, set layer, move
   between lanes **and between tracks**, switch a track's active lane,

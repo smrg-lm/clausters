@@ -479,7 +479,7 @@ impl SignalElement {
         rect: Rect,
         indent: f32,
         m: &Metrics,
-        lanes: usize,
+        uploaded: usize,
     ) -> Option<ValueAxis> {
         if !self.caps.navigable || self.presentation != Presentation::Signal || self.is_live() {
             return None;
@@ -498,7 +498,7 @@ impl SignalElement {
             body,
             domain: self.domain(),
             y: self.editor.y_view(),
-            lanes: self.lanes(lanes),
+            rows: self.rows(uploaded),
         })
     }
 
@@ -564,7 +564,7 @@ impl SignalElement {
     /// How many lanes this element stacks out of the `uploaded` channels the
     /// front found in its slot: one when the channels are **overlaid**, however
     /// many there are, else one per channel.
-    pub fn lanes(&self, uploaded: usize) -> usize {
+    pub fn rows(&self, uploaded: usize) -> usize {
         if self.display.overlay {
             1
         } else {

@@ -349,15 +349,15 @@ impl WidgetKind {
         self.as_element()?.measured_gutter(rect, m)
     }
 
-    /// **How many lanes this widget stacks**, out of the `uploaded` channel
+    /// **How many rows this widget stacks**, out of the `uploaded` channel
     /// count the front read off its GPU slot — the divisor for a lane-relative
     /// y gesture. A widget with no slot was given nothing and is one lane.
     ///
     /// A built-in answers from its variant, an element for itself
     /// ([`Element::lanes`]).
-    pub fn lanes(&self, uploaded: usize) -> usize {
+    pub fn rows(&self, uploaded: usize) -> usize {
         self.as_element()
-            .map_or_else(|| uploaded.max(1), |el| el.lanes(uploaded))
+            .map_or_else(|| uploaded.max(1), |el| el.rows(uploaded))
     }
 
     /// Whether a y zoom over this widget anchors at the centre of a lane

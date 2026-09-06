@@ -6,7 +6,7 @@
 //! triangle mesh — and this module is what that renderer reads: per channel, the
 //! raw samples (shared, for the zoomed-in regime) plus a peak pyramid (for the
 //! zoomed-out one), all sharing the time axis, so an editor-grade view draws
-//! stacked lanes or overlaid traces from one [`WaveformData`].
+//! stacked channels or overlaid traces from one [`WaveformData`].
 //!
 //! [`WaveformData::column`] is the one place the regimes below the screen's
 //! resolution are decided, and what it measures is **the column and nothing
@@ -833,8 +833,8 @@ impl WaveformData {
     }
 }
 
-/// The vertical margin the trace leaves inside its lane: the value domain's
-/// full span maps to this fraction of the lane's height. Shared with the
+/// The vertical margin the trace leaves inside its channel's row: the value
+/// domain's full span maps to this fraction of that row's height. Shared with the
 /// amplitude ruler and the cursor readout so a tick labeled 1.0 sits exactly on
 /// the trace's full-scale line.
 pub(crate) const AMP_MARGIN: f32 = 0.92;
@@ -887,10 +887,10 @@ pub fn baseline_of(min: f32, max: f32) -> Option<f32> {
     (min < 0.0 && max > 0.0).then_some(0.0)
 }
 
-/// Display coordinate of a value in the domain `[min, max]`: 0 at the lane
+/// Display coordinate of a value in the domain `[min, max]`: 0 at the row's
 /// bottom, 1 at its top, with [`AMP_MARGIN`] of headroom left about the
 /// domain's centre. The default domain reduces it to `amp * AMP_MARGIN`
-/// mapped about the half-lane, which is what every view drew before a domain
+/// mapped about the row's half, which is what every view drew before a domain
 /// could be named.
 pub fn value_to_display(v: f32, min: f32, max: f32) -> f64 {
     let (centre, half) = domain_centre_half(min, max);
@@ -903,7 +903,7 @@ pub fn display_to_value(d: f64, min: f32, max: f32) -> f32 {
     centre + ((d - 0.5) * 2.0 / AMP_MARGIN as f64) as f32 * half
 }
 
-/// How much of one lane a unit of value covers, before the vertical window is
+/// How much of one channel's row a unit of value covers, before the vertical window is
 /// applied — the resolution the cursor readout rounds to.
 pub fn value_per_display(min: f32, max: f32) -> f64 {
     let (_, half) = domain_centre_half(min, max);
@@ -912,7 +912,7 @@ pub fn value_per_display(min: f32, max: f32) -> f64 {
 
 /// A domain as its centre and half-span, with a degenerate one (`min == max`,
 /// or reversed) widened so nothing divides by zero and the value simply sits
-/// in the middle of its lane.
+/// in the middle of its row.
 fn domain_centre_half(min: f32, max: f32) -> (f32, f32) {
     let (lo, hi) = (min.min(max), min.max(max));
     let half = ((hi - lo) * 0.5).max(f32::MIN_POSITIVE);
@@ -999,7 +999,7 @@ impl WaveformView {
         self.domain
     }
 
-    /// How many channels the underlying data holds (the lane count).
+    /// How many channels the underlying data holds.
     pub fn num_channels(&self) -> usize {
         self.data.num_channels()
     }
@@ -1021,33 +1021,33 @@ impl WaveformView {
     }
 }
 
-/// The y **pixel** a value lands on inside `lane`, through the value `domain`
+/// The y **pixel** a value lands on inside `channel`, through the value `domain`
 /// and the visible vertical window `amp` (`(0.0, 1.0)` = the whole axis).
 ///
-/// Display coordinate 0 is the lane *bottom* — the convention the vertical
+/// Display coordinate 0 is the row's *bottom* — the convention the vertical
 /// ruler reads too, so a vertical zoom moves the trace and the ticks by exactly
-/// the same amount. A value outside the window lands outside the lane, and the
+/// the same amount. A value outside the window lands outside the row, and the
 /// mesh's clip rectangle cuts it there.
-pub fn value_to_y(v: f32, domain: (f32, f32), amp: (f64, f64), lane: Rect) -> f32 {
+pub fn value_to_y(v: f32, domain: (f32, f32), amp: (f64, f64), channel: Rect) -> f32 {
     let (y0, y_len) = (amp.0, amp.1.max(crate::viewport::MIN_SPAN));
     let d = value_to_display(v, domain.0, domain.1);
-    lane.y + lane.h * (1.0 - ((d - y0) / y_len) as f32)
+    channel.y + channel.h * (1.0 - ((d - y0) / y_len) as f32)
 }
 
-/// **Draws one lane of a navigable waveform** — the whole of what a `waveform`
+/// **Draws one channel of a navigable waveform** — the whole of what a `waveform`
 /// element's picture is, and the same call the demo harness makes.
 ///
 /// It is three coordinate maps handed to the one signal renderer
 /// ([`trace::draw_channel`]): `view` places the horizontal window, `domain` and
 /// the vertical window `amp` place the values. Nothing else distinguishes a
 /// navigable view from a clip's take or a plot's series.
-// The lane, the source, the channel and the two axes it is placed on: distinct
+// The row, the source, the channel and the two axes it is placed on: distinct
 // inputs to one drawing pass, clearer flat than bundled — as in `draw_channel`,
 // which this hands them to.
 #[allow(clippy::too_many_arguments)]
-pub fn draw_lane(
+pub fn draw_channel(
     mesh: &mut Mesh,
-    lane: Rect,
+    channel: Rect,
     trace: &Trace,
     ch: usize,
     view: &View,
@@ -1055,24 +1055,28 @@ pub fn draw_lane(
     amp: (f64, f64),
     style: TraceStyle,
 ) {
-    let w = lane.w.max(1.0) as f64;
+    let w = channel.w.max(1.0) as f64;
     trace::draw_channel(
         mesh,
-        lane,
+        channel,
         trace,
         ch,
-        |x| view.start + (x - lane.x) as f64 / w * view.len,
-        |s| lane.x + ((s - view.start) / view.len * w) as f32,
-        |v| value_to_y(v, domain, amp, lane),
+        |x| view.start + (x - channel.x) as f64 / w * view.len,
+        |s| channel.x + ((s - view.start) / view.len * w) as f32,
+        |v| value_to_y(v, domain, amp, channel),
         style,
     );
 }
 
-/// The lane one channel of `lanes` occupies inside `body`, stacked top to
-/// bottom. Overlaid traces are `lanes == 1`: every channel takes the whole body.
-pub fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
-    let lanes = lanes.max(1) as f32;
-    let h = body.h / lanes;
+/// The row channel `ch` of `channels` occupies inside `body`, stacked top to
+/// bottom. Overlaid traces are `channels == 1`: every channel takes the whole
+/// body.
+///
+/// A **channel** row, never a lane: a lane is a track's contents in the
+/// arrangement, and this is a band of one view's vertical axis.
+pub fn channel_rect(body: Rect, channels: usize, ch: usize) -> Rect {
+    let channels = channels.max(1) as f32;
+    let h = body.h / channels;
     Rect::new(body.x, body.y + ch as f32 * h, body.w, h)
 }
 
@@ -1082,12 +1086,12 @@ impl TimelineView for WaveformView {
     }
 
     fn mesh(&self, mesh: &mut Mesh, rect: Rect, view: &View, m: &Metrics, theme: &Theme) {
-        let lanes = self.num_channels();
+        let channels = self.num_channels();
         let trace = Trace::Data(&self.data);
-        for ch in 0..lanes {
-            draw_lane(
+        for ch in 0..channels {
+            draw_channel(
                 mesh,
-                lane_rect(rect, lanes, ch),
+                channel_rect(rect, channels, ch),
                 &trace,
                 ch,
                 view,
@@ -1173,7 +1177,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_only_multichannel_view_reads_every_lane() {
+    fn cache_only_multichannel_view_reads_every_channel() {
         let inter: Vec<f32> = envelope_signal(2048)
             .into_iter()
             .flat_map(|s| [s, s * 0.5])
@@ -1187,7 +1191,7 @@ mod tests {
         assert!(hi0 >= 0.4 && (0.2..0.4).contains(&hi1));
     }
 
-    /// The lane the vertical-mapping tests measure against: 100 px tall, so a
+    /// The row the vertical-mapping tests measure against: 100 px tall, so a
     /// display coordinate reads straight off the y in percent from the bottom.
     const LANE: Rect = Rect {
         x: 0.0,
@@ -1206,18 +1210,18 @@ mod tests {
             "{top}"
         );
         assert!((value_to_y(0.0, DEFAULT_DOMAIN, (0.0, 1.0), LANE) - 50.0).abs() < 1e-4);
-        // Zoomed into the top half: the zero line sits on the lane's bottom
-        // edge and full scale inside the lane, above the middle.
+        // Zoomed into the top half: the zero line sits on the row's bottom
+        // edge and full scale inside the row, above the middle.
         assert!((value_to_y(0.0, DEFAULT_DOMAIN, (0.5, 0.5), LANE) - 100.0).abs() < 1e-4);
         let full = value_to_y(1.0, DEFAULT_DOMAIN, (0.5, 0.5), LANE);
         assert!((0.0..50.0).contains(&full), "{full}");
-        // A value below the window leaves the lane (the clip rect cuts it).
+        // A value below the window leaves the row (the clip rect cuts it).
         assert!(value_to_y(-1.0, DEFAULT_DOMAIN, (0.5, 0.5), LANE) > 100.0);
     }
 
     /// A named domain is the *same* map over another range: its ends land where
     /// full scale lands on the amplitude axis, so the margin is a property of
-    /// the lane and not of what the signal happens to measure.
+    /// the row and not of what the signal happens to measure.
     #[test]
     fn a_named_domain_maps_its_ends_where_full_scale_maps() {
         for (min, max) in [(0.0f32, 1.0f32), (-0.25, 0.75), (20.0, 20_000.0)] {
@@ -1239,7 +1243,7 @@ mod tests {
         }
     }
 
-    /// A degenerate domain divides by nothing and parks the value mid-lane,
+    /// A degenerate domain divides by nothing and parks the value mid-row,
     /// rather than producing a NaN the vertex buffer would carry to the GPU.
     #[test]
     fn a_degenerate_domain_is_finite() {

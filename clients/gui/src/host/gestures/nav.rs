@@ -31,7 +31,7 @@ pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
 /// counts the vertical axes are panned through coming off the front's context.
 pub(super) fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<Hit> {
     interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y, &|id, kind| {
-        ctx.lanes(id, kind)
+        ctx.rows(id, kind)
     })
 }
 
@@ -782,7 +782,7 @@ pub(super) fn value_axis(
         hit.rect,
         hit.indent,
         host.metrics_for(ctx.def_id),
-        ctx.lanes(hit.id, &hit.kind),
+        ctx.rows(hit.id, &hit.kind),
     )
 }
 

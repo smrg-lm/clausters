@@ -408,7 +408,7 @@ impl WebApp {
     /// Carries out one fetch-machine step: send the next request over the WS
     /// leg, or turn a finished buffer into view data for its widgets —
     /// looking each widget up in the tree, like the native front, to decide
-    /// between a multichannel waveform and per-channel STFT lanes.
+    /// between a multichannel waveform and one STFT per channel.
     fn apply_fetch_step(&mut self, step: FetchStep) {
         match step {
             FetchStep::Request(msg) => self.send_to_server(msg),
@@ -470,7 +470,7 @@ impl WebApp {
                             } else {
                                 sample_rate
                             };
-                            let stfts = frame::stft_lanes(
+                            let stfts = frame::stft_channels(
                                 frame::deinterleave(&samples, channels),
                                 window_size,
                                 hop,

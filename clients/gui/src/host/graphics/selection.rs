@@ -13,12 +13,12 @@
 //! So the drawing is one function and the *difference* between the views is a
 //! value: [`Vertical`] says what the second axis measures, which is the only
 //! question a sweep asks that a view answers differently. What it decides is
-//! whether the sweep is a **stripe** — the whole lane, because nothing
+//! whether the sweep is a **stripe** — the whole body, because nothing
 //! restricts it vertically — or a **rectangle** the hand cut out of it.
 //!
 //! The edges follow from the same answer rather than from a flag: a band the
-//! full height of the lane owns only its two vertical edges (its top and bottom
-//! are the lane's own), and a restricted one owns all four, because every one
+//! full height of the body owns only its two vertical edges (its top and bottom
+//! are the body's own), and a restricted one owns all four, because every one
 //! of them is a value the hand chose.
 
 use crate::host::layout::Rect;
@@ -28,8 +28,8 @@ use crate::viewport::View;
 
 /// The wash a selection is filled with, over whatever it covers.
 const FILL: f32 = 0.18;
-/// The opacity of an edge the *hand* decided (the lane's own edges are the
-/// lane's, and are not redrawn here).
+/// The opacity of an edge the *hand* decided (the body's own edges are the
+/// body's, and are not redrawn here).
 const EDGE: f32 = 0.75;
 
 /// What a view's **second axis** measures, which is what decides whether a
@@ -76,27 +76,27 @@ pub fn span_x(body: Rect, nav: &View, start: f64, len: f64) -> Option<(f32, f32)
     (x1 > x0).then_some((x0, x1))
 }
 
-/// The vertical extents a selection covers, as `(y, height)` **per lane**: the
-/// whole of each lane for a selection nothing restricts, and the restriction's
-/// own slice of it otherwise.
+/// The vertical extents a selection covers, as `(y, height)` **per channel
+/// row**: the whole of each row for a selection nothing restricts, and the
+/// restriction's own slice of it otherwise.
 ///
 /// The range is mapped through the same pair the picture was drawn with, so the
 /// band's edges land on the values the picture puts there. A range that
-/// survives a zoom out of the visible window is clipped to the lane rather than
+/// survives a zoom out of the visible window is clipped to the row rather than
 /// dropped: the selection still holds those values, they are simply off screen.
 ///
-/// The restriction is drawn in *every* lane, for the reason a value zoom is
-/// centred in every lane: one vertical window serves them all and a value says
+/// The restriction is drawn in *every* row, for the reason a value zoom is
+/// centred in every row: one vertical window serves them all and a value says
 /// the same thing in each, so a range of values is a range in each of them.
 pub fn bands(
     body: Rect,
-    lanes: usize,
+    channels: usize,
     restriction: Option<(f64, f64)>,
     vertical: Vertical,
 ) -> Vec<(f32, f32)> {
-    let lanes = lanes.max(1);
+    let channels = channels.max(1);
     // Nothing restricting it is **one** stripe over the whole height, not one
-    // per lane: the two look the same and only the first is honest about what
+    // per row: the two look the same and only the first is honest about what
     // the hand did, which is what decides the edges below.
     let whole = vec![(body.y, body.h)];
     let Some((min, max)) = restriction.filter(|(a, b)| b > a) else {
@@ -116,27 +116,27 @@ pub fn bands(
         }
         Vertical::Value { domain, window } => {
             let (y0, y_len) = window;
-            let mut out = Vec::with_capacity(lanes);
-            for ch in 0..lanes {
-                let lane = lane_of(body, lanes, ch);
-                let lane = Rect::new(body.x, lane.0, body.w, lane.1);
-                // Value -> display -> the lane's own height, the inverse of the
+            let mut out = Vec::with_capacity(channels);
+            for ch in 0..channels {
+                let row = row_of(body, channels, ch);
+                let row = Rect::new(body.x, row.0, body.w, row.1);
+                // Value -> display -> the row's own height, the inverse of the
                 // read the sweep made.
                 let y_of = |v: f64| {
                     let d = crate::waveform::value_to_display(v as f32, domain.0, domain.1);
                     let rel = 1.0 - ((d - y0) / y_len.max(f64::MIN_POSITIVE));
-                    lane.y + (rel as f32) * lane.h
+                    row.y + (rel as f32) * row.h
                 };
-                out.extend(clipped(lane, y_of(max), y_of(min)));
+                out.extend(clipped(row, y_of(max), y_of(min)));
             }
             out
         }
     }
 }
 
-/// One lane's `(y, height)` in a stack of `lanes`.
-fn lane_of(body: Rect, lanes: usize, ch: usize) -> (f32, f32) {
-    let r = crate::waveform::lane_rect(body, lanes, ch);
+/// One channel row's `(y, height)` in a stack of `channels`.
+fn row_of(body: Rect, channels: usize, ch: usize) -> (f32, f32) {
+    let r = crate::waveform::channel_rect(body, channels, ch);
     (r.y, r.h)
 }
 
@@ -150,7 +150,7 @@ fn clipped(r: Rect, top: f32, bottom: f32) -> Option<(f32, f32)> {
 /// **Draws the sweep**: the wash between `x0` and `x1` over each of `bands`,
 /// with the edges the hand decided.
 ///
-/// `full` is the height a band has when nothing restricts it — the lane's own —
+/// `full` is the height a band has when nothing restricts it — the body's own —
 /// and it is what tells the two cases apart without a second argument saying so.
 pub fn draw(d: &mut Draw, x0: f32, x1: f32, bands: &[(f32, f32)], full: (f32, f32)) {
     let (mesh, m, theme) = d.parts();
@@ -164,7 +164,7 @@ pub fn draw(d: &mut Draw, x0: f32, x1: f32, bands: &[(f32, f32)], full: (f32, f3
         mesh.rect(Rect::new(x0, y, w, h), edge);
         mesh.rect(Rect::new(x1 - w, y, w, h), edge);
         // The horizontal edges are the hand's only where the band is not the
-        // whole lane: a stripe's top and bottom are the lane's own, and drawing
+        // whole body: a stripe's top and bottom are the body's own, and drawing
         // over them would claim the sweep put them there.
         if (y - full.0).abs() > 0.01 || (h - full.1).abs() > 0.01 {
             mesh.rect(Rect::new(x0, y, x1 - x0, w), edge);
@@ -184,7 +184,7 @@ pub fn draw_span(
     body: Rect,
     nav: &View,
     sel: Option<(f64, f64)>,
-    lanes: usize,
+    channels: usize,
     restriction: Option<(f64, f64)>,
     vertical: Vertical,
 ) {
@@ -192,7 +192,7 @@ pub fn draw_span(
     let Some((x0, x1)) = span_x(body, nav, start, len) else {
         return;
     };
-    let bands = bands(body, lanes, restriction, vertical);
+    let bands = bands(body, channels, restriction, vertical);
     draw(d, x0, x1, &bands, (body.y, body.h));
 }
 
@@ -241,9 +241,10 @@ mod tests {
     }
 
     /// Nothing to restrict on — a lane of clips, a spectrogram — is the whole
-    /// lane, however many lanes there are and whatever a stale range says.
+    /// body, however many channel rows there are and whatever a stale range
+    /// says.
     #[test]
-    fn an_unrestricted_sweep_is_the_whole_lane() {
+    fn an_unrestricted_sweep_is_the_whole_body() {
         assert_eq!(bands(BODY, 1, None, Vertical::Whole), vec![(0.0, 100.0)]);
         assert_eq!(
             bands(BODY, 1, Some((0.0, 1.0)), Vertical::Whole),
@@ -253,7 +254,7 @@ mod tests {
         assert_eq!(
             bands(BODY, 2, None, Vertical::Whole).len(),
             1,
-            "one stripe over the stack, not one per lane",
+            "one stripe over the stack, not one per row",
         );
     }
 

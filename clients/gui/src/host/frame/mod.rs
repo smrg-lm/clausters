@@ -125,7 +125,7 @@ pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot 
 }
 
 /// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
-/// texture) per channel lane. Navigation lives in the timeline group.
+/// texture) per channel. Navigation lives in the timeline group.
 pub(crate) struct SpectrogramSlot {
     pub(crate) views: Vec<SpectrogramView>,
 }
@@ -266,12 +266,12 @@ fn roll_into_slot(
     (view.stft().n_frames() > 0).then(|| view.total_samples())
 }
 
-/// One STFT per channel for a spectrogram lane set: de-interleaved `channels`,
+/// One STFT per channel for a spectrogram's channel stack: de-interleaved `channels`,
 /// analyzed at `window_size`/`hop` (the hop raised by [`hop_capped`] so a long
 /// buffer fits the magnitude texture) and `sample_rate` (48 kHz when unknown,
 /// so the frequency axis is still drawable). Shared by both fronts and every
 /// data source (mapped path, fetched buffer, inline samples).
-pub(crate) fn stft_lanes(
+pub(crate) fn stft_channels(
     channels: Vec<Vec<f32>>,
     window_size: usize,
     hop: usize,
@@ -292,7 +292,7 @@ pub(crate) fn stft_lanes(
 }
 
 /// De-interleaves `channels` channels out of a flat buffer (a trailing partial
-/// frame is ignored) — the front half of [`stft_lanes`] for inline sources.
+/// frame is ignored) — the front half of [`stft_channels`] for inline sources.
 pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
     let channels = channels.max(1);
     let frames = samples.len() / channels;
@@ -698,16 +698,20 @@ pub(crate) fn ink_of(p: &layout::Placed) -> Ink {
     }
 }
 
-/// The lane sub-rectangle `ch` of `lanes` inside `body` (stacked top to
+/// The row channel `ch` of `channels` occupies inside `body` (stacked top to
 /// bottom, no gap — the divider line is overlay chrome).
 ///
 /// The **third** row a view stacks, beside a roll's semitone and a
 /// multitrack's lane, and the same structure: a band of the vertical axis. So
 /// it is a [`Bands`] like the other two, on its uniform arm — a channel stack
 /// divides its body evenly because every channel is worth the same picture.
-pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
-    let lanes = lanes.max(1);
-    let (y, h) = Bands::uniform(lanes, body.h / lanes as f32).band(ch);
+///
+/// Same structure, **different word**: `lane` is the arrangement's, a track's
+/// contents, and it is not this. The two were one name until the document
+/// claimed the first.
+pub(crate) fn channel_rect(body: Rect, channels: usize, ch: usize) -> Rect {
+    let channels = channels.max(1);
+    let (y, h) = Bands::uniform(channels, body.h / channels as f32).band(ch);
     Rect::new(body.x, body.y + y, body.w, h)
 }
 
@@ -725,10 +729,10 @@ pub(crate) fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
     }
 }
 
-/// The stacked-lane index under window y `cy` (clamped into range).
-pub(crate) fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
+/// The stacked-channel index under window y `cy` (clamped into range).
+pub(crate) fn channel_at(body: Rect, channels: usize, cy: f64) -> usize {
     let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
-    ((rel * lanes as f64) as usize).min(lanes.saturating_sub(1))
+    ((rel * channels as f64) as usize).min(channels.saturating_sub(1))
 }
 
 /// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
@@ -793,7 +797,7 @@ pub(crate) fn render(
                     })
                     .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
-                    let lanes = slot.views.len();
+                    let channels = slot.views.len();
                     for (ch, view) in slot.views.iter_mut().enumerate() {
                         view.set_display(
                             look.db_floor,
@@ -802,7 +806,7 @@ pub(crate) fn render(
                             look.colormap.max(0) as u32,
                         );
                         view.set_freq_window(freq.0, freq.1);
-                        view.set_framing(framing_of(lane_rect(body, lanes, ch), fb_w, fb_h));
+                        view.set_framing(framing_of(channel_rect(body, channels, ch), fb_w, fb_h));
                         view.upload(
                             &gpu.device,
                             &gpu.queue,
@@ -820,7 +824,7 @@ pub(crate) fn render(
     // between a spectral *view* of a file and a spectral *clip* of it.
     for item in &collected.spectral_bodies {
         if let Some(slot) = spectrograms.get_mut(&item.id) {
-            let lanes = slot.views.len();
+            let channels = slot.views.len();
             for (ch, view) in slot.views.iter_mut().enumerate() {
                 view.set_display(
                     item.db_floor,
@@ -828,7 +832,11 @@ pub(crate) fn render(
                     item.freq_scale,
                     item.colormap.max(0) as u32,
                 );
-                view.set_framing(framing_of(lane_rect(item.rect, lanes, ch), fb_w, fb_h));
+                view.set_framing(framing_of(
+                    channel_rect(item.rect, channels, ch),
+                    fb_w,
+                    fb_h,
+                ));
                 view.upload(
                     &gpu.device,
                     &gpu.queue,
@@ -914,10 +922,10 @@ pub(crate) fn render(
                     let Some(slot) = spectrograms.get(&item.id) else {
                         continue;
                     };
-                    let lanes = slot.views.len();
+                    let channels = slot.views.len();
                     for (ch, view) in slot.views.iter().enumerate() {
-                        let lane = lane_rect(body, lanes, ch);
-                        let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                        let row = channel_rect(body, channels, ch);
+                        let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
                         if w >= 1.0 && h >= 1.0 {
                             pass.set_viewport(x, y, w, h, 0.0, 1.0);
                             view.draw(&mut pass, renderers);
@@ -936,10 +944,10 @@ pub(crate) fn render(
             {
                 continue;
             }
-            let lanes = slot.views.len();
+            let channels = slot.views.len();
             for (ch, view) in slot.views.iter().enumerate() {
-                let lane = lane_rect(item.rect, lanes, ch);
-                let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                let row = channel_rect(item.rect, channels, ch);
+                let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
                 if w >= 1.0 && h >= 1.0 {
                     pass.set_viewport(x, y, w, h, 0.0, 1.0);
                     view.draw(&mut pass, renderers);
@@ -2023,20 +2031,20 @@ mod tests {
     }
 
     #[test]
-    fn lane_at_picks_the_lane_under_the_cursor() {
+    fn channel_at_picks_the_channel_under_the_cursor() {
         let body = Rect::new(0.0, 0.0, 400.0, 300.0);
-        assert_eq!(lane_at(body, 3, 50.0), 0);
-        assert_eq!(lane_at(body, 3, 150.0), 1);
-        assert_eq!(lane_at(body, 3, 299.0), 2);
-        assert_eq!(lane_at(body, 3, 1000.0), 2, "clamped");
+        assert_eq!(channel_at(body, 3, 50.0), 0);
+        assert_eq!(channel_at(body, 3, 150.0), 1);
+        assert_eq!(channel_at(body, 3, 299.0), 2);
+        assert_eq!(channel_at(body, 3, 1000.0), 2, "clamped");
     }
 
     #[test]
-    fn lanes_split_the_body_evenly_and_share_x() {
+    fn channels_split_the_body_evenly_and_share_x() {
         let body = Rect::new(0.0, 0.0, 400.0, 300.0);
-        let a = lane_rect(body, 3, 0);
-        let b = lane_rect(body, 3, 1);
-        let c = lane_rect(body, 3, 2);
+        let a = channel_rect(body, 3, 0);
+        let b = channel_rect(body, 3, 1);
+        let c = channel_rect(body, 3, 2);
         assert_eq!(a.h, 100.0);
         assert_eq!((a.x, a.w), (b.x, b.w));
         assert_eq!(b.y, 100.0);
@@ -2053,14 +2061,14 @@ mod tests {
     }
 
     #[test]
-    fn stft_lanes_cap_the_hop_for_long_buffers() {
+    fn stft_channels_cap_the_hop_for_long_buffers() {
         // A buffer long enough that hop 8 would exceed MAX_FRAMES: the hop is
-        // raised so every lane fits the texture.
+        // raised so every channel fits the texture.
         let n = 200_000;
         let chan: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
-        let lanes = stft_lanes(vec![chan], 256, 8, 48_000.0);
-        assert_eq!(lanes.len(), 1);
-        assert!(lanes[0].n_frames() <= crate::spectrogram::MAX_FRAMES);
-        assert_eq!(lanes[0].total_samples(), n);
+        let stacks = stft_channels(vec![chan], 256, 8, 48_000.0);
+        assert_eq!(stacks.len(), 1);
+        assert!(stacks[0].n_frames() <= crate::spectrogram::MAX_FRAMES);
+        assert_eq!(stacks[0].total_samples(), n);
     }
 }

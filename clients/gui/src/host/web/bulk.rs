@@ -9,7 +9,7 @@
 //! for a take drawn into the mesh.
 //!
 //! The rule the whole path serves is the crate's: bulk moves as bulk. A
-//! minutes-long take reaches a lane as a peak pyramid over one fetch, never as
+//! minutes-long take reaches a clip as a peak pyramid over one fetch, never as
 //! JSON over OSC.
 
 use super::*;
@@ -105,7 +105,7 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
             ..
         } => {
             let flat = decode_f32(&bytes);
-            let stfts = frame::stft_lanes(
+            let stfts = frame::stft_channels(
                 frame::deinterleave(&flat, channels),
                 window_size,
                 hop,

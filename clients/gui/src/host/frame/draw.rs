@@ -182,19 +182,19 @@ fn amp_or_value_ticks(
     domain: (f32, f32),
     unit: RulerY,
     bit_depth: u32,
-    lane_h: f64,
+    row_h: f64,
     (y0, y_len): (f64, f64),
     m: &Metrics,
 ) -> Vec<ruler::Tick> {
     if domain == crate::waveform::DEFAULT_DOMAIN {
-        return ruler::amp_ticks(unit, lane_h, bit_depth, y0, y_len, m);
+        return ruler::amp_ticks(unit, row_h, bit_depth, y0, y_len, m);
     }
     // The visible slice of the domain. `value_to_display` is affine, so a
     // value's fraction of this slice is exactly its fraction of the window —
     // the ticks land on the samples they name with no margin arithmetic here.
     let lo = crate::waveform::display_to_value(y0, domain.0, domain.1);
     let hi = crate::waveform::display_to_value(y0 + y_len, domain.0, domain.1);
-    ruler::value_ticks(lo as f64, hi as f64, lane_h, m)
+    ruler::value_ticks(lo as f64, hi as f64, row_h, m)
 }
 
 /// What a timeline view's **vertical** axis measures, which is what its cursor
@@ -230,9 +230,9 @@ fn sweep_axis(editor: &EditorProps, vertical: Vertical) -> selection::Vertical {
 
 /// Draws the selection overlay and playhead of one timeline view — both read
 /// off `chrome`, its navigation group's shared state — plus its cursor readout
-/// when the pointer is inside the body. `lanes` is the lane
-/// count of the stacked layout (1 when overlaid), so the vertical readout is
-/// computed within the lane under the cursor.
+/// when the pointer is inside the body. `channels` is the channel count of the
+/// stacked layout (1 when overlaid), so the vertical readout is computed within
+/// the channel's row under the cursor.
 #[allow(clippy::too_many_arguments)] // one chrome pass, all inputs by value
 pub(super) fn draw_editor_overlay(
     mesh: &mut Mesh,
@@ -240,7 +240,7 @@ pub(super) fn draw_editor_overlay(
     body: Rect,
     chrome: &GroupState,
     rate: f64,
-    lanes: usize,
+    channels: usize,
     inputs: &FrameInputs,
     vertical: Vertical,
     theme: &Theme,
@@ -261,7 +261,7 @@ pub(super) fn draw_editor_overlay(
         body,
         nav,
         chrome.selection(),
-        lanes,
+        channels,
         item.editor.value_range(),
         sweep_axis(&item.editor, vertical),
     );
@@ -277,18 +277,18 @@ pub(super) fn draw_editor_overlay(
         && (held.end() as f64) > nav.start
         && (held.start as f64) < nav.start + nav.len
     {
-        let lanes_n = lanes.max(1);
-        let lane = crate::host::frame::lane_rect(body, lanes_n, held.channel.min(lanes_n - 1));
+        let n = channels.max(1);
+        let row = crate::host::frame::channel_rect(body, n, held.channel.min(n - 1));
         let (y0, y_len) = item.editor.y_view();
         let y_of = |v: f32| {
             let d = crate::waveform::value_to_display(v, domain.0, domain.1);
             let rel = 1.0 - ((d - y0) / y_len.max(f64::MIN_POSITIVE));
-            lane.y + (rel as f32) * lane.h
+            row.y + (rel as f32) * row.h
         };
         let r = m.point_radius;
         // One sample or a whole stroke: the same drawing at two lengths. The
         // tethers go down first so the trace and its marks sit on top of them.
-        let clamp = |y: f32| y.clamp(lane.y, lane.y + lane.h);
+        let clamp = |y: f32| y.clamp(row.y, row.y + row.h);
         let mut prev: Option<[f32; 2]> = None;
         let dots = held.values.len() <= 512;
         for (i, (&v, &was)) in held.values.iter().zip(&held.previous).enumerate() {
@@ -329,7 +329,7 @@ pub(super) fn draw_editor_overlay(
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner —
-    // pure math over the view mapping, within the lane under the cursor.
+    // pure math over the view mapping, within the channel's row under the cursor.
     if let Some((cx, cy)) = inputs.world.cursor
         && body.contains(cx, cy)
     {
@@ -348,8 +348,8 @@ pub(super) fn draw_editor_overlay(
             ),
             _ => ruler::readout_time(s, rate, nav.len / rate / body.w.max(1.0) as f64),
         };
-        let lane = lane_rect(body, lanes.max(1), lane_at(body, lanes.max(1), cy));
-        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+        let row = channel_rect(body, channels.max(1), channel_at(body, channels.max(1), cy));
+        let rel = ((cy - row.y as f64) / row.h.max(1.0) as f64).clamp(0.0, 1.0);
         // The cursor's height mapped through the visible vertical window into
         // an absolute display coordinate (0 = axis bottom) — so the readout
         // names exactly what is under the cursor at any vertical zoom/pan.
@@ -362,7 +362,7 @@ pub(super) fn draw_editor_overlay(
                 let f = ruler::display_to_hz(display, nyquist, scale, f_lo);
                 format!("{time}  {} HZ", f.round() as i64)
             }
-            // A trace: the value at the cursor's height within its lane, read
+            // A trace: the value at the cursor's height within its row, read
             // through the same domain the geometry was built with — so the
             // readout names what is under the pointer whatever range the
             // element declared, and not an amplitude it never drew.
@@ -370,7 +370,7 @@ pub(super) fn draw_editor_overlay(
                 let v = crate::waveform::display_to_value(display, domain.0, domain.1);
                 let v = v.clamp(domain.0.min(domain.1), domain.0.max(domain.1));
                 let per_px = crate::waveform::value_per_display(domain.0, domain.1) * y_len
-                    / lane.h.max(1.0) as f64;
+                    / row.h.max(1.0) as f64;
                 let value = if domain == crate::waveform::DEFAULT_DOMAIN {
                     ruler::readout_amp(v as f64, editor.ruler_y, editor.bit_depth, per_px)
                 } else {
@@ -401,7 +401,7 @@ pub(super) fn draw_editor_overlay(
 
 /// Draws the timeline views (waveform/spectrogram): the field, time ruler and
 /// the vertical-ruler strip go into the base `mesh` (under the GPU view); the
-/// border, lane dividers, selection, playhead and cursor readout into `over`
+/// border, channel dividers, selection, playhead and cursor readout into `over`
 /// (drawn over it).
 pub(super) fn draw_timeline_meshes(
     mesh: &mut Mesh,
@@ -415,7 +415,7 @@ pub(super) fn draw_timeline_meshes(
     let m = inputs.metrics;
     // Timeline views (waveform/spectrogram): the field, time ruler and the
     // vertical-ruler strip go into the base mesh (under the GPU view); the
-    // border, lane dividers, selection, playhead and cursor readout into the
+    // border, channel dividers, selection, playhead and cursor readout into the
     // overlay mesh (over it).
     for item in &collected.timeline_items {
         mesh.set_clip(item.clip);
@@ -455,20 +455,20 @@ pub(super) fn draw_timeline_meshes(
                     rate,
                     &item.editor,
                 );
-                let lanes = slot.view.num_channels();
-                // Overlaid traces share one lane (and one amplitude axis).
-                let draw_lanes = if *overlaid { 1 } else { lanes };
+                let n = slot.view.num_channels();
+                // Overlaid traces share one row (and one amplitude axis).
+                let draw_channels = if *overlaid { 1 } else { n };
                 if item.editor.ruler_y != RulerY::Off {
                     // The window the element stated for this frame, which is
                     // the one its picture was uploaded at.
                     let (y0, y_len) = (amp.0, amp.1);
-                    for ch in 0..draw_lanes {
-                        let lane = lane_rect(body, draw_lanes, ch);
+                    for ch in 0..draw_channels {
+                        let row = channel_rect(body, draw_channels, ch);
                         let ticks = amp_or_value_ticks(
                             *domain,
                             item.editor.ruler_y,
                             item.editor.bit_depth,
-                            lane.h as f64,
+                            row.h as f64,
                             (y0, y_len),
                             m,
                         );
@@ -476,12 +476,12 @@ pub(super) fn draw_timeline_meshes(
                             &mut Draw::new(mesh, m, th),
                             body.x,
                             item.rect.x,
-                            lane,
+                            row,
                             &ticks,
                         );
                     }
                 }
-                // The picture itself, into the base mesh: one lane per channel
+                // The picture itself, into the base mesh: one row per channel
                 // through the one signal renderer, placed on the *local* window
                 // (a member of a group draws its own samples where it sits).
                 let local = placed_nav(&nav, item.editor.offset);
@@ -501,12 +501,12 @@ pub(super) fn draw_timeline_meshes(
                 let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
                 // One picture per measure, into the one body: the envelope the
                 // signal reached, then the level it held drawn inside it.
-                for ch in 0..lanes {
-                    let lane = lane_rect(body, draw_lanes, if *overlaid { 0 } else { ch });
+                for ch in 0..n {
+                    let row = channel_rect(body, draw_channels, if *overlaid { 0 } else { ch });
                     for measure in measures.iter() {
-                        crate::waveform::draw_lane(
+                        crate::waveform::draw_channel(
                             mesh,
-                            lane,
+                            row,
                             &trace,
                             ch,
                             &local,
@@ -527,9 +527,9 @@ pub(super) fn draw_timeline_meshes(
                         );
                     }
                 }
-                for ch in 1..draw_lanes {
-                    let lane = lane_rect(body, draw_lanes, ch);
-                    over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
+                for ch in 1..draw_channels {
+                    let row = channel_rect(body, draw_channels, ch);
+                    over.rect(Rect::new(row.x, row.y, row.w, 1.0), th.channel_divider);
                 }
                 draw_editor_overlay(
                     &mut *over,
@@ -537,7 +537,7 @@ pub(super) fn draw_timeline_meshes(
                     body,
                     &chrome,
                     rate,
-                    draw_lanes,
+                    draw_channels,
                     inputs,
                     Vertical::Value(*domain),
                     th,
@@ -570,13 +570,13 @@ pub(super) fn draw_timeline_meshes(
                     rate,
                     &item.editor,
                 );
-                let lanes = slot.views.len();
-                for ch in 0..lanes {
-                    let lane = lane_rect(body, lanes, ch);
+                let n = slot.views.len();
+                for ch in 0..n {
+                    let row = channel_rect(body, n, ch);
                     if ch > 0 {
                         over.rect(
-                            Rect::new(lane.x, lane.y, lane.w, m.divider_w),
-                            th.lane_divider,
+                            Rect::new(row.x, row.y, row.w, m.divider_w),
+                            th.channel_divider,
                         );
                     }
                     if item.editor.ruler_y != RulerY::Off {
@@ -584,7 +584,7 @@ pub(super) fn draw_timeline_meshes(
                             nyquist,
                             look.freq_scale,
                             f_lo,
-                            lane.h as f64,
+                            row.h as f64,
                             freq.0,
                             freq.1,
                             m,
@@ -593,7 +593,7 @@ pub(super) fn draw_timeline_meshes(
                             &mut Draw::new(mesh, m, th),
                             body.x,
                             item.rect.x,
-                            lane,
+                            row,
                             &ticks,
                         );
                     }
@@ -612,7 +612,7 @@ pub(super) fn draw_timeline_meshes(
                     body,
                     &chrome,
                     rate,
-                    lanes,
+                    n,
                     inputs,
                     Vertical::Frequency(nyquist, look.freq_scale, f_lo),
                     th,

@@ -38,7 +38,7 @@ pub(crate) fn hit(
     fb_h: u32,
     x: f64,
     y: f64,
-    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+    rows: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<Hit> {
     let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut found = None;
@@ -62,7 +62,7 @@ pub(crate) fn hit(
         scale: p.scale,
         indent: p.indent,
         kind: p.widget.kind.clone(),
-        chain: chain_of(host, def_id, &placed, i, y, lanes),
+        chain: chain_of(host, def_id, &placed, i, y, rows),
     })
 }
 
@@ -86,7 +86,7 @@ pub(crate) fn sole_time_axis(
     def_id: i32,
     fb_w: u32,
     fb_h: u32,
-    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+    rows: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<SoleAxis> {
     let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut key = None;
@@ -109,7 +109,7 @@ pub(crate) fn sole_time_axis(
             lane_ids.push(id);
         }
         if found.is_none() {
-            found = time_axis(host, def_id, p, p.indent, lanes).map(|axis| (id, axis));
+            found = time_axis(host, def_id, p, p.indent, rows).map(|axis| (id, axis));
         }
     }
     let (id, axis) = found?;
@@ -129,7 +129,7 @@ fn chain_of(
     placed: &[layout::Placed],
     i: usize,
     y: f64,
-    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+    rows: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Vec<Frame> {
     let mut chain = Vec::new();
     let mut at = Some(i);
@@ -154,7 +154,7 @@ fn chain_of(
             // every member of one axis starts it at the same x, and the layout
             // already resolved it (`Placed::indent`).
             _ if p.widget.is_timeline() => {
-                time_axis(host, def_id, &p, p.indent, lanes).map(Coords::Time)
+                time_axis(host, def_id, &p, p.indent, rows).map(Coords::Time)
             }
             _ => None,
         };
@@ -225,7 +225,7 @@ fn time_axis(
     def_id: i32,
     p: &layout::Placed,
     indent: f32,
-    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+    rows: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
     let ruler_on = p.widget.kind.editor()?.ruler != super::super::widget::Ruler::Off;
@@ -256,9 +256,9 @@ fn time_axis(
             strip: Rect::new(p.rect.x, p.rect.y, (body.x - p.rect.x).max(0.0), p.rect.h),
             start,
             len,
-            lanes: p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1),
-            lane_h: (body.h as f64
-                / p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1) as f64)
+            rows: p.widget.id.map_or(1, |id| rows(id, &p.widget.kind)).max(1),
+            row_h: (body.h as f64
+                / p.widget.id.map_or(1, |id| rows(id, &p.widget.kind)).max(1) as f64)
                 .max(1.0),
         }),
     })

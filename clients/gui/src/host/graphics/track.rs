@@ -808,13 +808,13 @@ pub(crate) fn draw_take(
         return;
     }
     // **Every channel is drawn**, stacked, exactly as the standalone view
-    // stacks its lanes: a clip is a picture of the contents and a stereo take
+    // stacks its rows: a clip is a picture of the contents and a stereo take
     // whose right channel is nowhere on it is a picture of half of one — which
     // is also what an edit on that channel would land in, invisibly. `overlay`
     // is the same choice the standalone view offers, and it arrives the same
     // way (the element's own prop), so the two never disagree about what a
     // channel is.
-    let lanes = if overlay { 1 } else { trace.channels().max(1) };
+    let rows = if overlay { 1 } else { trace.channels().max(1) };
     // **The window is drawn a run at a time**, each run a stretch of clip time
     // over which it stays inside the contents — one run for the ordinary case,
     // one per iteration for a looping clip, and none at all where a clip
@@ -824,27 +824,22 @@ pub(crate) fn draw_take(
     // whether a clip loops.
     let runs = window.runs(local.start, local.start + local.len, dur, total);
     for ch in 0..trace.channels().max(1) {
-        let lane = crate::host::frame::lane_rect(cr, lanes, if overlay { 0 } else { ch });
-        if lane.h <= 0.0 {
+        let row = crate::host::frame::channel_rect(cr, rows, if overlay { 0 } else { ch });
+        if row.h <= 0.0 {
             continue;
         }
-        let y_at = move |v: f32| lane.y + lane.h * (1.0 - fraction(v, min, max));
+        let y_at = move |v: f32| row.y + row.h * (1.0 - fraction(v, min, max));
         // The line and the fill read one rule, so a take cannot be filled to a
         // baseline that was never drawn (or drawn one it does not reach).
         if let Some(b) = crate::waveform::baseline_of(min, max) {
             let y = y_at(b);
-            mesh.line(
-                [lane.x, y],
-                [lane.x + lane.w, y],
-                m.divider_w,
-                theme.baseline,
-            );
+            mesh.line([row.x, y], [row.x + row.w, y], m.divider_w, theme.baseline);
         }
         for &(from, to, source0) in &runs {
             // The run's own rectangle: the pixels its stretch of clip time
             // covers, which is what bounds the drawing to it.
             let (x0, x1) = (local_x(cr, local, from), local_x(cr, local, to));
-            let run_rect = Rect::new(x0, lane.y, (x1 - x0).max(0.0), lane.h);
+            let run_rect = Rect::new(x0, row.y, (x1 - x0).max(0.0), row.h);
             if run_rect.w < 0.5 {
                 continue;
             }
@@ -1182,7 +1177,7 @@ mod tests {
         let below = drawn.y + drawn.h - mid;
         assert!(
             above > below,
-            "the lanes hold their own channel: {above} above, {below} below"
+            "the rows hold their own channel: {above} above, {below} below"
         );
     }
 

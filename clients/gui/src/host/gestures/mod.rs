@@ -117,8 +117,8 @@ impl GestureCtx {
     /// The lane count a widget stacks on screen — the divisor for
     /// lane-relative y gestures. The two halves of one answer: what the front
     /// uploaded, and what the widget makes of it.
-    fn lanes(&self, id: i32, kind: &WidgetKind) -> usize {
-        kind.lanes(self.slot_channels.get(&id).copied().unwrap_or(1))
+    fn rows(&self, id: i32, kind: &WidgetKind) -> usize {
+        kind.rows(self.slot_channels.get(&id).copied().unwrap_or(1))
     }
 }
 
@@ -245,13 +245,13 @@ enum Drag {
     },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,
-    /// `lane_h` the lane height in device pixels (absolute panning, so a
+    /// `row_h` the channel row's height in device pixels (absolute panning, so a
     /// clamped edge never drifts).
     PanY {
         id: i32,
         origin_y: f64,
         y_start: f64,
-        lane_h: f64,
+        row_h: f64,
     },
     /// Panning a spectrum's **frequency** window from a drag anywhere on its
     /// axis: `x_start` is the window snapshot at the press, `body_w` the pixels

@@ -77,7 +77,7 @@ impl SignalElement {
                 ),
             ))
         } else {
-            SlotFill::Texture(crate::host::frame::stft_lanes(
+            SlotFill::Texture(crate::host::frame::stft_channels(
                 crate::host::frame::deinterleave(&data.samples, data.channels),
                 self.spectral.fft_size,
                 self.spectral.hop,

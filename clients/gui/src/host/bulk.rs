@@ -173,7 +173,7 @@ fn map_plot_samples(_path: &Path, _channels: usize) -> Option<Arc<[f32]>> {
 }
 
 /// Reads `path` as raw little-endian `f32` de-interleaved into all `channels`
-/// (the spectrogram's lane source). Unix-only, like the rest of the mmap path.
+/// (the spectrogram's row source). Unix-only, like the rest of the mmap path.
 #[cfg(unix)]
 fn map_raw_channels(path: &Path, channels: usize) -> Option<Vec<Vec<f32>>> {
     use super::mapfile::MappedFile;

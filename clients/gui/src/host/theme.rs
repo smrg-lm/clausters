@@ -121,8 +121,9 @@ theme_roles! {
     header = [0.14, 0.16, 0.20, 1.0];
     /// The alternate, darker lane (black-key rows, the velocity lane).
     lane_alt = [0.07, 0.08, 0.10, 1.0];
-    /// The divider line between stacked lanes.
-    lane_divider = [0.30, 0.33, 0.38, 0.8];
+    /// The divider line between stacked channels (a multichannel view's
+    /// rows, never a track's lanes).
+    channel_divider = [0.30, 0.33, 0.38, 0.8];
     /// A view's reference grid (the phase scope's cross and square).
     grid = [0.30, 0.34, 0.40, 0.6];
     /// A fine grid line (the piano roll's row lines).

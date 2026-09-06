@@ -14,7 +14,7 @@ use crate::spectrogram::FreqScale;
 use super::controls::body_rect;
 use super::signal::trace;
 use crate::host::font;
-use crate::host::frame::lane_rect;
+use crate::host::frame::channel_rect;
 use crate::host::layout::Rect;
 use crate::host::live::TapWindow;
 use crate::host::paint::{Color, Draw};
@@ -76,7 +76,7 @@ pub fn draw_scope(
     // measure, the envelope under the level body.
     for measure in measures.iter() {
         let color = trace::measure_color(d.theme, measure, d.theme.trace);
-        trace_lane(d, body, history, 1, 0, (min, max), color, measure);
+        trace_row(d, body, history, 1, 0, (min, max), color, measure);
     }
 }
 
@@ -100,20 +100,20 @@ pub(crate) struct WaveParams<'a> {
 }
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
-/// lanes (or color-coded `overlay` traces in one field), each an
+/// rows, one per channel (or color-coded `overlay` traces in one field), each an
 /// already-aligned display window (see `clausters_core::oscil`) over `[min, max]` —
 /// a polyline while the data fits the width, a per-column min/max envelope
 /// when it does not (never resolving finer than the screen). The chrome names
 /// what the trigger did: a faint line marks the `trigger` level in the first
-/// channel's lane (where the alignment is searched) and a `lock`/`free`
+/// channel's row (where the alignment is searched) and a `lock`/`free`
 /// read-out says whether it fired. `ruler` is the x strip in milliseconds of
-/// the window, `ruler_y` the per-lane value strip. An empty window draws just
+/// the window, `ruler_y` the per-row value strip. An empty window draws just
 /// the framed field.
 pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     label_strip(d, p.label, rect);
     let m = d.m;
     let mut body = body_rect(rect, p.label.is_some(), m);
-    let lanes = if p.overlay {
+    let channels = if p.overlay {
         1
     } else {
         p.window.channels.max(1)
@@ -121,8 +121,8 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     // Height first: the x strip takes it, and it is what decides how finely the
     // value axis steps and therefore how wide the labels the y strip holds are.
     let takes_x = p.ruler && body.h > m.ruler_h * 2.0;
-    let lane_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / lanes as f32;
-    let want_w = ruler::value_strip_w(p.min as f64, p.max as f64, lane_h, m);
+    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / channels as f32;
+    let want_w = ruler::value_strip_w(p.min as f64, p.max as f64, row_h, m);
     let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -153,22 +153,22 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
     for ch in 0..channels {
-        let lane = lane_rect(body, lanes, if p.overlay { 0 } else { ch });
+        let row = channel_rect(body, channels, if p.overlay { 0 } else { ch });
         if ch > 0 && !p.overlay {
             d.mesh.rect(
-                Rect::new(body.x, lane.y, body.w, m.divider_w),
-                d.theme.lane_divider,
+                Rect::new(body.x, row.y, body.w, m.divider_w),
+                d.theme.channel_divider,
             );
         }
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = strip_x
         {
-            let ticks = ruler::value_ticks(p.min as f64, p.max as f64, lane.h as f64, m);
-            ruler::draw_ticks_v(d, body.x, strip_x, lane, &ticks);
+            let ticks = ruler::value_ticks(p.min as f64, p.max as f64, row.h as f64, m);
+            ruler::draw_ticks_v(d, body.x, strip_x, row, &ticks);
         }
         if ch == 0 && frames > 0 {
             // The trigger level, in the channel the alignment is searched in.
-            let y = lane.y + lane.h * (1.0 - fraction(p.trigger, p.min, p.max));
+            let y = row.y + row.h * (1.0 - fraction(p.trigger, p.min, p.max));
             d.mesh
                 .rect(Rect::new(body.x, y, body.w, m.divider_w), d.theme.trigger);
         }
@@ -178,9 +178,9 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
             d.theme.trace
         };
         for measure in p.measures.iter() {
-            trace_lane(
+            trace_row(
                 d,
-                lane,
+                row,
                 &p.window.samples,
                 channels,
                 ch,
@@ -195,7 +195,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     }
 }
 
-/// One channel of a live source into `lane`, through the **one** column source
+/// One channel of a live source into `row`, through the **one** column source
 /// and mesh renderer every view of a signal against time reads
 /// ([`trace::draw_channel`]): a per-column min/max envelope while the frames
 /// outnumber the pixels, a polyline once they do not.
@@ -206,9 +206,9 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
 /// and no baseline. A live view is the same drawing of the same signal as a
 /// stored one; only where the samples come from differs.
 #[allow(clippy::too_many_arguments)]
-fn trace_lane(
+fn trace_row(
     d: &mut Draw,
-    lane: Rect,
+    row: Rect,
     samples: &[f32],
     channels: usize,
     ch: usize,
@@ -222,16 +222,16 @@ fn trace_lane(
     if frames < 2 {
         return;
     }
-    // A live window is drawn whole: its span is the lane, end to end.
+    // A live window is drawn whole: its span is the row, end to end.
     let span = (frames - 1) as f64;
     trace::draw_channel(
         mesh,
-        lane,
+        row,
         &trace::Trace::samples(samples, channels),
         ch,
-        |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
-        |s| lane.x + (s / span) as f32 * lane.w,
-        |v| lane.y + lane.h * (1.0 - fraction(v, min, max)),
+        |x| (x - row.x) as f64 / row.w.max(1.0) as f64 * span,
+        |s| row.x + (s / span) as f32 * row.w,
+        |v| row.y + row.h * (1.0 - fraction(v, min, max)),
         trace::TraceStyle::new(color, m.trace_w)
             .with_dots(m.point_radius)
             .with_measure(measure),
@@ -329,7 +329,7 @@ mod tests {
     /// The live views read the **one** trace renderer now, so a history longer
     /// than the body's pixels summarizes into min/max columns instead of
     /// drawing a segment per sample. This module used to have a polyline of its
-    /// own that stepped `lane.w / (frames - 1)` however many frames there were,
+    /// own that stepped `row.w / (frames - 1)` however many frames there were,
     /// which aliases and costs the data rather than the screen — the rule every
     /// other view of a signal has always followed.
     #[test]
@@ -355,19 +355,19 @@ mod tests {
         assert!(!mesh.is_empty());
     }
 
-    /// A live lane is drawn by the shared renderer, so it inks what the other
+    /// A live row is drawn by the shared renderer, so it inks what the other
     /// two ink: an offset signal is a band at its own level (never a fill from
     /// the baseline) and a signal that swings across zero is the solid body.
     /// Before the fold this module drew a hairline envelope of its own, so a
     /// live view never quite matched the stored view beside it.
     #[test]
-    fn a_live_lane_inks_what_every_other_trace_inks() {
-        let lane = Rect::new(0.0, 0.0, 100.0, 100.0);
+    fn a_live_row_inks_what_every_other_trace_inks() {
+        let row = Rect::new(0.0, 0.0, 100.0, 100.0);
         let draw = |samples: &[f32], min: f32, max: f32| {
             let mut mesh = Mesh::new();
-            trace_lane(
+            trace_row(
                 &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
-                lane,
+                row,
                 samples,
                 1,
                 0,
@@ -375,18 +375,18 @@ mod tests {
                 [1.0, 1.0, 1.0, 1.0],
                 trace::Measure::Peak,
             );
-            mesh.extent().expect("the lane drew").h
+            mesh.extent().expect("the row drew").h
         };
         let offset = vec![0.8f32; 4_000];
         assert!(
-            draw(&offset, -1.0, 1.0) < lane.h * 0.05,
+            draw(&offset, -1.0, 1.0) < row.h * 0.05,
             "an offset signal is a band where the samples are"
         );
         let swinging: Vec<f32> = (0..4_000)
             .map(|i| if i % 2 == 0 { 0.9 } else { -0.9 })
             .collect();
         assert!(
-            draw(&swinging, -1.0, 1.0) > lane.h * 0.8,
+            draw(&swinging, -1.0, 1.0) > row.h * 0.8,
             "and a swinging one is the body its own data fills"
         );
     }

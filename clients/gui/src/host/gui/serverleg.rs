@@ -128,7 +128,7 @@ impl App {
                 } else {
                     sample_rate
                 };
-                let stfts = frame::stft_lanes(
+                let stfts = frame::stft_channels(
                     frame::deinterleave(&take.read_all(), channels),
                     window_size,
                     hop,
@@ -503,7 +503,7 @@ impl App {
                     } else {
                         sample_rate
                     };
-                    let stfts = frame::stft_lanes(
+                    let stfts = frame::stft_channels(
                         frame::deinterleave(&samples, channels),
                         window_size,
                         hop,

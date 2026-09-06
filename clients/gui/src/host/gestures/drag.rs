@@ -184,7 +184,7 @@ impl Gestures {
                 id,
                 origin_y,
                 y_start,
-                lane_h,
+                row_h,
             } => {
                 // Dragging down moves the window down with the cursor;
                 // absolute from the snapshot, so a clamped edge never drifts.
@@ -192,7 +192,7 @@ impl Gestures {
                     .widget_kind(def_id, id)
                     .and_then(WidgetKind::editor)
                     .map_or(1.0, |e| e.y_view().1);
-                let start = y_start + (cy - origin_y) / lane_h * y_len;
+                let start = y_start + (cy - origin_y) / row_h * y_len;
                 set_y_view(host, &mut out, def_id, id, start, y_len);
             }
             Drag::ScrollPan {

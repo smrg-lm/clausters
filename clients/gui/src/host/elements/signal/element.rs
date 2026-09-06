@@ -343,8 +343,8 @@ impl Element for SignalElement {
         SignalElement::measured_gutter(self, rect, m)
     }
 
-    fn lanes(&self, uploaded: usize) -> usize {
-        SignalElement::lanes(self, uploaded)
+    fn rows(&self, uploaded: usize) -> usize {
+        SignalElement::rows(self, uploaded)
     }
 
     fn centres_y_zoom(&self) -> bool {
@@ -387,8 +387,14 @@ impl Element for SignalElement {
         trace.has_raw().then(|| trace.at(channel, frame as f64))
     }
 
-    fn value_axis(&self, rect: Rect, indent: f32, m: &Metrics, lanes: usize) -> Option<ValueAxis> {
-        SignalElement::value_axis(self, rect, indent, m, lanes)
+    fn value_axis(
+        &self,
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        channels: usize,
+    ) -> Option<ValueAxis> {
+        SignalElement::value_axis(self, rect, indent, m, channels)
     }
 
     fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {

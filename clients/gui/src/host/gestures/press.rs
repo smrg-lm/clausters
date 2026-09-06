@@ -110,7 +110,7 @@ impl Gestures {
                 id,
                 origin_y: cy,
                 y_start: y.start,
-                lane_h: y.lane_h,
+                row_h: y.row_h,
             });
             return out;
         }
@@ -164,7 +164,7 @@ impl Gestures {
         }
         let Some(sole) =
             interact::sole_time_axis(host, ctx.def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
-                ctx.lanes(id, kind)
+                ctx.rows(id, kind)
             })
         else {
             return false;
@@ -407,7 +407,7 @@ impl Gestures {
                     return false;
                 }
                 let index = frames.round().max(0.0) as usize;
-                let channel = crate::host::frame::lane_at(value.body, value.lanes.max(1), cy);
+                let channel = crate::host::frame::channel_at(value.body, value.rows.max(1), cy);
                 // What it is now, so the intent that leaves on release is
                 // absolute *and* carries its own inverse.
                 let Some(previous) = host
@@ -473,7 +473,7 @@ impl Gestures {
                     return false;
                 }
                 let index = frames.round().max(0.0) as usize;
-                let channel = crate::host::frame::lane_at(value.body, value.lanes.max(1), cy);
+                let channel = crate::host::frame::channel_at(value.body, value.rows.max(1), cy);
                 let Some(previous) = host
                     .window_def(ctx.def_id)
                     .and_then(|t| t.find(id))

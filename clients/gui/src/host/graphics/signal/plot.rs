@@ -6,7 +6,7 @@
 //! zoom/pan, the plot draws a signal once through the flat-geometry painter
 //! ([`crate::host::paint`]) — the case the catalog calls "a simple static plot of an
 //! NRT-generated signal/file". It does not navigate or edit; what it adds over
-//! a bare trace is measurement: adjustable x/y rulers, multichannel lanes, an
+//! a bare trace is measurement: adjustable x/y rulers, multichannel rows, an
 //! auto-fitted value range for arbitrary numeric sequences, and a hover
 //! readout naming the exact sample (or spectral bin) under the cursor.
 //!
@@ -33,7 +33,7 @@ use crate::spectrogram::{FreqScale, Stft};
 
 use super::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
-use crate::host::frame::{lane_at, lane_rect};
+use crate::host::frame::{channel_at, channel_rect};
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters::{self, fraction};
 use crate::host::layout::Rect;
@@ -143,7 +143,7 @@ pub struct PlotParams<'a> {
     pub samples: &'a [f32],
     pub channels: usize,
     pub view: PlotView,
-    /// Overlaid per-color traces instead of stacked lanes.
+    /// Overlaid per-color traces instead of stacked channels.
     pub overlay: bool,
     /// 0 = unknown (the x axis then reads in sample/index counts).
     pub sample_rate: f64,
@@ -179,12 +179,12 @@ struct Geom {
     strip_x: Option<f32>,
     /// The x-ruler strip under the body, when the ruler is on.
     x_strip: Option<Rect>,
-    lanes: usize,
+    channels: usize,
 }
 
 fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
     let mut body = body_rect(rect, p.label.is_some(), m);
-    let lanes = if p.overlay {
+    let channels = if p.overlay {
         1
     } else {
         p.channels.max(1).min(frames_of(p).max(1))
@@ -194,12 +194,12 @@ fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
     // first, because it is what decides how finely the value axis steps and
     // therefore how wide the labels the y strip must hold are.
     let takes_x = p.ruler != Ruler::Off && body.h > m.ruler_h * 2.0;
-    let lane_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / lanes.max(1) as f32;
+    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / channels.max(1) as f32;
     let (lo, hi) = match p.view {
         PlotView::Signal => value_range(p),
         PlotView::Spectrum => (p.db_floor, p.db_ceil.max(p.db_floor + 1.0)),
     };
-    let want_w = ruler::value_strip_w(lo as f64, hi as f64, lane_h, m);
+    let want_w = ruler::value_strip_w(lo as f64, hi as f64, row_h, m);
     let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -214,7 +214,7 @@ fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
         body,
         strip_x,
         x_strip,
-        lanes,
+        channels,
     }
 }
 
@@ -257,7 +257,7 @@ fn x_unit(p: &PlotParams) -> TimeUnit<'static> {
 }
 
 /// Draws a plot into `mesh`: the label strip, the framed field, the rulers and
-/// the view's traces (stacked per-channel lanes, or overlaid when asked).
+/// the view's traces (stacked one channel per row, or overlaid when asked).
 pub fn draw(d: &mut Draw, rect: Rect, p: &PlotParams) {
     meters::label_strip(d, p.label, rect);
     let (mesh, m, theme) = d.parts();
@@ -267,9 +267,9 @@ pub fn draw(d: &mut Draw, rect: Rect, p: &PlotParams) {
     }
     mesh.rect(g.body, theme.track);
     mesh.border(g.body, m.divider_w, theme.frame_plot);
-    for lane in 1..g.lanes {
-        let r = lane_rect(g.body, g.lanes, lane);
-        mesh.rect(Rect::new(r.x, r.y, r.w, m.divider_w), theme.lane_divider);
+    for row in 1..g.channels {
+        let r = channel_rect(g.body, g.channels, row);
+        mesh.rect(Rect::new(r.x, r.y, r.w, m.divider_w), theme.channel_divider);
     }
     match p.view {
         PlotView::Signal => draw_signal(&mut Draw::new(mesh, m, theme), &g, p),
@@ -287,34 +287,29 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
     }
     for ch in 0..channels {
-        let lane = lane_rect(g.body, g.lanes, if p.overlay { 0 } else { ch });
+        let row = channel_rect(g.body, g.channels, if p.overlay { 0 } else { ch });
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
-                let ticks = ruler::value_ticks(lo as f64, hi as f64, lane.h as f64, m);
+                let ticks = ruler::value_ticks(lo as f64, hi as f64, row.h as f64, m);
                 ruler::draw_ticks_v(
                     &mut Draw::new(mesh, m, theme),
                     g.body.x,
                     strip_x,
-                    lane,
+                    row,
                     &ticks,
                 );
             }
             // A zero baseline, when 0 is within the displayed range — the same
             // rule the columns are filled to.
             if let Some(b) = crate::waveform::baseline_of(lo, hi) {
-                let y = lane.y + lane.h * (1.0 - fraction(b, lo, hi));
-                mesh.line(
-                    [lane.x, y],
-                    [lane.x + lane.w, y],
-                    m.divider_w,
-                    theme.baseline,
-                );
+                let y = row.y + row.h * (1.0 - fraction(b, lo, hi));
+                mesh.line([row.x, y], [row.x + row.w, y], m.divider_w, theme.baseline);
             }
         }
         if n < 2 {
             continue;
         }
-        // The whole sequence over the lane's width, through the one column
+        // The whole sequence over the row's width, through the one column
         // source every signal view reads: a polyline while samples are wider
         // than a couple of pixels, the min/max envelope once they are not.
         let span = (n - 1) as f64;
@@ -323,12 +318,12 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         for measure in p.measures.iter() {
             trace::draw_channel(
                 mesh,
-                lane,
+                row,
                 &Trace::samples(p.samples, channels),
                 ch,
-                |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
-                |s| lane.x + (s / span) as f32 * lane.w,
-                |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
+                |x| (x - row.x) as f64 / row.w.max(1.0) as f64 * span,
+                |s| row.x + (s / span) as f32 * row.w,
+                |v| row.y + row.h * (1.0 - fraction(v, lo, hi)),
                 TraceStyle::new(
                     trace::measure_color(theme, measure, theme.series(ch)),
                     m.trace_w,
@@ -370,26 +365,28 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
         if curve.is_empty() {
             continue;
         }
-        let lane = lane_rect(g.body, g.lanes, if p.overlay { 0 } else { ch % g.lanes });
+        let row = channel_rect(
+            g.body,
+            g.channels,
+            if p.overlay { 0 } else { ch % g.channels },
+        );
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = g.strip_x
         {
-            let ticks = ruler::value_ticks(dlo as f64, dhi as f64, lane.h as f64, m);
+            let ticks = ruler::value_ticks(dlo as f64, dhi as f64, row.h as f64, m);
             ruler::draw_ticks_v(
                 &mut Draw::new(mesh, m, theme),
                 g.body.x,
                 strip_x,
-                lane,
+                row,
                 &ticks,
             );
         }
         let color = theme.series(ch);
-        let columns = lane.w.max(1.0) as usize;
+        let columns = row.w.max(1.0) as usize;
         let bin_at = |c: usize| bin_at_column(c, columns, spec, p.freq_scale, f_lo, p.x_view);
-        let y_at = |db: f32| lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
-        super::spectrum::polyline(
-            mesh, &lane, columns, &bin_at, &y_at, curve, color, m.trace_w,
-        );
+        let y_at = |db: f32| row.y + row.h * (1.0 - fraction(db, dlo, dhi));
+        super::spectrum::polyline(mesh, &row, columns, &bin_at, &y_at, curve, color, m.trace_w);
     }
 }
 
@@ -425,8 +422,8 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
         return;
     }
     let frac = ((cx - g.body.x as f64) / g.body.w.max(1.0) as f64).clamp(0.0, 1.0);
-    let lane_i = lane_at(g.body, g.lanes, cy);
-    let lane = lane_rect(g.body, g.lanes, lane_i);
+    let channel_i = channel_at(g.body, g.channels, cy);
+    let row = channel_rect(g.body, g.channels, channel_i);
     let text = match p.view {
         PlotView::Signal => {
             let channels = p.channels.max(1);
@@ -435,12 +432,12 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
                 return;
             }
             let i = ((frac * (n - 1) as f64).round() as usize).min(n - 1);
-            let ch = channel_under_cursor(p, &g, lane_i, i, cy);
+            let ch = channel_under_cursor(p, &g, channel_i, i, cy);
             let v = p.samples[i * channels + ch];
             let (lo, hi) = value_range(p);
-            let x = lane.x + lane.w * (i as f64 / (n - 1).max(1) as f64) as f32;
-            let y = lane.y + lane.h * (1.0 - fraction(v, lo, hi));
-            hairline_and_dot(&mut Draw::new(over, m, theme), lane, x, y);
+            let x = row.x + row.w * (i as f64 / (n - 1).max(1) as f64) as f32;
+            let y = row.y + row.h * (1.0 - fraction(v, lo, hi));
+            hairline_and_dot(&mut Draw::new(over, m, theme), row, x, y);
             let pos = match x_unit(p) {
                 TimeUnit::Seconds => {
                     let secs_per_px = (n - 1) as f64 / p.sample_rate / g.body.w.max(1.0) as f64;
@@ -466,7 +463,7 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
             let ch = if p.overlay {
                 0
             } else {
-                lane_i.min(spec.curves.len().saturating_sub(1))
+                channel_i.min(spec.curves.len().saturating_sub(1))
             };
             let curve = match spec.curves.get(ch) {
                 Some(c) if !c.is_empty() => c,
@@ -476,8 +473,8 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
                 .min(curve.len() - 1);
             let db = curve[bin];
             let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
-            let y = lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
-            hairline_and_dot(&mut Draw::new(over, m, theme), lane, cx as f32, y);
+            let y = row.y + row.h * (1.0 - fraction(db, dlo, dhi));
+            hairline_and_dot(&mut Draw::new(over, m, theme), row, cx as f32, y);
             let tag = if spec.curves.len() > 1 {
                 format!("CH{ch} ")
             } else {
@@ -502,21 +499,21 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
     );
 }
 
-/// The channel the readout names: the lane's own channel when stacked; with
+/// The channel the readout names: the row's own channel when stacked; with
 /// overlaid traces, the channel whose value at sample `i` is nearest the
 /// cursor's height.
-fn channel_under_cursor(p: &PlotParams, g: &Geom, lane_i: usize, i: usize, cy: f64) -> usize {
+fn channel_under_cursor(p: &PlotParams, g: &Geom, channel_i: usize, i: usize, cy: f64) -> usize {
     let channels = p.channels.max(1);
     if !p.overlay {
-        return lane_i.min(channels - 1);
+        return channel_i.min(channels - 1);
     }
-    let lane = lane_rect(g.body, g.lanes, 0);
+    let row = channel_rect(g.body, g.channels, 0);
     let (lo, hi) = value_range(p);
     (0..channels)
         .min_by(|&a, &b| {
             let dist = |ch: usize| {
                 let v = p.samples[i * channels + ch];
-                let y = lane.y + lane.h * (1.0 - fraction(v, lo, hi));
+                let y = row.y + row.h * (1.0 - fraction(v, lo, hi));
                 (y as f64 - cy).abs()
             };
             dist(a).total_cmp(&dist(b))
@@ -524,11 +521,11 @@ fn channel_under_cursor(p: &PlotParams, g: &Geom, lane_i: usize, i: usize, cy: f
         .unwrap_or(0)
 }
 
-/// The cursor hairline spanning the lane, plus a marker dot on the trace.
-fn hairline_and_dot(d: &mut Draw, lane: Rect, x: f32, y: f32) {
+/// The cursor hairline spanning the row, plus a marker dot on the trace.
+fn hairline_and_dot(d: &mut Draw, row: Rect, x: f32, y: f32) {
     let (over, _m, theme) = d.parts();
     over.rect(
-        Rect::new(x, lane.y, 1.0, lane.h),
+        Rect::new(x, row.y, 1.0, row.h),
         with_alpha(theme.text, 0.35),
     );
     over.rect(
@@ -668,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn stacked_channels_draw_one_lane_each() {
+    fn stacked_channels_draw_one_row_each() {
         // Two interleaved channels: the stacked draw has a divider and two
         // traces, so it carries more geometry than the same data as mono.
         let two: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.1).sin()).collect();
@@ -685,7 +682,7 @@ mod tests {
             &params(&two, 1),
         );
         assert!(stacked.vertex_count() > mono.vertex_count());
-        // Overlay folds both traces into one lane, still drawing both.
+        // Overlay folds both traces into one row, still drawing both.
         let mut over = Mesh::new();
         let mut p = params(&two, 2);
         p.overlay = true;

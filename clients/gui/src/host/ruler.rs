@@ -612,10 +612,10 @@ const DB_RUNGS: [f64; 17] = [
     -3.0, -2.0, -1.0, // 0 dB is handled as the walk's endpoint below.
 ];
 
-/// The ticks of an amplitude ruler beside a waveform lane of `height_px`
+/// The ticks of an amplitude ruler beside a waveform row of `height_px`
 /// device pixels, in the vertical unit `unit` (`Off`/`Hz` yield none), laid
 /// out over the visible display window `[y_start, y_start + y_len)` of the
-/// lane's vertical axis (`0, 1` = no zoom). The positions respect the same
+/// row's vertical axis (`0, 1` = no zoom). The positions respect the same
 /// `AMP_MARGIN` the waveform geometry applies, so a tick sits exactly on the
 /// amplitude it names. The linear units (`Norm`, `Percent`, `Bits`) share the
 /// 1-2-5 geometry and differ only in labels; `Db` walks the fixed dBFS rung
@@ -634,8 +634,8 @@ pub(crate) fn amp_ticks(
         return Vec::new();
     }
     let margin = AMP_MARGIN as f64;
-    // Absolute display coordinate of an amplitude (0 = lane bottom at no
-    // zoom), then mapped through the visible window into the lane fraction.
+    // Absolute display coordinate of an amplitude (0 = the row's bottom at no
+    // zoom), then mapped through the visible window into the row's fraction.
     let frac_of = |amp: f64| ((amp * margin + 1.0) / 2.0 - y_start) / y_len;
     let visible = |f: f64| (-1e-9..=1.0 + 1e-9).contains(&f);
     match unit {
@@ -1128,10 +1128,10 @@ pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
     }
 }
 
-/// Draws one lane's worth of vertical-ruler ticks into the strip left of the
+/// Draws one row's worth of vertical-ruler ticks into the strip left of the
 /// body: tick marks against the body's left edge at `body_x` (longer when
 /// labeled), labels right-aligned beside them and kept inside the strip
-/// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
+/// starting at `strip_x`. `frac` 0 is the row's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
 /// The clear space `draw_ticks_v` leaves between a label's right edge and the
 /// body it labels — so the width a strip must reserve is its widest label plus
@@ -1163,9 +1163,9 @@ pub(crate) fn ticks_width(ticks: &[Tick], metrics: &Metrics) -> f32 {
 
 /// The width a **value** strip over `[lo, hi]` asks for, never below the
 /// `ruler_w` role: [`ticks_width`] of the ticks [`value_ticks`] will draw in a
-/// lane `lane_h` px tall.
-pub(crate) fn value_strip_w(lo: f64, hi: f64, lane_h: f32, metrics: &Metrics) -> f32 {
-    let ticks = value_ticks(lo, hi, lane_h as f64, metrics);
+/// row `row_h` px tall.
+pub(crate) fn value_strip_w(lo: f64, hi: f64, row_h: f32, metrics: &Metrics) -> f32 {
+    let ticks = value_ticks(lo, hi, row_h as f64, metrics);
     metrics.ruler_w.max(ticks_width(&ticks, metrics))
 }
 
@@ -1174,32 +1174,32 @@ pub(crate) fn value_strip_w(lo: f64, hi: f64, lane_h: f32, metrics: &Metrics) ->
 /// [`amp_ticks`] draws (decibels, normalized, percent, sample values).
 pub(crate) fn amp_strip_w(
     unit: RulerY,
-    lane_h: f32,
+    row_h: f32,
     bit_depth: u32,
     y_start: f64,
     y_len: f64,
     metrics: &Metrics,
 ) -> f32 {
-    let ticks = amp_ticks(unit, lane_h as f64, bit_depth, y_start, y_len, metrics);
+    let ticks = amp_ticks(unit, row_h as f64, bit_depth, y_start, y_len, metrics);
     metrics.ruler_w.max(ticks_width(&ticks, metrics))
 }
 
-pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, ticks: &[Tick]) {
-    if lane.h <= 4.0 {
+pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, row: Rect, ticks: &[Tick]) {
+    if row.h <= 4.0 {
         return;
     }
     let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
-    // **A lane shorter than one caption keeps its ticks and drops their
+    // **A row shorter than one caption keeps its ticks and drops their
     // labels** — the rule a squeezed control already follows
     // ([`crate::host::graphics::controls::label_height`]): a line that does not
     // fit is a drawing that lies, while a tick with no number is merely terser.
     // It is also what keeps the placement below well-formed: the label's band
-    // is `lane.y ..= lane.y + lane.h - line`, which inverts exactly here.
+    // is `row.y ..= row.y + row.h - line`, which inverts exactly here.
     let line = font::height(scale);
-    let labelled = lane.h >= line;
+    let labelled = row.h >= line;
     for tick in ticks {
-        let y = lane.y + lane.h * (1.0 - tick.frac as f32);
+        let y = row.y + row.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
         mesh.rect(
             Rect::new(body_x - w, y, w, metrics.divider_w),
@@ -1208,7 +1208,7 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, 
         if let Some(label) = tick.label.as_ref().filter(|_| labelled) {
             let lw = font::width(label, scale);
             let lx = (body_x - LABEL_GAP - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - line);
+            let ty = (y - 3.0).clamp(row.y, row.y + row.h - line);
             font::text(mesh, label, lx, ty, scale, theme.ruler_text);
         }
     }
@@ -1224,19 +1224,19 @@ mod tests {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()
     }
 
-    /// **A lane too short for a line of text still draws its ticks, and drops
+    /// **A row too short for a line of text still draws its ticks, and drops
     /// their labels** — and above all does not panic.
     ///
-    /// It used to. The label's y was `clamp`ed into the band from `lane.y` to
-    /// `lane.y + lane.h` less one line of text, whose upper bound falls *below*
-    /// the lower one as soon as the lane is shorter than one caption, and
-    /// `f32::clamp` panics on an inverted range. The guard above it tested `lane.h` against a literal
+    /// It used to. The label's y was `clamp`ed into the band from `row.y` to
+    /// `row.y + row.h` less one line of text, whose upper bound falls *below*
+    /// the lower one as soon as the row is shorter than one caption, and
+    /// `f32::clamp` panics on an inverted range. The guard above it tested `row.h` against a literal
     /// four, a number that predates the text and is not the height the
-    /// arithmetic needs, so every lane between it and a caption's height was a
+    /// arithmetic needs, so every row between it and a caption's height was a
     /// crash — reached by dragging a window's corner in, which is how it was
     /// found.
     #[test]
-    fn a_lane_shorter_than_its_own_caption_drops_the_label_and_does_not_panic() {
+    fn a_row_shorter_than_its_own_caption_drops_the_label_and_does_not_panic() {
         let m = Metrics::default();
         let ticks = value_ticks(-1.0, 1.0, 200.0, &m);
         assert!(!labels(&ticks).is_empty(), "the case needs labelled ticks");
@@ -1247,12 +1247,12 @@ mod tests {
         let mut h = 4.5;
         while h < line {
             let mut mesh = Mesh::new();
-            let lane = Rect::new(10.0, 356.0, 300.0, h);
+            let row = Rect::new(10.0, 356.0, 300.0, h);
             draw_ticks_v(
                 &mut Draw::new(&mut mesh, &m, &Theme::default()),
-                lane.x + 40.0,
-                lane.x,
-                lane,
+                row.x + 40.0,
+                row.x,
+                row,
                 &ticks,
             );
             assert!(!mesh.is_empty(), "the tick marks are drawn at h = {h}");
@@ -1261,13 +1261,13 @@ mod tests {
 
         // One line of room is where the captions come back.
         let mut mesh = Mesh::new();
-        let lane = Rect::new(10.0, 356.0, 300.0, line + 1.0);
+        let row = Rect::new(10.0, 356.0, 300.0, line + 1.0);
         let mut bare = Mesh::new();
         draw_ticks_v(
             &mut Draw::new(&mut bare, &m, &Theme::default()),
-            lane.x + 40.0,
-            lane.x,
-            lane,
+            row.x + 40.0,
+            row.x,
+            row,
             &ticks
                 .iter()
                 .map(|t| Tick {
@@ -1278,14 +1278,14 @@ mod tests {
         );
         draw_ticks_v(
             &mut Draw::new(&mut mesh, &m, &Theme::default()),
-            lane.x + 40.0,
-            lane.x,
-            lane,
+            row.x + 40.0,
+            row.x,
+            row,
             &ticks,
         );
         assert!(
             mesh.vertex_count() > bare.vertex_count(),
-            "a lane with room for a line draws its labels"
+            "a row with room for a line draws its labels"
         );
     }
 
@@ -1843,7 +1843,7 @@ mod tests {
         }
         assert_no_v_collisions(&zoomed, 400.0, "norm zoomed");
         // The dB axis zoomed into the top reveals the fine (-1, -2) rungs the
-        // full view drops on a short lane.
+        // full view drops on a short row.
         let db_short = amp_ticks(RulerY::Db, 150.0, 16, 0.0, 1.0, &Metrics::default());
         let db_zoom = amp_ticks(RulerY::Db, 150.0, 16, 0.85, 0.15, &Metrics::default());
         assert!(

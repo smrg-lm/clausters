@@ -24,7 +24,7 @@
 //! | a clip's body draw | [`Element::draw_body`], or [`Element::texture_body`] for the one the frame must route to the GPU |
 //! | the shared time axis' chrome | [`Element::gutter`] / [`Element::measured_gutter`] |
 //! | the default drag table | [`Element::gesture_map`] |
-//! | the gesture machine's reads | [`Element::lanes`] / [`Element::centres_y_zoom`], and [`Element::freq_axis`] & co. for an element that measures its own x |
+//! | the gesture machine's reads | [`Element::rows`] / [`Element::centres_y_zoom`], and [`Element::freq_axis`] & co. for an element that measures its own x |
 //!
 //! **Three things in, two things out**, and the boundary is narrow on purpose:
 //! most of what looks like "what a widget needs from the host" is the widget's
@@ -183,13 +183,13 @@ pub struct SampleBlock {
     pub sample_rate: f64,
 }
 
-/// **An element's own measured y axis**: the body its lanes are cut from, the
+/// **An element's own measured y axis**: the body its rows are cut from, the
 /// domain they are drawn over and the vertical window they are seen through.
 ///
 /// The counterpart of [`FreqAxis`] on the other axis, and asked for the same
 /// reason: a marquee that restricts a selection in *value* needs the number
 /// under the pointer to be the one the cursor readout names, and only the
-/// element knows the domain it drew through, how many lanes it stacked and
+/// element knows the domain it drew through, how many rows it stacked and
 /// where inside its rectangle the picture ended up.
 ///
 /// It is the axis of a **trace** — amplitude, or whatever domain an element
@@ -250,7 +250,7 @@ impl PendingEdit {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ValueAxis {
-    /// Where the picture maps: the rectangle the lanes are cut from, exactly
+    /// Where the picture maps: the rectangle the rows are cut from, exactly
     /// what the renderer drew through.
     pub body: Rect,
     /// The value domain the geometry was mapped through — the element's
@@ -259,8 +259,8 @@ pub struct ValueAxis {
     /// The visible vertical window, normalized `(start, len)` of the display
     /// axis — `EditorProps::y_view`, the same pair the renderer used.
     pub y: (f64, f64),
-    /// How many lanes the body is split into (1 when overlaid).
-    pub lanes: usize,
+    /// How many rows the body is split into (1 when overlaid).
+    pub rows: usize,
 }
 
 impl ValueAxis {
@@ -268,30 +268,30 @@ impl ValueAxis {
     /// domain.
     ///
     /// **Lane-relative**, like every other vertical read: a stacked view shows
-    /// the same value axis in each lane, so the height is resolved within the
-    /// lane the pointer is in and the answer is what the cursor readout says at
+    /// the same value axis in each row, so the height is resolved within the
+    /// row the pointer is in and the answer is what the cursor readout says at
     /// that height. One inversion, shared with the readout
     /// ([`crate::waveform::display_to_value`]), so the marquee and the number
     /// beside it can never disagree.
     pub fn value_at(&self, cy: f64) -> f64 {
-        let lanes = self.lanes.max(1);
-        self.value_in(crate::host::frame::lane_at(self.body, lanes, cy), cy)
+        let rows = self.rows.max(1);
+        self.value_in(crate::host::frame::channel_at(self.body, rows, cy), cy)
     }
 
-    /// The value `cy` names **in a named lane**, whatever lane it is actually
-    /// over — clamped to that lane's own ends.
+    /// The value `cy` names **in a named row**, whatever row it is actually
+    /// over — clamped to that row's own ends.
     ///
     /// This is what an edit reads, and the difference is not a detail: a drag
     /// belongs to the channel it started on, so a hand that slides up into the
-    /// lane above must write that channel's *maximum*, not the value the
-    /// neighbouring lane would show at the same height. Reading the lane under
+    /// row above must write that channel's *maximum*, not the value the
+    /// neighbouring row would show at the same height. Reading the row under
     /// the pointer (which is what a hover readout wants, and what
     /// [`Self::value_at`] does) made a stroke jump back to mid-scale the moment
-    /// it left its own lane.
-    pub fn value_in(&self, lane: usize, cy: f64) -> f64 {
-        let lanes = self.lanes.max(1);
-        let lane = crate::host::frame::lane_rect(self.body, lanes, lane.min(lanes - 1));
-        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+    /// it left its own row.
+    pub fn value_in(&self, row: usize, cy: f64) -> f64 {
+        let rows = self.rows.max(1);
+        let row = crate::host::frame::channel_rect(self.body, rows, row.min(rows - 1));
+        let rel = ((cy - row.y as f64) / row.h.max(1.0) as f64).clamp(0.0, 1.0);
         let display = self.y.0 + (1.0 - rel) * self.y.1;
         let v = crate::waveform::display_to_value(display, self.domain.0, self.domain.1) as f64;
         let (lo, hi) = (
@@ -471,7 +471,7 @@ pub enum Bulk {
     Samples { path: PathBuf, channels: usize },
     /// A prebuilt (single-channel) STFT cache.
     StftCache(PathBuf),
-    /// Raw interleaved `f32` to analyze into per-channel STFT lanes.
+    /// Raw interleaved `f32` to analyze into one STFT per channel.
     Stft {
         path: PathBuf,
         channels: usize,
@@ -522,7 +522,7 @@ pub enum Loaded {
     /// back, and the slot it claimed draws the same one — a pyramid is a picture
     /// *and* a body, and copying it would have made those two things.
     Peaks(std::sync::Arc<crate::waveform::WaveformData>),
-    /// Per-channel STFT lanes.
+    /// One STFT per channel.
     Stfts(Vec<crate::spectrogram::Stft>),
     /// Interleaved samples, kept whole.
     Samples(std::sync::Arc<[f32]>),
@@ -705,10 +705,10 @@ pub enum SlotFrame {
     /// the slot holds, drawn into `body` at the element's vertical window.
     ///
     /// What is *not* here is as deliberate as what is: the horizontal window is
-    /// the **navigation group's** and the lane count is the **slot's**, so an
+    /// the **navigation group's** and the row count is the **slot's**, so an
     /// element states neither — it would have to know its own id for the first
     /// and what reached the card for the second. `overlay` is the one thing
-    /// about the lanes that is the element's: whether they stack or share one.
+    /// about the rows that is the element's: whether they stack or share one.
     Waveform {
         body: Rect,
         /// The **value domain** the geometry is mapped through — the element's
@@ -728,7 +728,7 @@ pub enum SlotFrame {
         measures: crate::host::graphics::signal::trace::Measures,
         overlay: bool,
     },
-    /// The texture slot: one uploaded analysis per lane, sampled a texel per
+    /// The texture slot: one uploaded analysis per row, sampled a texel per
     /// pixel, drawn into `body` at the element's frequency window and look.
     Spectrogram {
         body: Rect,
@@ -758,7 +758,7 @@ pub enum SlotFill {
     /// bucket.
     Geometry(std::sync::Arc<crate::waveform::WaveformData>),
     /// A [`SlotKind::Texture`] slot's whole content: one analysis per channel
-    /// lane, uploaded once and sampled one texel per pixel.
+    /// row, uploaded once and sampled one texel per pixel.
     Texture(Vec<crate::spectrogram::Stft>),
     /// A [`SlotKind::Texture`] slot's **new columns**, frame-major and oldest
     /// first: a retained time-frequency picture grows forward, so the upload is
@@ -793,7 +793,7 @@ impl fmt::Debug for SlotFill {
                 .finish(),
             SlotFill::Texture(stfts) => f
                 .debug_struct("Texture")
-                .field("lanes", &stfts.len())
+                .field("rows", &stfts.len())
                 .field("frames", &stfts.first().map(|s| s.n_frames()))
                 .finish(),
             SlotFill::Columns {
@@ -1483,9 +1483,9 @@ pub trait Element: fmt::Debug {
     ///
     /// Asked for the same reason [`Element::freq_axis`] is: the region split is
     /// the element's own, and a marquee that restricts a selection in value has
-    /// to read the axis the picture was drawn through. `lanes` is what the
+    /// to read the axis the picture was drawn through. `rows` is what the
     /// front found in the element's slot, resolved by
-    /// [`Element::lanes`] as everywhere else — the element states the domain and
+    /// [`Element::rows`] as everywhere else — the element states the domain and
     /// the window, never how many channels reached the card. `indent` is where
     /// the shared axis starts inside the rect, as everywhere else.
     fn value_axis(
@@ -1493,7 +1493,7 @@ pub trait Element: fmt::Debug {
         _rect: Rect,
         _indent: f32,
         _m: &Metrics,
-        _lanes: usize,
+        _channels: usize,
     ) -> Option<ValueAxis> {
         None
     }
@@ -1627,30 +1627,30 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **How many lanes this element stacks on screen**, given the `uploaded`
+    /// **How many rows this element stacks on screen**, given the `uploaded`
     /// count the front found in its GPU slot — the divisor for every
-    /// lane-relative y gesture.
+    /// row-relative y gesture.
     ///
     /// The front knows how many channels are actually on the card and nothing
     /// about how they are arranged, which is why the two halves meet here: an
-    /// element that *overlays* its channels draws one lane however many it was
+    /// element that *overlays* its channels draws one row however many it was
     /// given, and one that stacks them draws as many as there are. The default
     /// stacks.
-    fn lanes(&self, uploaded: usize) -> usize {
+    fn rows(&self, uploaded: usize) -> usize {
         uploaded.max(1)
     }
 
-    /// Whether a y zoom over this element anchors at the **centre** of a lane
+    /// Whether a y zoom over this element anchors at the **centre** of a row
     /// rather than under the pointer. `false` by default: the pointer is where
     /// a reader expects a zoom to hold still.
     ///
     /// It is a property of what the axis *measures*, because one vertical
-    /// window is shared by every lane. An axis of **values** — frequency,
+    /// window is shared by every row. An axis of **values** — frequency,
     /// pitch — says the same thing in each of them, so the value under the
     /// cursor is meaningful and holding it still is what the reader wants. An
-    /// **amplitude** axis does not: zero sits at the centre of every lane, an
-    /// anchor taken from the pointer's height means nothing in the other lanes,
-    /// and any off-centre window pushes the trace out of its lane and clips it.
+    /// **amplitude** axis does not: zero sits at the centre of every row, an
+    /// anchor taken from the pointer's height means nothing in the other rows,
+    /// and any off-centre window pushes the trace out of its row and clips it.
     fn centres_y_zoom(&self) -> bool {
         false
     }

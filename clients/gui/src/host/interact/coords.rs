@@ -97,25 +97,25 @@ pub(crate) struct YAxis {
     /// The visible window (`EditorProps::y_view`) at the press.
     pub start: f64,
     pub len: f64,
-    /// How many pixels one window's worth spans: a **lane's** height, since one
-    /// vertical window is shared by every channel lane of a stacked view.
-    pub lane_h: f64,
-    /// How many lanes the view stacks — with [`lane_h`](Self::lane_h), the
+    /// How many pixels one window's worth spans: a **channel row's** height,
+    /// since one vertical window is shared by every row of a stacked view.
+    pub row_h: f64,
+    /// How many rows the view stacks — with [`row_h`](Self::row_h), the
     /// whole of its vertical stack.
-    pub lanes: usize,
+    pub rows: usize,
 }
 
 impl YAxis {
     /// The view's vertical **band stack**, in the body's own coordinates.
     ///
-    /// A channel lane is the same structure a roll's semitone row and a
+    /// A channel row is the same structure a roll's semitone row and a
     /// multitrack's lane are, so the gestures over it ask one type — which is
     /// also where a stack of *unequal* rows would enter, on the tabulated arm.
     /// A channel stack divides evenly because every channel is worth the same
     /// picture, and that is a statement about channels rather than about what
     /// the axis can hold.
     pub fn bands(&self) -> super::super::bands::Bands {
-        super::super::bands::Bands::uniform(self.lanes.max(1), self.lane_h as f32)
+        super::super::bands::Bands::uniform(self.rows.max(1), self.row_h as f32)
     }
 }
 

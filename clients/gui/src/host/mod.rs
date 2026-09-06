@@ -392,7 +392,7 @@ pub trait BulkLoader {
     fn plot_samples(&self, path: &Path, channels: usize) -> Option<std::sync::Arc<[f32]>>;
 
     /// Reads a local `path` of raw little-endian `f32` into its de-interleaved
-    /// channels (all of them) — the spectrogram's lane source; each channel is
+    /// channels (all of them) — the spectrogram's row source; each channel is
     /// analyzed separately. `None` on an unsupported platform or an I/O error.
     fn raw_channels(&self, path: &Path, channels: usize) -> Option<Vec<Vec<f32>>>;
 

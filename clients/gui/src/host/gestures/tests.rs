@@ -1236,10 +1236,10 @@ fn a_widget_says_how_it_stacks_what_the_front_uploaded() {
     let mut ctx = GestureCtx::new(1, 800, 300);
     ctx.slot_channels.insert(60, 4);
     ctx.slot_channels.insert(61, 4);
-    assert_eq!(ctx.lanes(60, &tree.find(60).unwrap().kind), 4);
-    assert_eq!(ctx.lanes(61, &tree.find(61).unwrap().kind), 1);
+    assert_eq!(ctx.rows(60, &tree.find(60).unwrap().kind), 4);
+    assert_eq!(ctx.rows(61, &tree.find(61).unwrap().kind), 1);
     // A widget with no slot was given nothing, and nothing is one lane.
-    assert_eq!(ctx.lanes(62, &tree.find(62).unwrap().kind), 1);
+    assert_eq!(ctx.rows(62, &tree.find(62).unwrap().kind), 1);
 }
 
 /// The amplitude axis zooms symmetrically: whatever lane the cursor is

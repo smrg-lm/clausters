@@ -405,7 +405,7 @@ fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
             hop,
             sample_rate,
         } => MmapLoader.raw_channels(path, *channels).map(|split| {
-            let stfts = frame::stft_lanes(split, *window_size, *hop, *sample_rate);
+            let stfts = frame::stft_channels(split, *window_size, *hop, *sample_rate);
             let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
             info!(
                 "spectrogram: analyzed {} ({} frame(s), no OSC)",

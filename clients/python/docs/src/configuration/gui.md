@@ -106,7 +106,7 @@ the same color to within the 8 bits of the notation:
 | `lane` | `#171a21` | A lane's background (a track lane, the piano roll's grid). |
 | `header` | `#242933` | A track's header strip. |
 | `lane_alt` | `#12141a` | The alternate, darker lane (black-key rows, the velocity lane). |
-| `lane_divider` | `#4c5461cc` | The divider line between stacked lanes. |
+| `channel_divider` | `#4c5461cc` | The divider line between stacked channels. |
 | `grid` | `#4c576699` | A view's reference grid (the phase scope's cross and square). |
 | `grid_line` | `#292e38` | A fine grid line (the piano roll's row lines). |
 | `baseline` | `#475261` | The zero baseline of a value axis. |

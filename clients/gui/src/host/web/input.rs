@@ -38,7 +38,7 @@ fn to_key(key: &Key) -> Option<HostKey> {
 
 impl WebApp {
     /// Snapshots the gesture context for one canvas: its framebuffer size, its
-    /// modifier keys, and the heavy views' lane counts (channel/lane splits
+    /// modifier keys, and the heavy views' row counts (channel splits
     /// live in this front's GPU slots, so they are copied out here) — the
     /// browser twin of the native front's snapshot.
     pub(super) fn gesture_ctx(&self, def: i32) -> Option<(GestureCtx, (f64, f64))> {

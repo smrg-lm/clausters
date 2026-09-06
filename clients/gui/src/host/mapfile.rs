@@ -92,7 +92,7 @@ impl MappedFile {
 
     /// The mapped bytes as little-endian `f32`s, de-interleaved into **all**
     /// `channels` channels (a trailing partial frame is ignored) — the
-    /// multichannel read the editor-grade views build their lanes from.
+    /// multichannel read the editor-grade views build their rows from.
     pub fn channels_f32(&self, channels: usize) -> Vec<Vec<f32>> {
         let channels = channels.max(1);
         let frames = (self.len / 4) / channels;
