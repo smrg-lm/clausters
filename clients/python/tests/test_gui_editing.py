@@ -13,6 +13,8 @@ import pytest
 from clausters.gui.editing import (Application, Domain, Echo, Editing,
                                    Editor, View)
 from clausters.gui.ids import GuiIdAllocator
+from clausters.defs.ugens import Env
+from clausters.seq.automation import Automation
 
 SR = 48_000.0
 
@@ -255,6 +257,46 @@ def test_an_editor_with_no_window_still_shares_the_history():
     wid = host.tree["children"][0]["id"]
     open_one.apply("/gui_event", [wid, 1, 0, "dial", 0.4])
     assert silent.can_undo, "it has no picture; it still shares the pile"
+
+
+# ---- screen state is about a thing, and a thing is not its address ----
+
+def test_a_new_structure_does_not_inherit_a_freed_ones_screen_state():
+    # CPython reuses an address the moment an object is freed (196 times out of
+    # 200 in a straight loop), so screen state keyed by `id()` is handed to
+    # whatever lands there next: a curve drawn against the axis of a curve that
+    # is gone, an aggregate drawn expanded because a cut let go of one.
+    import gc
+
+    from clausters.gui.editing import PointsView
+
+    view = PointsView()
+    gone = Automation(Env([0.0, 100.0], [2.0]), None, name="gone")
+    view.axis(gone, gone.to_points())
+    del gone
+    gc.collect()
+
+    fresh = Automation(Env([0.0, 1.0], [2.0]), None, name="fresh")
+    lo, hi, _span = view.axis(fresh, fresh.to_points())
+    assert hi < 10.0, f"it took the freed curve's axis: {(lo, hi)}"
+
+
+def test_a_drawers_id_space_goes_when_the_drawer_does():
+    # The same defect one level up, in what AP1 added: a table keyed by the
+    # drawer's address would hand a new editor whatever the last one at that
+    # address had named.
+    import gc
+
+    app = Application()
+    first = an_editor(app=app)
+    first.draw()
+    assert len(app._offline) == 1
+    # An application holds its editors, the way a host holds an open one, so the
+    # table goes when the editor **leaves** — which is what `close` does.
+    app.forget(first)
+    del first
+    gc.collect()
+    assert len(app._offline) == 0, "the id space went with the drawer"
 
 
 # ---- a redraw is a difference, not a rebuild ----

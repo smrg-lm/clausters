@@ -291,7 +291,13 @@ class FormEditor(Editor):
         self._length: dict = {}
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: an aggregate resolved rather than collapsed).
-        self._expanded: set[int] = set()
+        #:
+        #: The **elements**, weakly, not their addresses: `id()` is reused the
+        #: moment an object is freed, so a set of numbers draws a brand-new
+        #: aggregate expanded because a cut let go of one at that address. Weak
+        #: membership also drops what an edit removed, which is what screen
+        #: state about a thing should do when the thing goes.
+        self._expanded: "weakref.WeakSet" = weakref.WeakSet()
         #: widget id -> `_Placed` — where the clip came from in the arrangement and
         #: what was drawn for it, which is what an edit-back writes through.
         self._clips: dict = {}
@@ -371,10 +377,12 @@ class FormEditor(Editor):
         #: patch widget id -> (logical `Aggregate`, its box-order member handles) —
         #: the directed-patch view of a logical aggregate, for its edit-back route.
         self._patches: dict = {}
-        #: id(aggregate) -> {box index: (x, y)} — a patch's box placements, presentation
+        #: aggregate -> {box index: (x, y)} — a patch's box placements, presentation
         #: only (a logical aggregate is a signal graph, so positions live here, not in
-        #: the arrangement). Keyed by aggregate identity, so they survive a redraw.
-        self._patch_geometry: dict = {}
+        #: the arrangement). Keyed by the aggregate itself, weakly, so the boxes
+        #: survive a redraw and go when the aggregate does — and so a new one
+        #: cannot inherit them by landing on a freed one's address.
+        self._patch_geometry: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: The rendering in flight: where it went and on what clock — what
         #: `rerender` re-schedules after an edit.
         self._destination = None
@@ -430,16 +438,16 @@ class FormEditor(Editor):
     def expand(self, element) -> "FormEditor":
         """Resolve a nested `Aggregate` into lanes of its own (instead of the labeled
         rectangle that summarizes it). The arrangement's *base level*, made an edit."""
-        self._expanded.add(id(element))
+        self._expanded.add(element)
         return self
 
     def collapse(self, element) -> "FormEditor":
         """Summarize a nested `Aggregate` back into one labeled rectangle."""
-        self._expanded.discard(id(element))
+        self._expanded.discard(element)
         return self
 
     def is_expanded(self, element) -> bool:
-        return id(element) in self._expanded
+        return element in self._expanded
 
     # ---- the forward draw: the arrangement -> GuiDef ----
 
@@ -496,7 +504,7 @@ class FormEditor(Editor):
         p, handles = _logical_patch(aggregate)
         wid = self._new_id()
         self._patches[wid] = (aggregate, handles)
-        geometry = self._patch_geometry.get(id(aggregate), {})
+        geometry = self._patch_geometry.get(aggregate, {})
         content = (900.0, 700.0)
         view = patch(id=wid, **p.to_widget(geometry), label=_name(aggregate),
                      x=0.0, y=0.0, w=content[0], h=content[1])
@@ -1967,7 +1975,7 @@ class FormEditor(Editor):
         if tag == "wire" and len(values) >= 4:
             return self._apply_wire(aggregate, handles, values[:4])
         if tag == "move" and len(values) >= 3:
-            self._patch_geometry.setdefault(id(aggregate), {})[int(values[0])] = (
+            self._patch_geometry.setdefault(aggregate, {})[int(values[0])] = (
                 float(values[1]), float(values[2]))
             return False
         return False

@@ -32,6 +32,8 @@ Every editor holds one, and makes its own when it is not handed one, so nothing
 a script writes changes.
 """
 
+import weakref
+
 from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
 from .echo import Echo
@@ -40,6 +42,19 @@ from .echo import Echo
 #: and above `clausters.gui.ids.BASE_ID`, so a tree drawn with no host does not
 #: collide with one drawn on a host that is allocating.
 BASE_ID = 10_000
+
+
+class _Anyone:
+    """The drawer of a call that named none — `new_id()` asked of the
+    application itself rather than by an editor.
+
+    A real object rather than ``None`` so that it can be a weak key like every
+    other drawer. One is enough for the whole module: the tables it keys live on
+    an application, so two applications sharing this key still get their own.
+    """
+
+
+_ANYONE = _Anyone()
 
 
 def _resolve_host(host):
@@ -80,10 +95,16 @@ class Application:
         #: ids reach nothing: two of them cannot collide with each other, and
         #: keeping them apart is what lets a draw with no window start its
         #: numbering over so that drawing one picture twice gives one tree.
+        #:
+        #: Keyed by the **drawer**, weakly, not by its address: `id()` is reused
+        #: the moment an object is freed, so a table keyed by one would hand a
+        #: new editor whatever the last one at that address had drawn. Weak keys
+        #: also let a closed editor's table go with it.
         self._base_id = int(base_id)
-        self._offline: dict = {}
-        #: Each drawer's owner in each table it has drawn on, keyed by the pair.
-        self._owners: dict = {}
+        self._offline: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+        #: Each drawer's owner in each table it has drawn on — the drawer weakly,
+        #: and the table under it, for the reason above.
+        self._owners: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: How this application answers a version, when it was given a way.
         self._version_of = version
         #: The last tree sent for each window, so the next one can be sent as
@@ -193,10 +214,11 @@ class Application:
         ids = getattr(self.host, "ids", None)
         if ids is not None:
             return ids
-        table = self._offline.get(id(drawer))
+        drawer = _ANYONE if drawer is None else drawer
+        table = self._offline.get(drawer)
         if table is None:
             table = GuiIdAllocator(base=self._base_id, capacity=CAPACITY)
-            self._offline[id(drawer)] = table
+            self._offline[drawer] = table
         return table
 
     def _owner(self, drawer, table: GuiIdAllocator) -> int:
@@ -206,11 +228,15 @@ class Application:
         opened has already named widgets in a table the host knows nothing
         about: each table hands out its own drawers.
         """
-        key = (id(drawer), id(table))
-        owner = self._owners.get(key)
+        drawer = _ANYONE if drawer is None else drawer
+        mine = self._owners.get(drawer)
+        if mine is None:
+            mine = weakref.WeakKeyDictionary()
+            self._owners[drawer] = mine
+        owner = mine.get(table)
         if owner is None:
             owner = table.owner()
-            self._owners[key] = owner
+            mine[table] = owner
         return owner
 
     def new_id(self, drawer=None) -> int:
@@ -253,7 +279,9 @@ class Application:
             # on. On a host it would be wrong: the leases there belong to every
             # window the client has open, not to whoever is drawing.
             table.clear()
-            self._owners.pop((id(drawer), id(table)), None)
+            mine = self._owners.get(_ANYONE if drawer is None else drawer)
+            if mine is not None:
+                mine.pop(table, None)
         table.begin(self._owner(drawer, table))
 
     def retire_ids(self, drawer=None) -> list:

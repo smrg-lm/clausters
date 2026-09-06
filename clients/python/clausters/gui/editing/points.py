@@ -20,6 +20,8 @@ travel in it — without that an undo put the curve back straight, which is
 losing the data rather than declining to interpret it.
 """
 
+import weakref
+
 from ... import _native
 from ...defs.ugens import points_to_env
 from ...seq.automation import Automation
@@ -108,8 +110,14 @@ class PointsView(View):
         #: The value axis this view is drawing against, and the time it spans,
         #: kept per structure so a redraw does not re-fit them. Both only ever
         #: **grow** — see `axis`.
-        self._axis: dict = {}
-        self._span: dict = {}
+        #:
+        #: Keyed by the **curve itself**, weakly. Screen state is about a thing,
+        #: and a thing is not its address: `id()` is reused the moment an object
+        #: is freed, so a table keyed by one hands a new curve whatever axis the
+        #: last one at that address was drawn against. Weak keys also let the
+        #: state go when the curve does, which is what screen state should do.
+        self._axis: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+        self._span: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
     def axis(self, structure, points) -> tuple:
         """The value axis and the duration this curve is drawn against.
@@ -124,10 +132,9 @@ class PointsView(View):
         """
         values = [float(p[1]) for p in _quads(points)]
         times = [float(p[0]) for p in _quads(points)] or [0.0]
-        key = id(structure)
-        lo, hi = _native.curve_axis(values, self._axis.get(key))
-        span = max(max(times), self._span.get(key, 0.0))
-        self._axis[key], self._span[key] = (lo, hi), span
+        lo, hi = _native.curve_axis(values, self._axis.get(structure))
+        span = max(max(times), self._span.get(structure, 0.0))
+        self._axis[structure], self._span[structure] = (lo, hi), span
         return lo, hi, span
 
     def build(self, editor) -> dict:

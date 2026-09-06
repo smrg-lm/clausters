@@ -2239,6 +2239,24 @@ def test_a_redefine_leaves_the_editor_able_to_edit():
     assert member.offset == pytest.approx(5.0), "and the edit landed"
 
 
+def test_a_freed_aggregate_does_not_leave_a_new_one_drawn_expanded():
+    """Expand/collapse is screen state **about an element**, and an element is
+    not its address. CPython reuses one the moment an object is freed, so a set
+    of `id()`s draws a brand-new aggregate expanded because a cut let go of one
+    that happened to sit there."""
+    import gc
+
+    ed = editor()
+    gone = Aggregate([])
+    ed.expand(gone)
+    assert ed.is_expanded(gone)
+    del gone
+    gc.collect()
+
+    fresh = Aggregate([])
+    assert not ed.is_expanded(fresh), "it inherited a freed aggregate's state"
+
+
 def test_a_structural_edit_redefines_the_window_and_so_does_its_undo():
     """A placement is a prop the host can be told about; a widget that was not
     there is not. The second half of a split -- and the clip an undone split

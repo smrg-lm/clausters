@@ -242,18 +242,49 @@ through `_editors` before `__init__` had made that list, so constructing one
 standalone raised. Every editor passes a callable, which is why 935 tests never
 touched it.
 
-### AP3 - Screen state belongs to the host, keyed by the derived key
+### AP3 - Screen state is about a thing, and a thing is not its address
 
-- Selection, zoom/`view_x`/`view_y`, layer and the hand's position stop being
-  per-`Editor` fields and become state the host holds against the key from AP1.
-- `NOT_AN_EDIT` stays the boundary it already is; what changes is where the
-  answer is kept, not which tags are edits.
-- Two views of one structure therefore agree about the selection without either
-  of them pushing it to the other (`adopt_selection` goes away as a mechanism).
+**Rewritten 2026-09-06, because the milestone as opened contradicted a decision
+this project had already made and written down three times.** It said that "two
+views of one structure agree about the selection" and that `adopt_selection`
+would go away. Both are wrong, and the tree says so in the book
+(`clients/python/docs/src/composition.md`: *"What each window keeps for itself is
+what a window can see: its selection, its zoom, which layer the hand is on"*), in
+`Editing`'s own docstring, and in `examples/editors/two_windows.py` (*"the
+selection does not travel"*). And `adopt_selection` is not the mechanism the
+milestone thought it was: it is a **composed** view handing its selection *up* to
+the composition it is part of, so an operation over a range is given one value
+whichever of the piece's windows swept it. That is real and stays.
 
-**Acceptance:** two windows over one structure show one selection with no call
-between them; a selection is still readable from a script as a typed value
-(`Ox` O6); nothing about screen state reaches a history or a file.
+What survives of the milestone is its one true sentence - screen state is keyed
+by *what it is about* - and it turns out to be a defect that was already in the
+tree, in four places:
+
+- Screen state was keyed by `id(object)`. CPython reuses an address the moment
+  an object is freed - **196 times out of 200** in a straight loop - so such a
+  table hands its state to whatever lands there next. Reproduced: expand an
+  aggregate, let it go, make another, and the new one draws expanded. The same
+  shape sat under a curve's held axis (`PointsView`), a patch's box placements,
+  and - added by AP1 - an application's per-drawer id table.
+- The fix is the one the tree already uses one level down (`Editing._structures`
+  keeps the object beside the number "so its `id` cannot be reused"): key by the
+  **object**, weakly. State then also goes when the thing goes, which is what
+  screen state should do.
+
+**Acceptance:** a new structure never inherits a freed one's axis, expansion or
+id space; a selection is still readable from a script as a typed value
+(`Ox` O6); nothing about screen state reaches a history or a file; and each
+window still keeps its own selection, zoom and layer.
+
+**Done 2026-09-06.** Four tables moved to weak keys (`PointsView._axis`/`_span`,
+`FormEditor._expanded`/`_patch_geometry`, `Application._offline`/`_owners`), with
+a test per failure that reproduces the inheritance. 944 Python tests pass.
+
+**What is left where it was, deliberately:** the selection, zoom and layer stay
+each window's, and the host stays their owner on the wire (`/gui_query` already
+reports "what the widget is now"). Moving them out of the client is not what the
+four-layer table asks for - the client keeps a *read-back value* a script uses,
+not the authority - so there was nothing to move.
 
 ### AP4 - A payload is by value or by reference
 
@@ -398,7 +429,7 @@ Written down so it can be checked rather than felt:
 - [x] AP0 - the seam, in Python only
 - [x] AP1 - a widget id is named, not leased
 - [~] AP2 - a redraw is a diff *(mechanism landed; acceptance rides with AP6)*
-- [ ] AP3 - screen state to the host
+- [x] AP3 - screen state is keyed by the thing, not by its address
 - [ ] AP4 - by value or by reference
 - [ ] AP5 - the application core moves to Rust
 - [ ] AP6 - `FormEditor` converges
