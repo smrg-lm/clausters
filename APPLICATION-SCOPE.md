@@ -358,6 +358,46 @@ ids*; the `editing/` line count in both clients drops to the domains, the views
 a client defines and the idiomatic surface; no numeric or timing rule is left
 implemented twice.
 
+**First slice landed 2026-09-06: the difference is the core's.**
+`clausters_core::guidiff` decides what to send so a host drawing one picture
+draws another — the sets, or the word that says the shape changed — bound as
+`clausters_gui_difference` (core ABI v40) and `guiDifference`, both taking the
+two documents as JSON text and answering as JSON text. Python's `publish` calls
+it and the Python walk is gone; the web client binds it and owes only the
+caller, which is AP0's seam. It went first because it was the piece written in
+**one** language and about to be ported into two — lowering it prevented a
+divergence rather than repairing one.
+
+**Two of the things the milestone listed were already single, and the audit is
+the deliverable rather than the move.** The **unit bridge** is four one-line
+compositions per client over calls that are already the core's
+(`tempo_map.secs_at` -> `secs_to_samples`, and their inverses) — read side by
+side, Python and TypeScript compose the same core calls in the same order, so
+there is no second rule to remove and lowering them would add an ABI call per
+conversion per widget per draw. The **echo's** staleness test is one comparison
+(`against != 0 && against < floor`), identical in both. Neither is a rule
+written twice; both are the same rule called twice, which is what a binding is
+for.
+
+**What AP5 still owes, and why each is where it is.**
+
+- **The routing table.** `NOT_AN_EDIT` is a vocabulary list — which tags are
+  screen state rather than edits — duplicated verbatim in both clients. The two
+  agree today, checked; it is the shape of thing that drifts, and lowering it is
+  a core module and two ABI symbols to save eight strings. Filed rather than
+  done, because the failure it prevents (a tag one client treats as an edit and
+  the other does not) is a routed gesture that does nothing, which the pair
+  audit catches, and because a module invented to hold one list is the machinery
+  AP4 refused.
+- **The undo/redo walk.** `Application.step` orchestrates *client objects* — it
+  asks the context for the legs and hands them round the registered editors, each
+  projecting through its own domain. Lowering it means inverting the control
+  flow, which is a design step of its own rather than a move.
+- **The catalogue views.** Building `waveform`, `bpf`, `pianoroll` and the
+  multitrack's lanes through `tree.rs` is what gives the standalone host the same
+  function from the same code, and it is entangled with AP6's convergence: the
+  lanes and clips are the view that has to be named first. It lands there.
+
 ### AP6 - `FormEditor` converges
 
 It is ported to the seam, not ported to Rust as it stands.
@@ -477,7 +517,7 @@ Written down so it can be checked rather than felt:
 - [~] AP2 - a redraw is a diff *(mechanism landed; acceptance rides with AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [ ] AP5 - the application core moves to Rust
+- [~] AP5 - the application core moves to Rust *(the difference is down; the rest is scoped below it)*
 - [ ] AP6 - `FormEditor` converges
 - [ ] AP7 - a second application
 - [ ] AP8 - the pass over the packages

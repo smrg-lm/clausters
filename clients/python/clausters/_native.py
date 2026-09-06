@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 39
+CORE_ABI_VERSION = 40
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -574,6 +574,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_registry_graph_audio_reserved.argtypes = []
     lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
     lib.clausters_registry_graph_control_reserved.argtypes = []
+    lib.clausters_gui_difference.restype = ctypes.c_size_t
+    lib.clausters_gui_difference.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_int64,
+        u8p, ctypes.c_size_t,
+    ]
     lib.clausters_widgetids_new.restype = ctypes.c_void_p
     lib.clausters_widgetids_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
     lib.clausters_widgetids_free.restype = None
@@ -2421,6 +2426,33 @@ class Registry:
             self.close()
         except Exception:
             pass
+
+
+def gui_difference(old: dict, new: dict, root_id: int) -> "list | None":
+    """What to send so a host drawing ``old`` draws ``new`` instead.
+
+    A list of ``(widget id, props)`` — one ``/gui_set`` each, in tree order, and
+    empty when the two pictures are identical — or ``None`` when the **shape**
+    changed and the tree has to go whole.
+
+    The walk is the core's because it is a rule rather than a convenience: a
+    redefine frees the old subtree, so it takes every widget's screen state with
+    it and drops what the host had pending, and two clients deciding differently
+    when that is unavoidable is two clients redrawing differently.
+    """
+    _lib = lib()
+    old_p, old_n, _o = _u8(json.dumps(old))
+    new_p, new_n, _n = _u8(json.dumps(new))
+    args = (old_p, old_n, new_p, new_n, int(root_id))
+    need = _lib.clausters_gui_difference(*args, None, 0)
+    if need == 0:
+        return None
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_gui_difference(*args, out, need)
+    answer = json.loads(ctypes.string_at(out, n).decode("utf-8"))
+    if answer.get("define"):
+        return None
+    return [(int(wid), props) for wid, props in answer.get("sets", ())]
 
 
 def _u8(text: str):

@@ -1783,10 +1783,11 @@ What landed, beyond the list above:
   tree)` sends a redraw as one `/gui_set` per widget whose props moved, and
   `/gui_def` only when the shape changed — a widget that appeared or went, a
   changed type or name, a prop that was removed, or a tree with blobs; an
-  id-less node may stay if it is identical in both pictures. It is written in
-  Python today and is **client logic that belongs in Rust** by the project's own
-  rule, so the port to expect is not a second implementation of the walk but the
-  binding of the one the branch lowers.
+  id-less node may stay if it is identical in both pictures. **The walk itself
+  is already lowered**: it is `clausters_core::guidiff`, bound here as
+  `gui_difference` (both pictures as JSON text, the answer as JSON text), so
+  what the port owes is the caller — `publish` and the record of what the host
+  is drawing — and never a second implementation of the walk.
 
   It is a **recorded** divergence rather than an accidental one — the branch
   lowers this machinery to Rust before porting it, so writing it twice in

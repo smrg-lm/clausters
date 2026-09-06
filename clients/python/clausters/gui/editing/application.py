@@ -34,6 +34,7 @@ a script writes changes.
 
 import weakref
 
+from ... import _native
 from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
 from .echo import Echo
@@ -396,13 +397,21 @@ class Application:
         the same places, with the same names — what goes out is one `/gui_set`
         per widget whose props moved, and nothing is freed or built. Only a
         change of shape redefines, and that is also what `open` does.
+
+        **What counts as a shape change is the core's** (`gui_difference`), not
+        this module's: a redefine costs every widget's screen state, and two
+        clients deciding differently when that is unavoidable is two clients
+        redrawing differently.
         """
         host = self.host
         if host is None:
             return False
         window_id = int(window_id)
         previous = self._published.get(window_id)
-        sets = None if blobs else _difference(previous, tree, window_id)
+        # A tree with blobs goes whole: a blob is referenced by index from a
+        # `/gui_def`'s trailing arguments, and a `/gui_set` has no such index.
+        sets = (None if blobs or previous is None
+                else _native.gui_difference(previous, tree, window_id))
         if sets is None:
             host.define(window_id, tree, *blobs)
             self._published[window_id] = tree
@@ -458,76 +467,3 @@ class Application:
         if host is None:
             return not until()
         return host._wait_while(until, timeout)
-
-
-# ---- the difference between two pictures ----
-
-#: Keys of a node that are not props to be `/gui_set`: what the node *is*
-#: rather than what it shows. A change in any of them is a change of shape.
-_STRUCTURE = ("type", "id", "name", "children")
-
-
-def _difference(old, new, root_id: int):
-    """The `/gui_set`s that turn ``old`` into ``new``, or ``None`` when the two
-    are not the same picture and the tree has to be defined whole.
-
-    ``None`` is the ordinary answer for anything the wire cannot express as a
-    set: a widget that appeared or went, one that changed type or name, a prop
-    that was removed rather than changed, or a node with no id to address. There
-    is no insert or remove on the protocol, and a name is what a handle resolves
-    by — so both are shape, and shape is what `/gui_def` is for.
-    """
-    if not isinstance(old, dict) or not isinstance(new, dict):
-        return None
-    sets: list = []
-    if not _walk(old, new, root_id, sets):
-        return None
-    return sets
-
-
-def _walk(old: dict, new: dict, node_id, sets: list) -> bool:
-    """One node and its children, collecting what changed. ``False`` the moment
-    anything is not expressible as a set."""
-    if old.get("type") != new.get("type") or old.get("name") != new.get("name"):
-        return False
-    changed = _props(old, new)
-    if changed is None:
-        return False
-    if changed:
-        sets.append((int(node_id), changed))
-    old_kids = old.get("children") or ()
-    new_kids = new.get("children") or ()
-    if len(old_kids) != len(new_kids):
-        return False
-    for was, is_ in zip(old_kids, new_kids):
-        if not isinstance(was, dict) or not isinstance(is_, dict):
-            return False
-        if was.get("id") != is_.get("id"):
-            # The ids are stable across a redraw (`id_for`), so two pictures of
-            # one thing line up by id. They differing *is* the shape changing.
-            return False
-        if is_.get("id") is None:
-            # **An id-less widget may stay, as long as it did not move.** The
-            # host stamps such a node inside the copy it sends, so this client
-            # does not know what number it got and cannot `/gui_set` it — but a
-            # node that is identical in both pictures needs no set, and the
-            # picture around it is still a difference. Chrome that never changes
-            # (a ruler, a spacer) is exactly this case, and refusing it would
-            # make every tree holding one a redefine.
-            if was != is_:
-                return False
-            continue
-        if not _walk(was, is_, is_.get("id"), sets):
-            return False
-    return True
-
-
-def _props(old: dict, new: dict):
-    """What of ``new``'s props differ from ``old``'s, or ``None`` when a prop
-    was **removed** — which a set cannot express, since there is no value that
-    means "unset"."""
-    was = {k: v for k, v in old.items() if k not in _STRUCTURE}
-    is_ = {k: v for k, v in new.items() if k not in _STRUCTURE}
-    if was.keys() - is_.keys():
-        return None
-    return {k: v for k, v in is_.items() if k not in was or was[k] != v}

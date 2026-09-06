@@ -34,6 +34,7 @@ mod bundle;
 mod clocksync;
 mod document;
 mod envshape;
+mod guidiff;
 mod history;
 mod measure;
 #[cfg(feature = "notation")]
@@ -255,7 +256,16 @@ pub use time::*;
 /// language and not the other. `_begin`/`_retire` are the draw cycle: what was
 /// not asked for is taken back, ascending, so two clients free the same widgets
 /// in the same order. Additive, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 39;
+///
+/// **v40 a redraw is the difference.** `clausters_gui_difference` answers what
+/// to send so a host drawing one picture draws another: one `/gui_set` per
+/// widget whose props moved, or the word that says the shape changed and the
+/// tree has to go whole. A redefine frees the old subtree, so it takes every
+/// widget's screen state with it and drops what the host had pending — and a
+/// walk deciding when that is necessary is a rule, not a convenience, which is
+/// why it is here rather than once per client. Additive, and the counter moves
+/// for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 40;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
