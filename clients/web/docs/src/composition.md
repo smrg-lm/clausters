@@ -244,6 +244,51 @@ what a saved session is. Those are the crate's, they were never `form`'s, and
 they are what the three applications are built on.
 
 
+## The arrangement: tracks, lanes, regions
+
+Everything above is the general tree. **Beside** it there is the model a
+multitrack editor actually edits, and it is the one the three classic
+applications are built over — the audio editor, the multitrack editor and the
+score editor, over one document.
+
+The vocabulary is the field's own:
+
+- A **source** is samples. It lives outside the arrangement — the session's
+  table says where — and is never overwritten.
+- A **region** is one placed thing: a span of the timeline (where it starts, how
+  long, its fades, which of the overlapping ones is on top) plus what fills it.
+  Six regions over one source are six identities and one source, referenced
+  rather than copied. That is the whole of non-destructive editing.
+- A **lane** is one of a track's several contents, an ordered list of regions.
+- A **track** holds several lanes and **plays one**, which is what comping is:
+  record six passes into six lanes, then take from each.
+- An **automation** is a curve over one parameter, in the arrangement's time.
+- The **arrangement** is the tracks plus what the piece has one of: the tempo
+  map, the meter map, the markers, the loop. They are there and not on a track
+  precisely so that no two tracks can disagree about them.
+
+```javascript
+import { Arrangement, Content, Lane, Region, Tempo, Track } from "clausters";
+
+const piece = new Arrangement();
+piece.setTempo(new Tempo({ at: 0, bpm: 96 }));
+
+const drums = new Track({ id: 1, name: "drums", lanes: [new Lane({ id: 2 })] });
+drums.activeLane.place(new Region({
+    id: 3, position: 0, length: 4, content: Content.onto(take),
+}));
+piece.tracks.push(drums);
+
+const written = piece.write();   // the crate's JSON
+Arrangement.read(written);
+```
+
+A **region** is the model's word and a **clip** is the picture's: a clip, a lane
+row, a waveform are what the host draws; a region is what an edit names. And
+everything placed is placed in **beats**, while what fills a region is measured
+in its own source's units — the two are not the same axis, and the conversion
+between them needs the tempo map, which is why the map is part of the piece.
+
 ## The document: what the composition *is*
 
 Everything above is this client's own surface. Underneath it there is one

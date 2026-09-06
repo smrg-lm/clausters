@@ -217,6 +217,24 @@ export * as segments from "./segments.ts";
  * crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
+
+/**
+ * The arrangement: tracks, lanes, regions, and the timeline they sit on — the
+ * model a multitrack editor edits. See `./arrangement.ts`.
+ */
+export * as arrangement from "./arrangement.ts";
+export {
+    Arrangement,
+    Automation,
+    Fade,
+    Lane,
+    Marker,
+    Meter,
+    Region,
+    Span,
+    Tempo,
+    Track,
+} from "./arrangement.ts";
 export {
     History,
     Log,

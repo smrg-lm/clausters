@@ -40,6 +40,9 @@ use serde::{Deserialize, Serialize};
 use crate::{Member, NodeId};
 
 /// What was copied.
+///
+/// **Not [`crate::arrangement::Content`]**, which is what fills a region. This
+/// one is the crate root's `Content`; that one is reached through its module.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Content {
@@ -108,6 +111,9 @@ impl Content {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clipboard {
     /// What was copied.
+    ///
+    /// **Not [`crate::arrangement::Content`]**, which is what fills a region. This
+    /// one is the crate root's `Content`; that one is reached through its module.
     pub content: Content,
     /// The element it was taken from, when that is known. A paste reads it to
     /// decide whether it is pasting into the same kind of place; nothing here

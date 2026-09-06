@@ -111,6 +111,10 @@ class Fade:
 class Content:
     """What fills a region: a **window** onto a source, or a **composite** tree.
 
+    Not the clipboard's content, which is what was *copied*. Two nouns in two
+    modules, each the right word where it stands: this one is a region's
+    ``content`` field, and the format tags it ``fill``.
+
     Two shapes, held here as one class with a `fill` saying which, because that
     is how the format writes it and a client that mirrored it as a class
     hierarchy would spend an inheritance on a tag.

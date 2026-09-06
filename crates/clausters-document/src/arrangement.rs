@@ -85,6 +85,12 @@ impl Fade {
 
 /// What fills a region.
 ///
+/// **Not [`crate::clipboard::Content`]**, which is what was *copied*. Two
+/// nouns, two modules, and each is the right word where it stands: this one is
+/// the `content` field of a region, and the wire tags it `fill`. Only the
+/// clipboard's is re-exported at the crate root, so an unqualified `Content` is
+/// always that one.
+///
 /// The half REAPER puts in a `Take`. Three kinds, and the third is the door the
 /// tree walks through rather than a special case.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
