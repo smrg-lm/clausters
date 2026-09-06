@@ -242,7 +242,7 @@ class NotesView(View):
     def build(self, editor) -> dict:
         from ..guidef import pianoroll, window
 
-        wid = self.register(editor._new_id(), editor.structure)
+        wid = self.widget(editor, "roll", editor.structure)
         notes = _notes(editor)
         body: dict = {}
         if notes:

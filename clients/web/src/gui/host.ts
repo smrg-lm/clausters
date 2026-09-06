@@ -455,6 +455,18 @@ export class GuiHost {
     // ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----
 
     /**
+     * This host client's widget-id namespace ({@link GuiIdAllocator}).
+     *
+     * Exposed because a namespace is a **client-side resource**, not a verb of
+     * the protocol: a view names its widgets in the host's table so that two
+     * views on one host cannot pick the same number, and it reaches the table
+     * rather than asking the host to forward every call.
+     */
+    get ids(): GuiIdAllocator {
+        return this.alloc;
+    }
+
+    /**
      * A fresh id, unique across everything this host client names — windows
      * and widgets share one recycling namespace, so a widget id never repeats
      * across windows. A freed subtree's ids return to the pool.

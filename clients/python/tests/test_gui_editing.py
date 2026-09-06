@@ -12,6 +12,7 @@ import pytest
 
 from clausters.gui.editing import (Application, Domain, Echo, Editing,
                                    Editor, View)
+from clausters.gui.ids import GuiIdAllocator
 
 SR = 48_000.0
 
@@ -60,8 +61,7 @@ class DialView(View):
     """One widget drawing one number."""
 
     def build(self, editor) -> dict:
-        wid = editor._new_id()
-        self.register(wid, editor.structure)
+        wid = self.widget(editor, "dial", editor.structure)
         return {"type": "window", "children": [
             {"id": wid, "type": "number", "value": editor.structure.value}]}
 
@@ -75,13 +75,15 @@ class FakeHost:
     def __init__(self):
         self.acks: list = []
         self.pushes: list = []
-        self.next = 20_000
+        #: The widget-id namespace, as a real host has one: the editors drawing
+        #: on this double name their widgets in it, so two of them cannot pick
+        #: the same number.
+        self.ids = GuiIdAllocator(base=20_000)
         #: What `subscribe` was handed -- an open editor's `apply`.
         self.subscribed: list = []
 
     def alloc_id(self) -> int:
-        self.next += 1
-        return self.next
+        return self.ids.alloc()
 
     def open(self, tree, id=None):
         self.tree = tree
@@ -257,7 +259,7 @@ def test_an_editor_makes_an_application_of_one_and_registers_in_it():
 
 
 def test_the_application_owns_the_host_and_the_widget_id_space():
-    left, right = an_editor(), None
+    left = an_editor()
     right = an_editor(app=left.app)
     host = FakeHost()
     left.open(host)
@@ -307,6 +309,75 @@ def test_an_editor_that_closes_leaves_the_drain():
     left.open(FakeHost())
     left.close()
     assert left.app.editors == [right]
+
+
+# ---- the widget id: an identity, not a lease ----
+
+def test_a_redraw_leaves_every_id_where_it_was():
+    # The whole of it. A leased id changed on every redraw, so anything holding
+    # one across a redraw held a number that now draws something else.
+    ed = an_editor()
+    host = FakeHost()
+    ed.open(host)
+    first = ed.draw()["children"][0]["id"]
+    assert ed.draw()["children"][0]["id"] == first
+    assert ed.draw()["children"][0]["id"] == first, "and not only the once"
+
+
+def test_an_edit_that_crosses_a_redraw_lands_on_the_widget_the_hand_touched():
+    # The failure this fixes, driven end to end: the hand acts, the picture is
+    # rebuilt before the event is routed, and the event still names the widget
+    # it was made on.
+    dial = Dial()
+    ed = an_editor(dial)
+    host = FakeHost()
+    ed.open(host)
+    wid = host.tree["children"][0]["id"]
+
+    ed.draw()                                    # a redraw, mid-gesture
+    assert ed._owns(wid), "the widget the event names is still this view's"
+    assert ed.apply("/gui_event", [wid, 1, 0, "dial", 0.8]) is True
+    assert dial.value == 0.8, "and the edit reached the data"
+
+
+def test_the_two_views_of_one_structure_name_the_same_widget():
+    # A name is the structure's identity plus the role, so two pictures of one
+    # thing agree about which widget draws which part of it — which is what
+    # makes a correction from either one addressable by the other.
+    dial = Dial()
+    host = FakeHost()
+    left, right = an_editor(dial), an_editor(dial, app=None)
+    left.open(host)
+    right.open(host)
+    assert left.draw()["children"][0]["id"] == right.draw()["children"][0]["id"]
+
+
+def test_a_widget_that_stopped_being_drawn_gives_its_id_back():
+    ed = an_editor()
+    host = FakeHost()
+    ed.open(host)
+    wid = ed.draw()["children"][0]["id"]
+    held = host.ids.in_use
+
+    ed.view = View()                             # a picture that draws nothing
+    ed.view.build = lambda editor: {"type": "window", "children": []}
+    ed.draw()
+    assert host.ids.in_use == held - 1, "the name let go of it"
+    assert not ed._owns(wid)
+
+
+def test_two_editors_on_one_host_do_not_retire_each_others_widgets():
+    # One table, two drawers. Either redrawing used to be enough to take back
+    # the other's ids, because the cycle did not say whose draw it was.
+    host = FakeHost()
+    left, right = an_editor(), an_editor()
+    left.open(host)
+    right.open(host)
+    right_id = right.draw()["children"][0]["id"]
+
+    left.draw()
+    assert right.draw()["children"][0]["id"] == right_id
+    assert right._owns(right_id)
 
 
 def test_the_context_is_the_structures_and_is_asked_for_not_built():

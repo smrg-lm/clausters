@@ -1754,6 +1754,36 @@ What landed, beyond the list above:
 
 ## Parity gaps carried from the Python client
 
+- ⬜ **The editing seam: an application, and a widget id that names what it
+  draws.** The Python client has grown two things this client has not, both on
+  the `application-scope` branch, and the shape the port must follow is fixed
+  already so the two do not re-derive it differently.
+
+  **The application** (`clausters.gui.editing.Application`) owns what is true of
+  a *window set* rather than of one structure: the host and its adoption rule,
+  the widget-id space, the `Echo`, the socket drain and the walk of the undo
+  order. `Editor` keeps the structure, the `Domain`, the `View` and the unit
+  bridge, and reads the rest through its application; an editor handed none
+  makes one of its own, so nothing a script writes changes. Several editors can
+  then share one host, one id space, one drain and one order — the shape a
+  bundle of subviews over unrelated structures needs.
+
+  **The named widget id** is the core's (`WidgetIds`, bound here already as
+  `clausters_core_web`'s `WidgetIds` and used by `GuiIdAllocator`). What is
+  *not* ported is the door a view takes: `View.widget(editor, role, showing,
+  key)`, which asks the application for the id that draws
+  `(structure identity, role, key)` and gives back the same number on every
+  redraw, plus the bracket `Editor.draw` puts around a draw (`reset_ids` before,
+  `retire_ids` after) that releases only what the picture genuinely stopped
+  drawing. The three built-in views name their widget `"curve"`, `"waveform"`
+  and `"roll"` respectively, and those spellings are part of the name: two
+  clients drawing one structure must ask for the same id.
+
+  It is a **recorded** divergence rather than an accidental one — the branch
+  lowers this machinery to Rust before porting it, so writing it twice in
+  TypeScript first would be writing what is about to be deleted — and it closes
+  when that lowering lands.
+
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed
   2026-08-05, recorded so a name-by-name diff of the two clients does not
   re-raise it). The audio server takes `--port` now, so a machine runs several

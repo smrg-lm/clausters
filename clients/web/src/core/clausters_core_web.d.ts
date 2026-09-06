@@ -691,6 +691,78 @@ export class TempoMap {
 }
 
 /**
+ * A client's widget-id space, the JS face of
+ * [`clausters_core::widgetids::WidgetIds`].
+ */
+export class WidgetIds {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * An id nothing names, or `undefined` when the space is full.
+     */
+    alloc(): number | undefined;
+    /**
+     * Starts `owner`'s draw: every keyed id that owner asks for until its
+     * `retire` counts as still drawn.
+     */
+    begin(owner: number): void;
+    /**
+     * Drops every name and every id: the table as it was made.
+     */
+    clear(): void;
+    /**
+     * Whether `id` falls in this table's space.
+     */
+    contains(id: number): boolean;
+    /**
+     * Gives one keyed id back by name, answering the id released.
+     */
+    forget(structure: number, role: string, key: string): number | undefined;
+    /**
+     * The id that draws `(structure, role, key)`, minted on first ask and the
+     * same one after that; `undefined` when the space is full.
+     */
+    idFor(owner: number, structure: number, role: string, key: string): number | undefined;
+    /**
+     * The id that draws `(structure, role, key)` **if it already has one**.
+     * No minting, and no effect on the draw cycle.
+     */
+    idOf(structure: number, role: string, key: string): number | undefined;
+    /**
+     * A bounded table over `[base, base + capacity)`.
+     */
+    constructor(base: number, capacity: number);
+    /**
+     * A fresh drawer: the owner a `begin`/`retire` cycle names. One table
+     * serves a whole host, so a drawer is a value the table hands out rather
+     * than one a caller invents.
+     */
+    owner(): number;
+    /**
+     * Returns an anonymous id to the space. Ids this table never handed out
+     * are ignored, so freeing is always safe.
+     */
+    release(id: number): void;
+    /**
+     * Ends `owner`'s draw and takes back every keyed id of that owner's it did
+     * not ask for, answering them ascending.
+     */
+    retire(owner: number): Float64Array;
+    /**
+     * The table whose space never runs out.
+     */
+    static unbounded(base: number): WidgetIds;
+    /**
+     * How many ids are held, keyed and anonymous together.
+     */
+    readonly inUse: number;
+    /**
+     * How many of them answer to a name.
+     */
+    readonly named: number;
+}
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1107,6 +1179,7 @@ export interface InitOutput {
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
+    readonly __wbg_widgetids_free: (a: number, b: number) => void;
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -1255,6 +1328,20 @@ export interface InitOutput {
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly voiceToSheet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly widgetids_alloc: (a: number) => [number, number];
+    readonly widgetids_begin: (a: number, b: number) => void;
+    readonly widgetids_clear: (a: number) => void;
+    readonly widgetids_forget: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly widgetids_idFor: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly widgetids_idOf: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly widgetids_named: (a: number) => number;
+    readonly widgetids_new: (a: number, b: number) => number;
+    readonly widgetids_owner: (a: number) => number;
+    readonly widgetids_release: (a: number, b: number) => void;
+    readonly widgetids_retire: (a: number, b: number) => [number, number];
+    readonly widgetids_unbounded: (a: number) => number;
+    readonly widgetids_contains: (a: number, b: number) => number;
+    readonly widgetids_inUse: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;

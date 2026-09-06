@@ -133,7 +133,7 @@ class PointsView(View):
     def build(self, editor) -> dict:
         from ..guidef import bpf, window
 
-        wid = self.register(editor._new_id(), editor.structure)
+        wid = self.widget(editor, "curve", editor.structure)
         points = editor.structure.to_points()
         lo, hi, span = self.axis(editor.structure, points)
         return window(bpf(id=wid, points=points, min=lo, max=hi,

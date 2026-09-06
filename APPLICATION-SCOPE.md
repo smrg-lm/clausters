@@ -124,13 +124,14 @@ lazy in `_registered`, exactly as it was. What the milestone actually wanted -
 that an application know its context without being told - is answered by reading
 it off the registered editors, which costs nothing and has no such hole.
 
-### AP1 - A widget id is derived, not leased
+### AP1 - A widget id is named, not leased
 
 The fix for the recurring visualization failures, and the thing every later
 milestone depends on.
 
-- A widget id is **derived** from a stable key rather than taken from a pool:
-  `(structure identity, view role, key within the view)`. The structure identity
+- A widget id is **named** rather than taken from a pool: it is asked for as
+  `(structure identity, view role, key within the view)` and the same name gets
+  the same number for as long as it keeps being drawn. The structure identity
   already exists and is already stable - it is what `clausters_history_register`
   mints and what `Editing.identity` caches - so no new notion of identity is
   introduced.
@@ -147,6 +148,49 @@ milestone depends on.
 every widget that still exists; an edit-back that crosses a redraw lands on the
 widget the hand touched; a test drives a gesture, forces a redraw before the
 answer is routed, and the picture and the data agree.
+
+**Done 2026-09-06.** `clausters_core::widgetids::WidgetIds` is the GUI namespace
+with **two doors over one occupancy map** - the anonymous lease a hand-built
+tree takes, and the named id a view asks for - bound as `clausters_widgetids_*`
+(C ABI v39) and `JsWidgetIds` (wasm), declared in `docs/bindings.md`. Both
+clients' `GuiIdAllocator` sits on it; the Python `Application` takes the named
+door, `View.widget(editor, role, showing, key)` is what a `build` calls, and the
+three built-in views name their widget `"curve"`, `"waveform"` and `"roll"`.
+`Editor.draw` brackets the draw so only what a picture genuinely stopped drawing
+gives its id back. 935 Python tests, the core's 14 unit tests and its doctest,
+`tests/bindings.rs`, `npx pyright`, the web `build.sh`/`test.sh`, the feature
+matrix and `scripts/check-docs.sh` all pass.
+
+**Four things this milestone learned, all of them recorded because they are the
+kind of thing a later pass would otherwise "simplify" back out.**
+
+- **A name is a map, not a hash.** A 31-bit space and a thousand live widgets is
+  a collision every few thousand sessions, and a collision is two widgets
+  answering to one number - silent, and indistinguishable from the bug the table
+  exists to remove. The plan said "a pure function over the key"; a map costs a
+  lookup and cannot do that, so a map it is.
+- **A draw names its drawer.** One table serves a whole host, and a host carries
+  more than one - two editors opened on the ambient host are two. A cycle that
+  did not say whose draw it was let either one retire the other's widgets simply
+  by redrawing, which is the same defect one level up. So `begin`/`retire` take
+  an `owner` the table hands out, and `id_for` records who drew each name.
+- **An anonymous free may not take back a named id.** A host frees a redefined
+  subtree widget by widget (`_recycle_subtree`), and a keyed id is still held by
+  its name at that moment; letting that free release it would hand one number to
+  two widgets - exactly what was being fixed. A named id leaves only through
+  `retire` or `forget`.
+- **An unopened draw is private to whoever draws it.** With no host there is no
+  window and nothing in flight, so such a draw starts its numbering over and
+  drawing one picture twice gives one tree - the property `FormEditor`'s render
+  tests rest on. On a host that would be wrong, because the leases there belong
+  to every window the client has open.
+
+**Where the port stands.** The core symbol reaches **both** bindings, and the
+web `GuiIdAllocator` and `GuiHost.ids` moved with it, so the namespace surface
+is in step. What is not ported is the door a view takes, because it sits on the
+AP0 seam this branch deliberately did not write twice - `clients/web/PLAN.md`
+carries the shape the port must follow, under "Parity gaps carried from the
+Python client", and it closes with AP5/AP6.
 
 ### AP2 - A redraw is a diff
 
@@ -307,7 +351,7 @@ Written down so it can be checked rather than felt:
 ## Status
 
 - [x] AP0 - the seam, in Python only
-- [ ] AP1 - a widget id is derived
+- [x] AP1 - a widget id is named, not leased
 - [ ] AP2 - a redraw is a diff
 - [ ] AP3 - screen state to the host
 - [ ] AP4 - by value or by reference

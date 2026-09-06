@@ -317,6 +317,18 @@ class GuiHost:
         from the same pool). A freed subtree's ids return to the pool."""
         return self._alloc.alloc()
 
+    @property
+    def ids(self):
+        """This host client's widget-id namespace
+        (`clausters.gui.ids.GuiIdAllocator`).
+
+        Exposed because a namespace is a **client-side resource**, not a verb of
+        the protocol: an editor names its widgets in the host's table so that two
+        editors on one host cannot pick the same number, and it reaches the table
+        rather than asking the host to forward every call.
+        """
+        return self._alloc
+
     def open(self, tree: dict, *blobs: bytes, id: "int | None" = None) -> WindowHandle:
         """Open a window from a ``window``-rooted GuiDef and return its handle.
 

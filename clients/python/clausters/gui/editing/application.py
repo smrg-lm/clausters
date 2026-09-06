@@ -32,8 +32,7 @@ Every editor holds one, and makes its own when it is not handed one, so nothing
 a script writes changes.
 """
 
-import itertools
-
+from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
 from .echo import Echo
 
@@ -75,9 +74,16 @@ class Application:
         #: The context when one was named; otherwise the editors' own, asked for
         #: on each use.
         self._context = context
-        #: Where a host-less draw counts from, and the counter itself.
+        #: Where a host-less draw takes its ids from — one table per drawer,
+        #: built on the first ask and never used again once there is a host.
+        #: **Per drawer** and not per application, because an unopened draw's
+        #: ids reach nothing: two of them cannot collide with each other, and
+        #: keeping them apart is what lets a draw with no window start its
+        #: numbering over so that drawing one picture twice gives one tree.
         self._base_id = int(base_id)
-        self._fallback_ids = itertools.count(self._base_id)
+        self._offline: dict = {}
+        #: Each drawer's owner in each table it has drawn on, keyed by the pair.
+        self._owners: dict = {}
         #: How this application answers a version, when it was given a way.
         self._version_of = version
         #: The end of the acknowledgement protocol — the stamp, the floor, the
@@ -165,22 +171,93 @@ class Application:
             self.host = _resolve_host(host)
         return self.host
 
-    # ---- the widget-id space ----
+    # ---- the widget-id space, and its two doors ----
 
-    def new_id(self) -> int:
-        """A widget id for the tree being drawn. On a host it comes from the
-        recycling pool (`clausters.gui.host.GuiHost.alloc_id`); host-less (a
-        test, or inspecting `draw`), it counts from ``base_id``."""
-        host = self.host
-        return host.alloc_id() if host is not None else next(self._fallback_ids)
+    def _ids(self, drawer=None) -> GuiIdAllocator:
+        """The table ``drawer`` names widgets in.
 
-    def reset_ids(self) -> None:
-        """Start a fresh draw's id numbering. Host-less, the counter restarts;
-        on a host nothing resets — the ids come from its pool, and re-defining a
-        window returns the previous tree's ids there, so the churn recycles
-        instead of climbing."""
-        if self.host is None:
-            self._fallback_ids = itertools.count(self._base_id)
+        The **host's** once there is one, so that two applications on one host —
+        two editors opened on the ambient host, say — cannot hand out the same
+        number. Before that, one private table per drawer: an unopened draw's
+        ids reach nothing, so they need not be unique across drawers, and the
+        privacy is what lets such a draw restart its numbering.
+
+        Both doors come from whichever table it is — a leased id and a named one
+        are the same resource taken two ways, and splitting them across two
+        tables is how two widgets end up with one number.
+        """
+        ids = getattr(self.host, "ids", None)
+        if ids is not None:
+            return ids
+        table = self._offline.get(id(drawer))
+        if table is None:
+            table = GuiIdAllocator(base=self._base_id, capacity=CAPACITY)
+            self._offline[id(drawer)] = table
+        return table
+
+    def _owner(self, drawer, table: GuiIdAllocator) -> int:
+        """``drawer``'s owner in ``table``, minted once per pair.
+
+        Per pair rather than once, because a drawer that drew before it was
+        opened has already named widgets in a table the host knows nothing
+        about: each table hands out its own drawers.
+        """
+        key = (id(drawer), id(table))
+        owner = self._owners.get(key)
+        if owner is None:
+            owner = table.owner()
+            self._owners[key] = owner
+        return owner
+
+    def new_id(self, drawer=None) -> int:
+        """A **leased** widget id: one for a widget nothing names — a hand-built
+        tree, a decoration. It changes across redraws, which is why a view that
+        draws a structure asks `id_for` instead."""
+        return self._ids(drawer).alloc()
+
+    def id_for(self, structure: int, role: str, key: str = "", drawer=None) -> int:
+        """The id that draws ``(structure, role, key)`` — the **same** number for
+        as long as ``drawer`` keeps drawing that name.
+
+        The door a view takes, and the whole of what makes a redraw safe: an
+        edit-back in flight, a correction on its way out and a widget's screen
+        state all name an id, and an id that changed under them lands on
+        somebody else.
+        """
+        table = self._ids(drawer)
+        return table.id_for(self._owner(drawer, table), int(structure), role, str(key))
+
+    def id_of(self, structure: int, role: str, key: str = "",
+              drawer=None) -> "int | None":
+        """The id already drawing that name, or ``None`` — a lookup, which mints
+        nothing and does not count as drawing it."""
+        return self._ids(drawer).id_of(int(structure), role, str(key))
+
+    def reset_ids(self, drawer=None) -> None:
+        """Start ``drawer``'s draw: from here, every name it asks for counts as
+        drawn, and `retire_ids` takes back the rest.
+
+        Every other drawer is untouched — the cycle names whose it is, so two
+        editors on one host redraw independently.
+        """
+        table = self._ids(drawer)
+        if table is not getattr(self.host, "ids", None):
+            # **Nothing outside this draw holds one of these ids.** With no host
+            # there is no window, no pending gesture and no second drawer in this
+            # table, so it starts over and two draws of one picture come out
+            # identical — the property a test that inspects a tree twice rests
+            # on. On a host it would be wrong: the leases there belong to every
+            # window the client has open, not to whoever is drawing.
+            table.clear()
+            self._owners.pop((id(drawer), id(table)), None)
+        table.begin(self._owner(drawer, table))
+
+    def retire_ids(self, drawer=None) -> list:
+        """End ``drawer``'s draw and take back every name it stopped drawing,
+        answering the ids released. A draw that named nothing releases
+        nothing."""
+        table = self._ids(drawer)
+        return table.retire(self._owner(drawer, table))
 
     # ---- the acknowledgement, which is the echo's ----
 

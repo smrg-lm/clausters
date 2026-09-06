@@ -100,4 +100,5 @@ pub mod spectrum;
 pub mod tempoclock;
 pub mod tempomap;
 pub mod warp;
+pub mod widgetids;
 pub mod window;

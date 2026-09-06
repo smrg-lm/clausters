@@ -16,13 +16,14 @@
 
 import initCore, {
     Registry,
+    WidgetIds,
     graph_bus_reserved,
     midiWriteClip,
     midiWriteSmf,
     node_id_partition,
 } from "../core/clausters_core_web.js";
 
-export { Registry };
+export { Registry, WidgetIds };
 
 // The MIDI file writers (`clausters-midi`, through the core's door). Straight
 // re-exports: they take and return flat bytes, so there is nothing to convert

@@ -218,12 +218,28 @@ class Editor:
     # editor is allowed to ask for.
 
     def _new_id(self) -> int:
-        """A widget id for the tree being drawn (`Application.new_id`)."""
-        return self.app.new_id()
+        """A **leased** widget id (`Application.new_id`): one for a widget
+        nothing names. It changes across redraws, so a widget that draws part of
+        this structure asks `_named_id` instead."""
+        return self.app.new_id(self)
+
+    def _named_id(self, role: str, key: str = "") -> int:
+        """The id that draws ``role``/``key`` **of this structure** — the same
+        number for as long as it keeps being drawn (`Application.id_for`).
+
+        The name is the structure's identity in the history, so two views of one
+        thing agree about which widget draws which part of it, and a redraw
+        leaves every id where it was. An editor with no structure has no
+        identity to name and takes a lease instead: nothing can be in flight
+        against a picture with no data behind it.
+        """
+        if self.structure is None:
+            return self._new_id()
+        return self.app.id_for(self._registered(), role, key, drawer=self)
 
     def _reset_ids(self):
-        """Start a fresh draw's id numbering (`Application.reset_ids`)."""
-        self.app.reset_ids()
+        """Start this draw (`Application.reset_ids`)."""
+        self.app.reset_ids(self)
 
     @property
     def _host(self):
@@ -310,11 +326,20 @@ class Editor:
 
     def draw(self) -> dict:
         """The structure as a ``window``-rooted GuiDef. Pure — it builds the
-        tree and the view's registry, and sends nothing."""
+        tree and the view's registry, and sends nothing.
+
+        The draw is **bracketed**: every named widget asked for inside it counts
+        as still drawn, and what the view stopped drawing gives its id back on
+        the way out. That bracket is what lets an id be an identity rather than
+        a lease — a widget still in the picture keeps its number, and only one
+        that is genuinely gone releases it.
+        """
         if self.view is None:
             raise RuntimeError("this editor has no view to draw with")
         self._reset_ids()
-        return self.view.draw(self)
+        tree = self.view.draw(self)
+        self.app.retire_ids(self)
+        return tree
 
     def open(self, host=None, id: "int | None" = None):
         """`draw` the structure and open it on ``host`` (a

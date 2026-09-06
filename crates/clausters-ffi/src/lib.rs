@@ -46,6 +46,7 @@ mod sched;
 pub mod shm;
 mod tempomap;
 mod time;
+mod widgetids;
 pub mod ws;
 
 // Every module's `extern "C"` items are re-exported here. The C symbols do not
@@ -243,7 +244,18 @@ pub use time::*;
 /// redraw it makes an edit rescale the picture, so the two clients agreeing
 /// about it is the difference between one curve drawn one way and one curve
 /// drawn two. Additive, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 38;
+///
+/// **v39 a widget id names what it draws.** `clausters_widgetids_*` is the GUI
+/// namespace with two doors over one occupancy map: the anonymous lease a
+/// hand-built tree takes, and a **keyed** id asked for by naming the structure,
+/// the role and which one it is — the same name getting the same number for as
+/// long as it keeps being drawn. It is here rather than in each client because
+/// a leased id is what makes an edit-back in flight across a redraw land on the
+/// wrong widget, and a table written twice would agree about that in one
+/// language and not the other. `_begin`/`_retire` are the draw cycle: what was
+/// not asked for is taken back, ascending, so two clients free the same widgets
+/// in the same order. Additive, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 39;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

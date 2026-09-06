@@ -171,7 +171,7 @@ class SamplesView(View):
         from ..guidef import waveform, window
 
         take = editor.structure
-        wid = self.register(editor._new_id(), take)
+        wid = self.widget(editor, "waveform", take)
         return window(waveform(id=wid, buffer=int(take.bufnum),
                                channels=max(1, int(take.channels or 1)),
                                measure=" ".join(self.layers),

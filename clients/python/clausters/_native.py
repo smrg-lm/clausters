@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 38
+CORE_ABI_VERSION = 39
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -574,6 +574,46 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_registry_graph_audio_reserved.argtypes = []
     lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
     lib.clausters_registry_graph_control_reserved.argtypes = []
+    lib.clausters_widgetids_new.restype = ctypes.c_void_p
+    lib.clausters_widgetids_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
+    lib.clausters_widgetids_free.restype = None
+    lib.clausters_widgetids_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_widgetids_owner.restype = ctypes.c_int64
+    lib.clausters_widgetids_owner.argtypes = [ctypes.c_void_p]
+    lib.clausters_widgetids_alloc.restype = ctypes.c_int64
+    lib.clausters_widgetids_alloc.argtypes = [ctypes.c_void_p]
+    lib.clausters_widgetids_release.restype = None
+    lib.clausters_widgetids_release.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_widgetids_id_for.restype = ctypes.c_int64
+    lib.clausters_widgetids_id_for.argtypes = [
+        ctypes.c_void_p, ctypes.c_int64, ctypes.c_int64,
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_widgetids_id_of.restype = ctypes.c_int64
+    lib.clausters_widgetids_id_of.argtypes = [
+        ctypes.c_void_p, ctypes.c_int64,
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_widgetids_forget.restype = ctypes.c_int64
+    lib.clausters_widgetids_forget.argtypes = [
+        ctypes.c_void_p, ctypes.c_int64,
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_widgetids_begin.restype = None
+    lib.clausters_widgetids_begin.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_widgetids_retire.restype = ctypes.c_int64
+    lib.clausters_widgetids_retire.argtypes = [
+        ctypes.c_void_p, ctypes.c_int64,
+        ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t,
+    ]
+    lib.clausters_widgetids_in_use.restype = ctypes.c_uint64
+    lib.clausters_widgetids_in_use.argtypes = [ctypes.c_void_p]
+    lib.clausters_widgetids_named.restype = ctypes.c_uint64
+    lib.clausters_widgetids_named.argtypes = [ctypes.c_void_p]
+    lib.clausters_widgetids_contains.restype = ctypes.c_int32
+    lib.clausters_widgetids_contains.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_widgetids_clear.restype = None
+    lib.clausters_widgetids_clear.argtypes = [ctypes.c_void_p]
     # WebSocket client transport (ABI v2). A connection is an opaque handle;
     # bytes (with embedded NULs) cross via c_char_p + an explicit length, so OSC
     # packets are passed whole, not NUL-truncated.
@@ -2374,6 +2414,134 @@ class Registry:
         handle = getattr(self, "_handle", None)
         if handle:
             self._lib.clausters_registry_free(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def _u8(text: str):
+    """A string as the ``(pointer, length)`` pair the C ABI's string arguments
+    take. The buffer is kept alive by the caller's expression, which is why this
+    hands back three things rather than two."""
+    raw = str(text).encode("utf-8")
+    buf = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+    return ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte)), len(raw), buf
+
+
+class WidgetIds:
+    """The core's widget-id table: an id that names **what it draws**.
+
+    A GUI namespace with two doors over one occupancy map. `alloc` is the
+    anonymous lease a hand-built tree takes; `id_for` is asked for by naming the
+    structure, the role and which one it is, and gives back the **same** number
+    for as long as that name keeps being drawn — which is what keeps an
+    edit-back in flight across a redraw from landing on the wrong widget.
+
+    `begin` and `retire` are the draw cycle: what the draw did not ask for is
+    taken back, ascending. Free with `close` (``__del__`` is the backstop)."""
+
+    def __init__(self, base: int, capacity: "int | None"):
+        if capacity is not None and capacity <= 0:
+            raise ValueError(f"widget id capacity must be positive, got {capacity}")
+        self._lib = lib()
+        self._handle = self._lib.clausters_widgetids_new(
+            int(base), 0 if capacity is None else int(capacity))
+
+    def owner(self) -> int:
+        """A fresh drawer: the owner a `begin`/`retire` cycle names.
+
+        One table serves a whole host, so a drawer is a value the table hands
+        out rather than one a caller invents — two clients inventing their own
+        would eventually pick the same number, and each would then retire the
+        other's widgets by redrawing."""
+        return self._lib.clausters_widgetids_owner(self._handle)
+
+    def alloc(self) -> "int | None":
+        """An id nothing names, or ``None`` when the space is full."""
+        wid = self._lib.clausters_widgetids_alloc(self._handle)
+        return None if wid == -1 else wid
+
+    def release(self, id_: int):
+        """Return an anonymous id to the space. Ids this table never handed out
+        are ignored, so freeing is always safe."""
+        self._lib.clausters_widgetids_release(self._handle, int(id_))
+
+    def id_for(self, owner: int, structure: int, role: str,
+               key: str) -> "int | None":
+        """The id ``owner`` draws ``(structure, role, key)`` with, minted on
+        first ask and the same one after that. ``None`` when the space is
+        full."""
+        role_p, role_n, _r = _u8(role)
+        key_p, key_n, _k = _u8(key)
+        wid = self._lib.clausters_widgetids_id_for(
+            self._handle, int(owner), int(structure),
+            role_p, role_n, key_p, key_n)
+        return None if wid == -1 else wid
+
+    def id_of(self, structure: int, role: str, key: str) -> "int | None":
+        """The id that draws ``(structure, role, key)`` **if it already has
+        one** — no minting, and no effect on the draw cycle."""
+        role_p, role_n, _r = _u8(role)
+        key_p, key_n, _k = _u8(key)
+        wid = self._lib.clausters_widgetids_id_of(
+            self._handle, int(structure), role_p, role_n, key_p, key_n)
+        return None if wid == -1 else wid
+
+    def forget(self, structure: int, role: str, key: str) -> "int | None":
+        """Give one keyed id back by name, answering the id released."""
+        role_p, role_n, _r = _u8(role)
+        key_p, key_n, _k = _u8(key)
+        wid = self._lib.clausters_widgetids_forget(
+            self._handle, int(structure), role_p, role_n, key_p, key_n)
+        return None if wid == -1 else wid
+
+    def begin(self, owner: int):
+        """Start ``owner``'s draw: every id that owner asks for until its
+        `retire` counts as drawn. Another drawer's cycle is untouched."""
+        self._lib.clausters_widgetids_begin(self._handle, int(owner))
+
+    def retire(self, owner: int) -> list:
+        """End ``owner``'s draw and take back every keyed id of that owner's it
+        did not ask for, ascending.
+
+        The buffer is sized by `named`, which bounds what can be released — the
+        C call refuses an under-sized one rather than losing ids, since retiring
+        is destructive."""
+        cap = int(self._lib.clausters_widgetids_named(self._handle))
+        if cap == 0:
+            self._lib.clausters_widgetids_retire(self._handle, int(owner), None, 0)
+            return []
+        out = (ctypes.c_int64 * cap)()
+        count = self._lib.clausters_widgetids_retire(
+            self._handle, int(owner), out, cap)
+        return [] if count <= 0 else [int(out[i]) for i in range(count)]
+
+    def contains(self, id_: int) -> bool:
+        """Whether ``id_`` falls in this table's space."""
+        return bool(self._lib.clausters_widgetids_contains(self._handle, int(id_)))
+
+    @property
+    def in_use(self) -> int:
+        """How many ids are held, keyed and anonymous together."""
+        return self._lib.clausters_widgetids_in_use(self._handle)
+
+    @property
+    def named(self) -> int:
+        """How many of them answer to a name."""
+        return self._lib.clausters_widgetids_named(self._handle)
+
+    def clear(self):
+        """Drop every name and every id: the table as it was made."""
+        self._lib.clausters_widgetids_clear(self._handle)
+
+    def close(self):
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_widgetids_free(handle)
             self._handle = None
 
     def __del__(self):

@@ -165,6 +165,34 @@ position. One implementation, every client bound to it.
 | — | `JsRegistry.is_allocated` | **gap** — per-id occupancy read |
 | — | `JsRegistry.base` | **gap** — the range's first id |
 
+## The widget-id table
+
+The GUI namespace's two doors over one occupancy map: the anonymous lease a
+hand-built tree takes, and the **keyed** id a view asks for by naming what it
+draws — the structure's identity in the history, the role the widget plays and
+which one it is. A keyed name keeps its number for as long as it keeps being
+drawn, which is what stops an edit-back in flight across a redraw from landing
+on the wrong widget. It is one table rather than one per door because two id
+spaces kept apart by arithmetic are two spaces that eventually overlap.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_widgetids_new` | `JsWidgetIds.new` | |
+| `clausters_widgetids_free` | — | `idiom` — wasm frees by `Drop` |
+| — | `JsWidgetIds.unbounded` | **gap** — the capacity-less constructor, as `JsRegistry.unbounded` |
+| `clausters_widgetids_owner` | `JsWidgetIds.owner` | a drawer's identity, handed out by the table — one table serves a whole host, and a drawer each client invented for itself would eventually collide |
+| `clausters_widgetids_alloc` | `JsWidgetIds.alloc` | |
+| `clausters_widgetids_release` | `JsWidgetIds.release` | |
+| `clausters_widgetids_id_for` | `JsWidgetIds.id_for` | `idiom` — C takes each string as pointer + length and answers -1 for "no id"; wasm takes `&str` and answers `undefined` |
+| `clausters_widgetids_id_of` | `JsWidgetIds.id_of` | `idiom` — as above |
+| `clausters_widgetids_forget` | `JsWidgetIds.forget` | `idiom` — as above |
+| `clausters_widgetids_begin` | `JsWidgetIds.begin` | |
+| `clausters_widgetids_retire` | `JsWidgetIds.retire` | `idiom` — C writes the ids through an out pointer and refuses (-1, retiring nothing) when the buffer is too small, since retiring is destructive and an under-sized buffer must be caught before the ids are gone; wasm returns the array |
+| `clausters_widgetids_named` | `JsWidgetIds.named` | the bound a C caller sizes its `retire` buffer with |
+| `clausters_widgetids_in_use` | `JsWidgetIds.in_use` | |
+| `clausters_widgetids_contains` | `JsWidgetIds.contains` | |
+| `clausters_widgetids_clear` | `JsWidgetIds.clear` | |
+
 ## Peak pyramids
 
 | C ABI | wasm | Note |
