@@ -3030,7 +3030,8 @@ work, where a pending item reads as done.)*
   and would let a file assert a second its own tempi do not produce. Loading
   replays them through the ordinary writers, so a stored map that loads is one
   the client could have written and the door that reads a file is the door that
-  checks it. `dumps`/`loads`, `dump`/`load`, `clausters_tempomap_dump`/`_load`;
+  checks it. `dump`/`load`, the one name every layer uses
+  (`clausters_tempomap_dump`/`_load`);
   `CORE_ABI_VERSION` 31.
 
   And a clock **adopts** a map instead of copying it, which is what lets two
@@ -3049,7 +3050,7 @@ work, where a pending item reads as done.)*
 
 - ✅ **A tempo map has no identity, so a save cannot name one** *(found
   2026-09-01, with the user, when the ownership question dissolved into this
-  one)*. The map serializes (`dumps`/`loads`, its breakpoints) and it is shared
+  one)*. The map serializes (`dump`/`load`, its breakpoints) and it is shared
   by reference at run time, which is all a clock needs. What is missing is a
   way for a **stored** thing to say *which* map it is written against: an id
   and a table, the peer of `SourceId` and `sources` — the tree names material
@@ -3074,8 +3075,8 @@ work, where a pending item reads as done.)*
   sane unit: its **name** and its **map**. Its position is transport, its queue
   is whatever happens to be scheduled, and its `timebase` is a choice of the
   *run* — pacing against the OS clock or a server's sample counter says nothing
-  about the music, so a loaded clock takes this run's. `TempoClock.dumps`/
-  `loads` and `dump`/`load`, plus a `name` that follows the document node's own
+  about the music, so a loaded clock takes this run's. `TempoClock.dump`/
+  `load`, plus a `name` that follows the document node's own
   rule: it says what the clock is, never which one it is.
 
   Polytempo falls out and is tested: a canon at three tempi is three named

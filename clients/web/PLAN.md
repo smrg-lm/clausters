@@ -2816,9 +2816,9 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   with no counterpart rather than one pair — and reported it as two missing
   twins, which reads like a gap in the port instead of a typo in a filename.
   Renamed to `views/tempo-ruler.html`; the pair then differed by one call, the
-  map's `dumps` against `dump`, which is the `json` module's spelling against
-  the wasm core's and is now a row in `docs/example-parity.md` with its `loads`
-  / `load` half.
+  map's `dumps` against `dump` — declared an idiom row at first and then fixed
+  properly, by renaming the Python client to the `dump`/`load` every other
+  layer already used (`docs/decisions.md`).
 
 - ✅ **Every page opened in a browser, and what that turned up** *(done
   2026-09-05)*. The pair audit reads what a page **calls**; it cannot say
