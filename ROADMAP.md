@@ -232,9 +232,11 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.
   - ⬜ **A set is addressed to a widget the redefine beside it just removed** —
-    the two halves of one publish disagree. Three candidate causes, the third
-    being `AP5`'s premise itself; a cheap test decides which, and a passing test
-    exonerates the walk rather than closing the entry.
+    the two halves of one publish disagree. Both tests are now written and both
+    pass, over generated pictures and over a host double that holds a registry,
+    so the walk is exonerated and the entry is **evidence for `AP5`'s premise**
+    rather than a bug of its own. It closes in `O23`, when the host stops being
+    the only one who knows what it is drawing.
   - ⬜ **The window closes and the process spins at 100% CPU** — nothing is known
     beyond the shape. Two places to look and neither has been.
   - ⬜ **A clip dragged past the first or last lane oscillates back to the start
@@ -248,6 +250,10 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     in both clients; they agree today and nothing keeps them agreeing.
   - ⬜ **`Echo.raise_floor` is called by nothing** — one site left after
     `FormEditor` went, and it assigns through the property instead.
+  - ⬜ **`Application` exists in Python and not in the web client** — the whole
+    publish loop has one implementation, and the web binds `guiDifference` and
+    calls it nowhere. The standing rule's own case, invisible until now because
+    the only editor that made a publish happen was `FormEditor`.
 
 ## 2. Fixes that need a decision first
 

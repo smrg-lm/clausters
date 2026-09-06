@@ -383,4 +383,211 @@ mod tests {
         assert!(difference(&json!([]), &json!({}), 1).whole);
         assert!(difference(&json!({}), &json!("window"), 1).whole);
     }
+
+    // ---- the generated pass: the invariant, over pictures nobody chose ----
+    //
+    // The cases above are each a shape somebody thought of. This one is here
+    // because of a defect nobody thought of: a host warned `/gui_set 1005: no
+    // such widget` immediately after a publish that redefined the widget 1005
+    // was inside. The walk is written to make that impossible, so either the
+    // reasoning has a hole or the two halves came from different pictures --
+    // and reading the walk again cannot tell those apart, while catching it can.
+
+    /// A deterministic generator, so this needs no dependency and a failure
+    /// reproduces from its seed. xorshift64.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+
+        fn one_in(&mut self, n: u64) -> bool {
+            self.below(n) == 0
+        }
+
+        fn value(&mut self) -> Value {
+            json!(self.below(80) as f64 / 8.0)
+        }
+    }
+
+    /// A window of lanes of clips, with ids drawn from one counter so no two
+    /// widgets share a number -- the host's namespace, as `AP1` made it.
+    fn grow(rng: &mut Rng, depth: u32, next: &mut i64) -> Value {
+        let mut kids = Vec::new();
+        for _ in 0..rng.below(4) {
+            if depth == 0 {
+                break;
+            }
+            if rng.one_in(9) {
+                // Chrome with no id: it may stay, but nothing can address it.
+                kids.push(json!({"type": "timeruler", "ruler": "beats"}));
+                continue;
+            }
+            let id = *next;
+            *next += 1;
+            let mut node = grow(rng, depth - 1, next);
+            let node = node.as_object_mut().unwrap();
+            node.insert("id".into(), json!(id));
+            node.insert(
+                "type".into(),
+                json!(if depth > 1 { "field" } else { "clip" }),
+            );
+            node.insert("offset".into(), rng.value());
+            if rng.one_in(3) {
+                node.insert("gain".into(), rng.value());
+            }
+            kids.push(Value::Object(node.clone()));
+        }
+        json!({"type": "window", "children": kids})
+    }
+
+    /// The next picture: the same tree with a handful of the changes a hand
+    /// makes -- a prop moves, a prop goes, a widget arrives or leaves, a type
+    /// changes, an id moves.
+    fn mutate(rng: &mut Rng, node: &Value, next: &mut i64) -> Value {
+        let mut out = node.as_object().unwrap().clone();
+        match rng.below(12) {
+            0 => {
+                out.insert("offset".into(), rng.value());
+            }
+            1 => {
+                out.remove("gain");
+            }
+            2 if out.contains_key("id") => {
+                out.insert("type".into(), json!("knob"));
+            }
+            3 if out.contains_key("id") => {
+                let id = *next;
+                *next += 1;
+                out.insert("id".into(), json!(id));
+            }
+            4 => {
+                let id = *next;
+                *next += 1;
+                let kids = out.entry("children").or_insert_with(|| json!([]));
+                kids.as_array_mut()
+                    .unwrap()
+                    .push(json!({"id": id, "type": "clip", "offset": 0.0}));
+            }
+            5 => {
+                if let Some(kids) = out.get_mut("children").and_then(|k| k.as_array_mut()) {
+                    kids.pop();
+                }
+            }
+            _ => {}
+        }
+        if let Some(kids) = out.get_mut("children").and_then(|k| k.as_array_mut()) {
+            for kid in kids.iter_mut() {
+                if kid.is_object() {
+                    *kid = mutate(rng, kid, next);
+                }
+            }
+        }
+        Value::Object(out)
+    }
+
+    /// Every id in this subtree, the node's own included -- what a `/gui_def`
+    /// of it frees and builds again.
+    fn ids(node: &Value, out: &mut Vec<i64>) {
+        let Some(node) = node.as_object() else { return };
+        if let Some(id) = node_id(node) {
+            out.push(id);
+        }
+        for kid in children(node) {
+            ids(kid, out);
+        }
+    }
+
+    /// The subtree a widget id names, or nothing when this picture has no such
+    /// widget.
+    fn find(node: &Value, wanted: i64) -> Option<&Value> {
+        let obj = node.as_object()?;
+        if node_id(obj) == Some(wanted) {
+            return Some(node);
+        }
+        children(obj).iter().find_map(|kid| find(kid, wanted))
+    }
+
+    #[test]
+    fn no_set_ever_names_a_widget_the_redefine_beside_it_removed() {
+        const ROOT: i64 = 1;
+        let (mut whole, mut redefined, mut setted, mut both) = (0, 0, 0, 0);
+        for seed in 1..=2000u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+            let mut next = 10;
+            let was = grow(&mut rng, 3, &mut next);
+            let now = mutate(&mut rng, &was, &mut next);
+            let out = difference(&was, &now, ROOT);
+            let case = format!("seed {seed}\nwas {was}\nnow {now}\ngot {out:?}");
+
+            whole += out.whole as u32;
+            redefined += !out.redefine.is_empty() as u32;
+            setted += !out.sets.is_empty() as u32;
+            both += (!out.redefine.is_empty() && !out.sets.is_empty()) as u32;
+            if out.whole {
+                assert!(
+                    out.redefine.is_empty() && out.sets.is_empty(),
+                    "a whole tree carries everything, so nothing rides beside it\n{case}"
+                );
+                continue;
+            }
+
+            // Both halves address widgets both pictures hold. A set to an id
+            // only the new picture has is a set to a widget the host has never
+            // been told about, which is the same warning from the other side.
+            for wid in out.redefine.iter().chain(out.sets.iter().map(|(id, _)| id)) {
+                if *wid == ROOT {
+                    continue;
+                }
+                assert!(
+                    find(&was, *wid).is_some(),
+                    "{wid} is not in the old picture\n{case}"
+                );
+                assert!(
+                    find(&now, *wid).is_some(),
+                    "{wid} is not in the new picture\n{case}"
+                );
+            }
+
+            // The invariant this test exists for. A redefine frees its whole
+            // subtree, so a set for anything inside it -- the widget itself
+            // included -- lands on a number the host no longer has.
+            for wid in &out.redefine {
+                let mut freed = Vec::new();
+                ids(find(&now, *wid).unwrap(), &mut freed);
+                for (sid, _) in &out.sets {
+                    assert!(
+                        !freed.contains(sid),
+                        "set {sid} rides under the redefined {wid}\n{case}"
+                    );
+                }
+                // And a redefine inside a redefine is the same message twice,
+                // the inner one about a widget the outer one already rebuilt.
+                for other in &out.redefine {
+                    assert!(
+                        other == wid || !freed.contains(other),
+                        "redefine {other} is inside the redefined {wid}\n{case}"
+                    );
+                }
+            }
+        }
+        // The generator has to reach all three answers, and above all the case
+        // this is about -- one publish carrying a redefine *and* a set -- or it
+        // passes by producing nothing worth asserting on.
+        assert!(
+            whole > 100 && redefined > 100 && setted > 100 && both > 100,
+            "the pictures generated are not varied enough to mean anything: \
+             whole={whole} redefined={redefined} setted={setted} both={both}"
+        );
+    }
 }

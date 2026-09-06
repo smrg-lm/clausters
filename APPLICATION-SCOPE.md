@@ -1019,6 +1019,26 @@ owner moved is how a working editor becomes a new set of defects.
   question that is currently open. What must not happen is this entry being
   closed by assumption because AP5 has an explanation that fits.
 
+  **Both tests are written, and the entry stays open** *(2026-09-06)*. The
+  arithmetic's is `guidiff::no_set_ever_names_a_widget_the_redefine_beside_it_removed`
+  - 2000 generated pairs of pictures, a deterministic generator so a failure
+  reproduces from its seed, asserting that no set names a widget under any
+  redefined id (the redefined widget itself included), that no redefine sits
+  inside another, and that both halves address widgets **both** pictures hold.
+  It counts what it generated and fails if the run never produced a publish
+  carrying a redefine and a set at once, which is the one case it exists for.
+  The wire's is `clients/python/tests/test_gui_publish.py`, whose host double is
+  a **registry** rather than a recorder: a `/gui_def` of a subtree frees every id
+  under it and builds the new one, and a `/gui_set` to a number the host does not
+  hold raises where the real host only warns.
+
+  **Both pass, so the walk is exonerated and this entry is now evidence for
+  AP5's premise.** What a pass means is bounded and the test file says so: the
+  publish loop is sound *while the client's picture and the host's agree*, which
+  the double makes true by construction. The running program is where they do
+  not, and that is the third cause. The entry closes when the host stops being
+  the only one who knows what it is drawing - which is `O23` - and not before.
+
 - ⬜ **The window closes and the process spins at 100% CPU** *(found 2026-09-06
   by the user, twice; one earlier instance was a `composer.py` still running 55
   minutes after its window was gone, at ~19% of a core)*. Nothing is known about
@@ -1128,6 +1148,27 @@ owner moved is how a working editor becomes a new set of defects.
   such a module (a second GUI vocabulary constant that has to be shared) or a
   cheaper place to put it, and it should be settled *there* rather than by
   whichever milestone next reads the list.
+
+- ⬜ **`Application` exists in Python and not in the web client, so half the
+  publish machinery has one implementation** *(found 2026-09-06, writing the
+  publish test)*. `clausters.gui.editing.Application` holds the picture per
+  window, publishes the difference, forgets a window that closed, hands a
+  host-less draw its ids and walks the pile round the registered editors. The
+  web client has **no `Application` at all** - `clients/web/src/gui/editing/`
+  has context, domain, echo, edit, editor, events, points, samples and view, and
+  no application - and it has never had one: `git log -S"class Application"` over
+  `clients/web/src` returns nothing. The core function is bound and exported
+  there (`guiDifference`, `src/base/core.ts`) and **called by nobody**.
+  Measured, the module's surface differs by `Application`, `ATTR`, `BASE_ID` and
+  `watch` in Python's favour; what runs the other way is type aliases and two
+  internals TS exports and Python keeps private (`contexts` behind `Editing.of`,
+  `resolveEditorHost`), which is idiom rather than surface.
+  **Why it was not visible until now**: the one override of `restructure` that
+  made a publish happen lived in `FormEditor`, so both base editors answer
+  `False` and the loop had no user left to diverge over. The next application
+  gives it one. This is the standing rule's own case - a class that exists in
+  one client and not the other - and it is why the wire test above has a Python
+  half and no TypeScript twin.
 
 - ⬜ **The undo/redo walk is still each client's, and lowering it is a design
   step rather than a move** *(found 2026-09-06, scoping AP5)*.
