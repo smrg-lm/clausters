@@ -18,8 +18,9 @@ from clausters.form.aggregate import LOGICAL
 from clausters.form.document import FIRST_VERSION, to_document
 from clausters.base import _osclib
 from clausters.gui.editing import FormEditor
-from clausters.gui.host import _prop_args
 from clausters.gui.editing.formeditor import _logical_patch
+from clausters.gui.host import _prop_args
+from clausters.gui.ids import GuiIdAllocator
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
 
@@ -2237,6 +2238,59 @@ def test_a_redefine_leaves_the_editor_able_to_edit():
     (roll,) = clips(lead)
     assert ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT)) is True
     assert member.offset == pytest.approx(5.0), "and the edit landed"
+
+
+def _host_with_a_namespace() -> _FakeHost:
+    """A double with a **real** widget-id namespace, as a host has.
+
+    The plain double hands ids from a counter its own draws reset, which makes
+    every redraw look stable whatever the editor does. What these tests are
+    about is precisely that, so they need the namespace the multitrack actually
+    names widgets in.
+    """
+    host = _FakeHost()
+    host.ids = GuiIdAllocator(base=20_000)
+    host.alloc_id = host.ids.alloc
+    return host
+
+
+def test_a_lane_and_a_clip_keep_their_ids_across_a_redraw():
+    """A widget id names the **placement** it draws — its document node id — so
+    two draws of one composition line up. Leased, they did not: the ids moved on
+    every draw, so nothing ever matched and every redraw was a redefine."""
+    ed = editor()
+    ed.open(_host_with_a_namespace())
+    first = [lane["id"] for lane in ed.draw()["children"]]
+    assert ed.draw()["children"] == ed.draw()["children"], "the tree is stable"
+    assert [lane["id"] for lane in ed.draw()["children"]] == first
+
+
+def test_redrawing_the_same_piece_costs_nothing():
+    ed = editor()
+    host = _host_with_a_namespace()
+    ed.open(host)
+    defines, sets = len(host.defines), len(host.sets)
+    ed.load(ed.element)
+    assert (len(host.defines) - defines, len(host.sets) - sets) == (0, 0)
+
+
+def test_editing_one_clip_in_a_piece_of_many_emits_no_definition():
+    """The acceptance this was all for. A redefine frees the old subtree, so it
+    takes every widget's screen state with it and drops what the host had
+    pending — doing that because a clip moved is what made a window flicker under
+    a hand that was not even in it."""
+    ed = editor(quant=0.25)
+    host = _host_with_a_namespace()
+    ed.open(host)
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    defines = len(host.defines)
+
+    assert ed.apply(*clip_event(roll["id"], 3 * BEAT, 2 * BEAT)) is True
+    ed.update()
+    assert len(host.defines) == defines, "no definition"
+    (_, lead) = lanes(ed.draw())
+    assert clips(lead)[0]["id"] == roll["id"], "and the clip is the same widget"
 
 
 def test_a_freed_aggregate_does_not_leave_a_new_one_drawn_expanded():

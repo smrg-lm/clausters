@@ -401,15 +401,27 @@ It is ported to the seam, not ported to Rust as it stands.
 - The mapping rule (root aggregate -> lanes, members -> clips, a nested
   aggregate as its summary until expanded) is unchanged; expand/collapse becomes
   screen state under AP3.
-- **The multitrack's widgets are named** (AP2's acceptance, moved here on
-  2026-09-06 with the measurement that forced it). A lane, a clip, a roll, a
-  patch and the ruler stop taking leased ids and ask for one by name, so two
-  draws of one composition line up and AP2's difference has something to match.
-  A clip's stable key is the **placement**, which is its document node id
-  (`Ox` O14) - and reaching one derives the document, so what this milestone
-  settles is not the naming but what `draw` is allowed to do: today its
-  docstring says it is pure, and a held document (`Ox` O13) is what makes
-  asking cheap.
+- ✅ **The multitrack's widgets are named** *(AP2's acceptance, moved here on
+  2026-09-06 with the measurement that forced it; done the same day)*. A lane, a
+  clip, a patch, its workspace and the ruler stop taking leased ids and ask for
+  one by name through `FormEditor._widget_id`. A clip's name is the
+  **placement** it draws - its document node id (`Ox` O14) - which survives a
+  redraw, a save and a reopen, so the widget keeps its number across all three.
+  An element the document does not name yet takes a lease, which is the honest
+  answer: it has no identity to be stable against.
+
+  **What this settled is what `draw` may do**, not the naming. Asking for a node
+  id derives the document, and the milestone was written expecting that to be
+  the obstacle. It is not: the editor holds one (`Ox` O13), so the ordinary
+  answer is a lookup, and it is re-derived only when the arrangement moved by a
+  route no gesture took - which is exactly when the picture has to be rebuilt
+  anyway. So the derivation is not a cost `draw` pays, it is one it schedules.
+
+  **Measured, on a host with a real namespace.** Two draws of one composition
+  now give the same lane ids (20001, 20003, 20004 twice, against 20005/20007 ->
+  20009/20011 before); a redraw of the same piece costs **zero definitions and
+  zero sets**; and dragging a clip in a piece of many, then redrawing, costs
+  **zero definitions** and leaves the clip the same widget.
 
 **Acceptance:** `composer.py` and the web client's equivalent page do the same
 things by the same calls in the same order, read side by side, verb by verb; the
@@ -560,10 +572,10 @@ Written down so it can be checked rather than felt:
 
 - [x] AP0 - the seam, in Python only
 - [x] AP1 - a widget id is named, not leased
-- [~] AP2 - a redraw is a diff *(mechanism landed; acceptance rides with AP6)*
+- [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
 - [~] AP5 - the application core moves to Rust *(the difference is down; the rest is scoped below it)*
-- [ ] AP6 - `FormEditor` converges
+- [~] AP6 - `FormEditor` converges *(its widgets are named; the seam itself is open)*
 - [ ] AP7 - a second application
 - [ ] AP8 - the pass over the packages

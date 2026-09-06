@@ -491,7 +491,8 @@ class FormEditor(Editor):
         # A lane and a patch workspace are different containers on the wire, and
         # only the first has a time axis to rule: `track` builds the two-axis
         # `field`, `patch` the locked-scale `plane`.
-        ruler = [timeruler(ruler="beats", sample_rate=self.sample_rate,
+        ruler = [timeruler(id=self._named_id("ruler"), ruler="beats",
+                           sample_rate=self.sample_rate,
                            tempo=self.tempo, tempo_map=self._map_prop())] if any(
             lane.get("type") == "field" for lane in lanes) else []
         return window(*lanes, *ruler, *self.extra, title=self.title,
@@ -502,13 +503,13 @@ class FormEditor(Editor):
         workspace — a server patch among the timeline lanes. Registers the patch
         widget id so an edit-back resolves to the aggregate it draws."""
         p, handles = _logical_patch(aggregate)
-        wid = self._new_id()
+        wid = self._widget_id("patch", aggregate)
         self._patches[wid] = (aggregate, handles)
         geometry = self._patch_geometry.get(aggregate, {})
         content = (900.0, 700.0)
         view = patch(id=wid, **p.to_widget(geometry), label=_name(aggregate),
                      x=0.0, y=0.0, w=content[0], h=content[1])
-        return scroll(view, id=self._new_id(),
+        return scroll(view, id=self._widget_id("scroll", aggregate),
                       content_w=content[0], content_h=content[1])
 
     def open(self, host=None, id: int | None = None) -> "WindowHandle":
@@ -2786,6 +2787,33 @@ class FormEditor(Editor):
 
     # ---- the tree walk ----
 
+    def _widget_id(self, role: str, element, member=None) -> int:
+        """The id of one multitrack widget, **named by what it draws**.
+
+        A lane, a clip and a patch all draw a *placement*, and a placement's name
+        in this composition is its document node id (`Ox` O14) — which survives a
+        redraw, a save and a reopen, so the widget drawing it keeps its number
+        across all three. That is what lets a redraw be sent as a difference
+        (`Application.publish`) instead of freeing the window and building it
+        again, and what keeps an edit-back in flight from landing on another
+        clip.
+
+        **Asking derives the document, and that is the point rather than a
+        cost.** The editor holds one (`Ox` O13), so the ordinary answer is a
+        lookup; it is re-derived only when the arrangement moved by a route no
+        gesture took, which is exactly when the picture has to be rebuilt anyway.
+
+        An element the document does not name — one being drawn before it has
+        been placed — takes a **lease** instead: it has no identity to be stable
+        against, and a widget that cannot be named is one the next redraw
+        rebuilds, which is the honest answer rather than a number that means
+        nothing.
+        """
+        node = self._node_id(element, member)
+        if node is None:
+            return self._new_id()
+        return self._named_id(role, str(node))
+
     def _lanes_for(self, element, base: float, owner, member) -> list:
         """The lanes an element contributes: a concrete `Aggregate` becomes one
         lane holding its members as clips (plus a lane of its own for every
@@ -2903,7 +2931,7 @@ class FormEditor(Editor):
         The header's toggles and its fader are drawn from the composition, not
         from the view: what the lane shows is what a reopened document says,
         and pressing one writes back through the log like every other edit."""
-        wid = self._new_id()
+        wid = self._widget_id("lane", element, member)
         lane = track(*clips, id=wid, label=_name(element),
                      sample_rate=self.sample_rate, tempo=self.tempo,
                      tempo_map=self._map_prop(),
@@ -2957,7 +2985,7 @@ class FormEditor(Editor):
         """One `clip`: the element placed at ``base`` beats (absolute on the shared
         axis), with the body (or **bodies**) its kind calls for. Registers what it
         drew, which is what the edit-back path resolves against."""
-        wid = self._new_id()
+        wid = self._widget_id("clip", element, member)
         offset = self.beats_to_units(base)
         dur_length = self._drawn_length(element, member)
         body = self._body_for(element, dur_length)
