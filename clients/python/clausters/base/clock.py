@@ -199,7 +199,7 @@ class TempoClock:
         self._map = tempo_map
         self._sync_map(wake=True)
 
-    def dumps(self) -> str:
+    def dump(self) -> str:
         """The clock as JSON: its name and its tempo map.
 
         **What of a clock belongs to the piece, and it is only these two.** Its
@@ -212,13 +212,13 @@ class TempoClock:
         which would make polytempo unwritable, but a named clock per tempo,
         with lanes naming which one they run on.
         """
-        return _json.dumps({"name": self.name, "map": _json.loads(self._map.dumps())})
+        return _json.dumps({"name": self.name, "map": _json.loads(self._map.dump())})
 
     @classmethod
-    def loads(cls, json: str, timebase=None) -> "TempoClock":
-        """A clock rebuilt from what `dumps` wrote: the same name, the same
+    def load(cls, json: str, timebase=None) -> "TempoClock":
+        """A clock rebuilt from what `dump` wrote: the same name, the same
         tempo map, and a `timebase` that is this run's rather than the saved
-        one's (there is no saved one -- see `dumps`). Raises `ValueError` on
+        one's (there is no saved one -- see `dump`). Raises `ValueError` on
         anything this client could not have written.
         """
         try:
@@ -226,7 +226,7 @@ class TempoClock:
             name, points = data["name"], data["map"]
         except (TypeError, KeyError, ValueError) as exc:
             raise ValueError(f"not a saved clock: {exc}") from exc
-        clock = cls(timebase=timebase, tempo_map=_native.TempoMap.loads(_json.dumps(points)))
+        clock = cls(timebase=timebase, tempo_map=_native.TempoMap.load(_json.dumps(points)))
         clock.name = name
         return clock
 

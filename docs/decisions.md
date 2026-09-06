@@ -8032,3 +8032,26 @@ stopped holding the data moves, since taking the union of the two padded ranges
 would drop the floor whenever the ceiling grew, which is the same jump one step
 removed. Widening rather than refitting is also what makes a point dragged down
 and back up leave the drawing where it was.
+
+## The house spells it `dump` and `load`, not `dumps` and `loads`
+
+`TempoMap` and `TempoClock` are written out as JSON in every layer, and until
+now the Python client was the one that spelled it differently: `dumps` /
+`loads` against `clausters_tempomap_dump` / `..._load` in the C ABI, `dump` /
+`load` in the wasm export, and `dump` / `load` in the web client. The pair
+audit found it, since a Python example and its page twin then made calls of
+two different names.
+
+The `s` came from `json.dumps`, and that is the whole of the argument for it —
+in the standard library the letter *disambiguates*: `json.dump(obj, fp)` writes
+a file and `json.dumps(obj)` returns a string, so the `s` is "string" and it is
+there because there are two functions. Here there is one, and nothing to tell
+it apart from. Borrowing the letter borrows a distinction the project does not
+make, and a reader who knows why `json` has it will look for the file variant.
+
+So the Python client renamed rather than the other three, which is the
+direction that leaves one name at every layer a person reads: the C symbol, the
+wasm export, `TempoMap.dump()` in TypeScript and `TempoMap.dump()` in Python.
+The general rule it settles: **when a house name and a language's stdlib name
+disagree, the house name wins unless the language's spelling carries a meaning
+here too.**

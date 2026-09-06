@@ -134,7 +134,7 @@ print(f"opened window {win} — drag a corner and watch the top ruler")
 # The curve owns nothing: it reports the whole break-point list in its own units
 # and this script decides what that means. Here it means the piece's tempo, so
 # the map is rebuilt and handed back to the ruler — a `/gui_set` value is a
-# scalar, hence the JSON the map writes with `dumps`.
+# scalar, hence the JSON the map writes with `dump`.
 
 # %%
 def _shape_of(shape: int, curvature: float):
@@ -160,7 +160,7 @@ def on_points(tag, *payload):
                          [_shape_of(q[2], q[3]) for q in quads[:-1]])
     except ValueError:
         return                       # a tempo the envelope cannot be read as
-    win["beats"].set(tempo_map=moved.dumps())
+    win["beats"].set(tempo_map=moved.dump())
     print(f"re-ruled: {moved.beats_at(corners[-1]):.2f} beats "
           f"in {corners[-1]:.1f} s")
 

@@ -61,9 +61,9 @@ def test_a_live_gesture_lands_on_a_map_written_ahead_of_the_clock():
 def test_a_map_round_trips_through_its_breakpoints():
     m = TempoMap(1.0)
     m.shaped(2.0, 6.0, 1.0, 2.0, curve="exponential")
-    json = m.dumps()
+    json = m.dump()
     assert "secs" not in json  # the integral is derived
-    back = TempoMap.loads(json)
+    back = TempoMap.load(json)
     for b in (-1.0, 0.0, 2.0, 4.5, 9.0):
         assert back.secs_at(b) == m.secs_at(b)
     assert back.version == 1  # a loaded map has had no edits
@@ -72,7 +72,7 @@ def test_a_map_round_trips_through_its_breakpoints():
 def test_a_stored_map_is_checked_by_the_door_that_reads_it():
     for json in ("[]", '[{"beats":0.0,"tempo":0.0}]', "not json"):
         with pytest.raises(ValueError):
-            TempoMap.loads(json)
+            TempoMap.load(json)
 
 
 def test_a_gesture_says_where_it_is_written():
@@ -83,7 +83,7 @@ def test_a_gesture_says_where_it_is_written():
     clock.set_tempo(4.0, over=4.0, at=16.0, curve="exponential")
     assert clock.beats2secs(8.0) == 8.0
     assert clock.beats2secs(12.0) == 10.0
-    assert [p["beats"] for p in json.loads(clock.map.dumps())] == [0.0, 8.0, 16.0, 20.0]
+    assert [p["beats"] for p in json.loads(clock.map.dump())] == [0.0, 8.0, 16.0, 20.0]
 
 
 def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
@@ -97,7 +97,7 @@ def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
     def melody():
         yield 3.0
         clock.set_tempo(200.0)
-        written.append(json.loads(clock.map.dumps())[-1]["beats"])
+        written.append(json.loads(clock.map.dump())[-1]["beats"])
         yield 1.0
 
     Routine(melody).play(clock)
@@ -110,19 +110,19 @@ def test_a_clock_is_saved_as_a_name_and_a_map():
     # refers to it by. Not its position, not its queue, not its timebase.
     clock = TempoClock(2.0, name="lead")
     clock.set_tempo(4.0, over=8.0, at=4.0, curve="exponential")
-    back = TempoClock.loads(clock.dumps())
+    back = TempoClock.load(clock.dump())
     assert back.name == "lead"
     assert back.beats2secs(12.0) == clock.beats2secs(12.0)
-    assert "timebase" not in clock.dumps()
+    assert "timebase" not in clock.dump()
     with pytest.raises(ValueError):
-        TempoClock.loads("{}")
+        TempoClock.load("{}")
 
 
 def test_polytempo_is_several_named_clocks():
     # The reason the saved unit is a clock and not "the" tempo: a canon at
     # three tempi is three of them, and a lane says which one it runs on.
     canon = [TempoClock(t, name=f"voice {i}") for i, t in enumerate((1.0, 1.5, 2.0))]
-    written = [c.dumps() for c in canon]
-    read = [TempoClock.loads(j) for j in written]
+    written = [c.dump() for c in canon]
+    read = [TempoClock.load(j) for j in written]
     assert [c.name for c in read] == ["voice 0", "voice 1", "voice 2"]
     assert [c.tempo for c in read] == [1.0, 1.5, 2.0]

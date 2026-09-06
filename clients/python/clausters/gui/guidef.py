@@ -2809,7 +2809,7 @@ _Y_AXIS = {
 
 def _tempo_map(value):
     """A ``tempo_map`` keyword as the wire carries it: the JSON breakpoint list
-    a `TempoMap` writes with ``dumps``.
+    a `TempoMap` writes with ``dump``.
 
     A map or the string are both accepted because a script has one and a stored
     def has the other, and the axis means the same thing either way. Every
@@ -2818,7 +2818,7 @@ def _tempo_map(value):
     """
     if value is None or isinstance(value, str):
         return value
-    return value.dumps()
+    return value.dump()
 
 
 def _axes(_axes_given: dict | None = None, **flat) -> dict:

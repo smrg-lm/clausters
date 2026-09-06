@@ -2123,12 +2123,12 @@ class TempoMap:
         """
         return self._lib.clausters_tempomap_version(self._handle)
 
-    def dumps(self) -> str:
+    def dump(self) -> str:
         """The map as JSON: its breakpoints, without the derived seconds.
 
         A second is ``M(beats)``, the integral evaluated there — a cache, never
         authored. Writing it out would let a file assert a second its own
-        tempi do not produce, so a stored map is its breakpoints and `loads`
+        tempi do not produce, so a stored map is its breakpoints and `load`
         replays them.
         """
         need = self._lib.clausters_tempomap_dump(self._handle, None, 0)
@@ -2137,8 +2137,8 @@ class TempoMap:
         return buf.raw[:need].decode("utf-8")
 
     @classmethod
-    def loads(cls, json: str) -> "TempoMap":
-        """A map read back from what `dumps` wrote.
+    def load(cls, json: str) -> "TempoMap":
+        """A map read back from what `dump` wrote.
 
         The breakpoints are replayed through the ordinary writers, so a stored
         map that loads is one this client could have written and every rule a

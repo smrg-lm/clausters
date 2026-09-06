@@ -1325,6 +1325,15 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **The tempo map was written out under two names** *(found and fixed
+  2026-09-05)*. `TempoMap.dumps` / `loads` here, `dump` / `load` in the C ABI,
+  the wasm export and the web client — found by the pair audit, which saw the
+  two examples calling names that did not pair. Renamed to `dump` / `load` on
+  both `TempoMap` and `TempoClock`, since the `s` of `json.dumps` marks a
+  string variant against a file one and there is no file variant here.
+  Breaking, and pre-1.0, so no alias: `docs/decisions.md` carries the rule it
+  settles.
+
 - ⬜ **An automation's lane is freed on a beat length computed from one tempo**
   *(found 2026-09-05, reading the fundamental structures after the tempo-map
   ownership question was raised)*. `Automation.play` schedules the curve's
