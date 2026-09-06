@@ -263,14 +263,16 @@ one conversion still names the right node in the next.
 
 ### An edit is applied in one place
 
-The crate is the only thing that applies an edit. A client does not apply and
+`clausters.document` is the door to it — the same surface the web client reaches
+through its own `document` module, name for name. The crate is the only thing
+that applies an edit. A client does not apply and
 then report — it hands over the document and the **intent** and receives the new
 document plus what happened:
 
 ```python
-from clausters import _native
+from clausters.document import apply_intent
 
-result = _native.document_apply(
+result = apply_intent(
     doc,
     {"intent": "place", "node": 3, "offset": 4.3},
     against={"version": doc["version"]},   # the state you were looking at

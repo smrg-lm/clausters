@@ -926,12 +926,11 @@ class Document:
     asked for rather than paid per edit.
 
     Args:
-        document: a document as `clausters.form.to_document` writes it, or
-            ``None`` for an empty composition.
+        document: a document as JSON, or ``None`` for an empty composition.
 
     Usage::
 
-        with Document(to_document(song)) as doc:
+        with Document(written) as doc:
             outcome = doc.apply({"intent": "place", "node": 4, "offset": 2.0})
             song = from_document(doc.snapshot())
 
@@ -1018,6 +1017,20 @@ class Document:
         out = (ctypes.c_ubyte * need)()
         n = fn(*args, out, need)
         return json.loads(ctypes.string_at(out, n))
+
+    @staticmethod
+    def coalesce_key(intent: dict) -> str:
+        """What makes two edits over the arrangement *the same thing done the
+        same way* — the key a `History` coalesces on, or ``""`` when the intent
+        will not parse. The method form of `document_coalesce_key`, and the one
+        the web client spells `Document.coalesceKey`."""
+        return document_coalesce_key(intent)
+
+    def inverse(self, intent: dict) -> "dict | None":
+        """The edit that would put this node back the way it is, read **before**
+        anything is applied, or ``None`` when the document cannot describe it.
+        The method form of `document_inverse`."""
+        return document_inverse(self, intent)
 
     def resolve(self, selection: dict, *, frames_per_beat: float,
                 frames_per_second: float, in_beats: bool = False) -> list:
@@ -1569,7 +1582,7 @@ class Log:
     Usage::
 
         log = Log()
-        with Document(to_document(song)) as doc:
+        with Document(written) as doc:
             log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
                       label="move the clip")
             log.undo(doc)                    # exactly where it was

@@ -24,6 +24,7 @@ loaders:
       - clausters.ipc
       - clausters.errors
       - clausters.data
+      - clausters.document
       - clausters.base
       - clausters.base.builtins
       - clausters.base.absobject

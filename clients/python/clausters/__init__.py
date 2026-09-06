@@ -85,7 +85,8 @@ The layers:
 
 from . import _native
 from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
-from . import base, data, defs, errors, form, gui, ipc, launch, segments, seq
+from . import (base, data, defs, document, errors, form, gui, ipc, launch,
+               segments, seq)
 from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock
