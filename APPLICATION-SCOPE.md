@@ -544,6 +544,26 @@ it loses no decision.
   Everything this turns up is recorded **here**, in this file, because all of it
   is to be dealt with — including by changing the design.
 
+- ⬜ **A clip dragged past the first or last lane oscillates back to the start
+  of the track** *(found 2026-09-06 by the user, by eye, twice)*. Holding a
+  vertical drag against the top or bottom of the stack makes the clip jump to
+  the beginning and back, repeatedly, while the hand is still down. **No event
+  reaches the client for those frames** — the log carries none — so it is the
+  host's own drag, not an edit being refused. Two things in `gestures` are worth
+  reading together for it: the edge auto-scroll (`drag.rs::tick`) pans the
+  group's window and re-applies the drag against the window it left behind, and
+  `apply_clip_drag` maps the cursor through the group's **current** window. What
+  has not been checked is what `LaneStack::at` answers past the ends of the
+  stack, and whether the pan fires from a vertical overshoot at all.
+
+- ⬜ **The playhead draws behind the clips** *(found 2026-09-06 by the user, by
+  eye, after a lane was redefined in place)*. Not missing — behind. The line is
+  a lane prop the transport sets (`playhead_at`), read from `_playline` on each
+  use so a redraw's new widgets get it, so the client's half survives a
+  redefine; what has not been read is the host's paint order for a lane whose
+  subtree was spliced. It appeared with the narrow redefine, which is the first
+  thing that ever rebuilt a widget *inside* an open window.
+
 - ⬜ **Dropping a clip where another one already sits makes the lane draw as
   one layered clip, so both appear to vanish into one** *(found 2026-09-06 by
   the user, by eye — "the curve's clip moved by itself back to where it was" —
