@@ -59,6 +59,7 @@ pub mod resolve;
 pub mod samples;
 pub mod selection;
 pub mod session;
+pub mod timebase;
 
 pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
