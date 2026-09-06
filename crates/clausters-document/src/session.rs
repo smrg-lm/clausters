@@ -45,6 +45,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::arrangement::{Arrangement, Extra};
 use crate::{Document, Lifetime, Opaque, SourceId};
 
 /// The format this file was written in.
@@ -119,6 +120,9 @@ pub struct Source {
     /// The destructive edit open over it, if one is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing: Option<OpenEdit>,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
+    pub extra: Extra,
 }
 
 impl Source {
@@ -133,6 +137,7 @@ impl Source {
             sample_rate: None,
             provenance: None,
             editing: None,
+            extra: Extra::new(),
         }
     }
 
@@ -178,12 +183,24 @@ impl Source {
     }
 }
 
-/// A composition, saved: the document, and where its samples are.
+/// A composition, saved: the arrangement, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
     pub format: u32,
-    /// The composition.
+    /// **The piece**: its tracks, and the timeline they are placed on.
+    #[serde(default, skip_serializing_if = "is_empty_arrangement")]
+    pub arrangement: Arrangement,
+    /// The general tree, for what is not an arrangement.
+    ///
+    /// **This is the leg that is being walked off, and saying so is part of
+    /// the design rather than an apology.** It is what every current reader
+    /// opens - the standalone host, the clients' save and reopen - so it stays
+    /// until the host binds the arrangement instead, which is a milestone of
+    /// its own. What replaces it is already here: a
+    /// [`Content::Composite`](crate::arrangement::Content::Composite) region
+    /// carries this same tree, placed, so nothing the general model can say is
+    /// lost by the move - it gains a position.
     pub document: Document,
     /// Where each source is. A `BTreeMap`, so a written session is stable
     /// under re-saving and a diff of two saves is the edits and not the
@@ -195,17 +212,34 @@ pub struct Session {
     /// not lose the reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Opaque>,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
+    pub extra: Extra,
+}
+
+/// Whether an arrangement says nothing at all, so an empty one stays out of the
+/// file rather than writing an empty object into every session ever saved.
+fn is_empty_arrangement(arrangement: &Arrangement) -> bool {
+    *arrangement == Arrangement::new()
 }
 
 impl Session {
-    /// A session over this document, with no sources yet.
+    /// A session over this document, with no arrangement and no sources yet.
     pub fn new(document: Document) -> Self {
         Self {
             format: FORMAT,
+            arrangement: Arrangement::new(),
             document,
             sources: BTreeMap::new(),
             provenance: None,
+            extra: Extra::new(),
         }
+    }
+
+    /// Carries this arrangement.
+    pub fn with_arrangement(mut self, arrangement: Arrangement) -> Self {
+        self.arrangement = arrangement;
+        self
     }
 
     /// Records where a source is.
@@ -244,10 +278,23 @@ impl Session {
             .collect()
     }
 
-    /// Sources the tree names but the table does not hold — what an opening
+    /// Sources the piece names but the table does not hold — what an opening
     /// reader reports rather than discovering one element at a time.
+    ///
+    /// Both halves are walked: the arrangement's regions and the general tree.
+    /// A reader that checked only one would open a session missing exactly the
+    /// material the other half plays.
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
+        for region in self.arrangement.regions() {
+            if let Some(window) = region.content.as_window()
+                && let Some(source) = window.source.samples()
+                && !self.sources.contains_key(&source.source)
+                && !missing.contains(&source.source)
+            {
+                missing.push(source.source);
+            }
+        }
         self.document.walk(&mut |node| {
             let named: Vec<crate::SourceId> = match &node.body {
                 crate::Body::Vector { source, .. } => vec![source.source],

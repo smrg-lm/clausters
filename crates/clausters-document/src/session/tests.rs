@@ -323,3 +323,101 @@ fn an_unknown_body_survives_a_save_and_an_open() {
     assert_eq!(carried["kind"], "constellation");
     assert_eq!(carried["spread"], 0.5);
 }
+
+// ---- the arrangement the session now carries ----
+
+#[test]
+fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
+    use crate::arrangement::{Arrangement, Content, Region, Tempo, Track};
+    use crate::timebase::Beat;
+
+    // Nothing said, nothing written: every session saved before this existed
+    // reads back identical, which is what makes the field an addition rather
+    // than a format change.
+    let plain = saved();
+    let json = serde_json::to_string(&plain).unwrap();
+    assert!(!json.contains("arrangement"), "{json}");
+    assert_eq!(reopen(&plain), plain);
+
+    let mut arrangement = Arrangement::new();
+    arrangement.set_tempo(Tempo::at(Beat(0.0), 96.0));
+    let mut track = Track::new(NodeId(80), NodeId(81)).named("drums");
+    track.active_lane_mut().unwrap().place(Region::new(
+        NodeId(82),
+        Beat(0.0),
+        Beat(4.0),
+        Content::Composite {
+            node: Box::new(Node::new(
+                NodeId(83),
+                Body::Clang {
+                    config: crate::Opaque::none(),
+                    fires: None,
+                },
+            )),
+        },
+    ));
+    arrangement.tracks.push(track);
+    let session = plain.with_arrangement(arrangement);
+    let opened = reopen(&session);
+    assert_eq!(opened.arrangement.end(), Beat(4.0));
+    assert_eq!(opened.arrangement.tempo_at(Beat(2.0)).unwrap().bpm, 96.0);
+    assert_eq!(opened, session);
+}
+
+#[test]
+fn a_source_only_a_region_names_is_still_reported_missing() {
+    use crate::arrangement::{Arrangement, Content, Region, Track};
+    use crate::timebase::Beat;
+    use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
+
+    // The table is walked against **both** halves. A reader that checked only
+    // the tree would open a session missing exactly what the arrangement plays,
+    // and an alternate take counts: it names its source whether or not it is
+    // the lane that plays.
+    let window = |source: u64| SegmentRef {
+        source: SegmentSource::Samples(SourceRef {
+            source: SourceId(source),
+            lifetime: Lifetime::Session,
+            generation: 0,
+            range: None,
+        }),
+        start: 0.0,
+        duration: 1.0,
+    };
+    let mut arrangement = Arrangement::new();
+    let mut track = Track::new(NodeId(90), NodeId(91));
+    track.active_lane_mut().unwrap().place(Region::new(
+        NodeId(92),
+        Beat(0.0),
+        Beat(4.0),
+        Content::window(window(700)),
+    ));
+    track.lanes.push(crate::arrangement::Lane::new(NodeId(93)));
+    track.lanes[1].place(Region::new(
+        NodeId(94),
+        Beat(0.0),
+        Beat(4.0),
+        Content::window(window(701)),
+    ));
+    arrangement.tracks.push(track);
+
+    let session = Session::new(Document::new(Node::new(
+        NodeId(1),
+        Body::Clang {
+            config: crate::Opaque::none(),
+            fires: None,
+        },
+    )))
+    .with_arrangement(arrangement);
+    assert_eq!(session.dangling(), vec![SourceId(700), SourceId(701)]);
+}
+
+#[test]
+fn a_top_level_field_a_newer_writer_added_survives_a_save() {
+    let json = r#"{"format":1,"document":{"version":1,"root":{"id":1,"kind":"clang"}},
+                   "mixer":{"buses":[{"id":1,"name":"reverb"}]}}"#;
+    let session: Session = serde_json::from_str(json).unwrap();
+    assert!(session.extra.contains_key("mixer"));
+    let back = serde_json::to_value(&session).unwrap();
+    assert_eq!(back["mixer"]["buses"][0]["name"], "reverb");
+}

@@ -16,10 +16,16 @@
 //!   configuration it never interprets ([`Opaque`]), because a generator *is
 //!   code* in the language of whoever wrote it and no crate in any language can
 //!   own one. What it does own is where that leaf sits in time.
-//! - **The tree stays general; a view carries its own restrictions.** There is
-//!   no lane, no vertical position and no type-per-container here. A multitrack
-//!   editor is a *projection* that may decline to show what its shape does not
-//!   admit, the way an unknown widget is laid out and not painted.
+//! - **The tree stays general, and the arrangement is beside it rather than
+//!   projected out of it.** *(Changed 2026-09-06.)* This used to read "there is
+//!   no lane, no vertical position and no type-per-container here", with a
+//!   multitrack as a *projection* of the general tree — and a projection has
+//!   nowhere to keep the state a multitrack has, so that state ended up in the
+//!   widget tree, which is drawn, and drawing frees. So [`arrangement`] holds
+//!   the model the field actually has — source, region, lane, track, automation
+//!   — and the general tree is what a
+//!   [`Content::Composite`](arrangement::Content::Composite) region *places*.
+//!   Nothing the tree could say is lost; it gains a position.
 //! - **Sources are never overwritten.** A [`SourceRef`] names samples and
 //!   carries the [`Lifetime`] that says whether it outlives the session, which
 //!   is what lets a save be honest about what it is about to promote.
@@ -62,6 +68,9 @@ pub mod selection;
 pub mod session;
 pub mod timebase;
 
+pub use arrangement::{
+    Arrangement, Automation, Extra, Fade, Lane, Marker, Meter, Region, Span, Tempo, Track,
+};
 pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
 pub use events::{Event, Events, EventsIntent};
@@ -75,6 +84,7 @@ pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
 pub use samples::{Samples, SamplesIntent};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
+pub use timebase::{Beat, ContentBeat, ContentFrame, TimelineFrame};
 
 use std::collections::HashMap;
 

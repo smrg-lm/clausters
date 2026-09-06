@@ -684,6 +684,17 @@ impl Arrangement {
         self.meter.insert(at, meter);
     }
 
+    /// Every region in the arrangement, in track then lane then position
+    /// order — **every** lane, not only the ones that play, because an
+    /// alternate take still names the source it plays and a save that forgot
+    /// it would reopen missing the take nobody chose yet.
+    pub fn regions(&self) -> impl Iterator<Item = &Region> {
+        self.tracks
+            .iter()
+            .flat_map(|t| t.lanes.iter())
+            .flat_map(|l| l.regions.iter())
+    }
+
     /// Adds a marker, keeping them in position order. Several markers may share
     /// a beat: unlike a tempo, two names for one moment is a thing people do.
     pub fn add_marker(&mut self, marker: Marker) {
