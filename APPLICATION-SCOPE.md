@@ -309,6 +309,35 @@ implementor per branch today. If AP4 cannot be written without inventing a
 second one, it waits - a trait designed against a single implementor is designed
 wrong, and this plan says so about its own milestone.*
 
+**Closed 2026-09-06 by finding it already true, and nothing was built.** The
+milestone asked for "one seam that says which of the two a payload is, and never
+branches on the vocabulary". That seam exists and is called `Domain`, and the
+second half is already an invariant rather than an aspiration: `payload`,
+`refusal`, `current`, `project`, `label` and `coalesce_key` are the whole of what
+the core asks of a vocabulary, there are exactly four call sites (all in
+`Editor`), and **no module of the application core names a vocabulary** - not
+`editor`, not `application`, not `context`, not `echo`, and not `FormEditor`.
+Grepping the five for `SAMPLES`/`POINTS`/`EVENTS`, `domain.name` and an
+`isinstance` against a domain returns nothing.
+
+So the two branches are not a distinction to be introduced; they are two
+implementations of one interface, and there are three of them. **By value** -
+the state crosses the ABI and the crate answers with the edit and its inverse -
+is `points` and `events`, two implementors. **By reference** - the state lives
+elsewhere, the client applies it and the inverse rides on the wire - is
+`samples`, one. Adding a marker saying which is which would be machinery nothing
+reads, which is exactly what this milestone's own risk note says to refuse.
+
+**What the milestone's second half was really about is transport, and it is a
+non-goal of this branch.** "Native, shared memory; in the browser, whatever the
+transport can do" is about how bulk travels, not about how an edit is expressed:
+a stroke's run crosses today as floats in the OSC event, and moving it to the
+shared segment is a native fast path under an ownership rule that is already
+decided. It belongs to the GUI track's data-path work, not here.
+
+**One leftover, filed rather than fixed** (see "Found by use" below): the
+temporal coupling in `SamplesDomain`.
+
 ### AP5 - The application core moves to Rust
 
 Only now, and only what AP0-AP4 have already proven is common.
@@ -395,6 +424,23 @@ The milestone that makes deleting this file legal.
 **Acceptance:** nothing in this file is the only copy of anything, and deleting
 it loses no decision.
 
+## Found by use
+
+- ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
+  it** *(found 2026-09-06, auditing AP4's premise)*. The crate's `samples`
+  vocabulary has no field for "what this replaced", so the previous run - which
+  arrives on the wire in the same event - waits in `self._previous` between
+  `payload` and `current`. Two things follow. The interface does not say that
+  `current` must be called right after `payload` and exactly once, so the
+  contract lives in the flow rather than in the type; and a domain instance is
+  therefore single-gesture, which nothing declares. It is **not a live defect**:
+  there is one domain per editor, the four call sites run on one thread, and the
+  only path that reaches `payload` also reaches `current`. It is filed because
+  the coupling is invisible at the seam every other vocabulary is written
+  against, and the fix - carrying the previous run in the payload the wire
+  already put it in - has to answer what an extra field does to the coalesce key
+  and to what the log records, which is more than a rename.
+
 ## The order, and why it is this one
 
 1. **AP0 before anything**, because moving the seam in Python is cheap and
@@ -430,7 +476,7 @@ Written down so it can be checked rather than felt:
 - [x] AP1 - a widget id is named, not leased
 - [~] AP2 - a redraw is a diff *(mechanism landed; acceptance rides with AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
-- [ ] AP4 - by value or by reference
+- [x] AP4 - by value or by reference *(already true; nothing built, and why)*
 - [ ] AP5 - the application core moves to Rust
 - [ ] AP6 - `FormEditor` converges
 - [ ] AP7 - a second application
