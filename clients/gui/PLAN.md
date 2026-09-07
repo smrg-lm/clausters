@@ -3446,6 +3446,83 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   painted on those and no others, so the four pictures answer the rule the four
   takes already did.
 
+- ⬜ **A press on empty staff answers with the engraver's own drawing about one
+  time in seven, and it is the staff lines** *(found 2026-09-07 by the user, by
+  eye, in `notation/score_editor`)*. Measured over the sitting: **64** presses
+  wrote a quarter and **10** came back as `"element"` carrying an id the model
+  does not own -- the engraver's own drawing -- so no note was written and the
+  page answered a selection instead. It looked random from the window until the
+  user placed it: it is the presses that land **on a line** rather than in a
+  space, which is not a coincidence but the whole mechanism.
+
+  It is the open half of the hit test the noteheads' fix closed on 2026-09-03.
+  That one settled the case where something *sounds*: a sounding element wins
+  over anything drawn across it, and the tightest box only decides between
+  those. On empty staff nothing sounds, so the tightest box decides alone --
+  and a staff line is a hairline the width of the system, the tightest box on
+  the page. It is the same geometry that made a notehead answer with the staff
+  in the first place; only the arm that resolves it is different, because there
+  is no sounding element to prefer. The rule needs its second
+  half: what a press means when it lands on nothing that sounds, where a staff
+  is a **place** and not a thing to select.
+
+- ⬜ **An insert breaks the ties the document was read with, and only the
+  engraver says so** *(found 2026-09-07, reading `notation/score_editor`'s log
+  during the visual review's second sitting)*. The page engraves clean when it
+  opens. After the first inserted note the engraver starts reporting
+
+      [Warning] Unable to match @tie of note 'n24-2', skipping it
+      [Warning] Expected @tie median or terminal in note 'n39', skipping it
+
+  and never stops -- 16 of them for one note across the sitting, on seven notes
+  in all. It begins on the `-2` ids, which are the bass staff made here by
+  transposing a copy, and later reaches the typed staff's own. A skipped tie is
+  a duration that changes on the page and in what is played, and the whole of
+  the evidence is a warning on stderr that no example reads and no test asserts.
+
+  Two places to look and neither has been: whether an insert renumbers or
+  invalidates the tie references the ABC import wrote into the model, and
+  whether the transposed copy carries tie references naming notes that only
+  exist in the original. They are different bugs with the same symptom, and the
+  order of the ids says the second may be the older one.
+
+- ⬜ **A paste lands on a cursor no hand can place** *(found 2026-09-07 by the
+  user, by eye, in `editors/pianoroll`: "al pegar deberia hacerlo a partir del
+  cursor, de lo contrario no hay referencia de donde pegar")*. `Ctrl`+`V` over a
+  roll pastes the block at `self.step`, and so does the cut that shares the
+  comment: *"a paste has no pointer, and the cursor is where the roll is being
+  written"*. The diagnosis is right -- a key gesture has no pointer to read --
+  and the cursor chosen is written in exactly one place in the whole element:
+  it is **advanced** when a live note is entered by step, and no gesture ever
+  sets it. So for anyone who is not step-recording it is 0, every paste lands at
+  the beginning whatever the eye was on, and there is no way to aim one.
+
+  What it wants is a cursor a hand can put somewhere and see -- the roll already
+  answers `locate`, and a window already has a position -- rather than a second
+  invisible one. The same anchor is what a cut would report and what a `q`
+  would quantize toward, so it is one decision for the three of them.
+
+- ⬜ **A marker added on the OSC lane names nothing, and the two clients
+  disagree about it** *(found 2026-09-07 by the user, by eye, comparing
+  `editors/pianoroll` with `editors/edit_notes`)*. `Ctrl`+click on the marker
+  lane pushes `OscMark { time, label: None }` -- a marker with **no address**.
+  A marker is the message it sends, so one with no address is a message that
+  names nothing, and the wire carries it as an empty label.
+
+  What the two clients do with it is the visible half. `edit_notes` routes the
+  lane through the timeline's domain, which cannot build an `OscItem` without an
+  address and refuses with a sentence naming the verb to call instead;
+  `pianoroll` keeps its own list and counts what arrives, so the marker is
+  accepted and will never send anything. Neither is wrong about the value it was
+  handed: the host offered a thing the model cannot hold, and each client
+  answered honestly.
+
+  So the question is the host's, and it is the same one the wire settled for
+  everything else -- a view emits what a structure can take. Either the lane
+  refuses an add it cannot address (and says so, which is the entry below), or
+  the address is part of the gesture, or a labelless marker is given a meaning
+  of its own. It cannot stay a value only one client notices.
+
 - ⬜ **An undo leaves the pencil dead, and a dead pencil draws a selection**
   *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "hice
   undo/redo y no me dejó dibujar más")*. Reproduced with a trace. One stroke

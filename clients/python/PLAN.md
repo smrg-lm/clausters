@@ -3242,6 +3242,39 @@ work, where a pending item reads as done.)*
   web client's `Playhead` seeks the same way and the fix is one rule in two
   spellings.
 
+- ⬜ **Half the editors a hand can use have no history, because they edit
+  through the raw event** *(found 2026-09-07 by the user, by eye, in
+  `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z no hace
+  nada", twice)*. Counted over the examples that let a hand edit a structure,
+  it is four and four:
+
+  | through `edit()`, with a history | through `on_event`, with none |
+  |---|---|
+  | `edit_curve`, `edit_notes`, `edit_samples`, `notation/score_editor` | `editors/bpf`, `editors/pianoroll`, `editors/pianoroll_midi`, `editors/multitrack` |
+
+  The right-hand column subscribes to the widget and keeps its own list. Every
+  gesture works -- the piano-roll's whole set does: move, resize, add, remove,
+  marquee, quantize, cut, copy, paste -- and none of it is undoable, because the
+  window's undo verb is addressed to the window and there is nobody behind it to
+  answer. A sitting's trace over the roll carries 37 `notes` events, 6 `osc`
+  events and **not one line of the editing seam**. `Ctrl`+`Z` in those four
+  windows is a key that does nothing, silently, which is the same lesson a
+  refusal nobody draws teaches.
+
+  Two of them are the interesting ones. The **piano-roll** is presented as the
+  editor-grade sibling of the multitrack's clip roll and is the roll a reader is
+  likeliest to meet first, so the surface is met before the seam -- the opposite
+  of the order the two were written in. The **multitrack** is the shape `O24`'s
+  application takes, and it is the one whose edits already have somewhere to go.
+
+  It is not a missing feature in the client: `edit_notes` drives the *same*
+  widget through `edit()` and has the history, the domain and the refusals. What
+  is open is whether these four are ported onto the seam, or whether a
+  script-owned list is a legitimate second way to drive a view and the examples
+  should say which one they are showing. **Related:** the piano-roll also loops
+  with nothing moving -- `play` scans what is drawn and no `Playhead` is
+  anchored to the line, the way `editors/multitrack` anchors its transport.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
