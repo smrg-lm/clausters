@@ -503,11 +503,19 @@ def test_the_echo_is_the_protocol_and_needs_no_structure():
     echo.announce()
     assert host.acks[-1] == (0, 3, None), "the host is told what it is drawing"
 
-    # Unstated applies unchecked; anything under the floor is overtaken.
-    echo.floor = 5
+    # Unstated applies unchecked; anything under the floor is overtaken. The
+    # floor moves by the one verb that moves it, which is also the road an
+    # editor takes -- a test that assigned it would check an act nobody
+    # performs.
+    version = 5
+    echo.raise_floor()
     assert echo.stale(0) is False
     assert echo.stale(4) is True
     assert echo.stale(9) is False
+    #: Back to 3 for the half below: an acknowledgement carries the version the
+    #: context is at *now*, and the floor is a separate number that stays where
+    #: the verb left it.
+    version = 3
 
     echo.correct(7, value=1.0)
     echo.acknowledge(2, reason="not here")

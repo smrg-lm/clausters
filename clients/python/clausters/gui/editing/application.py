@@ -300,14 +300,6 @@ class Application:
         self.echo.corrections = list(value)
 
     @property
-    def floor(self) -> int:
-        return self.echo.floor
-
-    @floor.setter
-    def floor(self, value) -> None:
-        self.echo.floor = int(value)
-
-    @property
     def reason(self) -> "str | None":
         return self.echo.reason
 
@@ -318,6 +310,10 @@ class Application:
     def announce(self) -> None:
         """Tell the host which version it is drawing, before any edit."""
         self.echo.announce()
+
+    def raise_floor(self) -> None:
+        """The composition moved by a route no gesture took."""
+        self.echo.raise_floor()
 
     def stale(self, against: int) -> bool:
         """Whether an edit made against version ``against`` has been

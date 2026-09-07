@@ -79,7 +79,15 @@ class Echo:
 
     def raise_floor(self):
         """The composition moved by a route no gesture took, so what is in
-        flight was made against a picture that is gone."""
+        flight was made against a picture that is gone.
+
+        **The only way the floor moves**, which is what makes `stale` a monotone
+        test rather than a race. It is a verb and not an assignment for the same
+        reason: writing the floor by hand means reading the version and writing
+        it somewhere else, and the two halves of that can disagree -- the floor
+        was once *lowered* by a path that meant to reset it, which is not a
+        floor at all.
+        """
         self.floor = self.version
 
     def correct(self, widget_id: int, **props):

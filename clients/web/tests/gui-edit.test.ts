@@ -161,6 +161,50 @@ test("a curve is drawn, edited and read back with no composition", async () => {
     assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0]);
 });
 
+test("an edit made against a picture an undo replaced is refused", async () => {
+    // The staleness floor, on the road an editor actually travels. A host
+    // stamps every event with the version it was last told, and it is told only
+    // when an acknowledgement reaches it — a round trip a hand outruns — so an
+    // edit naming an older version is the ordinary case and applies. What does
+    // not is an edit made against a picture the composition has moved away from
+    // by a route the host never saw: here an undo.
+    const curve = aCurve();
+    const editor = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
+    const { host, wid } = await opened(editor);
+
+    assert.equal(
+        editor.apply("/gui_event", [wid, 1, 0, "points",
+            0.0, 300.0, 1, 0.0, 2.0, 100.0, 1, 0.0]),
+        true,
+    );
+    // The version the host has just been told it is drawing, read where it
+    // lives: the version is the editing **context's**, not this view's.
+    const against = Editing.of(curve).version;
+
+    assert.equal(editor.undo(), true);
+    assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0]);
+
+    // The event the hand had already sent, naming the picture it was made
+    // against. Refused rather than applied: an edit-back payload is absolute
+    // *and* whole, so applying one made against an older picture would silently
+    // drop whatever arrived in between — here, the undo.
+    assert.equal(
+        editor.apply("/gui_event", [wid, 2, against, "points",
+            0.0, 900.0, 1, 0.0, 2.0, 900.0, 1, 0.0]),
+        false,
+    );
+    assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0], "the undo stands");
+    assert.equal(host.acks[host.acks.length - 1]![2], "the composition changed since this edit");
+
+    // And a gesture made against the picture that now holds applies.
+    assert.equal(
+        editor.apply("/gui_event", [wid, 3, Editing.of(curve).version, "points",
+            0.0, 600.0, 1, 0.0, 2.0, 600.0, 1, 0.0]),
+        true,
+    );
+    assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 600.0]);
+});
+
 test("a segment's shape survives the round trip", async () => {
     // The crate carries a point's `data` and reads none of it, which is what
     // keeps an undo from putting the curve back straight.

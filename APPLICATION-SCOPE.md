@@ -1428,7 +1428,7 @@ owner moved is how a working editor becomes a new set of defects.
   belongs where the redefinition is decided rather than at each of five call
   sites, four of which happen to remember.
 
-- ⬜ **`Echo.raise_floor` is called by nothing** *(found 2026-09-06, same audit;
+- ✅ **`Echo.raise_floor` is called by nothing** *(found 2026-09-06, same audit;
   narrowed the same day)*. The floor rose at three places — `Editor.apply`,
   `FormEditor.rederive` and `FormEditor.load` — and all three assigned
   `self._floor = self._version` through the property rather than calling the
@@ -1444,6 +1444,31 @@ owner moved is how a working editor becomes a new set of defects.
   multitrack actually takes is not. Either the three sites call the verb, or the
   verb goes and the property carries the documentation — but the test has to end
   up on the road that is travelled.
+
+  **Fixed 2026-09-07: the verb stays and the property goes**, in both clients.
+  `Editor._raise_floor()` / `Editor.raiseFloor()` call it, beside `_announce`
+  and `_correct` — where an *act* delegated to the `Echo` belongs — and the
+  `_floor` / `floor` accessor pairs are deleted from `Editor` **and** from
+  `Application`. Four accessors in Python, two in TypeScript, and none of them
+  had a reader: the whole chain existed so one line could perform the act by
+  hand.
+
+  **Why that direction rather than the other.** A floor that can be assigned is
+  not a floor. The act is *read the version, write it to the floor*, and the two
+  halves of that can disagree — which is exactly the entry below, where a path
+  meaning to reset the floor lowered it. One verb makes `stale` monotone by
+  construction rather than by every caller remembering; the value pair made it a
+  convention.
+
+  **And the test moved onto the road.** The protocol test now raises the floor
+  through the verb instead of assigning it, and a new case exercises the path an
+  editor takes: a curve edited, undone, and then an edit-back naming the picture
+  the undo replaced — refused, with the undo standing, and the next gesture
+  against the picture that now holds applying. It lives in
+  `test_gui_edit.py` / `gui-edit.test.ts` rather than in the generic editor's
+  own suite, because that pair exists in **both** clients and the generic one
+  does not. Both twins fail when the call is removed, which is what says they
+  check the verb rather than the arithmetic around it.
 
 - ✅ **`FormEditor.load` lowers the floor instead of raising it** *(found
   2026-09-06, same audit; **moot the same day** — `load` went with `FormEditor`,

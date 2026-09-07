@@ -178,6 +178,44 @@ def test_a_curve_is_drawn_edited_and_read_back_with_no_composition():
     assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0])
 
 
+def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
+    # The staleness floor, on the road an editor actually travels. A host stamps
+    # every event with the version it was last told, and it is told only when an
+    # acknowledgement reaches it -- a round trip a hand outruns -- so an edit
+    # naming an older version is the ordinary case and applies. What does not is
+    # an edit made against a picture the composition has moved away from by a
+    # route the host never saw: here an undo.
+    curve = a_curve()
+    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
+    host, wid = opened(editor)
+
+    assert editor.apply("/gui_event", [wid, 1, 0, "points",
+                                       0.0, 300.0, 1, 0.0,
+                                       2.0, 100.0, 1, 0.0]) is True
+    #: The version the host has just been told it is drawing, read where it
+    #: lives: the version is the editing **context's**, not this view's.
+    against = Editing.of(curve).version
+
+    assert editor.undo() is True
+    assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0])
+
+    # The event the hand had already sent, naming the picture it was made
+    # against. Refused rather than applied: an edit-back payload is absolute
+    # *and* whole, so applying one made against an older picture would silently
+    # drop whatever arrived in between -- here, the undo.
+    assert editor.apply("/gui_event", [wid, 2, against, "points",
+                                       0.0, 900.0, 1, 0.0,
+                                       2.0, 900.0, 1, 0.0]) is False
+    assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0]), "the undo stands"
+    assert host.acks[-1][2] == "the composition changed since this edit"
+
+    # And a gesture made against the picture that now holds applies.
+    assert editor.apply("/gui_event", [wid, 3, Editing.of(curve).version, "points",
+                                       0.0, 600.0, 1, 0.0,
+                                       2.0, 600.0, 1, 0.0]) is True
+    assert curve.to_points()[0:2] == pytest.approx([0.0, 600.0])
+
+
 def test_a_segments_shape_survives_the_round_trip():
     # The crate carries a point's `data` and reads none of it, which is what
     # keeps an undo from putting the curve back straight.

@@ -253,8 +253,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     host stops emitting `'lane'` rather than the client refusing it.
   - ⬜ **The routing table's tag list is written twice** — eight strings verbatim
     in both clients; they agree today and nothing keeps them agreeing.
-  - ⬜ **`Echo.raise_floor` is called by nothing** — one site left after
-    `FormEditor` went, and it assigns through the property instead.
   - ⬜ **`Application` exists in Python and not in the web client** — the whole
     publish loop has one implementation. The standing rule's own case,
     invisible until now because the only editor that made a publish happen was

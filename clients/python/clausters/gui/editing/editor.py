@@ -260,14 +260,6 @@ class Editor:
         self.app.corrections = value
 
     @property
-    def _floor(self) -> int:
-        return self.app.floor
-
-    @_floor.setter
-    def _floor(self, value):
-        self.app.floor = value
-
-    @property
     def _reason(self) -> "str | None":
         return self.app.reason
 
@@ -277,6 +269,9 @@ class Editor:
 
     def _announce(self):
         self.app.announce()
+
+    def _raise_floor(self):
+        self.app.raise_floor()
 
     def _stale(self, against: int) -> bool:
         return self.app.stale(against)
@@ -454,7 +449,7 @@ class Editor:
         # route the host knows nothing about raises the floor: the version moved
         # since the last event was answered, and no event is what moved it.
         if self._version != self._applied:
-            self._floor = self._version
+            self._raise_floor()
         if self._stale(against):
             # The data moved under the gesture, by a route no gesture produced.
             # The edit is not applied and not merged: an edit-back payload is

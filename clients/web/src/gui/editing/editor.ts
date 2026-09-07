@@ -306,14 +306,6 @@ export class Editor<S = unknown> implements Adopting {
         this.echo.corrections = value;
     }
 
-    protected get floor(): number {
-        return this.echo.floor;
-    }
-
-    protected set floor(value: number) {
-        this.echo.floor = value;
-    }
-
     protected get reason(): string | undefined {
         return this.echo.reason;
     }
@@ -324,6 +316,10 @@ export class Editor<S = unknown> implements Adopting {
 
     protected announce(): void {
         this.echo.announce();
+    }
+
+    protected raiseFloor(): void {
+        this.echo.raiseFloor();
     }
 
     protected stale(against: number): boolean {
@@ -562,7 +558,7 @@ export class Editor<S = unknown> implements Adopting {
         // acknowledgement reaches it — a round trip a hand outruns. What the
         // check is for is the data moving by a route the host knows nothing
         // about, so only *that* raises the floor.
-        if (this.version !== this.applied) this.floor = this.version;
+        if (this.version !== this.applied) this.raiseFloor();
         if (this.stale(against)) {
             // The data moved under the gesture, by a route no gesture produced.
             // The edit is not applied and not merged: an edit-back payload is
