@@ -24,24 +24,42 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.form import Aggregate, Clang, Vector, to_document  # noqa: E402
-from clausters.seq import Event as SeqEvent  # noqa: E402
-
-
-class _Buffer:
-    """A stand-in for a server buffer: the conversion reads a `bufnum`."""
-
-    bufnum = 100
 
 
 def composition() -> dict:
-    piece = Aggregate()
-    piece.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
-    piece.add(Vector(_Buffer(), instrument="take"), offset=2.0, dur=4.0)
-    inner = Aggregate()
-    inner.add(Clang(SeqEvent(midinote=67, dur=0.5)), offset=0.0, dur=0.5)
-    piece.add(inner, offset=8.0, dur=2.0)
-    return to_document(piece)
+    """The document the edits are applied to, written out directly.
+
+    It used to be built with `clausters.form` and converted; that door is gone,
+    and building it by hand is the honest shape anyway — what this vector is
+    about is the **edits**, so the composition it starts from should be a fixed
+    piece of JSON both sides read rather than the output of a conversion that
+    could itself drift.
+    """
+    return {
+        "version": 1,
+        "root": {
+            "id": 1,
+            "kind": "aggregate",
+            "grouping": "concrete",
+            "members": [
+                {"offset": 0.0, "dur": 1.0,
+                 "node": {"id": 2, "kind": "clang",
+                          "config": {"midinote": 60, "dur": 1.0}}},
+                {"offset": 2.0, "dur": 4.0,
+                 "node": {"id": 3, "kind": "vector", "duration": 4.0,
+                          "source": {"source": 100, "lifetime": "session",
+                                     "generation": 0},
+                          "config": {"instrument": "take"}}},
+                {"offset": 8.0, "dur": 2.0,
+                 "node": {"id": 4, "kind": "aggregate", "grouping": "concrete",
+                          "members": [
+                              {"offset": 0.0, "dur": 0.5,
+                               "node": {"id": 5, "kind": "clang",
+                                        "config": {"midinote": 67,
+                                                   "dur": 0.5}}}]}},
+            ],
+        },
+    }
 
 
 #: (label, intent, against-version-offset or None, quant). The offsets are
