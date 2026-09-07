@@ -3141,6 +3141,26 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   desktop or to a page is a string, which is why a note block already travels in
   the `text` kind, and bridging it is its own work with its own platform matrix.
 
+- ⬜ **A selected staff is edited by its line count, not by its position**
+  *(the user, 2026-09-07, during the visual review's second sitting)*. Selecting
+  a staff is legitimate and a score editor should offer it. What it must **not**
+  offer is dragging one up or down: no notation program moves a staff that way,
+  because where a staff sits on the page is the engraver's and a system's
+  spacing is not a statement anybody made -- it is exactly the class of thing
+  the N track already refuses to store.
+
+  What a staff genuinely admits is **how many lines it has**. A five-line staff
+  is the default and not the rule: percussion is written on one line, on two, on
+  five without pitch meaning, and a change of line count changes what a staff
+  position *means* rather than where anything is drawn. So the verb is a
+  property of the staff in the model, the clef and the mapping from staff
+  position to pitch follow from it, and a percussion staff stops being a thing
+  the reader has to fake with a treble clef.
+
+  **Related:** `N8` asks which element admits which edit, and this is its answer
+  for one of them; the hit-test entry in "Found by use" is what made the
+  question concrete, since it is a press on a staff that raised it.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A time axis is labelled by one tempo, and a piece can have several**
@@ -3462,7 +3482,15 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   and a staff line is a hairline the width of the system, the tightest box on
   the page. It is the same geometry that made a notehead answer with the staff
   in the first place; only the arm that resolves it is different, because there
-  is no sounding element to prefer. The rule needs its second
+  is no sounding element to prefer.
+
+  **Selecting the staff is not the wrong answer -- pre-empting the write is**
+  *(the user, the same day)*. A staff is a thing a score editor selects, and
+  what a selected one admits is a question of its own (see "A selected staff is
+  edited by its line count, not by its position" in Future directions). What
+  cannot stand is that a press meant to write a note is spent on a selection
+  because it landed a pixel onto a line: writing is what a press on the staff
+  *is for*, and selecting the staff needs its own way to be asked for. The rule needs its second
   half: what a press means when it lands on nothing that sounds, where a staff
   is a **place** and not a thing to select.
 
