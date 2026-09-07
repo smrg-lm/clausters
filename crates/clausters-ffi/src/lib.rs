@@ -34,7 +34,6 @@ mod bundle;
 mod clocksync;
 mod document;
 mod envshape;
-mod guidiff;
 mod history;
 mod measure;
 #[cfg(feature = "notation")]
@@ -274,7 +273,21 @@ pub use time::*;
 /// symbol answers a different document — which is exactly why the counter has
 /// to move: a staged library one version behind would otherwise be read as
 /// saying "nothing changed" for every redraw.
-pub const CORE_ABI_VERSION: u32 = 41;
+/// **v42 the difference goes, because the host reconciles.**
+/// `clausters_gui_difference` is removed. It answered *what to send so a host
+/// drawing one picture draws another*, which is only a question a caller
+/// holding a copy of the host's picture can ask — and no caller can hold one:
+/// the host mutates on its own (a drag writes an offset per frame, a wheel
+/// writes a window, a marquee writes a mark) and screen state is reported by
+/// nothing, correctly. A `/gui_def` now means *make it look like this*: the
+/// host walks the tree it was handed beside the tree it draws, matches widget
+/// to widget by the id that names what it draws, and keeps what is its own. So
+/// the decision moved to the only place that has the true copy, and it did not
+/// move as this symbol -- it is a comparison of a document with a **widget
+/// tree**, not of two documents. **Removing a symbol**, so the counter moves and
+/// a caller of it fails to link rather than diffing against a picture nobody is
+/// drawing.
+pub const CORE_ABI_VERSION: u32 = 42;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -900,20 +900,6 @@ export function engraveOptions(scale: number, page_width: number, extra?: string
 export function graph_bus_reserved(): Uint32Array;
 
 /**
- * JS face: what to send so a host drawing `old` draws `new` instead.
- *
- * Both pictures go in as their JSON text and the answer comes back the same
- * way — `{"whole": bool, "redefine": [id, …], "sets": [[id, props], …]}`, all
- * in tree order: send the tree whole if `whole`, else redefine each id and
- * then apply the sets. Text rather than objects for the reason `TempoMap.dump`
- * is:
- * the document is JSON already, and crossing it as a structure would mean a
- * converter on both sides of a boundary that has one. Unreadable input answers
- * `{"define": true}`: a caller that cannot be diffed can always send the tree.
- */
-export function guiDifference(old: string, _new: string, root_id: number): string;
-
-/**
  * JS face: hertz -> **bark** (Traunmuller), the critical-band scale. Spelled
  * `cpsbark`.
  */
@@ -1217,7 +1203,6 @@ export interface InitOutput {
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
-    readonly guiDifference: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
     readonly history_canRedo: (a: number) => number;
     readonly history_canUndo: (a: number) => number;

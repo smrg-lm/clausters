@@ -1804,20 +1804,25 @@ What landed, beyond the list above:
   and `"roll"` respectively, and those spellings are part of the name: two
   clients drawing one structure must ask for the same id.
 
-  **The difference, instead of the rebuild.** `Application.publish(window,
-  tree)` sends a redraw as one `/gui_set` per widget whose props moved, and
-  `/gui_def` only when the shape changed — a widget that appeared or went, a
-  changed type or name, a prop that was removed, or a tree with blobs; an
-  id-less node may stay if it is identical in both pictures. **The walk itself
-  is already lowered**: it is `clausters_core::guidiff`, bound here as
-  `gui_difference` (both pictures as JSON text, the answer as JSON text), so
-  what the port owes is the caller — `publish` and the record of what the host
-  is drawing — and never a second implementation of the walk.
+  **The publish, which is now much smaller than it was** *(rewritten
+  2026-09-07)*. `Application.publish(widget, tree, window=…)` sends a
+  `/gui_def` of the widget it names and nothing else: the host **reconciles**
+  the tree it is handed against the tree it draws, so a def says what to look
+  like rather than what to destroy, and deciding how much of the window a
+  redraw costs is the host's. There is no difference to compute and no record
+  of what the host is drawing to keep — `clausters_core::guidiff` and its two
+  bindings are **gone** (core ABI v42), because a difference is only correct
+  against a copy of the host's picture and no client can hold one.
 
-  It is a **recorded** divergence rather than an accidental one — the branch
-  lowers this machinery to Rust before porting it, so writing it twice in
-  TypeScript first would be writing what is about to be deleted — and it closes
-  when that lowering lands.
+  So what the port owes is a `publish` that forwards to `define` or
+  `redefine`, and the granularity that goes with it: publish the widget the
+  edit named, not the window, because the window is megabytes a second of JSON
+  at drag rates on a large piece. It also owes `GuiHost.redefine` itself, which
+  is the door for a part and which this client does not have — see
+  `APPLICATION-SCOPE.md`'s "Found by use".
+
+  It is a **recorded** divergence rather than an accidental one, and it is now
+  a much cheaper one to close.
 
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed
   2026-08-05, recorded so a name-by-name diff of the two clients does not

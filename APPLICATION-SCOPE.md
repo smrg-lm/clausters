@@ -620,15 +620,21 @@ ids*; the `editing/` line count in both clients drops to the domains, the views
 a client defines and the idiomatic surface; no numeric or timing rule is left
 implemented twice.
 
-**First slice landed 2026-09-06: the difference is the core's.**
-`clausters_core::guidiff` decides what to send so a host drawing one picture
-draws another — the sets, or the word that says the shape changed — bound as
-`clausters_gui_difference` (core ABI v40) and `guiDifference`, both taking the
-two documents as JSON text and answering as JSON text. Python's `publish` calls
-it and the Python walk is gone; the web client binds it and owes only the
-caller, which is AP0's seam. It went first because it was the piece written in
-**one** language and about to be ported into two — lowering it prevented a
-divergence rather than repairing one.
+**First slice landed 2026-09-06: the difference is the core's** — *and was
+retired on 2026-09-07, see (4) below.* `clausters_core::guidiff` decided what to
+send so a host drawing one picture draws another — the sets, or the word that
+says the shape changed — bound as `clausters_gui_difference` (core ABI v40) and
+`guiDifference`, both taking the two documents as JSON text and answering as
+JSON text. Python's `publish` called it and the Python walk went; the web client
+bound it and owed only the caller.
+
+It went first because it was the piece written in **one** language and about to
+be ported into two — lowering it prevented a divergence rather than repairing
+one, and that was the right call on the day even though the module has since
+gone: it stopped the walk from being written a second time in TypeScript, which
+would then have had to be deleted twice. What replaced it is not a better
+difference but the discovery that **no difference can be computed at all**
+outside the host, which is what the rest of this milestone is about.
 
 **Two of the things the milestone listed were already single, and the audit is
 the deliverable rather than the move.** The **unit bridge** is four one-line
@@ -726,6 +732,12 @@ planned, and it is why this is written here rather than re-derived later.
    knows because an intent names a node and `AP1` derives the widget id from it.
    Publishing the window and letting the host reconcile would be correct and
    unusable.
+
+   **`_published` went on 2026-09-07**, and the condition is kept by making the
+   granularity the **caller's** argument rather than a rule inside `publish`:
+   `publish(widget, tree, window=…)` names any widget, so an editor publishes
+   what its edit touched. Nothing enforces it, and nothing can — which widget an
+   edit named is knowledge only the editor has.
 2. **Which props are the host's and survive a reconcile.** Implicit today in "a
    redefine destroys everything"; it has to become explicit, per widget kind —
    zoom, scroll, selection, focus, expanded, the overlays for what is in flight.
@@ -763,6 +775,35 @@ planned, and it is why this is written here rather than re-derived later.
    it — and the FFI and wasm exports go. **Both clients lose surface**, which for
    the non-divergence rule is the right direction, and the ABI counter moves for
    it.
+
+   **Done 2026-09-07, and it turned out to be a retirement rather than a move**
+   (core ABI v42). The exports are gone, both clients lost the surface, the
+   counter moved — every outcome this item asked for — but the module did not
+   land in the host, because there is nowhere in the host for it to land.
+
+   **Why, and it is the same argument as the one above, one level down.** A
+   difference is a comparison of two *documents*, and it is only correct when
+   one of them equals the picture on screen. Inside the host that copy is no
+   more reachable than it was in the client: the host would have to keep the
+   last `GuiNode` it was handed, and it writes to its **widgets** without
+   writing to that — a drag writes an offset per frame, a wheel writes a
+   window — so a redraw restating the offset the document already carried would
+   diff as *unchanged* and leave the widget where the hand left it. That is
+   `_published`'s defect exactly, reproduced one process over.
+
+   What the host has instead is the comparison that is always true: the document
+   it was handed against **the widget tree it draws**. That is `reconcile`, it
+   already landed with `O23`(b), and it is not this module in a new home — the
+   two sides are not the same kind of thing. So `guidiff` had no caller left
+   anywhere, and a module in the host that nothing calls is worse than one in
+   the core that nothing calls.
+
+   **What went with it**, and it is worth naming because it was good: the
+   generated pass over two thousand pictures nobody chose, asserting that no set
+   ever named a widget the redefine beside it removed. It tested an arithmetic
+   that no longer runs. Its counterpart on the client side went the same way,
+   and what replaces both is the reconcile's own suite, which asks the question
+   against the widgets rather than against a document.
 
 **What does not change.** The acknowledgement and the version stay as they are.
 They are about the **document**, the document is the client's, and they are used
@@ -807,6 +848,13 @@ client and from a standalone host because it is one piece of code.
   multitrack's lanes through `tree.rs` is what gives the standalone host the same
   function from the same code, and it is entangled with AP6's convergence: the
   lanes and clips are the view that has to be named first. It lands there.
+
+  **It has had no home since AP6 was closed by removal** *(noticed 2026-09-07,
+  reading this milestone against the status)*: "it lands there" now points at a
+  void milestone, so this is an item with a name, an argument and nowhere to be
+  done. It goes to `O24`, whose three applications are what name the lanes and
+  clips — and it is written down here rather than moved in passing, because
+  which milestone owns it is `O24`'s decision to record and not this file's.
 - **The reconciliation itself** — everything the section above describes — is
   the milestone's remaining half. **The host's side landed 2026-09-07**
   (`widget::reconcile`, `O23`(b)): a `/gui_def` over a tree the host draws is
@@ -836,6 +884,26 @@ client and from a standalone host because it is one piece of code.
   and that editor is `O24`'s multitrack. The host's half does not wait on any of
   it: a redefine already stops destroying a zoom, whoever sends it.
 
+  **It stopped waiting the same day, because (4) forced it** *(2026-09-07)*.
+  Retiring `guidiff` takes `gui_difference` out of the C ABI and the wasm, so
+  `publish` cannot compute a difference whether or not anybody calls it. What it
+  became is **less** machinery rather than a seam designed for nobody: it sends
+  the tree it was handed to `define`, or to `redefine` when a `window` is named,
+  and `_published`, `published` and `forget_window` are gone with the picture.
+
+  **The granularity did not become the client's, it became the caller's**, which
+  is the shape the measurement endorsed and the one that does not need `O24` to
+  exist to be right. `publish(widget, tree, window=…)` names any widget, because
+  `/gui_def` does; an editor that knows which node its intent touched knows which
+  widget to publish, and one that does not can still publish the window and pay
+  for it. The plan's worry — designing a granularity mechanism against zero
+  implementors — does not apply to *removing* one and handing the decision to
+  whoever redraws.
+
+  The measurement's third column went with the difference: there is no delta to
+  weigh any more. The table above keeps it as the record of what it was, and
+  `test_gui_publish.py` now weighs the two answers that are still reachable — the
+  touched widget, flat in the size of the piece, and the window, which is not.
 **The standing reason for this milestone**, said by the user on 2026-09-06 while
 reading the day's defects: *the editing logic has to be in Rust so that it is in
 one place and consistent across clients*. Every defect found by eye that day was
@@ -1102,7 +1170,7 @@ owner moved is how a working editor becomes a new set of defects.
   Everything this turns up is recorded **here**, in this file, because all of it
   is to be dealt with — including by changing the design.
 
-- ⬜ **A set is addressed to a widget the redefine beside it just removed**
+- ✅ **A set is addressed to a widget the redefine beside it just removed**
   *(found 2026-09-06 in the log, with the narrow redefine running: the host
   warns `/gui_set 1005: no such widget` immediately after
   `publish ... 1 redefine(s) [1002] and 2 set(s): 1003(offset), 1005(offset)`)*.
@@ -1154,6 +1222,19 @@ owner moved is how a working editor becomes a new set of defects.
   the double makes true by construction. The running program is where they do
   not, and that is the third cause. The entry closes when the host stops being
   the only one who knows what it is drawing - which is `O23` - and not before.
+
+  **Closed 2026-09-07, by removing the sentence it was about.** A publish is a
+  `/gui_def` and nothing else: there is no set beside a redefine, so there are
+  no two halves to disagree. The third cause is gone with them — no client holds
+  a picture to diff against, so no message is addressed from one. Both generated
+  tests went with the arithmetic they tested; what asks the question now is the
+  reconcile's own suite, against the widgets the host holds rather than against
+  a document nobody is drawing.
+
+  It stays here as the record of the diagnosis, which is the part worth keeping:
+  the walk was right, the wire test was right, and the defect was in the
+  **premise both of them were written under**. Two green tests exonerating a
+  mechanism that was failing in front of the user is what this list is for.
 
 - ⬜ **The window closes and the process spins at 100% CPU** *(found 2026-09-06
   by the user, twice; one earlier instance was a `composer.py` still running 55
@@ -1275,6 +1356,9 @@ owner moved is how a working editor becomes a new set of defects.
   no application - and it has never had one: `git log -S"class Application"` over
   `clients/web/src` returns nothing. The core function is bound and exported
   there (`guiDifference`, `src/base/core.ts`) and **called by nobody**.
+  *(That binding is gone since 2026-09-07 — the difference was retired with the
+  reconcile — which makes the port cheaper rather than smaller: what is missing
+  is the class, and a publish is now one `/gui_def`.)*
   Measured, the module's surface differs by `Application`, `ATTR`, `BASE_ID` and
   `watch` in Python's favour; what runs the other way is type aliases and two
   internals TS exports and Python keeps private (`contexts` behind `Editing.of`,
@@ -1291,7 +1375,9 @@ owner moved is how a working editor becomes a new set of defects.
   `Application.step` asks the editing context for a step's legs and hands them
   round the registered editors, each projecting the ones it owns through its own
   domain. Every part of that orchestrates **client objects**, so it cannot be
-  lowered the way the difference was: the crate would have to drive the clients
+  lowered the way the difference was *(and the difference has since been retired
+  rather than lowered further, which changes nothing here — this walk is still
+  written twice)*: the crate would have to drive the clients
   rather than answer them, which is an inversion of control and a decision about
   what a binding may call back into — not a function to move. It is the last
   thing in the application core that is written twice once AP6 has taken the
@@ -1426,7 +1512,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the difference is down; the picture's single owner is the remaining half, and it is scoped)*
+- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine`, plus the routing table, the undo/redo walk and the catalogue views - all four in "Found by use" or owed to `O24`)*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

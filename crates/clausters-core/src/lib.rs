@@ -73,10 +73,6 @@
 //!   tree takes and the **named** id a view asks for by saying what it draws, so
 //!   a widget keeps its number across a redraw and nothing in flight lands on
 //!   the wrong one.
-//! - [`guidiff`] — what to send so a host drawing one picture draws another:
-//!   the `/gui_set`s, or the word that says the shape changed and the tree has
-//!   to go whole. A redefine costs every widget's screen state, so deciding
-//!   when it is unavoidable is a rule rather than a convenience.
 //! - `notation` (feature `notation`, off by default) — the pure half of the
 //!   notation layer: the verovio-SVG -> display-list walk and the voice -> MEI
 //!   encoder, the format-agnostic parts every client shares (the native
@@ -91,7 +87,6 @@ pub mod config;
 pub mod edit;
 pub mod envshape;
 pub mod fft;
-pub mod guidiff;
 pub mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;

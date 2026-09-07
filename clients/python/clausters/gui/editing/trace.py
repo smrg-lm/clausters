@@ -16,7 +16,7 @@ So the path says what it did, at five points and no more:
 - an **entry** recorded: its label and the intent behind it;
 - a **step** of the pile: the direction, whether anything moved, and the labels
   on either side of the cursor;
-- a **publish**: whether it was a difference or a redefine, and how big;
+- a **publish**: which widget was redrawn, and how big the tree was;
 - an **acknowledgement**: the stamp, the version and the corrections that rode
   with it.
 

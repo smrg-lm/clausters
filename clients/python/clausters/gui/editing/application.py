@@ -109,10 +109,6 @@ class Application:
         self._owners: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: How this application answers a version, when it was given a way.
         self._version_of = version
-        #: The last tree sent for each window, so the next one can be sent as
-        #: the **difference**. A window absent here has never been published and
-        #: is defined whole.
-        self._published: dict = {}
         #: The editors drawing in this window set, in the order they registered.
         #: Held strongly, the way the host holds an open editor: an application
         #: is what a script keeps, and its editors go when it does.
@@ -373,80 +369,53 @@ class Application:
 
     # ---- publishing a picture: the difference, when there is one ----
 
-    def published(self, window_id: int, tree: dict) -> None:
-        """Record ``tree`` as what the host is now drawing for ``window_id``.
+    def publish(self, widget_id: int, tree: dict, *blobs: bytes,
+                window: "int | None" = None) -> None:
+        """Make the host draw ``tree`` for ``widget_id`` — **the whole tree,
+        every time**.
 
-        Called by whoever sent it, so that the *next* picture can be sent as a
-        difference. `open` goes through here rather than through `publish`: the
-        first tree is a definition by nature.
-        """
-        self._published[int(window_id)] = tree
+        A definition used to mean *free this and build that*, so re-sending a
+        window because one number moved took the screen state of every widget in
+        it — a scroll position, a zoom, a selection in flight — and dropped
+        everything the host had pending there. It no longer does: a ``/gui_def``
+        over a tree the host is already drawing says *what to look like*, and
+        the host **reconciles**, matching widget to widget by the id that names
+        what it draws and keeping what is its own.
 
-    def forget_window(self, window_id: int) -> None:
-        """Drop what is remembered about a window that closed, so a window that
-        opens again is defined whole rather than diffed against a picture
-        nobody is drawing."""
-        self._published.pop(int(window_id), None)
+        **So this client holds no picture of the host's**, and that is the whole
+        of the change. It used to keep the last tree per window and send the
+        difference, which is only correct if that copy equals what the host
+        holds — and it cannot: the host mutates on its own (a drag writes an
+        offset per frame, a wheel writes a window, a marquee writes a mark) and
+        screen state is reported by nothing, correctly, because screen state is
+        the host's. A difference against a picture nobody is drawing is a set to
+        a widget that moved somewhere else.
 
-    def publish(self, window_id: int, tree: dict, *blobs: bytes) -> bool:
-        """Make the host draw ``tree`` for ``window_id``, **as a difference when
-        it can be**. Answers whether anything had to be rebuilt.
+        **What that leaves the caller is the granularity, and it is the caller's
+        for a reason.** ``/gui_def`` names any widget, so publish the one your
+        edit touched — you know which, because an intent names a node and a
+        widget id is derived from it. Measured over a drag, the subtree of the
+        clip that moved is flat in the size of the piece; the window is not, and
+        on a large one it is megabytes a second of JSON for a gesture that
+        touched one rectangle. Name a ``window`` to publish a part of it: the
+        names under the old subtree go and the rest of the window keeps the ones
+        it had.
 
-        A definition is expensive in a way that has nothing to do with bytes:
-        the host frees the subtree it names and builds a new one, so the screen
-        state of every widget in it goes too — a scroll position, a zoom, a
-        selection in flight — and everything the host had pending there is
-        dropped. Doing that to the **window** because one number changed is what
-        makes it flicker under a hand that is not even in it; doing it to the
-        window because a clip arrived in one lane is the same failure one size
-        up.
-
-        So what goes out is one `/gui_set` per widget whose props moved, and
-        where the **shape** did move, a `/gui_def` of the smallest subtree that
-        holds the change — a clip appearing in one lane costs that lane and
-        leaves every other one where the hand left it. Only a change of shape at
-        the root costs the window, and that is also what `open` does.
-
-        **How much of the window a change costs is the core's**
-        (`gui_difference`), not this module's: two clients deciding differently
-        is two clients redrawing differently.
+        It answers nothing. It used to say whether anything had been rebuilt, so
+        a caller could pair a redefinition with an announcement; what a def
+        costs is now the host's answer and no longer knowable here, so the
+        announcement pairs with **every** publish rather than with a bool.
         """
         host = self.host
         if host is None:
-            return False
-        window_id = int(window_id)
-        previous = self._published.get(window_id)
-        if blobs or previous is None:
-            # A tree with blobs goes whole: a blob is referenced by index from a
-            # `/gui_def`'s trailing arguments, and a `/gui_set` has no such
-            # index. So does a window nobody is drawing yet.
-            whole, redefine, sets = True, [], []
+            return
+        widget_id = int(widget_id)
+        log.debug("publish %s: %d widget(s)%s", widget_id, _widgets(tree),
+                  "" if window is None else f" inside window {window}")
+        if window is None:
+            host.define(widget_id, tree, *blobs)
         else:
-            whole, redefine, sets = _native.gui_difference(previous, tree, window_id)
-        if whole:
-            log.debug("publish window %s WHOLE (the root's shape moved)", window_id)
-            host.define(window_id, tree, *blobs)
-            self._published[window_id] = tree
-            return True
-        log.debug("publish window %s as %d redefine(s)%s and %d set(s)%s",
-                  window_id, len(redefine),
-                  "" if not redefine else " " + str(redefine), len(sets),
-                  "" if not sets else ": " + ", ".join(
-                      f"{wid}({' '.join(sorted(props))})" for wid, props in sets))
-        for wid in redefine:
-            subtree = _subtree(tree, wid)
-            if subtree is None:
-                # The core named a widget this tree does not hold, which cannot
-                # happen from a walk of this very tree — but a caller that
-                # somehow got here sends the window rather than nothing.
-                host.define(window_id, tree)
-                self._published[window_id] = tree
-                return True
-            host.redefine(wid, subtree, window=window_id)
-        for wid, props in sets:
-            host.set(wid, **props)
-        self._published[window_id] = tree
-        return bool(redefine)
+            host.redefine(widget_id, tree, *blobs, window=int(window))
 
     # ---- the loop ----
 
@@ -496,19 +465,8 @@ class Application:
         return host._wait_while(until, timeout)
 
 
-def _subtree(tree: dict, widget_id: int) -> "dict | None":
-    """The node ``widget_id`` names, anywhere under ``tree``.
-
-    Plumbing rather than a rule: *which* widget is redefined is the core's
-    answer (`clausters._native.gui_difference`); this only reaches into the
-    caller's own document to hand that widget's subtree to the host.
-    """
-    for child in tree.get("children") or ():
-        if not isinstance(child, dict):
-            continue
-        if child.get("id") == widget_id:
-            return child
-        found = _subtree(child, widget_id)
-        if found is not None:
-            return found
-    return None
+def _widgets(tree: dict) -> int:
+    """How many widgets a published tree holds — the trace's measure of what a
+    redraw cost, now that how much of it the host rebuilds is the host's."""
+    return 1 + sum(_widgets(child) for child in tree.get("children") or ()
+                   if isinstance(child, dict))

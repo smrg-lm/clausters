@@ -30,7 +30,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode,
 use clausters_core::{
     builtins, bundle,
     clocksync::SampleClockModel,
-    envshape, guidiff, measure, osc,
+    envshape, measure, osc,
     peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
@@ -314,38 +314,6 @@ impl JsRegistry {
     pub fn clear(&mut self) {
         self.0.clear();
     }
-}
-
-/// JS face: what to send so a host drawing `old` draws `new` instead.
-///
-/// Both pictures go in as their JSON text and the answer comes back the same
-/// way — `{"whole": bool, "redefine": [id, …], "sets": [[id, props], …]}`, all
-/// in tree order: send the tree whole if `whole`, else redefine each id and
-/// then apply the sets. Text rather than objects for the reason `TempoMap.dump`
-/// is:
-/// the document is JSON already, and crossing it as a structure would mean a
-/// converter on both sides of a boundary that has one. Unreadable input answers
-/// `{"define": true}`: a caller that cannot be diffed can always send the tree.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = guiDifference)]
-pub fn gui_difference(old: &str, new: &str, root_id: f64) -> String {
-    let answer = match (
-        serde_json::from_str::<serde_json::Value>(old),
-        serde_json::from_str::<serde_json::Value>(new),
-    ) {
-        (Ok(old), Ok(new)) => guidiff::difference(&old, &new, root_id as i64),
-        _ => guidiff::Update::everything(),
-    };
-    serde_json::json!({
-        "whole": answer.whole,
-        "redefine": answer.redefine,
-        "sets": answer
-            .sets
-            .into_iter()
-            .map(|(id, props)| serde_json::json!([id, props]))
-            .collect::<Vec<_>>(),
-    })
-    .to_string()
 }
 
 // ---- the widget-id table: an id that names what it draws ----

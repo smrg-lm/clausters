@@ -165,22 +165,6 @@ position. One implementation, every client bound to it.
 | — | `JsRegistry.is_allocated` | **gap** — per-id occupancy read |
 | — | `JsRegistry.base` | **gap** — the range's first id |
 
-## The redraw difference
-
-What to send so a host drawing one picture draws another: one `/gui_set` per
-widget whose props moved, and, where the shape moved, a `/gui_def` of the
-**smallest subtree that holds the change**. A redefine frees the subtree it
-names, so it takes the screen state of every widget in it — a scroll position, a
-zoom, a selection in flight — and drops what the host had pending there; how
-much of the window that has to be is a rule rather than a convenience, and a
-rule written once per client is how two clients come to redraw differently. It
-lines up two pictures **by id**, which is only meaningful because a widget id
-names what it draws (below).
-
-| C ABI | wasm | Note |
-|---|---|---|
-| `clausters_gui_difference` | `gui_difference` | `idiom` — both take the two documents as JSON text and answer as JSON text (`{whole, redefine, sets}`); C sizes with a null `out` and fills with a second call, wasm returns the string. A page spells it `guiDifference`, the JS name wasm-bindgen gives it |
-
 ## The widget-id table
 
 The GUI namespace's two doors over one occupancy map: the anonymous lease a

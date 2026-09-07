@@ -256,9 +256,14 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   - ⬜ **`Echo.raise_floor` is called by nothing** — one site left after
     `FormEditor` went, and it assigns through the property instead.
   - ⬜ **`Application` exists in Python and not in the web client** — the whole
-    publish loop has one implementation, and the web binds `guiDifference` and
-    calls it nowhere. The standing rule's own case, invisible until now because
-    the only editor that made a publish happen was `FormEditor`.
+    publish loop has one implementation. The standing rule's own case,
+    invisible until now because the only editor that made a publish happen was
+    `FormEditor`. Cheaper since 2026-09-07: the difference is gone, so a
+    publish is a `/gui_def` and the port is the class, not the walk.
+  - ⬜ **`GuiHost.redefine` exists in Python and not in the web client** — the
+    narrow definition, which is the channel this whole branch is about. The
+    message goes out through `define` either way; what breaks is the window's
+    name map, silently.
   - ✅ **The crate's client surface was public in one client and private in the
     other** *(fixed 2026-09-06 by `O21`(d))*. `document.ts` had been a module of
     its own since it was written; the Python client reached the same surface

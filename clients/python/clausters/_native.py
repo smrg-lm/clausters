@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 41
+CORE_ABI_VERSION = 42
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -574,11 +574,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_registry_graph_audio_reserved.argtypes = []
     lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
     lib.clausters_registry_graph_control_reserved.argtypes = []
-    lib.clausters_gui_difference.restype = ctypes.c_size_t
-    lib.clausters_gui_difference.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_int64,
-        u8p, ctypes.c_size_t,
-    ]
     lib.clausters_widgetids_new.restype = ctypes.c_void_p
     lib.clausters_widgetids_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
     lib.clausters_widgetids_free.restype = None
@@ -2450,35 +2445,6 @@ class Registry:
             self.close()
         except Exception:
             pass
-
-
-def gui_difference(old: dict, new: dict, root_id: int) -> tuple:
-    """What to send so a host drawing ``old`` draws ``new`` instead.
-
-    Answers ``(whole, redefine, sets)``, read in that order: send the tree whole
-    when ``whole``; else ``/gui_def`` each id in ``redefine`` (the smallest
-    subtrees whose shape moved, in tree order), then ``/gui_set`` each
-    ``(widget id, props)`` in ``sets``. All three empty means the two pictures
-    are identical and there is nothing to send.
-
-    The walk is the core's because it is a rule rather than a convenience: a
-    redefine frees the subtree it names, so it takes the screen state of every
-    widget in it, and two clients deciding differently how much of the window
-    that has to be is two clients redrawing differently.
-    """
-    _lib = lib()
-    old_p, old_n, _o = _u8(json.dumps(old))
-    new_p, new_n, _n = _u8(json.dumps(new))
-    args = (old_p, old_n, new_p, new_n, int(root_id))
-    need = _lib.clausters_gui_difference(*args, None, 0)
-    if need == 0:
-        return True, [], []
-    out = (ctypes.c_ubyte * need)()
-    n = _lib.clausters_gui_difference(*args, out, need)
-    answer = json.loads(ctypes.string_at(out, n).decode("utf-8"))
-    return (bool(answer.get("whole")),
-            [int(wid) for wid in answer.get("redefine", ())],
-            [(int(wid), props) for wid, props in answer.get("sets", ())])
 
 
 def _u8(text: str):

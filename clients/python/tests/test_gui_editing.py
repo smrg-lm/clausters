@@ -306,7 +306,7 @@ def test_a_drawers_id_space_goes_when_the_drawer_does():
     assert len(app._offline) == 0, "the id space went with the drawer"
 
 
-# ---- a redraw is a difference, not a rebuild ----
+# ---- a redraw says what to look like, and the host decides what it costs ----
 
 def a_tree(**props):
     """A two-widget picture: the ids are the caller's, as a named draw's are."""
@@ -315,76 +315,43 @@ def a_tree(**props):
         {"id": 11, "type": "number", "value": props.get("right", 0.0)}]}
 
 
-def test_publishing_the_same_picture_again_sends_nothing():
+def test_a_publish_sends_the_tree_and_nothing_is_remembered():
+    # The client holds no picture of the host's. It used to keep the last tree
+    # per window and send the difference, which is only correct if that copy
+    # equals what the host holds -- and it cannot, because the host moves
+    # widgets on its own and screen state is reported by nothing.
     app, host = Application(), FakeHost()
     app.host = host
-    app.published(1, a_tree())
-    assert app.publish(1, a_tree()) is False
-    assert (host.defines, host.sets) == ([], []), "nothing moved, so nothing went"
+    app.publish(1, a_tree())
+    app.publish(1, a_tree())
+    assert [wid for wid, _ in host.defines] == [1, 1], \
+        "the same picture twice is the same message"
+    assert host.sets == [], "a client that holds no picture computes no set"
 
 
-def test_one_prop_moving_is_one_set_and_no_redefine():
-    # The whole of it: a redefine frees the old subtree and builds a new one, so
-    # every widget's screen state goes with it and everything the host had
-    # pending is dropped. Doing that because one number changed is what makes a
-    # window flicker under a hand that is not even in it.
+def test_publishing_a_part_names_the_widget_and_the_window_it_is_in():
+    # The granularity is the caller's, and this is the door for it: a
+    # `/gui_def` names any widget, so an edit publishes the one it touched
+    # rather than the window around it.
     app, host = Application(), FakeHost()
     app.host = host
-    app.published(1, a_tree())
-    assert app.publish(1, a_tree(right=0.5)) is False
-    assert host.defines == [], "no definition"
-    assert host.sets == [(11, {"value": 0.5})], "and only the widget that moved"
+    app.publish(1, a_tree())
+    app.publish(11, {"id": 11, "type": "number", "value": 0.5}, window=1)
+    assert host.redefines == [(11, 1)]
+    assert [wid for wid, _ in host.defines] == [1], \
+        "and the window was not redrawn for it"
 
 
-def test_a_widget_that_was_not_there_can_only_arrive_whole():
-    app, host = Application(), FakeHost()
-    app.host = host
-    app.published(1, a_tree())
-    grown = a_tree()
-    grown["children"].append({"id": 12, "type": "number", "value": 1.0})
-    assert app.publish(1, grown) is True, "a shape change redefines"
-    assert len(host.defines) == 1 and host.sets == []
-
-
-def test_a_prop_that_went_away_redefines():
-    # There is no value that means "unset" on the wire, so a prop a picture
-    # stopped carrying cannot be sent as a set.
-    app, host = Application(), FakeHost()
-    app.host = host
-    app.published(1, a_tree())
-    bare = a_tree()
-    del bare["children"][0]["value"]
-    assert app.publish(1, bare) is True
-
-
-def test_chrome_with_no_id_may_stay_as_long_as_it_did_not_move():
-    # A ruler or a spacer carries no id — the host stamps one inside the copy it
-    # sends — so it cannot be `set`. It can still be *matched*: a node identical
-    # in both pictures needs no message, and refusing it would make every tree
-    # holding one a redefine.
-    app, host = Application(), FakeHost()
-    app.host = host
-
-    def with_ruler(value):
-        tree = a_tree(left=value)
-        tree["children"].append({"type": "timeruler", "ruler": "beats"})
-        return tree
-
-    app.published(1, with_ruler(0.0))
-    assert app.publish(1, with_ruler(0.5)) is False
-    assert host.sets == [(10, {"value": 0.5})]
-
-    moved = with_ruler(0.5)
-    moved["children"][-1]["ruler"] = "time"
-    assert app.publish(1, moved) is True, "and a changed one is a shape change"
-
-
-def test_a_window_that_closed_is_defined_whole_when_it_opens_again():
+def test_a_window_that_closed_and_opened_again_is_no_special_case():
+    # It used to be one: a difference against a picture nobody was drawing
+    # would have been sets onto freed widgets, so a closing window had to be
+    # forgotten. Nothing is remembered now, so there is nothing to forget.
     ed = an_editor()
     host = FakeHost()
     ed.open(host)
     ed.close()
-    assert ed.app.publish(1, a_tree()) is True, "nobody is drawing the old one"
+    ed.app.publish(1, a_tree())
+    assert host.defines[-1][0] == 1
 
 
 # ---- the application: what a window set owns, as against one structure ----
