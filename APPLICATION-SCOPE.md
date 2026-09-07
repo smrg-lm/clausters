@@ -983,6 +983,19 @@ owner moved is how a working editor becomes a new set of defects.
 
 ## Found by use
 
+- ⬜ **The reconcile has no example to see it in** *(found 2026-09-07, going to
+  check it by eye)*. `widget::reconcile` has seven unit tests and **no manual
+  test surface**: no example in either client sends a second `/gui_def` over an
+  open window. `multitrack.py` — the one that looks like it would — drives
+  everything through `/gui_set`, and grep finds no `redefine` in any example in
+  the tree. It is the same absence as `Application.publish` having no caller,
+  seen from the other side: `FormEditor` was what made a def happen twice, and
+  it went. So the behaviour that fixes the branch's opening complaint cannot be
+  watched happening, which for this project is half a check. It closes with the
+  editor that publishes again (`O24`'s multitrack), and that example is where
+  the by-eye pass belongs — a lane zoomed in, a clip added to another lane, and
+  the zoom still there.
+
 - ✅ **A change of shape redefined the whole window, so an edit in one lane
   cost every other lane its screen state** *(found 2026-09-06 by the user, by
   eye, in `composer.py`: splitting a clip works and the **vertical zoom of every
