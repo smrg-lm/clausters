@@ -119,4 +119,68 @@ fn a_field_the_client_added_and_this_build_has_no_name_for_survives() {
     assert_eq!(region.extra["warp"]["mode"], "beats");
 }
 
-use clausters_document::{Body, NodeId};
+use clausters_document::{Body, Lifetime, Location, NodeId, Session, SourceId};
+
+// ---- the session: the piece, and where its samples are ----
+
+const SESSION: &str = include_str!("arrangement_session_vector.json");
+
+fn saved() -> Session {
+    serde_json::from_str(SESSION).expect("the Python client's session must parse here")
+}
+
+#[test]
+fn the_clients_session_parses_and_survives_a_round_trip() {
+    let session = saved();
+    let out: serde_json::Value =
+        serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
+    let original: serde_json::Value = serde_json::from_str(SESSION).unwrap();
+    assert_eq!(out, original);
+}
+
+#[test]
+fn a_source_table_written_there_reads_as_sources_here() {
+    let session = saved();
+    assert_eq!(session.sources.len(), 6);
+    let take = session
+        .source(SourceId(100))
+        .expect("a file the table locates");
+    assert!(matches!(&take.location, Location::File { path } if path == "takes/100.wav"));
+    assert_eq!(take.lifetime, Lifetime::Session);
+    assert_eq!(take.channels, Some(2));
+    assert_eq!(take.sample_rate, Some(48_000.0));
+    // Carried and never interpreted: what produced these samples.
+    assert_eq!(
+        session
+            .source(SourceId(200))
+            .unwrap()
+            .provenance
+            .as_ref()
+            .unwrap()
+            .0["def"],
+        "sines"
+    );
+}
+
+#[test]
+fn a_save_that_cannot_promise_everything_says_which_part() {
+    // The three states a table has to be able to hold, each read back as
+    // itself: a file that is there, samples nobody wrote down, and a working
+    // copy whose destructive edit is still open.
+    let session = saved();
+    assert_eq!(session.volatile(), vec![SourceId(201)]);
+    assert_eq!(session.open_edits(), vec![SourceId(300)]);
+    assert_eq!(
+        session.source(SourceId(300)).unwrap().lifetime,
+        Lifetime::Temporary
+    );
+    assert!(session.is_readable());
+}
+
+#[test]
+fn the_piece_inside_the_session_is_the_same_piece() {
+    let session = saved();
+    assert_eq!(session.arrangement, vector());
+    // ...and the table covers what it plays.
+    assert_eq!(session.dangling(), Vec::<SourceId>::new());
+}

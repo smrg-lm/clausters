@@ -193,6 +193,10 @@ pub struct Session {
     pub arrangement: Arrangement,
     /// The general tree, for what is not an arrangement.
     ///
+    /// **Absent means empty, not invalid** — a session that is only an
+    /// arrangement is the shape this milestone is walking towards, and it has
+    /// to be writable before the leg comes off rather than after.
+    ///
     /// **This is the leg that is being walked off, and saying so is part of
     /// the design rather than an apology.** It is what every current reader
     /// opens - the standalone host, the clients' save and reopen - so it stays
@@ -201,6 +205,10 @@ pub struct Session {
     /// [`Content::Composite`](crate::arrangement::Content::Composite) region
     /// carries this same tree, placed, so nothing the general model can say is
     /// lost by the move - it gains a position.
+    #[serde(
+        default = "Document::empty",
+        skip_serializing_if = "Document::is_empty"
+    )]
     pub document: Document,
     /// Where each source is. A `BTreeMap`, so a written session is stable
     /// under re-saving and a diff of two saves is the edits and not the

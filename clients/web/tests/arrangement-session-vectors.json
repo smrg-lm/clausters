@@ -1,0 +1,324 @@
+{
+ "format": 1,
+ "arrangement": {
+  "tracks": [
+   {
+    "id": 10,
+    "name": "vocals",
+    "lanes": [
+     {
+      "id": 11,
+      "name": "take 1",
+      "regions": [
+       {
+        "id": 20,
+        "position": 0.0,
+        "length": 16.0,
+        "content": {
+         "fill": "window",
+         "window": {
+          "source": {
+           "source": 100,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 0.0,
+          "duration": 4.0
+         }
+        },
+        "name": "vox 0"
+       }
+      ]
+     },
+     {
+      "id": 12,
+      "name": "take 2",
+      "regions": [
+       {
+        "id": 21,
+        "position": 0.0,
+        "length": 16.0,
+        "content": {
+         "fill": "window",
+         "window": {
+          "source": {
+           "source": 101,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 0.0,
+          "duration": 4.0
+         }
+        },
+        "name": "vox 1"
+       }
+      ]
+     },
+     {
+      "id": 13,
+      "name": "comp",
+      "regions": [
+       {
+        "id": 22,
+        "position": 0.0,
+        "length": 16.0,
+        "content": {
+         "fill": "window",
+         "window": {
+          "source": {
+           "source": 102,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 0.0,
+          "duration": 4.0
+         }
+        },
+        "name": "vox 2"
+       }
+      ]
+     }
+    ],
+    "active": 1
+   },
+   {
+    "id": 30,
+    "name": "guitars",
+    "lanes": [
+     {
+      "id": 31,
+      "regions": [
+       {
+        "id": 32,
+        "position": 0.0,
+        "length": 20.0,
+        "content": {
+         "fill": "window",
+         "window": {
+          "source": {
+           "source": 200,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 0.0,
+          "duration": 4.0
+         }
+        },
+        "fade_out": {
+         "length": 4.0
+        }
+       },
+       {
+        "id": 33,
+        "position": 16.0,
+        "length": 16.0,
+        "content": {
+         "fill": "window",
+         "window": {
+          "source": {
+           "source": 201,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 2.0,
+          "duration": 4.0
+         },
+         "playrate": 1.5,
+         "args": {
+          "seed": 7
+         }
+        },
+        "layer": 1,
+        "fade_in": {
+         "length": 4.0,
+         "shape": {
+          "curve": "exp"
+         }
+        },
+        "muted": true
+       }
+      ]
+     }
+    ],
+    "automation": [
+     {
+      "id": 34,
+      "name": "level",
+      "target": {
+       "ctl": "level"
+      },
+      "points": [
+       {
+        "at": 0.0,
+        "value": 0.0,
+        "data": {}
+       },
+       {
+        "at": 16.0,
+        "value": 1.0,
+        "data": {
+         "shape": "exp"
+        }
+       }
+      ],
+      "visible": true
+     }
+    ],
+    "soloed": true
+   },
+   {
+    "id": 40,
+    "name": "sections",
+    "lanes": [
+     {
+      "id": 41,
+      "regions": [
+       {
+        "id": 42,
+        "position": 32.0,
+        "length": 16.0,
+        "content": {
+         "fill": "composite",
+         "node": {
+          "id": 43,
+          "kind": "aggregate",
+          "grouping": "concrete",
+          "members": [
+           {
+            "offset": 0.0,
+            "node": {
+             "id": 44,
+             "kind": "clang"
+            }
+           }
+          ]
+         }
+        },
+        "warp": {
+         "mode": "beats"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "tempo": [
+   {
+    "at": 0.0,
+    "bpm": 96.0
+   },
+   {
+    "at": 32.0,
+    "bpm": 120.0,
+    "ramp": true
+   }
+  ],
+  "meter": [
+   {
+    "at": 0.0,
+    "beats": 4,
+    "unit": 4
+   },
+   {
+    "at": 32.0,
+    "beats": 7,
+    "unit": 8
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "at": 0.0,
+    "name": "intro"
+   },
+   {
+    "id": 2,
+    "at": 32.0,
+    "name": "B"
+   }
+  ],
+  "loop_span": {
+   "start": 0.0,
+   "end": 32.0
+  },
+  "punch": {
+   "start": 8.0,
+   "end": 16.0
+  },
+  "groove": {
+   "name": "mpc60"
+  }
+ },
+ "sources": {
+  "100": {
+   "location": {
+    "at": "file",
+    "path": "takes/100.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "101": {
+   "location": {
+    "at": "file",
+    "path": "takes/101.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "102": {
+   "location": {
+    "at": "file",
+    "path": "takes/102.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "200": {
+   "location": {
+    "at": "file",
+    "path": "takes/200.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0,
+   "provenance": {
+    "def": "sines"
+   }
+  },
+  "201": {
+   "location": {
+    "at": "volatile"
+   },
+   "lifetime": "session",
+   "generation": 0
+  },
+  "300": {
+   "location": {
+    "at": "file",
+    "path": "scratch/300.wav"
+   },
+   "lifetime": "temporary",
+   "generation": 0,
+   "editing": {
+    "from": 200,
+    "confirmed": false
+   }
+  }
+ },
+ "provenance": {
+  "script": "make.py"
+ }
+}

@@ -37,4 +37,6 @@ if __name__ == "__main__":
     here = pathlib.Path(__file__).resolve().parent
     (here / "arrangement-vectors.json").write_text(
         json.dumps(shared.build().write(), indent=1) + "\n")
-    print(f"wrote {here / 'arrangement-vectors.json'}")
+    (here / "arrangement-session-vectors.json").write_text(
+        json.dumps(shared.saved().write(), indent=1) + "\n")
+    print(f"wrote {here / 'arrangement-vectors.json'} and its session")

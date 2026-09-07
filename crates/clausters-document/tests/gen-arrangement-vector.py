@@ -26,8 +26,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
 from clausters.arrangement import (Arrangement, Automation, Content, Fade,  # noqa: E402
-                                   Lane, Marker, Meter, Region, Span, Tempo,
-                                   Track)
+                                   Lane, Marker, Meter, Region, Session, Span,
+                                   Source, Tempo, Track)
 
 
 def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
@@ -94,9 +94,30 @@ def build() -> Arrangement:
     return piece
 
 
+def saved() -> Session:
+    """The same piece as a **session**: the arrangement plus where its samples
+    are, which is the half the piece deliberately does not carry.
+
+    It covers the three states a table has to be able to say, because a save
+    that could not say them would either block or decide for the person: a file
+    that is there, samples nobody wrote down, and a working copy whose
+    destructive edit is still open.
+    """
+    session = Session(arrangement=build(), provenance={"script": "make.py"})
+    for source in (100, 101, 102, 200):
+        session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
+            2, 480_000, 48_000.0)
+    session.sources[200].provenance = {"def": "sines"}
+    session.sources[201] = Source.volatile()
+    session.sources[300] = Source.file("scratch/300.wav", lifetime="temporary")
+    session.sources[300].editing = {"from": 200, "confirmed": False}
+    return session
+
+
 if __name__ == "__main__":
     here = pathlib.Path(__file__).resolve().parent
-    written = build().write()
     (here / "arrangement_vector.json").write_text(
-        json.dumps(written, indent=1) + "\n")
-    print(f"wrote {here / 'arrangement_vector.json'}")
+        json.dumps(build().write(), indent=1) + "\n")
+    (here / "arrangement_session_vector.json").write_text(
+        json.dumps(saved().write(), indent=1) + "\n")
+    print(f"wrote {here / 'arrangement_vector.json'} and its session")

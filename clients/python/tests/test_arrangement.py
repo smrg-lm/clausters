@@ -173,3 +173,74 @@ def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
     piece.tracks.append(track)
     named = [r.content.window["source"]["source"] for r in piece.regions()]
     assert named == [700, 701]
+
+
+# ---- the session: the piece, and where its samples are ----
+
+from clausters.arrangement import FrozenSource, Session, Source  # noqa: E402
+
+
+def test_a_session_round_trips_with_its_table():
+    piece = Arrangement()
+    piece.tracks.append(Track(id=1, lanes=[Lane(id=2)]))
+    piece.tracks[0].lanes[0].place(region(3, 0.0, 4.0, source=700))
+    session = Session(arrangement=piece,
+                      sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
+                      provenance={"script": "make.py"})
+    written = session.write()
+    assert written["sources"]["700"]["location"] == {"at": "file", "path": "take.wav"}
+    assert Session.read(written) == session
+
+
+def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
+    # The crate's own rule, mirrored: a session always has a piece, possibly
+    # empty, so nothing downstream has to ask whether there is one.
+    session = Session.read({"format": 1})
+    assert session.arrangement.tracks == []
+    assert session.write() == {"format": 1}
+
+
+def test_a_save_knows_what_it_cannot_promise():
+    session = Session(sources={
+        1: Source.file("kept.wav"),
+        2: Source.volatile(),
+        3: Source.file("scratch.wav", lifetime="temporary"),
+    })
+    session.sources[3].editing = {"from": 1, "confirmed": False}
+    assert session.volatile() == [2], "samples nobody wrote down"
+    assert session.open_edits() == [3], "an edit still undecided"
+
+    # A save mid-edit promotes the working copy and leaves the edit open:
+    # auto-confirming would turn a save into an edit.
+    assert session.promote(3) and session.sources[3].lifetime == "session"
+    assert session.open_edits() == [3], "still undecided, and that is the point"
+    assert session.confirm(3) and session.open_edits() == []
+    assert not session.promote(1), "nothing temporary about it"
+
+
+def test_a_source_only_a_region_names_is_reported_missing():
+    piece = Arrangement()
+    track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)])
+    track.lanes[0].place(region(4, 0.0, 4.0, source=700))
+    track.lanes[1].place(region(5, 0.0, 4.0, source=701))
+    piece.tracks.append(track)
+    session = Session(arrangement=piece, sources={700: Source.file("one.wav")})
+    # Every lane, not only the one that plays.
+    assert session.dangling() == [701]
+
+
+def test_a_frozen_source_keeps_what_the_table_said():
+    # A piece opened with no way to read its files must still write back every
+    # location it was given -- without this it would save with every source
+    # marked volatile, which is a format that loses its contents on the second
+    # save.
+    entry = Source.file("take.wav").shaped(2, 480, 48_000.0)
+    frozen = FrozenSource(700, entry)
+    assert frozen.bufnum == 700 and frozen.path == "take.wav"
+    assert (frozen.channels, frozen.frames, frozen.sample_rate) == (2, 480, 48_000.0)
+    assert FrozenSource(701).path is None
+
+
+def test_a_session_field_a_newer_writer_added_survives():
+    written = {"format": 1, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
+    assert Session.read(written).write() == written

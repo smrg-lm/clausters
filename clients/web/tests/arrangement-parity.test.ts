@@ -16,8 +16,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { Arrangement, Content, Fade, Lane, Region, Span, Tempo, Track }
-    from "../src/arrangement.ts";
+import { Arrangement, Content, Fade, FrozenSource, Lane, Region, Session,
+         Source, Span, Tempo, Track } from "../src/arrangement.ts";
 
 const VECTOR = new URL("./arrangement-vectors.json", import.meta.url);
 
@@ -159,4 +159,72 @@ test("a half-open span meets the next one without covering a beat twice", () => 
     assert.equal(first.length, 8);
     assert.equal(first.end, new Span(8, 16).start);
     assert.equal(new Fade(4).write().length, 4);
+});
+
+// ---- the session: the piece, and where its samples are ----
+
+const SESSION = new URL("./arrangement-session-vectors.json", import.meta.url);
+
+async function saved(): Promise<Record<string, unknown>> {
+    return JSON.parse(await readFile(SESSION, "utf8"));
+}
+
+test("the client's session parses and survives a round trip", async () => {
+    const written = await saved();
+    assert.deepEqual(Session.read(written).write(), written);
+});
+
+test("a source table written there reads as sources here", async () => {
+    const session = Session.read(await saved());
+    assert.equal(session.sources.size, 6);
+    const take = session.source(100);
+    assert.deepEqual(take?.location, { at: "file", path: "takes/100.wav" });
+    assert.equal(take?.lifetime, "session");
+    assert.equal(take?.channels, 2);
+    assert.equal(take?.sampleRate, 48000);
+    // Carried and never interpreted: what produced these samples.
+    assert.deepEqual(session.source(200)?.provenance, { def: "sines" });
+});
+
+test("a save that cannot promise everything says which part", async () => {
+    // The three states a table has to be able to hold, each read back as
+    // itself: a file that is there, samples nobody wrote down, and a working
+    // copy whose destructive edit is still open.
+    const session = Session.read(await saved());
+    assert.deepEqual(session.volatile(), [201]);
+    assert.deepEqual(session.openEdits(), [300]);
+    assert.equal(session.source(300)?.lifetime, "temporary");
+
+    // A save mid-edit promotes the copy and leaves the edit open.
+    assert.ok(session.promote(300));
+    assert.equal(session.source(300)?.lifetime, "session");
+    assert.deepEqual(session.openEdits(), [300], "still undecided, and that is the point");
+    assert.ok(session.confirm(300));
+    assert.deepEqual(session.openEdits(), []);
+});
+
+test("the piece inside the session is the same piece", async () => {
+    const session = Session.read(await saved());
+    assert.deepEqual(session.arrangement.write(), await vector());
+    assert.deepEqual(session.dangling(), []);
+});
+
+test("an absent arrangement reads as an empty one rather than as nothing", () => {
+    const session = Session.read({ format: 1 });
+    assert.deepEqual(session.arrangement.tracks, []);
+    assert.deepEqual(session.write(), { format: 1 });
+});
+
+test("a frozen source keeps what the table said", () => {
+    const entry = Source.file("take.wav").shaped(2, 480, 48000);
+    const frozen = new FrozenSource(700, entry);
+    assert.equal(frozen.bufnum, 700);
+    assert.equal(frozen.path, "take.wav");
+    assert.deepEqual([frozen.channels, frozen.frames, frozen.sampleRate], [2, 480, 48000]);
+    assert.equal(new FrozenSource(701).path, undefined);
+});
+
+test("a session field a newer writer added survives", () => {
+    const written = { format: 1, mixer: { buses: [{ id: 1, name: "reverb" }] } };
+    assert.deepEqual(Session.read(written).write(), written);
 });

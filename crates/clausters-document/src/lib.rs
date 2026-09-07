@@ -840,6 +840,32 @@ impl Document {
         }
     }
 
+    /// A document with nothing in it: one anonymous, empty aggregate.
+    ///
+    /// What a session that is **only an arrangement** carries where its general
+    /// tree used to be. It is a document rather than an absence so that every
+    /// reader of the field goes on working while the leg comes off.
+    pub fn empty() -> Self {
+        Self::new(Node::new(
+            NodeId(0),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: Vec::new(),
+                config: Opaque::none(),
+            },
+        ))
+    }
+
+    /// Whether this is [`Document::empty`] and nothing else — an unedited,
+    /// anonymous, empty aggregate with no content beside it.
+    ///
+    /// What a session consults before writing the field at all, so a session
+    /// that is only an arrangement writes no general tree and reads back
+    /// without one.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::empty()
+    }
+
     /// The same document with `content` held beside the tree — the nodes a
     /// [`SegmentSource::Node`] names.
     pub fn with_content(mut self, content: Vec<Node>) -> Self {

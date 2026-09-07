@@ -227,6 +227,7 @@ export {
     Arrangement,
     Automation,
     Fade,
+    FrozenSource,
     Lane,
     Marker,
     Meter,
