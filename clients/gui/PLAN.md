@@ -3529,6 +3529,23 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the entry was written against, now with a number on it: the sentence existed,
   was correct, was sent, and was thrown away one process later.
 
+  **And the owner's half, the same afternoon** *(`editors/edit_notes`)*. This
+  entry was written about an owner's refusal, and that is now measured too, in
+  the case the example's own docstring promises: a `Ctrl`+click on empty space
+  in the marker lane cannot add a marker, because a marker is the message it
+  sends and a roll has no way to type an address. The owner declines, corrects
+  the widget back, and the acknowledgement carries
+
+      reason='a marker is the message it sends, and a roll cannot say which:
+              add it with timeline.add(beat, OscItem(addr, ...)) and drag it
+              here'
+
+  -- a sentence that names the verb to call instead. What reaches the person at
+  the window is the correction springing the picture back: **a line that
+  flickers on each click and nothing else**, which is how the user described it
+  before being told what the wire had said. Both halves of the entry now have a
+  witness, and they fail identically from the outside.
+
   It also says where the smallest fix is. `"refused"` is a tag every view can
   emit and no view can mean as an edit, so it belongs with the tags an editor
   answers itself rather than routes -- beside `NOT_AN_EDIT`, not inside a
