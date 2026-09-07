@@ -41,11 +41,13 @@ small set of data structures with no view. The design that replaces it is
 projection" (`O21`-`O24`).
 
 **Taken first, and everything below is read against it**: `O21` (the session's
-types and format) **closed 2026-09-06**, so the sequence is now `O22` (the
-intents a DAW admits), `O23` (the host binds the session and reconciles), `O24`
-(the three applications). What `O21` leaves for them: the model exists in the
-crate and in both clients, `form` has no relation to it, and the host still
-draws the general tree. `O23` is where
+types and format) closed 2026-09-06 and `O22` (the intents a DAW admits)
+**closed 2026-09-07**, so the sequence is now `O23` (the host binds the session
+and reconciles), then `O24` (the three applications). What the two leave for
+them: the model exists in the crate and in both clients, it has a vocabulary of
+fourteen verbs registered as a domain of its own, both clients reach that
+vocabulary through the door they already had — and **the host still draws the
+general tree**, which is exactly what `O23` is. `O23` is where
 `APPLICATION-SCOPE.md`'s `AP5` lands, and its prerequisite is **design, not a
 note**: it was scoped as a list of props that are the host's and survive a
 reconcile, and became a **structure** — a named view object per model object, on
@@ -359,7 +361,9 @@ are written down.
   difference was. **The decision:** whether the crate drives the clients through
   a callback, or the walk is restated over something the crate already owns -
   which is `O22`'s intents and `O23`'s reconcile, and it wants a milestone of its
-  own that it does not have.
+  own that it does not have. Half of that is no longer a maybe: `O22` closed
+  2026-09-07, so the piece's edits *are* something the crate owns, and the walk
+  now has a vocabulary to be restated over rather than a promise of one.
 
 ## 3. Tests and reviews pending
 

@@ -55,6 +55,8 @@
  * @module
  */
 
+import { FIRST_VERSION } from "./document.ts";
+
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
 
@@ -621,6 +623,13 @@ export class Span {
  * for where they live.
  */
 export class Arrangement {
+    /**
+     * What this piece is *at*, and the whole of what a stale edit is stale
+     * against — the twin of the document's own version, and deliberately a
+     * second counter: an editor of the piece is not editing the tree, so one
+     * number would make every edit to either look like a change to both.
+     */
+    version = FIRST_VERSION;
     tracks: Track[] = [];
     tempo: Tempo[] = [];
     meter: Meter[] = [];
@@ -699,6 +708,10 @@ export class Arrangement {
     /** The arrangement as the crate's JSON. Nothing said is nothing written. */
     write(): Extra {
         const out: Extra = {};
+        // Out of the file while it is the first version, so an unedited piece
+        // still writes an empty object: the reader defaults back to the same
+        // number, so nothing is lost by leaving it out.
+        if (this.version !== FIRST_VERSION) out.version = this.version;
         if (this.tracks.length) out.tracks = this.tracks.map((t) => t.write());
         if (this.tempo.length) out.tempo = this.tempo.map((t) => t.write());
         if (this.meter.length) out.meter = this.meter.map((m) => m.write());
@@ -711,14 +724,15 @@ export class Arrangement {
     /** An arrangement from the crate's JSON. */
     static read(written: Extra): Arrangement {
         const piece = new Arrangement();
+        piece.version = (written.version as number) ?? FIRST_VERSION;
         piece.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
         piece.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
         piece.meter = ((written.meter as Extra[]) ?? []).map(Meter.read);
         piece.markers = ((written.markers as Extra[]) ?? []).map(Marker.read);
         if (written.loop_span) piece.loopSpan = Span.read(written.loop_span as Extra);
         if (written.punch) piece.punch = Span.read(written.punch as Extra);
-        piece.extra = rest(written, "tracks", "tempo", "meter", "markers",
-                           "loop_span", "punch");
+        piece.extra = rest(written, "version", "tracks", "tempo", "meter",
+                           "markers", "loop_span", "punch");
         return piece;
     }
 }

@@ -1138,6 +1138,11 @@ def document_coalesce_key(intent: dict) -> str:
 #: spelled at each call site so a typo cannot quietly mint a structure in a
 #: domain nobody reads.
 TREE = "tree"
+#: The **piece's** vocabulary — what a multitrack editor does. A domain of its
+#: own rather than more of the tree's: the piece and the tree are two
+#: descriptions, and one history holds both without either knowing the other's
+#: words.
+ARRANGEMENT = "arrangement"
 POINTS = "points"
 SAMPLES = "samples"
 EVENTS = "events"
@@ -1178,18 +1183,24 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
     wrong thing.
 
     Args:
-        domain: the vocabulary — `POINTS` or `EVENTS`.
-        state: the structure in that vocabulary (a curve's points, a timeline's
-            events), as plain JSON-able data.
+        domain: the vocabulary — `ARRANGEMENT`, `POINTS` or `EVENTS`.
+        state: the structure in that vocabulary (a piece, a curve's points, a
+            timeline's events), as plain JSON-able data.
         payload: the edit.
 
     Returns:
         ``{"state": …, "applied": bool, "reason"?: …, "current"?: …}``, or
         ``None`` for a vocabulary whose state is not a value a caller can hand
-        over: `TREE` (it needs a version to check against and a grid to snap to,
-        and `Document.apply` is its door) and `SAMPLES` (a borrowed view whose
-        frames are in a server buffer, never in a string — reading a span back
-        is what its inverse costs).
+        over: `TREE` (what it edits is a handle that lives across the seam, not
+        a value) and `SAMPLES` (a borrowed view whose frames are in a server
+        buffer, never in a string — reading a span back is what its inverse
+        costs).
+
+        A **piece** is served, and it is the case that shows what the `TREE`
+        entry is really about: its whole state is one JSON value the caller
+        holds, version included, so the door works — it applies against whatever
+        that state says and snaps to nothing, which is what a client that just
+        read the piece wants.
     """
     _lib = lib()
     u8p = ctypes.POINTER(ctypes.c_ubyte)

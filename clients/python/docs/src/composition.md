@@ -279,6 +279,62 @@ everything placed is placed in **beats**, while what fills a region is measured
 in its own source's units — the two are not the same axis, and the conversion
 between them needs the tempo map, which is why the map is part of the piece.
 
+### Editing a piece: the verbs a multitrack admits
+
+The piece has an edit vocabulary of its own, and it is reached through the same
+door every other structure is — `domain_edit`, with `ARRANGEMENT` as the
+vocabulary. Hand over the piece as the crate's JSON and the edit; take back the
+piece as it now stands and the edit that puts it back.
+
+```python
+from clausters.arrangement import Arrangement
+from clausters.document import ARRANGEMENT, domain_edit
+
+edited = domain_edit(
+    ARRANGEMENT, piece.write(),
+    {"intent": "placeregion", "region": 3, "track": 1, "lane": 2,
+     "position": 16.0, "layer": 0},
+)
+edited["applied"]                       # True
+Arrangement.read(edited["state"])       # the piece with the region moved
+edited["current"]                       # the edit that puts it back
+```
+
+Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
+now, whole — adding, removing and reordering are one verb, because all three
+say the same thing) and `setactivelane`, which is comping's one verb. What a
+**region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
+`splitregion`, `joinregions` and `faderegion`. What the **piece** holds:
+`setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
+span), `settempomap` and `setmetermap`.
+
+Three things about them are worth knowing before you write against them.
+
+**Moving a region to another track is one edit.** Where a region is means track,
+lane *and* beat, and an intent is absolute — so `placeregion` states all three
+together. One entry in a history, one undo, and no moment in between where the
+region is on no lane at all.
+
+**A crossfade is two fades over an overlap**, not a third object: `faderegion`
+on each of the two regions, which is what the model already holds. There is no
+crossfade to lose track of, and nothing to keep in step with the two fades.
+
+**A split and a join ask you for the content.** They are the two edits that
+change how many regions there are, and the two the crate will not work out on
+its own: the cut is on the musical axis and a window into a source is on the
+content's, and this document converts between the two *never* — that is the
+whole reason the tempo map is the piece's. So `splitregion` takes
+`left_content` and `right_content` and `joinregions` takes `content`, from you,
+who has the map. Omit them and both halves go on reading what the region read.
+Both also invert as `setlane`, the lane's previous contents: nothing smaller
+describes putting back a region that was made out of two.
+
+Everything else the vocabulary does it does the way the tree's does — absolute,
+idempotent, refused rather than merged when it was made against a piece that has
+moved. The piece carries **its own version** for exactly that: an editor of the
+piece is not editing the tree, so one counter for both would make every edit to
+either look like a change to both.
+
 ## The document: what the composition *is*, and who edits it
 
 Everything above is this client's own surface. Underneath it there is one

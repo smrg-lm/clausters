@@ -63,6 +63,7 @@ from clausters import Session as Server
 from clausters.arrangement import (Arrangement, Content, Lane, Region, Session,
                                    Source, Tempo, Track)
 from clausters.defs.buffer import Buffer
+from clausters.document import ARRANGEMENT, domain_edit
 from clausters.play import play
 
 SAMPLE_RATE = 48_000
@@ -153,6 +154,36 @@ echo.active_lane.place(Region(id=22, position=4.0, length=4.0,
 
 piece.tracks.extend([tone, echo])
 print(f"the piece is {piece.end:.0f} beats long, over {len(piece.tracks)} tracks")
+
+# %% [markdown]
+# ## Editing it: one edit, one undo
+#
+# The piece has a vocabulary of its own, reached through the door every other
+# structure is reached through. Two things about it are worth seeing rather than
+# reading: **where a region is** means track, lane and beat together, so moving
+# one to the other track is a single edit -- there is no moment in between where
+# it is on no lane at all; and the crate hands back the edit that *puts it back*
+# in the same answer, because an inverse has to be read before the edit lands.
+
+# %%
+moved = domain_edit(
+    ARRANGEMENT, piece.write(),
+    {"intent": "placeregion", "region": 13, "track": 20, "lane": 21,
+     "position": 12.0, "layer": 0},
+)
+after = Arrangement.read(moved["state"])
+where = next((t, l, r) for t in after.tracks for l in t.lanes
+             for r in l.regions if r.id == 13)
+print(f"  moved:  region 13 is on track {where[0].id}, lane {where[1].id}, "
+      f"at beat {where[2].position:.0f}")
+print(f"  and to put it back: {moved['current']}")
+
+#: The other direction, through the same door -- and the piece is exactly the
+#: one that was built above, which is what "absolute" buys.
+piece = Arrangement.read(domain_edit(ARRANGEMENT, moved["state"],
+                                     moved["current"])["state"])
+print(f"  undone: the piece is {piece.end:.0f} beats long again, "
+      f"over {len(piece.tracks)} tracks")
 
 # %% [markdown]
 # ## Written as a session

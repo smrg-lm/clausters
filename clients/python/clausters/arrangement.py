@@ -57,6 +57,8 @@ Usage::
 
 from dataclasses import dataclass, field
 
+from .document import FIRST_VERSION
+
 __all__ = [
     "Arrangement",
     "Automation",
@@ -534,6 +536,11 @@ class Arrangement:
     argument for where they live.
     """
 
+    #: What this piece is *at*, and the whole of what a stale edit is stale
+    #: against — the twin of the document's own version, and deliberately a
+    #: second counter: an editor of the piece is not editing the tree, so one
+    #: number would make every edit to either look like a change to both.
+    version: int = FIRST_VERSION
     tracks: list = field(default_factory=list)
     tempo: list = field(default_factory=list)
     meter: list = field(default_factory=list)
@@ -597,6 +604,11 @@ class Arrangement:
         """The arrangement as the crate's JSON. Nothing said is nothing
         written."""
         out: dict = {}
+        # Out of the file while it is the first version, so an unedited piece
+        # still writes an empty object: the reader defaults back to the same
+        # number, so nothing is lost by leaving it out.
+        if self.version != FIRST_VERSION:
+            out["version"] = self.version
         if self.tracks:
             out["tracks"] = [t.write() for t in self.tracks]
         if self.tempo:
@@ -615,10 +627,12 @@ class Arrangement:
     @classmethod
     def read(cls, written: dict) -> "Arrangement":
         """An arrangement from the crate's JSON."""
-        known = ("tracks", "tempo", "meter", "markers", "loop_span", "punch")
+        known = ("version", "tracks", "tempo", "meter", "markers", "loop_span",
+                 "punch")
         loop = written.get("loop_span")
         punch = written.get("punch")
         return cls(
+            version=written.get("version", FIRST_VERSION),
             tracks=[Track.read(t) for t in written.get("tracks", [])],
             tempo=[Tempo.read(t) for t in written.get("tempo", [])],
             meter=[Meter.read(m) for m in written.get("meter", [])],

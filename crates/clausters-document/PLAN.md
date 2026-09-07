@@ -830,7 +830,7 @@ DAW session, because that is what a DAW session is good at.
   `lane_divider` -> `channel_divider` (it only ever drew between stacked
   channels), with its book table. `lane` now appears in the host only where a
   track's row is meant.
-- ⬜ **O22 - The intents the session admits.** The vocabulary extended to what a
+- ✅ **O22 - The intents the session admits.** *(Closed 2026-09-07.)* The vocabulary extended to what a
   DAW does: place, move, trim, split, join, fade, crossfade, set layer, move
   between lanes **and between tracks**, switch a track's active lane,
   add/remove/reorder tracks, edit an automation lane, set a marker or a range.
@@ -895,6 +895,41 @@ DAW session, because that is what a DAW session is good at.
   vocabulary *"the arrangement's vocabulary"* throughout - true when it was
   written and wrong the day `Arrangement` became a type. Renamed to *the tree's*
   wherever the tree is what is meant.
+
+  **(d) The client half cost one constant.** *(Landed 2026-09-07.)* Because the
+  piece is a **domain**, both clients already had the door: `domain_edit` /
+  `domainEdit` take a vocabulary name, a state and a payload, and hand back the
+  new state with the edit that puts it back. So the whole port is the name -
+  `ARRANGEMENT` in `clausters.document` and in `document.ts` - plus
+  `Arrangement.version` on both dataclasses. **No new FFI symbol, no new wasm
+  export, and no typed intent builders in either language**, which is the same
+  answer the tree gives: an intent is a value, and a client that has to
+  construct one through a class is a client whose spelling can drift.
+
+  That is worth stating as the design's own argument rather than as luck. The
+  reason `domain::edit` serves the piece and refuses the tree is not a
+  convenience: **a piece's whole state is one JSON value the caller holds**,
+  version included, so applying against what that state says and snapping to
+  nothing is exactly what a client that just read the piece wants. The tree
+  cannot be served that way because what it edits is a *handle* that lives
+  across the seam. The old wording said the tree needed a version and a grid;
+  the piece needs both too, and has them, so that wording was naming the wrong
+  reason. Corrected in the docstring and in `domain.rs`.
+
+  **The crossing.** `document-vectors.json` gained three arrangement rows -
+  the move between tracks, a split, and a refusal - written by the Python
+  client through the C ABI and replayed by the web client through wasm. One
+  piece, two languages, one crate: the parity a vocabulary needs and the only
+  check that would notice a binding doing arithmetic the crate is not.
+
+  **What it found on the way.** The web client had no `FIRST_VERSION` and no
+  `SESSION_FORMAT`; the Python client had both. Invisible until the piece needed
+  a default version to write against, and fixed in the same commit.
+
+  **What O22 leaves for O23.** The vocabulary exists and both clients reach it;
+  **the host still does not speak it** - it draws the general tree, and
+  `reparent_clip` still moves a `Widget` between two `children` vectors. That is
+  O23's whole subject, and it now has something to reconcile against.
 - ⬜ **O23 - The host binds the session and reconciles.** The host holds the
   session, derives its presentation from it, and answers a change by
   reconciling - matching regions by identity within a lane - rather than by

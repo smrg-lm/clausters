@@ -733,3 +733,217 @@ fn vocabulary() -> Vec<ArrangementIntent> {
     assert_eq!(all.len(), 14, "one of each verb, and the enum has 14");
     all
 }
+
+// ---- through a history: one pile, two vocabularies ----
+
+mod through_a_history {
+    use super::*;
+    use crate::history::{Editable, History};
+    use crate::points::{POINTS, Points, PointsIntent, payload as points_payload};
+
+    /// Undo, spelled the way a caller has to spell it: the pile hands back the
+    /// inverses with the structure each belongs to, and the caller applies them
+    /// through that domain's own door.
+    fn undo(history: &mut History, piece: &mut Arrangement) {
+        let undone = history.undo().expect("something to undo");
+        for (_, load) in undone.legs {
+            Piece::new(piece).apply(&load);
+        }
+    }
+
+    #[test]
+    fn a_region_moved_between_tracks_undoes_in_one_step() {
+        // O22's acceptance. One intent, so one entry -- and the undo puts the
+        // region back on the lane it came from, not merely at the beat it came
+        // from.
+        let mut piece = piece();
+        let mut history = History::new();
+        let arrangement = history.register(ARRANGEMENT);
+
+        history.apply(
+            arrangement,
+            &mut Piece::new(&mut piece),
+            &payload(&ArrangementIntent::PlaceRegion {
+                region: NodeId(100),
+                track: NodeId(20),
+                lane: NodeId(21),
+                position: Beat(16.0),
+                layer: 1,
+            }),
+            "move the region",
+        );
+        assert_eq!(history.len(), 1, "one gesture, one entry");
+        assert_eq!(
+            piece.locate(NodeId(100)).map(|(t, l, _)| (t.id, l.id)),
+            Some((NodeId(20), NodeId(21)))
+        );
+
+        undo(&mut history, &mut piece);
+        let (track, lane, back) = piece.locate(NodeId(100)).expect("back where it was");
+        assert_eq!((track.id, lane.id), (NodeId(10), NodeId(11)));
+        assert_eq!((back.position, back.layer), (Beat(0.0), 0));
+        assert!(!history.can_undo());
+    }
+
+    #[test]
+    fn a_split_undoes_as_the_lane_that_was_there() {
+        let mut piece = piece();
+        let before = piece.lane(NodeId(11)).unwrap().1.clone();
+        let mut history = History::new();
+        let arrangement = history.register(ARRANGEMENT);
+        history.apply(
+            arrangement,
+            &mut Piece::new(&mut piece),
+            &payload(&ArrangementIntent::SplitRegion {
+                region: NodeId(100),
+                at: Beat(1.0),
+                left: NodeId(110),
+                right: NodeId(111),
+                left_content: None,
+                right_content: None,
+            }),
+            "split",
+        );
+        assert_eq!(piece.lane(NodeId(11)).unwrap().1.regions.len(), 2);
+        undo(&mut history, &mut piece);
+        assert_eq!(
+            piece.lane(NodeId(11)).unwrap().1.regions,
+            before.regions,
+            "the region that was made out of two is the one that comes back"
+        );
+    }
+
+    #[test]
+    fn a_refused_edit_leaves_no_entry() {
+        let mut piece = piece();
+        let mut history = History::new();
+        let arrangement = history.register(ARRANGEMENT);
+        history.apply(
+            arrangement,
+            &mut Piece::new(&mut piece),
+            &payload(&ArrangementIntent::RemoveMarker {
+                marker: NodeId(999),
+            }),
+            "remove",
+        );
+        assert!(history.is_empty(), "a refusal is not an edit");
+    }
+
+    #[test]
+    fn a_history_holding_a_piece_and_a_curve_undoes_them_in_one_order() {
+        // The reason the piece is a domain rather than a second `apply`: an
+        // application showing a multitrack and a curve has one history, and the
+        // interleaved order is the pile's. Nothing routes by anything but the
+        // structure each leg names.
+        let mut piece = piece();
+        let mut curve = Points::new(Vec::new());
+        let mut history = History::new();
+        let arrangement = history.register(ARRANGEMENT);
+        let points = history.register(POINTS);
+
+        history.apply(
+            arrangement,
+            &mut Piece::new(&mut piece),
+            &payload(&ArrangementIntent::SetMarker {
+                marker: NodeId(30),
+                at: Beat(8.0),
+                name: Some("chorus".into()),
+            }),
+            "add a marker",
+        );
+        history.apply(
+            points,
+            &mut curve,
+            &points_payload(&PointsIntent::SetPoints {
+                points: vec![Point {
+                    at: 0.0,
+                    value: 1.0,
+                    data: Opaque::none(),
+                }],
+            }),
+            "draw",
+        );
+        history.apply(
+            arrangement,
+            &mut Piece::new(&mut piece),
+            &payload(&ArrangementIntent::SetRange {
+                range: SpanKind::Loop,
+                span: Some(Span::new(Beat(0.0), Beat(16.0))),
+            }),
+            "set the loop",
+        );
+        assert_eq!(history.len(), 3, "one pile over both");
+
+        for expected in [arrangement, points, arrangement] {
+            for (structure, load) in history.undo().expect("something to undo").legs {
+                assert_eq!(structure, expected);
+                if structure == arrangement {
+                    Piece::new(&mut piece).apply(&load);
+                } else {
+                    curve.apply(&load);
+                }
+            }
+        }
+        assert!(piece.markers.is_empty());
+        assert!(piece.loop_span.is_none());
+        assert!(curve.0.is_empty());
+        assert!(!history.can_undo());
+    }
+}
+
+// ---- the door a client reaches: the piece as JSON state ----
+
+#[test]
+fn the_piece_is_edited_across_the_seam_as_state_and_an_inverse() {
+    // What both clients already have a binding for (`domain_edit`), now
+    // answering for the piece: hand over the state and the edit, take back the
+    // new state and what would put it back. No new surface in either language,
+    // which is what keeps the two from growing different doors to one
+    // vocabulary.
+    let state = Opaque(serde_json::to_value(piece()).unwrap());
+    let load = payload(&ArrangementIntent::PlaceRegion {
+        region: NodeId(100),
+        track: NodeId(20),
+        lane: NodeId(21),
+        position: Beat(16.0),
+        layer: 0,
+    });
+    let edited = crate::domain::edit(ARRANGEMENT, &state, &load).expect("the piece is served");
+    assert!(edited.applied);
+
+    let moved: Arrangement = serde_json::from_value(edited.state.0.clone()).unwrap();
+    assert_eq!(
+        moved.locate(NodeId(100)).map(|(t, _, _)| t.id),
+        Some(NodeId(20))
+    );
+    assert_eq!(moved.version, crate::FIRST_VERSION + 1);
+
+    let back = crate::domain::edit(ARRANGEMENT, &edited.state, &edited.current.unwrap())
+        .expect("and the inverse goes back through the same door");
+    let restored: Arrangement = serde_json::from_value(back.state.0).unwrap();
+    assert_eq!(
+        restored.locate(NodeId(100)).map(|(t, l, _)| (t.id, l.id)),
+        Some((NodeId(10), NodeId(11)))
+    );
+}
+
+#[test]
+fn the_crate_names_the_pieces_vocabulary_where_a_caller_asks_for_it() {
+    assert!(crate::domain::known(ARRANGEMENT));
+    let load = payload(&ArrangementIntent::TrimRegion {
+        region: NodeId(100),
+        position: Beat(0.0),
+        length: Beat(2.0),
+        content: None,
+    });
+    assert_eq!(
+        crate::domain::coalesce_key(ARRANGEMENT, &load).as_deref(),
+        Some("trimregion:100"),
+        "asked once here rather than spelled again per language"
+    );
+    assert_eq!(
+        crate::domain::coalesce_key(ARRANGEMENT, &Opaque(serde_json::json!({"intent": "nope"}))),
+        None,
+        "and a payload written in another vocabulary says so"
+    );
+}

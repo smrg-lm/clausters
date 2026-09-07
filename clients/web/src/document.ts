@@ -408,12 +408,39 @@ export interface RecordedLeg {
  * mint a structure in a domain nobody reads.
  */
 export const TREE = "tree";
+/**
+ * The **piece's** vocabulary — what a multitrack editor does, in
+ * `ArrangementIntent`'s words. See {@link TREE}.
+ *
+ * A domain of its own rather than more of the tree's: the piece and the tree
+ * are two descriptions, and one history holds both without either knowing the
+ * other's words.
+ */
+export const ARRANGEMENT = "arrangement";
 /** The break-point curve's vocabulary. See {@link TREE}. */
 export const POINTS = "points";
 /** A span of samples' vocabulary. See {@link TREE}. */
 export const SAMPLES = "samples";
 /** A timeline of events' vocabulary. See {@link TREE}. */
 export const EVENTS = "events";
+
+/**
+ * The version an unedited document and an unedited piece are at.
+ *
+ * The counter moves when the description changes, so an edit made against a
+ * version the document has left behind is refused as stale rather than applied
+ * blind.
+ */
+export const FIRST_VERSION = 1;
+
+/**
+ * The session format this build writes.
+ *
+ * It moves when a reader that does not know the new shape would read a file
+ * **wrongly** — never for an added field, which an older reader ignores and a
+ * newer one defaults.
+ */
+export const SESSION_FORMAT = 1;
 
 /**
  * What makes two of a **domain's** edits *the same thing done the same way* —

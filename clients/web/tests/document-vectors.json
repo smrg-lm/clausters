@@ -2028,6 +2028,31 @@
       "key": "configure:2"
     },
     {
+      "domain": "arrangement",
+      "payload": {
+        "intent": "placeregion",
+        "region": 100,
+        "track": 20,
+        "lane": 21,
+        "position": 16.0,
+        "layer": 1
+      },
+      "key": "placeregion:100"
+    },
+    {
+      "domain": "arrangement",
+      "payload": {
+        "intent": "settempomap",
+        "tempo": [
+          {
+            "at": 0.0,
+            "bpm": 132.0
+          }
+        ]
+      },
+      "key": "settempomap"
+    },
+    {
       "domain": "points",
       "payload": {
         "intent": "setpoints",
@@ -2102,6 +2127,426 @@
     }
   ],
   "edited": [
+    {
+      "domain": "arrangement",
+      "state": {
+        "tracks": [
+          {
+            "id": 10,
+            "name": "vocals",
+            "lanes": [
+              {
+                "id": 11,
+                "regions": [
+                  {
+                    "id": 100,
+                    "position": 0.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 1,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 12,
+                "regions": [
+                  {
+                    "id": 101,
+                    "position": 8.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 2,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "name": "guitar",
+            "lanes": [
+              {
+                "id": 21
+              }
+            ]
+          }
+        ]
+      },
+      "payload": {
+        "intent": "placeregion",
+        "region": 100,
+        "track": 20,
+        "lane": 21,
+        "position": 16.0,
+        "layer": 1
+      },
+      "edited": {
+        "state": {
+          "tracks": [
+            {
+              "id": 10,
+              "lanes": [
+                {
+                  "id": 11
+                },
+                {
+                  "id": 12,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 2,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 101,
+                      "length": 4.0,
+                      "position": 8.0
+                    }
+                  ]
+                }
+              ],
+              "name": "vocals"
+            },
+            {
+              "id": 20,
+              "lanes": [
+                {
+                  "id": 21,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 1,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 100,
+                      "layer": 1,
+                      "length": 4.0,
+                      "position": 16.0
+                    }
+                  ]
+                }
+              ],
+              "name": "guitar"
+            }
+          ],
+          "version": 2
+        },
+        "applied": true,
+        "current": {
+          "intent": "placeregion",
+          "lane": 11,
+          "layer": 0,
+          "position": 0.0,
+          "region": 100,
+          "track": 10
+        }
+      }
+    },
+    {
+      "domain": "arrangement",
+      "state": {
+        "tracks": [
+          {
+            "id": 10,
+            "name": "vocals",
+            "lanes": [
+              {
+                "id": 11,
+                "regions": [
+                  {
+                    "id": 100,
+                    "position": 0.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 1,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 12,
+                "regions": [
+                  {
+                    "id": 101,
+                    "position": 8.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 2,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "name": "guitar",
+            "lanes": [
+              {
+                "id": 21
+              }
+            ]
+          }
+        ]
+      },
+      "payload": {
+        "intent": "splitregion",
+        "region": 100,
+        "at": 2.0,
+        "left": 110,
+        "right": 111
+      },
+      "edited": {
+        "state": {
+          "tracks": [
+            {
+              "id": 10,
+              "lanes": [
+                {
+                  "id": 11,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 1,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 110,
+                      "length": 2.0,
+                      "position": 0.0
+                    },
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 1,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 111,
+                      "length": 2.0,
+                      "position": 2.0
+                    }
+                  ]
+                },
+                {
+                  "id": 12,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 2,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 101,
+                      "length": 4.0,
+                      "position": 8.0
+                    }
+                  ]
+                }
+              ],
+              "name": "vocals"
+            },
+            {
+              "id": 20,
+              "lanes": [
+                {
+                  "id": 21
+                }
+              ],
+              "name": "guitar"
+            }
+          ],
+          "version": 2
+        },
+        "applied": true,
+        "current": {
+          "intent": "setlane",
+          "lane": 11,
+          "regions": [
+            {
+              "content": {
+                "fill": "composite",
+                "node": {
+                  "grouping": "concrete",
+                  "id": 1,
+                  "kind": "aggregate"
+                }
+              },
+              "id": 100,
+              "length": 4.0,
+              "position": 0.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "domain": "arrangement",
+      "state": {
+        "tracks": [
+          {
+            "id": 10,
+            "name": "vocals",
+            "lanes": [
+              {
+                "id": 11,
+                "regions": [
+                  {
+                    "id": 100,
+                    "position": 0.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 1,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 12,
+                "regions": [
+                  {
+                    "id": 101,
+                    "position": 8.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "composite",
+                      "node": {
+                        "id": 2,
+                        "kind": "aggregate",
+                        "grouping": "concrete",
+                        "members": []
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "name": "guitar",
+            "lanes": [
+              {
+                "id": 21
+              }
+            ]
+          }
+        ]
+      },
+      "payload": {
+        "intent": "placeregion",
+        "region": 999,
+        "track": 20,
+        "lane": 21,
+        "position": 0.0
+      },
+      "edited": {
+        "state": {
+          "tracks": [
+            {
+              "id": 10,
+              "lanes": [
+                {
+                  "id": 11,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 1,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 100,
+                      "length": 4.0,
+                      "position": 0.0
+                    }
+                  ]
+                },
+                {
+                  "id": 12,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "composite",
+                        "node": {
+                          "grouping": "concrete",
+                          "id": 2,
+                          "kind": "aggregate"
+                        }
+                      },
+                      "id": 101,
+                      "length": 4.0,
+                      "position": 8.0
+                    }
+                  ]
+                }
+              ],
+              "name": "vocals"
+            },
+            {
+              "id": 20,
+              "lanes": [
+                {
+                  "id": 21
+                }
+              ],
+              "name": "guitar"
+            }
+          ]
+        },
+        "applied": false,
+        "reason": "no such region"
+      }
+    },
     {
       "domain": "points",
       "state": [

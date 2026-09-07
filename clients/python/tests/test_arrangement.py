@@ -115,6 +115,19 @@ def test_nothing_said_is_nothing_written():
     assert "playrate" not in written["content"]
 
 
+def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
+    # The counter a stale edit is stale against, and it is the piece's rather
+    # than the document's: an editor of one is not editing the other. It stays
+    # out of the file while it is the first version, so an unedited piece still
+    # writes an empty object and a file that never named one reads back at it.
+    assert Arrangement().version == 1
+    assert "version" not in Arrangement().write()
+    assert Arrangement.read({}).version == 1
+    edited = Arrangement(version=4)
+    assert edited.write()["version"] == 4
+    assert Arrangement.read(edited.write()).version == 4
+
+
 def test_a_whole_piece_round_trips():
     piece = Arrangement()
     piece.set_tempo(Tempo(at=0.0, bpm=96.0))

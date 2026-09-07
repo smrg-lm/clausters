@@ -149,6 +149,20 @@ test("nothing said is nothing written", () => {
     assert.equal((written.content as Record<string, unknown>).playrate, undefined);
 });
 
+test("the piece carries its own version and keeps it out of an empty file", () => {
+    // The counter a stale edit is stale against, and it is the piece's rather
+    // than the document's: an editor of one is not editing the other. It stays
+    // out of the file while it is the first version, so an unedited piece still
+    // writes an empty object and a file that never named one reads back at it.
+    assert.equal(new Arrangement().version, 1);
+    assert.equal(new Arrangement().write().version, undefined);
+    assert.equal(Arrangement.read({}).version, 1);
+    const edited = new Arrangement();
+    edited.version = 4;
+    assert.equal(edited.write().version, 4);
+    assert.equal(Arrangement.read(edited.write()).version, 4);
+});
+
 test("a fill this build does not know is carried whole", () => {
     const written = { fill: "video", clip: "take1.mov", offset: 0 };
     assert.deepEqual(Content.read(written).write(), written);
