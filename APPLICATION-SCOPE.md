@@ -1262,6 +1262,27 @@ owner moved is how a working editor becomes a new set of defects.
   ends a session, and it leaves a stale host holding the port, which then makes
   the *next* run fail for an unrelated reason.
 
+  **Not seen in nine runs, and both suspects were exercised** *(2026-09-07, the
+  visual review's second sitting)*. Seven examples across nine launches --
+  `multitrack` three times, `edit_samples` three, `edit_notes`, `edit_curve`,
+  `pianoroll`, `bpf`, `score_editor` -- every one closed by the user's hand and
+  every one exited 0, with the server and the host going down with it. That is
+  not an absence of testing on either named place: nine windows closed means
+  `drop_window` ran nine times, and `edit_samples` ends on `editor.wait()`,
+  which is `Application.wait` down to `GuiHost._wait_while` -- the client-side
+  suspect by name. `pianoroll` ends on `WindowHandle.wait`.
+
+  **The user's reading, and the dates support it**: it was `FormEditor`'s. This
+  entry was written on 2026-09-06 at 06:33 and `FormEditor` was removed the same
+  day at 19:21, thirteen hours later, taking `composer.py` with it -- and
+  `composer.py` is the run that was still going 55 minutes after its window was
+  gone. Both sightings are from before the removal.
+
+  **It stays open**, because nine quiet runs do not prove a spin cannot happen
+  and nobody has read either loop. What has changed is what to look at if it
+  comes back: not the two places above, which have now run clean under a hand
+  nine times, but whatever the returning case does that these seven do not.
+
 - ⬜ **A clip dragged past the first or last lane oscillates back to the start
   of the track** *(found 2026-09-06 by the user, by eye, twice)*. Holding a
   vertical drag against the top or bottom of the stack makes the clip jump to
