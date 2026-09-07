@@ -364,6 +364,11 @@ impl WebApp {
     /// scopes their tick-fed histories); the node tree stays empty until a
     /// browser node-tree path exists.
     pub(super) fn draw(&mut self, def: i32) {
+        // **First, whatever was told to read itself again.** A `reload` is the
+        // element forgetting what it resolved, so a fill that ran before the
+        // reload was served would fill from nothing and leave the stale picture
+        // on the canvas.
+        self.reload_bulk(def);
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it — a canvas with nothing live in it never ticks.
         if let (Some(slot), Some(tree)) =

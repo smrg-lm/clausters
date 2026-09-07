@@ -149,6 +149,10 @@ impl Element for SignalElement {
         }
     }
 
+    fn wants_reload(&mut self) -> Option<crate::host::widget::element::Bulk> {
+        self.take_reload()
+    }
+
     fn needs(&self) -> Needs {
         let mut needs = Needs {
             retention: self.retention(),

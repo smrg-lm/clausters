@@ -3551,7 +3551,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the address is part of the gesture, or a labelless marker is given a meaning
   of its own. It cannot stay a value only one client notices.
 
-- ⬜ **An undo leaves the pencil dead, and a dead pencil draws a selection**
+- ✅ **An undo leaves the pencil dead, and a dead pencil draws a selection**
   *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "hice
   undo/redo y no me dejó dibujar más")*. Reproduced with a trace. One stroke
   lands, `Ctrl+Z` and `Ctrl+Shift+Z` walk the history, and from then on
@@ -3586,6 +3586,88 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   through. A plan that resolved to a gesture should consume the press whatever
   happens next, and say why when it cannot act. **Related:** "A refused edit
   springs back and says nothing" is where the saying-why half is decided.
+
+  **Fixed 2026-09-07: there was no next pass** (`gui/windows.rs`,
+  `web/bulk.rs`). The first of the two, and the cause was one line further on
+  than the chain above reaches. `reread`'s own comment says the element forgets
+  what it resolved *"and the loader picks it up on the next pass"* -- and there
+  was no next pass. `load_bulk` is the only walk that reads `Needs::bulk` and
+  the only thing that starts a buffer fetch, and it runs **once, when the
+  window opens**. So a take told to re-read forgot its body and nothing ever
+  asked the server for it again.
+
+  Which also explains the half that made it hard to see: the window looked
+  fine. A fill with no data returns `None`, meaning *nothing new for the slot*,
+  so the GPU kept the picture it already had. The picture on screen stopped
+  being the buffer's while the element behind it held nothing -- the user's own
+  reading, *"undo/redo corrompe el estado"*, and a better description than the
+  one this entry was filed under.
+
+  The pass now exists on both fronts, and what makes it affordable is that the
+  ask is **one-shot**: `Element::wants_reload` is the mutable twin of
+  `Needs::bulk`, and asking clears the ask, so a per-repaint walk answers once
+  per `reload`. Deriving it from *"it has no body"* would have been a query per
+  frame for as long as a fetch took -- an element waiting for an answer and one
+  that has not asked look identical from outside.
+
+  **What is left is the second half**, and it is now its own entry below: an
+  arm that resolved to a gesture still returns `false` on every path but the
+  zoom gate's, so the next thing that goes wrong inside one will fall through
+  to a sweep exactly as this did.
+
+- ⬜ **A press arm that resolved to a gesture does not consume the press**
+  *(split out 2026-09-07 from the entry above, whose bug it carried in)*. The
+  host's own standard, turned on itself. `GestureMap::plan` resolves
+  `ctrl -> alt -> shift -> plain` and a step that returns `false` means *this
+  press was not mine*, so the press walks on down the chain. The zoom gate in
+  the pencil's arm is the only place that gets this right, and it says so:
+  `return true; // consumed: the plan must not fall through to a sweep`. Every
+  other way the same arm gives up returns `false`, so a pencil that resolved
+  and then could not act becomes a selection tool, silently.
+
+  The protocol document already specifies the rule, twice, for the two cases it
+  had reason to name -- `draw` is *"refused ... visibly and consuming the
+  press, so a plan naming a sweep behind it cannot turn a refused stroke into a
+  selection"*, and a locked clip body the same. So this is not a design
+  question: it is the host keeping its own published contract in one arm and
+  breaking it in the others.
+
+  **Also closes a second defect for the price of one**: a press on an empty
+  staff space that answers with the engraver's drawing instead of writing a
+  note ("A press on empty staff answers with the engraver's drawing", below) is
+  the same shape -- an arm that meant to write, could not resolve, and let the
+  press through to a selection. Reading each `return false` in
+  `gestures/press.rs` and asking *was this press mine* is the whole of the
+  work; the answers are in the code, not in a decision.
+
+- ✅ **The pencil drew before the samples were drawn, and wrote hundreds at a
+  time** *(found and fixed 2026-09-07, by the user, by eye: "me esta dejando
+  editar la forma de onda antes de que se vean los discos de las muestras, y se
+  puede editar una cantidad muy grande por vez")*. Two numbers for one rule.
+  The gate refused where a pixel was more than one sample; the trace puts its
+  sample dots on at three radii of spacing (`graphics::signal::trace::
+  dots_fit`), which is twelve pixels a sample at the default density. Between
+  the two a stroke was allowed over a picture with no dots in it.
+
+  The two halves of the report are one gap: the samples were not being shown
+  one by one, **and** a drag across the body wrote every sample it crossed --
+  at a pixel a sample, nine hundred of them from one gesture, none of which the
+  hand could aim at.
+
+  The gesture now asks the drawing (`trace::samples_are_drawn`) rather than
+  carrying a threshold beside it, so the pencil is allowed exactly where the
+  reader can see which sample they are writing, and how much a stroke can write
+  is bounded by that rather than by a number invented for it.
+
+  **Everything needed to catch this was already written down.** The example's
+  own instructions say *zoom in until the samples are discs, then draw*, and
+  `docs/decisions.md` has a section titled *"A stroke writes what the reader
+  can see"*. The principle was decided and documented; only the number
+  disagreed. What let it drift is that **nothing tested the gate** -- the one
+  gesture test over a pencil draws at a hundred pixels a sample, far inside
+  both thresholds, so either number passed it. The general lesson is in the
+  decisions entry: a rule stated in two places is a rule that will disagree
+  with itself.
 
 - ✅ **A refused edit springs back and says nothing** *(found 2026-09-03, while
   chasing "the clip does not respond": pressing `e` over a piano-roll clip is

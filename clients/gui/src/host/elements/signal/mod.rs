@@ -380,6 +380,15 @@ pub struct SignalElement {
     /// when the fill is taken, which is what keeps a still picture at zero
     /// uploads.
     pub slot_dirty: bool,
+    /// **This element was told its resource moved and has not been served
+    /// since** — the `reload` prop, waiting for a loader.
+    ///
+    /// Re-reading is the element *forgetting* what it resolved, so the ask is
+    /// not "have I got a body" (which is also true while a fetch is in flight,
+    /// and would re-ask every frame): it is this one-shot flag, raised by
+    /// [`SignalElement::reread`] and taken by
+    /// [`Element::wants_reload`](crate::host::widget::element::Element::wants_reload).
+    pub reload_asked: bool,
     /// The edit the hand is making **right now**, before anyone has applied it.
     ///
     /// The host owns no data, so a dragged sample is not a change to the
@@ -438,6 +447,7 @@ impl SignalElement {
             analysis: None,
             live: LiveState::default(),
             slot_dirty: true,
+            reload_asked: false,
         }
     }
 

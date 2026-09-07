@@ -370,6 +370,34 @@ pub fn dots_fit(spacing: f32, radius: f32) -> bool {
     radius > 0.0 && spacing >= 3.0 * radius
 }
 
+/// The same question in the **axis' own unit**: whether a picture at
+/// `samples_per_px` is drawing its samples one by one.
+///
+/// It exists so a *gesture* can ask it. Writing one sample is only meaningful
+/// where the reader can see which sample they are writing, and the drawing
+/// already decides exactly that with [`dots_fit`] — so the pencil asks the
+/// picture rather than carrying a threshold of its own. Two numbers for one
+/// rule is how a stroke came to be allowed over a picture with no dots in it,
+/// writing hundreds of samples the hand could not aim at.
+pub fn samples_are_drawn(samples_per_px: f64, radius: f32) -> bool {
+    if !samples_per_px.is_finite() || samples_per_px <= 0.0 {
+        // No span to divide by: whatever is drawn, one pixel is not more than
+        // one sample, so the dot is the only question left.
+        return radius > 0.0;
+    }
+    dots_fit((1.0 / samples_per_px) as f32, radius)
+}
+
+/// How many samples a pixel may cover before the samples stop being drawn one
+/// by one — the ceiling [`samples_are_drawn`] tests against, for a refusal that
+/// can say what it is waiting for.
+pub fn drawable_per_px(radius: f32) -> f64 {
+    if radius <= 0.0 {
+        return 0.0;
+    }
+    1.0 / (3.0 * radius) as f64
+}
+
 impl TraceStyle {
     /// A trace inked at `width`, with no sample dots.
     pub fn new(color: Color, width: f32) -> Self {

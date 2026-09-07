@@ -1890,6 +1890,21 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **This element was told its resource moved**, and this is what it wants
+    /// loaded again — `None` for the overwhelming majority, which were told
+    /// nothing.
+    ///
+    /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
+    /// the reason [`fill`](Element::fill) is: **asking clears the ask**, so one
+    /// `reload` produces one load. A front's per-repaint walk can call it every
+    /// frame and it answers once, which is what a fetch in flight needs — an
+    /// element with no body yet is indistinguishable from one that has not
+    /// asked, and a front deriving the ask from that would send a query per
+    /// frame for as long as the answer took.
+    fn wants_reload(&mut self) -> Option<Bulk> {
+        None
+    }
+
     /// **The slot's contents are gone**: the window's GPU resources were
     /// rebuilt (a fresh device, a page's canvas re-attached), so whatever this
     /// element handed over is no longer on the card and the next

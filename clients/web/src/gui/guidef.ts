@@ -1314,10 +1314,11 @@ export function view(
     hug?: boolean;
     /**
      * The host's **status bar**: a band along the window's bottom edge saying
-     * what it last did and what it last refused — a stroke where a pixel is
-     * more than one sample, an edit an owner answered with a reason. **On
-     * unless this turns it off**, and it is the host's: nothing here writes to
-     * it, because the host already knows what it did and sending that back
+     * what it last did and what it last refused — a stroke over samples the
+     * picture is not drawing one by one, an edit an owner answered with a
+     * reason. **On unless this turns it off**, and it is the host's: nothing
+     * here writes to it, because the host already knows what it did and
+     * sending that back
      * over the wire would be telling it something it told us. Clicking it
      * opens it into the window's log area, where the wheel scrolls back
      * through the lines it kept; clicking again closes it.

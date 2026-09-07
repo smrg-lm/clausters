@@ -5923,10 +5923,23 @@ two.
 
 ## A stroke writes what the reader can see
 
-The pencil is already refused where a pixel is more than one sample — a stroke
-there would write values nobody can check, and the refusal is visible
+The pencil is refused until the picture draws its samples one by one — a stroke
+before that would write values nobody can check, and the refusal is visible
 (`"refused" "draw" …`) because a pencil that sometimes silently does nothing
 teaches that it sometimes does not work.
+
+**The threshold is the drawing's, and for a while it was not.** This section
+first said *where a pixel is more than one sample*, and the gate was written to
+that number; the trace puts its sample dots on at three radii of spacing, which
+is twelve pixels a sample at the default density. Between the two a stroke was
+allowed over a picture with no dots in it — found by eye on 2026-09-07, as *"it
+lets me edit before the discs appear, and a very large amount at once"*, which
+is both halves of the same gap: the samples were not shown, and a drag across
+the body wrote every one it crossed. So the gesture asks the drawing
+(`graphics::signal::trace::samples_are_drawn`) instead of carrying a threshold
+beside it. The heading was right all along; two numbers for one rule is what
+was wrong, and it is the general lesson — a rule stated in two places is a rule
+that will disagree with itself.
 
 The same rule decides what happens when the hand keeps going: a drag holds the
 pointer, so it goes on reporting past the edge of the view and past the window

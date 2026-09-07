@@ -14,6 +14,7 @@
 //! match is what makes a new widget kind impossible to forget here.
 
 use super::super::Host;
+use super::super::graphics::signal::trace;
 use super::super::interact::{self, Hit};
 use super::super::layers;
 use super::super::placement::Placements;
@@ -453,12 +454,39 @@ impl Gestures {
                 else {
                     return false;
                 };
-                // **Refused where a pixel is more than one sample**, and said
-                // out loud: a stroke there would write values the reader cannot
-                // see, and a pencil that silently does nothing teaches that it
-                // sometimes does not work.
+                // **Refused until the picture draws its samples one by one**,
+                // and said out loud: a stroke over a summarized trace writes
+                // values the reader cannot see, and a pencil that silently does
+                // nothing teaches that it sometimes does not work.
+                //
+                // The threshold is the *drawing's*, asked rather than restated
+                // (`graphics::signal::trace::samples_are_drawn`). It used to be
+                // one pixel per sample, which is a different number from the one
+                // that puts the dots on the trace: between the two a stroke was
+                // allowed over a picture with no dots in it, and a drag across
+                // the body wrote hundreds of samples the hand could not aim at.
+                // The example's own instructions had the rule right all along --
+                // *zoom in until the samples are discs, then draw*.
+                let radius = host.metrics_for(def_id).point_radius;
                 let per_px = axis.nav.len / axis.body.w.max(1.0) as f64;
-                if per_px > 1.0 {
+                if !trace::samples_are_drawn(per_px, radius) {
+                    let ceiling = trace::drawable_per_px(radius);
+                    // Two readings of one fact, each in the unit that is legible
+                    // in its own range: far out a pixel holds many samples, and
+                    // close in a sample holds a fraction of a pixel.
+                    let need = 1.0 / ceiling;
+                    let why = if per_px > 1.0 {
+                        format!(
+                            "zoom in until the samples are dots to draw: one pixel is \
+                             {per_px:.0} samples, and a dot needs {need:.0} px per sample"
+                        )
+                    } else {
+                        format!(
+                            "zoom in until the samples are dots to draw: one sample is \
+                             {:.1} px, and a dot needs {need:.0}",
+                            1.0 / per_px.max(f64::MIN_POSITIVE)
+                        )
+                    };
                     emit(
                         host,
                         out,
@@ -467,9 +495,7 @@ impl Gestures {
                         vec![
                             OscType::String("refused".into()),
                             OscType::String("draw".into()),
-                            OscType::String(format!(
-                                "zoom in to draw: one pixel is {per_px:.0} samples"
-                            )),
+                            OscType::String(why),
                         ],
                     );
                     return true; // consumed: the plan must not fall through to a sweep

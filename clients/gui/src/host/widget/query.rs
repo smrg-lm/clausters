@@ -468,6 +468,12 @@ impl WidgetKind {
         self.as_element_mut()?.fill()
     }
 
+    /// **What this widget was told to read again**, when it was
+    /// ([`Element::wants_reload`]). Asking clears the ask.
+    pub fn wants_reload(&mut self) -> Option<super::element::Bulk> {
+        self.as_element_mut()?.wants_reload()
+    }
+
     /// **The window's GPU slots are gone** (a device rebuilt, a canvas
     /// re-attached): whatever this widget handed over has to be handed over
     /// again.

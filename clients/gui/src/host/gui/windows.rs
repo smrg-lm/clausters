@@ -214,11 +214,14 @@ impl App {
             load_bulk(
                 tree,
                 None,
+                false,
                 gpu,
                 renderers,
-                &mut waveforms,
-                &mut spectrograms,
-                &mut buffer_refs,
+                &mut BulkOut {
+                    waveforms: &mut waveforms,
+                    spectrograms: &mut spectrograms,
+                    buffers: &mut buffer_refs,
+                },
             );
         }
         if let Some(tree) = self.host.window_def(id) {
@@ -253,6 +256,58 @@ impl App {
             self.host.set_timeline_total(*wid, slot.total_samples());
         }
         (waveforms, spectrograms, canvases, buffer_refs)
+    }
+
+    /// **Serves whatever this window's elements were told to read again** — a
+    /// take whose owner answered an edit with `reload`, which is what an undo
+    /// over a server buffer is.
+    ///
+    /// The pass the `reload` prop's own comment always promised and never had.
+    /// It runs before every repaint, beside the slot refresh, and it costs a
+    /// walk and nothing else on a window where nothing asked: `wants_reload`
+    /// answers `None` for every element that was told nothing, and answers once
+    /// for one that was.
+    pub(super) fn reload_bulk_for(&mut self, def_id: i32) {
+        let mut waveforms = HashMap::new();
+        let mut spectrograms = HashMap::new();
+        let mut buffer_refs = Vec::new();
+        // Disjoint field borrows: the tree is the host's, the GPU the window's.
+        let Some(ws) = self.windows.get(&def_id) else {
+            return;
+        };
+        let (gpu, renderers) = (&ws.gpu, &ws.renderers);
+        if let Some(tree) = self.host.window_def_mut(def_id) {
+            load_bulk(
+                tree,
+                None,
+                true,
+                gpu,
+                renderers,
+                &mut BulkOut {
+                    waveforms: &mut waveforms,
+                    spectrograms: &mut spectrograms,
+                    buffers: &mut buffer_refs,
+                },
+            );
+        }
+        if waveforms.is_empty() && spectrograms.is_empty() && buffer_refs.is_empty() {
+            return;
+        }
+        // A resource that resolved locally lands in the slot it was routed to,
+        // replacing the picture the window was still holding -- which is the
+        // half of the bug that made the window *look* right while the element
+        // behind it held nothing.
+        if let Some(ws) = self.windows.get_mut(&def_id) {
+            for (id, slot) in waveforms {
+                self.host.set_timeline_total(id, slot.view.total_samples());
+                ws.waveforms.insert(id, slot);
+            }
+            for (id, slot) in spectrograms {
+                self.host.set_timeline_total(id, slot.total_samples());
+                ws.spectrograms.insert(id, slot);
+            }
+        }
+        self.start_buffer_fetches(def_id, buffer_refs);
     }
 
     pub(super) fn drop_window(&mut self, id: i32) {
@@ -313,32 +368,60 @@ impl App {
 /// The id a load is keyed by is the **owner's**: a clip's body carries none, so
 /// the walk carries the nearest id above it down, which a flat `descendants`
 /// pass could not.
+/// Where a bulk walk puts what it resolves: the two slot maps, and the server
+/// buffers it can only ask another process for.
+///
+/// One struct because the walk carries them together through every level of
+/// the tree and hands them back to one caller — three out-params threaded
+/// through a recursion is the same thing spelled longer.
+struct BulkOut<'a> {
+    waveforms: &'a mut HashMap<i32, WaveformSlot>,
+    spectrograms: &'a mut HashMap<i32, SpectrogramSlot>,
+    /// `(widget_id, bufnum, shape_only)` — the deferred half.
+    buffers: &'a mut Vec<(i32, i32, bool)>,
+}
+
 fn load_bulk(
     widget: &mut Widget,
     owner: Option<i32>,
+    again: bool,
     gpu: &Gpu,
     renderers: &Renderers,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
-    buffer_refs: &mut Vec<(i32, i32, bool)>,
+    out: &mut BulkOut<'_>,
 ) {
     let owner = widget.id.or(owner);
-    let needs = widget.kind.needs();
-    if let (Some(id), Some(want)) = (owner, needs.bulk) {
+    // Two questions, one routing. `again` asks only the widgets that were
+    // **told** their resource moved (`Element::wants_reload`, which clears the
+    // ask); otherwise it is every widget that wants anything, which is what a
+    // window being built or redefined asks.
+    let want = if again {
+        widget.kind.wants_reload()
+    } else {
+        widget.kind.needs().bulk
+    };
+    let needs_slot = widget.kind.needs().slot.is_some();
+    if let (Some(id), Some(want)) = (owner, want) {
         match want {
             // A server buffer names no local file: the leg fetches it, and the
             // reply lands through the same routing this walk does.
-            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum, false)),
+            Bulk::Buffer(bufnum) => out.buffers.push((id, bufnum, false)),
             // A take being recorded into: the leg asks for its shape and
             // builds an empty summary, and the overview fills it.
-            Bulk::Recording { buffer, .. } => buffer_refs.push((id, buffer, true)),
+            Bulk::Recording { buffer, .. } => out.buffers.push((id, buffer, true)),
             want => {
                 if let Some(loaded) = resolve_bulk(&want) {
-                    if needs.slot.is_some() {
+                    if needs_slot {
                         // The picture goes to the slot, and whatever of it is
                         // *samples* stays with the element that named it.
                         frame::keep_data(widget, &loaded);
-                        frame::place_in_slot(loaded, id, gpu, renderers, waveforms, spectrograms);
+                        frame::place_in_slot(
+                            loaded,
+                            id,
+                            gpu,
+                            renderers,
+                            out.waveforms,
+                            out.spectrograms,
+                        );
                     } else {
                         widget.kind.take_bulk(loaded);
                     }
@@ -347,15 +430,7 @@ fn load_bulk(
         }
     }
     for child in &mut widget.children {
-        load_bulk(
-            child,
-            owner,
-            gpu,
-            renderers,
-            waveforms,
-            spectrograms,
-            buffer_refs,
-        );
+        load_bulk(child, owner, again, gpu, renderers, out);
     }
 }
 

@@ -5030,3 +5030,72 @@ mod status_bar {
         );
     }
 }
+
+/// **The pencil's threshold is the drawing's**, not one of its own.
+///
+/// The defect (found 2026-09-07, on `editors/edit_samples`): the gate refused
+/// below one pixel per sample, and the trace draws its sample dots at three
+/// radii of spacing -- twelve pixels a sample at the default density. Between
+/// the two numbers a stroke was allowed over a picture with no dots in it, so
+/// a drag across the body wrote hundreds of samples the hand could not aim at
+/// and could not see. The example's own instructions had the rule: *zoom in
+/// until the samples are discs, then draw*.
+#[test]
+fn the_pencil_waits_for_the_dots_the_trace_draws() {
+    use crate::host::graphics::signal::trace;
+
+    // Enough samples behind the view that the zoomed-in case has one under the
+    // pointer: the gate is what this tests, not what happens past the data.
+    let data = ["0.0"; 400].join(",");
+    let def = format!(
+        r#"{{"type":"window","status":0,"children":[
+            {{"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[{data}],"base_bucket":2,
+             "gestures":{{"drag":"draw"}}}}]}}"#
+    );
+    let def = def.as_str();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    // The rule itself, in the unit the gate reads: a pixel a sample carries no
+    // dots, and the old gate allowed a stroke at anything up to it.
+    let radius = Metrics::default().point_radius;
+    assert!(!trace::samples_are_drawn(1.0, radius), "the old ceiling");
+    assert!(!trace::samples_are_drawn(0.25, radius), "four px a sample");
+    assert!(trace::samples_are_drawn(
+        trace::drawable_per_px(radius),
+        radius
+    ));
+
+    // 400 samples across a body under 800 px wide: about half a sample a pixel,
+    // so the old gate let it through, and the trace draws it as a bare line.
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 400);
+    let mut g = Gestures::default();
+    let effects = g.press(&mut host, &ctx, 100.0, 100.0);
+    let args = emitted_args(&effects, 50).expect("it says why");
+    assert_eq!(args[0], OscType::String("refused".into()));
+    assert_eq!(args[1], OscType::String("draw".into()));
+    assert!(
+        !g.dragging(),
+        "and no stroke was opened over a picture with no dots in it"
+    );
+    assert!(
+        host.widget_kind(1, 50)
+            .and_then(|k| k.pending_edit())
+            .is_none(),
+        "nothing was written"
+    );
+
+    // Zoomed until the dots fit -- twenty samples across the same body, tens of
+    // pixels apart -- the same press draws.
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 20);
+    let mut g = Gestures::default();
+    let effects = g.press(&mut host, &ctx, 100.0, 100.0);
+    assert!(
+        emitted_args(&effects, 50).is_none(),
+        "no refusal where the samples are drawn one by one: {:?}",
+        emitted_args(&effects, 50)
+    );
+    assert!(g.dragging(), "the stroke is open");
+}

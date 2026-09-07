@@ -24,13 +24,23 @@ use crate::host::widget::element::Bulk;
 /// local reference into the URL a page reads it from. That is the whole of the
 /// browser's half.
 fn collect_bulk(
-    widget: &Widget,
+    widget: &mut Widget,
     owner: Option<i32>,
+    again: bool,
     buffer_refs: &mut Vec<(i32, i32, bool)>,
     requests: &mut Vec<(i32, Bulk)>,
 ) {
     let id = widget.id.or(owner);
-    if let (Some(id), Some(want)) = (id, widget.kind.needs().bulk) {
+    // Two questions, one walk. `again` asks only the widgets that were **told**
+    // their resource moved (`Element::wants_reload`, which clears the ask);
+    // otherwise it is every widget that wants anything, which is what a def
+    // being opened asks.
+    let want = if again {
+        widget.kind.wants_reload()
+    } else {
+        widget.kind.needs().bulk
+    };
+    if let (Some(id), Some(want)) = (id, want) {
         match want {
             Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum, false)),
             // A take being recorded into: its shape, and the overview fills it.
@@ -38,10 +48,10 @@ fn collect_bulk(
             want => requests.push((id, want)),
         }
     }
-    for child in &widget.children {
+    for child in &mut widget.children {
         // A clip's body carries no id of its own: the fetch is keyed by the
         // container's, which is what the reply resolves back through.
-        collect_bulk(child, id, buffer_refs, requests);
+        collect_bulk(child, id, again, buffer_refs, requests);
     }
 }
 
@@ -177,12 +187,28 @@ impl WebApp {
     /// over the WS leg, and `fetch`es of every waveform/plot `path`/`cache`
     /// (URLs against the page origin in the browser).
     pub(super) fn start_bulk(&mut self, def: i32) {
-        let Some(tree) = self.host.window_def(def) else {
+        self.bulk_pass(def, false);
+    }
+
+    /// **Serves whatever this def's elements were told to read again** — a take
+    /// whose owner answered an edit with `reload`, which is what an undo over a
+    /// server buffer is. The page's half of the pass the `reload` prop always
+    /// promised; it runs before every draw and costs a walk on a tree where
+    /// nothing asked.
+    pub(super) fn reload_bulk(&mut self, def: i32) {
+        self.bulk_pass(def, true);
+    }
+
+    fn bulk_pass(&mut self, def: i32, again: bool) {
+        let Some(tree) = self.host.window_def_mut(def) else {
             return;
         };
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
-        collect_bulk(tree, None, &mut buffer_refs, &mut requests);
+        collect_bulk(tree, None, again, &mut buffer_refs, &mut requests);
+        if buffer_refs.is_empty() && requests.is_empty() {
+            return;
+        }
         // **A page drawing a server buffer registers for notifications.**
         // `/buffer_touched` is how it hears that another peer edited the
         // samples under it, and the server broadcasts that only to the

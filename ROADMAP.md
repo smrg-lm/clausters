@@ -248,16 +248,20 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   change the host makes to the picture is announced. Found 2026-09-07, in the
   visual review's second sitting.
 
-- ⬜ **An undo leaves the pencil dead, and a dead pencil draws a selection**
-  *(`clients/gui/PLAN.md`, Found by use)*. A history step corrects the widget
-  with `reload`, the element forgets its body, the sample the stroke would
-  replace is no longer readable, and the press arm declines -- which in this
-  machine means the press walks on and the plain plan sweeps a selection. So
-  `Alt`+drag and `Ctrl`+drag both go dead for the rest of the session, with no
-  refusal, because nothing refused. Found 2026-09-07, in the visual review's
-  second sitting. It carries a second, general half: an arm that resolved to a
-  gesture should consume the press however it ends, which today only the zoom
-  gate does.
+- ⬜ **A press arm that resolved to a gesture does not consume the press**
+  *(`clients/gui/PLAN.md`, Found by use)*. A step that returns `false` means
+  *this press was not mine*, so the press walks on down the plan and the plain
+  arm sweeps a selection. The pencil's zoom gate is the only place that returns
+  `true` and says why; every other way an arm gives up falls through, so a
+  gesture that meant to write becomes a selection tool silently.
+  **No decision to make**: `docs/gui-protocol.md` already specifies the rule
+  twice (`draw`, and a locked clip body) -- *refused visibly and consuming the
+  press, so a plan naming a sweep behind it cannot turn a refused stroke into a
+  selection*. The host keeps its own published contract in one arm and breaks
+  it in the others; reading each `return false` in `gestures/press.rs` is the
+  work.
+  **Two for the price of one**: "A press on empty staff answers with the
+  engraver's drawing" is the same shape and closes with it.
 
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is

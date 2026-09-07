@@ -52,12 +52,34 @@ impl SignalElement {
             return;
         }
         data.body = None;
+        // **The ask a loader answers.** The comment on the `reload` prop says
+        // the loader picks it up on the next pass, and for a long time there
+        // was no next pass: the bulk walk ran once, when the window opened, so
+        // a take told to re-read forgot its body and nothing ever asked for it
+        // again -- a picture frozen at whatever the slot last held, over an
+        // element holding nothing, which is what an undo over a server buffer
+        // did.
+        self.reload_asked = true;
         // A sequence keeps its samples inline, so *those* are what it must
         // forget; a take keeps a pyramid, and dropping the body is enough.
         if !data.bulk {
             data.samples = Vec::new().into();
         }
         self.slot_dirty = true;
+    }
+
+    /// The bulk resource this element was told to read **again**, if it was —
+    /// and asking clears the ask, so one `reload` is one load.
+    ///
+    /// One-shot rather than derived from "it has no body", because a fetch in
+    /// flight has no body either and a front that re-asked on that would send
+    /// a query per frame for as long as the answer took.
+    pub fn take_reload(&mut self) -> Option<Bulk> {
+        if !self.reload_asked {
+            return None;
+        }
+        self.reload_asked = false;
+        self.want()
     }
 
     pub fn want(&self) -> Option<Bulk> {

@@ -150,7 +150,7 @@ values it covered — a rectangle, which declines where the picture measures onl
 time), ``sample`` (grab the sample under the pointer and drag it vertically,
 declining below the zoom that draws each one as a disc), ``draw`` (write the
 value under the pointer over every sample a stroke passes, refused out loud
-where a pixel is more than one sample), ``locate``, ``none``::
+until the samples are drawn one by one), ``locate``, ``none``::
 
     waveform(data=take, gestures={"drag": "pan", "shift": "select"})
     waveform(data=take, gestures={"drag": "select", "ctrl": "select_box select"})
@@ -1011,8 +1011,9 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     containers inside it hug.
 
     ``status`` is the host's **status bar**, a band along the window's bottom
-    edge saying what it last did and what it last refused — a stroke where a
-    pixel is more than one sample, an edit an owner answered with a reason.
+    edge saying what it last did and what it last refused — a stroke over
+    samples the picture is not drawing one by one, an edit an owner answered
+    with a reason.
     It is **on unless this turns it off**, and it is the host's: nothing here
     writes to it, because the host already knows what it did and sending that
     back over the wire would be telling it something it told us. Clicking it

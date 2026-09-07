@@ -280,6 +280,39 @@ mod data_tests {
         );
     }
 
+    /// **And the ask is one-shot**, which is what makes a front able to run the
+    /// pass every frame.
+    ///
+    /// The defect this pins (found 2026-09-07, on `editors/edit_samples`): a
+    /// take backed by a server buffer, told to `reload` by an undo, forgot its
+    /// body and *nothing ever asked for it again* -- the bulk walk ran once,
+    /// when the window opened. The picture stayed on the card (a fill with no
+    /// data returns `None` and leaves the slot alone), so the window looked
+    /// right over an element holding nothing, and every read that goes through
+    /// the element -- `sample_value`, and so the pencil -- was dead from then
+    /// on. Deriving the ask from "it has no body" instead would have re-asked
+    /// every frame for as long as the fetch took.
+    #[test]
+    fn a_reload_asks_once_and_the_ask_clears() {
+        use crate::host::widget::element::Element;
+        let mut e =
+            el(r#"{"id":1,"type":"signal","view":"trace","buffer":7,"bulk":true,"channels":1}"#);
+        assert!(
+            e.wants_reload().is_none(),
+            "an element nobody told anything asks for nothing"
+        );
+        assert!(e.set("reload", &serde_json::json!(1)));
+        let asked = e.wants_reload().expect("told to, it asks");
+        assert!(
+            matches!(asked, crate::host::widget::element::Bulk::Buffer(7)),
+            "and it asks for the buffer it draws: {asked:?}"
+        );
+        assert!(
+            e.wants_reload().is_none(),
+            "once -- a front's per-frame pass must not send a query per frame"
+        );
+    }
+
     /// A source with nothing behind it is left alone: reloading it would erase
     /// the samples rather than refresh it.
     #[test]

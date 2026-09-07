@@ -215,6 +215,11 @@ impl App {
     /// at all: a `/gui_set` that rebuilt a picture would otherwise wait for a
     /// tick that never comes.
     pub(super) fn refresh_slots_for(&mut self, def_id: i32) {
+        // **First, whatever was told to read itself again.** A `reload` is the
+        // element forgetting what it resolved, so a fill that ran before the
+        // reload was served would fill from nothing and leave the stale picture
+        // on the card.
+        self.reload_bulk_for(def_id);
         let mut extents: Vec<(i32, frame::Extent)> = Vec::new();
         // Disjoint field borrows: the tree is the host's, the slots the
         // window's.
