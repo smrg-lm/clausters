@@ -41,19 +41,25 @@ small set of data structures with no view. The design that replaces it is
 projection" (`O21`-`O24`).
 
 **Taken first, and everything below is read against it**: `O21` (the session's
-types and format) closed 2026-09-06 and `O22` (the intents a DAW admits)
-**closed 2026-09-07**, so the sequence is now `O23` (the host binds the session
-and reconciles), then `O24` (the three applications). What the two leave for
-them: the model exists in the crate and in both clients, it has a vocabulary of
-fourteen verbs registered as a domain of its own, both clients reach that
-vocabulary through the door they already had — and **the host still draws the
-general tree**, which is exactly what `O23` is. `O23` is where
-`APPLICATION-SCOPE.md`'s `AP5` lands, and its prerequisite is **design, not a
-note**: it was scoped as a list of props that are the host's and survive a
-reconcile, and became a **structure** — a named view object per model object, on
-the Live Object Model's shape — which decides whether screen state is something
-a script can save with a session. It is still not a milestone, but it is no
-longer something written at any time before `O23` starts.
+types and format) closed 2026-09-06, `O22` (the intents a DAW admits) and `O23`
+(the host binds the session and reconciles) **closed 2026-09-07**, so what is
+left of the turn is **`O24` — the three applications**, and it is the next
+thing. What the three leave for it: the model exists in the crate and in both
+clients, with a vocabulary of fourteen verbs registered as a domain of its own;
+the presentation is a structure beside the piece (a view object per model
+object, on the Live Object Model's shape) and a session saves a list of them;
+a `/gui_def` means *make it look like this* and the host reconciles, so no
+client holds a picture of what the host draws and none can. What `O24` still
+finds waiting is that **the host draws the general tree**: it reconciles
+correctly against what it is handed, and what it is handed is not yet derived
+from a session.
+
+`O24` is also where three things deferred from elsewhere are decided:
+`APPLICATION-SCOPE.md`'s `AP7` (whether a second application is still a
+milestone or is one of these three), `AP5`'s catalogue views (which lost their
+home when `AP6` was closed by removal), and the manual surface the reconcile has
+never had — no example in either client sends a second `/gui_def` over an open
+window, so the branch's opening complaint cannot be watched being fixed.
 
 Where the work lives:
 
@@ -236,12 +242,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.
-  - ⬜ **A set is addressed to a widget the redefine beside it just removed** —
-    the two halves of one publish disagree. Both tests are now written and both
-    pass, over generated pictures and over a host double that holds a registry,
-    so the walk is exonerated and the entry is **evidence for `AP5`'s premise**
-    rather than a bug of its own. It closes in `O23`, when the host stops being
-    the only one who knows what it is drawing.
   - ⬜ **The window closes and the process spins at 100% CPU** — nothing is known
     beyond the shape. Two places to look and neither has been.
   - ⬜ **A clip dragged past the first or last lane oscillates back to the start
@@ -360,9 +360,10 @@ are written down.
   difference was. **The decision:** whether the crate drives the clients through
   a callback, or the walk is restated over something the crate already owns -
   which is `O22`'s intents and `O23`'s reconcile, and it wants a milestone of its
-  own that it does not have. Half of that is no longer a maybe: `O22` closed
-  2026-09-07, so the piece's edits *are* something the crate owns, and the walk
-  now has a vocabulary to be restated over rather than a promise of one.
+  own that it does not have. That is no longer a maybe on either side: `O22` and
+  `O23` both closed 2026-09-07, so the piece's edits *are* something the crate
+  owns and the reconcile *is* the host's, and the walk has both to be restated
+  over rather than a promise of them.
 
 ## 3. Tests and reviews pending
 
@@ -479,12 +480,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The branch's own, and they are the near work
 
-- ⬜ **`AP5`'s remaining half - the picture's single owner**
-  *(`APPLICATION-SCOPE.md`, marked `[~]`)*. The difference and the mapping went
-  down to Rust; what did not is the half the milestone was named for, and it
-  **lands in `O23`** rather than here - reconciling needs a session to reconcile
-  against. The entry stays open on the branch so the half that shipped is not
-  read as the whole.
+- ⬜ **`AP5`'s remainder** *(`APPLICATION-SCOPE.md`, marked `[~]`)*. The half the
+  milestone was named for - the picture's single owner - **landed in `O23`** on
+  2026-09-07, both sides of it. What keeps the checkbox open is three items it
+  never reached: the **catalogue views** (orphaned when `AP6` was closed by
+  removal, and now `O24`'s), the **routing table** and the **undo/redo walk**
+  (both in the file's "Found by use", and both waiting on a decision rather than
+  on work), plus the web client's half, which is `W30`.
 
 - ⬜ **`AP7` - a second application, to prove the abstraction**
   *(`APPLICATION-SCOPE.md`)*. Written before the turn, and the turn gives it its

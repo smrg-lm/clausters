@@ -930,7 +930,7 @@ DAW session, because that is what a DAW session is good at.
   **the host still does not speak it** - it draws the general tree, and
   `reparent_clip` still moves a `Widget` between two `children` vectors. That is
   O23's whole subject, and it now has something to reconcile against.
-- ⬜ **O23 - The host binds the session and reconciles.** The host holds the
+- ✅ **O23 - The host binds the session and reconciles.** *(Closed 2026-09-07, but for the web client's half, which is `W30`.)* The host holds the
   session, derives its presentation from it, and answers a change by
   reconciling - matching regions by identity within a lane - rather than by
   freeing and rebuilding. `/gui_def` comes to mean *make it look like this*
@@ -1024,22 +1024,53 @@ DAW session, because that is what a DAW session is good at.
   the host had. That is this milestone's division in one sentence: *the client
   says what it redrew; the host decides what that costs.*
 
-  **What is left of O23.** The client still holds `_published` and still
-  computes the difference. The measurement that gated removing it **was made
-  2026-09-07** and is written up in `APPLICATION-SCOPE.md`'s AP5 cost (1): a
-  drag's delta is 21 B/frame and flat, the widget the edit named is 91 B and
-  flat, the window is 1.9 kB to 652 kB and grows with the piece. So the picture
-  can go, on one condition - the client publishes **the widget its edit named**,
-  never the window - and that condition is a granularity change in the client's
-  `editing/`, not in the host. The host's half is done and is useful on its own:
-  it is what makes a redefine stop destroying a zoom, which was the branch's
-  opening complaint.
+  **(c) The bulk is kept by being asked for.** *(Landed 2026-09-07.)* A def has
+  to name every widget in the subtree it redraws, and a clip's samples are the
+  largest payload in the system - so a lane restated because one clip moved
+  carried every other clip's audio with it, which is the same failure as freeing
+  a zoom for it, one order of magnitude up. `"data": "keep"` names the run the
+  host is already drawing: the reconcile carries it and the resolved pyramid,
+  both behind an `Arc`. It is a **value of the prop that already names the
+  samples** rather than a sixth carrier, because a blob is how `data` travels;
+  and it is asked for rather than inferred from silence, because silence already
+  means something else here - a clip that states no source has no take body at
+  all. A keep the host cannot honour is reported, since an empty waveform looks
+  exactly like a waveform of silence.
 
-  **And the client's half waits on a caller.** `Application.publish` has no
-  caller in the package - `FormEditor` was the only one and it was deleted on
-  2026-09-06, so what an editor uses today is the narrow per-widget correction.
-  Rewriting it now would be designing a seam against zero implementors. It lands
-  with the first editor that publishes again, which is `O24`'s multitrack.
+  **(d) The client stops holding a picture.** *(Landed 2026-09-07.)* The
+  measurement that gated it is in `APPLICATION-SCOPE.md`'s AP5 cost (1): a
+  drag's delta is 21 B/frame and flat, the widget the edit named is 91 B and
+  flat, the window is 1.9 kB to 652 kB and grows with the piece. It was expected
+  to wait on `O24`'s multitrack, since `Application.publish` had no caller and
+  rewriting it would be designing a seam against zero implementors. What forced
+  it instead was `AP5`'s own item (4): retiring the redraw difference takes
+  `gui_difference` out of the C ABI and the wasm, so `publish` cannot compute one
+  whether or not anybody calls it.
+
+  What resulted is **less** machinery rather than a seam designed for nobody:
+  `publish(widget, tree, window=…)` sends one `/gui_def`, and `_published`,
+  `published()` and `forget_window()` are gone with the picture - and with them
+  the window-that-closed special case, since nothing is remembered and so there
+  is nothing to forget. The granularity did not become the client's, it became
+  the **caller's**: `/gui_def` names any widget, so an editor that knows which
+  node its intent touched knows which widget to publish, and one that does not
+  can still publish the window and pay for it.
+
+  **And the difference was retired rather than lowered.** It was to move into
+  the host; there is nowhere in the host for it. A difference compares two
+  *documents* and is correct only when one equals the picture on screen, and
+  inside the host that copy is no more reachable than in the client - the host
+  writes to its **widgets** without writing to the document it was handed, so a
+  redraw restating an offset the document already carried would diff as
+  unchanged and leave the widget where the hand left it. The comparison that is
+  always true is the document against the **widget tree**, which is (b). Core
+  ABI v42.
+
+  **What is left of O23: nothing but the web client**, which has neither the
+  `Application` that publishes nor the `GuiHost.redefine` a part is published
+  through. Both are `W30` in `clients/web/PLAN.md`, written to run after this
+  branch and after `O24` - so the acceptance holds for the crate, the host and
+  the Python client, and the clause about every client is what `W30` closes.
 - ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
   editor** and the **score editor**, each an application over this document,
   programmable from the GUI host and driven identically from every client. This
