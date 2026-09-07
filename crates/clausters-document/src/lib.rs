@@ -67,6 +67,7 @@ pub mod samples;
 pub mod selection;
 pub mod session;
 pub mod timebase;
+pub mod view;
 
 pub use arrangement::edit::{ARRANGEMENT, ArrangementIntent, Piece, SpanKind};
 pub use arrangement::{
@@ -86,6 +87,7 @@ pub use samples::{Samples, SamplesIntent};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
 pub use timebase::{Beat, ContentBeat, ContentFrame, TimelineFrame};
+pub use view::{LaneView, TrackView, View};
 
 use std::collections::HashMap;
 

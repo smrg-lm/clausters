@@ -65,6 +65,7 @@ __all__ = [
     "Content",
     "Fade",
     "Lane",
+    "LaneView",
     "Marker",
     "Meter",
     "Region",
@@ -74,6 +75,8 @@ __all__ = [
     "Span",
     "Tempo",
     "Track",
+    "TrackView",
+    "View",
 ]
 
 
@@ -789,6 +792,221 @@ class FrozenSource:
         return f"<FrozenSource {self.bufnum} {where}>"
 
 
+
+# ---- the presentation: what a window shows of a piece ----
+#
+# Parallel to the model and never inside it, which is Live's shape and
+# deliberate: `Song.View`, `Track.View` and `Application.View` are objects
+# *beside* their model objects rather than children. So a `TrackView` is looked
+# up by the track's id, and an `Arrangement` round trips the same whether or not
+# a view of it exists.
+
+
+@dataclass
+class TrackView:
+    """How one track is drawn."""
+
+    #: How tall its row is, in the window's own units. ``None`` is the window's
+    #: default, which is what a track nobody resized has.
+    height: "float | None" = None
+    #: Whether the row is collapsed to its header.
+    collapsed: bool = False
+    #: Whether the track's other lanes are shown under the one that plays --
+    #: comping open, in a word. Closed by default: a track with six takes on it
+    #: is one row until somebody asks to see them.
+    lanes_shown: bool = False
+    #: The colour the track is drawn in, carried and never read.
+    color: "str | None" = None
+    extra: dict = field(default_factory=dict)
+
+    def write(self) -> dict:
+        out: dict = {}
+        if self.height is not None:
+            out["height"] = float(self.height)
+        if self.collapsed:
+            out["collapsed"] = True
+        if self.lanes_shown:
+            out["lanes_shown"] = True
+        if self.color is not None:
+            out["color"] = self.color
+        out.update(self.extra)
+        return out
+
+    @classmethod
+    def read(cls, written: dict) -> "TrackView":
+        known = ("height", "collapsed", "lanes_shown", "color")
+        return cls(
+            height=written.get("height"),
+            collapsed=bool(written.get("collapsed", False)),
+            lanes_shown=bool(written.get("lanes_shown", False)),
+            color=written.get("color"),
+            extra=_rest(written, *known),
+        )
+
+
+@dataclass
+class LaneView:
+    """How one lane is drawn."""
+
+    #: How tall its row is when the track's lanes are shown.
+    height: "float | None" = None
+    extra: dict = field(default_factory=dict)
+
+    def write(self) -> dict:
+        out: dict = {}
+        if self.height is not None:
+            out["height"] = float(self.height)
+        out.update(self.extra)
+        return out
+
+    @classmethod
+    def read(cls, written: dict) -> "LaneView":
+        return cls(height=written.get("height"), extra=_rest(written, "height"))
+
+
+@dataclass
+class View:
+    """One window's picture of one piece: where it is looking, how far it is
+    zoomed, what the hand is holding, how tall each track is drawn.
+
+    None of that is what the piece *is* -- a selection and a zoom are each
+    window's and never the composition's -- and all of it is state a person
+    loses on a reopen unless something writes it down. A session carries a
+    **list** of these, because a piece drawn in two windows has two views and
+    they disagree on purpose.
+
+    Nothing here ever reaches the document or the history: a view is not edited
+    through an intent, and an undo never puts a scroll back.
+    """
+
+    #: What the window is called, when a person named it.
+    name: "str | None" = None
+    #: The stretch of the timeline on screen -- the zoom and the horizontal
+    #: scroll, which are one fact and not two. ``None`` shows the whole piece.
+    visible: "Span | None" = None
+    #: How far down the tracks the window is scrolled, in its own units.
+    scroll: float = 0.0
+    #: The grid this window snaps to, in beats. Zero snaps nothing. It is here
+    #: rather than in the piece because two windows over one piece may snap
+    #: differently -- the arranger to a bar, the editor below it to a sixteenth.
+    quant: float = 0.0
+    #: Whether the window follows its content. ``False`` says the window is the
+    #: reader's, and nothing moves it, which is what an editor wants.
+    autofit: bool = True
+    #: The time range the hand swept, when it swept one.
+    selection: "Span | None" = None
+    #: What the hand is holding: regions, lanes or tracks, by id. One list
+    #: rather than one per kind, because the piece has one id space.
+    selected: list = field(default_factory=list)
+    #: What a keystroke is aimed at, which is not the same as what is selected.
+    focused: "int | None" = None
+    #: The region the detail editor below is showing, when the window has one.
+    detail: "int | None" = None
+    #: How each track is drawn, by the track's id.
+    tracks: dict = field(default_factory=dict)
+    #: How each lane is drawn, by the lane's id.
+    lanes: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
+
+    def track(self, id: int) -> TrackView:
+        """How this track is drawn, or the default when nobody touched it."""
+        return self.tracks.get(int(id), TrackView())
+
+    def track_view(self, id: int) -> TrackView:
+        """How this track is drawn, to be edited -- created on first use, which
+        is what makes "nobody has touched it" cost nothing to store."""
+        return self.tracks.setdefault(int(id), TrackView())
+
+    def lane(self, id: int) -> LaneView:
+        """How this lane is drawn, or the default."""
+        return self.lanes.get(int(id), LaneView())
+
+    def lane_view(self, id: int) -> LaneView:
+        """How this lane is drawn, to be edited. See `track_view`."""
+        return self.lanes.setdefault(int(id), LaneView())
+
+    def prune(self, piece: "Arrangement") -> bool:
+        """Drops everything this view says about objects the piece no longer
+        holds, and answers whether anything went.
+
+        **State goes when the thing goes.** Keeping it is worse than losing it:
+        a height kept for a track that is not the same track is a defect that
+        looks like a feature.
+        """
+        held = set()
+        for track in piece.tracks:
+            held.add(track.id)
+            for lane in track.lanes:
+                held.add(lane.id)
+                held.update(r.id for r in lane.regions)
+            held.update(a.id for a in track.automation)
+        before = (len(self.tracks), len(self.lanes), len(self.selected),
+                  self.focused, self.detail)
+        self.tracks = {id: v for id, v in self.tracks.items() if id in held}
+        self.lanes = {id: v for id, v in self.lanes.items() if id in held}
+        self.selected = [id for id in self.selected if id in held]
+        if self.focused not in held:
+            self.focused = None
+        if self.detail not in held:
+            self.detail = None
+        return before != (len(self.tracks), len(self.lanes),
+                          len(self.selected), self.focused, self.detail)
+
+    def write(self) -> dict:
+        """The view as the crate's JSON. Nothing said is nothing written."""
+        out: dict = {}
+        if self.name is not None:
+            out["name"] = self.name
+        if self.visible is not None:
+            out["visible"] = self.visible.write()
+        if self.scroll:
+            out["scroll"] = float(self.scroll)
+        if self.quant:
+            out["quant"] = float(self.quant)
+        if not self.autofit:
+            out["autofit"] = False
+        if self.selection is not None:
+            out["selection"] = self.selection.write()
+        if self.selected:
+            out["selected"] = [int(id) for id in self.selected]
+        if self.focused is not None:
+            out["focused"] = int(self.focused)
+        if self.detail is not None:
+            out["detail"] = int(self.detail)
+        if self.tracks:
+            out["tracks"] = {str(id): v.write()
+                             for id, v in sorted(self.tracks.items())}
+        if self.lanes:
+            out["lanes"] = {str(id): v.write()
+                            for id, v in sorted(self.lanes.items())}
+        out.update(self.extra)
+        return out
+
+    @classmethod
+    def read(cls, written: dict) -> "View":
+        """A view from the crate's JSON."""
+        known = ("name", "visible", "scroll", "quant", "autofit", "selection",
+                 "selected", "focused", "detail", "tracks", "lanes")
+        visible = written.get("visible")
+        selection = written.get("selection")
+        return cls(
+            name=written.get("name"),
+            visible=None if visible is None else Span.read(visible),
+            scroll=float(written.get("scroll", 0.0)),
+            quant=float(written.get("quant", 0.0)),
+            autofit=bool(written.get("autofit", True)),
+            selection=None if selection is None else Span.read(selection),
+            selected=[int(id) for id in written.get("selected", [])],
+            focused=written.get("focused"),
+            detail=written.get("detail"),
+            tracks={int(id): TrackView.read(v)
+                    for id, v in (written.get("tracks") or {}).items()},
+            lanes={int(id): LaneView.read(v)
+                   for id, v in (written.get("lanes") or {}).items()},
+            extra=_rest(written, *known),
+        )
+
+
 @dataclass
 class Session:
     """A composition, saved: the arrangement, and where its samples are.
@@ -813,6 +1031,11 @@ class Session:
     #: The piece. Always present, possibly empty — which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
     arrangement: "Arrangement" = field(default_factory=lambda: Arrangement())
+    #: How the piece was being **looked at**: one entry per window. Carried for
+    #: the reason every program in the field carries it -- reopening a piece
+    #: into the window it was left in is what a person expects -- and a reader
+    #: that ignores it opens the same piece.
+    views: list = field(default_factory=list)
     document: "dict | None" = None
     #: Where each source is, keyed by source id.
     sources: dict = field(default_factory=dict)
@@ -877,6 +1100,8 @@ class Session:
         written = self.arrangement.write()
         if written:
             out["arrangement"] = written
+        if self.views:
+            out["views"] = [v.write() for v in self.views]
         if self.document is not None:
             out["document"] = self.document
         if self.sources:
@@ -890,10 +1115,12 @@ class Session:
     @classmethod
     def read(cls, written: dict) -> "Session":
         """A session from the crate's JSON."""
-        known = ("format", "arrangement", "document", "sources", "provenance")
+        known = ("format", "arrangement", "views", "document", "sources",
+                 "provenance")
         return cls(
             format=int(written.get("format", 1)),
             arrangement=Arrangement.read(written.get("arrangement") or {}),
+            views=[View.read(v) for v in written.get("views", [])],
             document=written.get("document"),
             sources={int(id): Source.read(entry)
                      for id, entry in (written.get("sources") or {}).items()},

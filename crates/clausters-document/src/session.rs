@@ -46,6 +46,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::arrangement::{Arrangement, Extra};
+use crate::view::View;
 use crate::{Document, Lifetime, Opaque, SourceId};
 
 /// The format this file was written in.
@@ -210,6 +211,19 @@ pub struct Session {
         skip_serializing_if = "Document::is_empty"
     )]
     pub document: Document,
+    /// How the piece was being **looked at**: one entry per window.
+    ///
+    /// Presentation, parallel to the model and never inside it
+    /// ([`crate::view`]). A session carries it for the reason every program in
+    /// the field does — reopening a piece into the window it was left in is
+    /// what a person expects — and a reader that ignores the field opens the
+    /// same piece, since nothing here can change what plays.
+    ///
+    /// A **list** because a piece drawn in two windows has two views, and they
+    /// disagree on purpose. Empty is the ordinary case: nothing was saved, so
+    /// the window opens on its own defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<View>,
     /// Where each source is. A `BTreeMap`, so a written session is stable
     /// under re-saving and a diff of two saves is the edits and not the
     /// iteration order.
@@ -237,6 +251,7 @@ impl Session {
         Self {
             format: FORMAT,
             arrangement: Arrangement::new(),
+            views: Vec::new(),
             document,
             sources: BTreeMap::new(),
             provenance: None,
@@ -247,6 +262,12 @@ impl Session {
     /// Carries this arrangement.
     pub fn with_arrangement(mut self, arrangement: Arrangement) -> Self {
         self.arrangement = arrangement;
+        self
+    }
+
+    /// Carries how the piece was being looked at. See [`Session::views`].
+    pub fn with_view(mut self, view: View) -> Self {
+        self.views.push(view);
         self
     }
 

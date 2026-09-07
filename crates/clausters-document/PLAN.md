@@ -948,6 +948,54 @@ DAW session, because that is what a DAW session is good at.
   state stops being an anonymous blob inside the host and becomes something a
   script can save with a session, restore, and set. That also makes the four-layer
   table's "presentation" row an addressable thing rather than a policy.
+
+  **(a) The prerequisite exists.** *(Landed 2026-09-07.)* `view.rs`: a `View` is
+  one window's picture of one piece - where it is looking (`visible`, which is
+  the zoom and the horizontal scroll, one fact and not two), `scroll`, `quant`,
+  `autofit`, `selection`, `selected`, `focused`, `detail` - plus a `TrackView`
+  (`height`, `collapsed`, `lanes_shown`, `color`) and a `LaneView` (`height`)
+  looked up **by id**. Every field is one the host already holds or the `AP5`
+  list already named; nothing was invented to fill a shape.
+
+  Three things are decided by where it sits rather than by what is in it:
+
+  - **Parallel, never a field.** An `Arrangement` serializes byte for byte
+    whether or not a view of it exists, which is the property that keeps the
+    model clean and is asserted as its own test. Nothing in `view.rs` is ever
+    consulted by an edit.
+  - **There is more than one.** `Session::views` is a **list**, because a piece
+    drawn in two windows has two views that disagree on purpose - the arranger
+    snapping to a bar, the editor below it to a sixteenth. A format holding one
+    would push the second back to being anonymous, which is the thing this
+    structure exists to stop. It is also this project's own reading of Live's
+    two pictures over one model, recorded in `APPLICATION-SCOPE.md`.
+  - **State goes when the thing goes.** `View::prune` drops every entry naming
+    an object the piece no longer holds, including a `selected`/`focused`/
+    `detail` that pointed at one. That is `AP3`'s lesson in this structure's
+    terms, and the reason it is a method rather than a habit: keeping too much
+    is worse than today's defect, since a height kept for a track that is not
+    the same track is a defect that looks like a feature.
+
+  **A written decision had to be refined, and it is named here rather than
+  quietly stepped over.** `AP3`'s acceptance says *"nothing about screen state
+  reaches a history or a file"*. It still holds where it was aimed - the
+  **document** and the **history** - and a view reaches neither: it is not
+  edited through an intent and an undo never puts a scroll back. What it no
+  longer holds is the *file*, because O23's own framing asks for exactly that:
+  screen state a script can save with a session, restore and set. The two are
+  compatible only because a session file is not the document, and the view is a
+  third thing beside both.
+
+  **The crossing.** The session vector now carries two views, written by the
+  Python client, parsed by the crate, read back by the web client - and the pair
+  disagrees, so a reader that collapsed them into one would fail rather than
+  pass. `arrangement_parity.rs` also asserts that dropping every view leaves the
+  piece byte-identical.
+
+  **What is left of O23**, and it is the milestone's real half: the host does not
+  use any of this yet. `/gui_def` still means *free this and build that*, the
+  client still holds `_published`, and the reconcile has not been written. The
+  acceptance for it can now be written, which is what this prerequisite was for.
 - ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
   editor** and the **score editor**, each an application over this document,
   programmable from the GUI host and driven identically from every client. This

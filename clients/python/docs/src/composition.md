@@ -335,6 +335,51 @@ moved. The piece carries **its own version** for exactly that: an editor of the
 piece is not editing the tree, so one counter for both would make every edit to
 either look like a change to both.
 
+## The presentation: what a window shows, beside what the piece is
+
+Where a window is looking, how far it is zoomed, what the hand is holding, how
+tall each track is drawn — none of that is what the piece *is*, and all of it is
+state a person loses on a reopen unless something writes it down.
+
+So it is a **`View`**, and it sits **beside** the model rather than inside it.
+The shape is Live's and it is deliberate: `Song.View`, `Track.View` and
+`Application.View` are objects parallel to their model objects rather than
+children, presentation on one side and functional data on the other, both
+readable and writable from a script. A `TrackView` is therefore looked up by the
+track's id, and an `Arrangement` round-trips the same whether or not a view of it
+exists.
+
+```python
+from clausters.arrangement import Session, Span, View
+
+window = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
+window.track_view(10).height = 96.0
+window.track_view(10).lanes_shown = True      # comping open
+window.selected = [20, 32]
+
+session = Session(arrangement=piece, views=[window])
+```
+
+**There is more than one of them.** A piece drawn in two windows has two views
+and they disagree on purpose — the arranger snapping to a bar, the editor below
+it to a sixteenth — which is why a session carries a list rather than a view.
+
+**A view entry for something the piece no longer holds is dropped.** `prune`
+does it, and the rule is the one this project already fixed a class of defects
+by adopting: state goes when the thing goes. Keeping it is worse than losing it,
+because a height kept for a track that is not the same track is a defect that
+looks like a feature.
+
+```python
+window.prune(piece)      # True when something went
+```
+
+**What a view never reaches.** Not the document, and not the history: a view is
+not edited through an intent, an undo never puts a scroll back, and nothing here
+is consulted when an edit is applied. A session file may carry one because
+reopening a piece into the window it was left in is what every program in the
+field does — and a reader that ignores the field opens exactly the same music.
+
 ## The document: what the composition *is*, and who edits it
 
 Everything above is this client's own surface. Underneath it there is one

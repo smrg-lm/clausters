@@ -61,7 +61,7 @@ import wave
 
 from clausters import Session as Server
 from clausters.arrangement import (Arrangement, Content, Lane, Region, Session,
-                                   Source, Tempo, Track)
+                                   Source, Span, Tempo, Track, View)
 from clausters.defs.buffer import Buffer
 from clausters.document import ARRANGEMENT, domain_edit
 from clausters.play import play
@@ -194,7 +194,18 @@ print(f"  undone: the piece is {piece.end:.0f} beats long again, "
 # copies and never rewrites.
 
 # %%
-session = Session(arrangement=piece)
+#: **How it was being looked at**, beside what it is. A window's zoom, its
+#: grid, what the hand was holding and how tall each track was drawn are not the
+#: composition -- nothing here can change what plays -- and all of it is state
+#: the person loses on a reopen unless the file carries it. A list, because a
+#: piece drawn in two windows has two views and they disagree on purpose.
+window = View(name="arranger", visible=Span(0.0, piece.end), quant=1.0)
+window.track_view(10).height = 96.0
+window.track_view(10).lanes_shown = True
+window.track_view(20).color = "#4488cc"
+window.selected = [12]
+
+session = Session(arrangement=piece, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
     2, take_frames, float(SAMPLE_RATE))
 
@@ -260,6 +271,15 @@ def run() -> None:
               f"{len(reopened.arrangement.tracks)} tracks, "
               f"{len(buffers)} source(s) read, "
               f"{reopened.volatile()} still volatile")
+        #: The window comes back too, and it is *not* the piece: the track
+        #: heights and the grid are the person's, and a reader that ignored
+        #: them would open the same music into a window that had forgotten
+        #: everything about how it was left.
+        for window in reopened.views:
+            print(f"  window {window.name!r}: grid {window.quant:g}, "
+                  f"track 10 at height {window.track(10).height}, "
+                  f"holding {window.selected}")
+
         for track in reopened.arrangement.tracks:
             state = " (muted)" if track.muted else ""
             for region in track.active_lane.regions:

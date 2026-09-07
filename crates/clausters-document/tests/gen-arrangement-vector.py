@@ -13,6 +13,9 @@ second, two regions overlapping with a crossfade and a layer order saying which
 is on top, a composite region placing the general tree, an automation curve
 whose point shapes nothing here reads, a tempo map that ramps, a meter change,
 markers sharing a beat, a loop and a punch, and a field a newer writer added.
+The session it also writes carries **two views** of that one piece, which is
+where the presentation lives: parallel to the model, never inside it, and two
+because a piece drawn in two windows has two and they disagree on purpose.
 
 Run from the repo root, and commit whatever moves:
 
@@ -27,7 +30,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/py
 
 from clausters.arrangement import (Arrangement, Automation, Content, Fade,  # noqa: E402
                                    Lane, Marker, Meter, Region, Session, Span,
-                                   Source, Tempo, Track)
+                                   Source, Tempo, Track, View)
 
 
 def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
@@ -94,6 +97,32 @@ def build() -> Arrangement:
     return piece
 
 
+def views() -> list:
+    """How the piece was being looked at: two windows over one piece.
+
+    They disagree on purpose -- that is what a second window is for -- and the
+    pair is here rather than one view because a format that could carry only one
+    would push the second back to being anonymous, which is what the view
+    objects exist to stop.
+    """
+    arranger = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
+    arranger.selected = [20, 32]
+    arranger.focused = 20
+    arranger.track_view(10).height = 96.0
+    arranger.track_view(10).lanes_shown = True
+    arranger.track_view(30).color = "#4488cc"
+    arranger.lane_view(12).height = 32.0
+    #: A field a newer window wrote and this build has no name for: carried, so
+    #: an older reader opening the session and saving it does not lose it.
+    arranger.extra["fold"] = "tracks"
+
+    editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
+                  autofit=False, scroll=140.0)
+    editor.selection = Span(8.0, 12.0)
+    editor.detail = 42
+    return [arranger, editor]
+
+
 def saved() -> Session:
     """The same piece as a **session**: the arrangement plus where its samples
     are, which is the half the piece deliberately does not carry.
@@ -103,7 +132,8 @@ def saved() -> Session:
     that is there, samples nobody wrote down, and a working copy whose
     destructive edit is still open.
     """
-    session = Session(arrangement=build(), provenance={"script": "make.py"})
+    session = Session(arrangement=build(), provenance={"script": "make.py"},
+                      views=views())
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
             2, 480_000, 48_000.0)

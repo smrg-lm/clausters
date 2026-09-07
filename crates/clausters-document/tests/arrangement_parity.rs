@@ -184,3 +184,75 @@ fn the_piece_inside_the_session_is_the_same_piece() {
     // ...and the table covers what it plays.
     assert_eq!(session.dangling(), Vec::<SourceId>::new());
 }
+
+// ---- the presentation, which is parallel to the piece and never inside it ----
+
+#[test]
+fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
+    // The prerequisite `O23` asked for, crossing: screen state written by the
+    // Python client, parsed here, and read back by the web client. What makes
+    // it worth a vector is that a view is *not* the piece -- a reader that
+    // dropped the field would open the same music and lose the window.
+    let session = saved();
+    assert_eq!(
+        session.views.len(),
+        2,
+        "a piece in two windows has two views"
+    );
+
+    let arranger = &session.views[0];
+    assert_eq!(arranger.name.as_deref(), Some("arranger"));
+    assert_eq!(arranger.visible.unwrap().length(), Beat(48.0));
+    assert_eq!(arranger.quant, Beat(4.0));
+    assert!(arranger.autofit, "the default, and left out of the file");
+    assert_eq!(arranger.selected, vec![NodeId(20), NodeId(32)]);
+    assert_eq!(arranger.focused, Some(NodeId(20)));
+    assert_eq!(arranger.track(NodeId(10)).height, Some(96.0));
+    assert!(arranger.track(NodeId(10)).lanes_shown, "comping open");
+    assert_eq!(arranger.track(NodeId(30)).color.as_deref(), Some("#4488cc"));
+    assert_eq!(arranger.lane(NodeId(12)).height, Some(32.0));
+    assert_eq!(
+        arranger.extra["fold"], "tracks",
+        "a newer window's own state"
+    );
+
+    let editor = &session.views[1];
+    assert_eq!(editor.visible.unwrap().start, Beat(8.0));
+    assert_eq!(editor.quant, Beat(0.25), "the same piece, a finer grid");
+    assert!(!editor.autofit, "an editor's window is the reader's");
+    assert_eq!(editor.scroll, 140.0);
+    assert_eq!(editor.selection.unwrap().length(), Beat(4.0));
+    assert_eq!(editor.detail, Some(NodeId(42)));
+}
+
+#[test]
+fn a_view_says_nothing_about_what_plays() {
+    // The whole argument for parallel rather than a field on the model: drop
+    // every view and the piece is the same piece, byte for byte.
+    let mut session = saved();
+    let piece = serde_json::to_value(&session.arrangement).unwrap();
+    session.views.clear();
+    assert_eq!(serde_json::to_value(&session.arrangement).unwrap(), piece);
+    assert_eq!(session.arrangement, vector());
+}
+
+#[test]
+fn a_view_of_a_track_that_is_gone_goes_with_it() {
+    // State goes when the thing goes. Pruning against a piece that no longer
+    // holds the guitars drops their height, their colour and the selection that
+    // named their region -- and leaves everything the piece still holds.
+    let session = saved();
+    let mut view = session.views[0].clone();
+    let mut piece = session.arrangement.clone();
+    piece.tracks.retain(|t| t.id != NodeId(30));
+
+    assert!(view.prune(&piece));
+    assert!(view.tracks.contains_key(&NodeId(10)), "the vocals stay");
+    assert!(!view.tracks.contains_key(&NodeId(30)), "the guitars go");
+    assert_eq!(
+        view.selected,
+        vec![NodeId(20)],
+        "and so does what named them"
+    );
+    assert_eq!(view.focused, Some(NodeId(20)));
+}

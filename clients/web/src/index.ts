@@ -229,12 +229,15 @@ export {
     Fade,
     FrozenSource,
     Lane,
+    LaneView,
     Marker,
     Meter,
     Region,
     Span,
     Tempo,
     Track,
+    TrackView,
+    View,
 } from "./arrangement.ts";
 export {
     History,

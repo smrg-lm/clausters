@@ -909,6 +909,249 @@ export class FrozenSource {
     }
 }
 
+// ---- the presentation: what a window shows of a piece ----
+//
+// Parallel to the model and never inside it, which is Live's shape and
+// deliberate: `Song.View`, `Track.View` and `Application.View` are objects
+// *beside* their model objects rather than children. So a `TrackView` is looked
+// up by the track's id, and an `Arrangement` round trips the same whether or
+// not a view of it exists.
+
+/** How one track is drawn. */
+export class TrackView {
+    /**
+     * How tall its row is, in the window's own units. Absent is the window's
+     * default, which is what a track nobody resized has.
+     */
+    height?: number;
+    /** Whether the row is collapsed to its header. */
+    collapsed = false;
+    /**
+     * Whether the track's other lanes are shown under the one that plays —
+     * comping open, in a word. Closed by default: a track with six takes on it
+     * is one row until somebody asks to see them.
+     */
+    lanesShown = false;
+    /** The colour the track is drawn in, carried and never read. */
+    color?: string;
+    extra: Extra = {};
+
+    write(): Extra {
+        const out: Extra = {};
+        if (this.height !== undefined) out.height = this.height;
+        if (this.collapsed) out.collapsed = true;
+        if (this.lanesShown) out.lanes_shown = true;
+        if (this.color !== undefined) out.color = this.color;
+        return { ...out, ...this.extra };
+    }
+
+    static read(written: Extra): TrackView {
+        const view = new TrackView();
+        if (written.height !== undefined) view.height = num(written.height);
+        view.collapsed = written.collapsed === true;
+        view.lanesShown = written.lanes_shown === true;
+        if (written.color !== undefined) view.color = String(written.color);
+        view.extra = rest(written, "height", "collapsed", "lanes_shown", "color");
+        return view;
+    }
+}
+
+/** How one lane is drawn. */
+export class LaneView {
+    /** How tall its row is when the track's lanes are shown. */
+    height?: number;
+    extra: Extra = {};
+
+    write(): Extra {
+        const out: Extra = {};
+        if (this.height !== undefined) out.height = this.height;
+        return { ...out, ...this.extra };
+    }
+
+    static read(written: Extra): LaneView {
+        const view = new LaneView();
+        if (written.height !== undefined) view.height = num(written.height);
+        view.extra = rest(written, "height");
+        return view;
+    }
+}
+
+/**
+ * One window's picture of one piece: where it is looking, how far it is zoomed,
+ * what the hand is holding, how tall each track is drawn.
+ *
+ * None of that is what the piece *is* — a selection and a zoom are each
+ * window's and never the composition's — and all of it is state a person loses
+ * on a reopen unless something writes it down. A session carries a **list** of
+ * these, because a piece drawn in two windows has two views and they disagree
+ * on purpose.
+ *
+ * Nothing here ever reaches the document or the history: a view is not edited
+ * through an intent, and an undo never puts a scroll back.
+ */
+export class View {
+    /** What the window is called, when a person named it. */
+    name?: string;
+    /**
+     * The stretch of the timeline on screen — the zoom and the horizontal
+     * scroll, which are one fact and not two. Absent shows the whole piece.
+     */
+    visible?: Span;
+    /** How far down the tracks the window is scrolled, in its own units. */
+    scroll = 0;
+    /**
+     * The grid this window snaps to, in beats. Zero snaps nothing. It is here
+     * rather than in the piece because two windows over one piece may snap
+     * differently — the arranger to a bar, the editor below it to a sixteenth.
+     */
+    quant = 0;
+    /**
+     * Whether the window follows its content. `false` says the window is the
+     * reader's, and nothing moves it, which is what an editor wants.
+     */
+    autofit = true;
+    /** The time range the hand swept, when it swept one. */
+    selection?: Span;
+    /**
+     * What the hand is holding: regions, lanes or tracks, by id. One list
+     * rather than one per kind, because the piece has one id space.
+     */
+    selected: number[] = [];
+    /** What a keystroke is aimed at, which is not the same as what is selected. */
+    focused?: number;
+    /** The region the detail editor below is showing, when the window has one. */
+    detail?: number;
+    /** How each track is drawn, by the track's id. */
+    tracks = new Map<number, TrackView>();
+    /** How each lane is drawn, by the lane's id. */
+    lanes = new Map<number, LaneView>();
+    extra: Extra = {};
+
+    /** How this track is drawn, or the default when nobody touched it. */
+    track(id: number): TrackView {
+        return this.tracks.get(id) ?? new TrackView();
+    }
+
+    /**
+     * How this track is drawn, to be edited — created on first use, which is
+     * what makes "nobody has touched it" cost nothing to store.
+     */
+    trackView(id: number): TrackView {
+        let view = this.tracks.get(id);
+        if (!view) {
+            view = new TrackView();
+            this.tracks.set(id, view);
+        }
+        return view;
+    }
+
+    /** How this lane is drawn, or the default. */
+    lane(id: number): LaneView {
+        return this.lanes.get(id) ?? new LaneView();
+    }
+
+    /** How this lane is drawn, to be edited. See {@link View.trackView}. */
+    laneView(id: number): LaneView {
+        let view = this.lanes.get(id);
+        if (!view) {
+            view = new LaneView();
+            this.lanes.set(id, view);
+        }
+        return view;
+    }
+
+    /**
+     * Drops everything this view says about objects the piece no longer holds,
+     * and answers whether anything went.
+     *
+     * **State goes when the thing goes.** Keeping it is worse than losing it: a
+     * height kept for a track that is not the same track is a defect that looks
+     * like a feature.
+     */
+    prune(piece: Arrangement): boolean {
+        const held = new Set<number>();
+        for (const track of piece.tracks) {
+            held.add(track.id);
+            for (const lane of track.lanes) {
+                held.add(lane.id);
+                for (const region of lane.regions) held.add(region.id);
+            }
+            for (const curve of track.automation) held.add(curve.id);
+        }
+        const before = [this.tracks.size, this.lanes.size, this.selected.length,
+                        this.focused, this.detail].join(",");
+        for (const id of [...this.tracks.keys()]) {
+            if (!held.has(id)) this.tracks.delete(id);
+        }
+        for (const id of [...this.lanes.keys()]) {
+            if (!held.has(id)) this.lanes.delete(id);
+        }
+        this.selected = this.selected.filter((id) => held.has(id));
+        if (this.focused !== undefined && !held.has(this.focused)) {
+            this.focused = undefined;
+        }
+        if (this.detail !== undefined && !held.has(this.detail)) {
+            this.detail = undefined;
+        }
+        return before !== [this.tracks.size, this.lanes.size,
+                           this.selected.length, this.focused,
+                           this.detail].join(",");
+    }
+
+    /** The view as the crate's JSON. Nothing said is nothing written. */
+    write(): Extra {
+        const out: Extra = {};
+        if (this.name !== undefined) out.name = this.name;
+        if (this.visible) out.visible = this.visible.write();
+        if (this.scroll) out.scroll = this.scroll;
+        if (this.quant) out.quant = this.quant;
+        if (!this.autofit) out.autofit = false;
+        if (this.selection) out.selection = this.selection.write();
+        if (this.selected.length) out.selected = [...this.selected];
+        if (this.focused !== undefined) out.focused = this.focused;
+        if (this.detail !== undefined) out.detail = this.detail;
+        if (this.tracks.size) {
+            const table: Extra = {};
+            for (const id of [...this.tracks.keys()].sort((a, b) => a - b)) {
+                table[String(id)] = this.tracks.get(id)!.write();
+            }
+            out.tracks = table;
+        }
+        if (this.lanes.size) {
+            const table: Extra = {};
+            for (const id of [...this.lanes.keys()].sort((a, b) => a - b)) {
+                table[String(id)] = this.lanes.get(id)!.write();
+            }
+            out.lanes = table;
+        }
+        return { ...out, ...this.extra };
+    }
+
+    /** A view from the crate's JSON. */
+    static read(written: Extra): View {
+        const view = new View();
+        if (written.name !== undefined) view.name = String(written.name);
+        if (written.visible) view.visible = Span.read(written.visible as Extra);
+        view.scroll = num(written.scroll);
+        view.quant = num(written.quant);
+        view.autofit = written.autofit !== false;
+        if (written.selection) view.selection = Span.read(written.selection as Extra);
+        view.selected = ((written.selected as number[]) ?? []).map(Number);
+        if (written.focused !== undefined) view.focused = num(written.focused);
+        if (written.detail !== undefined) view.detail = num(written.detail);
+        for (const [id, entry] of Object.entries((written.tracks as Extra) ?? {})) {
+            view.tracks.set(Number(id), TrackView.read(entry as Extra));
+        }
+        for (const [id, entry] of Object.entries((written.lanes as Extra) ?? {})) {
+            view.lanes.set(Number(id), LaneView.read(entry as Extra));
+        }
+        view.extra = rest(written, "name", "visible", "scroll", "quant",
+                          "autofit", "selection", "selected", "focused",
+                          "detail", "tracks", "lanes");
+        return view;
+    }
+}
+
 /**
  * A composition, saved: the arrangement, and where its samples are.
  *
@@ -928,6 +1171,13 @@ export class Session {
      * where an absent arrangement reads as an empty one rather than as nothing.
      */
     arrangement = new Arrangement();
+    /**
+     * How the piece was being **looked at**: one entry per window. Carried for
+     * the reason every program in the field carries it — reopening a piece into
+     * the window it was left in is what a person expects — and a reader that
+     * ignores it opens the same piece.
+     */
+    views: View[] = [];
     /**
      * The general tree, for what is not an arrangement. The leg being walked
      * off: a composite region carries that same tree, placed.
@@ -1014,6 +1264,7 @@ export class Session {
         const out: Extra = { format: this.format };
         const piece = this.arrangement.write();
         if (Object.keys(piece).length) out.arrangement = piece;
+        if (this.views.length) out.views = this.views.map((v) => v.write());
         if (this.document !== undefined) out.document = this.document;
         if (this.sources.size) {
             const table: Extra = {};
@@ -1031,13 +1282,14 @@ export class Session {
         const session = new Session();
         session.format = num(written.format, 1);
         session.arrangement = Arrangement.read((written.arrangement as Extra) ?? {});
+        session.views = ((written.views as Extra[]) ?? []).map(View.read);
         if (written.document !== undefined) session.document = written.document as Extra;
         for (const [id, entry] of Object.entries((written.sources as Extra) ?? {})) {
             session.sources.set(Number(id), Source.read(entry as Extra));
         }
         if (written.provenance !== undefined) session.provenance = written.provenance;
-        session.extra = rest(written, "format", "arrangement", "document",
-                             "sources", "provenance");
+        session.extra = rest(written, "format", "arrangement", "views",
+                             "document", "sources", "provenance");
         return session;
     }
 }

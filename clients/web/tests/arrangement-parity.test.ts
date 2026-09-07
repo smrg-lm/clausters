@@ -16,8 +16,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { Arrangement, Content, Fade, FrozenSource, Lane, Region, Session,
-         Source, Span, Tempo, Track } from "../src/arrangement.ts";
+import { Arrangement, Content, Fade, FrozenSource, Lane, LaneView, Region,
+         Session, Source, Span, Tempo, Track, TrackView,
+         View } from "../src/arrangement.ts";
 
 const VECTOR = new URL("./arrangement-vectors.json", import.meta.url);
 
@@ -241,4 +242,111 @@ test("a frozen source keeps what the table said", () => {
 test("a session field a newer writer added survives", () => {
     const written = { format: 1, mixer: { buses: [{ id: 1, name: "reverb" }] } };
     assert.deepEqual(Session.read(written).write(), written);
+});
+
+// ---- the presentation: what a window shows of a piece ----
+
+function aPiece(): Arrangement {
+    const piece = new Arrangement();
+    const vocals = new Track({ id: 10, lanes: [new Lane({ id: 11 }), new Lane({ id: 12 })] });
+    vocals.lanes[0].place(new Region({
+        id: 20, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
+    }));
+    piece.tracks.push(vocals, new Track({ id: 30, lanes: [new Lane({ id: 31 })] }));
+    return piece;
+}
+
+test("the session carries two views of one piece and they disagree on purpose", async () => {
+    // The crossing: screen state written by the Python client, parsed by the
+    // crate, read back here. A reader that dropped the field would open the
+    // same music and lose the window.
+    const session = Session.read(await saved());
+    assert.equal(session.views.length, 2);
+
+    const arranger = session.views[0];
+    assert.equal(arranger.name, "arranger");
+    assert.equal(arranger.visible?.length, 48);
+    assert.equal(arranger.quant, 4);
+    assert.equal(arranger.autofit, true, "the default, and left out of the file");
+    assert.deepEqual(arranger.selected, [20, 32]);
+    assert.equal(arranger.focused, 20);
+    assert.equal(arranger.track(10).height, 96);
+    assert.equal(arranger.track(10).lanesShown, true, "comping open");
+    assert.equal(arranger.track(30).color, "#4488cc");
+    assert.equal(arranger.lane(12).height, 32);
+    assert.deepEqual(arranger.extra.fold, "tracks", "a newer window's own state");
+
+    const editor = session.views[1];
+    assert.equal(editor.visible?.start, 8);
+    assert.equal(editor.quant, 0.25, "the same piece, a finer grid");
+    assert.equal(editor.autofit, false, "an editor's window is the reader's");
+    assert.equal(editor.scroll, 140);
+    assert.equal(editor.selection?.length, 4);
+    assert.equal(editor.detail, 42);
+});
+
+test("a view that says nothing writes an empty object", () => {
+    assert.deepEqual(new View().write(), {});
+});
+
+test("a view says nothing about what plays", () => {
+    // The whole argument for parallel rather than a field on the model.
+    const piece = aPiece();
+    const written = piece.write();
+    const view = new View();
+    view.name = "arranger";
+    view.visible = new Span(0, 32);
+    view.trackView(10).height = 96;
+    const session = new Session();
+    session.arrangement = piece;
+    session.views = [view];
+    const back = Session.read(session.write());
+    assert.deepEqual(back.arrangement.write(), written);
+    assert.equal(back.views[0].track(10).height, 96);
+});
+
+test("a track nobody touched reads as the default and costs nothing", () => {
+    const view = new View();
+    assert.deepEqual(view.track(10), new TrackView());
+    assert.deepEqual(view.lane(11), new LaneView());
+    assert.equal(view.tracks.size, 0, "asking is not touching");
+    view.trackView(10).lanesShown = true;
+    assert.equal(view.tracks.size, 1);
+});
+
+test("state goes when the thing goes", () => {
+    const view = new View();
+    view.trackView(10).height = 96;
+    view.trackView(999).height = 48;
+    view.laneView(11).height = 24;
+    view.selected = [20, 777];
+    view.focused = 777;
+    view.detail = 20;
+
+    assert.equal(view.prune(aPiece()), true);
+    assert.deepEqual([...view.tracks.keys()], [10]);
+    assert.deepEqual([...view.lanes.keys()], [11]);
+    assert.deepEqual(view.selected, [20]);
+    assert.equal(view.focused, undefined);
+    assert.equal(view.detail, 20);
+    assert.equal(view.prune(aPiece()), false, "and pruning twice finds nothing to do");
+});
+
+test("a field a newer window wrote survives a load and a save", () => {
+    const written = {
+        name: "arranger", fold: "tracks",
+        tracks: { "10": { height: 96, waveform: "rectified" } },
+    };
+    const view = View.read(written);
+    assert.equal(view.extra.fold, "tracks");
+    assert.equal((view.tracks.get(10)!.extra as Record<string, unknown>).waveform,
+                 "rectified");
+    assert.deepEqual(view.write(), written);
+});
+
+test("a session written without views reads back without them", () => {
+    const session = new Session();
+    session.arrangement = aPiece();
+    assert.equal(session.write().views, undefined);
+    assert.deepEqual(Session.read(session.write()).views, []);
 });

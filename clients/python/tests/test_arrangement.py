@@ -257,3 +257,94 @@ def test_a_frozen_source_keeps_what_the_table_said():
 def test_a_session_field_a_newer_writer_added_survives():
     written = {"format": 1, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
     assert Session.read(written).write() == written
+
+
+# ---- the presentation: what a window shows of a piece ----
+
+from clausters.arrangement import LaneView, TrackView, View  # noqa: E402
+
+
+def a_piece() -> Arrangement:
+    piece = Arrangement()
+    vocals = Track(id=10, lanes=[Lane(id=11), Lane(id=12)])
+    vocals.lanes[0].place(region(20, 0.0, 4.0, source=700))
+    piece.tracks.extend([vocals, Track(id=30, lanes=[Lane(id=31)])])
+    return piece
+
+
+def test_a_view_that_says_nothing_writes_an_empty_object():
+    # The arrangement's rule, mirrored: a view of a piece nobody has touched
+    # costs a file two braces.
+    assert View().write() == {}
+
+
+def test_a_view_says_nothing_about_what_plays():
+    # The whole argument for parallel rather than a field on the model: drop
+    # every view and the piece is the same piece.
+    piece = a_piece()
+    written = piece.write()
+    view = View(name="arranger", visible=Span(0.0, 32.0))
+    view.track_view(10).height = 96.0
+    session = Session(arrangement=piece, views=[view])
+    back = Session.read(session.write())
+    assert back.arrangement.write() == written
+    assert back.views[0].track(10).height == 96.0
+
+
+def test_two_windows_over_one_piece_are_two_views_and_disagree_on_purpose():
+    arranger = View(name="arranger", visible=Span(0.0, 64.0), quant=4.0)
+    editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
+                  autofit=False)
+    editor.detail = 20
+    session = Session(arrangement=a_piece(), views=[arranger, editor])
+    back = Session.read(session.write())
+    assert len(back.views) == 2
+    assert back.views[0].quant == 4.0
+    assert back.views[1].quant == 0.25
+    assert back.views[1].autofit is False
+    assert back.views[1].detail == 20
+
+
+def test_a_track_nobody_touched_reads_as_the_default_and_costs_nothing():
+    view = View()
+    assert view.track(10) == TrackView()
+    assert view.lane(11) == LaneView()
+    assert view.tracks == {}, "asking is not touching"
+    view.track_view(10).lanes_shown = True
+    assert len(view.tracks) == 1
+
+
+def test_state_goes_when_the_thing_goes():
+    # The rule the client's screen-state tables were fixed to obey, in this
+    # structure's terms: a height kept for a track that is not the same track is
+    # a defect that looks like a feature.
+    view = View()
+    view.track_view(10).height = 96.0
+    view.track_view(999).height = 48.0
+    view.lane_view(11).height = 24.0
+    view.selected = [20, 777]
+    view.focused = 777
+    view.detail = 20
+
+    assert view.prune(a_piece()) is True
+    assert list(view.tracks) == [10]
+    assert list(view.lanes) == [11]
+    assert view.selected == [20]
+    assert view.focused is None
+    assert view.detail == 20
+    assert view.prune(a_piece()) is False, "and pruning twice finds nothing to do"
+
+
+def test_a_field_a_newer_window_wrote_survives_a_load_and_a_save():
+    written = {"name": "arranger", "fold": "tracks",
+               "tracks": {"10": {"height": 96.0, "waveform": "rectified"}}}
+    view = View.read(written)
+    assert view.extra["fold"] == "tracks"
+    assert view.tracks[10].extra["waveform"] == "rectified"
+    assert view.write() == written
+
+
+def test_a_session_written_without_views_reads_back_without_them():
+    session = Session(arrangement=a_piece())
+    assert "views" not in session.write()
+    assert Session.read(session.write()).views == []

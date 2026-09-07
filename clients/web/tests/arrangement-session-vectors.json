@@ -250,6 +250,51 @@
    "name": "mpc60"
   }
  },
+ "views": [
+  {
+   "name": "arranger",
+   "visible": {
+    "start": 0.0,
+    "end": 48.0
+   },
+   "quant": 4.0,
+   "selected": [
+    20,
+    32
+   ],
+   "focused": 20,
+   "tracks": {
+    "10": {
+     "height": 96.0,
+     "lanes_shown": true
+    },
+    "30": {
+     "color": "#4488cc"
+    }
+   },
+   "lanes": {
+    "12": {
+     "height": 32.0
+    }
+   },
+   "fold": "tracks"
+  },
+  {
+   "name": "editor",
+   "visible": {
+    "start": 8.0,
+    "end": 20.0
+   },
+   "scroll": 140.0,
+   "quant": 0.25,
+   "autofit": false,
+   "selection": {
+    "start": 8.0,
+    "end": 12.0
+   },
+   "detail": 42
+  }
+ ],
  "sources": {
   "100": {
    "location": {

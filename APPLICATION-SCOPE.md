@@ -732,6 +732,19 @@ question its forty-year-old structure (under our own name, `Lane`).
 **What is not settled**: the list in (2). Without it a reconcile keeps too much
 or too little, and there is no way to write the acceptance below until it exists.
 
+**Settled 2026-09-07, and it is a structure rather than a list** (`O23`(a) in
+`crates/clausters-document/PLAN.md`). `clausters_document::view` holds a `View`
+per window - `visible`, `scroll`, `quant`, `autofit`, `selection`, `selected`,
+`focused`, `detail` - with a `TrackView` and a `LaneView` looked up by id. It is
+parallel to the model on Live's shape, a session carries a **list** of them
+because two windows disagree on purpose, and `View::prune` makes *state goes when
+the thing goes* a method rather than a habit. The list in (2) is now those
+fields, so the acceptance below is writable and the reconcile is the only half
+left. One written decision was refined rather than stepped over: AP3's *"nothing
+about screen state reaches a history or a file"* still holds for the document and
+the history, and no longer for the session file - which is not the document, and
+is where this project's own framing of O23 asked the view to be saveable.
+
 **Acceptance, for this half:** `Application._published` is gone; a client holds
 no picture; the host answers a def by reconciling against what it draws; a lane
 whose identity persists keeps its zoom, its scroll and its selection across any
