@@ -147,6 +147,13 @@ impl SignalElement {
             // dropped without the edit disappearing with it. Only inline
             // samples: a mapped file or cache is re-read by remapping it, which
             // is a different door and is not this one.
+            // The def's word for *the samples you already have*. It says
+            // nothing new to a live widget -- the samples it names are the ones
+            // this element is holding -- so it is accepted and does nothing.
+            // Accepted rather than refused because it is the same props map a
+            // def carries, and a client that reuses one for a set should not
+            // have to strip a word that means "no change" out of it.
+            "data" if v.as_str() == Some(crate::host::widget::parse::KEEP) => true,
             "data" => match (v.as_array(), &mut self.source) {
                 // Inline only: a source that names a file, a cache or a server
                 // buffer is re-read by resolving that resource again, and
@@ -208,6 +215,9 @@ impl SignalElement {
                     | "data"
                     | "reload"
             )
+            // ...except a `data` that changed nothing: an already-uploaded
+            // picture of the same samples is the picture that holds.
+            && !(key == "data" && v.as_str() == Some(crate::host::widget::parse::KEEP))
         {
             self.slot_dirty = true;
         }
@@ -281,6 +291,26 @@ mod data_tests {
             panic!("a data source")
         };
         assert_eq!(&d.samples[..], &[0.0, 1.0, -1.0, 0.5], "still there");
+    }
+
+    /// The def's `keep` is a word about a **redraw**, so on a live widget it
+    /// says nothing new. It is accepted rather than refused because it is the
+    /// same props map a def carries, and a client should not have to strip a
+    /// word meaning "no change" out of one to reuse it.
+    #[test]
+    fn a_set_of_keep_changes_nothing_and_is_not_refused() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"trace","data":[0.0,1.0,-1.0,0.5]}"#);
+        e.slot_dirty = false;
+        assert!(e.set("data", &serde_json::json!("keep")));
+        let crate::host::elements::signal::Source::Data(d) = &e.source else {
+            panic!("a data source")
+        };
+        assert_eq!(&d.samples[..], &[0.0, 1.0, -1.0, 0.5]);
+        assert!(
+            !e.slot_dirty,
+            "and the uploaded picture is still the picture"
+        );
     }
 
     /// A mapped resource is re-read by remapping it, which is a different door:

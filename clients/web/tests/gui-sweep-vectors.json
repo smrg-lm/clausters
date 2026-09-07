@@ -1543,6 +1543,19 @@
  },
  {
   "builder": "notes",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
   "option": "ruler",
   "value": "beats",
   "tree": {
@@ -2285,6 +2298,19 @@
    "axes": {
     "x": {
      "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "autofit": true
     }
    }
   }
@@ -3706,6 +3732,20 @@
  },
  {
   "builder": "spectrogram",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
   "option": "data",
   "value": [
    0.125,
@@ -4444,6 +4484,20 @@
  },
  {
   "builder": "timeruler",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
   "option": "ruler",
   "value": "beats",
   "tree": {
@@ -4691,6 +4745,19 @@
   "tree": {
    "type": "field",
    "level": 3.5
+  }
+ },
+ {
+  "builder": "track",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
   }
  },
  {
@@ -4971,6 +5038,20 @@
   "tree": {
    "type": "window",
    "color": "q"
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
   }
  },
  {

@@ -652,11 +652,29 @@ class Source:
         return f"<Source {self._carrier}={held!r}, {len(self._live)} live>"
 
 
+#: **The samples the host is already drawing**, as a ``data=`` argument: what a
+#: redraw says in place of re-sending them.
+#:
+#: A ``/gui_def`` names every widget in the subtree it redraws, and a clip's
+#: samples are the largest payload in the system — so a lane redrawn because one
+#: clip moved would carry every other clip's audio with it. ``data=KEEP`` names
+#: that audio instead: the widget is described in full, its bulk is not, and the
+#: host carries the run it is already holding onto the widget that kept its
+#: identity (which is what a widget id naming what it draws is for).
+#:
+#: It is only ever an answer about a widget the host **has**. A def that says it
+#: about one that is new names bulk nobody holds, and the host says so and draws
+#: an empty picture rather than inventing one::
+#:
+#:     lane.set(clip(id=clip_id, offset=beat, dur=length, data=KEEP))
+KEEP = "keep"
+
+
 def _samples_arg(data):
-    """A ``data=`` argument as it goes into the node: a `Source` passes through
-    untouched (`node` expands it into its carrier), anything else is read into a
-    list here."""
-    if data is None or isinstance(data, Source):
+    """A ``data=`` argument as it goes into the node: a `Source` and `KEEP` pass
+    through untouched (`node` expands a source into its carrier), anything else
+    is read into a list here."""
+    if data is None or isinstance(data, Source) or data is KEEP:
         return data
     return list(data)
 

@@ -174,6 +174,24 @@ def cases():
         ),
     ))
 
+    # The redraw: a lane restated so a clip can move, naming the bulk it is not
+    # re-sending. `KEEP` is a word about the host's own copy, so it must be the
+    # same word from both clients -- and it is a *value* of an option the sweep
+    # already covers with an array, which is exactly the kind of thing a sweep
+    # by option name is blind to.
+    out.append((
+        "keep_the_bulk",
+        g.window(
+            g.track(
+                g.clip(id=2, offset=0.0, dur=48000.0, data=g.KEEP, label="take"),
+                g.clip(id=3, offset=48000.0, dur=24000.0, data=g.KEEP),
+                id=1, label="drums",
+            ),
+            g.waveform(id=4, data=g.KEEP, channels=2),
+            title="redraw", layout="col",
+        ),
+    ))
+
     # The free-standing ruler over a navigation group, the engraved page with
     # its whole cursor track, and the legacy boolean frequency-axis alias.
     out.append((

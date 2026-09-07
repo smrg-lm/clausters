@@ -72,6 +72,12 @@ const CLIP_OWN: [&str; 8] = [
 /// `points_min`/`points_max` are the curve's own.
 fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
     use element::BodyRole::{Curve, Notes, Take};
+    // The def's `keep` reaching a live clip: the samples it names are the ones
+    // this clip is already drawing, so it changes nothing -- and above all it
+    // does not build a take body, which is what routing it below would do.
+    if key == "data" && v.as_str() == Some(parse::KEEP) {
+        return true;
+    }
     match key {
         // A source prop, the take's own axis, or a spectral take's **display**
         // — the dB window, the frequency scale and the colormap are shader

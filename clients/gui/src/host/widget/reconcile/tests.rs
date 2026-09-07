@@ -230,3 +230,171 @@ fn a_subtree_spliced_in_place_reconciles_against_what_was_there() {
     assert_eq!(view(&host, 20), (1000.0, 4000.0));
     assert!(host.window_def(1).unwrap().find(22).is_some());
 }
+
+// ---- the bulk: `data: keep`, which is the largest payload on the wire ----
+
+/// A lane holding one clip with samples, and one that says [`KEEP`] instead.
+///
+/// The two clips are the whole test surface: one carries its run every time,
+/// the other names it once and then asks for the one the host is holding.
+fn lane_of_clips(second: &str) -> String {
+    format!(
+        r#"{{"type":"window","title":"w","children":[
+             {{"id":20,"type":"field","label":"one","children":[
+               {{"id":21,"type":"field","offset":0.0,"dur":4.0,"data":[0.25,-0.25]}},
+               {second}]}}]}}"#
+    )
+}
+
+/// The samples a clip's take is drawing, read through the element itself.
+fn take(host: &Host, id: i32) -> Vec<f32> {
+    let clip = host.window_def(1).expect("the window").find(id);
+    let Some(clip) = clip else { return Vec::new() };
+    clip.children
+        .iter()
+        .find_map(|body| match body.kind.signal().map(|el| &el.source) {
+            Some(crate::host::elements::signal::Source::Data(d)) => Some(d.samples.to_vec()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_clip_that_says_keep_draws_the_samples_it_had() {
+    // The point of the word. A lane redrawn because a neighbour moved names
+    // every clip on it, and re-sending minutes of audio for that is the same
+    // failure as freeing a zoom for it, one order of magnitude up.
+    let mut host = Host::new();
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0,0.5]}"#),
+    );
+    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
+
+    // The redraw: the clip moved, and its samples did not.
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":12.0,"dur":4.0,"data":"keep"}"#),
+    );
+    assert_eq!(
+        take(&host, 22),
+        vec![1.0, -1.0, 0.5],
+        "the run the host was already holding"
+    );
+    let clip = host.window_def(1).unwrap().find(22).unwrap();
+    assert!(
+        matches!(clip.kind, WidgetKind::Clip { offset, .. } if offset == 12.0),
+        "and everything the def did say is the def's"
+    );
+}
+
+#[test]
+fn a_keep_does_not_reach_the_clip_beside_it() {
+    // Each clip's bulk is its own: a keep on one says nothing about the other,
+    // and the bodies are matched inside their own container.
+    let mut host = Host::new();
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0]}"#),
+    );
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
+    );
+    assert_eq!(
+        take(&host, 21),
+        vec![0.25, -0.25],
+        "restated, and unchanged"
+    );
+    assert_eq!(take(&host, 22), vec![1.0, -1.0], "kept");
+}
+
+#[test]
+fn a_def_that_states_samples_replaces_them() {
+    // Nothing said is nothing written, and a run *is* something said: a keep is
+    // the only spelling that defers, so an edit that really changed the audio
+    // still lands.
+    let mut host = Host::new();
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0]}"#),
+    );
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[0.0,0.0,0.0]}"#),
+    );
+    assert_eq!(take(&host, 22), vec![0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn a_keep_on_a_widget_the_host_does_not_hold_draws_nothing() {
+    // The one failure this word can produce, and the reason it is reported: an
+    // empty waveform looks exactly like a waveform of silence.
+    let mut host = Host::new();
+    define(&mut host, &lane_of_clips(""));
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
+    );
+    assert!(
+        host.window_def(1).unwrap().find(22).is_some(),
+        "the clip is built, placed and drawn"
+    );
+    assert!(take(&host, 22).is_empty(), "and only its picture is empty");
+}
+
+#[test]
+fn a_standalone_signal_keeps_its_own_bulk() {
+    // The word is not the clip's: a waveform is where the payload is largest,
+    // and it reaches the same door through its own props rather than through a
+    // container's.
+    let hold = |data: &str| {
+        format!(
+            r#"{{"type":"window","title":"w","children":[
+                 {{"id":30,"type":"signal","view":"trace","data":{data},"channels":1}}]}}"#
+        )
+    };
+    let mut host = Host::new();
+    define(&mut host, &hold("[0.5,-0.5,0.25,-0.25]"));
+    define(&mut host, &hold("\"keep\""));
+
+    let tree = host.window_def(1).unwrap();
+    let el = tree.find(30).unwrap().kind.signal().expect("the waveform");
+    match &el.source {
+        crate::host::elements::signal::Source::Data(d) => {
+            assert_eq!(d.samples.to_vec(), vec![0.5, -0.5, 0.25, -0.25]);
+        }
+        _ => panic!("a stored source"),
+    }
+}
+
+#[test]
+fn a_keep_travels_over_the_blob_that_carried_it() {
+    // The wire's own case: the bulk arrived as a trailing blob, and the redraw
+    // sends no blob at all.
+    let blob: Vec<u8> = [1.0f32, -1.0, 0.5]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let mut host = Host::new();
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String(lane_of_clips(
+                    r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"blob":0}"#,
+                )),
+                OscType::Blob(blob),
+            ],
+        }),
+        from(),
+    );
+    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
+
+    define(
+        &mut host,
+        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
+    );
+    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
+}

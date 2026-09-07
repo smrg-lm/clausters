@@ -25,6 +25,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Env } from "../src/defs/ugens/index.ts";
 import { BASE_ID, GuiIdAllocator } from "../src/gui/ids.ts";
 import {
+    KEEP,
     bpf,
     canvas,
     clip,
@@ -228,6 +229,17 @@ const trees: Record<string, () => GuiNode> = {
                     points: [[0.0, 0.0], [24000.0, 1.0, "sin"]], exp: false,
                 }),
             ),
+        ),
+
+    keep_the_bulk: () =>
+        window(
+            { title: "redraw", layout: "col" },
+            track(
+                { id: 1, label: "drums" },
+                clip({ id: 2, offset: 0.0, dur: 48000.0, data: KEEP, label: "take" }),
+                clip({ id: 3, offset: 48000.0, dur: 24000.0, data: KEEP }),
+            ),
+            waveform({ id: 4, data: KEEP, channels: 2 }),
         ),
 
     ruler_score_legacy: () =>

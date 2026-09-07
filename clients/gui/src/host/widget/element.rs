@@ -1373,6 +1373,28 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **Keep the bulk this element already holds**, rather than the (empty)
+    /// bulk the def just built it with. `false` by default — an element that
+    /// carries no bulk has nothing to keep, and says so.
+    ///
+    /// A def that redraws a lane has to name every clip in it, and a clip's
+    /// samples are the largest payload on the wire: re-sending minutes of audio
+    /// because a neighbouring clip moved is the same failure as freeing a zoom
+    /// because a neighbouring clip moved, one order of magnitude up. So the
+    /// wire has a word for *the samples you already have* (`"data": "keep"`),
+    /// and this is what honours it — called by the reconcile, on a widget that
+    /// survived, with the element that widget was.
+    ///
+    /// It is a door and not a downcast because the caller is a pass: the
+    /// reconcile knows a widget kept its identity and knows the def said keep,
+    /// and neither of those is a question about which element this is. What is
+    /// kept is the element's own business, and an element that cannot make
+    /// sense of `from` answers `false` — a keep that could not be honoured is
+    /// reported rather than drawn as silence.
+    fn keep_bulk(&mut self, _from: &dyn Element) -> bool {
+        false
+    }
+
     /// Whether this element navigates the window's **shared time axis**, and so
     /// joins a navigation group. `false` by default.
     fn navigates_time(&self) -> bool {

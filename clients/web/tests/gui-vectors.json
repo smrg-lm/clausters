@@ -526,6 +526,45 @@
     }
   },
   {
+    "name": "keep_the_bulk",
+    "tree": {
+      "type": "window",
+      "title": "redraw",
+      "flow": "col",
+      "children": [
+        {
+          "type": "field",
+          "id": 1,
+          "label": "drums",
+          "children": [
+            {
+              "type": "field",
+              "id": 2,
+              "dur": 48000.0,
+              "offset": 0.0,
+              "data": "keep",
+              "label": "take"
+            },
+            {
+              "type": "field",
+              "id": 3,
+              "dur": 24000.0,
+              "offset": 48000.0,
+              "data": "keep"
+            }
+          ]
+        },
+        {
+          "type": "signal",
+          "id": 4,
+          "view": "trace",
+          "data": "keep",
+          "channels": 2
+        }
+      ]
+    }
+  },
+  {
     "name": "ruler_score_legacy",
     "tree": {
       "type": "window",

@@ -299,9 +299,36 @@ pub(crate) fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
     }
 }
 
+/// The `data` value that means **the samples you already have**: the wire's
+/// word for a redraw that names a widget without re-sending its bulk.
+///
+/// A `/gui_def` has to name every widget in the subtree it redraws, and a
+/// clip's samples are the largest payload in the system — so a lane redrawn
+/// because one clip moved would carry every other clip's audio with it. `keep`
+/// is what stops that: the widget is described in full, its bulk is not, and
+/// the [reconcile](super::reconcile) carries the run the host is already
+/// holding onto the widget that kept its identity. A def that names a widget
+/// the host does not hold has nothing to keep, and says so rather than drawing
+/// silence.
+pub(crate) const KEEP: &str = "keep";
+
+/// Whether this node's props say [`KEEP`] of their bulk.
+///
+/// Read on the container as well as on the element: a clip states its take's
+/// source in its own props, so `"data": "keep"` on a clip is a statement about
+/// the body it builds.
+pub(crate) fn keeps_bulk(props: &serde_json::Map<String, Value>) -> bool {
+    props.get("data").and_then(Value::as_str) == Some(KEEP)
+}
+
 /// Resolves a sample-view widget's inline samples: inline `"data": [f32…]`, or
 /// `"blob": <index>` into the OSC blobs carried with the def (raw little-endian
 /// `f32`). Shared by `waveform` and `plot`; `kind` names the widget in errors.
+///
+/// `"data": `[`KEEP`] resolves to **nothing here**, on purpose: what it names
+/// is not in this message, and the widget is built empty for the reconcile to
+/// fill. A build that never reaches a reconcile — a widget that is new — is
+/// therefore empty, which is the honest answer to a keep with nothing to keep.
 pub(super) fn inline_samples(
     kind: &str,
     id: Option<i32>,
@@ -309,6 +336,9 @@ pub(super) fn inline_samples(
     blobs: &[Vec<u8>],
 ) -> Result<Arc<[f32]>, String> {
     let label = id.map_or_else(|| kind.to_string(), |i| format!("{kind} {i}"));
+    if keeps_bulk(props) {
+        return Ok(Arc::from([] as [f32; 0]));
+    }
     if let Some(Value::Array(items)) = props.get("data") {
         let samples: Vec<f32> = items
             .iter()

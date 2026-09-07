@@ -53,6 +53,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 
 from .editing import MEASURES, Editor, edit, measures
 from .guidef import (
+    KEEP,
     Source,
     View,
     bpf,
@@ -177,6 +178,7 @@ __all__ = [
     "View",
     "Source",
     "source",
+    "KEEP",
     "node",
     "view",
     "window",

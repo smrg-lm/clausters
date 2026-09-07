@@ -686,6 +686,34 @@ the detail reads the take back with `Buffer.get_samples` once it is finished.
 `stop()` cancels the subscription and leaves the caches readable; `free()` drops
 them.
 
+### A redraw does not re-send what it draws
+
+A `/gui_def` describes **every widget in the subtree it names** — that is what
+lets a lane grow a clip without the window being rebuilt around it — and a
+clip's samples are the largest payload in the system. So a lane restated because
+one clip moved would carry every other clip's audio with it, which is the same
+failure as a redefinition taking a reader's zoom, one order of magnitude up.
+
+`KEEP` is the word for it, in place of a value:
+
+```python
+from clausters.gui import KEEP, clip, track
+
+# The lane is stated again so one clip can move; the clips that did not change
+# name their takes instead of sending them.
+track(clip(name="a", offset=0.0, dur=4 * BEAT, data=KEEP),
+      clip(name="b", offset=8 * BEAT, dur=4 * BEAT, data=KEEP, label="take"),
+      name="drums")
+```
+
+The widget is described in full and its bulk is not: the host carries the run it
+is already drawing onto the widget that kept its identity. So it is an answer
+about a widget the host **has**, which is what naming a widget rather than
+leasing its id is for. Said of a widget that is new, or of a name that now draws
+something else, it names bulk nobody holds — the host says so in its log and
+draws an empty picture rather than inventing one. On a `set` it means *no
+change*, so one props table serves both doors.
+
 ### The structures are held the same way
 
 Samples are one kind of heavy prop; the others are the **structures** — a

@@ -736,6 +736,29 @@ planned, and it is why this is written here rather than re-derived later.
    no blob index. Reconciling, a widget whose blob did not change must not have
    to re-send it, so there has to be a way to say *keep the one you have*. For
    the editor-grade waveform that is not a detail.
+
+   **Landed 2026-09-07, and the word is `"data": "keep"`.** It is a value of the
+   prop that already names the samples rather than a sixth carrier beside
+   `data`/`blob`/`buffer`/`path`/`cache` — `blob` is how `data` travels, so what
+   is being deferred is one thing however it arrived, and a client that spilled
+   to a blob and one that inlined a short run say the same word. The reconcile
+   carries the run **and the resolved pyramid**, both behind an `Arc`, from the
+   widget that survived onto the widget that replaced it, so honouring a keep is
+   two refcount bumps against re-sending minutes of audio.
+
+   **Asked for rather than inferred from silence**, which was the choice worth
+   making: silence already means something else here — a clip that states no
+   source has no take body at all, which is how a roll-only clip is spelled — so
+   a keep has to *say* the body is there before it can say what fills it. And a
+   keep the host cannot honour (a widget that is new, an id that now names
+   another kind) is **reported**, because an empty waveform looks exactly like a
+   waveform of silence: the one failure this word can produce is the one a
+   reader cannot see.
+
+   Both clients spell it `KEEP`, one constant each, and a parity vector holds
+   them to it — the sweep crosses every builder with every option and would not
+   have caught this, since it is a new **value** of an option that already
+   exists.
 4. `guidiff` moves into the host — a move rather than a rewrite, its tests with
    it — and the FFI and wasm exports go. **Both clients lose surface**, which for
    the non-divergence rule is the right direction, and the ABI counter moves for
@@ -982,6 +1005,26 @@ not whether the behaviour was correct. Rewriting the arithmetic because the
 owner moved is how a working editor becomes a new set of defects.
 
 ## Found by use
+
+- ⬜ **`GuiHost.redefine` exists in Python and not in the web client** *(found
+  2026-09-07, writing the wire's word for keeping a widget's bulk)*. The narrow
+  redefinition — a `/gui_def` of a widget **inside** an open window — is the
+  channel this whole branch is about, and only one client has a door for it.
+  `clausters.gui.host.GuiHost.redefine(id, tree, window=…)` sends the message
+  and does the bookkeeping a *part* needs: the names under the old subtree go,
+  the new ones join what the window already had, and the handle a script holds
+  stays the one it holds. The web client has `define` and nothing else, and
+  `define` is written for a **window** — it replaces the handle's whole name map
+  with the names of the tree it was handed, so calling it on a subtree leaves
+  the window resolving only that subtree's names.
+  **What makes it worth an entry rather than a port on the spot**: the message
+  goes out either way, so this is not a page that cannot redraw a lane — it is a
+  page whose *names* stop resolving when it does, which is silent, and shows up
+  as a handler that stopped firing rather than as an error. It is the standing
+  rule's own case (a verb in one client and not the other), it is the door
+  `data: "keep"` is sent through, and it is the same shape as `Application`
+  below: the machinery has one implementation because the one caller that
+  exercised it was Python's.
 
 - ⬜ **The reconcile has no example to see it in** *(found 2026-09-07, going to
   check it by eye)*. `widget::reconcile` has seven unit tests and **no manual

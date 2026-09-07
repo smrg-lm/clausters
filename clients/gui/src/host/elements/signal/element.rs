@@ -20,6 +20,8 @@
 //! roll and the free-standing ruler, and belongs to the **axis** rather than to
 //! whatever is drawn on it.
 
+use std::sync::Arc;
+
 use serde_json::{Map, Value};
 
 use super::{Presentation, SignalElement, Source};
@@ -407,6 +409,36 @@ impl Element for SignalElement {
 
     fn gesture_map(&self) -> Option<GestureMap> {
         SignalElement::gesture_map(self)
+    }
+
+    /// **The samples this element was drawing, kept.** What travels is the
+    /// inline run and the resolved pyramid, both behind an `Arc`, so honouring
+    /// a keep costs two refcount bumps against re-sending the audio.
+    ///
+    /// Only between two **stored** sources: a bus has no past to keep, and a
+    /// def that turned a stored view into a live one is describing a different
+    /// picture rather than the same one twice. Where the def names a resource
+    /// of its own (a file, a peaks cache, a server buffer) that resource is the
+    /// answer and the loader will read it, so the keep steps aside -- it is a
+    /// word about bulk that came over the wire, and nothing else.
+    fn keep_bulk(&mut self, from: &dyn Element) -> bool {
+        let Some(Source::Data(was)) = from
+            .as_any()
+            .and_then(|a| a.downcast_ref::<SignalElement>().map(|el| &el.source))
+        else {
+            return false;
+        };
+        let Source::Data(now) = &mut self.source else {
+            return false;
+        };
+        if now.path.is_some() || now.cache.is_some() || now.buffer.is_some() {
+            return false;
+        }
+        now.samples = Arc::clone(&was.samples);
+        now.body = was.body.clone();
+        self.slot_dirty = true;
+        self.refresh_analysis();
+        true
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

@@ -41,6 +41,22 @@
 //! - **The active layer and what is hidden** — which of a container's layered
 //!   contents the hand is on, and which of them are drawn.
 //!
+//! # The bulk is kept by being asked for
+//!
+//! A def has to name every widget in the subtree it redraws, and a clip's samples
+//! are the largest payload in the system — so a lane redrawn because one clip moved
+//! would carry every other clip's audio with it, which is the same failure as
+//! freeing a zoom because a neighbour moved, one order of magnitude up. The wire's
+//! word for it is `"data": "keep"`, and the carry below is what honours it: the run
+//! and the resolved pyramid travel from the widget that survived onto the widget
+//! that replaced it, both behind an `Arc`, so a keep costs two refcount bumps.
+//!
+//! It is **asked for** rather than inferred from silence, because silence already
+//! means something else here: a clip that states no source has no take body at all,
+//! and that is how a roll-only clip is spelled. A def that says keep and names a
+//! widget the host does not hold is a keep with nothing to keep — reported, rather
+//! than drawn as an empty waveform nobody can explain.
+//!
 //! # And the def still wins where it says something
 //!
 //! Carrying the host's value *over* a value the def stated would take away the
@@ -57,7 +73,9 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
+use super::super::GUI_DEF;
 use super::super::guidef::GuiNode;
+use super::parse::keeps_bulk;
 use super::{Widget, WidgetKind};
 
 /// The prop keys a surviving widget keeps unless the def states them.
@@ -178,6 +196,17 @@ fn carry<'a>(
             }
         }
     }
+    // **The bulk, when the def asked for it.** Unlike everything above this is
+    // not the host's state -- the samples are the client's, and the client is
+    // saying it did not change them. So it is honoured only where it was said,
+    // and a keep the element cannot make sense of is a warning rather than a
+    // silently empty picture.
+    if keeps_bulk(says)
+        && let (Some(before), Some(now)) = (held.kind.as_element(), fresh.kind.as_element_mut())
+        && !now.keep_bulk(before)
+    {
+        unkept(fresh.id);
+    }
     // Nothing on the wire sets the mark a marquee left, so there is no "the def
     // said so" case for it: it is the host's, always.
     fresh.selected = held.selected;
@@ -195,10 +224,19 @@ fn carry<'a>(
         match child.id {
             // By id, **anywhere** in the tree the host holds.
             Some(id) => {
-                if let Some(before) = index.get(&id)
-                    && same_kind(said, was, id, &before.kind, &child.kind)
-                {
-                    carry(before, child, said, was, index, says);
+                match index.get(&id) {
+                    Some(before) if same_kind(said, was, id, &before.kind, &child.kind) => {
+                        carry(before, child, said, was, index, says)
+                    }
+                    // Nothing to carry from: the id is new, or it names a
+                    // different kind of widget than it did. Ordinary -- except
+                    // for a def that said keep, which named bulk that is not in
+                    // this message and is not on the host either.
+                    _ => {
+                        if said.props.get(&id).is_some_and(|p| keeps_bulk(p)) {
+                            unkept(Some(id));
+                        }
+                    }
                 }
             }
             // A body, which the wire does not address: the first child of its
@@ -209,14 +247,35 @@ fn carry<'a>(
                     c.id.is_none()
                         && std::mem::discriminant(&c.kind) == std::mem::discriminant(&child.kind)
                 });
-                if let Some(at) = at
-                    && !taken[at]
-                {
-                    taken[at] = true;
-                    carry(&held.children[at], child, said, was, index, says);
+                match at {
+                    Some(at) if !taken[at] => {
+                        taken[at] = true;
+                        carry(&held.children[at], child, said, was, index, says);
+                    }
+                    // A body its container did not have before -- a clip that
+                    // grows a take. Its keep names bulk nobody holds.
+                    _ => {
+                        if keeps_bulk(says) {
+                            unkept(fresh.id);
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+/// Says that a `keep` named bulk the host does not have.
+///
+/// It is a warning and not an error because the def is otherwise good: the
+/// widget is built, placed and drawn, and only its picture is empty. What makes
+/// it worth saying out loud is that an empty waveform looks exactly like a
+/// waveform of silence, so the one failure this word can produce is the one a
+/// reader cannot see.
+fn unkept(id: Option<i32>) {
+    match id {
+        Some(id) => tracing::warn!("{GUI_DEF} {id}: `data: keep` with nothing held to keep"),
+        None => tracing::warn!("{GUI_DEF}: `data: keep` on a body with nothing held to keep"),
     }
 }
 

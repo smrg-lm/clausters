@@ -69,6 +69,27 @@ export const INLINE_MAX = 2048;
 export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const;
 
 /**
+ * **The samples the host is already drawing**, as a `data` option: what a
+ * redraw says in place of re-sending them.
+ *
+ * A `/gui_def` names every widget in the subtree it redraws, and a clip's
+ * samples are the largest payload in the system — so a lane redrawn because one
+ * clip moved would carry every other clip's audio with it. `data: KEEP` names
+ * that audio instead: the widget is described in full, its bulk is not, and the
+ * host carries the run it is already holding onto the widget that kept its
+ * identity (which is what a widget id naming what it draws is for).
+ *
+ * It is only ever an answer about a widget the host **has**. A def that says it
+ * about one that is new names bulk nobody holds, and the host says so and draws
+ * an empty picture rather than inventing one.
+ *
+ * ```ts
+ * lane.set(clip({ id: clipId, offset: beat, dur: length, data: KEEP }));
+ * ```
+ */
+export const KEEP = "keep";
+
+/**
  * The **structure** prop names a {@link Source} may stand in for — the heavy
  * props that carry a payload rather than a scalar and are not samples. Each
  * rides in the prop it is named by, so unlike the sample carriers there is
@@ -840,8 +861,11 @@ export interface SourceOptions extends WidgetOptions {
     path?: string | Source;
     /** A server buffer number, pulled over the host's client leg. */
     buffer?: number | Source;
-    /** A short signal inline in the JSON. */
-    data?: readonly number[] | Source;
+    /**
+     * A short signal inline in the JSON, or {@link KEEP} — the run the host is
+     * already drawing, named rather than re-sent.
+     */
+    data?: readonly number[] | Source | typeof KEEP;
     /**
      * The index of a binary blob carried beside the JSON (see
      * `samplesToBlob` and `GuiHost.define`).
@@ -2858,9 +2882,13 @@ function sourceProps(options: Pick<SourceOptions,
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
-        // A `Source` passes through untouched — `node` expands it into the
-        // carrier it picked; anything else is read into an array here.
-        ["data", data === undefined || data instanceof Source ? data : [...data]],
+        // A `Source` and `KEEP` pass through untouched — `node` expands a
+        // source into the carrier it picked, and a keep is a word about the
+        // host's own copy; anything else is read into an array here.
+        [
+            "data",
+            data === undefined || data === KEEP || data instanceof Source ? data : [...data],
+        ],
         ["blob", blob],
         ["channels", channels],
     ]);

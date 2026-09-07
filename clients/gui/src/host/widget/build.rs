@@ -256,7 +256,16 @@ fn clip_take(props: &Map<String, Value>, blobs: &[Vec<u8>]) -> Result<Option<Wid
             .and_then(Value::as_str)
             .map(PathBuf::from),
     );
-    if samples.is_empty() && buffer.is_none() && path.is_none() && cache.is_none() {
+    // A clip with no source at all has no take, and that is how a roll-only or
+    // a curve-only clip is spelled. A clip that says `keep` **does** have one —
+    // the run the host is already holding — so the body is built here, empty,
+    // for the reconcile to fill: without it there would be nothing to fill.
+    if samples.is_empty()
+        && buffer.is_none()
+        && path.is_none()
+        && cache.is_none()
+        && !parse::keeps_bulk(props)
+    {
         return Ok(None);
     }
     let mut el = take_element(
