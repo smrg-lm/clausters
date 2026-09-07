@@ -38,7 +38,7 @@ ATTR = "_clausters_editing"
 #: what an edit means by *unstated* when it names the state it was made
 #: against — the same reservation the GUI host's sequence numbers make.
 #:
-#: It is the same number as `clausters.form.document.FIRST_VERSION` and
+#: It is the same number as `clausters.document.FIRST_VERSION` and
 #: deliberately not the same symbol: that one is what a **file** says its
 #: version is, this one is what an editing context counts from. They coincide
 #: because an unedited document is version one, and a generic module importing

@@ -48,7 +48,7 @@ class _Member:
     **A handle is what carries the node id**, which is what makes one element
     placeable twice: a clip is a window onto an element, so the thing an edit
     names is the window and not the element behind it. The conversion stamps
-    it here (`clausters.form.document`), which is why this class has a slot for
+    it here (the document's own writers), which is why this class has a slot for
     something no caller sets.
     """
 
@@ -243,7 +243,7 @@ class Aggregate(Element):
     def bus_specs(self) -> list:
         """The bus declarations themselves — ``name``, ``rate``, ``channels``.
 
-        What `to_document` carries in the body's opaque config, and what a cord
+        What a document carries in the body's opaque config, and what a cord
         drawn in the patcher edits: the wiring is the aggregate's, so it is the
         aggregate's configuration that states it.
         """

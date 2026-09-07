@@ -1,66 +1,49 @@
 #!/usr/bin/env python3
-"""The **third writer**: a session this client writes, edited by a host with no
-language attached, and read back here unchanged.
+"""A **session**: the piece, where its samples are, and reading it back.
 
-A document says what plays when; a *session* is that plus the table saying where
-its samples live, and the format lives in the shared crate precisely so that more than
-one program can write it. Until now two of the three writers existed — this
-client, and this client again. The third is `clausters-gui --session`, a host
-that opens the file, draws it as a multitrack, applies its own gestures through
-the crate's own log and saves it back. No Python anywhere in that loop.
+A piece says what plays when; a *session* is that plus the table saying where
+its samples live, and the format lives in the shared crate precisely so that
+more than one program can write it. This writes one, reads it back, and reopens
+its take onto a running server -- the loop a save and an open actually are.
 
 What it shows, in the order the cells run:
 
-- **Writing one.** An arrangement built the ordinary way (`Aggregate`, `Track`,
-  `Timeline`) becomes a session with `to_session` — the same call
-  `composer.py` makes when it saves.
-- **Handing it over.** The command to open it in the standalone host is printed
-  for you to run. Drag a clip, `Ctrl+Z` to take it back, `Ctrl+Shift+Z` to put
-  it back, `Ctrl+S` to save. The host is the owner while that window is open:
-  the intent your drag emits is applied *there*, by the crate's `apply`, and the
-  inverse comes out of the document rather than being remembered.
-- **Editing the samples, not only the description.** The take opens twice: as
-  a clip in its lane, and as an editor under the ruler on an axis of its own.
-  Zoom that one in (wheel) until each sample is a disc, then **Alt+drag** to
-  draw over them — the picture changes over the span you drew and nowhere else,
-  and `Ctrl+Z` puts the samples back. The take is **stereo** and the channels
-  are drawn as stacked lanes: a stroke lands in the lane it was made in and the
-  other keeps its shape, because one channel of interleaved samples is written
-  as the strided span it is. **Click** on the waveform to place the
-  playhead, **space** to play from it and to pause where it stands (a pause
-  freezes the server's own transport, so playing again continues rather than
-  starting over), and **drag** a span to loop it. All of it goes through the
-  embedded server: the clip and the editor draw the one buffer a stroke writes,
-  and the line you see is the position that server is playing — the host reads
-  it, and never computes it.
-- **Reading it back.** `from_session` on what the host wrote gives an
-  arrangement again, and the cell prints where each element ended up — which is
-  the whole claim: a file passed between two writers means the same thing to
-  both. It is read with a **resolver over the session's own table**
-  (`session_resolver`), which is what makes reopening give back structures
-  rather than a description: each file the table names is read onto the server,
-  once per source however many clips draw it, and a generator nothing supplies
-  is left frozen with what it last rendered.
-- **What is mixed, and what is only looked at.** The bass lane is left
-  **muted**, and it reopens muted — mute, solo and level are the composition's
-  and ride in the node's configuration. A lane's *height* is the other kind of
-  thing: it says nothing about what the piece is, so no document carries it and
-  resizing one here changes no file.
+- **The piece.** Two tracks, one of them muted, and a region on each. A region
+  is one placed thing: where it starts, how long it occupies, and what fills it.
+  Six regions over one source would be six identities and one source -- nothing
+  is copied -- which is the whole of non-destructive editing.
+- **A take, which is samples rather than description.** The example writes its
+  own stereo WAV, so it needs no material found anywhere, and the session's
+  table is what says where those samples are. The piece names a source **id**
+  and never a path: that is the split that lets one file be opened by a program
+  that has no Python in it.
+- **What a save can and cannot promise.** The table says three things a save
+  has to be able to say without blocking or deciding for the person: a file that
+  is there, samples nobody wrote down, and a working copy whose destructive edit
+  is still open. The cell prints which sources are in which state.
+- **Reading it back.** The session is loaded and its table resolved: each file
+  it names is read onto the server **once per source**, however many regions
+  draw it, and the region that names it plays. A source the table calls volatile
+  comes back frozen -- drawn, placed, silent -- rather than as a lie.
+- **What is the piece's and what is the view's.** A muted track reopens muted,
+  because mute is the composition's. A track's *height* is not: it says nothing
+  about what the piece is, so no session carries it.
 
-The three files it writes go to ``examples/out/`` (``session.json``,
-``session-take.wav``, and ``session-edited.json`` once the host has saved) —
-the git-ignored directory every generator in this tree writes to. They are
-handed to another program and read back from it, so they are worth keeping and
-looking at rather than leaving in a temp directory.
+**Not yet here: handing it to a host with no language attached.** This example
+used to run ``clausters-gui --session`` on what it wrote, and that half went
+with the client-side converter it was built on: the standalone host opens the
+general tree, and binding the arrangement is the next step in the crate's plan.
+It comes back with the host, and this example is where it lands.
 
-**What it needs:** nothing running — the host boots its own embedded server
-(a `--features standalone` build; without one the take still draws as a named
-rectangle and the space bar does nothing). It writes its own WAV, so no samples
-has to be found. The host binary is `clients/gui/target/*/clausters-gui`; build it with
-``cargo build --bin clausters-gui`` from ``clients/gui`` if it is not there.
+The two files it writes go to ``examples/out/`` (``session.json`` and
+``session-take.wav``), the git-ignored directory every generator in this tree
+writes to.
 
-Run it as a script (it writes the file and prints the command), or step through
-the cells. Install once, from the repo root::
+**What it needs:** nothing running -- the example boots its own server for the
+reopening cell, and writes its own WAV.
+
+Run it as a script, or step through the cells. Install once, from the repo
+root::
 
     pip install -e clients/python
 
@@ -71,53 +54,32 @@ the cells. Install once, from the repo root::
 import json
 import math
 import os
-import shutil
 import struct
-import subprocess
 import sys
+import time
 import wave
 
-from clausters.form import Aggregate, Track, take
-from clausters.form.document import (FrozenSource, from_session,
-                                     session_resolver, sources_of, to_session)
-from clausters.seq import Timeline
-from clausters.seq.event import Event as SeqEvent
+from clausters import Session as Server
+from clausters.arrangement import (Arrangement, Content, Lane, Region, Session,
+                                   Source, Tempo, Track)
+from clausters.defs.buffer import Buffer
+from clausters.play import play
 
 SAMPLE_RATE = 48_000
-
-# %% [markdown]
-# ## An arrangement, built the ordinary way
-#
-# Nothing here knows about sessions or hosts: it is the same `Aggregate` of
-# `Track`s any other example builds. Two lanes, so the window has two to draw.
-
-# %%
-melody = Track(Timeline([
-    (0.0, SeqEvent(midinote=72, dur=1.0)),
-    (2.0, SeqEvent(midinote=76, dur=1.0)),
-]))
-bass = Track(Timeline([
-    (0.0, SeqEvent(midinote=48, dur=2.0)),
-    (4.0, SeqEvent(midinote=52, dur=2.0)),
-]))
-
-# %% [markdown]
-# ## And a take, which is samples rather than description
-#
-# A document says *what plays when* and never where the samples are — so a take
-# is a source **id**, and the session's table is what says where that source
-# lives. The two halves are written together below; the host resolves the table
-# and reads each file into a server buffer of its own, which is what lets a clip
-# draw its waveform instead of an empty rectangle.
 
 #: Where a run leaves its files: ``examples/out/``, the git-ignored directory
 #: every generator in this tree writes to.
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")
 os.makedirs(OUT, exist_ok=True)
 
-#: A file the example writes itself, so it needs nothing but itself — an
-#: ordinary WAV, the kind a person drags in, decoded by the server the way any
-#: other would be.
+# %% [markdown]
+# ## A take, which is samples rather than description
+#
+# The piece names a source **id** and never a path. Where the samples are is the
+# session's table, and keeping the two apart is what lets one file be opened by
+# a program that has no Python in it.
+
+# %%
 take_path = os.path.join(OUT, "session-take.wav")
 
 
@@ -127,9 +89,7 @@ def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
     Two partials and a slow decay, so the drawn waveform has a shape to
     recognize rather than a rectangle of noise -- and the two channels are
     deliberately unlike (the right one is the third partial alone, quieter), so
-    an edit on one is visibly an edit on *one*: a channel of interleaved
-    samples is a strided write, and that it lands where it was aimed is the
-    thing worth seeing.
+    an edit on one is visibly an edit on *one*.
     """
     frames = int(seconds * SAMPLE_RATE)
     with wave.open(path, "w") as f:
@@ -150,167 +110,147 @@ def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
 
 
 take_frames = write_take(take_path)
+take_seconds = take_frames / SAMPLE_RATE
+print(f"wrote {take_path} ({take_frames} frames)")
 
-#: The source the element names: `FrozenSource` is what a document reader hands
-#: back for a source it has not resolved to a live server buffer, and it is
-#: exactly what writing one from a file needs — the id, and where the samples
-#: are. The path is **relative**, resolved against the session file's own
-#: folder, which is what makes the pair of files movable together.
-source = FrozenSource(
-    {"source": 1, "lifetime": "session"},
-    {"location": {"at": "file", "path": os.path.basename(take_path)},
-     "channels": 2, "frames": take_frames, "sample_rate": float(SAMPLE_RATE)},
-)
+# %% [markdown]
+# ## The piece
+#
+# Two tracks, each with one lane, each with one region. The region's `position`
+# and `length` are in **beats** -- where a thing sits in a piece is a musical
+# decision -- while what fills it is measured in its own source's units. The two
+# are not the same axis, and the tempo map is what relates them, which is why
+# the map is part of the piece rather than of a track.
 
-#: `take` is where a recording lands: a clip whose length is the samples' own,
-#: which is the one line every script used to write by hand (frames over the
-#: rate they were recorded at).
-clip = take(source)
+# %%
+#: The source id the piece names. The table below is what says where it is.
+TAKE = 1
 
-melody_lane = Aggregate([(0.0, melody)], name="melody")
-bass_lane = Aggregate([(0.0, bass)], name="bass")
-#: **Mixing is the composition's.** A lane left muted here reopens muted — in
-#: this client and in the host — because mute, solo and level ride in the node's
-#: configuration. A lane's *height* does not: it says nothing about what the
-#: piece is, so no document carries it.
-bass_lane.mute = True
 
-piece = Aggregate([
-    (0.0, melody_lane),
-    (0.0, bass_lane),
-    (1.0, Aggregate([(0.0, clip)], name="take")),
-], name="piece")
+def window(start: float = 0.0, duration: float = take_seconds) -> dict:
+    """A window onto the take: which source, from where, for how long."""
+    return {"source": {"source": TAKE, "lifetime": "session", "generation": 0},
+            "start": start, "duration": duration}
 
-#: And the table that says where each source is, built from the arrangement
-#: itself rather than by hand: `to_session` refuses a table that does not cover
-#: its own document, and a table built once at startup stops covering the piece
-#: the moment reopening resolves its takes into new buffers.
-sources = sources_of(piece, folder=OUT)
+
+piece = Arrangement()
+piece.set_tempo(Tempo(at=0.0, bpm=120.0))
+
+#: The take, twice, at two places: two regions, two identities, **one** source.
+#: Nothing is copied, and trimming one leaves the other where it was.
+tone = Track(id=10, name="tone", lanes=[Lane(id=11)])
+tone.active_lane.place(Region(id=12, position=0.0, length=4.0, name="first",
+                              content=Content.onto(window())))
+tone.active_lane.place(Region(id=13, position=8.0, length=2.0, name="again",
+                              content=Content.onto(window(start=0.5))))
+
+#: **Mute is the composition's.** A track left muted here reopens muted, because
+#: it says something about the piece. A track's *height* does not, so no session
+#: carries one.
+echo = Track(id=20, name="echo", muted=True, lanes=[Lane(id=21)])
+echo.active_lane.place(Region(id=22, position=4.0, length=4.0,
+                              content=Content.onto(window())))
+
+piece.tracks.extend([tone, echo])
+print(f"the piece is {piece.end:.0f} beats long, over {len(piece.tracks)} tracks")
 
 # %% [markdown]
 # ## Written as a session
 #
-# `to_session` is the format's one writer on this side — the crate defines it,
-# and this client and the standalone host are two readers of the same
-# definition rather than two implementations of one idea.
+# The table says where each source is. A **relative** path is resolved against
+# the session file's own folder, which is what makes the pair of files movable
+# together; an absolute one names the user's own file, which a session never
+# copies and never rewrites.
 
-#: The two artifacts, in the examples' own `out/`. Not a temp directory,
-#: because these are not scratch: one is handed to another program and the
-#: other comes back from it, and both are worth opening, diffing and re-running
-#: the host on. Named after the example so they group with it there.
+# %%
+session = Session(arrangement=piece)
+session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
+    2, take_frames, float(SAMPLE_RATE))
+
+#: A source nobody wrote down, so the cell below has one of each to report. A
+#: session may hold one -- saving must not be blocked by it -- but a reader that
+#: finds one knows the samples are not there and opens that element unresolved
+#: rather than pretending.
+session.sources[2] = Source.volatile()
+
 path = os.path.join(OUT, "session.json")
-saved = os.path.join(OUT, "session-edited.json")
-
-# %%
 with open(path, "w") as f:
-    f.write(json.dumps(to_session(piece, sources=sources), indent=1))
+    f.write(json.dumps(session.write(), indent=1))
 print(f"wrote {path} ({os.path.getsize(path)} B)")
-print(f"  and {take_path} ({take_frames} frames), which its source table names")
-
 
 # %% [markdown]
-# ## Handed to a host with no language attached
+# ## What a save can and cannot promise
 #
-# The host opens it, draws it, and **owns** it: the gesture you make there is
-# applied by the crate's `apply` and logged by the crate's log, so the undo you
-# press reads its inverse out of the document. Nothing round-trips through
-# Python while that window is open — which is the point of the milestone.
+# Three states a table has to be able to hold, because a save that could not say
+# them would either block or decide for the person.
 
 # %%
-def host_binary() -> "str | None":
-    """The standalone host, wherever this checkout built it."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.abspath(os.path.join(here, "..", "..", ".."))
-    for profile in ("release", "debug"):
-        candidate = os.path.join(root, "clients", "gui", "target", profile, "clausters-gui")
-        if os.path.exists(candidate):
-            return candidate
-    return shutil.which("clausters-gui")
-
-
-def open_in_host(wait: bool = True) -> None:
-    """Runs the host on the session, saving to a second file.
-
-    Drag a clip, then `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close it. The
-    take's editor pane under the ruler is the other half: zoom in to the
-    samples, Alt+drag to draw over them, click to place the playhead, Space to
-    play and pause, and drag a span to loop it.
-    Saving writes to ``--save-to`` and never over what was opened: overwriting
-    the file you were given is a decision, not a default.
-    """
-    binary = host_binary()
-    if binary is None:
-        print("clausters-gui not found — build it:\n"
-              "  cd clients/gui && cargo build --bin clausters-gui")
-        return
-    cmd = [binary, "--session", path, "--save-to", saved]
-    print("running: " + " ".join(cmd))
-    print("  drag a clip, then Ctrl+Z, Ctrl+Shift+Z, Ctrl+S")
-    print("  and in the take's editor pane: wheel to zoom to the samples, "
-          "Alt+drag to draw, click to place the playhead, Space to play/pause, "
-          "drag a span to loop it, then close the window")
-    if wait:
-        subprocess.run(cmd, check=False)
-
+print(f"  volatile:   {session.volatile()}  (samples nobody wrote down)")
+print(f"  open edits: {session.open_edits()}  (a working copy still undecided)")
+print(f"  dangling:   {session.dangling()}  (named by the piece, absent from "
+      "the table)")
 
 # %% [markdown]
-# ## Read back here
+# ## Read back, onto a running server
 #
-# `from_session` turns what the host saved into an arrangement again. The offsets
-# printed are where the elements ended up — move a clip in the window and the
-# number moves with it, which is the claim the whole milestone rests on.
+# Reopening is two steps: the file gives the piece and its table, and the table
+# is resolved. Each file is read **once per source**, however many regions name
+# it -- two regions over one take are two windows onto one buffer, and reading
+# it twice would give them two that drift apart on the first edit.
 
 # %%
-def read_back() -> None:
-    """Prints where every element sits in the session the host wrote.
+def reopen(server=None) -> tuple:
+    """Reads the session back and resolves its table onto `server`.
 
-    `from_session` hands back **the arrangement and its source table** — what a
-    source *is* (a buffer to allocate, a file to map) being the caller's to
-    decide — so the element is the first of the pair.
+    Returns the piece and the buffers by source id. A source the table cannot
+    locate is simply absent from the second: half a session is worth opening,
+    and the region that names it comes back placed and silent rather than the
+    whole file failing.
     """
-    if not os.path.exists(saved):
-        print(f"nothing saved yet: press Ctrl+S in the host to write {saved}")
-        return
-    with open(saved) as f:
-        session = json.load(f)
-    # **The resolver is what makes reopening give back structures rather than a
-    # description.** Without one the tree comes back and every take in it is a
-    # bare source number; with one, each file in the table is read onto the
-    # server (once per source, however many clips name it) and a generator
-    # nothing supplies is left frozen with what it last rendered. This run has
-    # no server up, so nothing is read and the takes stay frozen -- which is the
-    # same call, taking the same path, saying so.
-    element, sources = from_session(
-        session, resolve=session_resolver(session, folder=OUT))
-    print(f"read {os.path.basename(saved)} back as {type(element).__name__} "
-          f"({len(sources)} source(s)):")
-    for offset, child, depth in _walk(element):
-        mixed = " (muted)" if child.mute else ""
-        print(f"  {offset:7.3f}  {'  ' * depth}{type(child).__name__}{mixed}")
+    with open(path) as f:
+        reopened = Session.read(json.load(f))
+    buffers = {}
+    for id, source in reopened.sources.items():
+        if source.path is None or server is None:
+            continue
+        where = source.path
+        if not os.path.isabs(where):
+            where = os.path.join(OUT, where)
+        buffers[id] = Buffer.read(where, server=server.server)
+    return reopened, buffers
 
 
-def _walk(element, base: float = 0.0, depth: int = 0):
-    """Every placed element and where it sits, absolute in beats.
-
-    A composition is a tree, so reading one back is a walk: what the host moved
-    is a placement somewhere inside it, and printing only the top would show
-    nothing changing.
-    """
-    for offset, _dur, child in getattr(element, "members", []):
-        here = base + offset
-        yield here, child, depth
-        yield from _walk(child, here, depth + 1)
-
-
-# %%
 def run() -> None:
-    """Open the session in the host, then read back whatever it saved."""
-    open_in_host()
-    read_back()
+    """Reopen the session, report it, and play what its first region names."""
+    with Server.live(tempo=2.0).activate() as session_server:
+        reopened, buffers = reopen(session_server)
+        session_server.server.sync()
+        print(f"reopened {os.path.basename(path)}: "
+              f"{len(reopened.arrangement.tracks)} tracks, "
+              f"{len(buffers)} source(s) read, "
+              f"{reopened.volatile()} still volatile")
+        for track in reopened.arrangement.tracks:
+            state = " (muted)" if track.muted else ""
+            for region in track.active_lane.regions:
+                print(f"  {region.position:6.2f}  {track.name}{state}: "
+                      f"{region.name or region.id} "
+                      f"({region.length:.0f} beats)")
+
+        # The two regions of the first track name one source, and there is one
+        # buffer behind them.
+        first = reopened.arrangement.track(10).active_lane.regions[0]
+        named = first.content.window["source"]["source"]
+        buffer = buffers.get(named)
+        if buffer is None:
+            print("  the take's file was not found, so nothing plays")
+            return
+        print(f"  playing source {named} from {buffer}")
+        play(buffer, server=session_server.server)
+        time.sleep(take_seconds + 0.5)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — open_in_host() to hand it over, read_back() to read what it saved")
+    print("up — run() to reopen the session and hear what it names")

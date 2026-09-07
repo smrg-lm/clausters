@@ -296,27 +296,18 @@ authoritative model — the **document** — and it lives in a Rust crate that e
 client binds: this one, the Python client, and a GUI host running standalone with
 no language attached at all.
 
-`toDocument` writes the arrangement as the document, and `fromDocument` reads one
-back:
+**`form` has no door to it, and that is deliberate.** It had one until
+2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
+was removed with the turn that made the arrangement a model of its own. What a
+piece is written with now is `arrangement`, above; what the crate's own document
+holds is a **leaf as an id, a kind and a configuration it never interprets**, and
+a generator travels as a *reference* the way a project file references a plugin
+rather than serializing it. A generator *is code*, in the language that wrote it,
+so no format owns one; what the document guarantees is that it does not lose it.
 
-```ts
-const doc = form.toDocument(song);        // { version: 1, root: {...} }
-const songAgain = form.fromDocument(doc);
-```
-
-The conversion is lossless for concrete samples — clangs, placements, aggregates,
-vectors by reference — and carries a **generator by reference**, the way a project
-file references a plugin rather than serializing it. A generator *is code*, in the
-language that wrote it, so no format owns one; what the document guarantees is
-that it does not lose it. Reading one back, `fromDocument(doc, { resolve })` hands
-each named leaf to your resolver and takes back whatever it has; with no resolver
-the reference itself stays in place, and that leaf is **frozen** — it draws, it
+A leaf whose reference nothing here can resolve is **frozen** — it draws, it
 holds its place, and it makes no sound. That is the floor, not a failure: it is
 what a composition means where the language that wrote it is not running.
-
-Node ids are stamped onto the elements, so converting the same tree twice gives
-the same ids and an edit made against one conversion still names the right node in
-the next.
 
 Because a document is one format for several languages, the two event keys this
 language spells its own way (`addAction`, `hasGate`) are written the way the file
@@ -331,35 +322,31 @@ and the tree has no business knowing which. A **session** is the document plus
 that missing half:
 
 ```ts
-const session = form.toSession(song, {
-    sources: {
-        7: { location: { at: "file", path: "takes/vocal.wav" },
-             lifetime: "external", generation: 0 },
-    },
-    provenance: { page: "song.html" },
-});
-const { element, sources } = form.fromSession(session);
+const session = new Session();
+session.arrangement = piece;
+session.provenance = { page: "song.html" };
+session.sources.set(7, Source.file("takes/vocal.wav", "external"));
+
+const written = session.write();
+const reopened = Session.read(written);
 ```
 
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
 `temporary` is a destructive edit's working copy. A session whose table does not
-cover its own document is refused as it is written, rather than reopening with a
-take that draws nothing and nothing saying why.
+cover its own piece is what `session.dangling()` reports, rather than reopening
+with a take that draws nothing and nothing saying why.
 
 `provenance` is a reference to whatever produced something, carried and never
 interpreted. It is what makes re-generating possible without the format knowing
 how, which is the same rule the opaque generator follows one level down.
 
-The table is not something to keep by hand. `sourcesOf` builds it from the
-arrangement being saved — each take's buffer asked where it is — which is what
-keeps it covering the piece as the piece changes:
-
-```ts
-const session = form.toSession(song, {
-    sources: Object.fromEntries(form.sourcesOf(song, { folder: "pieces/one" })),
-});
-```
+Three questions a save asks the table, and each has an answer rather than an
+exception: `session.volatile()` is what is not written down anywhere,
+`session.openEdits()` is what is still undecided, and `session.dangling()` is
+what the piece names and the table does not hold — **every** lane walked, not
+only the ones that play, because an alternate take names its source whether or
+not anyone has chosen it yet.
 
 A buffer read from a file knows its `path` and is written as that file; one
 allocated in this run is written **volatile** — it existed only while the page
@@ -370,13 +357,18 @@ session never claims to own the user's file.
 
 ## Reopening: structures, not a description
 
-`fromSession` rebuilds the tree, and by itself that is half a verb: every take
-comes back as a bare source number and nothing loads it. A **resolver over the
-session's own table** is the other half:
+`Session.read` gives the piece and its table back, and by itself that is half a
+verb: every take is a bare source number and nothing has loaded it. Resolving
+the table is the other half, and it is the caller's, because what a source *is*
+in a running system — a buffer to allocate, a file to map — is not the
+document's to decide:
 
 ```ts
-const resolve = await form.sessionResolver(saved, { folder, defs });
-const { element, sources } = form.fromSession(saved, { resolve });
+const session = Session.read(saved);
+const buffers = new Map();
+for (const [id, source] of session.sources) {
+    if (source.path) buffers.set(id, await Buffer.read(`${folder}/${source.path}`));
+}
 ```
 
 Each file the table names is read onto the server **once per source** — two clips
@@ -388,9 +380,8 @@ reference `defs` does not have keeps what it last **rendered** as its floor,
 which is the same thing a host with no language attached shows.
 
 Reading a file is asynchronous here and not in the Python client (a page's
-`Buffer.read` goes to the worker that owns the filesystem), so the takes are read
-while the resolver is built and the resolver itself is the same synchronous
-function on both sides — the `await` is the language's, not a different call.
+`Buffer.read` goes to the worker that owns the filesystem), so the `await` is the
+language's and not a different call.
 
 ## Mixing is the composition's
 

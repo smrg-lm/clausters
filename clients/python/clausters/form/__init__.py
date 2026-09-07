@@ -13,6 +13,13 @@ transport-agnostic; the multitrack view of it lives in `clausters.gui.editing`.
 See `clausters.form.element` for the primitives and the temporal *character*,
 `clausters.form.aggregate` for grouping and the temporal *relation*, and
 `clausters.form.render` for the change of state to sound.
+
+**This module has no door to the shared document.** It had one — a bridge that
+converted these elements to the crate's JSON — and it was removed on 2026-09-06
+with the turn that made the arrangement a model of its own. What a multitrack is
+written with now is `clausters.arrangement`, and the crate is reached through
+`clausters.document`. Nothing here converts, and nothing here is designed
+around: this is a frozen, secondary module of data structures.
 """
 
 from .element import (
@@ -42,22 +49,10 @@ from .aggregate import (
     SUCCESSIVE,
     Aggregate,
 )
-from .document import (FIRST_VERSION, MIXING, SESSION_FORMAT, from_document,
-                       from_session, session_resolver, sources_of, to_document,
-                       to_session)
 from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
     "Element",
-    "FIRST_VERSION",
-    "to_document",
-    "from_document",
-    "SESSION_FORMAT",
-    "to_session",
-    "from_session",
-    "session_resolver",
-    "sources_of",
-    "MIXING",
     "Clang",
     "Sequence",
     "Vector",

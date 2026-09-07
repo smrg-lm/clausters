@@ -361,7 +361,7 @@ def _velocity(event) -> int:
 
 def _plain(value):
     """An event's parameters as plain JSON-able data — what is not, travels as
-    the name that answers for it, which is the rule `to_document` already
+    the name that answers for it, which is the rule the document already
     follows for a clang's configuration."""
     if isinstance(value, dict):
         return {str(k): _plain(v) for k, v in value.items()}

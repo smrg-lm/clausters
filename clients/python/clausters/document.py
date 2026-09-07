@@ -37,6 +37,8 @@ What is here
   structure that is **not** a document: a curve, a span of samples, a timeline
   of events.
 - `TREE`, `POINTS`, `SAMPLES`, `EVENTS` — the domain names those two answer for.
+- `FIRST_VERSION` and `SESSION_FORMAT` — the two version numbers the format
+  itself carries.
 
 Usage::
 
@@ -52,11 +54,25 @@ Usage::
 
 from ._native import (EVENTS, POINTS, SAMPLES, TREE, Document, History, Log,
                       domain_coalesce_key, domain_edit)
+
+#: The version an unedited document carries.
+#:
+#: One rather than zero, because zero is what an edit means by *unstated* when
+#: it names the state it was made against — the same reservation the GUI host's
+#: acknowledgement uses.
+FIRST_VERSION = 1
+
+#: The session format this build writes. It moves when a reader that does not
+#: know the new shape would read a file **wrongly**, never for an added field,
+#: which an older reader ignores and a newer one defaults.
+SESSION_FORMAT = 1
 from ._native import document_apply as apply_intent
 from ._native import document_resolve as resolve_selection
 
 __all__ = [
     "EVENTS",
+    "FIRST_VERSION",
+    "SESSION_FORMAT",
     "POINTS",
     "SAMPLES",
     "TREE",

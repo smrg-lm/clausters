@@ -29,10 +29,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
-from clausters.form import (  # noqa: E402
-    Aggregate, Clang, Element, Generator, Segments, Sequence, Track, Vector,
-    flatten, sources_of, to_document, to_session,
-)
+from clausters.form import (Aggregate, Clang, Element, Generator, Segments,  # noqa: E402
+                            Sequence, Track, Vector, flatten)
 from clausters.seq.automation import Automation  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 from clausters.seq.timeline import Timeline  # noqa: E402
@@ -177,35 +175,12 @@ def main():
     for name, build in CASES:
         element = build()
         cases[name] = {
-            "document": to_document(element),
             "flat": flat(element),
             "relation": element.temporal_relation(),
         }
 
-    # One session, so the table's own rule travels too: a document whose
-    # sources the table does not cover is refused before it is written.
-    take = Vector(Buffer(100), duration=4.0, instrument="take")
-    piece = Aggregate()
-    piece.add(take, offset=0.0, dur=4.0)
-    session = to_session(piece, sources={
-        100: {"location": "takes/one.wav", "lifetime": "session", "generation": 0},
-    })
-
-    # And the table built from what the takes hold, which is the other half of
-    # a session: a buffer read from a file says where it is, one allocated in
-    # this run says it is volatile, and a path inside the session's own folder
-    # is written relative so the pair of files moves together.
-    from_file = Buffer(101)
-    from_file.path = "/pieces/one/takes/two.wav"
-    table = Aggregate()
-    table.add(take, offset=0.0, dur=4.0)
-    table.add(Vector(from_file, duration=2.0, instrument="take"), offset=4.0)
-    sources = {str(k): v for k, v in
-               sources_of(table, folder="/pieces/one").items()}
-
     path = pathlib.Path(__file__).with_name("form-vectors.json")
-    path.write_text(json.dumps({"cases": cases, "session": session,
-                                "sources": sources}, indent=1) + "\n")
+    path.write_text(json.dumps({"cases": cases}, indent=1) + "\n")
     print(f"wrote {path}")
 
 

@@ -287,23 +287,15 @@ client binds: this one, the web client, and a GUI host running standalone with
 no language attached at all. That is not an implementation detail you can ignore
 once you edit from more than one place, so this section says what crosses.
 
-`to_document` writes the arrangement as the document, and `from_document` reads
-one back:
-
-```python
-from clausters.form import to_document, from_document
-
-doc = to_document(song)          # {"version": 1, "root": {...}}
-song_again = from_document(doc)
-```
-
-The conversion is lossless for concrete samples — clangs, placements,
-aggregates, vectors by reference — and carries a **generator by reference**, the
-way a project file references a plugin rather than serializing it. A generator *is
-code*, in the language that wrote it, so no format owns one; what the document
-guarantees is that it does not lose it. Node ids are stamped onto the elements,
-so converting the same tree twice gives the same ids and an edit made against
-one conversion still names the right node in the next.
+**`clausters.form` has no door to it, and that is deliberate.** It had one until
+2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
+was removed with the turn that made the arrangement a model of its own. What a
+piece is written with now is `clausters.arrangement`, above; what the crate's
+own document holds is a **leaf as an id, a kind and a configuration it never
+interprets**, and a generator travels as a *reference* the way a project file
+references a plugin rather than serializing it. A generator *is* code, in the
+language that wrote it, so no format owns one; what the document guarantees is
+that it does not lose it.
 
 ### An edit is applied in one place
 
@@ -506,17 +498,13 @@ and the tree has no business knowing which. A **session** is the document plus
 that missing half:
 
 ```python
-from clausters.form import to_session, from_session
+from clausters.arrangement import Session, Source
 
-session = to_session(
-    song,
-    sources={
-        7: {"location": {"at": "file", "path": "takes/vocal.wav"},
-            "lifetime": "external", "generation": 0},
-    },
-    provenance={"script": "song.py"},
-)
-song_again, sources = from_session(session)
+session = Session(arrangement=piece, provenance={"script": "song.py"})
+session.sources[7] = Source.file("takes/vocal.wav", lifetime="external")
+
+written = session.write()
+session = Session.read(written)
 ```
 
 A source's **lifetime** is what makes saving honest: `external` is the user's own
@@ -530,37 +518,37 @@ program.
 interpreted. It is what makes re-generating possible without the format knowing
 how, which is the same rule the opaque generator follows one level down.
 
-The table is not something to keep by hand. `sources_of` builds it from the
-arrangement being saved — each take's buffer asked where it is — which is what
-keeps it covering the piece as the piece changes:
+A buffer read from a file is written as that file; one allocated in this run is
+written **volatile** (`Source.volatile()`) — it existed only while the process
+did, and a session that promised otherwise would reopen with silence where it
+promised samples. A path inside the session's own folder is written relative, so
+the pair of files moves together; one outside it stays absolute, because a
+session never claims to own your file.
 
-```python
-from clausters.form import sources_of, to_session
-
-session = to_session(song, sources=sources_of(song, folder="pieces/one"))
-```
-
-A buffer read from a file knows its `path` and is written as that file; one
-allocated in this run is written **volatile** — it existed only while the
-process did, and a session that promised otherwise would reopen with silence
-where it promised samples. A path inside the session's own folder is written
-relative, so the pair of files moves together; one outside it stays absolute,
-because a session never claims to own your file.
+Three questions a save asks the table, and each has an answer rather than an
+exception: `session.volatile()` is what is not written down anywhere,
+`session.open_edits()` is what is still undecided, and `session.dangling()` is
+what the piece names and the table does not hold — **every** lane walked, not
+only the ones that play, because an alternate take names its source whether or
+not anyone has chosen it yet.
 
 ### Reopening: structures, not a description
 
-`from_session` rebuilds the tree, and by itself that is half a verb: every take
-comes back as a bare source number and nothing loads it. A **resolver over the
-session's own table** is the other half:
+`Session.read` gives the piece and its table back, and by itself that is half a
+verb: every take is a bare source number and nothing has loaded it. Resolving
+the table is the other half, and it is the caller's, because what a source *is*
+in a running system — a buffer to allocate, a file to map — is not the
+document's to decide:
 
 ```python
-from clausters.form import from_session, session_resolver
+from clausters.arrangement import Session
+from clausters.defs import Buffer
 
 with open(path) as f:
-    saved = json.load(f)
+    session = Session.read(json.load(f))
 
-resolve = session_resolver(saved, folder=os.path.dirname(path), defs=my_defs)
-song_again, sources = from_session(saved, resolve=resolve)
+buffers = {id: Buffer.read(os.path.join(folder, source.path), server=server)
+           for id, source in session.sources.items() if source.path}
 ```
 
 Each file the table names is read onto the server **once per source** — two
@@ -614,17 +602,14 @@ it emits no event, which is the `Vector` rule rather than a special case.
 
 A document holds a **reference** to an algorithm and never the algorithm — a
 generator is code, in the language of whoever wrote it. So reopening hands each
-reference to a resolver and takes back whatever that resolver has, which means
-the reference must be something you can produce on the way back in. A def and an
+reference to whoever can resolve it and takes back whatever that caller has,
+which means the reference must be something you can produce on the way back
+in. A def and an
 automation carry a name of their own and need nothing; a pattern does not, so
 name the **element**:
 
 ```python
 bass = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=1.0), name="bassline")
-
-song_again, _ = from_session(session, resolve=lambda kind, config: (
-    pattern if config.get("sequence") == "bassline" else None
-))
 ```
 
 A name is a label, not an identity: nothing addresses an element by it, and two

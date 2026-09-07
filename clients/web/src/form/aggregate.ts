@@ -327,7 +327,7 @@ export class Aggregate extends Element {
     /**
      * The bus declarations themselves — `name`, `rate`, `channels`.
      *
-     * What `toDocument` carries in the body's opaque config, and what a cord
+     * What a document carries in the body's opaque config, and what a cord
      * drawn in the patcher edits: the wiring is the aggregate's, so it is the
      * aggregate's configuration that states it.
      */

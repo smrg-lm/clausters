@@ -69,7 +69,7 @@ use crate::Opaque;
 /// A structure's identity within one history.
 ///
 /// **Minted by the history**, not carried by the data: the arrangement has node
-/// ids only because `to_document` stamps them, and a curve or a buffer a caller
+/// ids only because whoever wrote the document stamped them, and a curve or a buffer a caller
 /// built has none and is not going to be given a stable one for this. So the
 /// caller registers what it is about to edit and keeps the handle — which is
 /// also the read-back path, since the identity that opened an editable view is

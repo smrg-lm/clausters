@@ -32,9 +32,6 @@ import {
     Track,
     Vector,
     flatten,
-    sourcesOf,
-    toDocument,
-    toSession,
 } from "../src/form/index.ts";
 import type { SourceLike } from "../src/form/index.ts";
 
@@ -214,10 +211,6 @@ for (const [name, build] of Object.entries(cases)) {
     const vector = vectors.cases[name];
     assert.ok(vector, `no reference vector for '${name}' — regenerate them`);
 
-    test(`'${name}' is written as the same document`, () => {
-        assert.deepEqual(toDocument(build()), vector.document);
-    });
-
     test(`'${name}' flattens to the same timeline`, () => {
         assert.deepEqual(flat(build()), vector.flat);
     });
@@ -226,33 +219,3 @@ for (const [name, build] of Object.entries(cases)) {
         assert.equal(build().temporalRelation(), vector.relation);
     });
 }
-
-test("a session carries the same document and table", () => {
-    const take = new Vector(buffer(100), null, 4.0, { instrument: "take" });
-    const piece = new Aggregate();
-    piece.add(take, 0.0, 4.0);
-    const session = toSession(piece, {
-        sources: {
-            100: { location: "takes/one.wav", lifetime: "session", generation: 0 },
-        },
-    });
-    assert.deepEqual(session, vectors.session);
-});
-
-test("the source table is built from what the takes hold", () => {
-    // The other half of a session: a buffer read from a file says where it is,
-    // one allocated in this run says it is volatile, and a path inside the
-    // session's own folder is written relative so the pair of files moves
-    // together.
-    const fromFile: SourceLike = { bufnum: 101, path: "/pieces/one/takes/two.wav" };
-    const piece = new Aggregate();
-    piece.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 0.0, 4.0);
-    piece.add(new Vector(fromFile, null, 2.0, { instrument: "take" }), 4.0);
-    const table = Object.fromEntries(
-        [...sourcesOf(piece, { folder: "/pieces/one" })].map(([id, entry]) => [
-            String(id),
-            entry,
-        ]),
-    );
-    assert.deepEqual(table, vectors.sources);
-});

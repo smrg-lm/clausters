@@ -12,9 +12,15 @@
 // transport-agnostic.
 //
 // See `./element.ts` for the primitives and the temporal *character*,
-// `./aggregate.ts` for grouping and the temporal *relation*, `./render.ts` for
-// the change of state to sound, and `./document.ts` for the bridge to the shared
-// document model.
+// `./aggregate.ts` for grouping and the temporal *relation*, and `./render.ts`
+// for the change of state to sound.
+//
+// **This module has no door to the shared document.** It had one -- a bridge
+// that converted these elements to the crate's JSON -- and it was removed on
+// 2026-09-06 with the turn that made the arrangement a model of its own. What a
+// multitrack is written with now is `../arrangement.ts`, and the crate is
+// reached through `../document.ts`. Nothing here converts, and nothing here is
+// designed around.
 
 export {
     ABSTRACT,
@@ -71,32 +77,5 @@ export type {
     PlacedMember,
     TemporalRelation,
 } from "./aggregate.ts";
-export {
-    FIRST_VERSION,
-    FORM_TRACK,
-    FrozenSource,
-    MIXING,
-    SESSION_FORMAT,
-    docIdOf,
-    fromDocument,
-    fromSession,
-    leafConfig,
-    leafNode,
-    mixingOf,
-    nextNodeId,
-    sessionResolver,
-    setDocId,
-    setMixing,
-    sourcesOf,
-    toDocument,
-    toSession,
-} from "./document.ts";
-export type {
-    DocNode,
-    DocumentJson,
-    Resolver,
-    SessionJson,
-    SessionResolverOptions,
-} from "./document.ts";
 export { flatten, render, renderLogical, toTimeline } from "./render.ts";
 export type { Flat, RenderOptions, RenderResult } from "./render.ts";

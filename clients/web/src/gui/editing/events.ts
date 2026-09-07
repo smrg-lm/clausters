@@ -474,7 +474,7 @@ function velocityOf(event: SeqEvent): number {
 
 /**
  * An event's parameters as plain JSON-able data — what is not, travels as the
- * name that answers for it, which is the rule `toDocument` already follows for a
+ * name that answers for it, which is the rule the document already follows for a
  * clang's configuration.
  */
 function plain(value: unknown): never;

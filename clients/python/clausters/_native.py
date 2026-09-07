@@ -932,7 +932,7 @@ class Document:
 
         with Document(written) as doc:
             outcome = doc.apply({"intent": "place", "node": 4, "offset": 2.0})
-            song = from_document(doc.snapshot())
+            written = doc.snapshot()
 
     Raises:
         ValueError: if the document will not parse.
