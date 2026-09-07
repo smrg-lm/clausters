@@ -5104,3 +5104,26 @@ finished work, where a pending item reads as done.
   objects and a range nothing reaches by hand — and the half that is still open
   is that one: reaching a lane's time range by hand. What this settled is the
   roll's default and the machine underneath both.
+
+- ⬜ **A clip drag released outside its lane keeps the new position and emits
+  nothing** *(found 2026-09-07 by the user, by eye, in `editors/multitrack`)*.
+  Drag a clip along its lane and let the button go with the pointer over the
+  ruler, over the transport row or outside the window: the clip stays drawn
+  **where the hand left it**, and no `"clip"` edit-back reaches the client. The
+  driver keeps the position it had, so the piece sounds where the clip no longer
+  is — the same clip, in two places, one on screen and one in the arrangement.
+
+  It is the branch's own subject seen from the host's side. A `/gui_def` means
+  *make it look like this* and the client is the picture's single owner, which
+  holds only as long as **every** change the host makes to the picture is
+  announced. A drag that ends off the lane is a change the host made and did not
+  announce, so the client's copy is stale in the one way the reconcile cannot
+  repair: nothing will redraw until the client sends a def, and the def it would
+  send is the old position.
+
+  Two ends are worth reading together, and neither has been: whether the drag's
+  release is bound to the widget that took the press or to whatever is under the
+  pointer, and whether the release path that runs off-target reaches the code
+  that emits the edit at all. Either the drag should **cancel** and spring back
+  — a legal answer, and then nothing is announced because nothing changed — or
+  it should commit and say so. What it does today is neither.

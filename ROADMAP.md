@@ -239,6 +239,15 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   reduced to two lanes and one drag. One question, two entries, and it is
   `O21`'s layered regions that decide it.
 
+- ⬜ **A clip drag released outside its lane keeps the new position and emits
+  nothing** *(`clients/gui/PLAN.md`, Found by use)*. Let the button go with the
+  pointer over the ruler, over the transport row or outside the window: the clip
+  stays drawn where the hand left it and no `"clip"` edit-back is sent, so the
+  piece sounds where the clip no longer is. It is the branch's own subject from
+  the host's side — the client is the picture's single owner only while every
+  change the host makes to the picture is announced. Found 2026-09-07, in the
+  visual review's second sitting.
+
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.
@@ -364,6 +373,19 @@ are written down.
   `O23` both closed 2026-09-07, so the piece's edits *are* something the crate
   owns and the reconcile *is* the host's, and the walk has both to be restated
   over rather than a promise of them.
+
+- ⬜ **A pass re-cued from the playhead drops the clip the playhead is inside**
+  *(`clients/python/PLAN.md`, Found by use)*. `Playhead.play(at=…)` starts the
+  scan at the first item **at or after** that beat, so an item spanning the
+  cursor is not rendered at all — and every driver that re-cues on each edit
+  pays it, which is what makes a clip moved onto the line fall silent. Found
+  2026-09-07, in the visual review's second sitting; both clients at once, since
+  `clausters.seq` is ported verbatim.
+  **The decision**: what a `Playhead` does with a clip it enters in the middle.
+  The seek primitive is right for what it says; what is missing beside it is the
+  items *live* at a beat with how far into each the cursor has gone, and then
+  whether an `Event` can be rendered from its middle at all — a shorter event at
+  an offset the item itself has to know how to take.
 
 ## 3. Tests and reviews pending
 

@@ -3218,6 +3218,30 @@ work, where a pending item reads as done.)*
   on a 96 000-frame take at 48 kHz: a `dur` of 2.0 sounded its two seconds at
   tempo 1 and was freed after **one** at tempo 2 — half the take.
 
+- ⬜ **A pass re-cued from the playhead drops the clip the playhead is
+  inside** *(found 2026-09-07 by the user, by eye, in `editors/multitrack`:
+  moving a clip **onto the playhead** while the piece plays makes it fall
+  silent)*. `Playhead.play(at=...)` starts the scan at
+  `Timeline.index_at(at)`, which is *the first item at or after that beat*, so
+  an item that **spans** the cursor -- one that began earlier and is still
+  sounding -- is not rendered at all. Every driver that re-cues live pays it:
+  the multitrack example's `follow()` plays again from `transport.position` on
+  each edit, which is what makes a mute or a drag take effect on the beat it is
+  made, and a clip the line happens to be crossing disappears until the next
+  pass reaches it from the front.
+
+  A DAW starts such a clip **in the middle**: the piece is what sounds at a
+  position, not what starts there. The seek primitive is right for what it says
+  it does; what is missing is a second one beside it -- the items *live* at a
+  beat, with how far into each the cursor already is -- and the decision of what
+  a `Playhead` does with the answer, since an `Event` rendered from its middle
+  is a shorter event at an offset the item itself has to know how to take.
+  `Timeline.range` and `at` are the neighbours it would join.
+
+  **It is both clients' at once**: `clausters.seq` is ported verbatim, so the
+  web client's `Playhead` seeks the same way and the fix is one rule in two
+  spellings.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
