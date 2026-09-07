@@ -3446,6 +3446,42 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   painted on those and no others, so the four pictures answer the rule the four
   takes already did.
 
+- ⬜ **An undo leaves the pencil dead, and a dead pencil draws a selection**
+  *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "hice
+  undo/redo y no me dejó dibujar más")*. Reproduced with a trace. One stroke
+  lands, `Ctrl+Z` and `Ctrl+Shift+Z` walk the history, and from then on
+  **`Alt`+drag and `Ctrl`+drag both arrive at the client as `selection`** --
+  54 of them in the sitting's log, and not one `draw`, `sample` or `refused`.
+  It lasts for the rest of the session.
+
+  The chain is four calls and each one is doing what it says:
+
+  - a history step corrects the widget with `reload`, which is the mapped
+    sibling of a `/gui_set data`: *it is where it always was, and it moved*;
+  - `reread` answers by forgetting what it resolved -- `data.body = None` --
+    so the loader picks the source up on the next pass;
+  - with no body, `trace()` falls back to the inline samples, and a take backed
+    by a server buffer has none, so `has_raw()` is false and `sample_value`
+    returns `None`;
+  - the press arm for the pencil needs that value (it is what the stroke
+    replaces, and the inverse rides in the event), so it **declines**.
+
+  And declining is `false`, which in this machine means *this press was not
+  mine*: the press walks on down the chain and the plain plan sweeps a
+  selection. So a widget whose bulk has been forgotten does not refuse a
+  stroke -- it silently turns into a selection tool.
+
+  **Two things to fix, and they are not the same size.** The first is the bug:
+  either the reload must not drop what the gestures read, or the loader must
+  refill it and the arm must wait rather than decline for good. The second is
+  the rule the bug rode in on, and it is the host's own standard turned on
+  itself: the zoom gate one screen above refuses out loud and comments
+  `return true; // consumed: the plan must not fall through to a sweep` --
+  every *other* way the same arm gives up returns `false` and does fall
+  through. A plan that resolved to a gesture should consume the press whatever
+  happens next, and say why when it cannot act. **Related:** "A refused edit
+  springs back and says nothing" is where the saying-why half is decided.
+
 - ⬜ **A refused edit springs back and says nothing** *(found 2026-09-03, while
   chasing "the clip does not respond": pressing `e` over a piano-roll clip is
   answered by a clear refusal nobody can see)*. The acknowledgement already
@@ -3479,6 +3515,27 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   timelines the document cannot store yet -- which is what the decision should
   be sized against, and it is a much smaller thing than the day it was
   written.
+
+  **Measured on the pencil, 2026-09-07** *(the visual review's second sitting,
+  `editors/edit_samples`)*. The third candidate is no longer a hypothesis: the
+  host refuses a stroke below one pixel per sample and **says so on the wire**
+  -- `refused draw "zoom in to draw: one pixel is N samples"` -- and the event
+  arrives at the client, which drops it. The debug trace of a sitting reads
+  `event 1000 'refused' -> no payload` and then nothing, because a tag no domain
+  claims is nothing rather than an error, which is the right rule for an edit
+  and the wrong one for a refusal. So the person at the window gets a pencil
+  that draws sometimes and explains never, and the reasonable conclusion -- the
+  one the user drew -- is that it broke and will not come back. That is the cost
+  the entry was written against, now with a number on it: the sentence existed,
+  was correct, was sent, and was thrown away one process later.
+
+  It also says where the smallest fix is. `"refused"` is a tag every view can
+  emit and no view can mean as an edit, so it belongs with the tags an editor
+  answers itself rather than routes -- beside `NOT_AN_EDIT`, not inside a
+  domain -- and what an editor does with one is the same open question as
+  before. **Related:** "The routing table's tag list is written twice"
+  (`APPLICATION-SCOPE.md`, Found by use) is the list it would join, and it is
+  duplicated in both clients today.
 
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;

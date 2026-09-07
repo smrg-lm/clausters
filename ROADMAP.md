@@ -248,6 +248,17 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   change the host makes to the picture is announced. Found 2026-09-07, in the
   visual review's second sitting.
 
+- ⬜ **An undo leaves the pencil dead, and a dead pencil draws a selection**
+  *(`clients/gui/PLAN.md`, Found by use)*. A history step corrects the widget
+  with `reload`, the element forgets its body, the sample the stroke would
+  replace is no longer readable, and the press arm declines -- which in this
+  machine means the press walks on and the plain plan sweeps a selection. So
+  `Alt`+drag and `Ctrl`+drag both go dead for the rest of the session, with no
+  refusal, because nothing refused. Found 2026-09-07, in the visual review's
+  second sitting. It carries a second, general half: an arm that resolved to a
+  gesture should consume the press however it ends, which today only the zoom
+  gate does.
+
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.
@@ -330,6 +341,11 @@ on each one; none of them is being taken by this file.
   over notes landed (2026-09-03) what is left is the honest case -- a generator
   that has not been rendered, and a join across timelines the document cannot
   store yet.
+  **Raised again 2026-09-07** by the visual review's second sitting: the host's
+  `"refused"` is dropped by the client that receives it, so the sample editor's
+  pencil declines below one pixel per sample and explains nothing, and the
+  person reads that as a pencil that broke. It moves the entry's cost from
+  argued to measured, and the plan says where the smallest fix sits.
 
 **Otherwise nothing open here.** One entry left this section without being
 closed: the layered clip drop, which on 2026-09-03 stopped being a question about
