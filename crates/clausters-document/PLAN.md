@@ -645,9 +645,8 @@ DAW session, because that is what a DAW session is good at.
 
 ### The milestones
 
-- ⬜ **O21 - The session: the types and their format.** *(The Rust half landed
-  2026-09-06; the entry stays open for the three client-side items (c), (d) and
-  (e) below, which are part of this milestone and not a follow-up.)* Source, Region,
+- ✅ **O21 - The session: the types and their format.** *(Closed 2026-09-06.)*
+  Source, Region,
   Lane, Track, Automation, Session, and the tempo/meter maps, markers and
   ranges - serde, round-trip, unknown-field preservation, and the same
   determinism O1 accepted. The composite region carries O1's tree unchanged. No
@@ -675,10 +674,25 @@ DAW session, because that is what a DAW session is good at.
   reopens equal. The tempo map has an owner at last: the **piece**, which is the
   fourth candidate the roadmap's ownership entry named and the one it expected.
 
-  **What is left, and it is the client half:** (c), (d) and (e) below - lift or
-  discard `form`'s round trip, move the crate's client surface out of `form` in
-  both clients, and leave `form` with no door. Until those land, the model
-  exists and nothing outside Rust can reach it.
+  **And the client half, the same day.** `clausters.arrangement` and
+  `arrangement.ts` write and read a piece and a session; `clausters.document` is
+  the door the Python client did not have, since the surface lived in the
+  private `_native` while the web client had `document.ts` all along - one
+  client with a door and one with a back way in, which is exactly the asymmetry
+  the non-divergence rule exists to catch. The crossing is one piece and three
+  readers: a vector the Python client builds, the crate parses and the web
+  client reads and rewrites, plus the same piece as a session with its table.
+  `form`'s door is deleted (e), and what was worth lifting from it was the
+  session half and never the conversion (c).
+
+  **The consequence found by measuring before deleting, and worth keeping:**
+  `form` was the **only writer of the general tree in any client**, so `Body`
+  was about to lose its crossing along with its writer. It did not, because a
+  composite region already carries a `Node`: the arrangement's vector exercises
+  the tree inside one, and `form_parity.rs` was replaced rather than merely
+  removed. The general rule behind it is that a format keeps its crossing as
+  long as *something* a client can write reaches it, and the composite region is
+  now that something.
 
   **The contradiction this milestone actually resolves, named because nothing
   else in this file names it** *(raised 2026-09-06 by the user)*: **the only
@@ -706,7 +720,11 @@ DAW session, because that is what a DAW session is good at.
   What `form` leaves behind is one asset and three tasks:
 
   **(c) `form`'s document is discarded; what is reused is its round trip, and
-  reused means for the other documents.** `form/document.py` (1268 lines) and
+  reused means for the other documents.** *(Done 2026-09-06: the session half
+  was lifted - `Source`, `FrozenSource` and `Session` in both clients - and the
+  element-to-node conversion was discarded with the module. What made the split
+  obvious once the file was read rather than counted is that the lifted half
+  never mentioned form's primitives.)* `form/document.py` (1268 lines) and
   its TypeScript twin are a working round trip through the crate's format: id
   stamping, opaque payloads,
   generators by reference, unknown-field survival, the version reservation. That
@@ -719,8 +737,8 @@ DAW session, because that is what a DAW session is good at.
   editor's. Nothing about that reuse keeps `form`'s five primitives; what is
   reused is the round trip.
 
-  **(d) The door moves out of `form` entirely** *(decided 2026-09-06 by the
-  user)*. Not a second door beside the old one, not a re-export, not a
+  **(d) The door moves out of `form` entirely** *(decided and done 2026-09-06;
+  the Python client gained `clausters.document`, which it had never had)*. Not a second door beside the old one, not a re-export, not a
   compatibility shim: `form` ends this milestone with no path into the crate.
   Today the crate's whole client surface - `edit(x)`, the document, undo,
   selection, the clipboard, save and reopen - is reachable only through
@@ -731,8 +749,8 @@ DAW session, because that is what a DAW session is good at.
   of `O21` and not a follow-up. A Python change, a TypeScript change and a book
   page in each - the pass over the packages, in the same milestone.
 
-  **(e) `form` keeps no door, and leaves no residue** *(decided 2026-09-06 by the
-  user)*. It does not write a session, not even one way out. `form/document.py`
+  **(e) `form` keeps no door, and leaves no residue** *(decided and done
+  2026-09-06: 6157 lines out, 619 in)*. It does not write a session, not even one way out. `form/document.py`
   and `form/document.ts` are deleted, `ID_ATTR` and the id stamping go with them,
   and `form` ends with no relation to the crate at all - which is what "frozen,
   relegated, secondary" already implied. Whatever of the round trip is worth

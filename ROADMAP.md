@@ -41,8 +41,11 @@ small set of data structures with no view. The design that replaces it is
 projection" (`O21`-`O24`).
 
 **Taken first, and everything below is read against it**: `O21` (the session's
-types and format), `O22` (the intents a DAW admits), `O23` (the host binds the
-session and reconciles), `O24` (the three applications). `O23` is where
+types and format) **closed 2026-09-06**, so the sequence is now `O22` (the
+intents a DAW admits), `O23` (the host binds the session and reconciles), `O24`
+(the three applications). What `O21` leaves for them: the model exists in the
+crate and in both clients, `form` has no relation to it, and the host still
+draws the general tree. `O23` is where
 `APPLICATION-SCOPE.md`'s `AP5` lands, and its prerequisite is **design, not a
 note**: it was scoped as a list of props that are the host's and survive a
 reconcile, and became a **structure** — a named view object per model object, on
@@ -254,6 +257,12 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     publish loop has one implementation, and the web binds `guiDifference` and
     calls it nowhere. The standing rule's own case, invisible until now because
     the only editor that made a publish happen was `FormEditor`.
+  - ✅ **The crate's client surface was public in one client and private in the
+    other** *(fixed 2026-09-06 by `O21`(d))*. `document.ts` had been a module of
+    its own since it was written; the Python client reached the same surface
+    through `clausters._native`, whose underscore says not to. Kept as the
+    record of how such a gap hides: the only thing using the door was `form`'s
+    converter, so nothing ever asked for a better one.
 
 ## 2. Fixes that need a decision first
 
