@@ -61,6 +61,7 @@ pub mod element;
 pub(crate) mod parse;
 mod props;
 mod query;
+pub mod reconcile;
 pub(crate) mod size;
 
 #[cfg(test)]

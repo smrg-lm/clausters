@@ -59,6 +59,20 @@ impl Registry {
         self.widgets.contains_key(&id)
     }
 
+    /// The type every registered widget was defined as, by id.
+    ///
+    /// Read **before** a def replaces them, and for one reason: reconciling has
+    /// to know whether the widget an id named before is the same *kind* of
+    /// widget it names now, and this is the only place the wire's own word for
+    /// a widget's type is kept. The typed tree spells two different elements
+    /// the same way.
+    pub fn kinds(&self) -> HashMap<i32, String> {
+        self.widgets
+            .iter()
+            .map(|(id, w)| (*id, w.kind.clone()))
+            .collect()
+    }
+
     /// Reads one widget back (for `/gui_query` -> `/gui_info`).
     pub fn get(&self, id: i32) -> Option<&Widget> {
         self.widgets.get(&id)

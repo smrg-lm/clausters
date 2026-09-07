@@ -992,10 +992,45 @@ DAW session, because that is what a DAW session is good at.
   pass. `arrangement_parity.rs` also asserts that dropping every view leaves the
   piece byte-identical.
 
-  **What is left of O23**, and it is the milestone's real half: the host does not
-  use any of this yet. `/gui_def` still means *free this and build that*, the
-  client still holds `_published`, and the reconcile has not been written. The
-  acceptance for it can now be written, which is what this prerequisite was for.
+  **(b) The host reconciles.** *(Landed 2026-09-07.)* `/gui_def` over a tree the
+  host already draws no longer replaces it: `widget::reconcile` walks the held
+  tree beside the new one, matches widget to widget, and carries the host's own
+  state across. Both entrances do it - a window root and a subtree spliced in
+  place - so a def is *make it look like this* whichever door it came through.
+
+  **What decides that two widgets are the same widget.** Identity by id, order
+  by index, both - Tracktion's rule for finding a clip, and ours. A widget with
+  an id is matched by it **anywhere in the tree**, not among its old siblings,
+  which is what makes re-parenting a clip cheap and is why this is a reconcile
+  and not an addressing scheme: an id survives a move and a path does not, and
+  moving a clip between lanes is the multitrack's most common gesture. A widget
+  with no id - a clip's bodies, which the wire deliberately does not address -
+  is matched by position among its siblings of the same kind. A match also
+  requires the same **kind**, compared as the *wire* spells it: the registry
+  already keeps one type string per registered id, read before the def
+  overwrites it, and it is the only comparison that separates two elements the
+  typed tree spells the same way (`Custom`).
+
+  **What survives is the host's own state and nothing else** - the window on the
+  axis (`view_start`/`view_len`, `y_start`/`y_len`), the selection
+  (`sel_start`/`sel_len`, `sel_min`/`sel_max`, and the per-widget mark a marquee
+  left), the active layer and what is hidden. Eight prop keys and three fields.
+  Short on purpose: keeping too much is worse than the defect it replaces.
+
+  **And the def still wins where it says something.** Carrying the host's value
+  *over* a value the def stated would take away the one channel a script has for
+  moving a view, so the rule is the wire's own - **nothing said is nothing
+  written**. A key the def states is the def's; a key it leaves out keeps what
+  the host had. That is this milestone's division in one sentence: *the client
+  says what it redrew; the host decides what that costs.*
+
+  **What is left of O23.** The client still holds `_published` and still
+  computes the difference. Removing it is the rest of `AP5`'s second half and it
+  is **gated on a measurement the plan asked for and nobody has made**: a tree
+  per redraw instead of a delta, at drag rates. Doing it before measuring is
+  what that entry exists to prevent. The host's half is done and is useful on its
+  own - it is what makes a redefine stop destroying a zoom, which was the
+  branch's opening complaint.
 - ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
   editor** and the **score editor**, each an application over this document,
   programmable from the GUI host and driven identically from every client. This

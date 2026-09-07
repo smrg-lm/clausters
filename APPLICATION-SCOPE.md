@@ -762,9 +762,18 @@ client and from a standalone host because it is one piece of code.
   function from the same code, and it is entangled with AP6's convergence: the
   lanes and clips are the view that has to be named first. It lands there.
 - **The reconciliation itself** — everything the section above describes — is
-  the milestone's remaining half and has not been started. It is ordered after
-  the prop list of (2) exists, because that list is what its acceptance is
-  written against.
+  the milestone's remaining half. **The host's side landed 2026-09-07**
+  (`widget::reconcile`, `O23`(b)): a `/gui_def` over a tree the host draws is
+  matched widget to widget — by id anywhere in the tree, by position for the
+  bodies the wire does not address, and only where the wire's own type string
+  agrees — and the host's own state is carried across. The def still wins on any
+  key it states, which is the wire's *nothing said is nothing written* and is
+  what keeps a script able to drive a view at all.
+
+  **What is left is the client's side**, and it is gated on cost (1) above: a
+  tree per redraw instead of a delta, **not measured**. `Application._published`
+  goes when that measurement says what it costs, and not before — the entry that
+  asks for it is the reason.
 
 **The standing reason for this milestone**, said by the user on 2026-09-06 while
 reading the day's defects: *the editing logic has to be in Rust so that it is in

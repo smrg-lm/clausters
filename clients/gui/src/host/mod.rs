@@ -1192,6 +1192,10 @@ impl Host {
         } else {
             self.registry.root_of(id)
         };
+        // What each id was registered as, read before this def overwrites the
+        // record: the reconcile below needs the wire's own word for the kind a
+        // surviving id used to name.
+        let was = self.registry.kinds();
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
         info!(
@@ -1209,6 +1213,15 @@ impl Host {
         if node.kind == "window" {
             match Widget::from_node(id, &node, blobs) {
                 Ok(mut tree) => {
+                    // **A def says what to look like, not what to destroy.**
+                    // The window's old tree is walked beside the new one and
+                    // everything the host itself put on a widget that survived
+                    // — its window on the axis, its selection, its layer — is
+                    // carried across, which is why a clip appearing in one lane
+                    // no longer takes the zoom of every other lane with it.
+                    if let Some(held) = self.window_defs.get(&id) {
+                        widget::reconcile::reconcile(held, &mut tree, &node, id, &was);
+                    }
                     // Theme groups and per-widget accents resolve here — at
                     // the mutation point, never per frame.
                     widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
@@ -1237,6 +1250,11 @@ impl Host {
             // was.
             match Widget::from_node(id, &node, blobs) {
                 Ok(mut subtree) => {
+                    if let Some(tree) = self.window_defs.get(&root)
+                        && let Some(held) = tree.find(id)
+                    {
+                        widget::reconcile::reconcile(held, &mut subtree, &node, id, &was);
+                    }
                     widget::resolve_style(&mut subtree, &Arc::new(self.theme.clone()));
                     if let Some(tree) = self.window_defs.get_mut(&root)
                         && let Some(held) = tree.find_mut(id)
