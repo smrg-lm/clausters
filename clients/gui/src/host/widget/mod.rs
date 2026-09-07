@@ -91,6 +91,12 @@ pub enum WidgetKind {
         /// ([`Widget::hug_size`]) on the axes where the composition is defined,
         /// falling back to the declared `w`/`h` on the others. Off by default.
         hug: bool,
+        /// The `status` prop: whether this window carries the host's **status
+        /// bar** along its bottom edge ([`crate::host::status`]). **On by
+        /// default** — the bar is the host's own voice, and the refusals it
+        /// exists to show were already being said into nothing. A window that
+        /// wants the pixels back turns it off.
+        status: bool,
     },
     /// A nestable container.
     Panel {

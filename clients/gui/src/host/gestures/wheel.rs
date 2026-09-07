@@ -145,6 +145,20 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
+        // **The open status log scrolls under the wheel**, and it is tested
+        // before the tree for the reason the press is: the band is chrome, the
+        // layout never got its pixels, and a wheel over it would otherwise
+        // reach whatever the window has at its bottom edge. A notch is a line,
+        // and up goes back through the log.
+        if host.status_open(def_id)
+            && let Some(band) = host.status_bar_rect(def_id, ctx.fb_w, ctx.fb_h)
+            && band.contains(cx, cy)
+        {
+            if host.scroll_status(def_id, ctx.fb_w, ctx.fb_h, steps.round() as isize) {
+                out.push(GestureEffect::Redraw(def_id));
+            }
+            return out;
+        }
         let Some(found) = hit(host, ctx, cx, cy) else {
             return out;
         };

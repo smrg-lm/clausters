@@ -89,6 +89,7 @@ the same color to within the 8 bits of the notation:
 | `text` | `#d9dee6` | Primary text: labels, values, readouts. |
 | `text_dim` | `#8c99a8` | De-emphasized text (the node tree's parameter lines). |
 | `label_dim` | `#99a1b2` | De-emphasized in-view labels (a lane's name tag). |
+| `status_bar` | `#14171c` | The **status bar**'s band along the window's bottom edge: a shade off the backdrop, so the strip reads as a place the window talks rather than as a panel holding something. |
 | `field` | `#242630` | A control's body fill (slider, knob, scope field). |
 | `track` | `#1a1c24` | The inset groove/body under a control's value (a slider's track), and the body of the static info views (node tree, plot). |
 | `accent` | `#4cc78c` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
@@ -195,6 +196,7 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `box_side` | 24 | The side of a square marker (a toggle's box). |
 | `knob_d` | 48 | The diameter of a round control (a knob): **two lines of control**, not a box-sized marker. A dial is read by its angle, so it needs the sweep to be legible — and a disc reads smaller than a box of the same bounding rect, which is why it is its own role rather than `control_h` twice over. |
 | `ruler_h` | 18 | The height of a ruler strip along a horizontal axis. |
+| `status_h` | 18 | The height of **one line of the status bar** along the window's bottom edge. A ruler's height rather than a control's: the bar is a strip of chrome with a line written on it, which is what a ruler is. |
 | `ruler_w` | 46 | The width of a ruler strip beside a vertical axis (sized for its widest labels). |
 | `header_w` | 96 | The width of a row's header column (a lane's name and controls). |
 | `divider_w` | 1 | A hairline: a divider between lanes, a box edge. |

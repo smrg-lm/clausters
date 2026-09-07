@@ -53,6 +53,7 @@ use crate::canvas::{self, CanvasView};
 use super::font;
 use super::paint::{Draw, Ink, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
+use super::status;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
@@ -492,6 +493,11 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) focused: Option<i32>,
     /// What a drag is holding right now (see [`Grab`]).
     pub(crate) grab: Grab,
+    /// **This window's status bar**: what it has said and whether it is open
+    /// (see [`super::status`]). `None` for a window that has said nothing yet
+    /// — the band is still carved, because a window that carries a bar carries
+    /// it before it has anything to put in it.
+    pub(crate) status: Option<&'a status::Status>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -504,6 +510,7 @@ impl Default for FrameInputs<'_> {
             world: World::default(),
             focused: None,
             grab: Grab::None,
+            status: None,
         }
     }
 }
@@ -754,7 +761,12 @@ pub(crate) fn render(
     theme: &Theme,
 ) {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    // The status band comes off the top of the frame, before anything is
+    // placed: the same call the hit test makes (`Host::content_area`), so the
+    // pixels a press lands on are the pixels the tree was drawn on.
+    let bar = status::bar(tree, inputs.status, window, inputs.metrics);
+    let area = status::content(tree, inputs.status, window, inputs.metrics);
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
     let placed = layout::layout_on(area, tree, inputs.metrics, &|id, link| {
@@ -776,6 +788,10 @@ pub(crate) fn render(
     draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
     draw_element_overlays(&mut over, &placed, inputs, theme);
 
+    // Last into the overlay, so the bar reads over whatever ran up to its edge.
+    if let Some(band) = bar {
+        draw_status(&mut over, band, inputs, theme);
+    }
     mesh.set_clip(None);
     over.set_clip(None);
     mesh.set_ink(Ink::default());

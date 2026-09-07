@@ -3587,7 +3587,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   happens next, and say why when it cannot act. **Related:** "A refused edit
   springs back and says nothing" is where the saying-why half is decided.
 
-- ⬜ **A refused edit springs back and says nothing** *(found 2026-09-03, while
+- ✅ **A refused edit springs back and says nothing** *(found 2026-09-03, while
   chasing "the clip does not respond": pressing `e` over a piano-roll clip is
   answered by a clear refusal nobody can see)*. The acknowledgement already
   carries the reason -- `/gui_ack`'s optional trailing string -- and the host
@@ -3658,6 +3658,42 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   before. **Related:** "The routing table's tag list is written twice"
   (`APPLICATION-SCOPE.md`, Found by use) is the list it would join, and it is
   duplicated in both clients today.
+
+  **Fixed 2026-09-07: the status bar** (`host/status.rs`). The decision the
+  entry was waiting on -- *where a reason shows* -- is answered, and by the
+  candidate none of the three named: a band the **host** draws along the bottom
+  of every window, saying what it last did and what it last refused. It is not
+  a widget, it is not in the tree, and **no line of it crosses the wire**, which
+  is the whole of why it settles the question the client-side candidates could
+  not: the host already knows what it just refused, so routing that fact out to
+  a client and back would be telling the host something the host said first.
+  A window that wants the pixels back says `status: false`; it is on by
+  default, because a bar nobody turns on is a bar nobody hears from.
+
+  Both measured halves are now visible from the same two lines of code. The
+  host's own refusals are read at `gestures::effects::emit`, the one place a
+  `/gui_event` is produced -- so `refused draw "zoom in to draw: one pixel is N
+  samples"` lands on the bar as it goes out, and every other verb with it. The
+  owner's reason is read at `Host::settle`, which makes the status bar **the
+  first reader `ack::Acked::reason` has ever had**: the field the protocol
+  always carried and the mechanism deliberately does not need. Closed the bar
+  shows the newest line, in the warning role when it reports a refusal; a click
+  opens it into the window's log area (128 lines kept, the wheel scrolls back
+  through them) and another closes it. Consecutive lines from one widget with
+  one verb replace rather than stack, because a drag emits per motion.
+
+  Two rules made it geometry rather than an overlay, and both are one function
+  each so they cannot drift: `Host::content_area` carves the band for **both**
+  the renderer and the hit test, so a widget is hit on the pixels it was drawn
+  on; and the band is chrome, so the press and the wheel are consumed there and
+  never reach the tree.
+
+  **What is left is a crumb, not the entry.** The client still routes a
+  `"refused"` tag into a domain that cannot claim it (`Editor._route`), which
+  prints `event N 'refused' -> no payload` in a trace and does nothing -- noise
+  now rather than a lost message, since the host displayed it before the client
+  ever saw it. Putting it beside `NOT_AN_EDIT` is still the tidy answer and is
+  no longer urgent.
 
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;

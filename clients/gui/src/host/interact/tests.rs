@@ -51,7 +51,9 @@ fn track_host() -> Host {
 fn geometry(host: &Host, fb_w: u32, fb_h: u32) -> (Rect, View) {
     let tree = host.window_def(1).unwrap();
     let nav = track::window_nav(tree);
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    // The content area, as the hit test lays it out: the status bar is chrome
+    // and the tree never gets its pixels.
+    let area = host.content_area(1, fb_w, fb_h);
     let track_rect = layout::layout(area, tree, host.metrics_for(1))
         .into_iter()
         .find(|p| matches!(p.widget.kind, WidgetKind::Track { .. }))
@@ -125,7 +127,9 @@ fn the_hit_carries_the_containers_over_it() {
 /// at its parent.
 #[test]
 fn a_workspace_is_its_own_plane_when_the_press_lands_on_it() {
-    let json = r#"{"type":"window","children":[
+    // No status bar: the press below aims at a pixel of the framebuffer, and
+    // the bar would have the bottom of it (`crate::host::status`).
+    let json = r#"{"type":"window","status":0,"children":[
         {"id":4,"type":"plane","flow":"free","children":[
             {"id":6,"type":"knob","x":0.0,"y":0.0,"w":20.0,"h":20.0}
         ]}
@@ -418,15 +422,11 @@ fn the_axis_of_a_roll_is_the_grid_it_draws_its_notes_in() {
     let host = pianoroll_host();
     let (fb_w, fb_h) = (800u32, 400u32);
     let tree = host.window_def(1).unwrap();
-    let rect = layout::layout(
-        Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32),
-        tree,
-        host.metrics_for(1),
-    )
-    .into_iter()
-    .find(|p| p.widget.id == Some(5))
-    .unwrap()
-    .rect;
+    let rect = layout::layout(host.content_area(1, fb_w, fb_h), tree, host.metrics_for(1))
+        .into_iter()
+        .find(|p| p.widget.id == Some(5))
+        .unwrap()
+        .rect;
     let r = pianoroll::regions(
         rect,
         true,

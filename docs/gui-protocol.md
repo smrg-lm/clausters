@@ -28,7 +28,7 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
 | `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …` — **what the widget is now**, which is the def's props with **every edit the user has made since** laid over them: a dragged control's value, a moved clip's `offset`/`dur`, a lane's mute/solo/level, a plane's `view_x`/`view_y`, an edited curve's `points`, a roll's `notes`, a score's `selected`. (A `/gui_set` needs no such correction — it is already the document.) The reply is flat OSC arguments, so it carries **scalars only**: a structural prop nothing edits (`theme`, `boxes`, `data`) is not reported, and asking for one means keeping the tree that was sent — but an **edited** structure is reported as the JSON **string** its own `/gui_set` already accepts (`points`, `notes`, `osc`), so what a query gives back is what a set would take. The `axes` pair is recorded **flat** (`ruler`, `view_start`, `min`, …) precisely so a query can answer it, while the node's `type` is kept as the tree wrote it. An **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
 | `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/node_set" 1001 "freq"` makes the widget send `/node_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
-| `/gui_ack seq docVersion [source generation…] [reason]` | **Answer the edits this host emitted, up to `seq`.** The reply `/gui_event` never had, and the thing that lets a host draw an edit before it is confirmed without lying about it. There is no success flag: the values the owner decided ride as ordinary `/gui_set`s **in the same bundle**, and *applied*, *applied transformed* and *refused* are one message — a refusal is simply the previous value pushed back. Send it **always**, including when nothing changed. `seq` is monotonic, so one number retires every edit at or below it and a lost acknowledgement is harmless; `docVersion` is the document's version after applying; each `source generation` pair reports samples whose *content* changed while its identity stayed put (a destructive edit), which is the only thing that can tell a reader its copy is stale; `reason` is informational and read by nothing in the mechanism. |
+| `/gui_ack seq docVersion [source generation…] [reason]` | **Answer the edits this host emitted, up to `seq`.** The reply `/gui_event` never had, and the thing that lets a host draw an edit before it is confirmed without lying about it. There is no success flag: the values the owner decided ride as ordinary `/gui_set`s **in the same bundle**, and *applied*, *applied transformed* and *refused* are one message — a refusal is simply the previous value pushed back. Send it **always**, including when nothing changed. `seq` is monotonic, so one number retires every edit at or below it and a lost acknowledgement is harmless; `docVersion` is the document's version after applying; each `source generation` pair reports samples whose *content* changed while its identity stayed put (a destructive edit), which is the only thing that can tell a reader its copy is stale; `reason` is informational — nothing in the *mechanism* reads it, and the host's **status bar** does (see "The status bar"), which is the whole of what it is for: an edit that springs back with nothing said teaches that it sometimes does not work. |
 | `/gui_bind id "widget" target prop` | Apply this widget's value to **another widget's property**, as a `/gui_set target prop <value>` would — a `menu` flipping a `stack`'s `index`, a slider driving a plot's `max`. A multi-value edit-back payload rides as the JSON string the prop already takes. A binding fires an **apply, never another binding**: the target's own binding does not fire from it, so two widgets bound to each other settle instead of cascading (stated, not detected — the chain is one hop by construction). |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |
 | `/gui_load name` | Instantiate a **persisted** GuiDef by name (the host replays it as its saved `/gui_def`). Needs a data directory. |
@@ -293,6 +293,41 @@ Three things follow, and they are the whole design:
 
 The acknowledgement is a **verb rather than a property** because it is scoped to the conversation and not to the tree: `seq` is per client, so two clients driving one window would collide on a single prop, and it does not round-trip, which a property here has to. It rides *after* the value pushes in the bundle, so the host never retires an edit before the state that edit produced has arrived.
 
+### The status bar
+
+A host says things nothing was listening for. It refuses a stroke where a pixel
+is more than one sample; it refuses a press on a body that draws a rendering
+rather than the thing itself; and an owner answers an edit with a `reason` the
+mechanism deliberately does not read. All of it used to be said into a log file
+nobody has open, so a refused edit sprang back in silence.
+
+The **status bar** is where it lands instead: a band along the bottom of every
+window, drawn by the host as chrome. It is not a widget, it is not in the tree,
+and **no line of it crosses the wire** — the host already knows what it just did
+and what it refused, so asking a client to send that back would be telling the
+host something the host said first. What goes in it is every `/gui_event` the
+host emits, at the one place an event is stamped, plus every `reason` an
+acknowledgement carries. Consecutive lines from one widget with one verb replace
+rather than stack, because a drag emits per motion and a log of four hundred
+`"clip"` lines is a log of one.
+
+Closed it is one line: the newest, in the warning colour when it reports a
+refusal and quiet otherwise. **Clicking it opens it** into the window's log area
+— the recent lines, newest at the bottom, up to half the window — and clicking
+again closes it. Open, the **wheel scrolls back** through what it kept, a notch
+per line, stopping at the newest line one way and at the oldest still on screen
+the other; a line arriving while it is scrolled up leaves the reader where they
+were, because a log that slides under the pointer is unreadable exactly while
+something is happening in it. Closing returns it to the bottom. The band is
+chrome, so the press and the wheel are consumed there and never reach the tree;
+and the tree is laid out in the window *minus* the band, so a widget is hit on
+the pixels it was drawn on.
+
+A window that wants the pixels back says `status` false. It is **on by default**,
+because a bar nobody turns on is a bar nobody hears from, and the refusals it
+exists to show were already being said into nothing.
+
+
 ## The model: containers, axes and elements
 
 This is what a `type` names. The wire's shape has not changed — a node is
@@ -314,7 +349,7 @@ catalog spells one idea several ways.
 
 | Type | Axes | Properties | Replaces |
 |---|---|---|---|
-| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `hug`, `theme` | `window` |
+| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `hug`, `status`, `theme` | `window` |
 | `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `hug`, `theme` | `panel`, `box`, `stack` |
 | `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
 | `field` | 2, **independent** | the time/value container: an `axes` pair, plus lane chrome (`label`, `height`, `header_w`, `mute`, `solo`, `level`) or a placement (`offset`, `dur`) | `track`, `clip`, `timeruler` |
@@ -685,7 +720,7 @@ script actually names these. The catalog itself:
 
 | Type | What it is | Notable properties |
 |---|---|---|
-| `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `theme` |
+| `window` | A top-level window (a GuiDef root). It carries the host's **status bar** along its bottom edge unless `status` is off — see the section below | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `status`, `theme` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `hug`, `theme` |
 | `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `hug`, `theme` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols`, `theme` |

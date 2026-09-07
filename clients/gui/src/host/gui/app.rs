@@ -417,6 +417,9 @@ impl App {
             return;
         };
         let cursor = self.windows.get(&def_id).map(|w| w.cursor);
+        // Held for the length of the frame it feeds: the log is the host's, and
+        // a front that copied it would be a second log.
+        let statuses = self.host.statuses();
         let inputs = frame::FrameInputs {
             metrics: self.host.metrics_for(def_id),
             world: World {
@@ -439,6 +442,7 @@ impl App {
                 .windows
                 .get(&def_id)
                 .map_or(frame::Grab::None, |w| w.gestures.grab()),
+            status: statuses.get(&def_id),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;

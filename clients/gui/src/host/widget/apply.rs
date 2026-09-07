@@ -157,6 +157,11 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
 /// this widget accepts (and thus changed it).
 pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
     match kind {
+        // The status bar is the window's alone -- a panel has no bottom edge of
+        // its own to talk on -- so it is answered before the arm the two share.
+        WidgetKind::Window { status, .. } if key == "status" => {
+            truthy(v).map(|b| *status = b).is_some()
+        }
         WidgetKind::Window {
             layout, flow, hug, ..
         }

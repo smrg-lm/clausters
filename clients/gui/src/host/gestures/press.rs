@@ -89,6 +89,18 @@ impl Gestures {
             }
             return out;
         }
+        // **The status bar**, which is chrome and not a widget: it is under no
+        // part of the tree (the layout never got its pixels), so it is tested
+        // here and it consumes the press. A click opens it into the window's
+        // log area and the next one closes it again.
+        if let Some(band) = host.status_bar_rect(ctx.def_id, ctx.fb_w, ctx.fb_h)
+            && band.contains(cx, cy)
+        {
+            let open = !host.status_open(ctx.def_id);
+            host.set_status_open(ctx.def_id, open);
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return out;
+        }
         let Some(hit) = hit(host, ctx, cx, cy) else {
             // A press on empty space drops the focus (a caret disappears).
             focus::on_press(host, &mut out, ctx, None);

@@ -51,6 +51,8 @@ pub(super) fn build_kind(
             layout: Layout::parse(props),
             flow: Flow::parse(props),
             hug: hug(props),
+            // On unless the window says otherwise: see `host::status::shown`.
+            status: props.get("status").and_then(truthy).unwrap_or(true),
         },
         // A container with no axes. `stack` — one child at a time, the one
         // `index` names — is one of the arrangements rather than a type of its

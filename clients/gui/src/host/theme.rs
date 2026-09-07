@@ -73,6 +73,10 @@ theme_roles! {
     text_dim = [0.55, 0.60, 0.66, 1.0];
     /// De-emphasized in-view labels (a lane's name tag).
     label_dim = [0.60, 0.63, 0.70, 1.0];
+    /// The **status bar**'s band along the window's bottom edge
+    /// (`host::status`): a shade off the backdrop, so the strip reads as a
+    /// place the window talks rather than as a panel holding something.
+    status_bar = [0.08, 0.09, 0.11, 1.0];
 
     // -- Controls --
     /// A control's body fill (slider, knob, scope field).

@@ -176,9 +176,9 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     and print the refusal, and both say a zoom comes first. Measured after:
     refused at the opening zoom with the reason, and the stroke lands once the
     wheel has been over the trace.
-    **Related:** "A refused edit springs back and says nothing" in section 2 is
-    the general version — an editor still has no door a refusal arrives at, so
-    an example has to listen to the wire to hear one.
+    **Since 2026-09-07 the window says it too**: the host's status bar draws
+    the refusal along the bottom edge, so the example's printing is a second
+    reading of a message the person can now see without a terminal.
   - ✅ **page only, and it was the page's** — `editors/multitrack`, **the clips
     of the `takes` and `spectrum` lanes were not drawn.** Their `dur` came from
     `Source.length`, which neither client has — a `Source` is a handle on a
@@ -326,26 +326,6 @@ on each one; none of them is being taken by this file.
   for the document's sources and a script-driven window has widgets over a
   `buffer=N` rather than a document. That is the likeliest reason neither
   client ever filled the field.
-
-- ⬜ **A refused edit springs back and says nothing** *(`clients/gui/PLAN.md`,
-  Found by use)*. The acknowledgement carries the reason and the host parses it
-  into a field nothing reads, so an edit an owner declined -- with a sentence
-  saying why -- reaches the person at the window as a clip that did not move.
-  **The decision**: where a reason shows. A window has no status line of its
-  own, the corner slot is the cursor read-out's, and the entry names the three
-  candidates. Related: the host refuses its *own* gestures out loud (a
-  `"refused"` event), so the two halves of one window disagree about whether a
-  refusal is announced.
-  **Sized after section 1, not before it**: most of what it would display are
-  refusals that should not happen, and after the split, the trim and the join
-  over notes landed (2026-09-03) what is left is the honest case -- a generator
-  that has not been rendered, and a join across timelines the document cannot
-  store yet.
-  **Raised again 2026-09-07** by the visual review's second sitting: the host's
-  `"refused"` is dropped by the client that receives it, so the sample editor's
-  pencil declines below one pixel per sample and explains nothing, and the
-  person reads that as a pencil that broke. It moves the entry's cost from
-  argued to measured, and the plan says where the smallest fix sits.
 
 **Otherwise nothing open here.** One entry left this section without being
 closed: the layered clip drop, which on 2026-09-03 stopped being a question about

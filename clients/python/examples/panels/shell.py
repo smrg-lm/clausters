@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""The application shell: menu bar, working area, status bar — layout props.
+"""The application shell: menu bar, working area, a report strip — layout props.
 
 Every widget takes the **generic place props** and every container the flow
 props, so a GuiDef composes a real application face from the same light
 elements a control panel uses:
 
 - ``w``/``h`` fix a child's main-axis size in a ``row``/``col`` — the menu bar
-  and the status bar here are ``h``-fixed rows;
+  and the report strip here are ``h``-fixed rows;
 - ``weight`` shares the leftover among the flexible children (default 1) —
   the working area takes everything between the two bars, and inside it the
   sidebar is ``w``-fixed while the scope stretches;
@@ -41,9 +41,15 @@ content plane, which carries a zoom of its own -- see ``workspace.py``.
 Everything is live: the sidebar's controls retune a quiet server voice, the
 oscilloscope draws the server's **actual stereo output** (the two hardware output buses,
 buses 0/1, read by the host from shared memory — zero per-frame messages),
-and the status bar is a plain ``label`` the script rewrites via ``set`` on
+and the report strip is a plain ``label`` the script rewrites via ``set`` on
 every event — the whole "application" is one GuiDef plus ordinary client
 code.
+
+That strip is the **script's**, and it is not the host's status bar. The band
+below it, saying what the host last did and what it last refused, is chrome the
+host draws on every window and nothing here writes to (``view(status=False)``
+turns it off). Two lines because they answer two questions: what this program
+just decided, and what the host just did with a gesture.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Install once, from the repo root::
@@ -104,8 +110,9 @@ voice().send(server)
 # %% [markdown]
 # ## The shell
 # A `col` window with `margin=0, gap=0`: an `h`-fixed menu bar, a `weight`ed
-# working row (a `w`-fixed sidebar + a stretching scope), an `h`-fixed status
-# bar. Only the containers reintroduce margins for their own contents.
+# working row (a `w`-fixed sidebar + a stretching scope), an `h`-fixed report
+# strip. Only the containers reintroduce margins for their own contents, and
+# under all of it the host draws its own status bar.
 
 # %%
 menu_bar = panel(menu(["sine"], w=120),
@@ -129,8 +136,8 @@ print(f"opened window {win}")
 # %% [markdown]
 # ## Drive it, wired by name
 # The script is the application logic: each button/control has its own handle
-# callback, and every action rewrites the status label -- `win["status"].set(
-# text=...)` is the whole status-bar API. Nothing here drives them: the host's
+# callback, and every action rewrites the report label -- `win["status"].set(
+# text=...)` is the whole of it. Nothing here drives them: the host's
 # event loop delivers each gesture on a thread of its own, and the oscilloscope
 # reads the buses from the segment without being asked.
 

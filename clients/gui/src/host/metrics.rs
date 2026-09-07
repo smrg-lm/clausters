@@ -5,7 +5,7 @@
 //! names an RGBA. The roles are named by **function** — the spacing family
 //! ([`Metrics::pad`], `gap`, `margin`, `indent`), the control family
 //! (`control_h`, `row_h`, `track_thick`, `handle_thick`, `handle_grip`,
-//! `box_side`, `knob_d`), the chrome family (`ruler_h`, `ruler_w`, `header_w`,
+//! `box_side`, `knob_d`), the chrome family (`ruler_h`, `status_h`, `ruler_w`, `header_w`,
 //! `divider_w`, `focus_ring`, `trace_w`, `point_radius`, `hit_slop`, `label_gap`,
 //! `tick_gap`) and the text family (`text_scale`, `label_scale`,
 //! `caption_scale`, `micro_scale`) — never by the widget that happens to read
@@ -163,6 +163,10 @@ metrics_roles! {
     // -- Chrome --
     /// The height of a ruler strip along a horizontal axis.
     ruler_h,
+    /// The height of **one line of the status bar** along the window's bottom
+    /// edge (`host::status`). A ruler's height rather than a control's: the bar
+    /// is a strip of chrome with a line written on it, which is what a ruler is.
+    status_h,
     /// The **floor** width of a ruler strip beside a vertical axis. A strip
     /// asks for what its own labels need (`ruler::ticks_width`) and takes this
     /// when they are narrower, which every fixed-vocabulary axis is; a value
@@ -244,6 +248,7 @@ impl Metrics {
             knob_d: grid(2.0 * control_h * 1.08),
 
             ruler_h: grid(cell * 1.25),
+            status_h: grid(cell * 1.25),
             // Five captions wide: the widest labels of the *fixed* vertical
             // vocabularies, `-32768`, `20K` and `-INF`. A data-dependent axis
             // measures its own and asks for more when it needs it.
@@ -307,6 +312,7 @@ impl Metrics {
             knob_d: grid(self.knob_d * k),
 
             ruler_h: grid(self.ruler_h * k),
+            status_h: grid(self.status_h * k),
             ruler_w: grid(self.ruler_w * k),
             header_w: grid(self.header_w * k),
             divider_w: hairline(self.divider_w * k),
@@ -460,6 +466,7 @@ mod tests {
                 "box_side",
                 "knob_d",
                 "ruler_h",
+                "status_h",
                 "ruler_w",
                 "header_w",
             ] {

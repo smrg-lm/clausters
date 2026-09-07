@@ -379,6 +379,7 @@ impl WebApp {
             .filter(|(d, _)| *d == def)
             .map(|(_, id)| id);
         let timelines = self.host.timelines();
+        let statuses = self.host.statuses();
         let theme = &self.host.theme;
         let Some(tree) = self.host.window_def(def) else {
             return;
@@ -403,6 +404,7 @@ impl WebApp {
             // The page draws what the desktop draws: a held clip keeps its
             // grip and nothing else lights up, whichever front is driving.
             grab: slot.gestures.grab(),
+            status: statuses.get(&def),
         };
         let Some(render) = slot.render.as_mut() else {
             return;
@@ -438,6 +440,10 @@ impl WebApp {
             &inputs,
             theme,
         );
+        // The frame is drawn: the host's status log can be let go of, so the
+        // fetch below has this canvas' host to itself.
+        drop(inputs);
+        drop(statuses);
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot
         // map the samples, so it reads exactly that span back — which is what

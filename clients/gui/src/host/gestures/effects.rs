@@ -9,6 +9,7 @@
 use clausters_core::osc::OscType;
 
 use super::super::interact;
+use super::super::status;
 use super::super::widget::Widget;
 use super::super::{Host, HostEffect};
 use super::GestureEffect;
@@ -30,6 +31,12 @@ pub(super) fn emit(
     widget_id: i32,
     args: Vec<OscType>,
 ) {
+    // **The window says what it just did.** Here rather than at each gesture
+    // for the reason the stamp is here: this is the one place an edit is
+    // produced, so the status bar reads every verb the host emits -- a refusal
+    // included, since the host refuses by emitting one -- without a line of it
+    // crossing the wire (see `crate::host::status`).
+    host.say(def_id, status::Line::of_event(widget_id, &args));
     let seq = host.outbox.borrow_mut().stamp(def_id, widget_id);
     out.push(GestureEffect::Emit {
         def_id,

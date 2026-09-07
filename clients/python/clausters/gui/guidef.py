@@ -983,7 +983,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 def view(*children, title: str | None = None, w: int | None = None, h: int | None = None,
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
-         theme: dict | None = None, color: str | None = None, **props) -> View:
+         status: bool | None = None, theme: dict | None = None,
+         color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
 
@@ -1009,6 +1010,15 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     so a mounted GuiDef takes the box the element gives it and only the
     containers inside it hug.
 
+    ``status`` is the host's **status bar**, a band along the window's bottom
+    edge saying what it last did and what it last refused — a stroke where a
+    pixel is more than one sample, an edit an owner answered with a reason.
+    It is **on unless this turns it off**, and it is the host's: nothing here
+    writes to it, because the host already knows what it did and sending that
+    back over the wire would be telling it something it told us. Clicking it
+    opens it into the window's log area, where the wheel scrolls back through
+    the lines it kept; clicking again closes it.
+
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
     the whole window — a **theme group**. On the root it persists with a named
@@ -1018,6 +1028,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
                        cols=cols, theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
+    if status is not None:
+        extra["status"] = 1 if status else 0
     return node("window", children=children, **extra, **props)
 
 

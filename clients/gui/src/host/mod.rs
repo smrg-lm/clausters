@@ -95,6 +95,7 @@ pub mod timeline;
 // The passes over that tree, and the read-only facts a frame hands them.
 pub mod frame;
 pub mod interact;
+pub mod status;
 pub mod world;
 
 // Where values and samples come from, on the agnostic side of the seam: the
@@ -657,6 +658,13 @@ pub struct Host {
     /// holds the tree immutably at that point — and a second implementation at
     /// the two fronts is exactly what the one-gesture-machine rule forbids.
     pub outbox: std::cell::RefCell<ack::Outbox>,
+    /// **What each window has said**: the status bar's lines, per def id (see
+    /// [`status`]). Behind a `RefCell` for the reason
+    /// [`outbox`](Self::outbox) is — a line is written where an edit is
+    /// *produced*, with the tree borrowed immutably — and beside it because
+    /// they are fed by the same two events: an edit going out, and the
+    /// acknowledgement coming back.
+    status: std::cell::RefCell<HashMap<i32, status::Status>>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
@@ -742,6 +750,7 @@ impl Host {
             owns_transport: false,
             voice_counter: 0,
             outbox: Default::default(),
+            status: Default::default(),
             owner: None,
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
@@ -1004,6 +1013,10 @@ impl Host {
             want.map_or_else(|| declared(fallback), |v| (v.ceil().max(1.0) as u32).max(1))
         };
         let (w, h) = tree.hug_size(metrics, scale);
+        // A window fitted to its content is fitted to the bar as well, or the
+        // bar would be taken out of the content it was measured to hold and a
+        // hugging window would open one line short of what it asked for.
+        let h = h.map(|h| h + status::bar_h(tree, metrics));
         Some((round(w, *width), round(h, *height)))
     }
 
@@ -1044,13 +1057,51 @@ impl Host {
         fb_h: u32,
     ) -> Option<Vec<layout::Placed<'_>>> {
         let tree = self.window_def(def_id)?;
+        let metrics = self.metrics_for(def_id);
+        let area = self.content_area(def_id, fb_w, fb_h);
+        Some(layout::layout_on(area, tree, metrics, &|id, link| {
+            self.timelines().nav(timeline::group_key(id, link))
+        }))
+    }
+
+    /// The framebuffer of window `def_id` **minus its status bar** — the area
+    /// its tree is laid out in.
+    ///
+    /// One function because two passes read it: the renderer draws the tree in
+    /// it ([`frame::render`]) and the hit test places the tree in it
+    /// ([`layout_window`](Self::layout_window)). A bar drawn over pixels the
+    /// layout also handed out would swallow presses meant for the widget under
+    /// it; a bar the layout avoided and the frame did not draw would be a strip
+    /// of dead window.
+    pub(crate) fn content_area(&self, def_id: i32, fb_w: u32, fb_h: u32) -> layout::Rect {
         let area = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-        Some(layout::layout_on(
-            area,
+        let Some(tree) = self.window_def(def_id) else {
+            return area;
+        };
+        status::content(
             tree,
+            self.status.borrow().get(&def_id),
+            area,
             self.metrics_for(def_id),
-            &|id, link| self.timelines().nav(timeline::group_key(id, link)),
-        ))
+        )
+    }
+
+    /// The status bar's band in window `def_id`'s framebuffer, when it has one
+    /// — what a press is tested against before the tree is.
+    pub(crate) fn status_bar_rect(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> Option<layout::Rect> {
+        let area = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        let tree = self.window_def(def_id)?;
+        status::bar(
+            tree,
+            self.status.borrow().get(&def_id),
+            area,
+            self.metrics_for(def_id),
+        )
     }
 
     /// Handles one decoded packet from `from`, returning the effects its front
@@ -1663,6 +1714,9 @@ impl Host {
             // that no longer exists is never coming, and a pending edit that
             // waits for one holds the outbox open forever.
             self.outbox.borrow_mut().forget(id);
+            // The status bar is the window's own history and goes with it: a
+            // window reopened on the same id starts with nothing to say.
+            self.status.borrow_mut().remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_bus_watches();
@@ -1692,6 +1746,63 @@ impl Host {
     ///
     /// Trailing pairs are source generations, which is the only thing that can
     /// say a destructive edit changed samples whose identity did not move. A
+    /// **Says one line on window `def_id`'s status bar** (see [`status`]).
+    ///
+    /// `&self` rather than `&mut self` because the two things that say
+    /// anything -- an edit going out, and the answer coming back -- both hold
+    /// the widget tree while they do it. It is the same `RefCell` reasoning as
+    /// [`outbox`](Self::outbox), and for the same reason: the alternative is
+    /// each front keeping its own copy of the log, which is two logs.
+    pub fn say(&self, def_id: i32, line: status::Line) {
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .say(line);
+    }
+
+    /// Every window's status, for a front about to draw one. The `Ref` is held
+    /// by the caller for the length of the frame it feeds.
+    pub(crate) fn statuses(&self) -> std::cell::Ref<'_, HashMap<i32, status::Status>> {
+        self.status.borrow()
+    }
+
+    /// **Scrolls window `def_id`'s open status log** by `lines` (positive is
+    /// back through it), answering whether it moved — which is what tells a
+    /// front whether to repaint.
+    ///
+    /// The band is measured here rather than passed in, so the clamp is
+    /// against the lines actually on screen and not against a caller's guess.
+    pub fn scroll_status(&self, def_id: i32, fb_w: u32, fb_h: u32, lines: isize) -> bool {
+        let Some(band) = self.status_bar_rect(def_id, fb_w, fb_h) else {
+            return false;
+        };
+        let visible = status::Status::visible_lines(band, self.metrics_for(def_id));
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .scroll_by(lines, visible)
+    }
+
+    /// Whether window `def_id`'s status bar is opened into its log area.
+    pub fn status_open(&self, def_id: i32) -> bool {
+        self.status
+            .borrow()
+            .get(&def_id)
+            .is_some_and(status::Status::is_open)
+    }
+
+    /// Opens or closes window `def_id`'s status bar, answering whether that
+    /// moved anything -- which is what tells a front whether to repaint.
+    pub fn set_status_open(&self, def_id: i32, open: bool) -> bool {
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .set_open(open)
+    }
+
     /// Retires everything an acknowledgement covers and lets go of what it was
     /// drawing — the two halves of *drop every pending at or below the stamp,
     /// and adopt what arrived*.
@@ -1703,9 +1814,23 @@ impl Host {
     ///
     /// Returns whether anything was retired.
     pub fn settle(&mut self, acked: ack::Acked) -> bool {
+        let reason = acked.reason.clone();
         let settled = self.outbox.borrow_mut().ack(acked);
         if settled.is_empty() {
             return false;
+        }
+        // **The one reader the reason has ever had.** The mechanism does not
+        // need it -- applied, transformed and refused are one message -- but a
+        // person does: an edit that springs back with nothing said teaches that
+        // it sometimes does not work. It lands on the window of the newest edit
+        // the answer covers, which is the one the hand just made.
+        if let Some(reason) = reason.filter(|r| !r.is_empty())
+            && let Some(last) = settled.last()
+        {
+            self.say(
+                last.def_id,
+                status::Line::of_reason(Some(last.widget_id), &reason),
+            );
         }
         debug!("retired {} pending edit(s)", settled.len());
         // What the owner pushed is already in the samples, so letting go is
@@ -3211,7 +3336,13 @@ mod tests {
         host.handle_packet(def_msg(2, hugging), from());
         let (kw, kh) = host.window_size(2).expect("a window asks for a size");
         let knob = host.window_def(2).unwrap().hug_size(&host.metrics, 1.0);
-        assert_eq!((kw as f32, kh as f32), (knob.0.unwrap(), knob.1.unwrap()));
+        // The content **plus the status bar**: a window fitted to what it holds
+        // is fitted to the chrome under it too, or the band would be taken out
+        // of the pixels the knob was measured to need.
+        assert_eq!(
+            (kw as f32, kh as f32),
+            (knob.0.unwrap(), knob.1.unwrap() + host.metrics.status_h),
+        );
         assert!(kw < 420 && kh < 360, "the window is the knob: {kw}x{kh}");
 
         // The declared number is what stands where the content is elastic: a
@@ -3242,7 +3373,9 @@ mod tests {
             (pw as f32, ph as f32),
             (
                 at_scale.0.unwrap().ceil().max(1.0),
-                at_scale.1.unwrap().ceil().max(1.0)
+                (at_scale.1.unwrap() + host.metrics_for(2).status_h)
+                    .ceil()
+                    .max(1.0)
             )
         );
         assert!(

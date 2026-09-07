@@ -1312,10 +1312,21 @@ export function view(
      * a lane, a heavy view) is one the container hands back.
      */
     hug?: boolean;
+    /**
+     * The host's **status bar**: a band along the window's bottom edge saying
+     * what it last did and what it last refused — a stroke where a pixel is
+     * more than one sample, an edit an owner answered with a reason. **On
+     * unless this turns it off**, and it is the host's: nothing here writes to
+     * it, because the host already knows what it did and sending that back
+     * over the wire would be telling it something it told us. Clicking it
+     * opens it into the window's log area, where the wheel scrolls back
+     * through the lines it kept; clicking again closes it.
+     */
+    status?: boolean;
     } = {},
     ...children: GuiNode[]
 ): View {
-    const { title, flow, layout, margin, gap, cols, hug, theme, ...rest } = options;
+    const { title, flow, layout, margin, gap, cols, hug, status, theme, ...rest } = options;
     return node("window", {
         ...rest,
         ...drop([
@@ -1325,6 +1336,7 @@ export function view(
             ["gap", gap],
             ["cols", cols],
             ["hug", flag(hug)],
+            ["status", flag(status)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],

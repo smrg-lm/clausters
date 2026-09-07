@@ -895,6 +895,54 @@ pub(super) fn draw_element_overlays(
     }
 }
 
+/// Draws the **status bar** into `band`: the window's newest line, or — open —
+/// as many of its recent lines as the band holds, newest at the bottom.
+///
+/// It is drawn into the *overlay* mesh and last, so it reads over a heavy view
+/// that runs to the window's edge. What colors a line is the only thing a line
+/// is typed by: something done reads as quiet text, something refused reads as
+/// the warning role, because the whole point of the bar is that a refusal is
+/// seen without being looked for.
+pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, theme: &Theme) {
+    let m = inputs.metrics;
+    over.set_clip(Some(band));
+    over.rect(band, theme.status_bar);
+    // The edge that separates the bar from the work above it.
+    over.rect(Rect::new(band.x, band.y, band.w, m.divider_w), theme.frame);
+    let Some(status) = inputs.status else {
+        over.set_clip(None);
+        return;
+    };
+    let size = m.caption_scale;
+    let left = band.x + m.pad;
+    let avail = (band.w - 2.0 * m.pad).max(0.0);
+    let color = |line: &crate::host::status::Line| match line.kind {
+        crate::host::status::Kind::Refused => theme.warn,
+        crate::host::status::Kind::Did => theme.text_dim,
+    };
+    if !status.is_open() {
+        if let Some(line) = status.last() {
+            let y = (band.y + (band.h - font::height(size)) * 0.5).max(band.y);
+            font::text_ellipsis(over, &line.text, left, y, avail, size, color(line));
+        }
+        over.set_clip(None);
+        return;
+    }
+    // Open: the newest line sits on the bottom and the log grows upward, which
+    // is the direction a log is read in when what matters is what just
+    // happened. A line that would start above the band is not drawn.
+    let advance = font::line_advance(size);
+    let mut y = band.y + band.h - m.pad - font::height(size);
+    for line in status.lines().rev().skip(status.scroll()) {
+        if y < band.y + m.divider_w {
+            break;
+        }
+        font::text_ellipsis(over, &line.text, left, y, avail, size, color(line));
+        y -= advance;
+    }
+    over.set_clip(None);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
