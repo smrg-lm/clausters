@@ -801,6 +801,18 @@ client and from a standalone host because it is one piece of code.
   remaining work is a granularity change in `editing/`: `publish` comes to take
   the subtree an edit touched, and the picture goes with it.
 
+  **And it waits on a caller, which is an ordering finding rather than an
+  excuse** *(found 2026-09-07, doing the work)*. `Application.publish` has **no
+  caller in the package**: `FormEditor` was the only thing that ever made a
+  publish happen, it was deleted on 2026-09-06, and what an `Editor` uses today
+  is `correct(widget_id, **props)` — narrow, per widget, already the granularity
+  the measurement endorses. Grep says the entire remaining call graph is the
+  tests'. So rewriting `publish` now would be designing a seam against **zero**
+  implementors, which is what this plan refuses in `AP4`'s own risk note and for
+  the same reason. It is written against the first editor that publishes again,
+  and that editor is `O24`'s multitrack. The host's half does not wait on any of
+  it: a redefine already stops destroying a zoom, whoever sends it.
+
 **The standing reason for this milestone**, said by the user on 2026-09-06 while
 reading the day's defects: *the editing logic has to be in Rust so that it is in
 one place and consistent across clients*. Every defect found by eye that day was

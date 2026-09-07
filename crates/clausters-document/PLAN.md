@@ -1034,6 +1034,12 @@ DAW session, because that is what a DAW session is good at.
   `editing/`, not in the host. The host's half is done and is useful on its own:
   it is what makes a redefine stop destroying a zoom, which was the branch's
   opening complaint.
+
+  **And the client's half waits on a caller.** `Application.publish` has no
+  caller in the package - `FormEditor` was the only one and it was deleted on
+  2026-09-06, so what an editor uses today is the narrow per-widget correction.
+  Rewriting it now would be designing a seam against zero implementors. It lands
+  with the first editor that publishes again, which is `O24`'s multitrack.
 - ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
   editor** and the **score editor**, each an application over this document,
   programmable from the GUI host and driven identically from every client. This
