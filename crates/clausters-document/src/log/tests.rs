@@ -517,7 +517,7 @@ fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
 
 #[test]
 fn the_arrangements_own_door_still_records_through_the_generic_one() {
-    // `apply_logged` is `History::apply` wearing the arrangement's vocabulary.
+    // `apply_logged` is `History::apply` wearing the tree's vocabulary.
     // What this checks is that nothing about the refusal rules moved: a stale
     // edit is refused and leaves no entry, and the outcome still reads as an
     // intent.

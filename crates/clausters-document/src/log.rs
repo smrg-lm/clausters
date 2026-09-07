@@ -59,11 +59,16 @@ pub use crate::history::{DEFAULT_BUDGET, DEFAULT_SPILL_ABOVE, MemorySpill, Spill
 
 /// The domain name a document's structure is registered under.
 ///
-/// The arrangement's vocabulary is [`Intent`], and this is what a caller
-/// routing a history's payloads matches on to know it is holding one.
+/// The tree's vocabulary is [`Intent`], and this is what a caller routing a
+/// history's payloads matches on to know it is holding one. The **piece** has a
+/// vocabulary of its own
+/// ([`ArrangementIntent`](crate::arrangement::edit::ArrangementIntent), under
+/// [`ARRANGEMENT`](crate::arrangement::edit::ARRANGEMENT)); the two are
+/// separate domains in one pile, which is what lets an undo cross from a region
+/// to a note in one order.
 pub const TREE: &str = "tree";
 
-/// One move in the forward direction, in the arrangement's vocabulary.
+/// One move in the forward direction, in the tree's vocabulary.
 ///
 /// [`history::Step`] with an [`Intent`] in place of the opaque payload, and the
 /// same wire shape: externally tagged — `{"edit": <intent>}`,
@@ -174,10 +179,7 @@ impl<'a> Tree<'a> {
 impl Editable for Tree<'_> {
     fn apply(&mut self, load: &Opaque) -> Applied {
         let Some(intent) = intent_of(load) else {
-            return Applied::refused(
-                load.clone(),
-                "not an edit written in the arrangement's vocabulary",
-            );
+            return Applied::refused(load.clone(), "not an edit written in the tree's vocabulary");
         };
         let outcome = crate::intent::apply(self.document, &intent, &self.against, &self.rules);
         Applied {
@@ -197,7 +199,7 @@ impl Editable for Tree<'_> {
     }
 }
 
-/// What an undo hands back, in the arrangement's vocabulary.
+/// What an undo hands back, in the tree's vocabulary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Undone {
     /// What the entry that inverted was called.
@@ -223,7 +225,7 @@ impl Undone {
     }
 }
 
-/// What a redo hands back, in the arrangement's vocabulary.
+/// What a redo hands back, in the tree's vocabulary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Redone {
     /// What the entry being redone was called.
@@ -572,7 +574,7 @@ pub fn apply_logged(
         .history_mut()
         .apply(structure, &mut tree, &payload(intent), label);
     Outcome {
-        // The effective payload is whatever the arrangement's own `apply` put
+        // The effective payload is whatever the tree's own `apply` put
         // there, so it reads back as an intent unless the edit was refused for
         // not being one -- and then the intent as given is the honest answer,
         // since a refusal hands back what holds.

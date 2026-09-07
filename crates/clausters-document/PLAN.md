@@ -838,6 +838,63 @@ DAW session, because that is what a DAW session is good at.
   O2's rules unchanged, its vocabulary widened. **Acceptance:** every intent
   enumerated by a test; a region moved between tracks is one transaction that
   undoes in one step; a trim reports the effective placement after snapping.
+
+  **(a) The vocabulary, and where it lives.** *(Landed 2026-09-06.)* Fourteen
+  verbs in `arrangement::edit::ArrangementIntent`, beside the model rather than
+  inside `intent.rs`: the piece is **its own editable domain**, registered as
+  `ARRANGEMENT` alongside `tree`, `points`, `samples` and `events`, with
+  `edit::Piece` as its [`Editable`] exactly as `log::Tree` is the document's.
+  That is what the domain table was built for, and it means the piece's edits
+  and the tree's share one undo pile without either knowing the other's words.
+
+  The list, and the three groupings it fell into: what a **track** is
+  (`SetTracks` whole - add, remove and reorder are one verb because all three
+  state the same thing - and `SetActiveLane`, which is comping's one verb);
+  what a **region** is (`SetLane` whole, `PlaceRegion`, `TrimRegion`,
+  `SplitRegion`, `JoinRegions`, `FadeRegion`); and what the **piece** holds
+  (`SetAutomation`, `SetMarker`, `RemoveMarker`, `SetRange`, `SetTempoMap`,
+  `SetMeterMap`).
+
+  **A move between tracks is one intent, not a transaction.** The acceptance
+  asked for one transaction that undoes in one step and the vocabulary does
+  better: because an intent is absolute, and *where a region is* is three
+  coordinates (track, lane, beat), `PlaceRegion` states all three at once. So
+  there is one entry, one undo, and - the part a transaction would not have
+  given - **no state in between where the region is on no lane at all**, which
+  every reader that redrew mid-gesture would otherwise have seen.
+
+  **The two maps got verbs the list did not ask for.** The tempo and meter maps
+  are the piece's (O21's decision) and no verb reached them, which is exactly
+  the defect `Intent::Configure` was widened to fix on the tree side: an edit
+  nothing can describe is an edit nothing can invert.
+
+  **(b) The two verbs this crate cannot compute.** *(Found 2026-09-06, while
+  writing them.)* Splitting and joining a region are the only edits that change
+  how many regions there are, and they are also the only two the crate cannot
+  work out on its own: **the cut is on the musical axis and a window into a
+  source is on the content's**, and `timebase` converts between the two never -
+  that is its whole premise, and it is not suspended because it would be
+  convenient here. So the caller, which holds the tempo map and its own frames
+  per beat, states the halves' content (`left_content`/`right_content`, and
+  `content` on a join) and the crate does the rest. `None` leaves a half reading
+  what the region read, which is right for a composite and for a caller that
+  does not care.
+
+  Both also **invert as `SetLane`** - the lane's previous contents, whole.
+  Nothing smaller describes putting back a region that was made out of two, and
+  computing it back would be the same refused conversion in the other direction.
+
+  **(c) The piece carries its own version.** *(Decided 2026-09-06.)* Staleness
+  needs a counter and `Document::version` is the tree's. A shared one would make
+  every edit to either half look like a change to both, and an editor of the
+  piece is not editing the tree - so `Arrangement::version` is a second counter,
+  and it is the one that stays when the tree comes off. It stays out of the file
+  while it is the first version, so an unedited piece still writes `{}`.
+
+  **What this also fixed, which was prose.** `log.rs` called the tree's
+  vocabulary *"the arrangement's vocabulary"* throughout - true when it was
+  written and wrong the day `Arrangement` became a type. Renamed to *the tree's*
+  wherever the tree is what is meant.
 - ⬜ **O23 - The host binds the session and reconciles.** The host holds the
   session, derives its presentation from it, and answers a change by
   reconciling - matching regions by identity within a lane - rather than by

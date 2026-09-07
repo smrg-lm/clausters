@@ -48,6 +48,8 @@ use serde_json::{Map, Value};
 use crate::timebase::Beat;
 use crate::{Node, NodeId, Opaque, SegmentRef};
 
+pub mod edit;
+
 /// Anything a newer writer wrote that this build has no field for, carried so a
 /// round trip through an older reader does not lose it.
 ///
@@ -604,8 +606,22 @@ impl Span {
 /// tempo map, the meter map, the markers, the loop. A track has none of them
 /// and never disagrees with another track about them, which is the whole
 /// argument for where they live.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Arrangement {
+    /// What this piece is *at*, and the whole of what a stale edit is stale
+    /// against.
+    ///
+    /// The twin of [`crate::Document::version`] and deliberately a second
+    /// counter rather than a shared one: the tree and the piece are two
+    /// descriptions today, and an editor of one is not editing the other, so
+    /// one number would make every edit to either look like a change to both.
+    /// When the tree comes off, this is the counter that stays.
+    ///
+    /// It stays out of the file while it is the first version, so an unedited
+    /// piece still writes an empty object — the counter defaults back to the
+    /// same number on the way in, so nothing is lost by leaving it out.
+    #[serde(default = "first_version", skip_serializing_if = "is_first_version")]
+    pub version: u64,
     /// The tracks, in the order they are shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<Track>,
@@ -633,10 +649,66 @@ pub struct Arrangement {
     pub extra: Extra,
 }
 
+fn first_version() -> u64 {
+    crate::FIRST_VERSION
+}
+
+fn is_first_version(version: &u64) -> bool {
+    *version == crate::FIRST_VERSION
+}
+
+impl Default for Arrangement {
+    fn default() -> Self {
+        Self {
+            version: crate::FIRST_VERSION,
+            tracks: Vec::new(),
+            tempo: Vec::new(),
+            meter: Vec::new(),
+            markers: Vec::new(),
+            loop_span: None,
+            punch: None,
+            extra: Extra::new(),
+        }
+    }
+}
+
 impl Arrangement {
     /// An empty arrangement: no tracks, and a timeline that says nothing.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The lane with this id, wherever it is, and the track that holds it.
+    pub fn lane(&self, id: NodeId) -> Option<(&Track, &Lane)> {
+        self.tracks
+            .iter()
+            .find_map(|t| t.lanes.iter().find(|l| l.id == id).map(|l| (t, l)))
+    }
+
+    /// The same, to be edited.
+    pub fn lane_mut(&mut self, id: NodeId) -> Option<&mut Lane> {
+        self.tracks
+            .iter_mut()
+            .flat_map(|t| t.lanes.iter_mut())
+            .find(|l| l.id == id)
+    }
+
+    /// The region with this id, and where it sits: which track, which lane.
+    ///
+    /// A region names one appearance, so this answers with the address an
+    /// intent needs rather than only the object.
+    pub fn locate(&self, id: NodeId) -> Option<(&Track, &Lane, &Region)> {
+        self.tracks
+            .iter()
+            .find_map(|t| t.lanes.iter().find_map(|l| l.region(id).map(|r| (t, l, r))))
+    }
+
+    /// The automation curve with this id, wherever it is.
+    pub fn automation_mut(&mut self, id: NodeId) -> Option<&mut Automation> {
+        self.tracks
+            .iter_mut()
+            .flat_map(|t| t.automation.iter_mut())
+            .find(|a| a.id == id)
     }
 
     /// The track with this id.

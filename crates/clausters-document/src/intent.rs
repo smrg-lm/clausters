@@ -89,7 +89,7 @@ impl Rules {
         Self { quant }
     }
 
-    fn snap(&self, beats: Beats) -> Beats {
+    pub(crate) fn snap(&self, beats: Beats) -> Beats {
         if self.quant <= 0.0 {
             return beats;
         }
@@ -242,12 +242,19 @@ impl Intent {
 /// simply the previous value handed back. Only the log reads [`Outcome::applied`],
 /// because only the log cares whether there is something to invert.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Outcome {
+pub struct Outcome<I = Intent> {
     /// The edit describing the document as it now stands — the intent as given
     /// when it applied verbatim, the transformed one when the owner snapped or
     /// clamped it, and the **previous** value when it was refused.
-    pub effective: Intent,
+    pub effective: I,
     /// Whether the document changed.
+    ///
+    /// The type parameter is which vocabulary the effective edit is written in:
+    /// [`Intent`] for the tree, and
+    /// [`ArrangementIntent`](crate::arrangement::edit::ArrangementIntent) for
+    /// the piece. One shape, because the rules it reports — verbatim,
+    /// transformed, refused, stale — are the vocabulary's rules and not any one
+    /// vocabulary's.
     pub applied: bool,
     /// Why it was refused, or why it was transformed. Optional because most
     /// outcomes have nothing to say, and present because an edit that springs
@@ -264,8 +271,8 @@ pub struct Outcome {
     pub stale: bool,
 }
 
-impl Outcome {
-    fn changed(effective: Intent) -> Self {
+impl<I> Outcome<I> {
+    pub(crate) fn changed(effective: I) -> Self {
         Self {
             effective,
             applied: true,
@@ -274,7 +281,7 @@ impl Outcome {
         }
     }
 
-    fn unchanged(effective: Intent) -> Self {
+    pub(crate) fn unchanged(effective: I) -> Self {
         Self {
             effective,
             applied: false,
@@ -283,7 +290,7 @@ impl Outcome {
         }
     }
 
-    fn transformed(effective: Intent, reason: impl Into<String>) -> Self {
+    pub(crate) fn transformed(effective: I, reason: impl Into<String>) -> Self {
         Self {
             effective,
             applied: true,
@@ -292,7 +299,7 @@ impl Outcome {
         }
     }
 
-    fn refused(effective: Intent, reason: impl Into<String>) -> Self {
+    pub(crate) fn refused(effective: I, reason: impl Into<String>) -> Self {
         Self {
             effective,
             applied: false,
@@ -301,7 +308,7 @@ impl Outcome {
         }
     }
 
-    fn superseded(effective: Intent, reason: impl Into<String>) -> Self {
+    pub(crate) fn superseded(effective: I, reason: impl Into<String>) -> Self {
         Self {
             stale: true,
             ..Self::refused(effective, reason)

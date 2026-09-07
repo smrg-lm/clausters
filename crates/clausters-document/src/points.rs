@@ -67,7 +67,7 @@ pub struct Point {
 pub struct Points(pub Vec<Point>);
 
 /// An edit to a curve. One verb, stating the result — the same absolute rule
-/// the arrangement's vocabulary follows, and for the same reason: an edit that
+/// the tree's vocabulary follows, and for the same reason: an edit that
 /// states a value is idempotent, and its inverse is the edit stating the
 /// previous one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,7 +112,7 @@ impl Editable for Points {
         };
         if points == self.0 {
             // A resend is not an edit, so it does not become an undo step --
-            // the arrangement's rule, and it is the vocabulary's rather than
+            // the tree's rule, and it is the vocabulary's rather than
             // the tree's.
             return Applied {
                 effective: crate::points::payload(&self.state()),

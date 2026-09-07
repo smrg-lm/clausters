@@ -68,6 +68,7 @@ pub mod selection;
 pub mod session;
 pub mod timebase;
 
+pub use arrangement::edit::{ARRANGEMENT, ArrangementIntent, Piece, SpanKind};
 pub use arrangement::{
     Arrangement, Automation, Extra, Fade, Lane, Marker, Meter, Region, Span, Tempo, Track,
 };

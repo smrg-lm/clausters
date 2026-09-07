@@ -23,6 +23,8 @@
 use serde::Serialize;
 
 use crate::Opaque;
+use crate::arrangement::Arrangement;
+use crate::arrangement::edit::{ARRANGEMENT, Piece};
 use crate::events::{EVENTS, Events};
 use crate::history::Editable;
 use crate::log::TREE;
@@ -33,7 +35,7 @@ use crate::samples::SAMPLES;
 ///
 /// What a caller registers a structure under, and the whole of what
 /// [`coalesce_key`] dispatches on.
-pub const DOMAINS: [&str; 4] = [TREE, POINTS, SAMPLES, EVENTS];
+pub const DOMAINS: [&str; 5] = [TREE, ARRANGEMENT, POINTS, SAMPLES, EVENTS];
 
 /// Whether the crate knows this vocabulary.
 pub fn known(domain: &str) -> bool {
@@ -51,6 +53,8 @@ pub fn known(domain: &str) -> bool {
 pub fn coalesce_key(domain: &str, payload: &Opaque) -> Option<String> {
     match domain {
         TREE => crate::log::intent_of(payload).map(|intent| crate::log::coalesce_key(&intent)),
+        ARRANGEMENT => crate::arrangement::edit::intent_of(payload)
+            .map(|intent| crate::arrangement::edit::coalesce_key(&intent)),
         POINTS => crate::points::coalesce_key(payload),
         SAMPLES => crate::samples::coalesce_key(payload),
         EVENTS => crate::events::coalesce_key(payload),
@@ -104,11 +108,33 @@ pub struct Edited {
 ///   state lives is the caller's, and reading a span back is what its inverse
 ///   costs.
 ///
-/// So this serves the two domains whose state *is* the data — a curve's points
-/// and a timeline's events — which is also every domain a client holds as an
-/// ordinary list.
+/// [`ARRANGEMENT`] is served, and it is the case that shows what the [`TREE`]
+/// entry above is really about. A piece's whole state *is* one JSON value the
+/// caller holds, version included, so the door works — it simply applies
+/// against whatever that state says and snaps to nothing, which is exactly what
+/// a client that just read the piece wants. An editor that has a grid, or a
+/// claim about a picture drawn a moment ago, uses the typed door
+/// ([`arrangement::edit::apply`](crate::arrangement::edit::apply)) instead. The
+/// tree cannot be served this way for a different reason: what it edits is a
+/// handle that lives across the seam, not a value.
+///
+/// So this serves the domains whose state *is* the data — the piece, a curve's
+/// points, a timeline's events — which is also every domain a client holds as
+/// an ordinary list.
 pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
     match domain {
+        ARRANGEMENT => {
+            let mut piece: Arrangement = serde_json::from_value(state.0.clone()).ok()?;
+            let mut editing = Piece::new(&mut piece);
+            let current = editing.current(payload);
+            let applied = editing.apply(payload);
+            Some(Edited {
+                state: Opaque(serde_json::to_value(&piece).ok()?),
+                applied: applied.applied,
+                reason: applied.reason,
+                current,
+            })
+        }
         POINTS => {
             let mut points: Points = serde_json::from_value(state.0.clone()).ok()?;
             edited(&mut points, payload)
