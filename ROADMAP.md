@@ -253,15 +253,11 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     host stops emitting `'lane'` rather than the client refusing it.
   - ⬜ **The routing table's tag list is written twice** — eight strings verbatim
     in both clients; they agree today and nothing keeps them agreeing.
-  - ⬜ **`Application` exists in Python and not in the web client** — the whole
-    publish loop has one implementation. The standing rule's own case,
-    invisible until now because the only editor that made a publish happen was
-    `FormEditor`. Cheaper since 2026-09-07: the difference is gone, so a
-    publish is a `/gui_def` and the port is the class, not the walk.
-  - ⬜ **`GuiHost.redefine` exists in Python and not in the web client** — the
-    narrow definition, which is the channel this whole branch is about. The
-    message goes out through `define` either way; what breaks is the window's
-    name map, silently.
+  - ⬜ **`Application` and `GuiHost.redefine` exist in Python and not in the web
+    client** — the two halves of one gap, and **both are `W30` now**
+    (`clients/web/PLAN.md`), which is where the port and the parity reading that
+    follows it are written. Named here because they were found on this branch
+    and are read against it; they are not this branch's work to do.
   - ✅ **The crate's client surface was public in one client and private in the
     other** *(fixed 2026-09-06 by `O21`(d))*. `document.ts` had been a module of
     its own since it was written; the Python client reached the same surface
@@ -499,6 +495,14 @@ its plan; the plan is where its acceptance is read.
   keeping** *(`APPLICATION-SCOPE.md`)*. The branch's closing milestone: what of
   this file and of `APPLICATION-SCOPE.md` survives into the standing plans, and
   what goes with the branch.
+
+- ⬜ **`W30` - the editing seam comes across, and the two clients are read
+  against each other** *(`clients/web/PLAN.md`)*. The branch's last structural
+  divergence, and the only one of these that is **not** the branch's to close:
+  it is written to run **after** `AP5`'s remainder, `AP7` and `AP8`, and after
+  `O24`, because porting a seam that is still moving is porting it twice. Named
+  here so the branch closes knowing what it hands over rather than discovering
+  it later.
 
 ## 5. Tracks not started, or incomplete
 

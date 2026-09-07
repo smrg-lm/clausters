@@ -844,6 +844,13 @@ client and from a standalone host because it is one piece of code.
   in "Found by use" below with a checkbox — this list says what the milestone
   did not do, and a pending item filed only among the reasons for not doing it
   is a pending item that reads as closed.
+- **The web client**, which has neither the `Application` this milestone is
+  about nor the `GuiHost.redefine` its granularity is sent through. Both are in
+  "Found by use" below and both are owned by **`W30`**
+  (`clients/web/PLAN.md`), which is written to run *after* this branch — so the
+  acceptance's "and that is true from the web client" is the one clause of it
+  this branch does not deliver, deliberately and with a milestone naming when it
+  will be.
 - **The catalogue views.** Building `waveform`, `bpf`, `pianoroll` and the
   multitrack's lanes through `tree.rs` is what gives the standalone host the same
   function from the same code, and it is entangled with AP6's convergence: the
@@ -1093,6 +1100,13 @@ owner moved is how a working editor becomes a new set of defects.
   `data: "keep"` is sent through, and it is the same shape as `Application`
   below: the machinery has one implementation because the one caller that
   exercised it was Python's.
+
+  **Owned by `W30`** *(`clients/web/PLAN.md`, written 2026-09-07)*, together
+  with `Application` below — two halves of one gap, ported together. The entry
+  stays open **here** because this is where it was found and this is the branch
+  it is read against; what it is not is this branch's work, and `W30` says why:
+  it runs after `AP5`'s remainder, `AP7`, `AP8` and `O24`, because porting a
+  seam that is still moving is porting it twice.
 
 - ⬜ **The reconcile has no example to see it in** *(found 2026-09-07, going to
   check it by eye)*. `widget::reconcile` has seven unit tests and **no manual
@@ -1370,6 +1384,16 @@ owner moved is how a working editor becomes a new set of defects.
   one client and not the other - and it is why the wire test above has a Python
   half and no TypeScript twin.
 
+  **Owned by `W30`** *(`clients/web/PLAN.md`, written 2026-09-07)*, which is
+  where the port, its ordering and its acceptance now live — with `redefine`
+  above, and with the second half this gap argues for: **the two clients read
+  against each other, verb by verb, and the example directories side by side**.
+  That reading is the milestone's own work and not a courtesy at its end,
+  because of how this entry was found: the class went missing on 2026-09-06 and
+  nothing failed, no test went red, and it surfaced a day later only because
+  somebody writing a wire word needed the door to send it through. A gap that
+  costs nothing to have is a gap nothing will find.
+
 - ⬜ **The undo/redo walk is still each client's, and lowering it is a design
   step rather than a move** *(found 2026-09-06, scoping AP5)*.
   `Application.step` asks the editing context for a step's legs and hands them
@@ -1537,7 +1561,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine`, plus the routing table, the undo/redo walk and the catalogue views - all four in "Found by use" or owed to `O24`)*
+- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the routing table, the undo/redo walk and the catalogue views, in "Found by use" or owed to `O24`)*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

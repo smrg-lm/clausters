@@ -1777,52 +1777,114 @@ What landed, beyond the list above:
   transport were found by reading the two directories side by side after the
   milestone's own list was done.
 
+### W30 - The editing seam comes across, and the two clients are read against each other
+
+The last structural divergence of the `application-scope` branch, and the one
+the standing rule is written about: **a class that exists in one client and not
+in the other**. It is a milestone rather than a parity-gap entry because it now
+has an acceptance and an order, and a pending item with both is a milestone
+whatever list it started in.
+
+**What is missing: an application, and a widget id that names what it draws.**
+Both were grown by the Python client on the `application-scope` branch, and the
+shape the port must follow is fixed already so the two do not re-derive it
+differently.
+
+**The application** (`clausters.gui.editing.Application`) owns what is true of
+a *window set* rather than of one structure: the host and its adoption rule,
+the widget-id space, the `Echo`, the socket drain and the walk of the undo
+order. `Editor` keeps the structure, the `Domain`, the `View` and the unit
+bridge, and reads the rest through its application; an editor handed none
+makes one of its own, so nothing a script writes changes. Several editors can
+then share one host, one id space, one drain and one order — the shape a
+bundle of subviews over unrelated structures needs.
+
+**The named widget id** is the core's (`WidgetIds`, bound here already as
+`clausters_core_web`'s `WidgetIds` and used by `GuiIdAllocator`). What is
+*not* ported is the door a view takes: `View.widget(editor, role, showing,
+key)`, which asks the application for the id that draws
+`(structure identity, role, key)` and gives back the same number on every
+redraw, plus the bracket `Editor.draw` puts around a draw (`reset_ids` before,
+`retire_ids` after) that releases only what the picture genuinely stopped
+drawing. The three built-in views name their widget `"curve"`, `"waveform"`
+and `"roll"` respectively, and those spellings are part of the name: two
+clients drawing one structure must ask for the same id.
+
+**The publish, which is now much smaller than it was** *(rewritten
+2026-09-07)*. `Application.publish(widget, tree, window=…)` sends a
+`/gui_def` of the widget it names and nothing else: the host **reconciles**
+the tree it is handed against the tree it draws, so a def says what to look
+like rather than what to destroy, and deciding how much of the window a
+redraw costs is the host's. There is no difference to compute and no record
+of what the host is drawing to keep — `clausters_core::guidiff` and its two
+bindings are **gone** (core ABI v42), because a difference is only correct
+against a copy of the host's picture and no client can hold one.
+
+So what the port owes is a `publish` that forwards to `define` or
+`redefine`, and the granularity that goes with it: publish the widget the
+edit named, not the window, because the window is megabytes a second of JSON
+at drag rates on a large piece. It also owes `GuiHost.redefine` itself, which
+is the door for a part and which this client does not have — see
+`APPLICATION-SCOPE.md`'s "Found by use".
+
+It is a **recorded** divergence rather than an accidental one, and it is now
+a much cheaper one to close.
+
+**And then the two clients are read against each other, verb by verb.** Not as a
+courtesy at the end but as the milestone's second half, because the branch that
+produced this gap produced it *invisibly*: the class went missing on 2026-09-06
+and nothing failed, no test went red, and it surfaced a day later only because
+somebody was writing a wire word and needed the door to send it through. A gap
+that costs nothing to have is a gap nothing will find.
+
+What that reading covers, and it is the standing rule's own list:
+
+- **`gui/editing/` module for module** — `context`, `domain`, `echo`, `edit`,
+  `editor`, `events`, `points`, `samples`, `view`, and the `application` this
+  milestone adds. Measured on 2026-09-06 the surfaces differed by `Application`,
+  `ATTR`, `BASE_ID` and `watch` in Python's favour, with `contexts` (behind
+  `Editing.of`) and `resolveEditorHost` running the other way as idiom. Every
+  difference left after the port is either `idiom` in `docs/bindings.md`'s sense
+  or a gap with an entry.
+- **`GuiHost` verb for verb** — this is where `redefine` was found missing, and
+  finding one that way says nothing about the next one.
+- **The examples in pairs.** `clients/python/examples/` against
+  `clients/web/examples/`, the same material by the same calls in the same
+  order — which is the reading that found four divergences the last time it was
+  done and would have found this one.
+
+**Order: after the milestones that are still moving what is being ported.**
+Porting a seam that is about to change means porting it twice, which is the
+argument `AP0` made when it wrote the seam in Python only, and it held: the
+difference this client bound and never called was deleted on 2026-09-07 before
+the port could copy it. So this waits on
+
+- **`APPLICATION-SCOPE.md`** — `AP5`'s remainder, `AP7` and `AP8`. `AP5` is what
+  decides what an application still owns; `AP8` is the pass over the packages,
+  and a parity reading before the docs and the bindings tables are settled is a
+  reading against a moving target.
+- **`crates/clausters-document/PLAN.md`'s `O24`** — the three applications. They
+  are the first real consumers of this seam, and `AP7` already defers to them;
+  an abstraction ported before its consumers exist is ported against a guess.
+- **`clients/gui/PLAN.md`'s open tracks**, where they touch the wire this seam
+  speaks.
+
+**Acceptance:** `clients/web/src/gui/editing/application.ts` exists and holds
+what the Python one holds; `GuiHost.redefine` exists and does the bookkeeping a
+part needs (the names under the old subtree go, the new ones merge into what the
+window already had, the handle a script holds stays the one it holds); a page
+publishes the widget its edit named through it; the two `gui/editing/` surfaces
+and the two `GuiHost` surfaces differ only where `docs/bindings.md` says
+`idiom`; the example pairs have been read side by side and whatever that reading
+turned up is fixed or written down.
+
+
 ## Parity gaps carried from the Python client
 
 - ⬜ **The editing seam: an application, and a widget id that names what it
-  draws.** The Python client has grown two things this client has not, both on
-  the `application-scope` branch, and the shape the port must follow is fixed
-  already so the two do not re-derive it differently.
-
-  **The application** (`clausters.gui.editing.Application`) owns what is true of
-  a *window set* rather than of one structure: the host and its adoption rule,
-  the widget-id space, the `Echo`, the socket drain and the walk of the undo
-  order. `Editor` keeps the structure, the `Domain`, the `View` and the unit
-  bridge, and reads the rest through its application; an editor handed none
-  makes one of its own, so nothing a script writes changes. Several editors can
-  then share one host, one id space, one drain and one order — the shape a
-  bundle of subviews over unrelated structures needs.
-
-  **The named widget id** is the core's (`WidgetIds`, bound here already as
-  `clausters_core_web`'s `WidgetIds` and used by `GuiIdAllocator`). What is
-  *not* ported is the door a view takes: `View.widget(editor, role, showing,
-  key)`, which asks the application for the id that draws
-  `(structure identity, role, key)` and gives back the same number on every
-  redraw, plus the bracket `Editor.draw` puts around a draw (`reset_ids` before,
-  `retire_ids` after) that releases only what the picture genuinely stopped
-  drawing. The three built-in views name their widget `"curve"`, `"waveform"`
-  and `"roll"` respectively, and those spellings are part of the name: two
-  clients drawing one structure must ask for the same id.
-
-  **The publish, which is now much smaller than it was** *(rewritten
-  2026-09-07)*. `Application.publish(widget, tree, window=…)` sends a
-  `/gui_def` of the widget it names and nothing else: the host **reconciles**
-  the tree it is handed against the tree it draws, so a def says what to look
-  like rather than what to destroy, and deciding how much of the window a
-  redraw costs is the host's. There is no difference to compute and no record
-  of what the host is drawing to keep — `clausters_core::guidiff` and its two
-  bindings are **gone** (core ABI v42), because a difference is only correct
-  against a copy of the host's picture and no client can hold one.
-
-  So what the port owes is a `publish` that forwards to `define` or
-  `redefine`, and the granularity that goes with it: publish the widget the
-  edit named, not the window, because the window is megabytes a second of JSON
-  at drag rates on a large piece. It also owes `GuiHost.redefine` itself, which
-  is the door for a part and which this client does not have — see
-  `APPLICATION-SCOPE.md`'s "Found by use".
-
-  It is a **recorded** divergence rather than an accidental one, and it is now
-  a much cheaper one to close.
+  draws.** Grew acceptance and an order of its own on 2026-09-07 and is now
+  **`W30`** above, which is where its content lives. Named here so a reader
+  going through the parity gaps is not left thinking it is unrecorded.
 
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed
   2026-08-05, recorded so a name-by-name diff of the two clients does not
