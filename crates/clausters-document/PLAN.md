@@ -1025,12 +1025,15 @@ DAW session, because that is what a DAW session is good at.
   says what it redrew; the host decides what that costs.*
 
   **What is left of O23.** The client still holds `_published` and still
-  computes the difference. Removing it is the rest of `AP5`'s second half and it
-  is **gated on a measurement the plan asked for and nobody has made**: a tree
-  per redraw instead of a delta, at drag rates. Doing it before measuring is
-  what that entry exists to prevent. The host's half is done and is useful on its
-  own - it is what makes a redefine stop destroying a zoom, which was the
-  branch's opening complaint.
+  computes the difference. The measurement that gated removing it **was made
+  2026-09-07** and is written up in `APPLICATION-SCOPE.md`'s AP5 cost (1): a
+  drag's delta is 21 B/frame and flat, the widget the edit named is 91 B and
+  flat, the window is 1.9 kB to 652 kB and grows with the piece. So the picture
+  can go, on one condition - the client publishes **the widget its edit named**,
+  never the window - and that condition is a granularity change in the client's
+  `editing/`, not in the host. The host's half is done and is useful on its own:
+  it is what makes a redefine stop destroying a zoom, which was the branch's
+  opening complaint.
 - ⬜ **O24 - The three applications.** The **audio editor**, the **multitrack
   editor** and the **score editor**, each an application over this document,
   programmable from the GUI host and driven identically from every client. This

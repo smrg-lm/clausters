@@ -22,6 +22,7 @@ one passing and the one on the wire still warning is evidence that the pictures
 diverged, not that the arithmetic is wrong.
 """
 
+import json
 import random
 
 from clausters.gui.editing import Application
@@ -223,3 +224,101 @@ def test_no_publish_ever_addresses_a_widget_the_host_no_longer_holds():
             seen["both"] += redefine and sets
     assert all(count > 50 for count in seen.values()), \
         f"the publishes generated are not varied enough to mean anything: {seen}"
+
+
+# ---- what a redraw costs, which is what decides whether the picture can go ----
+#
+# The measurement `APPLICATION-SCOPE.md`'s AP5 asks for and gates the rest of
+# the milestone on: the host reconciles now, so a client could stop holding a
+# picture and simply send what it drew -- if what it sends is affordable at drag
+# rates. What this asserts is the **shape** of the answer rather than a byte
+# count, because the shape is the load-bearing part: the cost of publishing the
+# widget an edit named does not grow with the piece, and the cost of publishing
+# the window does.
+
+class Weigher:
+    """A host that weighs what it is told instead of drawing it."""
+
+    def __init__(self):
+        self.bytes = 0
+
+    def alloc_id(self):
+        return 0
+
+    def define(self, wid, tree, *blobs):
+        self.bytes += len(json.dumps(tree))
+        return wid
+
+    def redefine(self, wid, tree, *blobs, window=None):
+        self.bytes += len(json.dumps(tree))
+
+    def set(self, wid, **props):
+        # One message per prop: the id, the key and the value.
+        for key, value in props.items():
+            self.bytes += len(json.dumps(value)) + len(key) + 8
+
+    def subscribe(self, func):
+        return func
+
+    def unsubscribe(self, func):
+        pass
+
+    looping = False
+    loop = None
+
+
+def a_multitrack(lanes: int, clips: int, moved: float) -> dict:
+    """`lanes` lanes of `clips` clips, with the first clip of the first lane
+    dragged to `moved`."""
+    out: dict = {"type": "window", "title": "arranger", "children": []}
+    wid = 100
+    for lane in range(lanes):
+        row: dict = {"id": wid, "type": "field", "label": f"track {lane}",
+                     "h": 96, "children": []}
+        wid += 1
+        for clip in range(clips):
+            offset = moved if (lane == 0 and clip == 0) else clip * 4.0 * 48_000
+            row["children"].append({"id": wid, "type": "field",
+                                    "label": f"take {clip}", "offset": offset,
+                                    "dur": 4.0 * 48_000})
+            wid += 1
+        out["children"].append(row)
+    return out
+
+
+def _drag_cost(lanes: int, clips: int, frames: int = 60) -> tuple:
+    """What one frame of a drag costs three ways: the difference the client
+    sends today, the subtree of the widget the edit named, and the window."""
+    host = Weigher()
+    app = an_app(host)
+    first = a_multitrack(lanes, clips, 0.0)
+    app.published(WINDOW, first)
+    host.bytes = 0
+    for frame in range(1, frames + 1):
+        app.publish(WINDOW, a_multitrack(lanes, clips, frame * 512.0))
+    clip = json.dumps(first["children"][0]["children"][0])
+    return host.bytes / frames, len(clip), len(json.dumps(first))
+
+
+def test_publishing_what_an_edit_touched_costs_the_same_in_any_size_of_piece():
+    # The finding, and the reason the client's picture can go at all: dragging
+    # one clip costs the same whether the piece has sixteen clips or six
+    # thousand, *if* what is published is the widget the edit named. Publish the
+    # window instead and the same gesture costs the whole piece, every frame.
+    small = _drag_cost(4, 4)
+    large = _drag_cost(64, 100)
+
+    assert small[1] == large[1], "the touched clip's subtree does not grow"
+    assert large[2] > 100 * small[2], "the window's does, and steeply"
+    assert large[1] < large[0] * 10, \
+        "and it stays within a small multiple of today's delta"
+
+
+def test_a_drag_sends_a_delta_that_does_not_grow_with_the_piece_either():
+    # What the client does today, for the comparison to mean anything: the
+    # difference finds the one prop that moved, so a drag is a `/gui_set` and
+    # nothing else however large the piece is.
+    small, _, _ = _drag_cost(4, 4)
+    large, _, _ = _drag_cost(64, 100)
+    assert small == large
+    assert small < 100, "a drag is one prop, not a picture"

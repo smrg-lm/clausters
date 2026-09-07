@@ -700,9 +700,32 @@ planned, and it is why this is written here rather than re-derived later.
 **What it costs, unpainted.**
 
 1. **Bandwidth.** A tree per redraw instead of a delta. Mitigated by publishing
-   the smallest subtree the client knows it touched rather than the window —
-   **not measured**, and it wants measuring at drag rates before anything is
-   built on it.
+   the smallest subtree the client knows it touched rather than the window.
+
+   **Measured 2026-09-07, and the mitigation is not optional — it is the whole
+   answer.** One clip dragged for 60 frames over four sizes of multitrack, each
+   frame published through the client's own difference, weighing what goes out
+   three ways (`tests/test_gui_publish.py`, which asserts the shape of this):
+
+   | piece | today's delta | the touched clip | the whole window |
+   |---|---|---|---|
+   | 4 lanes x 4 clips | 21 B/frame | 91 B | 1.9 kB |
+   | 8 x 16 | 21 B | 91 B | 13 kB |
+   | 24 x 40 | 21 B | 91 B | 97 kB |
+   | 64 x 100 | 21 B | 91 B | 652 kB |
+
+   Three readings, and the third is the decision. The **delta is flat** — the
+   difference finds the one prop that moved, so a drag is one `/gui_set` however
+   large the piece is. The **window is not affordable**: at 60 Hz the largest
+   here is 39 MB/s of JSON, and it grows with the piece rather than with the
+   gesture, which is the wrong shape whatever the constant. And the **touched
+   subtree is flat too, at four times the delta** — 5.5 kB/s, which is nothing.
+
+   So `_published` can go, and the granularity is the condition rather than a
+   refinement: the client must publish **the widget its edit named**, which it
+   knows because an intent names a node and `AP1` derives the widget id from it.
+   Publishing the window and letting the host reconcile would be correct and
+   unusable.
 2. **Which props are the host's and survive a reconcile.** Implicit today in "a
    redefine destroys everything"; it has to become explicit, per widget kind —
    zoom, scroll, selection, focus, expanded, the overlays for what is in flight.
@@ -770,10 +793,13 @@ client and from a standalone host because it is one piece of code.
   key it states, which is the wire's *nothing said is nothing written* and is
   what keeps a script able to drive a view at all.
 
-  **What is left is the client's side**, and it is gated on cost (1) above: a
-  tree per redraw instead of a delta, **not measured**. `Application._published`
-  goes when that measurement says what it costs, and not before — the entry that
-  asks for it is the reason.
+  **What is left is the client's side.** Cost (1) above is now measured, and it
+  answers with a condition rather than a yes: `_published` can go **when the
+  client publishes the widget its edit named** rather than the window — flat in
+  the size of the piece, four times today's delta — and not otherwise, because
+  publishing the window is 39 MB/s at drag rates on a large piece. So the
+  remaining work is a granularity change in `editing/`: `publish` comes to take
+  the subtree an edit touched, and the picture goes with it.
 
 **The standing reason for this milestone**, said by the user on 2026-09-06 while
 reading the day's defects: *the editing logic has to be in Rust so that it is in
