@@ -1886,14 +1886,22 @@ under the cursor, and an edit reaches the pass that is running"), which carries
 the problem, the shape and the acceptance -- read it there, and do not re-derive
 it here.
 
-**It waits on `C54`'s first question**, which is whether the live-edited case
-grows out of `Timeline` or becomes a **second structure beside it** (the user
-leans that way) -- for what it was written for (a bounced pattern, an offline
-render, a followed transport) the current shape is right, here as there. Port
-the answer, not this file's guess at it. And if the answer is a second
-structure, this milestone is likely a **binding** rather than a port: a player
-written once in Rust, bound here and in Python, is the standing rule and the
-only way the two clients cannot drift on it.
+**`C54`'s first question is answered, and it shrank this milestone**
+*(2026-09-08)*. Neither branch it offered was taken: the multitrack editor plays
+through the **server's transport** -- a region is a resident reader following
+`TransportPos`, and the position is the engine's -- so the audio half needs no
+player in any client, and `Timeline` is left exactly as it is for what it was
+written for (a bounced pattern, an offline render, a followed transport), here as
+there. `clients/web/src/seq/timeline.ts` therefore does not change on that
+account.
+
+What is left to port is the **events** half: a region of notes fires voices, so
+it keeps a queue -- on `/sched_atTransport` -- and keeps needing a re-cue on a
+**locate**, over what is live at that position. That is one structure serving one
+case, and if it is written in Rust in `crates/clausters-document` (the standing
+rule, and where the arrangement already lives) this milestone is a **binding**
+rather than a port. The transport half needs no decision at all: it is OSC, and
+`clients/web/src/defs/server/transport.ts` already has the builders.
 
 `clients/web/src/seq/timeline.ts` is the Python module ported **verbatim**: the
 same sorted `(beat, item)` list, the same `indexAt`, the same `feed` generator

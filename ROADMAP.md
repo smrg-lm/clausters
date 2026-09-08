@@ -503,11 +503,16 @@ its plan; the plan is where its acceptance is read.
   whose drawn half shipped that day ("One cursor, it is the transport's, and the
   content never moves it", `clients/gui/PLAN.md`), and `O24`'s multitrack is an
   editor that rewrites a playing timeline by hand, which is exactly what
-  `seq.timeline` was not written for -- which is a mismatch and not a verdict on
-  the object: its first question is whether one structure serves both uses or the
-  live-edited one is a second beside it. Read before `O24` rather than during it,
-  for the reason the cursor was: an application that has to fix its own transport
-  on the first day is two pieces of work in one.
+  `seq.timeline` was not written for -- a mismatch and not a verdict on the
+  object.
+
+  **Its first question was answered on 2026-09-08 and most of it moved into
+  `O24`.** The multitrack plays through the **server's transport** rather than
+  scanning a queue in a client, so the audio half needs no player anywhere and
+  `Timeline` is untouched. What is still `C54`/`W31` is the **events** half -- a
+  region of notes fires voices, so it keeps a queue on `/sched_atTransport` and a
+  re-cue on a locate -- which is now near `O24` rather than before it, and small
+  enough to land with the multitrack's roll lane.
 
 - ⬜ **`W30` - the editing seam comes across, and the two clients are read
   against each other** *(`clients/web/PLAN.md`)*. The branch's last structural

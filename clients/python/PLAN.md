@@ -194,7 +194,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
 
 - ✅ **C37 — The free-standing `scope`: real-time views of a live bus** *(done 2026-07-16)*: the real-time sibling of C36's `plot` — the three tap-fed instruments the host already carries (the G18 oscilloscope, the G19 phasescope and live spectrum), reachable in one verb. `clausters.scope(bus, view="signal"|"phase"|"spectrum")` resolves the ambient live server (`main.resolve_server`) and the ambient GUI host — the same owned host `plot` uses, here booted **wired to the server** (address + `shm` segment, the native tap read path; an owned host booted leg-less is rebooted wired when a leg is first needed); a `server` handle without a segment fails early with guidance (pass `host=` for an attached or browser host). The tap indices come from a new **client-side tap registry** (`Server.taps`, a `TapAllocator` over the core occupancy map, sized from `ServerOptions.taps` like the bus allocators — S10 spirit: freed runs reuse, double free and exhaustion raise), so two scopes never fight over one ring; the phase view takes a run of **two adjacent** taps for the stereo pair `bus`/`bus + 1`. The verb routes each tap (`/bus_tap`), opens the window and returns a `ScopeWindow` whose `set` retunes the display live and whose `close` releases everything — `/bus_tap … -1`, the registry run, the window. Host side, the `spectrum` widget's `log_freq` grew into `freq_scale` = linear/log/mel/bark through the shared `display_to_hz` geometry (the G20b move; the boolean stays as a legacy alias in parse and `/gui_set`), so the spectroscope's axis matches the spectrogram's and is retunable live. Docs: the Sessions page's "Scoping a live signal" section; example `examples/views/scoping.py`; a manual smoke step. Tests: `tests/test_scope.py` — the tap registry (recycle/adjacent pairs/misuse), per-view tree building and tap release against fake host/server; the host-side scale in the gui crate's widget tests. *(Follow-up: GUI G28 generalized the verb to `channels` consecutive buses — multichannel lanes/overlay, axis rulers, a visible trigger — and its docs to a brief user manual.)*
 
-- **C54 — A timeline plays what is under the cursor, and an edit reaches the
+- ⬜ **C54 — A timeline plays what is under the cursor, and an edit reaches the
   pass that is running** *(opened 2026-09-08 by the user, after hearing a clip
   dragged while the line was about to reach it: "hay que revisar la
   implementacion del sistema de reproduccion de las lineas temporales editables
@@ -204,37 +204,48 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   **by hand while it plays**. That is the mismatch, and every symptom below is
   one of its three faces rather than three defects.
 
-  **`Timeline` is not wrong, and the milestone does not start by assuming it is**
-  *(the user, opening this)*. For what it was written for it is right and several
-  paths depend on exactly that shape: a score bounced from a pattern
-  (`from_pattern`), an NRT render, an `Automation`, a playhead following a
-  conductor's transport, the document round-trip. A static list seeked at its
-  boundaries is a good answer to a static score. So **the first question this
-  milestone answers is which of two it is**, and the user's own reading leans to
-  the second *("y puede necesitarse otra implementacion para el editor
-  multipista")*:
+  **The first question is answered, and the answer is neither of the two it
+  offered** *(2026-09-08, from the analysis in `crates/clausters-document/PLAN.md`,
+  `O24`)*. It asked whether `Timeline` grows an extent and a time-located wake, or
+  whether the multitrack editor gets a **second player** beside it. It gets
+  neither, because it should not be scanning a queue in a client at all: **the
+  multitrack plays through the server's transport**, where a region is a resident
+  reader following `TransportPos` and the position is the engine's. That was
+  already the written design for the `standalone` host
+  (`docs/architecture.md`, "Playback time in a session: read, never computed")
+  and `docs/schemas.md` already names it *"the shape a multitrack needs -- many
+  readers, one time"*; what was missing is that the application was not using it.
+  So `Timeline` is left exactly as it is for what it was written for -- a bounced
+  pattern, an NRT render, an `Automation`, a playhead following a conductor, the
+  document round trip -- and the user's reading that it "is not wrong" holds
+  without a second implementation of it having to be written anywhere.
 
-  - **One structure**: the queue grows an extent and the pass a time-located
-    wake, and the static uses keep working through it unchanged.
-  - **Two**: the multitrack editor plays a **structure of its own** -- an
-    arrangement player, located by time, that asks what is live at a beat and
-    hands each item the offset it is entered at -- and `Timeline` is left exactly
-    as it is for the static score. They share the item seam (`play(destination)`)
-    and nothing else, which is what makes this cheap: an `Event`, an `OscItem`
-    and a `MidiItem` are already the currency of both.
+  **What that dissolves.** All three faces below, for **audio**: there is no
+  queue, so an onset with no extent is not a shape anything depends on; the
+  position is the engine's anchored `PiecePosition`, so no edit shifts it; and an
+  edit is a node command on a live node, so it lands wherever the transport is
+  with nothing re-cued and nothing already sounding cut. The `follow()` re-cue in
+  `examples/editors/multitrack` goes away rather than being made correct.
 
-  Whichever way it goes is written down before any code, because the answer
-  decides everything under it, and the by-ear acceptance is the same either way.
+  **What is left of this milestone, and it is the small half: the events.** A
+  region of notes has no reader to follow -- it fires voices -- so that half
+  keeps a queue, on `/sched_atTransport` (which rides the transport clock and
+  waits out a pause), and keeps needing a re-cue, but only on a **locate** and
+  over what is live at that position, rather than on every edit. So the question
+  *"what is alive at beat b, and how far into each"* survives exactly once, for
+  discrete contents, and the shape below is what answers it. The asymmetry that
+  entry already decided is the same one: continuous contents enter at the frame
+  that corresponds, discrete contents start at the next onset and one already
+  gone past is not recovered -- and with the transport holding the continuous
+  half, that sentence stops being a compromise and becomes a description of two
+  different mechanisms.
 
-  **If it is the second, it is probably not Python at all.** The rule the project
-  runs on is that the numeric and timing logic lives in `clausters-core` (or in
-  the crate that owns the model) and every client binds the same one -- and the
-  arrangement already lives in `crates/clausters-document`, which both clients
-  round-trip and the `standalone` host holds. A second player written twice, in
-  Python and in TS, is two implementations of one rule and is how the same piece
-  comes to sound different in two places. So the design pass weighs *where* it
-  goes as much as *what* it is, and `W31` may turn out to be a binding rather
-  than a port.
+  **Where it lives.** Whatever answers it is not written twice: the arrangement
+  lives in `crates/clausters-document`, which both clients round-trip and the
+  `standalone` host holds, so `W31` is likely a binding rather than a port. The
+  transport half needs no such decision -- it is OSC commands, and both clients
+  already have the builders (`clausters.defs.server.transport`,
+  `clients/web/src/defs/server/transport.ts`).
 
   **What is there today**, so the work is the difference and not a rewrite.
   `Timeline` is a list of `(beat, item)` kept sorted with `bisect.insort`, with
@@ -262,26 +273,29 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
     picking a clip up and letting it go, the old pass is still playing the old
     list, at the old place.
 
-  **The shape that answers it** -- *if* the answer is one structure, which is the
-  question above: the entry carries `(beat, dur, item)`; the pass is located by **time** and, at each
-  wake, asks the timeline *what is live at this beat and how far into each*
-  rather than walking an index; and each item takes that offset -- **continuous
-  contents enter at the frame that corresponds, discrete contents start at the
-  next onset and one already gone past is not recovered** (the asymmetry decided
-  in "A pass re-cued from the playhead drops the clip the playhead is inside",
-  Found by use, which is this milestone's own reproduction and its acceptance
-  by ear). With that, a live edit needs no re-cue at all: the next wake asks the
-  same question of the list as it now stands, so `follow()`-style re-cueing
-  becomes an optimization rather than the mechanism.
+  **The shape that answers what is left**, over discrete contents: the entry
+  carries `(beat, dur, item)`; the pass is located by **time** and, at each wake,
+  asks *what is live at this beat and how far into each* rather than walking an
+  index; and each item takes that offset -- **discrete contents start at the next
+  onset and one already gone past is not recovered** (the asymmetry decided in "A
+  pass re-cued from the playhead drops the clip the playhead is inside", Found by
+  use, which is this milestone's own reproduction and its acceptance by ear); the
+  other half of that asymmetry, continuous contents entering at the frame that
+  corresponds, is now the transport's and needs nothing here. Whether this shape
+  is `Timeline` grown or a structure beside it is no longer the load-bearing
+  question it was: it serves one case rather than the whole of playback, and the
+  static uses stay on `Timeline` either way.
 
-  **Acceptance.** With the piece playing in `examples/editors/multitrack`:
-  dragging a clip *onto* the line starts it from the frame the line is at;
-  dragging one *away* stops it as the hand lifts it and it no longer sounds
-  where it was; a clip dropped behind the line is not resurrected, and one
-  dropped ahead sounds when the line arrives. Plus a unit test per face, since
-  all three are testable off the clock: an item spanning the cursor is live, an
-  `add` before the cursor does not replay, and an edit mid-pass is heard without
-  a new pass.
+  **Acceptance.** With the piece playing in `examples/editors/multitrack`,
+  over its **roll** lane: a note region dragged onto the line sounds from its
+  next onset when the line reaches it, one dragged away goes quiet, and a locate
+  into the middle of one starts it at the next onset inside it rather than
+  skipping it whole. Plus a unit test per face, all testable off the clock: an
+  item spanning the cursor is live, an `add` before the cursor does not replay,
+  and an edit mid-pass is heard without a new pass. **The audio half's acceptance
+  moved to `O24`** and is the same sentences over the file lanes -- a clip dragged
+  onto the line enters from the frame the line is at -- because there it is the
+  transport doing it and not this.
 
   **Boundaries.** It is `seq.timeline` and the items' `play` seam, not the
   arrangement's object model and not what a static score does today -- nothing

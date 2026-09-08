@@ -1104,6 +1104,86 @@ DAW session, because that is what a DAW session is good at.
   That is the design question this milestone opens, and it is what makes the
   audio editor more than a waveform with a selection.
 
+  **The multitrack editor plays through the server's transport, and computes no
+  time at all** *(decided 2026-09-08, taken as the milestone's first leg)*. This
+  is not a new decision - `docs/architecture.md`, "Playback time in a session:
+  read, never computed", already writes it for the `standalone` host, and
+  `docs/schemas.md` already calls `TransportPos` *"the shape a multitrack needs
+  - many readers, one time"*. What is new is that the multitrack editor is the
+  application that has to use it, and today's example does the opposite: it
+  builds a `clausters.seq.Timeline` afresh per pass and runs a **client-side**
+  `Playhead` that scans onsets and fires one-shots, so the server never learns
+  that there is a piece.
+
+  The machine is already on the wire and unused by this application:
+
+  - The transport **exists on every server**, with no beat grid needed - rolling,
+    stopping, saying where the piece is and looping a span are all in samples.
+  - `/transport_group` binds the subtree the engine **governs**: `stop` freezes
+    it with every node's state intact, `play` thaws it, so resuming *continues*
+    rather than restarts. The host binds a group of its own and never the root,
+    which would freeze every sound the session has.
+  - `/transport_locateSample`, `/transport_locate` and `/transport_loop` are the
+    three verbs an editor wants, and the loop's wrap happens **in the engine**,
+    on its exact sample, so no client is in the loop and a reader hears no seam.
+  - `TransportPos(offset)` is what makes a region a **follower**: a `BufRd` on
+    that phase seeks when the transport seeks, loops when it loops and holds
+    when it stops, with nothing sent per pass and no position of its own. The
+    subtraction is `f64` inside the UGen, so a region reads its own frame 0
+    however deep into the piece it sits.
+  - The playhead is **read, not anchored**: `positionSample` is published in the
+    shared segment, the host's `HeadClock::Piece` already draws from it, and the
+    sweep anchor is then simply 0. A stopped transport holds the position so the
+    line holds; a locate moves it so the line jumps; a loop wraps it so the line
+    wraps.
+
+  **What this dissolves, and it is most of `C54`.** A region becomes a resident
+  node with a span rather than an entry in an onset queue, so *"is this under the
+  cursor"* is the reader's own arithmetic and no structure has to answer it; the
+  position is the engine's anchored `PiecePosition` and no edit can shift it; and
+  an edit is a node command on a live node (`/node_set` of the offset and the
+  span, `/synth_new`, `/node_free`) that lands wherever the transport is, with
+  nothing re-cued and nothing already sounding cut. `clients/python/PLAN.md`'s
+  `C54` carries the split and what is left of it.
+
+  **What it does not dissolve**, stated here so it is not discovered: a region of
+  **events** has no reader to follow. Notes fire voices, so that half keeps a
+  queue - on `/sched_atTransport`, which rides the transport clock and waits out
+  a pause - and keeps needing a re-cue, but only on a **locate**, over what is
+  live at that position, instead of on every edit. That is the small half of
+  `C54` and it is where "what is alive at beat b" is still a question a structure
+  has to answer.
+
+  **Two limits that come with a server-wide transport.** There is exactly one per
+  server, so two multitrack windows are two pieces and one transport; the host's
+  `Host::owns_transport` keeps them from fighting but does not make them two.
+  And a locate moves the position, never a node's state - which costs nothing for
+  a follower and is decisive for a **generator**, whose position *is* its state:
+  a generated region is seekable only once it is rendered, which is what decides
+  what may sit on a track and what has to pass through a render first.
+
+  **The three kinds of contents a multitrack holds**, against what the crate
+  already has:
+
+  | What the hand places | How it is written | How it sounds |
+  |---|---|---|
+  | an **audio file** | `Content::Window` over `SegmentSource::Samples`, with the session's `Source` table saying where | a `BufRd` on `TransportPos`, gated to the region's span, `playrate` scaling the phase and the fades an envelope over it |
+  | a **sequence of events** (MIDI, notes) | `Content::Window` over `SegmentSource::Node` - a window onto a node this document holds, which is what keeps a cut of notes a window and not a copy | voices fired on `/sched_atTransport`, re-cued on a locate |
+  | a **processing chain** | **not modelled yet** - a `Track` today carries `config: Opaque` and nothing else | - |
+
+  The first two need no new types. The **third is the milestone's one open design
+  decision**, and it is the crate's oldest unsettled question asked from the
+  application's side (see "What this turn does not settle" below): a `Track` in
+  the written model was to carry its kind, its routing and its authored mixer
+  state, and of that only `muted` and `soloed` exist. The line this crate has
+  already drawn twice answers it: **the processor is an opaque leaf** (which def,
+  with which arguments - because a def is code in the language of whoever wrote
+  it) **and the routing is the document's** (which bus a track feeds, what sends
+  it has, in what order the chain runs). That is exactly the split
+  `Automation.target` already lives on - the document knows *which parameter*,
+  never *what the parameter means*. Written here as the recommendation; it is
+  taken when it is taken, and until then a track's chain stays in `config`.
+
 **None of this starts from nothing on the Rust side.** About 8000 lines of
 multitrack behaviour are already implemented in the GUI host - the shared box
 geometry (`host/placement.rs`, whose own module doc says a lane and a semitone
@@ -1122,7 +1202,9 @@ whether the behaviour was correct.
 
 **What this turn does not settle**, and will not be settled in passing: whether
 plugins/processors are in the document at all (the leaf is opaque, and a plugin
-is a leaf - but a *send* is routing and routing is authored); and how a
+is a leaf - but a *send* is routing and routing is authored) - `O24`'s
+multitrack asks this one from the application's side and carries the
+recommendation, since a track with no chain is a mixer with no strip; and how a
 region's contents are addressed when the source is a function whose arguments
 differ per region - which is `O21`(a) asked from the other side, since REAPER's
 take is exactly *a reference plus the arguments of this appearance*.
