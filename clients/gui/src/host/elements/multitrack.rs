@@ -381,6 +381,101 @@ impl Multitrack {
         }
     }
 
+    /// A name no clip here has yet, derived from `base` — what a **split** needs
+    /// and what a **paste** needs.
+    ///
+    /// The identity is the client's word, and a split makes one the client never
+    /// said. So the host mints it the way it mints a marker's number, from the
+    /// name that was there, and it comes back in the report as any other name
+    /// does: the script learns it by being told, not by guessing a rule.
+    fn fresh_name(&self, base: &str) -> String {
+        let mut n = 2;
+        loop {
+            let name = format!("{base} {n}");
+            if self.clip(&name).is_none() {
+                return name;
+            }
+            n += 1;
+        }
+    }
+
+    /// The clip of this name, if it is here.
+    fn clip(&self, name: &str) -> Option<&Clip> {
+        self.clips.iter().find(|c| c.name == name)
+    }
+
+    /// **Cut every held clip at `at`**, keeping the halves in the hand.
+    ///
+    /// The window over the contents moves with the cut — `placement::split_at`
+    /// is the arithmetic, the same one a note's split uses — so the second half
+    /// reads on from where the first stopped rather than from the source's
+    /// start.
+    fn split_held(&mut self, at: f64) -> bool {
+        let mut made = Vec::new();
+        for &i in &self.selected {
+            let Some(clip) = self.clips.get(i) else {
+                continue;
+            };
+            let Some((first, second)) = placement::split_at(clip.place, at) else {
+                continue;
+            };
+            let name = self.fresh_name(&clip.name);
+            let mut tail = clip.clone();
+            tail.name = name;
+            tail.place = second;
+            made.push((i, first, tail));
+        }
+        if made.is_empty() {
+            return false;
+        }
+        for (i, first, tail) in made {
+            self.clips[i].place = first;
+            self.clips.push(tail);
+            self.selected.push(self.clips.len() - 1);
+        }
+        true
+    }
+
+    /// **Join the held clips that touch, on one lane** — a pitch is what makes
+    /// two notes one voice, and a **lane** is what makes two clips joinable.
+    ///
+    /// A run is read over what is there, so an overlap joins as readily as a
+    /// juxtaposition: two boxes sharing pixels are not two boxes to a reader.
+    fn join_held(&mut self) -> bool {
+        let mut held = self.selected.clone();
+        held.sort_by(|a, b| {
+            let (x, y) = (&self.clips[*a], &self.clips[*b]);
+            (x.lane.as_str(), x.place.offset)
+                .partial_cmp(&(y.lane.as_str(), y.place.offset))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut drop: Vec<usize> = Vec::new();
+        let mut i = 0;
+        while i < held.len() {
+            let head = held[i];
+            let mut j = i + 1;
+            while j < held.len()
+                && self.clips[held[j]].lane == self.clips[head].lane
+                && placement::adjacent(self.clips[head].place, self.clips[held[j]].place, 1.0)
+            {
+                self.clips[head].place =
+                    placement::merge(self.clips[head].place, self.clips[held[j]].place);
+                drop.push(held[j]);
+                j += 1;
+            }
+            i = j;
+        }
+        if drop.is_empty() {
+            return false;
+        }
+        drop.sort_unstable();
+        for i in drop.into_iter().rev() {
+            self.clips.remove(i);
+        }
+        self.selected.clear();
+        true
+    }
+
     /// The lane header a lane's own props ask for. Presence-driven, like every
     /// header here: a lane that carries no mixer state offers no controls.
     fn header(&self, lane: &Lane, indent: f32) -> track::Header {
@@ -673,17 +768,32 @@ impl Element for Multitrack {
     /// The verbs a hand has over what it is holding.
     ///
     /// `q` quantizes onto the lane's own `snap` grid — the grid a drag already
-    /// lands on — and Delete removes. Both act on **the held set**, across the
-    /// stack, and both report the clips as they now stand, which is the one
-    /// payload every edit here has.
-    fn key(&mut self, key: &Key, _input: &mut KeyInput) -> Option<Events> {
-        if self.selected.is_empty() {
+    /// lands on — `e` splits at the window's cursor and `j` joins a touching
+    /// run, Delete removes, and `Ctrl`+`C`/`X`/`V` move a block through the
+    /// host-wide clipboard. All of them act on **the held set**, across the
+    /// stack, and all of them report the clips as they now stand: there is one
+    /// payload here and a verb does not get to invent a second.
+    ///
+    /// **The letters are the ones a clip already answered to on a lane.** Which
+    /// keys they are is not settled — see `clients/gui/PLAN.md`, "A shortcut is
+    /// the application's, not the widget's".
+    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        if self.selected.is_empty() && !matches!(key, Key::Char('v') | Key::Char('V')) {
             return None;
         }
         match key {
-            Key::Char('q') => {
+            Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
                 let held = self.selected.clone();
                 placement::quantize(self, &held, self.snap).then(|| self.clips_event())
+            }
+            // **At the window's cursor**: a key gesture has no pointer to read a
+            // position from, and the window has one cursor for exactly that.
+            Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
+                let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                self.split_held(at).then(|| self.clips_event())
+            }
+            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => {
+                self.join_held().then(|| self.clips_event())
             }
             Key::Delete | Key::Backspace => {
                 let mut held = self.selected.clone();
@@ -694,6 +804,64 @@ impl Element for Multitrack {
                     }
                 }
                 self.selected.clear();
+                Some(self.clips_event())
+            }
+            // The clipboard is the host's one string, so a block travels between
+            // multitracks and windows — and rides it in the same JSON form a
+            // `/gui_set clips` accepts, which is the carrier every non-scalar
+            // here uses.
+            Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
+                if input.mods.ctrl =>
+            {
+                let block: Vec<Clip> = self
+                    .selected
+                    .iter()
+                    .filter_map(|&i| self.clips.get(i).cloned())
+                    .collect();
+                if block.is_empty() {
+                    return None;
+                }
+                input
+                    .clipboard
+                    .set_text(&model::clips_json(&block).to_string());
+                if !matches!(key, Key::Char('x') | Key::Char('X')) {
+                    // A copy changed nothing, so it reports nothing — but it
+                    // consumed the key.
+                    return Some(Events::none());
+                }
+                let mut held = self.selected.clone();
+                held.sort_unstable();
+                for i in held.into_iter().rev() {
+                    self.clips.remove(i);
+                }
+                self.selected.clear();
+                Some(self.clips_event())
+            }
+            Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
+                let mut props = Map::new();
+                props.insert(
+                    "clips".into(),
+                    serde_json::from_str(&input.clipboard.text()).ok()?,
+                );
+                let block = parse_clips(&props);
+                if block.is_empty() {
+                    return None;
+                }
+                // **At the cursor**, and keeping the block's own shape: the
+                // earliest pasted clip lands there and the rest keep their
+                // distances, which is what makes a pasted block the same block.
+                let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                let first = block
+                    .iter()
+                    .map(|c| c.place.offset)
+                    .fold(f64::INFINITY, f64::min);
+                self.selected.clear();
+                for mut clip in block {
+                    clip.place.offset = (clip.place.offset - first + at).max(0.0);
+                    clip.name = self.fresh_name(&clip.name);
+                    self.clips.push(clip);
+                    self.selected.push(self.clips.len() - 1);
+                }
                 Some(self.clips_event())
             }
             _ => None,
@@ -1135,5 +1303,125 @@ mod tests {
 
         // With nothing held, the keys are not this widget's.
         assert!(mt.key(&Key::Char('q'), &mut ki(&mut clipboard)).is_none());
+    }
+    /// **`e` cuts at the window's cursor and `j` joins a touching run.** The
+    /// window over the contents moves with the cut, so the second half reads on
+    /// from where the first stopped — and a join is stated over what is there,
+    /// so it puts the two back.
+    #[test]
+    fn a_clip_splits_at_the_cursor_and_joins_back() {
+        let mut mt = piece();
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        fn ki(clip: &mut crate::host::clipboard::Clip, cursor: Option<f64>) -> KeyInput<'_> {
+            KeyInput {
+                mods: Mods::default(),
+                clipboard: clip,
+                cursor,
+            }
+        }
+        mt.selected = vec![0];
+
+        let cut = mt
+            .key(&Key::Char('e'), &mut ki(&mut clipboard, Some(200.0)))
+            .expect("it cut");
+        assert_eq!(cut.into_messages()[0][0], OscType::String("clips".into()));
+        assert_eq!(mt.clips.len(), 3);
+        assert_eq!(mt.clips[0].place.dur, 200.0);
+        let tail = mt.clips.last().expect("the second half");
+        assert_eq!((tail.place.offset, tail.place.dur), (200.0, 300.0));
+        assert_eq!(
+            tail.place.start, 200.0,
+            "it reads on rather than restarting"
+        );
+        assert_eq!(
+            tail.name, "a 2",
+            "a name the client never said, minted here"
+        );
+        assert_eq!(tail.lane, "noise", "and it stayed on its lane");
+
+        // Both halves are in the hand, so `j` puts them back.
+        let joined = mt
+            .key(&Key::Char('j'), &mut ki(&mut clipboard, None))
+            .expect("it joined");
+        assert_eq!(
+            joined.into_messages()[0][0],
+            OscType::String("clips".into())
+        );
+        assert_eq!(mt.clips.len(), 2);
+        assert_eq!(mt.clips[0].place.dur, 500.0);
+        assert_eq!(mt.clips[0].place.offset, 0.0);
+    }
+
+    /// A join is **a lane's**: a pitch is what makes two notes one voice, and a
+    /// lane is what makes two clips joinable.
+    #[test]
+    fn two_clips_on_two_lanes_do_not_join() {
+        let mut mt = piece();
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        mt.clips[1].place.offset = 500.0; // it already ends where `a` does
+        mt.selected = vec![0, 1];
+        let joined = mt.key(
+            &Key::Char('j'),
+            &mut KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clipboard,
+                cursor: None,
+            },
+        );
+        assert!(joined.is_none(), "they touch in time and not on a lane");
+        assert_eq!(mt.clips.len(), 2);
+    }
+
+    /// **A block travels through the clipboard keeping its own shape**: the
+    /// earliest lands on the cursor and the rest keep their distances, which is
+    /// what makes a pasted block the same block.
+    #[test]
+    fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+
+        let cut = mt
+            .key(
+                &Key::Char('x'),
+                &mut KeyInput {
+                    mods: ctrl,
+                    clipboard: &mut clipboard,
+                    cursor: None,
+                },
+            )
+            .expect("they left");
+        assert_eq!(cut.into_messages()[0][0], OscType::String("clips".into()));
+        assert!(mt.clips.is_empty());
+
+        let pasted = mt
+            .key(
+                &Key::Char('v'),
+                &mut KeyInput {
+                    mods: ctrl,
+                    clipboard: &mut clipboard,
+                    cursor: Some(100.0),
+                },
+            )
+            .expect("they came back");
+        assert_eq!(
+            pasted.into_messages()[0][0],
+            OscType::String("clips".into())
+        );
+        assert_eq!(mt.clips.len(), 2);
+        assert_eq!(
+            mt.clips[0].place.offset, 100.0,
+            "the earliest on the cursor"
+        );
+        assert_eq!(mt.clips[1].place.offset, 600.0, "and the shape kept");
+        assert_eq!(
+            mt.clips[0].lane, "noise",
+            "each on the lane it was cut from"
+        );
+        assert_eq!(mt.clips[1].lane, "tone");
     }
 }

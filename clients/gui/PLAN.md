@@ -3049,6 +3049,41 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
 ## Future directions (to fold into milestones as they firm up)
 
+- ⬜ **A shortcut is the application's, not the widget's** *(raised 2026-09-08
+  by the user, closing `G34`'s host logic: "los shortcut documentalos cuando
+  hagas la documentacion del elemento, luego se deberian poder cambiar pero eso
+  tal vez requiera una implementacion mas general para todas las vistas segun el
+  contexto de la apicacion")*. Every heavy view spells its own letters in its own
+  `key` arm: a roll splits on `e` and joins on `j`, a multitrack now does the
+  same over clips, `q` quantizes in both, `Ctrl`+`C`/`X`/`V` move a block
+  through the host's one clipboard, Delete removes. They agree today because
+  they were written to agree, which is exactly the kind of agreement that stops
+  being true quietly.
+
+  **What is wrong with it is not the letters, it is where they live.** A key is
+  a *binding* — a name for a verb, chosen by whoever is using the program — and
+  today it is a `match` arm inside the element that performs the verb. So the
+  same key cannot mean two things in two applications over one widget, a user
+  cannot change one, and a verb no key names is unreachable even though the
+  element implements it. The audio editor, the multitrack editor and the score
+  editor are three applications over one set of views (`O24`), which is what
+  makes this stop being hypothetical: they will want different letters over the
+  same element, and the element is the wrong place to ask.
+
+  **The shape this suggests, and it is not decided:** an element declares the
+  **verbs** it performs, by name, and something above it — the application, or a
+  table the host holds and a client can set — decides which key reaches which
+  verb, in this context. That is the same move `Element::gesture_map` already
+  made for the pointer (a container's plan names the steps, the element performs
+  them), applied to the keyboard; and the same move `/gui_theme` and
+  `/gui_metrics` made for the look. Whether the table is the host's, the
+  application's or the client's is the open question, and it is `O24`'s to
+  answer rather than a widget's.
+
+  Until then the letters are documented where they are performed (the element's
+  `key` doc comment and `docs/gui-protocol.md`'s catalog row), so at least what
+  is unchangeable is written down.
+
 Captured here so the depth the editor-grade vision needs is not lost; each becomes a milestone — or a track — when its design converges. **The convention, stated because the list only works if it holds:** every entry carries a `⬜`, and one that converges into numbered milestones **leaves this list** — it is not marked `✅` here, because converging is not shipping and a `✅` beside an unstarted milestone says the opposite of what is true. The milestone that absorbed it is the record, and it says where it came from, so nothing needs a pointer that would go stale. Gone that way so far: scopes, the editor-grade views, edit-back-to-data and the BPF view (G18-G21), and — 2026-08-13 — the **DAW / timeline view**, which became the whole of G22 with its dedicated note view following as G24 — while the free arrangement plane it named alongside the lane stack **stays here**, since it is a second kind of multitrack whose model differs structurally from the one that shipped and has still to be defined, not an increment on it; and **a sample as a grabbable point**, folded into the D track (D1, D2), which is where the questions it raised are answered.
 
 **Ordering — what is left of it.** The original decision staged the widget-deepening arc first, the timeline and notation views after it, and packaging plus the in-browser audio engine deliberately last. Three quarters of that is spent: the deepening arc landed (G18-G21), the timeline converged as G22 and notation as G31, and the engine shipped as the server's B track — which also settled the `Transport`/`ServerLink` seam the ordering was keeping open, since `ServerLink::Page` is that variant. What still binds is the other half of the same sentence: **packaging stays last**, because it changes how the system ships and not what the system can show, and it keeps constraining design in the meantime — the web frontend must stay Tauri-wrappable.
