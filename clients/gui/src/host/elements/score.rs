@@ -164,6 +164,36 @@ impl Element for Score {
             .data
             .hit(input.rect, at.0 as f32, at.1 as f32)
             .map(str::to_string);
+        // **On a page that takes note entry, a staff is a place.** The hit test
+        // answers with a sounding element where there is one and with the
+        // tightest box otherwise, and the tightest box on an engraved page is a
+        // staff *line* -- a hairline the width of the system, thinner than any
+        // notehead. So a press aimed at a line rather than at a space was
+        // answered with the engraver's own drawing and spent on a selection:
+        // measured over one sitting, 64 presses wrote a quarter and 10 came
+        // back as `"element"` naming an id the model does not own.
+        //
+        // Selecting a staff is not the wrong answer -- writing is what a press
+        // on the staff is *for*, and being a pixel onto a line is not a way to
+        // ask for something else. So where this page takes entry, a pick that
+        // is not a sounding element is blank paper, and selecting the staff
+        // needs its own way to be asked for (see the plan's "A selected staff
+        // is edited by its line count").
+        //
+        // **Only where the page said which ids sound.** A client that named no
+        // elements leaves the host unable to tell a note from a staff line, and
+        // there every pick is the tightest box: treating them all as paper
+        // would answer a press on a note with an insert.
+        let picked = match &picked {
+            Some(id)
+                if self.data.entry
+                    && !self.data.elements.is_empty()
+                    && !self.data.elements.contains(id) =>
+            {
+                None
+            }
+            _ => picked,
+        };
         let changed = picked != self.data.selected;
         if changed {
             self.data.selected = picked.clone();
@@ -289,6 +319,29 @@ mod tests {
                   {{"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"}},
                   {{"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}}]}}"#
         ))
+        .unwrap();
+        Score {
+            data: ScoreData::parse(&props),
+            origin_y: None,
+        }
+    }
+
+    /// The same page **as the engraver actually draws it**: the staff lines
+    /// carry the staff's own id, which the fixture above leaves off and which
+    /// is the whole of why a press on a line had somewhere else to go.
+    fn engraved_staff() -> Score {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,1000],"step":90,"editable":true,
+                "glyphs":{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"},
+                "prims":[
+                  {"k":"line","pts":[[0,20],[1000,20]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,200],[1000,200]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,380],[1000,380]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,560],[1000,560]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,740],[1000,740]],"w":4,"id":"staff1"},
+                  {"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"},
+                  {"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}]}"#,
+        )
         .unwrap();
         Score {
             data: ScoreData::parse(&props),
@@ -486,6 +539,65 @@ mod tests {
                 OscType::Int(-4),
                 OscType::Int(0),
             ]))
+        );
+    }
+
+    /// **A press on a staff line, on a page that takes entry, writes.**
+    ///
+    /// The defect (found 2026-09-07 by the user, by eye, `notation/
+    /// score_editor`): the engraver gives its staff lines the staff's own id,
+    /// and a staff line is a hairline the width of the system -- the tightest
+    /// box on the page, thinner than any notehead. With nothing sounding under
+    /// the pointer the tightest box decides alone, so a press aimed at a line
+    /// rather than at a space came back as `"element"` naming the staff, and a
+    /// press meant to write was spent on a selection. It looked random from the
+    /// window; it is exactly the presses that land on a line. Measured over one
+    /// sitting: 64 wrote a quarter, 10 answered with the drawing.
+    #[test]
+    fn a_press_on_a_staff_line_writes_rather_than_selecting_the_staff() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = engraved_staff();
+        score.data.entry = true;
+        score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
+
+        // y = 380 is the middle line, and 700 is clear of both noteheads: dead
+        // on the furniture, and the one press that used to answer with it.
+        let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("insert".into()),
+                OscType::String("n2".into()),
+                OscType::Int(-4),
+                OscType::Int(0),
+            ])),
+            "the line is a place to write, not a thing to select"
+        );
+
+        // A note still answers as itself: the rule reaches the furniture only.
+        score.press(at(&score, input.rect, 450.0, 250.0), &input);
+        assert_eq!(
+            score.data.selected.as_deref(),
+            Some("n2"),
+            "a press on a notehead is still the note's"
+        );
+    }
+
+    /// ...and a page that is **not** taking entry still selects the staff,
+    /// because selecting one is a legitimate thing a score editor does. What
+    /// the fix refuses is a *write* being spent on it.
+    #[test]
+    fn a_read_only_page_still_selects_the_staff_under_the_pointer() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = engraved_staff();
+        score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
+        score.press(at(&score, input.rect, 700.0, 380.0), &input);
+        assert_eq!(
+            score.data.selected.as_deref(),
+            Some("staff1"),
+            "no entry on this page: the press has nothing else to be"
         );
     }
 

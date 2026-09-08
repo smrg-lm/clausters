@@ -3466,7 +3466,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   painted on those and no others, so the four pictures answer the rule the four
   takes already did.
 
-- ⬜ **A press on empty staff answers with the engraver's own drawing about one
+- ✅ **A press on empty staff answers with the engraver's own drawing about one
   time in seven, and it is the staff lines** *(found 2026-09-07 by the user, by
   eye, in `notation/score_editor`)*. Measured over the sitting: **64** presses
   wrote a quarter and **10** came back as `"element"` carrying an id the model
@@ -3493,6 +3493,31 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   *is for*, and selecting the staff needs its own way to be asked for. The rule needs its second
   half: what a press means when it lands on nothing that sounds, where a staff
   is a **place** and not a thing to select.
+
+  **Fixed 2026-09-07, and the second half is exactly that.** On a page that
+  takes note **entry**, a pick that is not a sounding element is blank paper:
+  the press writes. Selecting a staff is untouched where it is the only thing a
+  press can be -- a page without `entry` still answers with the furniture under
+  the pointer, because there the press has nothing else to be -- so what the fix
+  refuses is a *write* being spent on a selection, which is what the user asked
+  for and no more.
+
+  Two guards, and the second was nearly missed. The rule applies only where the
+  page **declared which ids sound**: a client that named no `elements` leaves
+  the host unable to tell a note from a staff line, and there every pick is the
+  tightest box, so treating them all as paper would answer a press on a notehead
+  with an insert. And the rule reads the pick rather than the *kind* of
+  primitive, so it needs no list of what counts as furniture -- the engraving
+  walk already said which ids sound and a renderer still cannot re-derive it.
+
+  **Nothing tested this, and the fixture is why.** The score fixture's staff
+  lines carried **no id**, so in every test the hit test had nothing to fall
+  back to and the defect could not appear. The real page labels them with the
+  staff's own id. There is a second fixture now that engraves them as the
+  engraver does, and the two tests hang off it: a press on a line writes, and a
+  read-only page still selects. It is the same lesson the pencil's threshold
+  taught this morning -- the gap was not in the code that was wrong but in the
+  test data that could not express it.
 
 - ⬜ **An insert breaks the ties the document was read with, and only the
   engraver says so** *(found 2026-09-07, reading `notation/score_editor`'s log
