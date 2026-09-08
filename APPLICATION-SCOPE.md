@@ -1250,39 +1250,6 @@ owner moved is how a working editor becomes a new set of defects.
   **premise both of them were written under**. Two green tests exonerating a
   mechanism that was failing in front of the user is what this list is for.
 
-- ⬜ **The window closes and the process spins at 100% CPU** *(found 2026-09-06
-  by the user, twice; one earlier instance was a `composer.py` still running 55
-  minutes after its window was gone, at ~19% of a core)*. Nothing is known about
-  it yet beyond the shape: the window goes and the process does not. Two places
-  to look, and neither has been: the front's loop after a window is dropped
-  (`gui/app.rs`, `drop_window`) — a redraw requested for a window that is gone
-  would spin — and the client's own wait (`Application.wait` /
-  `GuiHost._wait_while`), which holds a thread until the window closes and may
-  never learn that it did. It matters more than it looks: it is the failure that
-  ends a session, and it leaves a stale host holding the port, which then makes
-  the *next* run fail for an unrelated reason.
-
-  **Not seen in nine runs, and both suspects were exercised** *(2026-09-07, the
-  visual review's second sitting)*. Seven examples across nine launches --
-  `multitrack` three times, `edit_samples` three, `edit_notes`, `edit_curve`,
-  `pianoroll`, `bpf`, `score_editor` -- every one closed by the user's hand and
-  every one exited 0, with the server and the host going down with it. That is
-  not an absence of testing on either named place: nine windows closed means
-  `drop_window` ran nine times, and `edit_samples` ends on `editor.wait()`,
-  which is `Application.wait` down to `GuiHost._wait_while` -- the client-side
-  suspect by name. `pianoroll` ends on `WindowHandle.wait`.
-
-  **The user's reading, and the dates support it**: it was `FormEditor`'s. This
-  entry was written on 2026-09-06 at 06:33 and `FormEditor` was removed the same
-  day at 19:21, thirteen hours later, taking `composer.py` with it -- and
-  `composer.py` is the run that was still going 55 minutes after its window was
-  gone. Both sightings are from before the removal.
-
-  **It stays open**, because nine quiet runs do not prove a spin cannot happen
-  and nobody has read either loop. What has changed is what to look at if it
-  comes back: not the two places above, which have now run clean under a hand
-  nine times, but whatever the returning case does that these seven do not.
-
 - ⬜ **A clip dragged past the first or last lane oscillates back to the start
   of the track** *(found 2026-09-06 by the user, by eye, twice)*. Holding a
   vertical drag against the top or bottom of the stack makes the clip jump to

@@ -242,8 +242,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.
-  - ⬜ **The window closes and the process spins at 100% CPU** — nothing is known
-    beyond the shape. Two places to look and neither has been.
   - ⬜ **A clip dragged past the first or last lane oscillates back to the start
     of the track** — no event reaches the client for those frames, so it is the
     host's own drag.
