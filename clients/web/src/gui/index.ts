@@ -43,6 +43,8 @@ export { Transport } from "./transport.ts";
 export type { TransportOptions, TransportTargets } from "./transport.ts";
 
 export * from "./guidef.ts";
+export { Clip, Lane, Multitrack } from "./multitrack.ts";
+export type { ClipLike, LaneLike, MultitrackOptions, MultitrackWidget } from "./multitrack.ts";
 
 // Engraving, as its own namespace for the same reason the Python client keeps
 // it a submodule: it is a layer (an engraver, an encoder, a view) rather than a

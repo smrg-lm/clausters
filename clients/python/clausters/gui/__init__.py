@@ -110,6 +110,7 @@ from .guidef import (
 )
 from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost, WidgetInfo
+from .multitrack import Clip, Lane, Multitrack
 from .transport import Transport
 
 #: The host registered by `set_ambient_host`, if any.
@@ -217,6 +218,9 @@ __all__ = [
     "plot",
     "score",
     "multitrack",
+    "Multitrack",
+    "Lane",
+    "Clip",
     "timeruler",
     "track",
     "clip",
