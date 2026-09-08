@@ -3161,6 +3161,41 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
+- ⬜ **A press on a score means what its context says, not what is under it**
+  *(the user, 2026-09-07, after the staff-line fix and the regression that
+  followed it: "para que el editor de partituras funcione correctamente vamos a
+  tener que agregar reglas de edición segun el contexto en el que se produce un
+  clic y no solo el lugar o elemento especifico")*. The host answers a press by
+  asking **what is under the pointer** and nothing else: a sounding element if
+  there is one, otherwise the tightest box, with one exception now carved out
+  for the staff's own lines on a page that takes entry. That is a rule about
+  *place*, and a score editor is not driven by place alone.
+
+  The day this was written is the argument for it. Three passes over one press
+  — the noteheads' fix, the staff lines', and the regression between them that
+  made every slur and dynamic unselectable — were three attempts to say in
+  geometry what a musician says in a sentence: *I am writing notes*, *I am
+  adjusting dynamics*, *I am looking at what is here*. Each attempt got one
+  case right by making another wrong, because the question being answered was
+  never the one being asked.
+
+  What a context is, is the open part, and the candidates are not equivalent:
+  a **mode** the editor is in (write / select / a tool per family, which every
+  notation program has and which is a state the client owns); the **kind of
+  thing last touched** (a press after selecting a dynamic means dynamics); or
+  the **modifier**, which is the cheapest and the weakest, since it puts the
+  context in the hand every time instead of once. Whichever it is, it is the
+  *client's* — the host holds no score — so what the protocol needs is a way
+  for the client to say what the page is currently for, and for the host to
+  resolve a press against it. That is a prop and a rule, not a new gesture.
+
+  **Related:** `N8` again, from the other side — that entry asks which element
+  admits which edit, and this asks which edit a press is *asking for* before an
+  element is even chosen. And the "Found by use" pair on the hit test is the
+  evidence: both are closed, both were correct, and the editor is still not
+  what a hand expects, which is what says the missing piece is not another
+  geometric tie-break.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A time axis is labelled by one tempo, and a piece can have several**
@@ -3518,6 +3553,30 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   read-only page still selects. It is the same lesson the pencil's threshold
   taught this morning -- the gap was not in the code that was wrong but in the
   test data that could not express it.
+
+  **The first cut of the rule was too wide, shipped, and was caught by eye
+  within the hour**: *"no es posible seleccionar ligaduras, p, mp y otros
+  elementos, ahora siempre agrega notas"*. It asked whether the pick **sounds**,
+  and `elements` names notes and rests -- so a slur, a hairpin, a dynamic and a
+  beam, which sound nothing and are elements of the score all the same, became
+  blank paper and every press on one wrote a note. *Sounding* and *being the
+  staff's own drawing* are different questions, and only the second was this
+  fix's business.
+
+  The rule is now the narrow one: **the staff's lines and nothing else**,
+  through `ScoreData::staff_ids`, filled by the same pass that clusters those
+  lines into staves. Derived rather than declared, because it is the same
+  geometry the staves themselves come from and a second source for one fact is
+  a second answer to it. And the test data was the gap again, for the third
+  time in one day: the fixture held noteheads and staff lines and nothing that
+  is neither, so no test could have caught it. There is one with a dynamic on
+  it now.
+
+  **What this did not fix, and the user named it** *(see "A press on a score
+  means what its context says" in Future directions)*: three passes over one
+  press were three attempts to say in geometry what a musician says in a
+  sentence, and each got one case right by making another wrong. The editor
+  needs to know what a press is *for* before it decides what it landed on.
 
 - ⬜ **An insert breaks the ties the document was read with, and only the
   engraver says so** *(found 2026-09-07, reading `notation/score_editor`'s log

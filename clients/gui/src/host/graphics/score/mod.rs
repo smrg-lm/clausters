@@ -363,6 +363,23 @@ pub struct ScoreData {
     /// primitive, derived from `prims` and `glyphs` when the display list is
     /// parsed (see [`ScoreData::index`]).
     pub hits: Vec<HitBox>,
+    /// **The ids of the primitives that draw the staff lines**, filled by the
+    /// same pass that clusters them into staves ([`ScoreData::staves`]).
+    ///
+    /// The engraver labels a staff line with the staff's own `xml:id`, and a
+    /// line is a hairline the width of the system — the tightest box on the
+    /// page. So on a page taking note entry a press aimed at a line rather than
+    /// a space was answered with the staff and spent on a selection. This is
+    /// what tells the *staff's own drawing* from everything else a press can
+    /// land on, which is the whole of what that fix is allowed to reach: a
+    /// slur, a hairpin, a dynamic and a beam are elements of the score and are
+    /// selected by pointing at them, whether or not they sound.
+    ///
+    /// Derived here rather than declared, because it is the same geometric rule
+    /// the staves themselves come from — a line long relative to the page's
+    /// other horizontal strokes — and a second source for one fact is a second
+    /// answer to it.
+    pub staff_ids: std::collections::HashSet<String>,
     /// The engraved staves, top to bottom — derived with the hit index, and
     /// what tells a dragged pitch when it has left the staff.
     pub staves: Vec<Staff>,
@@ -424,6 +441,7 @@ impl Default for ScoreData {
             playhead_loop_len: 0.0,
             sample_rate: 0.0,
             hits: Vec::new(),
+            staff_ids: std::collections::HashSet::new(),
             staves: Vec::new(),
             selected: None,
             step: STEP,

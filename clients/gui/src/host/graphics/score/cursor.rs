@@ -116,23 +116,36 @@ impl ScoreData {
     /// identical to it: a pitch position measured here and resolved there has
     /// to mean the same thing.
     fn index_staves(&mut self) {
-        let horizontals: Vec<(f32, f32, f32)> = self
+        let horizontals: Vec<(f32, f32, f32, Option<&str>)> = self
             .prims
             .iter()
             .filter_map(|p| match p {
-                Prim::Line { pts, width, .. }
+                Prim::Line { pts, width, id, .. }
                     if pts.len() == 2 && (pts[0][1] - pts[1][1]).abs() < 1.0 =>
                 {
-                    Some(((pts[0][0] - pts[1][0]).abs(), pts[0][1], *width))
+                    Some((
+                        (pts[0][0] - pts[1][0]).abs(),
+                        pts[0][1],
+                        *width,
+                        id.as_deref(),
+                    ))
                 }
                 _ => None,
             })
             .collect();
         let longest = horizontals.iter().fold(0.0f32, |m, (len, ..)| m.max(*len));
+        // **The ids of the lines that survived**, which is the staff's own
+        // drawing and nothing else on the page: the same filter, so the set and
+        // the staves cannot disagree about what a staff line is.
+        self.staff_ids = horizontals
+            .iter()
+            .filter(|(len, ..)| *len >= 0.5 * longest && longest > 0.0)
+            .filter_map(|(_, _, _, id)| id.map(str::to_string))
+            .collect();
         let mut lines: Vec<(f32, f32)> = horizontals
             .into_iter()
             .filter(|(len, ..)| *len >= 0.5 * longest && longest > 0.0)
-            .map(|(_, y, width)| (y, width))
+            .map(|(_, y, width, _)| (y, width))
             .collect();
         lines.sort_by(|a, b| a.0.total_cmp(&b.0));
         lines.dedup_by(|a, b| (a.0 - b.0).abs() < 0.5);

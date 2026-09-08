@@ -164,34 +164,32 @@ impl Element for Score {
             .data
             .hit(input.rect, at.0 as f32, at.1 as f32)
             .map(str::to_string);
-        // **On a page that takes note entry, a staff is a place.** The hit test
-        // answers with a sounding element where there is one and with the
+        // **On a page that takes note entry, a staff line is a place.** The hit
+        // test answers with a sounding element where there is one and with the
         // tightest box otherwise, and the tightest box on an engraved page is a
         // staff *line* -- a hairline the width of the system, thinner than any
-        // notehead. So a press aimed at a line rather than at a space was
-        // answered with the engraver's own drawing and spent on a selection:
-        // measured over one sitting, 64 presses wrote a quarter and 10 came
-        // back as `"element"` naming an id the model does not own.
+        // notehead, carrying the staff's own id. So a press aimed at a line
+        // rather than at a space was answered with the engraver's own drawing
+        // and spent on a selection: measured over one sitting, 64 presses wrote
+        // a quarter and 10 came back as `"element"`.
         //
         // Selecting a staff is not the wrong answer -- writing is what a press
         // on the staff is *for*, and being a pixel onto a line is not a way to
-        // ask for something else. So where this page takes entry, a pick that
-        // is not a sounding element is blank paper, and selecting the staff
-        // needs its own way to be asked for (see the plan's "A selected staff
-        // is edited by its line count").
+        // ask for something else. So on a page that takes entry, a press on the
+        // staff's own drawing is the place that drawing is at, and selecting a
+        // staff needs its own way to be asked for (see the plan's "A selected
+        // staff is edited by its line count").
         //
-        // **Only where the page said which ids sound.** A client that named no
-        // elements leaves the host unable to tell a note from a staff line, and
-        // there every pick is the tightest box: treating them all as paper
-        // would answer a press on a note with an insert.
+        // **The staff's lines and nothing else.** The first cut of this asked
+        // whether the pick *sounds*, which is a different question with a
+        // different answer: a slur, a hairpin, a dynamic and a beam sound
+        // nothing and are elements of the score all the same, so that rule made
+        // them unselectable and turned every press on one into a note. What the
+        // page can say for itself is which primitives draw the staves
+        // (`ScoreData::staff_ids`, derived by the same geometry the staves are),
+        // and that is exactly the furniture this is allowed to reach.
         let picked = match &picked {
-            Some(id)
-                if self.data.entry
-                    && !self.data.elements.is_empty()
-                    && !self.data.elements.contains(id) =>
-            {
-                None
-            }
+            Some(id) if self.data.entry && self.data.staff_ids.contains(id) => None,
             _ => picked,
         };
         let changed = picked != self.data.selected;
@@ -581,6 +579,58 @@ mod tests {
             score.data.selected.as_deref(),
             Some("n2"),
             "a press on a notehead is still the note's"
+        );
+    }
+
+    /// **A slur, a dynamic and anything else that does not sound are still
+    /// selected by pointing at them**, on a page that takes entry.
+    ///
+    /// The regression this pins, shipped and caught by eye within the hour: the
+    /// first cut of the rule above asked whether the pick *sounds*, and
+    /// `elements` names notes and rests. A slur, a hairpin, a `p` and a beam
+    /// sound nothing and are elements of the score all the same, so every press
+    /// on one became a note and none of them could be selected --
+    /// *"no es posible seleccionar ligaduras, p, mp y otros elementos, ahora
+    /// siempre agrega notas"*. Sounding and *being the staff's own drawing* are
+    /// different questions; only the second is this fix's business.
+    #[test]
+    fn a_slur_or_a_dynamic_is_still_selected_on_a_page_that_takes_entry() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,1000],"step":90,"editable":true,"entry":true,
+                "glyphs":{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"},
+                "prims":[
+                  {"k":"line","pts":[[0,20],[1000,20]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,200],[1000,200]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,380],[1000,380]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,560],[1000,560]],"w":4,"id":"staff1"},
+                  {"k":"line","pts":[[0,740],[1000,740]],"w":4,"id":"staff1"},
+                  {"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"},
+                  {"k":"glyph","cp":"E0A4","xf":[700,900,1,-1],"id":"dyn1"}]}"#,
+        )
+        .unwrap();
+        let mut score = Score {
+            data: ScoreData::parse(&props),
+            origin_y: None,
+        };
+        // Only the notehead sounds; the dynamic is drawn and named like any
+        // other element of the score.
+        score.data.elements = ["n1"].iter().map(|s| s.to_string()).collect();
+        assert!(
+            score.data.staff_ids.contains("staff1"),
+            "the staff's own lines were recognized"
+        );
+        assert!(
+            !score.data.staff_ids.contains("dyn1"),
+            "and a glyph is not one of them"
+        );
+
+        score.press(at(&score, input.rect, 750.0, 950.0), &input);
+        assert_eq!(
+            score.data.selected.as_deref(),
+            Some("dyn1"),
+            "a press on the dynamic selects it rather than writing a note"
         );
     }
 
