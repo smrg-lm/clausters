@@ -381,29 +381,49 @@ pub(super) fn set_markers(
 /// The transport's cursor at an **exact** position, rather than at the one a
 /// pixel names: what a click on a marker means, since a marker is the moment it
 /// was placed at and not the pixel it is drawn on.
+/// **The window's one cursor**, in the units of the axis widget `id` is on, or
+/// `None` where it is on no navigation group or none has been placed there yet.
+///
+/// The same answer the frame draws the line with ([`GroupState::head_at`]), so
+/// what a key gesture is anchored to is what the reader is looking at: while the
+/// transport runs that is the swept position, and stopped it is the cursor a
+/// click left behind.
+///
+/// [`GroupState::head_at`]: super::super::timeline::GroupState::head_at
+pub(super) fn cursor_of(host: &Host, ctx: &GestureCtx, id: i32) -> Option<f64> {
+    let key = host.timeline_key(id)?;
+    host.timelines().state(key)?.head_at(ctx.sample_clock)
+}
+
 pub(super) fn locate_at(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
-    def_id: i32,
+    ctx: &GestureCtx,
     id: i32,
     pos: f64,
 ) {
-    let roots = host.set_timeline_cursor(id, pos);
+    // **One cursor**: the drawn one and the playing one are the same, so a
+    // locate that lands while the transport is running re-anchors the sweep and
+    // it carries on from here — the click does not wait for the owner to seek,
+    // and the line does not run on from where it was in the meantime. The
+    // `"locate"` below is what actually moves the music: the host owns where the
+    // cursor *is*, the script owns what sounds under it.
+    let roots = host.locate_timeline_cursor(id, pos, ctx.sample_clock);
     emit(
         host,
         out,
-        def_id,
+        ctx.def_id,
         id,
         vec![OscType::String("locate".into()), OscType::Float(pos as f32)],
     );
     redraw_all(out, &roots);
-    out.push(GestureEffect::Redraw(def_id));
+    out.push(GestureEffect::Redraw(ctx.def_id));
 }
 
 pub(super) fn locate_timeline(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
-    def_id: i32,
+    ctx: &GestureCtx,
     id: i32,
     body: Rect,
     cx: f64,
@@ -412,7 +432,7 @@ pub(super) fn locate_timeline(
         return;
     };
     let pos = interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
-    locate_at(host, out, def_id, id, pos);
+    locate_at(host, out, ctx, id, pos);
 }
 
 pub(super) fn pan_timeline(

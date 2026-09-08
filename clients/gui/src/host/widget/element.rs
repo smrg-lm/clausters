@@ -917,6 +917,16 @@ pub struct MidiNote {
 pub struct KeyInput<'a> {
     pub mods: Mods,
     pub clipboard: &'a mut crate::host::clipboard::Clip,
+    /// **The window's cursor**, in the axis units of the group this element is
+    /// on, or `None` where it is on none (or none has been placed yet).
+    ///
+    /// A key gesture has no pointer to read a position out of — which is what
+    /// left a roll's paste and cut landing on a step position only step entry
+    /// ever moved — so what a block operation is anchored to is the one cursor
+    /// the window has: placed by a click, and the same one the transport plays
+    /// from. It is read once, where it is known, rather than looked up by every
+    /// element that has an anchored key.
+    pub cursor: Option<f64>,
 }
 
 /// The `/gui_event` messages an element asks to be sent for it: each entry is
@@ -2350,6 +2360,7 @@ mod tests {
         let mut input = KeyInput {
             mods: Mods::default(),
             clipboard: &mut clipboard,
+            cursor: None,
         };
         assert_eq!(
             el.key(&Key::Up, &mut input),

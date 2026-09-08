@@ -23,7 +23,7 @@ use super::super::placement::Placements;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock};
 use super::effects::{emit, emit_clips, emit_view, redraw_all};
-use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
+use super::nav::{cursor_of, freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
 /// The two edit verbs a clip's **placement** answers to: cutting one in two,
@@ -118,6 +118,7 @@ impl Gestures {
                 alt: ctx.alt,
             },
             clipboard,
+            cursor: cursor_of(host, ctx, id),
         };
         let at = element::At::widget(id, rect, scale, indent);
         let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
@@ -160,6 +161,7 @@ impl Gestures {
                 alt: ctx.alt,
             },
             clipboard,
+            cursor: cursor_of(host, ctx, id),
         };
         let at = element::At::widget(id, rect, scale, indent);
         let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;

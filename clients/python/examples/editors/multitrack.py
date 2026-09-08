@@ -40,7 +40,11 @@ The other GUI examples each open *one* view. This one composes a whole
 The transport is `clausters.gui.Transport` over a `clausters.seq.Timeline`: play
 anchors the lanes' playhead to the engine's sample clock (one message, and the
 host sweeps the line on its own), pause parks the static cursor where the music
-stopped, stop rewinds. Clicking the ruler emits ``"locate"`` and seeks there.
+stopped, stop rewinds. **The window has one cursor and the content never moves
+it**: a click puts it where it points -- on the ruler, on empty lane space, and
+equally on a clip, since what took the press is not what names the time -- and
+the host emits ``"locate"`` so the pass seeks there. Click while it is playing
+and the line carries on from where you pointed.
 
 **What sounds is what is drawn, including the edits.** The lanes and the
 transport read one description of the piece (`CLIPS` and `LANE_STATE`), and the
@@ -606,6 +610,13 @@ def on_lane(name: str):
     ``"level"``) and its thickness (``"height"``, from Ctrl+wheel over it)."""
     def handler(tag, *vals):
         if not vals:
+            return
+        if tag == "locate":
+            # **One cursor, and it is the transport's.** A click anywhere on the
+            # lane names a time -- on a clip as much as on the space beside it,
+            # since what took the press is not what names the time -- so the
+            # seek is the ruler's, arriving here.
+            transport.locate(float(vals[0]) / BEAT)
             return
         if tag == "height":
             # The host resized the lane under the cursor; this stack wants one

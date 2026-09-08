@@ -5235,3 +5235,199 @@ fn a_cursor_left_of_the_body_pulls_the_view_and_says_so() {
          hand that is not there"
     );
 }
+
+/// The **one cursor**, and the half of it that is a click: a press that never
+/// left the slop is where the hand pointed, whatever was drawn under it. The
+/// clip is grabbed, as it must be -- and it moves nothing, so the click is
+/// still a place.
+#[test]
+fn a_click_on_a_clip_locates_like_a_click_on_the_lane_beside_it() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let midy = (body.y + body.h / 2.0) as f64;
+    // Over the first clip (which spans the first tenth of the 10000-sample
+    // axis): the element wins the press, and the release is still a locate.
+    let on_clip = body.x as f64 + body.w as f64 * 0.02;
+    g.press(&mut host, &ctx, on_clip, midy);
+    assert!(g.dragging(), "the clip under the cursor was grabbed");
+    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    assert!(
+        has_emit_tag(&effects, 70, "locate"),
+        "a click on a clip is a click on the axis it sits on"
+    );
+    let key = host.timeline_key(70).unwrap();
+    let cursor = host.timelines().state(key).unwrap().playhead;
+    assert!(
+        (cursor - 200.0).abs() < 20.0,
+        "at the time the pointer named, not at the clip's own start: {cursor}"
+    );
+    // ...and dragging the clip is not a click: it named a move, not a place.
+    let before = cursor;
+    g.press(&mut host, &ctx, on_clip, midy);
+    g.drag_to(&mut host, &ctx, on_clip + 120.0, midy);
+    let effects = g.release(&mut host, &ctx, on_clip + 120.0, midy);
+    assert!(!has_emit_tag(&effects, 70, "locate"), "a move is no cursor");
+    assert_eq!(
+        host.timelines().state(key).unwrap().playhead,
+        before,
+        "the content moved, and the cursor did not"
+    );
+}
+
+/// The roll locates too, on its grid and on the notes drawn over it: the
+/// cursor is the window's, and the content does not define it.
+#[test]
+fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"notes","min":48.0,"max":72.0,
+             "notes":[0.0,400.0,60.0,100,0]}]}"#,
+    );
+    host.set_timeline_total(90, 10000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let grid = {
+        let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let key = host.timeline_key(90).unwrap();
+    // The empty grid, at a fifth of the axis.
+    let x = grid.x as f64 + grid.w as f64 * 0.2;
+    let y = grid.y as f64 + grid.h as f64 * 0.5;
+    g.press(&mut host, &ctx, x, y);
+    let effects = g.release(&mut host, &ctx, x, y);
+    assert!(has_emit_tag(&effects, 90, "locate"), "a click is a cursor");
+    let cursor = host.timelines().state(key).unwrap().playhead;
+    assert!(
+        (cursor - 2000.0).abs() < 40.0,
+        "at the time the pointer named: {cursor}"
+    );
+    // And a click on the note at the start of the roll locates there rather
+    // than nowhere: the note is content, and content does not move the cursor.
+    let note_x = grid.x as f64 + 2.0;
+    let note_y = pitch_y(&host, &ctx, 90, 60.0);
+    g.press(&mut host, &ctx, note_x, note_y);
+    let effects = g.release(&mut host, &ctx, note_x, note_y);
+    assert!(
+        has_emit_tag(&effects, 90, "locate"),
+        "a click on a note is a click on the axis under it"
+    );
+    assert!(
+        host.timelines().state(key).unwrap().playhead < 200.0,
+        "at the pointer, near the start"
+    );
+}
+
+/// The window's y for a pitch on roll `id`, through the same geometry the
+/// renderer draws the rows with.
+fn pitch_y(host: &Host, ctx: &GestureCtx, id: i32, pitch: f32) -> f64 {
+    let rect = placed_rect(host, ctx, id);
+    let h = interact::hit(
+        host,
+        ctx.def_id,
+        ctx.fb_w,
+        ctx.fb_h,
+        400.0,
+        100.0,
+        &|_, _| 1,
+    )
+    .unwrap();
+    let grid = interact::time_of(&h.chain).unwrap().1.body;
+    let _ = rect;
+    // The window is 48..72 semitones, drawn bottom-up over the grid.
+    let (lo, hi) = (48.0_f32, 72.0_f32);
+    let frac = (pitch + 0.5 - lo) / (hi - lo);
+    (grid.y + grid.h * (1.0 - frac)) as f64
+}
+
+/// **Ctrl+V pastes at the cursor**, which is the one the click placed -- not at
+/// a step position of the roll's own, which only step entry ever moved.
+#[test]
+fn the_rolls_paste_lands_on_the_windows_cursor() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"notes","min":48.0,"max":72.0,"snap":0,
+             "notes":[0.0,400.0,60.0,100,0]}]}"#,
+    );
+    host.set_timeline_total(90, 10000);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 400);
+    let grid = {
+        let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let mut clip = crate::host::clipboard::Clip::default();
+    clip.set_text(r#"[0.0,400.0,60.0,100,0]"#);
+    // Put the cursor at a fifth of the axis with a click...
+    let x = grid.x as f64 + grid.w as f64 * 0.2;
+    let y = grid.y as f64 + grid.h as f64 * 0.5;
+    g.press(&mut host, &ctx, x, y);
+    g.release(&mut host, &ctx, x, y);
+    let cursor = host
+        .timelines()
+        .state(host.timeline_key(90).unwrap())
+        .unwrap()
+        .playhead;
+    // ...and paste over the roll.
+    ctx.ctrl = true;
+    let effects = g
+        .key_at_cursor(&mut host, &ctx, Key::Char('v'), x, y, &mut clip)
+        .expect("the roll took the paste");
+    let args = emitted_args(&effects, 90).expect("the paste reports the notes");
+    let starts: Vec<f32> = args[1..]
+        .chunks(5)
+        .filter_map(|c| match c.first() {
+            Some(OscType::Float(v)) => Some(*v),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        starts.iter().any(|s| (*s as f64 - cursor).abs() < 40.0),
+        "the pasted note starts at the cursor ({cursor}), not at 0: {starts:?}"
+    );
+}
+
+/// **One cursor** means the drawn one and the playing one are the same: a click
+/// while the transport runs places it there and the sweep carries on from
+/// there, rather than the line running on from where it was.
+#[test]
+fn a_click_while_playing_carries_the_sweep_from_where_it_landed() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 200);
+    // The transport is running: anchored at clock 0, the clock has reached 5000.
+    host.set_timeline_playhead(70, 0.0);
+    ctx.sample_clock = 5000.0;
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let key = host.timeline_key(70).unwrap();
+    assert_eq!(
+        host.timelines().state(key).unwrap().swept_at(5000.0),
+        Some(5000.0),
+        "the sweep is where the clock says"
+    );
+    let x = body.x as f64 + body.w as f64 * 0.2;
+    let y = (body.y + body.h / 2.0) as f64;
+    g.press(&mut host, &ctx, x, y);
+    let effects = g.release(&mut host, &ctx, x, y);
+    assert!(has_emit_tag(&effects, 70, "locate"), "the click located");
+    let swept = host
+        .timelines()
+        .state(key)
+        .unwrap()
+        .swept_at(ctx.sample_clock)
+        .expect("still running: a click is a locate, not a stop");
+    assert!(
+        (swept - 2000.0).abs() < 40.0,
+        "the sweep carries on from the click, not from where it was: {swept}"
+    );
+}

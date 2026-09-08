@@ -96,6 +96,11 @@ pub struct GestureCtx {
     /// it: a frequency axis has a resolution, and the zoom is not allowed past
     /// it.
     pub sample_rate: f64,
+    /// The engine's sample clock (`0.0` when this front does not know it) — the
+    /// same one the frame sweeps the playhead with. **One cursor** needs it: a
+    /// click that lands while the transport is running re-anchors the sweep, and
+    /// the anchor is a clock value.
+    pub sample_clock: f64,
 }
 
 impl GestureCtx {
@@ -111,6 +116,7 @@ impl GestureCtx {
             alt: false,
             slot_channels: HashMap::new(),
             sample_rate: 0.0,
+            sample_clock: 0.0,
         }
     }
 
@@ -165,17 +171,10 @@ enum Drag {
         id: i32,
         origin_x: f64,
         start: f64,
-        /// The axis' body, kept whole rather than as its width alone: a pan
-        /// that never left the slop is a **click**, and a click on a ruler
-        /// locates -- which needs the box the sample is read against.
+        /// The axis' body, kept whole rather than as its width alone: the pan
+        /// maps the cursor through it, and it is the same box the press was
+        /// measured against.
         body: Rect,
-        /// The **ruler strip the press was on** (the widget's own, or the one a
-        /// view reserves), or `None` anywhere else. Read at the press and
-        /// carried, because that is where the answer is: the release only knows
-        /// where the hand ended up, and a pan may have travelled off the strip
-        /// it started on. It doubles as the geometry a click reads its marker
-        /// out of, so the strip is derived once, where it is known.
-        ruler: Option<Rect>,
     },
     /// Sweeping a selection on a timeline container: `anchor` is the sample
     /// under the press, and the selection spans from it to the cursor's sample.
@@ -325,11 +324,39 @@ enum Drag {
     },
 }
 
-/// One window's gesture state: the in-progress drag, if any. The front holds
-/// one per window (the browser's single canvas holds one).
+/// **Where a press landed on a time axis**, kept until the button comes up.
+///
+/// A press is not yet a gesture: the same movement is a click or a sweep
+/// depending on what happens next, so what a click *means* is decided at the
+/// release. And a click means one thing on every view — the cursor goes there —
+/// which is why this is the machine's and not an arm's: the press may have been
+/// taken by a clip, a note, a marquee or nothing at all, and the answer is the
+/// same in all four cases. **The content does not move the cursor and does not
+/// define it**; the axis under the pointer is what names the time.
+#[derive(Debug, Clone, Copy)]
+struct Click {
+    /// The container whose axis the press was measured against — the navigation
+    /// group's member, which is what a locate addresses.
+    id: i32,
+    /// That axis' body, so the release reads the same pixels the press did.
+    body: Rect,
+    /// The **ruler strip the press was on**, or `None` anywhere else. A click on
+    /// a marker is that marker's moment rather than the pixel's, and the strip
+    /// is where that is asked; it is derived at the press because a gesture may
+    /// have travelled off the strip it began on.
+    ruler: Option<Rect>,
+    /// Where the press landed, in window pixels — what tells a click from a
+    /// gesture, against the same hit slop every other sweep uses.
+    origin_x: f64,
+}
+
+/// One window's gesture state: the in-progress drag, if any, and where the press
+/// under it landed on the axis. The front holds one per window (the browser's
+/// single canvas holds one).
 #[derive(Default)]
 pub struct Gestures {
     drag: Option<Drag>,
+    click: Option<Click>,
 }
 
 impl Gestures {

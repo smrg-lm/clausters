@@ -48,6 +48,10 @@ impl WebApp {
         // The same rate the frame draws with, so a gesture over a measured
         // axis resolves the same hertz the reader is looking at.
         ctx.sample_rate = self.server_rate;
+        // ...and the clock the canvas sweeps the playhead with, for the same
+        // reason: a click that locates while the transport runs re-anchors the
+        // sweep, and it must land where the line is drawn.
+        ctx.sample_clock = self.server_clock;
         (ctx.shift, ctx.ctrl, ctx.alt) = slot.modifiers();
         if let Some(render) = slot.render.as_ref() {
             for (id, view) in &render.waveforms {

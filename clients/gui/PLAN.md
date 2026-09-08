@@ -3189,11 +3189,12 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reads and no test asserts -- so whatever is done here starts by making the
   engraver's complaint something a run can be checked against.
 
-- ⬜ **One cursor, it is the transport's, and the content never moves it**
+- ✅ **One cursor, it is the transport's, and the content never moves it**
   *(the user, 2026-09-07, dictated after the paste and playhead entries in
   "Found by use" turned out to be two halves of one question; "puede que esto
   cambie el comportamiento de los ejemplos pero tiene que estar bien hecho del
-  lado del host")*.
+  lado del host". **The host's half done 2026-09-08**; what sounds under the
+  cursor is the client's and stays open -- see the end of this entry)*.
 
   **The rule.** A window has one cursor. Its position is a **time on the
   clock**, independent of what is drawn: the content does not move it, does not
@@ -3233,7 +3234,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   first source lane (or the selected one) onto the lanes that follow, clamping
   at the end of the stack or growing it.
 
-  **What the host does today, so the work is the difference and not a rewrite**:
+  **What the host did before this, so the work was the difference and not a
+  rewrite** -- kept as the record of what was wrong, each line answered below:
 
   - A **lane** already locates on a click — a marquee that never left the slop
     is where the hand pointed (`Gestures::release`) — and a **ruler** does too.
@@ -3257,9 +3259,42 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
     `clients/python/PLAN.md`, which is the same rule from the client's side and
     carries the defect that made it visible.)
 
-  **Related:** `O24`. This is what a multitrack's transport *is*, so it is worth
-  doing with the application rather than as four repairs to the examples that
-  reveal it.
+  **Done, 2026-09-08 -- the host's half.** The click is now the **machine's**
+  and not an arm's: `press` reads where the press landed on the innermost time
+  axis (once, where the axis is known, with the ruler strip beside it) and
+  `release` places the cursor there when the pointer never left the hit slop --
+  after the drag's own arm and whatever it delivered. So a clip, a note, a
+  roll's grid, empty lane space and a ruler all locate by one rule, and the
+  three copies that each answered a click for one view (the ruler's pan, the
+  marquee, the range sweep) are gone. The four steps that already answered for
+  the pressed pixel -- `locate`, `marker`, `sample`, `draw` -- cancel the click,
+  since none of them is a hand looking for a place.
+
+  The roll turned out to locate already, and not by its own plan: the marquee
+  unification had made its grid press a `Marquee` with a lane of its own, whose
+  release located. The entry above was written before that landed and read the
+  old code. What was missing there was the other half -- **`Ctrl+V` pastes at
+  the cursor** (and `e` cuts there), through `KeyInput::cursor`, which is the
+  window's cursor asked once in the machine rather than a position each element
+  keeps. `Notes::step` survives as what it always was, step entry's own
+  position, and stands in on a roll that is on no axis.
+
+  And **the transport's position lives in the group**: `locate_timeline_cursor`
+  sets the static cursor *and*, while the transport is running, re-anchors
+  `playhead_at` against the front's sample clock (now on `GestureCtx`), so a
+  click while playing carries the sweep on from where the hand pointed. The
+  `"locate"` event still goes out -- the host owns where the cursor is, the
+  script owns what sounds under it.
+
+  **Still open, and it is the client's half**: what *sounds* under the cursor --
+  a clip picked up going quiet, one dropped ahead sounding at the sample it was
+  placed at, one dropped under it entering at the offset its time implies, a
+  roll's event triggering only if the cursor passes its onset. That is "A pass
+  re-cued from the playhead drops the clip the playhead is inside" in
+  `clients/python/PLAN.md`, with the latent defect measured there.
+
+  **Related:** `O24`. This is what a multitrack's transport *is*, and doing it
+  before the application is taking it off the application's first day.
 
 - ⬜ **Messages are not the roll's to edit, and nothing else edits them**
   *(the user, 2026-09-07, after the markers lane was made read-only: "mensajes
@@ -5773,3 +5808,35 @@ finished work, where a pending item reads as done.
   test beside it pins the other half — that a coordinate left of the body
   *does* pull the view, which is correct and is exactly what made the sentinel
   fatal rather than merely wrong.
+
+- ⬜ **A click on a clip reports an edit that nothing edited**
+  *(found 2026-09-08, giving the click its cursor: the release arm beside it
+  emits the placement whatever the drag did)*. `Gestures::release`'s clip arm
+  ends in `emit_clip`/`emit_clips` unconditionally, so a press and a release
+  with nothing in between sends the clip's own offset and duration back to the
+  owner. The owner applies it and the document takes an entry: **a click on a
+  clip is an undo step**, and a hand that clicks four clips to look at them has
+  to undo four times to get past them.
+
+  It predates the cursor work and is untouched by it -- the click now also
+  locates, which is right, and the intent beside it is still noise. The fix is
+  to say what the arm means: one gesture is one edit *when the gesture changed
+  something*, so the release compares the placement against the press-time
+  `orig` it already carries and emits nothing when they agree. The lane-change
+  branch above it is already the honest shape (it reports because something
+  moved), and a trim that came back to its own edge is the same case.
+
+- ⬜ **Step entry keeps a position of its own, and a click does not move it**
+  *(found 2026-09-08, closing "One cursor" -- the paste and the cut read the
+  window's cursor now, and this is the one anchor that still does not)*.
+  `Notes::step` is where live MIDI writes when the transport is stopped, and it
+  advances one grid per chord. Nothing else moves it: locating the window puts
+  the cursor somewhere and step entry goes on writing where it left off, which
+  is the same "a position stored beside the one cursor" the paste was fixed of.
+
+  It is not the same shape as the paste, which is why it was left: a paste
+  *reads* an anchor and step entry **writes** one, so making it the window's
+  cursor means the element asking the host to move that cursor on each advance
+  -- a request beside `Events::and_select`, and the same door a step-recording
+  roll would need to scroll the view it is writing past the end of. Worth doing
+  with whatever else needs that door rather than as a special case for `midi`.

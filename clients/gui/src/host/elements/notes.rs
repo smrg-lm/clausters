@@ -764,9 +764,11 @@ impl Element for Notes {
             // owner holds the element; a roll holds its notes and cuts them
             // itself, which is the whole of the difference.
             //
-            // The cut falls on the **step cursor**, which is where the roll is
-            // being written and where a paste already lands: a roll's key
-            // gestures have no pointer to read.
+            // The cut falls on the **window's cursor**, which is where a paste
+            // lands too: a roll's key gestures have no pointer to read, and the
+            // window has one cursor for exactly this. Step entry's own position
+            // stands in where the roll is on no axis (a bare roll nothing has
+            // located yet).
             // **Only over a selection.** A roll drawn as a *clip's body* shares
             // these two letters with the clip they belong to, and the clip is
             // what a lane's hand is on: with nothing selected the key falls
@@ -775,7 +777,7 @@ impl Element for Notes {
             // It is also the sane reading on its own -- splitting every note in
             // the roll is not something anyone asks for by leaning on a letter.
             Key::Char('e') | Key::Char('E') if !input.mods.ctrl && !self.selected.is_empty() => {
-                let at = snap_to(self.step, self.snap).max(0.0);
+                let at = snap_to(self.anchor(input), self.snap).max(0.0);
                 let cut = pianoroll::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
                     return None;
@@ -819,9 +821,10 @@ impl Element for Notes {
             }
             Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
                 let block = clipboard_notes(&input.clipboard.text())?;
-                // At the step cursor: a paste has no pointer, and the cursor is
-                // where the roll is being written.
-                let at = snap_to(self.step, self.snap).max(0.0);
+                // **At the cursor**: what is pasted starts where the window's
+                // cursor is, playing or not -- a paste has no pointer, and the
+                // cursor is the one position the window keeps.
+                let at = snap_to(self.anchor(input), self.snap).max(0.0);
                 self.selected = pianoroll::paste_notes(&mut self.notes, &block, at);
                 Some(self.notes_event())
             }
@@ -884,6 +887,17 @@ impl Notes {
     /// no `/gui_query` reports it).
     pub(crate) fn selected(&self) -> &[usize] {
         &self.selected
+    }
+
+    /// **Where an anchored key gesture acts**: the window's cursor, and step
+    /// entry's own position where the roll is on no axis with one.
+    ///
+    /// One cursor is the window's rule, so a paste and a cut read it rather than
+    /// keeping a position of their own. [`Notes::step`] is what is left of the
+    /// old anchor: it is where step entry writes, it advances as chords are
+    /// entered, and it stands in for the cursor on a roll nothing has located.
+    fn anchor(&self, input: &KeyInput) -> f64 {
+        input.cursor.unwrap_or(self.step)
     }
 
     /// Whether this placement is the roll's **own** view rather than a clip's
@@ -1642,12 +1656,20 @@ mod tests {
         let mut r = roll(r#"{"notes":[90.0,50.0,60.0,100,0,260.0,50.0,64.0,100,0],"snap":100.0}"#);
         r.selected = vec![0];
         fn ki(clip: &mut crate::host::clipboard::Clip, ctrl: bool) -> KeyInput<'_> {
+            at_cursor(clip, ctrl, None)
+        }
+        fn at_cursor(
+            clip: &mut crate::host::clipboard::Clip,
+            ctrl: bool,
+            cursor: Option<f64>,
+        ) -> KeyInput<'_> {
             KeyInput {
                 mods: Mods {
                     ctrl,
                     ..Mods::default()
                 },
                 clipboard: clip,
+                cursor,
             }
         }
         assert!(
@@ -1667,14 +1689,31 @@ mod tests {
         let block = clipboard.text();
         assert!(block.starts_with('['), "{block}");
 
-        // ...and pastes back at the step cursor, keeping its pitch.
+        // ...and pastes back at the window's cursor, keeping its pitch: the
+        // block starts where the cursor is and not where it was copied from.
+        assert!(
+            r.key(
+                &Key::Char('v'),
+                &mut at_cursor(&mut clipboard, true, Some(400.0))
+            )
+            .is_some()
+        );
+        assert_eq!(r.notes.len(), 2);
+        assert_eq!(r.notes[1].pitch, 60.0);
+        assert_eq!(
+            r.notes[1].start, 400.0,
+            "at the cursor, snapped to the grid"
+        );
+        assert_eq!(r.selected, vec![1], "the pasted block is selected");
+        // A roll on no axis keeps step entry's own position as the anchor,
+        // which is where this one still stands.
+        pianoroll::remove_notes(&mut r.notes, &[1]);
+        r.selected.clear();
         assert!(
             r.key(&Key::Char('v'), &mut ki(&mut clipboard, true))
                 .is_some()
         );
-        assert_eq!(r.notes.len(), 2);
-        assert_eq!(r.notes[1].pitch, 60.0);
-        assert_eq!(r.selected, vec![1], "the pasted block is selected");
+        assert_eq!(r.notes[1].start, r.step, "no cursor: the step position");
 
         // Delete takes the selection away; a key it has no arm for falls
         // through to the front's own shortcuts.

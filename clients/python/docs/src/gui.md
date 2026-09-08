@@ -864,7 +864,9 @@ release, emits what you did — not pixels:
 ```python
 win["a"].on_event(lambda tag, *payload: print(tag, payload))
 # "clip" (offset, dur)  when a clip is moved or resized
-# "locate" (position)   when the ruler or empty lane space is clicked
+# "locate" (position)   when the axis is clicked -- the ruler, empty lane
+#                       space, a roll's grid, or a clip or note drawn on any
+#                       of them: one cursor, placed regardless of content
 # "view" (start, len)   when the axis is zoomed or panned
 # "selection" (start, len[, min, max])   the span, and the value band a
 #                                        sweep with height restricted it to

@@ -19,6 +19,10 @@ impl App {
         // The same rate the frame draws with, so a gesture over a measured
         // axis resolves the same hertz the reader is looking at.
         ctx.sample_rate = self.shm.as_ref().map_or(0.0, |s| s.sample_rate());
+        // ...and the clock the frame sweeps the playhead with, for the same
+        // reason: a click that locates while the transport runs re-anchors the
+        // sweep, and it must land where the line is drawn.
+        ctx.sample_clock = self.shm.as_ref().map_or(0.0, |s| s.sample_clock());
         if let Some(ws) = self.windows.get(&def_id) {
             ctx.shift = ws.shift;
             ctx.ctrl = ws.ctrl;

@@ -108,6 +108,7 @@ impl Gestures {
         if self.dragging() {
             return out;
         }
+        self.click = None;
         // An element that **declared** an overlay is modal: it is over
         // everything, so it is tested before the tree and it swallows the press
         // either way — on its own area it acts, anywhere else it closes, the
@@ -182,6 +183,23 @@ impl Gestures {
             });
             return out;
         }
+        // **The click is the machine's, not a step's.** Where the press landed
+        // on the axis is read here, once, whatever the plans below do with it:
+        // one cursor is placed by a click regardless of what was drawn under the
+        // pointer, so a clip, a note and empty lane space all answer the same
+        // way (see [`Gestures::release`]). Beside the axis — a lane's header —
+        // there is no position, and no click.
+        self.click = hit.chain.iter().rev().find_map(|f| match (f.id, f.coords) {
+            (Some(id), interact::Coords::Time(axis)) if axis.spans(cx) => Some(super::Click {
+                id,
+                body: axis.body,
+                ruler: f
+                    .ruler
+                    .then(|| crate::host::frame::ruler_strip(f.rect, axis.body)),
+                origin_x: cx,
+            }),
+            _ => None,
+        });
         let mut element_ran = false;
         for frame in hit.chain.iter().rev() {
             for step in frame.map.plan(ctx.shift, ctx.ctrl, ctx.alt).steps() {
@@ -198,6 +216,19 @@ impl Gestures {
                     }
                 };
                 if consumed {
+                    // **The steps that already answered for this pixel.** A
+                    // locate has put the cursor there itself, and the three
+                    // editing steps wrote something *at* the press: neither is a
+                    // click looking for a place, so the release adds none.
+                    if matches!(
+                        step,
+                        GestureStep::Locate
+                            | GestureStep::Marker
+                            | GestureStep::Sample
+                            | GestureStep::Draw
+                    ) {
+                        self.click = None;
+                    }
                     return out;
                 }
             }
@@ -227,10 +258,6 @@ impl Gestures {
             origin_x: cx,
             start: sole.axis.nav.start,
             body: sole.axis.body,
-            // The window's sole axis, grabbed with Shift where no container
-            // claimed the press: nowhere near a ruler strip, and a Shift+click
-            // has never located anything.
-            ruler: None,
         });
         true
     }
@@ -266,9 +293,6 @@ impl Gestures {
                     origin_x: cx,
                     start: axis.nav.start,
                     body: axis.body,
-                    ruler: frame
-                        .ruler
-                        .then(|| crate::host::frame::ruler_strip(frame.rect, axis.body)),
                 });
                 true
             }
@@ -575,7 +599,7 @@ impl Gestures {
                 if !axis.spans(cx) {
                     return false; // beside the axis (a lane's header): no position
                 }
-                locate_timeline(host, out, def_id, id, axis.body, cx);
+                locate_timeline(host, out, ctx, id, axis.body, cx);
                 true
             }
             _ => false,

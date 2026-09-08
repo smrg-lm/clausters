@@ -892,6 +892,35 @@ impl Host {
         self.timeline_roots(key)
     }
 
+    /// **Places the one cursor** at `pos`: the group's static cursor, and — when
+    /// the transport is running — the sweep's anchor with it, so the line
+    /// carries on from where the hand pointed instead of running on from where
+    /// it was.
+    ///
+    /// One cursor is the rule the window has: its position is a time on the
+    /// clock, and the drawn one and the playing one are the same thing. That
+    /// makes this a decision about *where the transport's position lives* rather
+    /// than a second gesture — the host answers the click at once and the owner
+    /// is told (`"locate"`), which is what re-cues whatever sounds.
+    ///
+    /// `clock` is the engine's sample clock the front is drawing this frame with
+    /// (`0.0` where it knows none); the anchor is a clock value, so
+    /// `playhead_at = clock - pos` is what puts the sweep at `pos` now. A
+    /// stopped group has no anchor to move and keeps none.
+    pub fn locate_timeline_cursor(&mut self, id: i32, pos: f64, clock: f64) -> Vec<i32> {
+        let Some(key) = self.timeline_key(id) else {
+            return Vec::new();
+        };
+        let Some(state) = self.timelines.states.get_mut(&key) else {
+            return Vec::new();
+        };
+        state.playhead = pos;
+        if state.playhead_at >= 0.0 && clock >= 0.0 {
+            state.playhead_at = clock - pos;
+        }
+        self.timeline_roots(key)
+    }
+
     /// Sets the group's **playhead loop region** — where the swept line wraps
     /// (samples; a non-positive length restores the straight pass). Group-wide,
     /// so linked views wrap at one place.

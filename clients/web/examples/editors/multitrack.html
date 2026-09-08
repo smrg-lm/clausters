@@ -39,6 +39,12 @@ the <b>lanes</b>
 in a scrolled stack; and a <b>transport</b> with a counter that reads the
 position in beats, seconds and samples at once.
 
+<b>The window has one cursor and the content never moves it</b>: a click puts it
+where it points — on the ruler, on empty lane space, and equally on a clip,
+since what took the press is not what names the time — and the host emits
+<code>"locate"</code> so the pass seeks there. Click while it is playing and the
+line carries on from where you pointed.
+
 <b>What sounds is what is drawn, including the edits.</b> The lanes and the
 transport read one description of the piece, and the timeline is built afresh
 for every pass — so dragging or resizing a clip moves what you hear, and a
@@ -484,6 +490,14 @@ it rather than on the next play.</div>
         const onLane = (name) => (tag, ...vals) => {
           {
             if (vals.length === 0) return;
+            if (tag === "locate") {
+              // **One cursor, and it is the transport's.** A click anywhere on
+              // the lane names a time -- on a clip as much as on the space
+              // beside it, since what took the press is not what names the
+              // time -- so the seek is the ruler's, arriving here.
+              transport.locate(Number(vals[0]) / BEAT);
+              return;
+            }
             if (tag === "height") {
               // The host resized the lane under the cursor; this stack wants
               // one thickness, so the number goes to all of them. Which lanes

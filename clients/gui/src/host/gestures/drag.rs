@@ -422,7 +422,59 @@ impl Gestures {
     /// the pointer was still on it); a knob/number drag releases its pointer
     /// grab; a pulled wire lands (rewire over a bus, unwire elsewhere); any
     /// drag ends.
+    ///
+    /// **And a press that never left the slop is a click, which is where the
+    /// cursor goes** — on the axis the press landed on, whatever was drawn there
+    /// and whatever took the press. It is answered here, after the drag's own
+    /// arm, because that is what makes it one rule rather than one per view: a
+    /// clip, a note, empty lane space and a ruler all place the same cursor, and
+    /// the content never moves it.
+    ///
+    /// **The head is placed when the button comes up**, not when it goes down. A
+    /// press is not yet a gesture — the same movement is a click or a sweep
+    /// depending on what happens next — and placing the head at the press puts
+    /// it where the hand *started* rather than where the selection *begins*,
+    /// which are different the moment a sweep runs leftwards. A plain click
+    /// still lands immediately, because a click is a press and a release with
+    /// nothing in between.
     pub fn release(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
+        // Taken either way: a gesture that swept is no longer a click, and the
+        // press it came from is spent.
+        let click = self
+            .click
+            .take()
+            .filter(|c| (cx - c.origin_x).abs() <= host.metrics_for(ctx.def_id).hit_slop as f64);
+        let mut out = self.release_drag(host, ctx, cx, cy);
+        if let Some(c) = click {
+            // **A click on a marker is that marker's moment**, not the pixel's:
+            // the arrow is a handle onto an exact time, which is most of what a
+            // marker is for. Anywhere else the click is the ordinary locate, at
+            // the time the pointer names.
+            let marker = c.ruler.and_then(|strip| {
+                let markers = host
+                    .widget_kind(ctx.def_id, c.id)
+                    .and_then(|k| k.editor().map(|e| e.markers.clone()))?;
+                super::nav::marker_under(host, ctx.def_id, c.id, strip, &markers, cx)
+                    .and_then(|i| markers.get(i).map(|m| m.time))
+            });
+            match marker {
+                Some(time) => super::nav::locate_at(host, &mut out, ctx, c.id, time),
+                None => locate_timeline(host, &mut out, ctx, c.id, c.body, cx),
+            }
+        }
+        out
+    }
+
+    /// What the drag itself delivers on release — one arm per [`Drag`] variant,
+    /// and the half of the release that is about *what was held* rather than
+    /// about where the hand pointed.
+    fn release_drag(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
@@ -510,87 +562,26 @@ impl Gestures {
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }
-        // **The head is placed when the button comes up**, not when it goes
-        // down. A press is not yet a gesture — the same movement is a click or
-        // a sweep depending on what happens next — and placing the head at the
-        // press puts it where the hand *started* rather than where the
-        // selection *begins*, which are different the moment a sweep runs
-        // leftwards. On release there is one answer and it is the right one; a
-        // plain click still lands immediately, because a click is a press and a
-        // release with nothing in between.
         // **A marquee ends where it is**: the objects it covered followed it
         // live and stay selected, and the rectangle -- which was the gesture's
-        // own picture and never a state -- goes with the drag that held it.
-        // **A pan that began on a ruler and never moved is a locate.** The
-        // ruler's plain drag scrolls the axis, so the cursor is what its
-        // *click* means -- the same rule a lane's marquee and a waveform's
-        // sweep already answer a click with, and the reason the range could
-        // take Alt without locating needing a chord of its own. Only a ruler,
-        // and only the one the press was on: elsewhere a pan is Shift's, and a
-        // Shift+click has never located anything.
-        if let Some(Drag::Pan {
-            id,
-            origin_x,
-            body,
-            ruler: Some(strip),
-            ..
-        }) = self.drag
-            && (cx - origin_x).abs() <= host.metrics_for(def_id).hit_slop as f64
-        {
+        // own picture and never a state -- goes with the drag that held it. A
+        // sweep that never moved is a click, and the cursor it places is
+        // [`Gestures::release`]'s, not this arm's.
+        if let Some(Drag::Marquee { .. }) = self.drag {
             self.drag = None;
-            // **A click on a marker is that marker's moment**, not the pixel's:
-            // the arrow is a handle onto an exact time, which is most of what a
-            // marker is for. Anywhere else on the strip the click is the
-            // ordinary locate, at the sample the pointer names.
-            let marker = host
-                .widget_kind(def_id, id)
-                .and_then(|k| k.editor().map(|e| e.markers.clone()))
-                .and_then(|markers| {
-                    super::nav::marker_under(host, def_id, id, strip, &markers, cx)
-                        .and_then(|i| markers.get(i).map(|m| m.time))
-                });
-            match marker {
-                Some(time) => super::nav::locate_at(host, &mut out, def_id, id, time),
-                None => locate_timeline(host, &mut out, def_id, id, body, cx),
-            }
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }
-        if let Some(Drag::Marquee { lanes, origin, .. }) = self.drag.clone() {
-            self.drag = None;
-            // A sweep that never moved is a **click**: on a stack of lanes
-            // that is where the hand pointed and nothing else, so it puts the
-            // transport's cursor there -- and it has already let go of the
-            // clips, being a rectangle of no size.
-            if let Some(l) =
-                lanes.filter(|_| (cx - origin.0).abs() <= host.metrics_for(def_id).hit_slop as f64)
-            {
-                locate_timeline(host, &mut out, def_id, l.id, l.body, cx);
-            }
-            out.push(GestureEffect::Redraw(def_id));
-            return out;
-        }
-        if let Some(Drag::Select {
-            id, body, origin_x, ..
-        }) = self.drag
-        {
+        if let Some(Drag::Select { id, .. }) = self.drag {
             let selection = host
                 .timeline_key(id)
                 .and_then(|key| host.timelines().state(key))
                 .map(|state| (state.sel_start, state.sel_len));
             if let Some((start, len)) = selection {
+                // A sweep that never moved is a click, and the cursor it places
+                // is [`Gestures::release`]'s: what this arm answers for is the
+                // *span*, which is the transport's loop and not its position.
                 transport_follows_selection(host, def_id, id, start, len, true);
-                // **A sweep that never moved is a cursor.** The hand pointed
-                // at one place and let go, which is what a click on a lane has
-                // always meant -- and it is why the marquee could take the
-                // plain drag without the locate needing a modifier of its own.
-                //
-                // The same slop the sweep itself calls a click, and *not* the
-                // length of the selection: a press lands on a sample, and one
-                // sample is what the span of a click honestly is.
-                if (cx - origin_x).abs() <= host.metrics_for(def_id).hit_slop as f64 {
-                    locate_timeline(host, &mut out, def_id, id, body, cx);
-                }
             }
         }
         // A moved or trimmed clip leaves as **one intent at the end**, for the

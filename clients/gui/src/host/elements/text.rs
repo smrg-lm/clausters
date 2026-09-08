@@ -326,6 +326,7 @@ mod tests {
             let mut input = KeyInput {
                 mods,
                 clipboard: &mut clipboard,
+                cursor: None,
             };
             last = field.key(key, &mut input);
         }
@@ -396,6 +397,7 @@ mod tests {
             let mut input = KeyInput {
                 mods: ctrl,
                 clipboard: &mut clipboard,
+                cursor: None,
             };
             field.key(&key, &mut input);
         }
@@ -407,6 +409,7 @@ mod tests {
         let mut input = KeyInput {
             mods: ctrl,
             clipboard: &mut clipboard,
+            cursor: None,
         };
         let events = other.key(&Key::Char('v'), &mut input);
         assert_eq!(other.value, "hola");

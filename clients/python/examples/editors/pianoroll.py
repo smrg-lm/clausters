@@ -23,7 +23,9 @@ parity):
 - **drag a selected note** moves the whole selection (rigid, snapped);
   **Delete/Backspace** removes it;
 - **q** quantizes the selected notes' onsets (or all) to the snap grid;
-- **Ctrl+C / Ctrl+X / Ctrl+V** copy / cut / paste the selection.
+- **click** the grid -- empty or on a note -- puts the window's cursor there;
+- **Ctrl+C / Ctrl+X / Ctrl+V** copy / cut / paste the selection, the paste
+  landing at that cursor.
 
 The roll opens on one ascending scale, and everything else here is the loop that
 sounds it. Every edit flows back per the **edit-back pattern**: the host emits a
