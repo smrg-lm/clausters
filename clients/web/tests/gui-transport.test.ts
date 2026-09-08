@@ -375,3 +375,117 @@ test("a transport with no host clock keeps update manual", async () => {
     clock.render();
     assert.equal(tp.update(), true);
 });
+
+// ---- the piece: the server owns the position, and the host reads it ----
+
+/** A server whose transport is the piece's: records the commands, answers where
+ * it is. */
+class PieceServer {
+    calls: unknown[][] = [];
+    state = { playing: false, positionSample: 0, loop: null as unknown };
+
+    async transportPlay(): Promise<void> {
+        this.calls.push(["play"]);
+        this.state.playing = true;
+    }
+
+    async transportStop(): Promise<void> {
+        this.calls.push(["stop"]);
+        this.state.playing = false;
+    }
+
+    async transportLocateSample(sample: number): Promise<void> {
+        this.calls.push(["locate", Math.trunc(sample)]);
+        this.state.positionSample = Math.trunc(sample);
+    }
+
+    async transportLoop(span: [number, number] | null): Promise<void> {
+        this.calls.push(["loop", span]);
+        this.state.loop = span;
+    }
+
+    async transportState(): Promise<typeof this.state> {
+        return { ...this.state };
+    }
+}
+
+/** A host that also records `headClock`. */
+class PieceHost extends FakeHost {
+    head: string | null = null;
+
+    headClock(which: string): void {
+        this.head = which;
+    }
+}
+
+function pieceTransport(host?: PieceHost): Transport {
+    const tp = new Transport((host ?? new PieceHost()) as unknown as GuiHost, 7, {
+        headClock: "piece",
+        tempo: TEMPO,
+        sampleRate: SR,
+    });
+    tp.server = new PieceServer() as unknown as Server;
+    return tp;
+}
+
+test("a piece transport tells the host which counter to draw", async () => {
+    // The two halves of one decision, so they cannot disagree: the client stops
+    // computing the line and the host starts reading the piece's position.
+    const host = new PieceHost();
+    const tp = pieceTransport(host);
+    assert.equal(host.head, "piece");
+    await tp.play();
+    assert.equal(host.last("playhead_at"), 0.0);
+});
+
+test("a piece transport's verbs are the server's", async () => {
+    const tp = pieceTransport();
+    const server = tp.server as unknown as PieceServer;
+    await tp.play();
+    tp.pause();
+    tp.locate(3.0);
+    tp.stop();
+    assert.deepEqual(server.calls, [
+        ["play"],
+        ["stop"],
+        ["locate", Math.trunc(3 * BEAT)],
+        ["stop"],
+        ["locate", 0],
+    ]);
+});
+
+test("a piece transport reads where it is instead of keeping it", async () => {
+    // The whole point: the position is the engine's, so a locate nobody here
+    // sent -- a loop's wrap, another client's seek -- is still where it says.
+    const tp = pieceTransport();
+    const server = tp.server as unknown as PieceServer;
+    server.state.positionSample = Math.trunc(5 * BEAT);
+    server.state.playing = true;
+    assert.equal(tp.position, 0.0, "nothing was asked yet, so nothing is known yet");
+    await tp.refresh();
+    assert.ok(Math.abs(tp.position - 5.0) < 1e-9);
+    assert.ok(tp.playing);
+});
+
+test("a locate while the piece plays does not re-cue anything", async () => {
+    // A device-clock transport throws the pass away and starts another; the
+    // piece's seeks in the engine, so the sound carries on from there.
+    const tp = pieceTransport();
+    const server = tp.server as unknown as PieceServer;
+    await tp.play();
+    server.calls.length = 0;
+    tp.locate(4.0);
+    assert.deepEqual(server.calls, [["locate", Math.trunc(4 * BEAT)]]);
+});
+
+test("a piece transport loops in the engine", () => {
+    const tp = pieceTransport();
+    const server = tp.server as unknown as PieceServer;
+    tp.loop(1.0, 3.0);
+    assert.deepEqual(server.calls.at(-1), [
+        "loop",
+        [Math.trunc(1 * BEAT), Math.trunc(3 * BEAT)],
+    ]);
+    tp.loop(null);
+    assert.deepEqual(server.calls.at(-1), ["loop", null]);
+});

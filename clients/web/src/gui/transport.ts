@@ -40,7 +40,7 @@ export interface TransportOptions {
      * `Playhead` (`null` when there is nothing to play). It is called afresh on
      * every play, so what sounds is always the piece as it now stands.
      */
-    source: (at: number) => Playhead | null;
+    source?: (at: number) => Playhead | null;
     /**
      * The piece's starting tempo in beats per second (2.0 is 120 bpm). Ignored
      * when `tempoMap` is given.
@@ -75,6 +75,17 @@ export interface TransportOptions {
      * it stopped instead of re-rendering it.
      */
     governed?: boolean;
+    /**
+     * Which counter the view's line is drawn from — `"device"` (the default:
+     * the engine's sample clock, which never stops, so this class owns the
+     * piece's time and anchors the line to it) or `"piece"` (the **server's
+     * transport position**, so the server owns it and this class sends
+     * commands). Setting `"piece"` also tells the host
+     * ({@link GuiHost.headClock}), because the two are one decision and letting
+     * them disagree draws a line nobody put there. A view whose axis is not
+     * samples keeps `"device"`: the piece's position is measured in frames.
+     */
+    headClock?: "device" | "piece";
 }
 
 /**
@@ -89,6 +100,17 @@ export interface TransportOptions {
  * page waits for an answer instead of blocking on one. `play`, `resume` and
  * `anchor` hand back promises; a script that does not await them still gets the
  * pass — what arrives late is the line, not the sound.
+ *
+ * **Or the server owns all of it** (`headClock: "piece"`). Then none of that
+ * applies: the transport is the audio server's, the position is the engine's
+ * `positionSample` — held while stopped, moved by a locate, wrapped inside a
+ * loop in the engine — and this class is four commands and a read. Play, pause,
+ * seek and loop stop being a line kept in step and become `/transport_play`,
+ * `/transport_stop`, `/transport_locateSample` and `/transport_loop`; the anchor
+ * is 0, because the counter the host draws already *is* the piece's time. That
+ * is the shape a multitrack wants, where many readers follow one time
+ * (`TransportPos`), and it is why an editor sends a locate and reads a position
+ * back instead of computing one.
  */
 /**
  * How often a rolling transport asks itself whether the pass has ended, in
@@ -101,7 +123,14 @@ const TICK = 0.05;
 export class Transport {
     host: GuiHost | null;
     ids: TransportTargets;
-    source: (at: number) => Playhead | null;
+    source: ((at: number) => Playhead | null) | null;
+    /**
+     * Which counter the line is drawn from: `"device"` or `"piece"`, the same
+     * two words {@link GuiHost.headClock} takes. On `"piece"` the position, the
+     * rolling state, the seek and the loop are all the audio server's, and this
+     * class holds none of them.
+     */
+    headClock: "device" | "piece";
     /**
      * The piece's beat→second map. The line sweeps by engine samples from an
      * origin this places, so the origin has to come from the same function the
@@ -133,6 +162,11 @@ export class Transport {
      * crossing it. `null` outside that stretch.
      */
     private tail: [number, number] | null = null;
+    /**
+     * The last answer {@link Transport.refresh} got from the server's
+     * transport, on the piece. Empty until one is asked for.
+     */
+    private piece: { playing?: boolean; positionSample?: number } = {};
 
     constructor(
         host: GuiHost | null,
@@ -146,17 +180,20 @@ export class Transport {
             extent,
             clock = null,
             governed = false,
+            headClock = "device",
         }: TransportOptions,
     ) {
         this.host = host;
         this.ids = ids;
-        this.source = source;
+        this.source = source ?? null;
+        this.headClock = headClock;
         this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
         this.sampleRate = Number(sampleRate);
         this.toUnits = toUnits ?? ((beats) => this.beatsToSamples(beats));
         this.extent = extent ?? null;
         this.clock = clock;
         this.governed = Boolean(governed);
+        if (this.headClock === "piece") this.host?.headClock("piece");
     }
 
     // ---- the unit bridge ----
@@ -207,17 +244,82 @@ export class Transport {
      * The tail counts as playing because everything a caller does with this
      * answer is true of it: a pause holds where the music is, a seek starts a
      * fresh pass from there, and a button reads "pause" rather than "play".
+     *
+     * On the **piece** it is the engine's last answer ({@link
+     * Transport.refresh}) and none of the above: the transport is rolling or it
+     * is not, and nothing here has an opinion.
      */
     get playing(): boolean {
+        if (this.headClock === "piece") return Boolean(this.piece.playing);
         return (this.head !== null && this.head.playing) || this.tail !== null;
+    }
+
+    /**
+     * Ask the server where the piece is, and remember it.
+     *
+     * **The read is separate from the answer** because asking is a round trip
+     * and {@link Transport.position} is not: a counter refreshes on its own
+     * tick, a button reads what is already known, and the *line* refreshes
+     * neither — the host draws it straight from the engine, every frame, with
+     * nothing sent. On a device-clock transport this does nothing, since the
+     * position is here.
+     *
+     * (A promise here and a plain call in the Python client, for the reason
+     * every request is: a page waits for an answer instead of blocking on one.
+     * The call is the same call.)
+     */
+    async refresh(): Promise<this> {
+        if (this.headClock === "piece" && this.server !== null) {
+            const state = await this.server.transportState();
+            this.piece = {
+                playing: state.playing,
+                positionSample: state.positionSample,
+            };
+        }
+        return this;
+    }
+
+    /**
+     * Samples of the piece → beats, through the same map
+     * {@link Transport.beatsToSamples} goes the other way — so what the engine
+     * reports and what the ruler draws are one function read in two directions.
+     */
+    samplesToBeats(samples: number): number {
+        const secs = this.sampleRate > 0 ? Number(samples) / this.sampleRate : 0.0;
+        return this.tempoMap.beatsAt(secs);
+    }
+
+    /**
+     * Draw every target's line straight from the piece's position: the anchor
+     * is 0, because the counter the host reads already is that time.
+     *
+     * Re-applied rather than set once, because a view that redraws has new
+     * widgets and they come up with no line at all.
+     */
+    private pieceAnchor(): void {
+        if (this.host === null) return;
+        for (const id of this.targets()) {
+            this.host.set(id, { playhead_at: 0.0, playhead: -1.0 });
+        }
     }
 
     /**
      * The transport's position in beats: where the playhead is while it plays,
      * where it got to while the last item is still ringing, and where the next
      * `play` starts when neither.
+     *
+     * On the **piece** it is what the engine last said ({@link
+     * Transport.refresh}), not something kept here, which is the whole point: a
+     * wrap at a loop's end and a seek some other client sent are both where it
+     * says, and neither passed through this object. Asking is a round trip and
+     * this is not, so a caller that wants it current refreshes first — the
+     * *line* needs neither, since the host draws it straight from the engine
+     * every frame.
      */
     get position(): number {
+        if (this.headClock === "piece") {
+            return this.samplesToBeats(this.piece.positionSample ?? 0);
+        }
         if (this.head !== null && this.head.playing) return this.head.position();
         const tail = this.tailPosition();
         return tail === null ? this.atBeat : tail;
@@ -262,17 +364,28 @@ export class Transport {
      * clock query goes (remembered for later passes).
      *
      * The pass starts before the promise settles: what is awaited is the anchor.
+     *
+     * On the **piece** it is `/transport_play`, and a bare one: the engine keeps
+     * where it stopped, so resuming is the same verb as starting and nothing is
+     * re-rendered. Given an `at` it seeks there first.
      */
     async play(
         server: Server | null = null,
         { at }: { at?: number } = {},
     ): Promise<Playhead | null> {
         if (server !== null) this.server = server;
+        if (this.headClock === "piece") {
+            if (at !== undefined) this.locate(at);
+            this.pieceAnchor();
+            await this.server?.transportPlay();
+            this.piece.playing = true;
+            return null;
+        }
         const beat = at === undefined ? this.atBeat : Number(at);
         this.halt();
         this.atBeat = beat;
         this.ended = false;
-        this.head = this.source(beat);
+        this.head = this.source?.(beat) ?? null;
         this.cursor(null); // the clock's line takes over from the cursor
         this.watch();
         await this.anchor(null, { at: beat });
@@ -292,6 +405,13 @@ export class Transport {
      * sound rather than start it again.
      */
     pause(): number {
+        if (this.headClock === "piece") {
+            // Nothing to park and nothing to compute: the engine holds the
+            // position where it froze, and the line holds with it.
+            void this.server?.transportStop();
+            this.piece.playing = false;
+            return this.position;
+        }
         // Where the music stopped — including inside the tail, where the scan
         // has drained but the last clip is still sounding.
         this.atBeat = this.position;
@@ -335,9 +455,20 @@ export class Transport {
      * Seek: put the transport at `beat`. Playing, it starts a fresh pass from
      * there (so a seek also picks up any edit); stopped, it just moves the
      * cursor the view draws. This is what a click on a ruler does.
+     *
+     * On the **piece** it is one `/transport_locateSample`, playing or not: the
+     * seek happens in the engine, so nothing is re-cued and what is already
+     * sounding carries on from there rather than being cut and started again.
      */
     locate(beat: number): this {
         const at = Math.max(Number(beat), 0.0);
+        if (this.headClock === "piece") {
+            const sample = Math.trunc(this.beatsToSamples(at));
+            void this.server?.transportLocateSample(sample);
+            this.piece.positionSample = sample;
+            this.pieceAnchor();
+            return this;
+        }
         if (this.playing) {
             void this.play(null, { at });
         } else {
@@ -360,6 +491,33 @@ export class Transport {
      * transport with no host (a view built but never opened) simply keeps
      * `update` as the manual call it always was.
      */
+    /**
+     * The span of the piece the position wraps inside, in beats — or, with no
+     * arguments (or `null`), looping off.
+     *
+     * **The piece's only**, because it is the only one the engine can wrap: the
+     * wrap happens on its exact sample, so a pass repeats with no seam and no
+     * client in the loop. A device-clock transport folds the *drawn* line
+     * instead (`playhead_loop_*`), which is a different thing and stays the
+     * view's.
+     */
+    loop(start: number | null = null, end: number | null = null): this {
+        if (this.headClock !== "piece") {
+            throw new Error(
+                'a loop is the piece\'s: build the transport with headClock: "piece"',
+            );
+        }
+        if (start === null || end === null) {
+            void this.server?.transportLoop(null);
+        } else {
+            void this.server?.transportLoop([
+                Math.trunc(this.beatsToSamples(Math.max(start, 0.0))),
+                Math.trunc(this.beatsToSamples(Math.max(end, 0.0))),
+            ]);
+        }
+        return this;
+    }
+
     private watch(): void {
         if (this.ticking) return;
         const clock = this.host?.clock;

@@ -19,6 +19,17 @@ has to say about its units.
 
 **A pass ends by itself.** `clausters.seq.Playhead` reports the end of its scan,
 so `update` parks the cursor at the piece's end without the script timing it.
+
+**Or the server owns all of it** (``head_clock="piece"``). Then none of the paragraphs
+above apply: the transport is the audio server's, the position is the engine's
+`positionSample` -- held while stopped, moved by a locate, wrapped inside a loop
+in the engine -- and this class is four commands and a read. Play, pause, seek
+and loop stop being a line kept in step and become `/transport_play`,
+`/transport_stop`, `/transport_locateSample` and `/transport_loop`; the anchor
+is 0, because the counter the host draws already *is* the piece's time. That is
+the shape a multitrack wants, where many readers follow one time
+(``TransportPos``), and it is why an editor sends a locate and reads a position
+back instead of computing one.
 """
 
 from .. import _native
@@ -60,11 +71,20 @@ class Transport:
         extent: ``extent()`` → the piece's length in beats, where `update` parks
             the cursor when a pass ends. Read on each use, so a piece that grew
             (a clip dragged past the end) ends where it now ends.
+        head_clock: which counter the view's line is drawn from —  ``"device"``
+            (the default: the engine's sample clock, which never stops, so this
+            class owns the piece's time and anchors the line to it) or
+            ``"piece"`` (the **server's transport position**, so the server owns
+            it and this class sends commands). Setting ``"piece"`` also tells
+            the host (`clausters.gui.host.GuiHost.head_clock`), because the two
+            are one decision and letting them disagree draws a line nobody put
+            there. A view whose axis is not samples keeps ``"device"``: the
+            piece's position is measured in frames.
     """
 
-    def __init__(self, host, ids, *, source, tempo: float = 1.0, tempo_map=None,
+    def __init__(self, host, ids, *, source=None, tempo: float = 1.0, tempo_map=None,
                  sample_rate: float, to_units=None, extent=None, clock=None,
-                 governed: bool = False):
+                 governed: bool = False, head_clock: str = "device"):
         self.host = host
         self.ids = ids
         self.source = source
@@ -88,6 +108,11 @@ class Transport:
         #: stopping the playhead, so `resume` continues the sound where it
         #: stopped instead of re-rendering it.
         self.governed = bool(governed)
+        #: Which counter the line is drawn from: ``"device"`` or ``"piece"``,
+        #: the same two words `clausters.gui.host.GuiHost.head_clock` takes.
+        #: In ``"piece"`` the position, the rolling state, the seek and the loop
+        #: are all the audio server's, and this class holds none of them.
+        self.head_clock = str(head_clock)
         #: The server the anchor queries for its clock — the destination of the
         #: last `play`, or whatever `anchor` was given.
         self.server = None
@@ -100,6 +125,11 @@ class Transport:
         #: must go on crossing it. `None` outside that stretch.
         self._tail = None
         self._ticking = False  # a self-driven `update` is scheduled
+        #: The last answer `refresh` got from the server's transport, on the
+        #: piece. Empty until one is asked for.
+        self._piece = {}
+        if self.head_clock == "piece" and host is not None and hasattr(host, "head_clock"):
+            host.head_clock("piece")
 
     # ---- the unit bridge ----
 
@@ -146,7 +176,13 @@ class Transport:
 
         The tail counts as playing because everything a caller does with this
         answer is true of it: a pause holds where the music is, a seek starts a
-        fresh pass from there, and a button reads "pause" rather than "play"."""
+        fresh pass from there, and a button reads "pause" rather than "play".
+
+        On the **piece** it is the engine's last answer (`refresh`) and none of
+        the above: the transport is rolling or it is not, and nothing here has an
+        opinion."""
+        if self.head_clock == "piece":
+            return bool(self._piece.get("playing"))
         ph = self._playhead
         return (ph is not None and ph.playing) or self._tail is not None
 
@@ -154,7 +190,16 @@ class Transport:
     def position(self) -> float:
         """The transport's position in beats: where the playhead is while it
         plays, where it got to while the last item is still ringing, and where
-        the next `play` starts when neither."""
+        the next `play` starts when neither.
+
+        On the **piece** it is what the engine last said (`refresh`), not
+        something kept here, which is the whole point: a wrap at a loop's end and
+        a seek some other client sent are both where it says, and neither passed
+        through this object. Asking is a round trip and this is not, so a caller
+        that wants it current refreshes first -- the *line* needs neither, since
+        the host draws it straight from the segment every frame."""
+        if self.head_clock == "piece":
+            return self.samples_to_beats(self._piece.get("position_sample", 0))
         ph = self._playhead
         if ph is not None and ph.playing:
             return ph.position()
@@ -180,6 +225,43 @@ class Transport:
         end = beat if self.extent is None else float(self.extent())
         return min(beat + (clock.beats() - since), max(end, beat))
 
+    def refresh(self):
+        """Ask the server where the piece is, and remember it; returns ``self``.
+
+        **The read is separate from the answer** because asking is a round trip
+        and `position` is not: a counter refreshes on its own tick, a button
+        reads what is already known, and the *line* refreshes neither — the host
+        draws it straight from the segment, every frame, with nothing sent. On a
+        device-clock transport this does nothing, since the position is here.
+
+        (In the web client this is a promise, for the reason every request there
+        is one: a page waits for an answer instead of blocking on it. The call
+        is the same call.)
+        """
+        server = self.server
+        if self.head_clock == "piece" and server is not None \
+                and hasattr(server, "transport_state"):
+            self._piece = server.transport_state()
+        return self
+
+    def samples_to_beats(self, samples: float) -> float:
+        """Samples of the piece → beats, through the same map `beats_to_samples`
+        goes the other way — so what the engine reports and what the ruler draws
+        are one function read in two directions."""
+        secs = float(samples) / self.sample_rate if self.sample_rate > 0 else 0.0
+        return self.tempo_map.beats_at(secs)
+
+    def _piece_anchor(self):
+        """Draw every target's line straight from the piece's position: the
+        anchor is 0, because the counter the host reads already is that time.
+
+        Re-applied rather than set once, because a view that redraws has new
+        widgets and they come up with no line at all."""
+        if self.host is None:
+            return
+        for wid in self._targets():
+            self.host.set(wid, playhead_at=0.0, playhead=-1.0)
+
     def _pass_clock(self):
         """The clock the pass in flight runs on: the playhead's own, else the
         one this transport was given."""
@@ -196,9 +278,21 @@ class Transport:
         """Play (or resume) from beat ``at`` — the transport's position by
         default — and anchor the line to the engine clock. ``server`` is where
         the anchor's clock query goes (remembered for later passes); any other
-        keyword goes on to `source`. Returns the playhead."""
+        keyword goes on to `source`. Returns the playhead.
+
+        On the **piece** it is `/transport_play`, and a bare one: the engine
+        keeps where it stopped, so resuming is the same verb as starting and
+        nothing is re-rendered. Given an ``at`` it seeks there first."""
         if server is not None:
             self.server = server
+        if self.head_clock == "piece":
+            if at is not None:
+                self.locate(at)
+            self._piece_anchor()
+            if self.server is not None and hasattr(self.server, "transport_play"):
+                self.server.transport_play()
+            self._piece["playing"] = True
+            return None
         at = self._at if at is None else float(at)
         self._halt()
         self._at = at
@@ -220,6 +314,13 @@ class Transport:
         the server's subtree and its queue, the clock freezes with them, and the
         scan simply stops making progress. That is what lets `resume` continue
         the sound rather than start it again."""
+        if self.head_clock == "piece":
+            # Nothing to park and nothing to compute: the engine holds the
+            # position where it froze, and the line holds with it.
+            if self.server is not None and hasattr(self.server, "transport_stop"):
+                self.server.transport_stop()
+            self._piece["playing"] = False
+            return self.position
         # Where the music stopped — including inside the tail, where the scan
         # has drained but the last clip is still sounding.
         self._at = self.position
@@ -264,8 +365,19 @@ class Transport:
     def locate(self, beat: float):
         """Seek: put the transport at ``beat``. Playing, it starts a fresh pass
         from there (so a seek also picks up any edit); stopped, it just moves the
-        cursor the view draws. This is what a click on a ruler does."""
+        cursor the view draws. This is what a click on a ruler does.
+
+        On the **piece** it is one `/transport_locateSample`, playing or not:
+        the seek happens in the engine, so nothing is re-cued and what is
+        already sounding carries on from there rather than being cut and
+        started again."""
         beat = max(float(beat), 0.0)
+        if self.head_clock == "piece":
+            if self.server is not None and hasattr(self.server, "transport_locate_sample"):
+                self.server.transport_locate_sample(int(self.beats_to_samples(beat)))
+            self._piece["position_sample"] = int(self.beats_to_samples(beat))
+            self._piece_anchor()
+            return self
         if self.playing:
             self.play(at=beat)
         else:
@@ -275,6 +387,29 @@ class Transport:
                 self._playhead.locate(beat)   # the pass no longer ended *here*
             self._ended = False
             self.cursor(beat)
+        return self
+
+    def loop(self, start: float | None = None, end: float | None = None):
+        """The span of the piece the position wraps inside, in beats — or, with
+        no arguments (or ``None``), looping off.
+
+        **The piece's only**, because it is the only one the engine can wrap:
+        the wrap happens on its exact sample, so a pass repeats with no seam and
+        no client in the loop. A device-clock transport folds the *drawn* line
+        instead (``playhead_loop_*``), which is a different thing and stays the
+        view's.
+        """
+        if self.head_clock != "piece":
+            raise ValueError("a loop is the piece's: build the transport with "
+                             'head_clock="piece"')
+        server = self.server
+        if server is None or not hasattr(server, "transport_loop"):
+            return self
+        if start is None or end is None:
+            server.transport_loop(None)
+        else:
+            server.transport_loop((int(self.beats_to_samples(max(start, 0.0))),
+                                   int(self.beats_to_samples(max(end, 0.0)))))
         return self
 
     def _watch(self):

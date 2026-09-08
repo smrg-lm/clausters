@@ -445,3 +445,108 @@ def test_an_ungoverned_pause_still_stops_the_playhead():
     tp.play(at=0.0)
     tp.pause()
     assert not heads[0].playing
+
+
+# ---- the piece: the server owns the position, and the host reads it ----
+
+class PieceServer(FakeServer):
+    """A server whose transport is the piece's: it records the commands and
+    answers where it is."""
+
+    def __init__(self):
+        self.calls = []
+        self.state = {"playing": False, "position_sample": 0, "loop": None}
+
+    def transport_play(self, position=None, timeout=None):
+        self.calls.append(("play", position))
+        self.state["playing"] = True
+
+    def transport_stop(self, timeout=None):
+        self.calls.append(("stop",))
+        self.state["playing"] = False
+
+    def transport_locate_sample(self, sample, timeout=None):
+        self.calls.append(("locate", int(sample)))
+        self.state["position_sample"] = int(sample)
+
+    def transport_loop(self, span=None, timeout=None):
+        self.calls.append(("loop", span))
+        self.state["loop"] = span
+
+    def transport_state(self, timeout=None):
+        return dict(self.state)
+
+
+class PieceHost(FakeHost):
+    """A host that also records `head_clock`."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = None
+
+    def head_clock(self, which):
+        self.head = which
+
+
+def piece_transport(host=None, server=None):
+    host = PieceHost() if host is None else host
+    tp = Transport(host, 7, head_clock="piece", tempo=TEMPO, sample_rate=SR)
+    tp.server = PieceServer() if server is None else server
+    return tp
+
+
+def test_a_piece_transport_tells_the_host_which_counter_to_draw():
+    """The two halves of one decision, so they cannot disagree: the client stops
+    computing the line and the host starts reading the piece's position."""
+    host = PieceHost()
+    tp = piece_transport(host)
+    assert host.head == "piece"
+    # And the anchor is 0, because the counter already *is* the piece's time.
+    tp.play()
+    assert host.last("playhead_at") == 0.0
+
+
+def test_a_piece_transports_verbs_are_the_servers():
+    tp = piece_transport()
+    tp.play()
+    tp.pause()
+    tp.locate(3.0)
+    tp.stop()
+    assert tp.server.calls == [
+        ("play", None),
+        ("stop",),
+        ("locate", int(3 * BEAT)),
+        ("stop",),
+        ("locate", 0),
+    ]
+
+
+def test_a_piece_transport_reads_where_it_is_instead_of_keeping_it():
+    """The whole point: the position is the engine's, so a locate nobody here
+    sent -- a loop's wrap, another client's seek -- is still where it says."""
+    tp = piece_transport()
+    tp.server.state["position_sample"] = int(5 * BEAT)
+    tp.server.state["playing"] = True
+    assert tp.position == 0.0, "nothing was asked yet, so nothing is known yet"
+    tp.refresh()
+    assert tp.position == pytest.approx(5.0)
+    assert tp.playing
+
+
+def test_a_locate_while_the_piece_plays_does_not_re_cue_anything():
+    """A device-clock transport throws the pass away and starts another; the
+    piece's seeks in the engine, so the sound carries on from there."""
+    tp = piece_transport()
+    tp.play()
+    tp.server.calls.clear()
+    tp.locate(4.0)
+    assert tp.server.calls == [("locate", int(4 * BEAT))], \
+        "one seek, and no second play"
+
+
+def test_a_piece_transport_loops_in_the_engine():
+    tp = piece_transport()
+    tp.loop(1.0, 3.0)
+    assert tp.server.calls[-1] == ("loop", (int(1 * BEAT), int(3 * BEAT)))
+    tp.loop(None)
+    assert tp.server.calls[-1] == ("loop", None)
