@@ -3161,6 +3161,34 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
+- ⬜ **An insert does not carry the ties the document was read with**
+  *(found 2026-09-07, reading `notation/score_editor`'s log during the visual
+  review's second sitting; moved here from "Found by use" the same day, at the
+  user's call: "no tiene sentido que estemos solucionando bugs que son cosas no
+  implementadas")*. The page engraves clean when it opens. After the first
+  inserted note the engraver starts reporting
+
+      [Warning] Unable to match @tie of note 'n24-2', skipping it
+      [Warning] Expected @tie median or terminal in note 'n39', skipping it
+
+  and never stops -- 16 of them for one note across the sitting, on seven notes
+  in all. It begins on the `-2` ids, which are the bass staff made by
+  transposing a copy, and later reaches the typed staff's own.
+
+  **It is filed here rather than as a defect because nothing was broken: note
+  entry simply does not maintain ties.** A tie is a reference between two notes,
+  an insert changes what follows what, and nothing in the entry path was ever
+  written to answer that -- so the warnings are the engraver reporting a
+  document it was handed, not a regression in one that worked. Two things it
+  needs, and they are the same shape as everything else on this list: an insert
+  that knows what a tie means, and a transposed copy that carries references
+  naming its own notes rather than the original's.
+
+  A skipped tie is a duration that changes on the page and in what is played,
+  and the whole of the evidence today is a warning on stderr that no example
+  reads and no test asserts -- so whatever is done here starts by making the
+  engraver's complaint something a run can be checked against.
+
 - ⬜ **A press on a score means what its context says, not what is under it**
   *(the user, 2026-09-07, after the staff-line fix and the regression that
   followed it: "para que el editor de partituras funcione correctamente vamos a
@@ -3578,26 +3606,6 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   sentence, and each got one case right by making another wrong. The editor
   needs to know what a press is *for* before it decides what it landed on.
 
-- ⬜ **An insert breaks the ties the document was read with, and only the
-  engraver says so** *(found 2026-09-07, reading `notation/score_editor`'s log
-  during the visual review's second sitting)*. The page engraves clean when it
-  opens. After the first inserted note the engraver starts reporting
-
-      [Warning] Unable to match @tie of note 'n24-2', skipping it
-      [Warning] Expected @tie median or terminal in note 'n39', skipping it
-
-  and never stops -- 16 of them for one note across the sitting, on seven notes
-  in all. It begins on the `-2` ids, which are the bass staff made here by
-  transposing a copy, and later reaches the typed staff's own. A skipped tie is
-  a duration that changes on the page and in what is played, and the whole of
-  the evidence is a warning on stderr that no example reads and no test asserts.
-
-  Two places to look and neither has been: whether an insert renumbers or
-  invalidates the tie references the ABC import wrote into the model, and
-  whether the transposed copy carries tie references naming notes that only
-  exist in the original. They are different bugs with the same symptom, and the
-  order of the ids says the second may be the older one.
-
 - ⬜ **A paste lands on a cursor no hand can place** *(found 2026-09-07 by the
   user, by eye, in `editors/pianoroll`: "al pegar deberia hacerlo a partir del
   cursor, de lo contrario no hay referencia de donde pegar")*. `Ctrl`+`V` over a
@@ -3634,6 +3642,19 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   refuses an add it cannot address (and says so, which is the entry below), or
   the address is part of the gesture, or a labelless marker is given a meaning
   of its own. It cannot stay a value only one client notices.
+
+  **And "the OSC lane" is a name only this repository uses** *(the user, asking
+  what it was, 2026-09-07: "¿Cual es el carril OSC? ... en un piano roll solo
+  hay carriles de notas, carril de velocidades, carril de marcadores")*. A roll
+  has a notes lane, a velocity lane and a **markers lane**; the host calls the
+  third one after what a marker *is* (`osc_lane` in the theme, `OscMark` in the
+  model, "the roll's OSC lane" in the docstring) and the reader calls it after
+  what it shows. Both are right and only one is on screen, so the name to use
+  in prose, in a theme role and in an example is the reader's -- the same rule
+  that makes a buffer a buffer and its contents samples. The internal type may
+  keep saying what a marker sends; a lane is called the markers lane. Worth
+  doing with whatever answers the question above, since both touch the same
+  lane in both clients.
 
 - ✅ **An undo leaves the pencil dead, and a dead pencil draws a selection**
   *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "hice
