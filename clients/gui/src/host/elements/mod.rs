@@ -76,6 +76,7 @@ mod knob;
 mod label;
 mod menu;
 mod meter;
+mod multitrack;
 mod nodes;
 pub(crate) mod notes;
 mod number;
@@ -100,6 +101,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,
+        "multitrack" => multitrack::build,
         "menu" => menu::build,
         "nodes" => nodes::build,
         "notes" => notes::build,

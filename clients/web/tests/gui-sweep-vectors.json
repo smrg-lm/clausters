@@ -1336,6 +1336,292 @@
   }
  },
  {
+  "builder": "multitrack",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "snap",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "snap": 3.5
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "multitrack",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "autofit",
+  "value": true,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "autofit": true
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "sel_start",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "sel_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "sel_len",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "sel_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "sel_min",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "y": {
+     "sel_min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "sel_max",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "y": {
+     "sel_max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "y_start",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "y": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "y_len",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "y": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "multitrack",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
   "builder": "nodes",
   "option": "group",
   "value": 7,

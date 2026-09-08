@@ -1922,6 +1922,51 @@ def _held(value, flatten):
     return flatten(value)
 
 
+def _flat_lanes(lanes) -> list:
+    """Normalizes ``lanes`` to the flat ``name label height mute solo gain``
+    sextuples the host reads.
+
+    A lane is a mapping, or a sequence starting with its name; everything after
+    the name has a default, so ``("drums",)`` is a lane at the host's own
+    thickness with no mixer state set."""
+    out: list = []
+    for lane in lanes:
+        if isinstance(lane, dict):
+            got = (lane.get("name"), lane.get("label"), lane.get("height"),
+                   lane.get("mute"), lane.get("solo"), lane.get("gain"))
+        elif isinstance(lane, (tuple, list)):
+            got = tuple(lane) + (None,) * (6 - len(lane))
+        else:
+            got = (lane, None, None, None, None, None)
+        name, label, height, mute, solo, gain = got[:6]
+        out += [str(name), "" if label is None else str(label),
+                96.0 if height is None else float(height),
+                int(bool(mute)), int(bool(solo)),
+                1.0 if gain is None else float(gain)]
+    return out
+
+
+def _flat_clips(clips) -> list:
+    """Normalizes ``clips`` to the flat ``name lane offset dur start label``
+    sextuples the host reads. Same shapes as `_flat_lanes`."""
+    out: list = []
+    for clip in clips:
+        if isinstance(clip, dict):
+            got = (clip.get("name"), clip.get("lane"), clip.get("offset"),
+                   clip.get("dur"), clip.get("start"), clip.get("label"))
+        elif isinstance(clip, (tuple, list)):
+            got = tuple(clip) + (None,) * (6 - len(clip))
+        else:
+            got = (clip, None, None, None, None, None)
+        name, lane, offset, dur, start, label = got[:6]
+        out += [str(name), "" if lane is None else str(lane),
+                0.0 if offset is None else float(offset),
+                0.0 if dur is None else float(dur),
+                0.0 if start is None else float(start),
+                "" if label is None else str(label)]
+    return out
+
+
 def _flat_markers(markers) -> list:
     """Normalizes a ``markers`` argument to the flat ``time, label, color``
     triples the host reads.
@@ -2212,6 +2257,69 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
                        playhead_loop_len=playhead_loop_len, link=link,
                        autofit=autofit))
     return node("field", id=id, children=clips, **extra, **props)
+
+
+def multitrack(*, lanes=(), clips=(), gap: float | None = None,
+               snap: float | None = None, label: str | None = None,
+               autofit: bool | None = None, ruler: str | None = None,
+               sample_rate: float | None = None, tempo: float | None = None,
+               tempo_map=None, beat_at: float | None = None,
+               quant: float | None = None,
+               sel_start: float | None = None, sel_len: float | None = None,
+               sel_min: float | None = None, sel_max: float | None = None,
+               y_start: float | None = None, y_len: float | None = None,
+               playhead_at: float | None = None, playhead: float | None = None,
+               playhead_loop_start: float | None = None,
+               playhead_loop_len: float | None = None,
+               link: int | None = None, theme: dict | None = None,
+               markers=None, axes: dict | None = None,
+               id: int | None = None, **props) -> View:
+    """A **multitrack**: one widget holding a stack of lanes and the clips on
+    them, drawn on one shared time axis.
+
+    It is the `pianoroll` of a piece. A roll is one widget holding its notes;
+    this is one widget holding its lanes and its clips — so you **describe** the
+    piece rather than composing a tree of `track` and `clip` widgets, and there
+    is exactly one thing that owns it. A lane cannot sit in a void: it is a row
+    of this widget, never a box you place somewhere.
+
+    ``lanes`` is a sequence of ``(name, label, height, mute, solo, gain)`` and
+    ``clips`` a sequence of ``(name, lane, offset, dur, start, label)``, with
+    ``offset``/``dur``/``start`` in timeline samples and ``lane`` naming one of
+    the lanes. **The name is the identity** — the client's own word, not a widget
+    id — so a clip is addressed, drawn and reported by the same name the script
+    already calls it. A clip naming a lane that is not there is kept and drawn
+    nowhere, so renaming a lane loses nothing.
+
+    ``snap`` is the drag grid in timeline samples; ``gap`` the space between
+    lanes. The time chrome (``ruler``, ``sample_rate``, ``tempo``, ``link``,
+    ``playhead*``, ``markers``) is the same every timeline view carries, and
+    ``link`` joins this widget's axis to a `timeruler` or another view.
+
+    It **places**; a clip is entered to edit. The contents of a clip draw
+    read-only here — this widget owns *where* things are, not what is inside
+    them::
+
+        multitrack(lanes=[("drums", "", 96, 0, 0, 0.8),
+                          ("bass", "", 96, 0, 0, 0.8)],
+                   clips=[("hit", "drums", 0, 48000, 0, ""),
+                          ("walk", "bass", 48000, 96000, 0, "")],
+                   name="piece", weight=1.0)
+    """
+    extra = _drop_none(lanes=_held(lanes or None, _flat_lanes),
+                       clips=_held(clips or None, _flat_clips), gap=gap,
+                       snap=snap, label=label, theme=theme)
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler,
+                       sample_rate=sample_rate, tempo=tempo,
+                       tempo_map=_tempo_map(tempo_map), beat_at=beat_at,
+                       quant=quant, sel_start=sel_start, sel_len=sel_len,
+                       sel_min=sel_min, sel_max=sel_max,
+                       y_start=y_start, y_len=y_len,
+                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len, link=link,
+                       autofit=autofit))
+    return node("multitrack", id=id, **extra, **props)
 
 
 def timeruler(*, h: float = 20.0, autofit: bool | None = None,

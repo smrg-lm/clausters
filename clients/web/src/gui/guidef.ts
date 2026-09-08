@@ -2563,6 +2563,96 @@ export function track(
     });
 }
 
+/** One lane of a {@link multitrack}: its name, then everything with a default. */
+export type LaneSpec = readonly (readonly [
+    name: string,
+    label?: string,
+    height?: number,
+    mute?: boolean,
+    solo?: boolean,
+    gain?: number,
+])[];
+
+/** One clip of a {@link multitrack}: its name, then everything with a default. */
+export type ClipSpec = readonly (readonly [
+    name: string,
+    lane?: string,
+    offset?: number,
+    dur?: number,
+    start?: number,
+    label?: string,
+])[];
+
+/** The flat `name label height mute solo gain` sextuples the host reads. */
+export function flatLanes(lanes: LaneSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [name, label, height, mute, solo, gain] of lanes) {
+        out.push(String(name), label === undefined ? "" : String(label),
+            height === undefined ? 96 : Number(height),
+            mute ? 1 : 0, solo ? 1 : 0,
+            gain === undefined ? 1 : Number(gain));
+    }
+    return out;
+}
+
+/** The flat `name lane offset dur start label` sextuples the host reads. */
+export function flatClips(clips: ClipSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [name, lane, offset, dur, start, label] of clips) {
+        out.push(String(name), lane === undefined ? "" : String(lane),
+            Number(offset ?? 0), Number(dur ?? 0), Number(start ?? 0),
+            label === undefined ? "" : String(label));
+    }
+    return out;
+}
+
+/**
+ * A **multitrack**: one widget holding a stack of lanes and the clips on them,
+ * drawn on one shared time axis.
+ *
+ * It is the {@link pianoroll} of a piece. A roll is one widget holding its
+ * notes; this is one widget holding its lanes and its clips — so you
+ * **describe** the piece rather than composing a tree of {@link track} and
+ * {@link clip} widgets, and there is exactly one thing that owns it. A lane
+ * cannot sit in a void: it is a row of this widget, never a box you place.
+ *
+ * `lanes` is `[name, label, height, mute, solo, gain]` and `clips`
+ * `[name, lane, offset, dur, start, label]`, with `offset`/`dur`/`start` in
+ * timeline samples and `lane` naming one of the lanes. **The name is the
+ * identity** — the client's own word, not a widget id — so a clip is addressed,
+ * drawn and reported by the same name the script already calls it. A clip
+ * naming a lane that is not there is kept and drawn nowhere, so renaming a lane
+ * loses nothing.
+ *
+ * It **places**; a clip is entered to edit. The contents of a clip draw
+ * read-only here — this widget owns *where* things are, not what is inside them.
+ */
+export function multitrack(
+    options: TimelineOptions & {
+        lanes?: LaneSpec;
+        clips?: ClipSpec;
+        /** The space between lanes, in logical pixels. */
+        gap?: number;
+        /** The drag grid in timeline samples; `0` is no grid. */
+        snap?: number;
+        label?: string;
+        theme?: Record<string, string>;
+    } = {},
+): GuiNode {
+    const { lanes, clips, gap, snap, label: text, theme, ...timeline } = options;
+    return node("multitrack", {
+        ...timelineProps(timeline),
+        ...drop([
+            ["lanes", lanes === undefined ? undefined : flatLanes(lanes)],
+            ["clips", clips === undefined ? undefined : flatClips(clips)],
+            ["gap", gap],
+            ["snap", snap],
+            ["label", text],
+            ["theme", theme],
+        ]),
+    });
+}
+
 /**
  * One `clip` on a `track`: a placed rectangle spanning `[offset, offset +
  * dur]` in timeline sample units (the graphic unit — length = duration).
