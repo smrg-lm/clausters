@@ -1192,6 +1192,21 @@ DAW session, because that is what a DAW session is good at.
   bus each, and what it listed as its kind is a consequence of the graph it
   holds rather than an enumeration the format has to close.
 
+  **A chain a hand adds to and takes from is an auto-sorted group, and that is
+  the spelling a track uses** *(the user, 2026-09-08: "graph def puede ser una
+  cadena de efectos a la que se le agregan o quitan defs como si fueran
+  plugins")*. Yes - and the two spellings differ on exactly that, which is what
+  picks between them. A **GraphDef instance** is atomic: the only verbs over one
+  are `/graph_new` and `/node_free`, so inserting a plugin means re-sending the
+  def and rebuilding the chain, losing every tail and every parameter the hand
+  had set. A **plain group with `/group_sortMode 1`** is the same thing built by
+  hand - one synth per effect, private buses, and the **same** bus-connection
+  DAG recomputing the execution order - except that `/synth_new` and
+  `/node_free` add and remove one member while it sounds, and the sort re-orders
+  around it with no bookkeeping. So a track's chain is an auto-sorted group;
+  a GraphDef is what a *fixed* instrument is, where atomic instantiation and a
+  named port surface are the point. Neither needs anything built.
+
   What this leaves genuinely open is narrower than "are plugins in the document":
   it is whether a chain **saved** in a session names a GraphDef by name (and the
   session is unopenable without it) or carries it, which is the same question
