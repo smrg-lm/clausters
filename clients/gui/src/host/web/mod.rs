@@ -252,10 +252,6 @@ struct WebApp {
     /// The server's sample rate (from `/clock_query.reply`, requested when the leg
     /// connects); `0.0` until known — window sizing then assumes 48 kHz.
     server_rate: f64,
-    /// The engine's sample clock from the newest `/clock_query.reply` — the browser
-    /// playhead source (polled once per tick while a playhead is shown; the
-    /// native front reads the shm header instead).
-    server_clock: f64,
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
@@ -287,7 +283,6 @@ impl WebApp {
             stream_dropped: 0,
             stream_sync_pending: false,
             server_rate: 0.0,
-            server_clock: 0.0,
             tick: None,
             stream_seen: false,
             fetches: BufferFetches::default(),
@@ -551,8 +546,14 @@ impl WebApp {
         // browser's stand-in for the shm header's sample clock) — once for the
         // page, however many canvases show one.
         if wants_clock && let Some(server) = self.host.server() {
+            // Which counter the line is drawn from decides which one is worth
+            // a message: the piece's position is the transport's to report.
+            let addr = match self.host.head_clock() {
+                crate::host::HeadClock::Device => "/clock_query",
+                crate::host::HeadClock::Piece => "/transport_query",
+            };
             let _ = server.send(OscMessage {
-                addr: "/clock_query".into(),
+                addr: addr.into(),
                 args: vec![],
             });
         }

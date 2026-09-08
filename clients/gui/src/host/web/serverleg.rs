@@ -354,7 +354,7 @@ impl WebApp {
                 // (samples, rate, ...): keep the rate for window sizing and
                 // the sample counter for the timeline playhead.
                 if let Some(OscType::Long(samples)) = msg.args.first() {
-                    self.server_clock = *samples as f64;
+                    self.buses.set_clock(*samples as f64);
                 }
                 if let Some(OscType::Double(rate)) = msg.args.get(1) {
                     self.server_rate = *rate;
@@ -363,6 +363,16 @@ impl WebApp {
                     // trees use, which is the only door that talks to the
                     // server about subscriptions.
                     self.schedule_stream_sync();
+                }
+            }
+            "/transport_query.reply" => {
+                // Field 7 is `positionSample`: where the transport is **in the
+                // piece**, which is what a playhead draws when the host was
+                // told to read the piece. The browser's stand-in for the
+                // segment's own field, polled on the same tick the device
+                // clock is.
+                if let Some(OscType::Long(samples)) = msg.args.get(7) {
+                    self.buses.set_position(*samples as f64);
                 }
             }
             "/server_query.reply" => {

@@ -72,7 +72,7 @@ impl EmbedServer {
     /// reader and the server it links disagree about the ABI — impossible in one
     /// binary, and reported rather than assumed away.
     #[cfg(unix)]
-    pub fn bus_source(&self, head: crate::host::shm::HeadClock) -> Option<Arc<dyn BusSource>> {
+    pub fn bus_source(&self) -> Option<Arc<dyn BusSource>> {
         let segment = Arc::clone(self.inner.segment());
         let (base, size) = (segment.base(), segment.size());
         // SAFETY: `base`/`size` describe the very segment `segment` keeps
@@ -80,7 +80,7 @@ impl EmbedServer {
         // for as long as the view lives.
         let view = unsafe { crate::host::shm::SharedSegment::borrowed(base, size, segment) };
         match view {
-            Ok(view) => Some(Arc::new(view.with_head(head))),
+            Ok(view) => Some(Arc::new(view)),
             Err(e) => {
                 tracing::warn!("the embedded server's segment is unreadable: {e}");
                 None
@@ -92,7 +92,6 @@ impl EmbedServer {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::host::shm::HeadClock;
     use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 
     /// The wire-up nothing else covers: an embedded server's own segment, read
@@ -110,11 +109,8 @@ mod tests {
             return;
         };
         let bus = embed
-            .bus_source(HeadClock::Piece)
+            .bus_source()
             .expect("the segment this build wrote is the segment this build reads");
-        let device = embed
-            .bus_source(HeadClock::Device)
-            .expect("the same segment, read on the other axis");
 
         let send = |addr: &str, args: Vec<OscType>| {
             let bytes = encode(&OscPacket::Message(OscMessage {
@@ -139,21 +135,22 @@ mod tests {
         // fail about one run in five, which is the worst kind of red: it says
         // nothing about the code and it trains a reader to re-run.
         assert!(
-            settles(|| bus.sample_clock() == 12_345.0),
+            settles(|| bus.transport_position() == 12_345.0),
             "located, and stopped: the piece stands exactly where it was put \
              (read {})",
-            bus.sample_clock()
+            bus.transport_position()
         );
         assert!(
-            device.sample_clock() > 0.0,
-            "while the device clock, on the same segment, has been running all along"
+            bus.sample_clock() > 0.0,
+            "while the device clock, the same source's other counter, has been \
+             running all along"
         );
 
         send("/transport_play", vec![]);
         assert!(
-            settles(|| bus.sample_clock() > 12_345.0),
+            settles(|| bus.transport_position() > 12_345.0),
             "and it moves once the transport rolls (read {})",
-            bus.sample_clock()
+            bus.transport_position()
         );
     }
 

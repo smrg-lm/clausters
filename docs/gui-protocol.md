@@ -34,6 +34,7 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_load name` | Instantiate a **persisted** GuiDef by name (the host replays it as its saved `/gui_def`). Needs a data directory. |
 | `/gui_font blob` | Draw text with this typeface from now on — a raw TrueType/OpenType file (no WOFF2). It carries **no id**: a face is a property of the host, not of a window, so every window it has open and every one it opens later draws with it. Loading one **relayouts nothing** (the size table never followed the typeface), which is what makes a late hand-over safe: the same tree comes up the same size, and only `text_size` stops being quantized to half-steps of the bitmap cell. A host built without a rasterizer, or handed bytes it cannot read, says so and keeps drawing with its embedded bitmap face — the floor every build draws on. The launch-time spelling is the host's own `--font <path>`. |
 | `/gui_theme json` | Draw the chrome from these colors from now on — a partial `{"role": "#rrggbb[aa]"}` object, the same table a container's `theme` prop takes, scoped to the **host** instead of to a subtree. It carries **no id** for that reason: a look is a property of the host, as a typeface is. It is the base every theme group is resolved over, so every open window re-resolves its groups against the new table and redraws — a group overlays what it *inherits*, so changing the base changes what a group means. Unknown roles and unreadable colors are reported and skipped; a payload that is not a JSON object is ignored whole. The launch-time spelling is `--theme <file.toml>` / the `[gui.theme]` config table. |
+| `/gui_headClock which` | Draw every playhead from this counter from now on — `"device"` or `"piece"`. It carries **no id**, like the typeface and the theme, because it says what the numbers a window is handed *mean*, and one host reads one server. `device` (the default) is the engine's sample clock, which never stops: what a host watching a live server wants, since its meters, scopes and taps are all on that axis. `piece` is the transport's **position** — it holds while the transport is stopped, jumps wherever `/transport_locate` puts it and wraps at a loop's end, all inside the engine. Natively that number is a field of the shared segment; in a page the host polls `/transport_query` for it instead of `/clock_query`, on the same tick. **What it changes for a client**: a window drawing the piece needs no anchor of its own (`playhead_at` of `0`) and no message per frame, because seeking, looping and pausing are transport commands rather than a line the script keeps in step — which is what lets an editor hand playback to the server and stop computing time. A word the host does not know is reported and ignored, so a typo leaves the line drawing what it was drawing. The launch-time spelling is `--clock <device|piece>`, and `--session` implies `piece`. (The verb is `headClock` and not `clock` because both clients already have a `clock` — their application clock — and one word for two things is how a reader loses an afternoon.) |
 | `/gui_metrics json` | Lay out with these sizes from now on — the theme's counterpart for lengths, a partial `{"role": number}` object over the metrics every widget reads its paddings, strips and hit slop from. The reserved `scale` key regenerates the whole set at a density rather than setting one role. Every canvas re-resolves the roles at its own scale and redraws. Same rules for what it does not understand, and the launch-time spelling is the `[gui.metrics]` config table. |
 
 There is no save command: a GuiDef whose root carries a `name` prop is
@@ -916,6 +917,18 @@ re-cues whatever sounds; and a click that lands while the transport is *running*
 re-anchors `playhead_at` too, so the line carries on from where the hand pointed
 instead of running on from where it was. The steps that answer for the pressed
 pixel themselves — `locate`, `marker`, `sample`, `draw` — place no second cursor.
+
+**Which clock the line sweeps by is `/gui_headClock`**, and it decides how much of
+this a client has to do. On `device` (the default) the counter never stops, so
+the client owns the piece's time: it anchors `playhead_at`, re-anchors on every
+locate, and parks the static cursor to make a pause look like one. On `piece`
+the counter *is* the piece's position — held while the transport is stopped,
+moved by `/transport_locate`, wrapped in the engine at a `/transport_loop`'s end
+— so the anchor is simply `0` and the three things stop being the client's:
+pausing is `/transport_stop`, seeking is `/transport_locateSample`, and a loop
+needs neither `playhead_loop_*` nor a message when it wraps. That is the shape a
+multitrack wants, where many readers follow one time (`TransportPos`), and it is
+why an editor sends a locate and reads a position back instead of computing one.
 
 A sweep that **repeats** a region — an editor playing a selection on a loop, a
 looping clip — sets `playhead_loop_start`/`playhead_loop_len` (the same sample

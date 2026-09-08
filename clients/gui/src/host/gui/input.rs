@@ -22,7 +22,7 @@ impl App {
         // ...and the clock the frame sweeps the playhead with, for the same
         // reason: a click that locates while the transport runs re-anchors the
         // sweep, and it must land where the line is drawn.
-        ctx.sample_clock = self.shm.as_ref().map_or(0.0, |s| s.sample_clock());
+        ctx.sample_clock = self.host.playhead_clock(self.shm.as_deref());
         if let Some(ws) = self.windows.get(&def_id) {
             ctx.shift = ws.shift;
             ctx.ctrl = ws.ctrl;

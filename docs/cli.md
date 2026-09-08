@@ -128,7 +128,7 @@ clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--ws [[addr:]port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
               [--theme <path>] [--font <path>] [--msaa <n>]
-              [--follow-block <seconds>]
+              [--clock <device|piece>] [--follow-block <seconds>]
 ```
 
 The host has two legs: a **server front** a script sends `/gui_*` to, and an
@@ -152,6 +152,7 @@ is assumed, and `--data-dir` names the *host's* GuiDef store.
 | `--server` | host:port | off | Also attach the client leg to a running audio server. Needed for widgets that reference a server buffer number, and for bound widgets (`/gui_bind`) to forward their value. |
 | `--shm` | path | off | Map the audio server's shared-memory segment (its own `--shm` path) for meters and scopes with no per-frame messages. Unix only. |
 | `--data-dir` | dir | the XDG data dir | The GuiDef store: named GuiDefs persist there and `/gui_load` reads from it. |
+| `--clock` | `device` \| `piece` | `device` (`piece` under `--session`) | Which counter every playhead is drawn from. `device` is the engine's sample clock, which never stops — what a host watching a live server wants. `piece` is the transport's **position**: it holds while stopped, jumps on `/transport_locate` and wraps at a `/transport_loop`'s end, all in the engine, so an editor draws the piece's own time and computes none of it. The wire spelling is `/gui_headClock`. |
 | `--standalone` | name (optional) | — | Boot the saved GuiDef against an **embedded** audio server — no separate server, no language client. With no name, `[standalone].gui` from the configuration is used. |
 | `--config` | path | the user+project chain | Read the configuration from this TOML file instead. |
 | `--theme` | path | — | Read the color theme from this TOML file, laid over `[gui.theme]`. A flat, partial table of `role = "#rrggbb[aa]"`. |

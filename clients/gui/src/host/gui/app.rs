@@ -442,7 +442,7 @@ impl App {
                 node_trees: &self.node_trees,
                 server_attached,
                 sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
-                sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
+                sample_clock: self.host.playhead_clock(self.shm.as_deref()),
                 cursor,
                 timelines: self.host.timelines(),
             },
@@ -907,7 +907,7 @@ impl App {
     pub(super) fn playhead_sample(&self, def_id: i32, id: i32) -> Option<f64> {
         let tree = self.host.window_def(def_id)?;
         let e = tree.find(id)?.kind.editor()?;
-        let clock = self.shm.as_ref().map_or(0.0, |s| s.sample_clock());
+        let clock = self.host.playhead_clock(self.shm.as_deref());
         self.host
             .timelines()
             .state(group_key(id, e.link))?

@@ -421,12 +421,30 @@ pub(crate) fn demand<'a>(
 #[derive(Default)]
 pub struct StreamedBuses {
     values: Mutex<HashMap<usize, f32>>,
+    /// The two counters a playhead can be drawn from, polled rather than
+    /// mapped: the device clock from `/clock_query.reply` and the piece's
+    /// position from `/transport_query.reply`. They live **here** and not on
+    /// the front so that the browser answers
+    /// [`BusSource::sample_clock`]/[`BusSource::transport_position`] the way
+    /// the segment does, and the choice between them is made once, on the host.
+    clocks: Mutex<(f64, f64)>,
 }
 
 impl StreamedBuses {
     /// Stores one streamed `(busIndex, value)` pair.
     pub fn set(&self, index: usize, value: f32) {
         self.values.lock().unwrap().insert(index, value);
+    }
+
+    /// Stores the newest device sample clock (`/clock_query.reply`).
+    pub fn set_clock(&self, samples: f64) {
+        self.clocks.lock().unwrap().0 = samples;
+    }
+
+    /// Stores the newest transport position in the piece
+    /// (`/transport_query.reply`).
+    pub fn set_position(&self, samples: f64) {
+        self.clocks.lock().unwrap().1 = samples;
     }
 }
 
@@ -438,6 +456,14 @@ impl BusSource for StreamedBuses {
             .get(&index)
             .copied()
             .unwrap_or(0.0)
+    }
+
+    fn sample_clock(&self) -> f64 {
+        self.clocks.lock().unwrap().0
+    }
+
+    fn transport_position(&self) -> f64 {
+        self.clocks.lock().unwrap().1
     }
 }
 
@@ -499,6 +525,14 @@ pub struct StreamedSource {
 impl BusSource for StreamedSource {
     fn control(&self, index: usize) -> f32 {
         self.buses.control(index)
+    }
+
+    fn sample_clock(&self) -> f64 {
+        self.buses.sample_clock()
+    }
+
+    fn transport_position(&self) -> f64 {
+        self.buses.transport_position()
     }
 
     fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {

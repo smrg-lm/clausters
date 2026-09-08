@@ -404,7 +404,7 @@ impl WebApp {
                 bus: Some(self.buses.as_ref() as &dyn BusSource),
                 server_attached,
                 sample_rate: self.server_rate,
-                sample_clock: self.server_clock,
+                sample_clock: self.host.playhead_clock(Some(self.buses.as_ref())),
                 cursor: slot.cursor,
                 timelines,
                 // The node tree stays empty until a browser node-tree path

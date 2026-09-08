@@ -30,14 +30,14 @@ use std::net::Ipv4Addr;
 // feature); these are only needed on that path.
 #[cfg(feature = "standalone")]
 use clausters_core::osc::encode;
+#[cfg(unix)]
+use clausters_gui::host::HeadClock;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::ServerLink;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::embed::{EmbedServer, EmbedSession};
-#[cfg(unix)]
-use clausters_gui::host::shm::HeadClock;
 
 const USAGE: &str = "\
 usage:
@@ -80,6 +80,13 @@ usage:
                             this editor's own samples go, and what a player
                             is started against (`clausters --shm <path>`);
                             without one a path is picked and logged. Unix only
+      --clock <which>       which counter every playhead is drawn from:
+                            `device` (default) is the engine's sample clock,
+                            what a host watching a live server wants; `piece`
+                            is the transport's position in the piece, which
+                            holds while stopped, jumps on a locate and wraps in
+                            a loop -- what an editor wants. --session implies
+                            `piece`. The wire spelling is /gui_headClock.
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
@@ -224,6 +231,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_shm: Option<String> = None;
     let mut cli_headless = false;
     let mut cli_data_dir: Option<String> = None;
+    let mut cli_head: Option<HeadClock> = None;
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
     let mut session_path: Option<String> = None;
@@ -274,6 +282,20 @@ fn run(args: &[String]) -> Result<(), String> {
                     .next()
                     .ok_or_else(|| format!("--shm needs a path\n{USAGE}"))?;
                 cli_shm = Some(v.clone());
+            }
+            "--clock" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--clock needs device or piece\n{USAGE}"))?;
+                cli_head = Some(match v.as_str() {
+                    "device" => HeadClock::Device,
+                    "piece" => HeadClock::Piece,
+                    other => {
+                        return Err(format!(
+                            "--clock takes device or piece, not {other}\n{USAGE}"
+                        ));
+                    }
+                });
             }
             "--data-dir" => {
                 let v = it
@@ -432,7 +454,17 @@ fn run(args: &[String]) -> Result<(), String> {
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
-        return run_session(&path, save_to.as_deref(), udp_bind, look, shm, server);
+        return run_session(
+            &path,
+            save_to.as_deref(),
+            udp_bind,
+            look,
+            shm,
+            server,
+            // A session editor's time is the piece's, which is what the head
+            // reads unless the launch said otherwise.
+            cli_head.unwrap_or(HeadClock::Piece),
+        );
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -479,6 +511,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let local = socket.local_addr().map_err(|e| e.to_string())?;
 
     let mut host = Host::new();
+    host.set_head_clock(cli_head.unwrap_or_default());
     look.apply(&mut host);
     load_face(
         &mut host,
@@ -534,7 +567,7 @@ fn run(args: &[String]) -> Result<(), String> {
         // and edits in place rather than fetching and sending back.
         #[cfg(unix)]
         let bus = {
-            let (bus, buffers) = gui::open_shm_buffers(shm, HeadClock::Device);
+            let (bus, buffers) = gui::open_shm_buffers(shm);
             if let Some(buffers) = buffers {
                 host.set_shared_buffers(buffers);
             }
@@ -623,6 +656,7 @@ fn run_session(
     look: Look,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
+    head: HeadClock,
 ) -> Result<(), String> {
     use clausters_gui::host::document::{Owner, sources, tree};
 
@@ -645,6 +679,7 @@ fn run_session(
     }
 
     let mut host = Host::new();
+    host.set_head_clock(head);
     #[cfg(feature = "standalone")]
     // The player is held, not used: it is a process this editor may own, and
     // dropping it is what stops it when the window closes.
@@ -800,8 +835,7 @@ fn attach_server(
     // regions beside it for the samples.
     #[cfg(unix)]
     let bus = {
-        let (bus, buffers) =
-            gui::open_shm_buffers(Some(path.display().to_string()), HeadClock::Piece);
+        let (bus, buffers) = gui::open_shm_buffers(Some(path.display().to_string()));
         match buffers {
             Some(buffers) => host.set_shared_buffers(buffers),
             None => tracing::warn!("session: the buffers could not be mapped; takes will fetch"),
@@ -1146,7 +1180,7 @@ fn run_standalone(
     // server has one of its own -- the in-process twin of mapping `--shm`.
     // Without this the widgets that watch a bus draw an empty box forever,
     // while the same bundle's meter fills in a browser tab.
-    let bus = embed.bus_source(HeadClock::Device);
+    let bus = embed.bus_source();
     if bus.is_none() {
         tracing::warn!("standalone: no data plane -- bus meters and scopes will stay empty");
     }

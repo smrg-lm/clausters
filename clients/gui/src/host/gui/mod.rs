@@ -240,7 +240,6 @@ pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
 #[cfg(unix)]
 pub fn open_shm_buffers(
     path: Option<String>,
-    head: super::shm::HeadClock,
 ) -> (
     Option<Arc<dyn BusSource>>,
     Option<super::mapped::SharedBuffers>,
@@ -250,7 +249,7 @@ pub fn open_shm_buffers(
     };
     match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
         Ok(seg) => {
-            let seg = Arc::new(seg.with_head(head));
+            let seg = Arc::new(seg);
             info!(
                 "shared segment mapped at {path} ({} control buses, {} buffer row(s)): \
                  zero-message meters, and samples read and written in place",

@@ -619,6 +619,32 @@ class GuiHost:
         """
         self._send("/gui_metrics", json.dumps(dict(table)))
 
+    def head_clock(self, which: str):
+        """``/gui_headClock <which>`` — which counter every playhead is drawn from.
+
+        ``"device"`` (the default) is the engine's sample clock, which never
+        stops: what a host watching a live server wants, since its meters,
+        scopes and taps are all on that axis. ``"piece"`` is the **transport's
+        position** — it holds while the transport is stopped, jumps wherever
+        ``/transport_locate`` puts it and wraps at a loop's end, all inside the
+        engine.
+
+        That is the one an editor wants, and it changes what a script has to do:
+        drawing the piece needs no anchor (``playhead_at=0``) and no message per
+        frame, because seeking, looping and pausing become transport commands
+        rather than a line the script keeps in step. Host-wide and id-less, like
+        `theme` and `font`, because it says what the numbers a window is handed
+        *mean*.
+
+        A word the host does not know is logged and ignored, so the line keeps
+        drawing what it was drawing. The launch-time spelling is the host's own
+        ``--clock <device|piece>``; ``--session`` implies ``piece``. It is
+        ``head_clock`` and not ``clock`` because a host already has one — its
+        `clausters.base.appclock.AppClock` — and this names a counter, not a
+        scheduler.
+        """
+        self._send("/gui_headClock", str(which))
+
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
         the document ``/gui_def`` is sent, plus ``name -> id`` collected into

@@ -31,24 +31,6 @@ use std::sync::atomic::Ordering;
 
 use clausters_core::shm::View;
 
-/// Which of the segment's counters a window's **playhead** reads.
-///
-/// The segment publishes several and a widget draws one number, so the choice
-/// is made once, where the source is built, rather than as a prop on every
-/// widget that could carry a head.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum HeadClock {
-    /// The device clock: samples processed since boot, never stopping. What a
-    /// host attached to a live server wants — its meters, scopes and taps are
-    /// all on that axis.
-    #[default]
-    Device,
-    /// The transport's **position in the piece**: it holds while stopped,
-    /// jumps on a locate and wraps in a loop. What an editor wants, because it
-    /// is the time of the samples rather than of the machine.
-    Piece,
-}
-
 /// Who owns the memory this reads.
 enum Backing {
     /// A mapping this made and must unmap.
@@ -67,7 +49,6 @@ enum Backing {
 pub struct SharedSegment {
     view: View,
     backing: Backing,
-    head: HeadClock,
 }
 
 // SAFETY: every access goes through the shared reader's atomics, and the
@@ -87,9 +68,9 @@ impl Drop for SharedSegment {
 impl SharedSegment {
     /// Maps the segment at `path` and validates its header. Fails if the file
     /// is too small, the magic is wrong, the ABI version differs, or the file
-    /// size does not match the layout the header describes. Reads the
-    /// **device** clock, which is what a host attached to a running server
-    /// wants; see [`Self::with_head`].
+    /// size does not match the layout the header describes. It publishes both
+    /// counters; which one a playhead draws is the host's
+    /// ([`crate::host::Host::set_head_clock`]).
     ///
     /// Mapped read/write, though the host only reads the segment itself: the
     /// shared reader is one type with one set of accessors, and a read-only
@@ -124,7 +105,6 @@ impl SharedSegment {
             Ok(view) => Ok(SharedSegment {
                 view,
                 backing: Backing::Mapped { ptr, len },
-                head: HeadClock::default(),
             }),
             Err(why) => {
                 // SAFETY: the mapping we just made; nothing else aliases it.
@@ -158,15 +138,7 @@ impl SharedSegment {
         Ok(SharedSegment {
             view,
             backing: Backing::Borrowed(owner),
-            head: HeadClock::default(),
         })
-    }
-
-    /// Reads the piece's position rather than the device clock — the choice an
-    /// editor makes, and the only place it is made (see [`HeadClock`]).
-    pub fn with_head(mut self, head: HeadClock) -> Self {
-        self.head = head;
-        self
     }
 
     /// Number of control buses this segment carries.
@@ -306,11 +278,10 @@ impl super::BusSource for SharedSegment {
     }
 
     fn sample_clock(&self) -> f64 {
-        // The one place the choice of counter is resolved: above here a
-        // playhead reads "the clock" and never asks which.
-        match self.head {
-            HeadClock::Device => SharedSegment::sample_clock(self) as f64,
-            HeadClock::Piece => SharedSegment::transport_position(self) as f64,
-        }
+        SharedSegment::sample_clock(self) as f64
+    }
+
+    fn transport_position(&self) -> f64 {
+        SharedSegment::transport_position(self) as f64
     }
 }
