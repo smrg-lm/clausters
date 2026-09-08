@@ -567,7 +567,12 @@ impl WebApp {
         let dragging: Vec<i32> = self
             .canvases
             .iter()
-            .filter(|(_, slot)| slot.gestures.edge_scrolling(slot.cursor.0))
+            .filter(|(_, slot)| {
+                // No cursor is not a cursor at the far left: a canvas the
+                // pointer is not over edge-scrolls nothing.
+                slot.cursor
+                    .is_some_and(|(cx, _)| slot.gestures.edge_scrolling(cx))
+            })
             .map(|(def, _)| *def)
             .collect();
         for def in dragging {

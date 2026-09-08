@@ -239,15 +239,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   reduced to two lanes and one drag. One question, two entries, and it is
   `O21`'s layered regions that decide it.
 
-- ⬜ **A clip drag released outside its lane keeps the new position and emits
-  nothing** *(`clients/gui/PLAN.md`, Found by use)*. Let the button go with the
-  pointer over the ruler, over the transport row or outside the window: the clip
-  stays drawn where the hand left it and no `"clip"` edit-back is sent, so the
-  piece sounds where the clip no longer is. It is the branch's own subject from
-  the host's side — the client is the picture's single owner only while every
-  change the host makes to the picture is announced. Found 2026-09-07, in the
-  visual review's second sitting.
-
 - **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
   together because they came out of one branch and are read against it; each is
   written in full there and only named here.

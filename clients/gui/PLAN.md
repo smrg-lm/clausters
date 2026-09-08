@@ -5429,7 +5429,7 @@ finished work, where a pending item reads as done.
   is that one: reaching a lane's time range by hand. What this settled is the
   roll's default and the machine underneath both.
 
-- ⬜ **A clip drag released outside its lane keeps the new position and emits
+- ✅ **A clip drag released outside its lane keeps the new position and emits
   nothing** *(found 2026-09-07 by the user, by eye, in `editors/multitrack`)*.
   Drag a clip along its lane and let the button go with the pointer over the
   ruler, over the transport row or outside the window: the clip stays drawn
@@ -5451,3 +5451,69 @@ finished work, where a pending item reads as done.
   that emits the edit at all. Either the drag should **cancel** and spring back
   — a legal answer, and then nothing is announced because nothing changed — or
   it should commit and say so. What it does today is neither.
+
+  **Measured 2026-09-07, and it does not happen** *(the status bar's first real
+  use: the window says what it emitted, so this took four gestures and no
+  instrumentation)*. Every case reports, and reports the right verb — released
+  inside the lane, `"clip"`; onto another lane, `"lane"`; changed lane and let
+  go over the ruler, `"lane"`; unchanged and let go over the ruler, `"clip"`.
+  A test now pins the three off-lane releases. Nothing about the release path
+  was wrong.
+
+  **What was actually seen is the entry below**, and the difference matters
+  because the diagnosis here was *inferred from a symptom* and the inference
+  went somewhere the code never did. The clip did move on its own, and it moved
+  because the pointer crossed the window manager's chrome — not because it was
+  released anywhere in particular. "No edit-back reaches the client" was never
+  observed; it was deduced from "the driver kept the old position", which had
+  another cause entirely. Kept as the record of that: **a symptom names where to
+  look, not what to look at**, and an entry that reasons past the last thing it
+  measured will send the next reader down the branch it invented.
+
+- ✅ **A pointer that left the window was written down as a place, and a held
+  clip jumped to the start of the timeline** *(found 2026-09-07 by the user, by
+  eye, `editors/multitrack`; fixed the same day)*. Drag a clip and cross the
+  **window manager's own chrome** — a resize border, the title bar — and the
+  clip jumps to the beginning of the axis, at the exact pixel the pointer
+  leaves the content. The user had seen the same thing on a knob and said what
+  it was: *"lo de las coordenadas mal sobre el chrome de la ventana ya había
+  pasado con los knob. Este es un problema que hay que solucionar de manera
+  general."*
+
+  The desktop front kept the pointer as a pair and wrote `(-1.0, -1.0)` into it
+  on `CursorLeft` — a **sentinel for *not here*, stored in the field that means
+  *where***. The edge auto-scroll reads that field: `-1` is left of every lane's
+  body, so it pulled the view leftwards at full tilt every frame and carried the
+  held clip to the start with it. Everything downstream was working correctly on
+  a coordinate no hand could have been at.
+
+  Two changes, both general rather than a platform's:
+
+  - **The type stopped admitting it.** The cursor is `Option<(f64, f64)>` in
+    *both* fronts now: absent and *at minus one* are different facts and only
+    one of them is a coordinate. The compiler named all eleven readers, which is
+    the whole reason to fix it in the type rather than at the site that
+    happened to be caught.
+  - **A drag owns the pointer until the button comes up.** A press captures it,
+    so crossing onto the chrome is the platform saying it left the *content*,
+    not that it stopped belonging to this gesture — motion keeps arriving and
+    the drag keeps following. `CursorLeft` no longer forgets the position while
+    a drag is in flight.
+
+  The page had the same shape of lie without the sentinel: a canvas nobody had
+  pointed at reported a cursor at its own top-left corner, which the readout
+  drew as a hand that was never there. Same `Option`, same invariant, one rule.
+
+  **A first attempt is worth recording because the tests killed it.** Clamping
+  a drag's coordinates into the window, in the shared machine, looked like the
+  general answer and turned two tests red: a plane's pan *must* keep going when
+  the hand runs past the edge, and so must a block of clips. The coordinate
+  being outside was never the problem — the front **inventing** one was. The
+  clamp would have fixed the symptom by breaking the feature underneath it.
+
+  **What is not covered, and should be said**: nothing tests either front. The
+  fix is the type (compiler-enforced) plus one behaviour in winit-driven code
+  no harness reaches, so the check was a hand on the window. The machine-level
+  test beside it pins the other half — that a coordinate left of the body
+  *does* pull the view, which is correct and is exactly what made the sentinel
+  fatal rather than merely wrong.

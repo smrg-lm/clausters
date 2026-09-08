@@ -50,7 +50,13 @@ pub(super) struct CanvasSlot {
     /// canvases with three in view, and the browser's own compositing skip does
     /// not stop *us* from computing a frame or the server from streaming for it.
     pub(super) visible: bool,
-    pub(super) cursor: (f64, f64),
+    /// **Where the pointer is on this canvas, or `None` when it is not over
+    /// it** — the page's half of the same invariant the desktop keeps
+    /// (`gui::app::WindowState::cursor`), and an `Option` for the same reason:
+    /// *absent* is not a coordinate. A canvas nobody has pointed at yet used to
+    /// report a cursor at its own top-left corner, which the readout drew as a
+    /// hand that was never there.
+    pub(super) cursor: Option<(f64, f64)>,
     /// **Which mouse buttons the browser says are down**, as of the last
     /// pointer event on this canvas — the bitmask of `PointerEvent.buttons`.
     ///
@@ -147,7 +153,7 @@ impl CanvasSlot {
             render: None,
             pending_size: None,
             visible: true,
-            cursor: (0.0, 0.0),
+            cursor: None,
             buttons: Rc::new(Cell::new(0)),
             mods: Rc::new(Cell::new(0)),
             pointer_listener: None,
@@ -399,7 +405,7 @@ impl WebApp {
                 server_attached,
                 sample_rate: self.server_rate,
                 sample_clock: self.server_clock,
-                cursor: Some(slot.cursor),
+                cursor: slot.cursor,
                 timelines,
                 // The node tree stays empty until a browser node-tree path
                 // exists.

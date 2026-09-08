@@ -57,7 +57,7 @@ impl WebApp {
                 ctx.slot_channels.insert(*id, view.views.len());
             }
         }
-        Some((ctx, slot.cursor))
+        Some((ctx, slot.cursor?))
     }
 
     /// Carries out a gesture's effects over this front's sinks: `/gui_event`s
@@ -371,7 +371,7 @@ impl WebApp {
                     self.on_release(def);
                     return;
                 }
-                slot.cursor = (position.x, position.y);
+                slot.cursor = Some((position.x, position.y));
                 if slot.gestures.dragging() {
                     self.on_move(def);
                 } else if self
@@ -424,18 +424,18 @@ impl WebApp {
                 match touch.phase {
                     TouchPhase::Started if slot.touch.is_none() => {
                         slot.touch = Some(touch.id);
-                        slot.cursor = (touch.location.x, touch.location.y);
+                        slot.cursor = Some((touch.location.x, touch.location.y));
                         self.on_press(def);
                     }
                     TouchPhase::Moved if owned => {
-                        slot.cursor = (touch.location.x, touch.location.y);
+                        slot.cursor = Some((touch.location.x, touch.location.y));
                         if slot.gestures.dragging() {
                             self.on_move(def);
                         }
                     }
                     TouchPhase::Ended | TouchPhase::Cancelled if owned => {
                         slot.touch = None;
-                        slot.cursor = (touch.location.x, touch.location.y);
+                        slot.cursor = Some((touch.location.x, touch.location.y));
                         self.on_release(def);
                     }
                     // Another finger while one is already down, or a stray

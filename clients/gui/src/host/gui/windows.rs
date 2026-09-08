@@ -151,7 +151,9 @@ impl App {
 
         let (origin, cursor, shift, ctrl, alt, gestures, histories) = state.take().unwrap_or((
             origin,
-            (0.0, 0.0),
+            // A window that has just opened has not been pointed at yet, which
+            // is *no cursor* rather than a cursor at the origin.
+            None,
             false,
             false,
             false,

@@ -37,9 +37,12 @@ impl App {
     /// so the frame tick must keep running: the view scrolls under a standing
     /// cursor, which sends no events of its own.
     pub(super) fn window_is_edge_scrolling(&self, def_id: i32) -> bool {
-        self.windows
-            .get(&def_id)
-            .is_some_and(|ws| ws.gestures.edge_scrolling(ws.cursor.0))
+        self.windows.get(&def_id).is_some_and(|ws| {
+            // No cursor is not a cursor at the far left: a window the
+            // pointer is not over edge-scrolls nothing.
+            ws.cursor
+                .is_some_and(|(cx, _)| ws.gestures.edge_scrolling(cx))
+        })
     }
 
     /// The frame step of every edge-held clip drag: pans the view and carries
@@ -56,7 +59,9 @@ impl App {
             let Some(ws) = self.windows.get_mut(&def_id) else {
                 continue;
             };
-            let (cx, cy) = ws.cursor;
+            let Some((cx, cy)) = ws.cursor else {
+                continue;
+            };
             let effects = ws.gestures.tick(&mut self.host, &ctx, cx, cy, dt);
             self.apply_gesture_effects(effects);
         }
@@ -93,7 +98,7 @@ impl App {
 
     /// Press on a widget: the machine acts by kind and possibly starts a drag.
     pub(super) fn on_press(&mut self, def_id: i32) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -116,7 +121,7 @@ impl App {
 
     /// Release: the machine finishes the drag (button up, wire landing).
     pub(super) fn on_release(&mut self, def_id: i32) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -129,7 +134,7 @@ impl App {
 
     /// Wheel: the machine zooms the time axis or the vertical display window.
     pub(super) fn on_wheel(&mut self, def_id: i32, steps: f64) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -165,7 +170,7 @@ impl App {
     /// cursor** — the block operations of a view, addressed where the pointer
     /// already is. Returns whether it was consumed.
     pub(super) fn key_at_cursor(&mut self, def_id: i32, key: HostKey) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -191,7 +196,7 @@ impl App {
     /// shortcut, reached only by a key the focus and the element under the
     /// cursor both declined. Returns whether it was consumed.
     pub(super) fn clipboard_key(&mut self, def_id: i32, verb: ClipVerb) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -217,7 +222,7 @@ impl App {
     /// verbs, reported to whoever owns the composition. Returns whether it was
     /// consumed.
     pub(super) fn clip_verb(&mut self, def_id: i32, verb: ClipEdit) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -234,7 +239,7 @@ impl App {
     /// Quantize the clips the hand is holding on the lane under the cursor.
     /// Returns whether it was consumed.
     pub(super) fn clip_quantize(&mut self, def_id: i32) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };
         let ctx = self.gesture_ctx(def_id);
@@ -251,7 +256,7 @@ impl App {
     /// The space bar over the view under the cursor: play its samples, or stop
     /// what is playing. Returns whether it was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };
         let ctx = self.gesture_ctx(def_id);

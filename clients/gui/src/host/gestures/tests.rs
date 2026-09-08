@@ -5138,3 +5138,100 @@ fn a_view_with_no_samples_refuses_instead_of_sweeping() {
         "a refused stroke does not become a selection: {effects:?}"
     );
 }
+
+/// **A clip released off the stack still says where it ended up.** Reproducing
+/// what the user saw (2026-09-07, `editors/multitrack`): drag a clip along its
+/// lane and let the button go with the pointer over the ruler, over a row of
+/// controls, or past the bottom of the window. The clip stays drawn where the
+/// hand left it, and if no edit-back leaves, the driver keeps the old position
+/// -- one clip in two places, one on screen and one in the arrangement.
+#[test]
+fn a_clip_released_off_the_stack_reports_where_it_landed() {
+    // The shape the example builds: a free-standing ruler over the stack, with
+    // a row of controls under it -- the two places a hand most easily lets go
+    // of a clip it was dragging.
+    let build = || {
+        let mut host = host_from(
+            r#"{"type":"window","status":0,"margin":0,"layout":"col","children":[
+                {"id":70,"type":"timeruler","link":"a","h":22.0},
+                {"id":80,"type":"field","label":"one","link":"a","h":120.0,"children":[
+                    {"id":81,"type":"field","offset":0.0,"dur":300.0,"data":[0.0,1.0]}]},
+                {"id":95,"type":"panel","h":60.0,"children":[
+                    {"id":96,"type":"button","label":"play"}]}]}"#,
+        );
+        host.sync_track_totals();
+        host
+    };
+    let ctx = GestureCtx::new(1, 800, 400);
+    let host0 = build();
+    let clip = placed_rect(&host0, &ctx, 81);
+    let ruler = placed_rect(&host0, &ctx, 70);
+    let strip = placed_rect(&host0, &ctx, 95);
+    let from = (
+        (clip.x + clip.w * 0.5) as f64,
+        (clip.y + clip.h * 0.5) as f64,
+    );
+
+    // Three ways to let go of a clip that is not over its lane any more.
+    for (what, to) in [
+        ("the ruler above", (ruler.y + ruler.h * 0.5) as f64),
+        ("the controls below", (strip.y + strip.h * 0.5) as f64),
+        ("past the window", 5_000.0),
+    ] {
+        let mut host = build();
+        let mut g = Gestures::default();
+        g.press(&mut host, &ctx, from.0, from.1);
+        assert!(g.dragging(), "the clip is held ({what})");
+        g.drag_to(&mut host, &ctx, from.0 + 120.0, from.1);
+        g.drag_to(&mut host, &ctx, from.0 + 120.0, to);
+        let effects = g.release(&mut host, &ctx, from.0 + 120.0, to);
+        let args = first_emit(&effects, 81)
+            .unwrap_or_else(|| panic!("released over {what}: nothing said"));
+        assert!(
+            matches!(&args[0], OscType::String(s) if s == "clip" || s == "clips"),
+            "released over {what}: the placement, not a lane change onto \
+             something that is not a lane: {args:?}"
+        );
+    }
+}
+
+/// **A coordinate off the left of the body pulls the edge scroll at full tilt**
+/// — which is correct, and is why a front must never manufacture one.
+///
+/// The defect this anchors (found 2026-09-07 by the user, by eye, dragging a
+/// clip across the window manager's own border): the desktop front kept the
+/// pointer as a pair and wrote `(-1.0, -1.0)` into it when the cursor left the
+/// content, a sentinel for *not here* stored in the field that means *where*.
+/// The edge scroll read it as a position, saw a cursor to the left of every
+/// lane, and panned the view to the start of the timeline every frame, carrying
+/// the held clip with it. Both fronts now keep an `Option`, so absence cannot
+/// be read as a place; this is the behaviour that made the sentinel fatal
+/// rather than merely wrong.
+#[test]
+fn a_cursor_left_of_the_body_pulls_the_view_and_says_so() {
+    let mut host = host_from(
+        r#"{"type":"window","status":0,"margin":0,"layout":"col","children":[
+            {"id":80,"type":"field","label":"one","link":"a","children":[
+                {"id":81,"type":"field","offset":100.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let clip = placed_rect(&host, &ctx, 81);
+    g.press(
+        &mut host,
+        &ctx,
+        (clip.x + clip.w * 0.5) as f64,
+        (clip.y + clip.h * 0.5) as f64,
+    );
+    assert!(g.dragging(), "the clip is held");
+    assert!(
+        !g.edge_scrolling((clip.x + clip.w * 0.5) as f64),
+        "a cursor over the clip pulls nothing"
+    );
+    assert!(
+        g.edge_scrolling(-1.0),
+        "and one at minus one pulls left -- which is a hand at the edge, not a \
+         hand that is not there"
+    );
+}

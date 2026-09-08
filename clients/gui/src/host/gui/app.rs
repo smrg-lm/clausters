@@ -54,7 +54,17 @@ pub(super) struct WindowState {
     /// (selection, playhead, rulers' overlay parts, cursor readout).
     pub(super) overlay: Painter,
     pub(super) origin: ClientId,
-    pub(super) cursor: (f64, f64),
+    /// **Where the pointer is in this window, or `None` when it is not over
+    /// it** — and an `Option` rather than a pair for exactly that reason.
+    ///
+    /// It used to be a pair with `(-1.0, -1.0)` standing in for *not here*,
+    /// which is a sentinel in the field that means *a position*. Everything
+    /// reading it as one got a point a hand cannot be at: the edge auto-scroll
+    /// saw a cursor to the left of every lane and pulled the view to the start
+    /// of the timeline at full tilt, so a clip dragged across the window
+    /// manager's own border jumped to the beginning. Absent and *at minus one*
+    /// are different facts, and only one of them is a coordinate.
+    pub(super) cursor: Option<(f64, f64)>,
     /// Whether Shift is held (Shift+drag pans a timeline view; plain drag
     /// selects).
     pub(super) shift: bool,
@@ -421,7 +431,7 @@ impl App {
         let Some(tree) = self.host.window_def(def_id) else {
             return;
         };
-        let cursor = self.windows.get(&def_id).map(|w| w.cursor);
+        let cursor = self.windows.get(&def_id).and_then(|w| w.cursor);
         // Held for the length of the frame it feeds: the log is the host's, and
         // a front that copied it would be a second log.
         let statuses = self.host.statuses();
@@ -720,14 +730,24 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::CursorLeft { .. } => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
-                    // Off-window: the cursor readout hides (nothing contains it).
-                    ws.cursor = (-1.0, -1.0);
-                    ws.gpu.window.request_redraw();
+                    // **A drag owns the pointer until the button comes up.** A
+                    // press captures it, so crossing onto the window manager's
+                    // chrome -- a resize border, the title bar -- is the
+                    // platform saying the pointer left the *content*, not that
+                    // it stopped belonging to this gesture: motion keeps
+                    // arriving and the drag keeps following. Forgetting the
+                    // position there is what made a held clip jump.
+                    if !ws.gestures.dragging() {
+                        // Off-window: the cursor readout hides (nothing
+                        // contains it).
+                        ws.cursor = None;
+                        ws.gpu.window.request_redraw();
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
-                    ws.cursor = (position.x, position.y);
+                    ws.cursor = Some((position.x, position.y));
                 }
                 let dragging = self
                     .windows
