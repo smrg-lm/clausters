@@ -2439,7 +2439,12 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
       notes are the MIDI messages the roll represents.
     - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) markers, one
       per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid —
-      the messages the roll carries alongside the notes.
+      the messages the roll carries alongside the notes. **The lane is
+      read-only.** A roll edits what has a pitch, which is what its grid is a
+      grid of; a message has none, and the flag is a lossy view of it (the
+      address as a label, the arguments not drawn), so there is nothing here a
+      hand could write. Add one with ``timeline.add(beat, OscItem(addr, ...))``
+      and it appears.
 
     ``markers`` are the labelled points on the shared time axis, drawn in this
     roll's own ruler strip when it has one (see `timeruler`, which documents

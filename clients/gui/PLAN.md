@@ -3189,6 +3189,51 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reads and no test asserts -- so whatever is done here starts by making the
   engraver's complaint something a run can be checked against.
 
+- ⬜ **Messages are not the roll's to edit, and nothing else edits them**
+  *(the user, 2026-09-07, after the markers lane was made read-only: "mensajes
+  (no eventos) OSC podrian tener otro widget con linea temporal especial pero
+  no es parte del roll")*. A `Timeline` holds three kinds of item and only one
+  of them has a pitch: an `Event` is a note, an `OscItem` is `(addr, *args)`
+  and a `MidiItem` is raw bytes. The roll is the editor of the first --
+  its grid *is* pitch × time -- and the other two are drawn under it as
+  markers, read-only, because the flag is a lossy view: the address as a label,
+  the arguments not drawn. So a hand can place a message in time by
+  programming (`timeline.add(beat, OscItem(addr, ...))`) and by no other means.
+
+  **What a real editor of messages would be is not a roll, and was never
+  designed.** It is multidimensional in a way the grid cannot hold: an address,
+  arguments of several types, and a *destination* that differs per item --
+  `seq/timeline.ts` already says an `OscItem` on a MIDI port and a `MidiItem`
+  on an OSC server are both an error. A widget for it has its own time line and
+  its own idea of a row, and the roll is not where it goes.
+
+  Three things worth knowing before it is designed, all found by reading the
+  model back rather than by using it:
+
+  - **The two items are not peers in practice.** `OscItem` has a second, sound
+    use the roll never touched: `render(Timeline)` bounces through
+    `Session.nrt()`, where its `play` puts a timestamped message into the score
+    with its arguments intact -- which is what an NRT score is. `MidiItem` has
+    no such path (a bounce's destination is a server, so it would fail) and
+    **nothing in either client constructs one** outside a single test, though
+    it is exported, serialized, dispatched and drawn.
+  - **The lane's round trip is by label.** A marker moved or removed is matched
+    back to its item by the string it draws, so two messages to one address are
+    indistinguishable to it. That is a property of *any* view that shows a
+    message by its address, and it is what a real one has to answer.
+  - **An item that is not one of the three cannot be written down.** A custom
+    object with `play(destination)` plays but `item_data` answers `None` for
+    it, so it reaches neither the document nor the editing domain. The
+    "timeline-item protocol" is a capability to *sound*, not a way to be *in* a
+    timeline, and nothing says so yet.
+
+  **Related:** the design question under it, which the user raised and which is
+  not settled -- whether a message is a kind of `Event` (one item type that may
+  address) or a sibling of it (three types told apart by a key), which is what
+  `item_data`/`item_from_data` implement today. Nothing about `Timeline` or the
+  items was changed for the read-only fix, deliberately: the defect was the
+  widget's.
+
 - ⬜ **A press on a score means what its context says, not what is under it**
   *(the user, 2026-09-07, after the staff-line fix and the regression that
   followed it: "para que el editor de partituras funcione correctamente vamos a
@@ -3622,7 +3667,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   invisible one. The same anchor is what a cut would report and what a `q`
   would quantize toward, so it is one decision for the three of them.
 
-- ⬜ **A marker added on the OSC lane names nothing, and the two clients
+- ✅ **A marker added on the OSC lane names nothing, and the two clients
   disagree about it** *(found 2026-09-07 by the user, by eye, comparing
   `editors/pianoroll` with `editors/edit_notes`)*. `Ctrl`+click on the marker
   lane pushes `OscMark { time, label: None }` -- a marker with **no address**.
@@ -3642,6 +3687,30 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   refuses an add it cannot address (and says so, which is the entry below), or
   the address is part of the gesture, or a labelless marker is given a meaning
   of its own. It cannot stay a value only one client notices.
+
+  **Fixed 2026-09-07 by removing the gesture, which is what the widget was
+  built with** *(the user, reading the model back with me: "el piano roll esta
+  para editar eventos que siempre tienen freq/degree/midinote ... los
+  marcadores no son editables, son de solo lectura, creo que esa fue la
+  decision original")*. It was. `G24a` recorded it -- *"OSC events (which have
+  no pitch) draw as flags in a separate lane below it"* -- and `G24c` recorded
+  it again -- *"display-only for now: the `(time, label)` marker is a lossy
+  view of the message, so writing it back would drop the args"*. The
+  add/remove/move press was added against both and **nothing tested this lane's
+  editing at all**, which is how a gesture contradicts a decision and stays.
+
+  So the lane shows and does not write. A `Ctrl` press -- the one that meant to
+  edit -- is refused out loud and consumed; every other press there goes back
+  to the container, the way the axis strip beside it does, so a sweep still
+  crosses the lane. The `"osc"` edit-back, the marker drag and the marker index
+  in the hit go with it, and the compiler named each one as it became dead.
+
+  **What reading the model together settled, and it is worth keeping**: the
+  loss is the *view's*, not the model's. `OscItem` earns its place elsewhere --
+  `render(Timeline)` with no destination bounces through `Session.nrt()`, where
+  `OscItem.play` puts a timestamped message into the score, arguments intact,
+  which is what an NRT score *is*. Nothing about that needed changing; what was
+  wrong was a roll claiming to edit it through a label.
 
   **And "the OSC lane" is a name only this repository uses** *(the user, asking
   what it was, 2026-09-07: "¿Cual es el carril OSC? ... en un piano roll solo

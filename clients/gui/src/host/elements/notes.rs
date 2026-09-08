@@ -111,8 +111,6 @@ enum Drag {
         press_velocity: i32,
         orig: Vec<(usize, i32)>,
     },
-    /// A marker sliding along the time axis.
-    OscMark { index: usize },
 }
 
 /// Which region of a roll a press landed on.
@@ -267,17 +265,6 @@ impl Notes {
         Events::message(args)
     }
 
-    /// The `"osc"` edit-back payload: the tag plus the flat `time label` pairs
-    /// (an empty string when a marker has no label).
-    fn osc_event(&self) -> Events {
-        let mut args = vec![OscType::String("osc".into())];
-        for m in &self.osc {
-            args.push(OscType::Float(m.time as f32));
-            args.push(OscType::String(m.label.clone().unwrap_or_default()));
-        }
-        Events::message(args)
-    }
-
     /// The axis position a cursor x maps back to, through the grid.
     fn time_at(&self, grid: Rect, nav: &View, x: f64) -> f64 {
         pianoroll::time_at(grid, nav, 0.0, x as f32)
@@ -290,7 +277,8 @@ impl Notes {
         let (lo, hi) = self.pitch_window();
         let (fx, fy) = (at.0 as f32, at.1 as f32);
         if self.osc_lane && r.osc.contains(at.0, at.1) {
-            let osc = nearest(r.osc, &nav, self.osc.iter().map(|m| m.time), fx);
+            // No marker index: the lane shows and does not write, so which
+            // marker the pointer is nearest is nobody's question here.
             return Hit {
                 region: Region::Osc,
                 rect: r.osc,
@@ -299,7 +287,6 @@ impl Notes {
                 lo,
                 hi,
                 note: None,
-                osc,
             };
         }
         if self.velocity_lane && r.velocity.contains(at.0, at.1) {
@@ -320,7 +307,6 @@ impl Notes {
                 lo,
                 hi,
                 note,
-                osc: None,
             };
         }
         let region = if r.grid.contains(at.0, at.1) {
@@ -338,7 +324,6 @@ impl Notes {
             note: (region == Region::Grid)
                 .then(|| pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, lo, hi, fx, fy))
                 .flatten(),
-            osc: None,
         }
     }
 
@@ -373,7 +358,6 @@ struct Hit {
     lo: f32,
     hi: f32,
     note: Option<pianoroll::NoteHit>,
-    osc: Option<usize>,
 }
 
 /// The index of the element whose time is nearest the cursor x, within a small
@@ -746,15 +730,6 @@ impl Element for Notes {
                 pianoroll::nudge_velocities_from(&mut self.notes, &orig, dv);
                 Events::none()
             }
-            Some(Drag::OscMark { index }) => {
-                if let Some(m) = self.osc.get_mut(index) {
-                    // A marker is a point, so its whole extent is its time: the
-                    // same edge stops it, with no tail to leave room for.
-                    let t = snap_to(time, self.snap).max(0.0);
-                    m.time = limit.map_or(t, |l| t.min(l));
-                }
-                Events::none()
-            }
             None => Events::none(),
         }
     }
@@ -764,7 +739,6 @@ impl Element for Notes {
         // nothing: it swept a selection, which is screen state and was reported
         // as it went.
         match self.drag.take() {
-            Some(Drag::OscMark { .. }) => self.osc_event(),
             None => Events::none(),
             Some(_) => self.notes_event(),
         }
@@ -1142,29 +1116,49 @@ impl Notes {
         Claim::take()
     }
 
-    /// A press on the OSC lane: Ctrl adds or removes a marker, a press on one
-    /// slides it.
-    fn press_osc(&mut self, h: &Hit, at: (f64, f64), input: &Input) -> Claim {
+    /// A press on the **markers lane**, which shows and does not write.
+    ///
+    /// A roll is the editor of things that have a **pitch**: that is what its
+    /// grid is a grid of. The other items a timeline holds have none — an OSC
+    /// message, raw MIDI bytes — so they are drawn below it as markers, which
+    /// is the decision this widget was built with (`G24a`: *"OSC events (which
+    /// have no pitch) draw as flags in a separate lane below it"*) and the one
+    /// the dedicated view recorded again (`G24c`: *"display-only for now: the
+    /// `(time, label)` marker is a lossy view of the message, so writing it
+    /// back would drop the args"*).
+    ///
+    /// The lane grew an add/remove/move gesture against that, and it could not
+    /// have worked: **a marker is the message it sends**, the lane draws only
+    /// its address, and there is no way to type one here — so an added marker
+    /// was a message with no destination, and a moved one was matched back to
+    /// its item *by its label*, which two messages to one address share. Both
+    /// clients saw the same press and answered differently, one refusing it
+    /// with a sentence and the other keeping a marker that will never send
+    /// anything.
+    ///
+    /// So a Ctrl press — the one that meant to edit — is refused out loud and
+    /// consumed, and every other press declines to the container, the way the
+    /// axis strip beside it does. **What is not decided here** is what a real
+    /// editor of messages would be: it is multidimensional (an address, typed
+    /// arguments, a destination that is a MIDI port for one item and an OSC
+    /// server for another) and it is not a roll's. See the plan's "Messages are
+    /// not the roll's to edit".
+    fn press_osc(&mut self, h: &Hit, _at: (f64, f64), input: &Input) -> Claim {
         if input.mods.ctrl {
-            match h.osc {
-                Some(index) if index < self.osc.len() => {
-                    self.osc.remove(index);
-                }
-                Some(_) => return Claim::Decline,
-                None => {
-                    let time = snap_to(self.time_at(h.grid, &h.nav, at.0), self.snap).max(0.0);
-                    self.osc.push(pianoroll::OscMark { time, label: None });
-                }
-            }
-            return Claim::events(self.osc_event());
+            return Claim::Take(Take {
+                events: Events::message(vec![
+                    OscType::String("refused".into()),
+                    OscType::String("osc".into()),
+                    OscType::String(
+                        "the markers lane shows what a timeline holds besides notes, and does                          not write it: a marker is the message it sends, and its address is                          not something this lane can say"
+                            .into(),
+                    ),
+                ]),
+                ..Take::default()
+            });
         }
-        match h.osc {
-            Some(index) => {
-                self.drag = Some(Drag::OscMark { index });
-                Claim::take().edge_scrolling()
-            }
-            None => Claim::Decline,
-        }
+        let _ = h;
+        Claim::Decline
     }
 }
 
@@ -1791,6 +1785,50 @@ mod tests {
             )),
             "its own key answers before the clip's"
         );
+    }
+
+    /// **The markers lane shows and does not write.**
+    ///
+    /// A roll is the editor of things that have a pitch; the other items a
+    /// timeline holds have none and are drawn below it as markers. The lane
+    /// had grown a `Ctrl`-press that added and removed them, against the
+    /// decision this widget was built with, and it could not have worked: a
+    /// marker *is* the message it sends, the lane draws only its address, and
+    /// there is no way to type one here, so an added marker was a message with
+    /// no destination. Both clients saw the same press and answered
+    /// differently -- one refusing it with a sentence, the other keeping the
+    /// addressless marker -- which is how it was found.
+    ///
+    /// Nothing tested this lane's editing at all, which is why the gesture
+    /// could contradict a recorded decision and stay.
+    #[test]
+    fn the_markers_lane_refuses_the_press_that_meant_to_edit_it() {
+        let m = Metrics::default();
+        let mut r = roll(r#"{"notes":[0.0,100.0,60.0,100,0],"osc":[50.0,"/bar"],"osc_lane":1}"#);
+        assert_eq!(r.osc.len(), 1, "the marker it was given");
+        let mut i = input(&m, rect(), axis(1000.0));
+        let lane = r.regions(rect(), pianoroll::KEYBOARD_W, &m).osc;
+        let on = (x_of(&r, &m, 50.0, 1000.0), (lane.y + lane.h * 0.5) as f64);
+        let empty = (x_of(&r, &m, 700.0, 1000.0), (lane.y + lane.h * 0.5) as f64);
+
+        // The gesture that meant to edit is told, and consumed so nothing
+        // behind it turns a refused edit into a sweep.
+        i.mods.ctrl = true;
+        for (what, at) in [("on a marker", on), ("on empty lane", empty)] {
+            let Claim::Take(take) = r.press(at, &i) else {
+                panic!("{what}: a refusal consumes the press");
+            };
+            let msgs = take.events.into_messages();
+            assert_eq!(msgs[0][0], OscType::String("refused".into()), "{what}");
+            assert_eq!(msgs[0][1], OscType::String("osc".into()), "{what}");
+        }
+        assert_eq!(r.osc.len(), 1, "nothing was added and nothing removed");
+
+        // And a plain press hands the lane back to the container, the way the
+        // axis strip beside it does -- so a sweep across the roll still works.
+        i.mods.ctrl = false;
+        assert_eq!(r.press(on, &i), Claim::Decline);
+        assert!(r.drag.is_none(), "and no marker is being slid");
     }
 
     /// **The picture must not follow a hand that cannot edit.** A body over a
