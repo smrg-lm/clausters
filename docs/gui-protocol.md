@@ -181,6 +181,18 @@ What is reported *as it goes* is what is not an edit: a `"view"` pan, a
 state a script follows now, not a document change, and none of them is
 versioned.
 
+**A clip's placement arrives under one of three tags, and which one is the
+gesture's choice rather than the clip's.** `"clip"` is one clip moved or trimmed
+inside its lane; `"clips"` is that same drag once a **selection** exists, sent to
+the lane the hand was on and naming every held clip by id; `"lane"` is that same
+drag when the clip **crossed the stack**. They do not accompany each other --
+each *replaces* the others for that gesture -- and the conditions are the hand's
+state, not the widget's, so a reader that handles `"clip"` alone is correct until
+the first marquee and silently wrong from then on. **Handle the three or none**:
+the failure has no error and no missing pixel, because the host has already moved
+the picture; what goes out of step is whatever the script was keeping in its own
+head.
+
 The **edit-back payloads**:
 
 | Tag | Arguments | Sent by |
