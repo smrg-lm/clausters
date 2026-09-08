@@ -5431,3 +5431,50 @@ fn a_click_while_playing_carries_the_sweep_from_where_it_landed() {
         "the sweep carries on from the click, not from where it was: {swept}"
     );
 }
+
+/// **A click is not an edit.** The release of a clip drag reports the placement
+/// the gesture amounts to -- and a press and a release with nothing in between
+/// amount to nothing, so there is nothing to report: the owner applies what it
+/// is sent, and a document takes an entry per intent, so a hand clicking four
+/// clips to look at them would have four steps to undo.
+#[test]
+fn a_click_on_a_clip_reports_no_edit_and_a_drag_still_does() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let midy = (body.y + body.h / 2.0) as f64;
+    let on_clip = body.x as f64 + body.w as f64 * 0.02;
+
+    // The click: it locates, and it edits nothing.
+    g.press(&mut host, &ctx, on_clip, midy);
+    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    assert!(has_emit_tag(&effects, 70, "locate"), "a click is a cursor");
+    assert!(
+        !has_emit_tag(&effects, 71, "clip"),
+        "and it is not an edit: nothing moved"
+    );
+
+    // A drag that moved reports, as it always did.
+    let before = clip_offset(&host, 71);
+    g.press(&mut host, &ctx, on_clip, midy);
+    g.drag_to(&mut host, &ctx, on_clip + 120.0, midy);
+    let effects = g.release(&mut host, &ctx, on_clip + 120.0, midy);
+    assert!(clip_offset(&host, 71) > before, "the clip moved");
+    assert!(has_emit_tag(&effects, 71, "clip"), "and it said so");
+
+    // ...and a drag that came back to exactly where it started is a click by
+    // another road: the hand changed nothing, so neither does the document.
+    g.press(&mut host, &ctx, on_clip, midy);
+    g.drag_to(&mut host, &ctx, on_clip + 120.0, midy);
+    g.drag_to(&mut host, &ctx, on_clip, midy);
+    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    assert!(
+        !has_emit_tag(&effects, 71, "clip"),
+        "back where it began: nothing to report"
+    );
+}

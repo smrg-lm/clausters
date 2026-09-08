@@ -5811,7 +5811,7 @@ finished work, where a pending item reads as done.
   *does* pull the view, which is correct and is exactly what made the sentinel
   fatal rather than merely wrong.
 
-- ⬜ **A click on a clip reports an edit that nothing edited**
+- ✅ **A click on a clip reports an edit that nothing edited**
   *(found 2026-09-08, giving the click its cursor: the release arm beside it
   emits the placement whatever the drag did)*. `Gestures::release`'s clip arm
   ends in `emit_clip`/`emit_clips` unconditionally, so a press and a release
@@ -5827,6 +5827,15 @@ finished work, where a pending item reads as done.
   `orig` it already carries and emits nothing when they agree. The lane-change
   branch above it is already the honest shape (it reports because something
   moved), and a trim that came back to its own edge is the same case.
+
+  **Fixed the same day**, and that is what it does: the arm reads the clip's
+  placement back and returns before the emit when it equals the `orig` the drag
+  was carrying, unless the clip changed lane (which is a move whatever the
+  offset says). The block needs no separate answer -- it moves rigidly with the
+  grabbed clip, so the grabbed one standing still is the whole block standing
+  still. Three cases in one test: the click reports no edit and still locates, a
+  real drag still reports, and a drag that came back to where it began reports
+  nothing either.
 
 - ⬜ **Step entry keeps a position of its own, and a click does not move it**
   *(found 2026-09-08, closing "One cursor" -- the paste and the cut read the

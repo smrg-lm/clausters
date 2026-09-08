@@ -591,12 +591,30 @@ impl Gestures {
             id,
             lane,
             press_lane,
+            orig,
             ref block,
             ..
         }) = self.drag.clone()
         {
             let lanes: Vec<i32> = block.iter().map(|(lane, _)| *lane).collect();
             self.drag = None;
+            // **And a gesture that changed nothing is not an edit.** A press and
+            // a release with nothing in between is a click -- which places the
+            // cursor, one line below -- and a drag that came back to where it
+            // began is the same thing by another road: the placement is the one
+            // the press found. Reporting it anyway sends the owner an intent to
+            // apply and a document an entry to undo, so looking at four clips
+            // would cost four undos. The block moves rigidly with the grabbed
+            // clip, so the grabbed one standing still is the whole block
+            // standing still.
+            let moved = host
+                .window_def(def_id)
+                .and_then(|t| t.find(id))
+                .is_none_or(|w| crate::host::graphics::track::clip_placement(w) != orig);
+            if lane == press_lane && !moved {
+                out.push(GestureEffect::Redraw(def_id));
+                return out;
+            }
             // **The clip crossed the stack**, so what it reports is which lane
             // it is on now and where it sits there. The owner reparents it and
             // places it in one transaction, because one gesture is one edit --
