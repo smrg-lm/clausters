@@ -1470,6 +1470,30 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **`form.Element` is a word two layers spend on different things, and one
+  of them is frozen** *(found 2026-09-08 by the user, reading the multitrack
+  widget: "Element es un termino que se usa en form")*. `clausters.form.Element`
+  is a thin adornment over an event, a timeline, a buffer or a pattern — an
+  onset and a duration, and nothing else. The GUI host's `Element` is the leaf
+  of a widget tree, one object implementing one trait (`clients/gui`'s K track,
+  and the directory `host/elements/` every widget lives in). They are two
+  layers and they never meet in one file, which is why nothing has broken; what
+  they cost is a reader's double take on every line either appears in, and the
+  project's own rule says a word this domain owns never names a second thing.
+
+  **The frozen one moves**, because that is the one with nothing built on it:
+  `Element` -> `FormElement`, with its file (`clausters/form/element.py`,
+  `clients/web/src/form/element.ts`) — 30 mentions in Python, 55 in TypeScript,
+  plus the handful outside the module (`render.py`'s dispatch and its
+  docstrings). The host's keeps the name it has had since the widget API
+  became one.
+
+  It is a rename with no behaviour in it, so it lands whole or not at all, in
+  **one commit across both clients**, with `form.md` and the `render` docstrings
+  read again afterwards rather than swept: an uncountable word swapped for a
+  compound leaves sentences that parse and no longer mean anything, which is
+  the rule `CLAUDE.md` states as *a rename is not a search-and-replace*.
+
 - ✅ **The tempo map was written out under two names** *(found and fixed
   2026-09-05)*. `TempoMap.dumps` / `loads` here, `dump` / `load` in the C ABI,
   the wasm export and the web client — found by the pair audit, which saw the
