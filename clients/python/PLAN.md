@@ -3242,6 +3242,60 @@ work, where a pending item reads as done.)*
   web client's `Playhead` seeks the same way and the fix is one rule in two
   spellings.
 
+  **Decided 2026-09-07 (the user), and it is wider than the seek.** The rule is
+  not about re-cueing: *a playing timeline plays what is dropped on it, whether
+  the material was put there before the line arrives or **while it is crossing
+  that position***. Dropping a long take under a running cursor starts it
+  sounding the moment it is released.
+
+  From *where* is the whole of the answer, and it is two answers because the
+  contents are two kinds of thing -- which is the distinction to write the code
+  against, not "audio" and "MIDI":
+
+  - **Continuous contents** (a take's samples) have a value at every instant, so
+    a cursor that is a third of the way into the clip starts it **at the frame
+    that corresponds** -- the piece is what sounds at a position, and a take
+    entered from its middle sounds from its middle. Sample-accurate, from the
+    release.
+  - **Discrete contents** (events, notes) have values only *at* instants, so
+    there is nothing at a moment between two of them. The pass starts at the
+    **next** event, and one whose onset the line has already gone past is
+    **not** recovered: *"el note on quedo despues del paso del cursor y no se
+    recupera"*. A held note is not resurrected by being dropped under the
+    cursor, because the thing that would have started it already happened.
+
+  That asymmetry is the design, not a shortcut: a sampled signal can be entered
+  anywhere and an event cannot be half-triggered. It also says what the missing
+  primitive answers -- the items **live** at a beat *and how far into each the
+  cursor is* -- and what each item does with that offset: a take seeks, an
+  event stream skips to its next onset.
+
+  **What is still open** is where the rule lives. The seek primitive is one
+  question (`Timeline.range`/`at` gain a neighbour); the *live* half is
+  another, since a drop during playback is an edit reaching a running
+  `Playhead` rather than a new pass, and today every driver re-cues by playing
+  again from the transport's position. Both clients, one rule, two spellings.
+
+  **The cursor is independent of the content, and that is the whole of it**
+  *(the user, clarifying)*. A pass's position is a **time on the clock**: the
+  content does not move it, and what sounds is whatever lies under it at each
+  moment. Today it is an *index* -- `_feed` keeps `cursor: usize` into the
+  entry list and walks it, sleeping to each onset -- and `Timeline.add` inserts
+  with `bisect.insort`, so **an item added before the cursor shifts the list
+  under a running pass and it replays the item it just played**. Nobody has
+  reported that; it follows from reading the two together, and it is the same
+  defect as the missed clip wearing different clothes: a position stored in
+  terms of the content moves when the content does.
+
+  So the fix is not a second seek primitive beside `index_at`. It is that a
+  pass is located by time, and *what is live at this beat and how far into each*
+  becomes a question that can be asked at any moment rather than a scan decided
+  at the start. The host's side of the same rule -- one cursor, placed by a
+  click, playing or stopped, and what a drop under it does -- is
+  "One cursor, it is the transport's, and the content never moves it"
+  (`clients/gui/PLAN.md`, Future directions), where the user's full
+  specification is written down.
+
 - ⬜ **Half the editors a hand can use have no history, because they edit
   through the raw event** *(found 2026-09-07 by the user, by eye, in
   `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z no hace

@@ -3189,6 +3189,78 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reads and no test asserts -- so whatever is done here starts by making the
   engraver's complaint something a run can be checked against.
 
+- ⬜ **One cursor, it is the transport's, and the content never moves it**
+  *(the user, 2026-09-07, dictated after the paste and playhead entries in
+  "Found by use" turned out to be two halves of one question; "puede que esto
+  cambie el comportamiento de los ejemplos pero tiene que estar bien hecho del
+  lado del host")*.
+
+  **The rule.** A window has one cursor. Its position is a **time on the
+  clock**, independent of what is drawn: the content does not move it, does not
+  push it and does not define it. It is placed by a click and it advances
+  monotonically. What *sounds* is whatever lies under it at each moment,
+  entered at the offset its time implies.
+
+  **Placing it**, and the phrase that matters is *regardless of content*:
+
+  - **Stopped** — a click on the time ruler or on a lane puts the cursor at
+    that time.
+  - **Playing** — the same click puts the cursor there **and playback carries
+    on from there**.
+
+  **What sounds under it**, which is where continuous and discrete part company
+  (the distinction to write against, not "audio" and "MIDI" — a clip of events
+  is discrete however it is voiced):
+
+  - A clip **picked up** from under the cursor stops sounding for as long as
+    the drag lasts: it is no longer under the cursor.
+  - **Dropped ahead** of the cursor, it sounds at exactly the sample position
+    it was placed at, when the cursor arrives.
+  - **Dropped under** the cursor — the line is inside its body — its samples
+    play **from the sample that time corresponds to**, from the release.
+  - A **roll** is the same, except an event sounds only if the cursor passes
+    through its **onset**: one already gone past is not recovered, because the
+    note-on it needed already happened. A sampled signal can be entered
+    anywhere and an event cannot be half-triggered.
+
+  **Ctrl+V**, kept on the same one cursor: the start of what is pasted lands at
+  the cursor, playing or not, and while playing it lands at the cursor's
+  position *at the moment the paste was made*. Two alternatives were named and
+  set aside — disabling paste during playback, and offsetting the items against
+  what was copied — because both introduce a second rule for a second state.
+  Where a **clip** is pasted onto is the lane question beside it: a lane can be
+  selected to paste onto, and a block spanning several lanes lands from the
+  first source lane (or the selected one) onto the lanes that follow, clamping
+  at the end of the stack or growing it.
+
+  **What the host does today, so the work is the difference and not a rewrite**:
+
+  - A **lane** already locates on a click — a marquee that never left the slop
+    is where the hand pointed (`Gestures::release`) — and a **ruler** does too.
+    What is missing is *regardless of content*: `Element` comes first in a
+    track's plan, so a click on a **clip** is the clip's and locates nothing.
+  - A **roll** locates on nothing. It has no `Locate` in its plan and its grid
+    hands an unclaimed press back to the container, so a click on the grid
+    background places no cursor. This is the half `Ctrl+V` is waiting on: the
+    roll pastes at `self.step`, which only step-recording advances.
+  - `locate_at` sets a **drawn** cursor and emits `"locate"`; whether the
+    transport seeks is the client's, and `"locate"` is in `NOT_AN_EDIT` — screen
+    state. One cursor means the drawn one and the playing one are the same
+    thing, which is a decision about where the transport's position lives, not
+    a new gesture.
+  - Nothing can start a take **from an offset** on a live edit, and
+    `Playhead._feed` is a scan: it walks items in order and sleeps to the next
+    onset, so a pass's position is an index plus accumulated waits. The rule
+    above needs it to be a time, with *what is live at this beat, and how far
+    into each* as a question that can be asked at any moment. (See "A pass
+    re-cued from the playhead drops the clip the playhead is inside",
+    `clients/python/PLAN.md`, which is the same rule from the client's side and
+    carries the defect that made it visible.)
+
+  **Related:** `O24`. This is what a multitrack's transport *is*, so it is worth
+  doing with the application rather than as four repairs to the examples that
+  reveal it.
+
 - ⬜ **Messages are not the roll's to edit, and nothing else edits them**
   *(the user, 2026-09-07, after the markers lane was made read-only: "mensajes
   (no eventos) OSC podrian tener otro widget con linea temporal especial pero
@@ -3666,6 +3738,16 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   answers `locate`, and a window already has a position -- rather than a second
   invisible one. The same anchor is what a cut would report and what a `q`
   would quantize toward, so it is one decision for the three of them.
+
+  **Decided 2026-09-07 (the user): it is the transport's cursor, and there is
+  only one.** The start of what is pasted lands where the cursor is, playing or
+  not; while playing it lands at the cursor's position at the moment the paste
+  was made. So this stops needing a cursor of its own and starts needing the
+  roll to *have* the one every other view has -- a click on its grid background
+  places it, which is what the roll cannot do today. The whole rule, its
+  playing/stopped halves and the lane question a clip paste raises are in "One
+  cursor, it is the transport's, and the content never moves it" (Future
+  directions); this entry is the defect that made it concrete.
 
 - ✅ **A marker added on the OSC lane names nothing, and the two clients
   disagree about it** *(found 2026-09-07 by the user, by eye, comparing
