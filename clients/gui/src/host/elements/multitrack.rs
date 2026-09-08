@@ -22,6 +22,7 @@
 //! applications are drawn on: the multitrack places, the audio editor and the
 //! score editor edit.
 
+use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
 use crate::host::font;
@@ -30,12 +31,22 @@ use crate::host::graphics::track;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::placement::Placement;
-use crate::host::widget::element::{Ctx, Element, TimeSpace};
+use crate::host::placement::{self, Bounds, Contents, Part, Placement};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Take, TimeSpace};
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{EditorProps, RulerY};
 use crate::viewport::View;
+
+/// One JSON scalar as the OSC primitive it is — **flat primitives at the
+/// boundary**, which is what every edit-back payload here rides as.
+fn json_arg(v: Value) -> OscType {
+    match v {
+        Value::String(s) => OscType::String(s),
+        Value::Number(n) if n.is_i64() => OscType::Int(n.as_i64().unwrap_or(0) as i32),
+        other => OscType::Float(other.as_f64().unwrap_or(0.0) as f32),
+    }
+}
 
 /// The gap between lanes, in logical pixels, when the props name none.
 const GAP: f32 = 4.0;
@@ -46,6 +57,27 @@ const LANE_H: f32 = 96.0;
 /// The narrowest a clip's box is drawn at, so one nobody can see never becomes
 /// one nobody can grab.
 const MIN_CLIP_W: f32 = 3.0;
+
+/// **What the hand took at the press, kept until it lets go.**
+///
+/// The snapshotted form of drag ([`crate::host::widget::element::Take`] says
+/// why there are three): a press-time origin plus the axis and the grid, so a
+/// clamped edge never drifts and a drag that comes back to where it began is
+/// exactly where it began.
+#[derive(Debug, Clone, Copy)]
+struct Grab {
+    /// The clip the hand has, by index.
+    clip: usize,
+    /// Which part of it — the body, or one of the two edges.
+    part: Part,
+    /// Where it sat when the press landed.
+    orig: Placement,
+    /// The lane it was on when the press landed, by index.
+    lane: usize,
+    /// The pointer's time at the press, so a body drag moves by the travel
+    /// rather than by where inside the box the hand grabbed it.
+    grabbed_at: f64,
+}
 
 /// The stack of lanes and the clips on them.
 #[derive(Debug, Clone)]
@@ -70,6 +102,9 @@ pub struct Multitrack {
     pub(crate) editor: EditorProps,
     /// A caption drawn in the corner.
     pub(crate) label: Option<String>,
+    /// The drag in flight. **The state lives in the element**; the machine
+    /// keeps only the sequence.
+    grab: Option<Grab>,
 }
 
 impl Default for Multitrack {
@@ -83,6 +118,7 @@ impl Default for Multitrack {
             snap: 0.0,
             editor: EditorProps::body(),
             label: None,
+            grab: None,
         }
     }
 }
@@ -106,6 +142,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         snap: number_f64(props, "snap", 0.0).max(0.0),
         editor: EditorProps::parse(props, RulerY::Off),
         label: label(props),
+        grab: None,
     }
 }
 
@@ -176,6 +213,65 @@ impl Multitrack {
     /// re-home rather than silently losing them.
     fn lane_of(&self, clip: &Clip) -> Option<usize> {
         self.lanes.iter().position(|l| l.name == clip.lane)
+    }
+
+    /// The lane whose row `y` fell in, by index — the same rects the drawing
+    /// used, because a hit test that measured its own would catch a lane the
+    /// eye does not see there.
+    fn lane_at(&self, rect: Rect, y: f64) -> Option<usize> {
+        model::stack(&self.lanes, rect, self.scroll, self.gap)
+            .iter()
+            .position(|r| y as f32 >= r.y && (y as f32) < r.y + r.h)
+    }
+
+    /// The clip under `(x, y)`, and which part of it — **the topmost first**,
+    /// since a later clip is drawn over an earlier one and the eye takes the
+    /// one it can see.
+    fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
+        let i = self.lane_at(input.rect, at.1)?;
+        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[i];
+        let body = track::lane_body(rect, false, input.indent, input.metrics);
+        let nav = self.view(input.time);
+        self.clips
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, c)| c.lane == self.lanes[i].name)
+            .find_map(|(n, c)| {
+                let (x0, x1) = model::clip_x(c, body, &nav, MIN_CLIP_W)?;
+                let inside = at.0 as f32 >= x0 && at.0 as f32 <= x1;
+                inside.then(|| (n, placement::part_at(x0, x1, at.0 as f32)))
+            })
+    }
+
+    /// The time a pointer x names on the shared axis.
+    fn time_at(&self, input: &Input, x: f64) -> f64 {
+        let nav = self.view(input.time);
+        let body = track::lane_body(input.rect, false, input.indent, input.metrics);
+        if body.w <= 0.0 {
+            return nav.start;
+        }
+        nav.start + (x - f64::from(body.x)) / f64::from(body.w) * nav.len
+    }
+
+    /// What bounds a clip's drag here: the lane's grid, and a floor no shorter
+    /// than a box a hand can still find.
+    fn bounds(&self) -> Bounds {
+        Bounds {
+            grid: self.snap,
+            ..Bounds::default()
+        }
+    }
+
+    /// **The edit-back: the clips as they now are.** One payload for every
+    /// gesture there is — a move, a trim, a lane crossed, a block — because
+    /// what is reported is the piece and not what the hand did to it.
+    fn clips_event(&self) -> Events {
+        let mut args = vec![OscType::String("clips".into())];
+        if let Value::Array(flat) = model::clips_json(&self.clips) {
+            args.extend(flat.into_iter().map(json_arg));
+        }
+        Events::message(args)
     }
 
     /// The lane header a lane's own props ask for. Presence-driven, like every
@@ -273,6 +369,87 @@ impl Element for Multitrack {
         }
     }
 
+    /// **A press takes a clip, and declines everywhere else.** The slack
+    /// between clips and beside them is the container's — that is where a click
+    /// places the transport's cursor and a sweep starts a marquee — so a press
+    /// that found no box goes back to the chain rather than being swallowed.
+    fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        let Some((clip, part)) = self.clip_at(input, at) else {
+            self.grab = None;
+            return Claim::Decline;
+        };
+        let Some(lane) = self.lane_of(&self.clips[clip]) else {
+            return Claim::Decline;
+        };
+        self.grab = Some(Grab {
+            clip,
+            part,
+            orig: self.clips[clip].place,
+            lane,
+            grabbed_at: self.time_at(input, at.0),
+        });
+        Claim::Take(Take {
+            // Held past the edge of the axis, the machine keeps ticking and
+            // pans the group under the hand — a clip dragged off the right of
+            // the window has to keep moving, and a held cursor sends nothing.
+            edge_scroll: true,
+            ..Take::default()
+        })
+    }
+
+    /// The clip follows the hand; **the edit leaves on release.**
+    ///
+    /// One gesture is one edit — a placement per frame would be an undo step
+    /// per frame, and a round trip whose acknowledgement the next frame
+    /// outruns. What moves here is the picture.
+    fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        let Some(grab) = self.grab else {
+            return Events::none();
+        };
+        let now = self.time_at(input, at.0);
+        // A body is pulled by the **travel**, so the box keeps the grip the
+        // hand took it by; an edge is pulled to where the pointer is.
+        let target = match grab.part {
+            Part::Body => grab.orig.offset + (now - grab.grabbed_at),
+            Part::Start => now,
+            Part::End => now,
+        };
+        let place = placement::drag(
+            grab.part,
+            target,
+            grab.orig,
+            Contents::default(),
+            self.bounds(),
+        );
+        // **The vertical half of a body drag is the lane it lands on**, and it
+        // is one field: the clip names another lane and nothing is removed or
+        // inserted. An edge drag says nothing about which lane a clip is on.
+        if grab.part == Part::Body
+            && let Some(i) = self.lane_at(input.rect, at.1)
+        {
+            self.clips[grab.clip].lane = self.lanes[i].name.clone();
+        }
+        self.clips[grab.clip].place = place;
+        Events::none()
+    }
+
+    /// **A gesture that changed nothing is not an edit.** A press and a release
+    /// with nothing in between is a click, and a drag that came back to where
+    /// it began is the same thing by another road: reporting it would hand the
+    /// owner an intent to apply and a document an entry to undo, so looking at
+    /// four clips would cost four undos.
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+        let Some(grab) = self.grab.take() else {
+            return Events::none();
+        };
+        let moved = self.clips[grab.clip].place != grab.orig
+            || self.lane_of(&self.clips[grab.clip]) != Some(grab.lane);
+        if !moved {
+            return Events::none();
+        }
+        self.clips_event()
+    }
+
     fn clone_box(&self) -> Box<dyn Element> {
         Box::new(self.clone())
     }
@@ -316,6 +493,38 @@ impl Element for Multitrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::widget::element::{Mods, TimeSpace};
+
+    /// A widget placed on a navigation group whose window is the whole piece,
+    /// with a header gutter wide enough to have a body beside it.
+    fn input<'a>(m: &'a Metrics, rect: Rect, len: f64) -> Input<'a> {
+        Input {
+            metrics: m,
+            rect,
+            indent: 100.0,
+            scale: 1.0,
+            mods: Mods::default(),
+            viewport: (rect.w, rect.h),
+            time: Some(TimeSpace::of(View { start: 0.0, len }, len)),
+        }
+    }
+
+    /// Two lanes of 100, and a clip on each: `a` over the first half of the
+    /// piece on `noise`, `b` over the second on `tone`.
+    fn piece() -> Multitrack {
+        from_props(&props(
+            r#"{"lanes": ["noise", "", 100, 0, 0, 1, "tone", "", 100, 0, 0, 1],
+                "clips": ["a", "noise", 0, 500, 0, "", "b", "tone", 500, 500, 0, ""]}"#,
+        ))
+    }
+
+    /// The x a time lands at, and the y the middle of lane `i` is at.
+    fn xy(mt: &Multitrack, m: &Metrics, rect: Rect, t: f64, len: f64, i: usize) -> (f64, f64) {
+        let body = track::lane_body(rect, false, 100.0, m);
+        let x = f64::from(body.x) + t / len * f64::from(body.w);
+        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        (x, f64::from(at[i].y + at[i].h / 2.0))
+    }
 
     fn props(json: &str) -> Map<String, Value> {
         match serde_json::from_str(json).expect("valid JSON") {
@@ -420,5 +629,133 @@ mod tests {
         assert_eq!(mt.content_span(), Some(0.0));
         mt.set("clips", &props(TWO)["clips"]);
         assert_eq!(mt.content_span(), Some(144_000.0));
+    }
+    /// **The three tags are gone.** A move, a trim and a lane crossing each
+    /// leave as one `"clips"` payload carrying the piece as it now stands — so
+    /// there is nothing for a reader to choose between, and no state a gesture
+    /// can put it in where the report changes shape.
+    #[test]
+    fn every_gesture_reports_the_piece_and_never_the_gesture() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+
+        let tag = |ev: Events| match ev.into_messages().first() {
+            Some(args) => match &args[0] {
+                OscType::String(s) => s.clone(),
+                _ => "?".into(),
+            },
+            None => "<nothing>".into(),
+        };
+
+        // A move inside its lane.
+        let mut mt = piece();
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        let to = xy(&mt, &m, rect, 350.0, len, 0);
+        assert!(matches!(
+            mt.press(from, &input(&m, rect, len)),
+            Claim::Take(_)
+        ));
+        mt.drag(to, &input(&m, rect, len));
+        let moved = mt.release(to, true, &input(&m, rect, len));
+        assert_eq!(tag(moved), "clips");
+        assert_eq!(mt.clips[0].place.offset, 100.0, "it moved by the travel");
+
+        // A trim, by the right edge.
+        let mut mt = piece();
+        let edge = xy(&mt, &m, rect, 500.0, len, 0);
+        let pulled = xy(&mt, &m, rect, 400.0, len, 0);
+        assert!(matches!(
+            mt.press(edge, &input(&m, rect, len)),
+            Claim::Take(_)
+        ));
+        mt.drag(pulled, &input(&m, rect, len));
+        let trimmed = mt.release(pulled, true, &input(&m, rect, len));
+        assert_eq!(tag(trimmed), "clips");
+        assert!(mt.clips[0].place.dur < 500.0, "it got shorter");
+        assert_eq!(mt.clips[0].place.offset, 0.0, "and stayed where it began");
+
+        // A lane crossed.
+        let mut mt = piece();
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        let down = xy(&mt, &m, rect, 250.0, len, 1);
+        assert!(matches!(
+            mt.press(from, &input(&m, rect, len)),
+            Claim::Take(_)
+        ));
+        mt.drag(down, &input(&m, rect, len));
+        let crossed = mt.release(down, true, &input(&m, rect, len));
+        assert_eq!(tag(crossed), "clips", "the same one tag, again");
+        assert_eq!(
+            mt.clips[0].lane, "tone",
+            "one field, not a remove and an add"
+        );
+    }
+
+    /// **A gesture that changed nothing is not an edit.** A press and a release
+    /// with nothing between them is a click, and a drag that came back is the
+    /// same thing by another road: looking at four clips must not cost four
+    /// undos.
+    #[test]
+    fn a_drag_that_came_back_reports_nothing() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        let away = xy(&mt, &m, rect, 400.0, len, 0);
+
+        mt.press(from, &input(&m, rect, len));
+        assert!(mt.release(from, true, &input(&m, rect, len)).is_empty());
+
+        mt.press(from, &input(&m, rect, len));
+        mt.drag(away, &input(&m, rect, len));
+        mt.drag(from, &input(&m, rect, len));
+        assert!(
+            mt.release(from, true, &input(&m, rect, len)).is_empty(),
+            "it is where the press found it"
+        );
+    }
+
+    /// **A press that found no clip goes back to the chain.** The slack between
+    /// clips is the container's: that is where a click places the transport's
+    /// cursor and a sweep starts a marquee, and swallowing the press would take
+    /// both away.
+    #[test]
+    fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        // Past `a`'s end, on its lane — bare lane, and `b` is on the other one.
+        let bare = xy(&mt, &m, rect, 800.0, len, 0);
+        assert!(matches!(
+            mt.press(bare, &input(&m, rect, len)),
+            Claim::Decline
+        ));
+        assert!(mt.grab.is_none());
+    }
+
+    /// The report is the same list a `/gui_set clips` would take, so applying
+    /// what came back is the identity — which is what makes the payload a
+    /// *state* rather than a description of a gesture.
+    #[test]
+    fn what_comes_back_is_what_a_set_would_take() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        let to = xy(&mt, &m, rect, 350.0, len, 0);
+        mt.press(from, &input(&m, rect, len));
+        mt.drag(to, &input(&m, rect, len));
+        let reported = mt.release(to, true, &input(&m, rect, len));
+
+        let mut echo = piece();
+        let msgs = reported.into_messages();
+        let args = msgs.first().expect("an edit");
+        assert!(echo.set("clips", &model::clips_json(&mt.clips)));
+        assert_eq!(echo.clips, mt.clips);
+        assert_eq!(args.len(), 1 + 6 * 2, "the tag, then a sextuple per clip");
     }
 }
