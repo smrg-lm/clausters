@@ -26,6 +26,7 @@
 pub mod bpf;
 pub mod controls;
 pub mod meters;
+pub mod multitrack;
 pub mod nodetree;
 #[cfg(feature = "patcher")]
 pub mod patch;
