@@ -289,10 +289,18 @@ class Transport:
             if at is not None:
                 self.locate(at)
             self._piece_anchor()
+            # A `source` is still called, and it is the **events** half: what
+            # follows the transport by itself (a reader on ``TransportPos``)
+            # needs no pass, and what fires voices does. So the two halves of a
+            # piece meet here -- the engine's readers, and a client pass the
+            # transport's verbs cue.
+            self._halt()
+            if self.source is not None:
+                self._playhead = self.source(self.position if at is None else at, **kw)
             if self.server is not None and hasattr(self.server, "transport_play"):
                 self.server.transport_play()
             self._piece["playing"] = True
-            return None
+            return self._playhead
         at = self._at if at is None else float(at)
         self._halt()
         self._at = at
@@ -320,6 +328,13 @@ class Transport:
             if self.server is not None and hasattr(self.server, "transport_stop"):
                 self.server.transport_stop()
             self._piece["playing"] = False
+            # Governed, the pass is starved of time rather than stopped, so
+            # resuming continues it; ungoverned there is nothing to starve.
+            if self.governed:
+                if self.clock is not None:
+                    self.clock.freeze()
+            else:
+                self._halt()
             return self.position
         # Where the music stopped — including inside the tail, where the scan
         # has drained but the last clip is still sounding.
@@ -377,6 +392,12 @@ class Transport:
                 self.server.transport_locate_sample(int(self.beats_to_samples(beat)))
             self._piece["position_sample"] = int(self.beats_to_samples(beat))
             self._piece_anchor()
+            # The readers seek in the engine and need nothing; a pass of voices
+            # has to be cued again, which is the one re-cue the piece keeps --
+            # on a locate, and not on every edit.
+            if self.playing and self.source is not None:
+                self._halt()
+                self._playhead = self.source(beat)
             return self
         if self.playing:
             self.play(at=beat)

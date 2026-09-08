@@ -550,3 +550,26 @@ def test_a_piece_transport_loops_in_the_engine():
     assert tp.server.calls[-1] == ("loop", (int(1 * BEAT), int(3 * BEAT)))
     tp.loop(None)
     assert tp.server.calls[-1] == ("loop", None)
+
+
+def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
+    """The two halves meet in `play`: what follows the transport by itself needs
+    no pass, and what fires voices does — so a source is still called, and a
+    locate cues it again while nothing re-cues on an edit."""
+    cued = []
+
+    def source(at, **_kw):
+        cued.append(at)
+        return None
+
+    host = PieceHost()
+    tp = Transport(host, 7, head_clock="piece", source=source,
+                   tempo=TEMPO, sample_rate=SR)
+    tp.server = PieceServer()
+    tp.play()
+    assert cued == [0.0]
+    tp.locate(2.0)
+    assert cued == [0.0, 2.0], "the one re-cue the piece keeps"
+    tp.pause()
+    tp.locate(4.0)
+    assert cued == [0.0, 2.0], "stopped, there is no pass to cue"

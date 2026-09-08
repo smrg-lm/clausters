@@ -377,9 +377,16 @@ export class Transport {
         if (this.headClock === "piece") {
             if (at !== undefined) this.locate(at);
             this.pieceAnchor();
+            // A `source` is still called, and it is the **events** half: what
+            // follows the transport by itself (a reader on `TransportPos`)
+            // needs no pass, and what fires voices does. So the two halves of a
+            // piece meet here — the engine's readers, and a client pass the
+            // transport's verbs cue.
+            this.halt();
+            this.head = this.source?.(at === undefined ? this.position : at) ?? null;
             await this.server?.transportPlay();
             this.piece.playing = true;
-            return null;
+            return this.head;
         }
         const beat = at === undefined ? this.atBeat : Number(at);
         this.halt();
@@ -410,6 +417,10 @@ export class Transport {
             // position where it froze, and the line holds with it.
             void this.server?.transportStop();
             this.piece.playing = false;
+            // Governed, the pass is starved of time rather than stopped, so
+            // resuming continues it; ungoverned there is nothing to starve.
+            if (this.governed) this.clock?.freeze();
+            else this.halt();
             return this.position;
         }
         // Where the music stopped — including inside the tail, where the scan
@@ -467,6 +478,13 @@ export class Transport {
             void this.server?.transportLocateSample(sample);
             this.piece.positionSample = sample;
             this.pieceAnchor();
+            // The readers seek in the engine and need nothing; a pass of voices
+            // has to be cued again, which is the one re-cue the piece keeps —
+            // on a locate, and not on every edit.
+            if (this.playing && this.source !== null) {
+                this.halt();
+                this.head = this.source(at);
+            }
             return this;
         }
         if (this.playing) {

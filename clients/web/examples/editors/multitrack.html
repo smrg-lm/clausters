@@ -73,9 +73,10 @@ it rather than on the next play.</div>
       /examples/editors/multitrack.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Group, Session, gui, seq } from "../../dist/index.js";
+      import { Buffer, Event, Group, Session, Synth, gui, seq } from "../../dist/index.js";
       import {
-        DoneAction, Env, SynthDef, control, envGen, out, sine,
+        DoneAction, Env, SynthDef, bufRd, control, envGen, out, sine,
+        transportPos,
       } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -153,21 +154,35 @@ it rather than on the next play.</div>
       }
 
       /**
-       * The sweep the spectral clip draws. The glide is an **exponential
-       * envelope**, which is why its ends are the ratio and not the
-       * frequencies: an exponential segment cannot start at zero.
+       * **A clip that follows the transport**, and the shape a multitrack is
+       * made of: a buffer read at the transport's own position, silent outside
+       * its span.
+       *
+       * It carries no position and no envelope. `transportPos` is the piece's
+       * position minus where this region starts, so the reader is at frame 0
+       * exactly when the line reaches the clip's left edge — and the
+       * subtraction happens in `f64` inside the UGen, so a region deep into a
+       * long piece still reads small numbers. The gate is the region's own
+       * length: `BufRd` **clamps** outside the buffer rather than going quiet,
+       * so without it a finished clip would hold its last sample forever.
+       *
+       * What that buys is everything a transport does. Seeking is
+       * `transportLocateSample` and this node is simply somewhere else the next
+       * block; looping is `transportLoop` and the wrap happens in the engine, on
+       * its exact sample; pausing is `transportStop` over the governed group,
+       * which freezes the node with its state intact so playing again
+       * *continues*. Nothing is sent per pass, nothing is re-cued on an edit,
+       * and moving the clip is one `/node_set` of `at` — which lands wherever
+       * the line already is.
        */
-      function glide(name = "multi_sweep") {
-        const amp = control("amp", 0.2, { rate: "ir" });
-        const secs = control("secs", 1.0, { rate: "ir" });
-        const freq = envGen(new Env([1.0, SWEEP_HI / SWEEP_LO], [1.0], "exp"),
-          { timeScale: secs }).mul(SWEEP_LO);
-        const shape = envGen(new Env([0.0, 1.0, 1.0, 0.0], [0.05, 0.75, 0.2]),
-          { timeScale: secs, doneAction: DoneAction.FREE_SELF });
-        const sig = sine(freq).mul(0.6)
-          .add(sine(660.0).mul(0.25))
-          .add(sine(1320.0).mul(0.15))
-          .mul(shape).mul(amp);
+      function region(name = "multi_region") {
+        const buf = control("buf", 0.0, { rate: "ir" });
+        const at = control("at", 0.0);      // where it starts, in frames of the piece
+        const span = control("span", 0.0);  // how long it lasts, in frames
+        const amp = control("amp", 0.2, { lag: 0.02 });
+        const pos = transportPos(at);
+        const live = pos.ge(0.0).mul(pos.lt(span));
+        const sig = bufRd(buf, 0.0, pos).mul(live).mul(amp);
         return new SynthDef(name, out(0.0, sig), out(1.0, sig));
       }
 
@@ -177,7 +192,6 @@ it rather than on the next play.</div>
       const LANE_STATE = Object.fromEntries(
         LANES.map((n) => [n, { mute: false, solo: false, level: 0.8 }]));
 
-      /** A take: one tone filling the clip, as long as the clip looks. */
       /**
        * **What fills a clip sounds for all of it.** An `Event` frees its synth
        * after `sustain`, which is `dur * legato` — and `legato` defaults to
@@ -190,12 +204,6 @@ it rather than on the next play.</div>
        * says it outright: a clip's length **is** its sounding length.
        */
       const FULL = 1.0;
-
-      const toneEvents = (freq, decay, amp = 0.2) => (beats, gain) =>
-        [[0.0, new Event({
-          instrument: "multi_tone", freq, dur: beats, legato: FULL,
-          secs: beats / TEMPO, decay, amp: amp * gain,
-        })]];
 
       /** The lead: its notes, relative to the clip and **cut to it**. */
       const leadEvents = (notes, amp = 0.14) => (beats, gain) =>
@@ -210,13 +218,6 @@ it rather than on the next play.</div>
           }),
         ]);
 
-      /** The spectral clip: one glide over the whole clip. */
-      const sweepEvents = (amp = 0.18) => (beats, gain) =>
-        [[0.0, new Event({
-          instrument: "multi_sweep", dur: beats, legato: FULL,
-          secs: beats / TEMPO, amp: amp * gain,
-        })]];
-
       /**
        * What a lane contributes to a pass: nothing when it is muted, nothing
        * when something else is soloed, its fader otherwise.
@@ -228,16 +229,20 @@ it rather than on the next play.</div>
         return st.level;
       }
 
-      /** The arrangement as a `Timeline`, built fresh for every pass. */
       /**
-       * The arrangement as a `Timeline` the playhead can scan. Every event is
-       * aimed at `target`, the group the pass owns: that is what lets the
-       * *next* pass end this one's sound rather than leave it ringing where
-       * the arrangement no longer says anything is.
+       * The **note** clips as a `Timeline` a pass can scan — built fresh for
+       * every cue, so it is always the piece as it now stands.
+       *
+       * Only the clips with `events`: a region reads its buffer at the
+       * transport's position and is never in a queue. Every event is aimed at
+       * `target`, the group the pass owns, so cueing again ends this one's
+       * sound rather than leaving it ringing where the arrangement no longer
+       * says anything is.
        */
       function buildTimeline(target) {
         const tl = new seq.Timeline();
         for (const spec of Object.values(CLIPS)) {
+          if (spec.events === undefined) continue;
           const gain = laneGain(spec.lane);
           if (gain <= 0.0) continue;
           for (const [rel, event] of spec.events(spec.beats, gain)) {
@@ -248,11 +253,15 @@ it rather than on the next play.</div>
         return tl;
       }
 
-      /** The group the pass in flight plays into — its voices, as one handle. */
+      /** The piece: everything that sounds, as one governed subtree. */
+      let piece = null;
+      /** clip name -> its resident region node, and clip name -> its buffer. */
+      const regions = {}, BUFS = {};
+      /** The group the note pass plays into — its voices, as one handle. */
       let passGroup = null;
 
       /**
-       * Free what the last pass started. Stopping a playhead only stops the
+       * Free what the last cue started. Stopping a playhead only stops the
        * *scan* (`Playhead.stop` says so: what is already rendered keeps
        * sounding, its release scheduled), which is right for a library and
        * wrong for a driver that just moved the clip those voices came from.
@@ -296,9 +305,10 @@ it rather than on the next play.</div>
         // something to ask how long it is. The frames are the take's, so the
         // clip's `dur` is read off the array the way the script reads it off
         // its own list.
-        const samples = {}, frames = {};
+        const samples = {}, frames = {}, takes = {};
         for (const [name, freq, beats, , decay] of TAKES) {
           const take = tone(freq, beats, decay);
+          takes[name] = take;
           frames[name] = take.length;
           samples[name] = gui.source(take);
         }
@@ -307,15 +317,25 @@ it rather than on the next play.</div>
         log(`built ${TAKES.length} takes and a ${SWEEP_BEATS.toFixed(0)}-beat sweep`);
 
         await voice().send(server);
-        await glide().send(server);
+        await region().send(server);
+
+        // The takes, **on the server**: the same arrays the lanes draw,
+        // installed as buffers so a region can read them. That is what makes
+        // "what sounds is what is drawn" literal rather than a claim about two
+        // descriptions agreeing -- the picture and the sound are one array in
+        // two places.
+        for (const [name] of TAKES) {
+          BUFS[name] = await Buffer.fromSamples(takes[name], 1, 0.0, { server });
+        }
+        BUFS.sweep = await Buffer.fromSamples(sweepTake, 1, 0.0, { server });
         await server.sync();
 
-        for (const [name, freq, beats, at, decay] of TAKES) {
-          CLIPS[name] = { lane: "takes", at, beats, events: toneEvents(freq, decay) };
+        for (const [name, , beats, at] of TAKES) {
+          CLIPS[name] = { lane: "takes", at, beats, buf: name };
         }
         CLIPS.theme = { lane: "lead", at: LEAD_AT, beats: 6.0, events: leadEvents(LEAD) };
         CLIPS.sweep = {
-          lane: "spectrum", at: SWEEP_AT, beats: SWEEP_BEATS, events: sweepEvents(),
+          lane: "spectrum", at: SWEEP_AT, beats: SWEEP_BEATS, buf: "sweep",
         };
 
         session.start();
@@ -404,20 +424,58 @@ it rather than on the next play.</div>
         ).open($("stage"));
         log(`opened window ${win.id} — menu bar, toolbar, ruler, 3 lanes, transport`);
 
+        // **The time of this piece is the server's.** `headClock: "piece"` says
+        // so once: the transport's four buttons become /transport_play,
+        // /transport_stop, /transport_locateSample and /transport_loop, and the
+        // host draws the line from the engine's own position -- which holds
+        // while stopped, jumps where a locate puts it and wraps where a loop
+        // wraps, with nothing sent per frame. The piece's group is **governed**,
+        // so a pause freezes it with every node's state intact and playing again
+        // continues the sound rather than starting it over.
+        piece = new Group({ server });
+        await server.transportGroup(piece);
+
         /**
-         * Begin a pass at beat `at`. The transport calls this on **every** play,
-         * so the timeline is rebuilt from the arrangement each time — which is
-         * how a clip dragged a beat later, or a lane muted, is heard now.
+         * Put a region where the arrangement says it is, in frames of the piece.
          *
-         * And the pass gets a **group of its own**, the last one freed as this
-         * one begins: an edit re-cues the piece, so what the previous
-         * arrangement had already started has to end here — otherwise a clip
-         * dragged away keeps sounding for as long as its note lasts, in the
-         * place it just left.
+         * The first call starts the node; every later one is a `/node_set`. That
+         * is the difference this milestone is about: a clip moved while the
+         * piece plays is a control change on a node that is already running, so
+         * it lands wherever the line already is — nothing is re-cued, and
+         * nothing that is sounding is cut to make it happen.
+         */
+        const place = (name) => {
+          const spec = CLIPS[name];
+          const args = {
+            at: spec.at * BEAT, span: spec.beats * BEAT,
+            amp: 0.2 * laneGain(spec.lane),
+          };
+          const node = regions[name];
+          if (node === undefined) {
+            regions[name] = new Synth("multi_region",
+              { buf: BUFS[spec.buf].bufnum, ...args },
+              { target: piece, server });
+          } else {
+            node.set(args);
+          }
+        };
+
+        for (const [name, spec] of Object.entries(CLIPS)) {
+          if (spec.buf !== undefined) place(name);
+        }
+
+        /**
+         * Cue the **notes** at beat `at`. The transport calls this on a play and
+         * on a locate, and on nothing else — the regions need neither.
+         *
+         * The pass gets a group of its own inside the piece, the last one freed
+         * as this one begins, so a cue ends what the previous one had already
+         * started. Inside the piece, so a pause freezes these voices with the
+         * regions.
          */
         const startPass = (at) => {
           silence();
-          passGroup = new Group({ server });
+          passGroup = new Group({ target: piece, server });
           const head = new seq.Playhead(
             buildTimeline(passGroup.id), session.clock, server);
           head.play({ at });
@@ -428,19 +486,30 @@ it rather than on the next play.</div>
           host,
           () => LANES.map((name) => win.widget(name).id),
           {
-            source: startPass, tempo: TEMPO, sampleRate: SR,
-            extent, clock: session.clock,
+            headClock: "piece", source: startPass, tempo: TEMPO, sampleRate: SR,
+            extent, clock: session.clock, governed: true,
           },
         );
         transport.server = server;
 
         /**
-         * Re-schedule what is playing from where it is. An edit does not
-         * interrupt the sound by itself, so a driver that wants the edit *now*
-         * plays again from the current position.
+         * Make an edit audible **now**.
+         *
+         * A region needs only its controls: `place` is the whole of it, and it
+         * lands on the running node. The notes are the other half and still need
+         * a cue, so an edit that touched them re-cues the pass from where the
+         * piece is — which is the one place this page still computes with a
+         * position, and the one `clients/web/PLAN.md`'s `W31` is about.
          */
-        const follow = () => {
-          if (transport.playing) transport.play(server, { at: transport.position });
+        const follow = async (name) => {
+          if (name !== undefined && CLIPS[name].buf !== undefined) {
+            place(name);
+            return;
+          }
+          if (transport.playing) {
+            await transport.refresh();
+            startPass(transport.position);
+          }
         };
 
         const showRuler = (shown) => {
@@ -482,7 +551,7 @@ it rather than on the next play.</div>
             CLIPS[name].beats = Math.max(Number(vals[1]) / BEAT, 0.0);
             log(`clip ${name}: ${CLIPS[name].at.toFixed(2)} .. `
               + `${(CLIPS[name].at + CLIPS[name].beats).toFixed(2)} beats`);
-            follow();
+            void follow(name);
           }
         };
 
@@ -518,7 +587,12 @@ it rather than on the next play.</div>
             const st = LANE_STATE[name];
             log(`lane ${name}: mute ${Number(st.mute)} solo ${Number(st.solo)} `
               + `level ${st.level.toFixed(2)} -> gain ${laneGain(name).toFixed(2)}`);
-            follow();
+            // A lane's gain reaches every region on it as a control, and the
+            // notes through a cue -- the two halves again, one message each.
+            for (const [clip, spec] of Object.entries(CLIPS)) {
+              if (spec.lane === name && spec.buf !== undefined) place(clip);
+            }
+            void follow();
           }
         };
 
@@ -531,6 +605,9 @@ it rather than on the next play.</div>
         });
         // A stop that leaves the last clip ringing over the rewound cursor is
         // a pause with a different picture.
+        // The regions need nothing: stopped, they are frozen and located at 0,
+        // which is what a rewound piece is. A voice a pass fired has no such
+        // position, so a stop that left it ringing would be a pause.
         win.widget("b_stop").onClick(() => {
           transport.stop();
           silence();
@@ -578,11 +655,15 @@ it rather than on the next play.</div>
 
         // A read-out is not an event -- the transport's position is *read*, not
         // reported -- so it goes on the **application clock**, where a function
-        // returning a number is rescheduled by whatever it returns. Nothing
-        // parks the cursor here: the transport asks about the end of its own
-        // pass on the same clock.
+        // returning a number is rescheduled by whatever it returns.
+        //
+        // `Transport.refresh` is that read, and it is here and nowhere else: the
+        // position is the **engine's**, so asking is a round trip and a counter
+        // is exactly what should pay for one. The *line* pays nothing -- the
+        // host draws it from the engine every frame, with nothing sent.
         let last = null;
         host.clock.sched(0.05, function tickCounter() {   // from here on the counter keeps itself
+          void transport.refresh();
           const text = readout();
           if (text !== last) {       // a stopped transport sends nothing
             win.widget("counter").set({ text });

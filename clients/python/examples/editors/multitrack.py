@@ -65,8 +65,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from clausters import Group, Session
-from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
+from clausters import Buffer, Group, Session, Synth
+from clausters.defs import (DoneAction, Env, SynthDef, buf_rd, control, env_gen,
+                            out, sine, transport_pos)
 from clausters.gui import (Transport, button, clip, label, layout, menu, samples_to_file, scroll, slider, timeruler, toggle, track, view)
 from clausters.seq import Event, Playhead, Timeline
 
@@ -152,12 +153,12 @@ samples_to_file(sweep_samples, sweep_path)
 print(f"wrote {len(TAKES)} takes and a {SWEEP_BEATS:.0f}-beat sweep under {tmp}")
 
 # %% [markdown]
-# ## The instruments
-# The lanes draw the samples; these are what sound it. One decaying sine for the
-# tones and the lead notes, and one glide for the sweep the spectral clip shows —
-# both freed by their own envelope, and both shaped like the file drawn beside
-# them: an instrument whose envelope is not the picture's makes the take look
-# like it ends after it is over.
+# ## The two ways a clip sounds
+# A clip over **samples** is read: `region` is a buffer read at the transport's
+# own position, so the sound *is* the picture and there is nothing to keep in
+# step. A clip of **notes** is played: `voice` is one note, freed by its own
+# envelope — a voice has no position to seek to, which is exactly why the notes
+# need a pass and the samples do not.
 
 # %%
 def voice(name: str = "multi_tone") -> SynthDef:
@@ -189,37 +190,63 @@ def voice(name: str = "multi_tone") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def glide(name: str = "multi_sweep") -> SynthDef:
-    """The sweep the spectral clip draws: an exponential glide from `SWEEP_LO`
-    to `SWEEP_HI` over the event's span, with two fixed partials over it — the
-    picture the trace cannot show and the STFT can.
+def region(name: str = "multi_region") -> SynthDef:
+    """**A clip that follows the transport**, and the shape a multitrack is made
+    of: a buffer read at the transport's own position, silent outside its span.
 
-    The glide is an **exponential envelope**, which is why its ends are the
-    ratio (``1`` to ``hi/lo``, scaled by ``lo``) and not the frequencies: an
-    exponential segment cannot start at zero, and a ratio is what a geometric
-    axis measures anyway."""
-    amp = control("amp", 0.2, "ir")
-    secs = control("secs", 1.0, "ir")
-    freq = env_gen(Env([1.0, SWEEP_HI / SWEEP_LO], [1.0], "exp"),
-                   time_scale=secs) * SWEEP_LO
-    shape = env_gen(Env([0.0, 1.0, 1.0, 0.0], [0.05, 0.75, 0.2]),
-                    time_scale=secs, done_action=DoneAction.FREE_SELF)
-    sig = (sine(freq) * 0.6 + sine(660.0) * 0.25 + sine(1320.0) * 0.15) * shape * amp
+    It carries no position and no envelope. `transport_pos` is the piece's
+    position minus where this region starts, so the reader is at frame 0 exactly
+    when the line reaches the clip's left edge -- and the subtraction happens in
+    ``f64`` inside the UGen, so a region deep into a long piece still reads small
+    numbers. The gate is the region's own length: ``BufRd`` **clamps** outside
+    the buffer rather than going quiet, so without it a finished clip would hold
+    its last sample forever.
+
+    What that buys is everything a transport does. Seeking is
+    `clausters.defs.server.Server.transport_locate_sample` and this node is
+    simply somewhere else the next block; looping is
+    `Server.transport_loop` and the wrap happens in the engine, on its exact
+    sample; pausing is `Server.transport_stop` over the governed group, which
+    freezes the node with its state intact so playing again *continues*. Nothing
+    is sent per pass, nothing is re-cued on an edit, and moving the clip is one
+    ``/node_set`` of ``at`` -- which lands wherever the line already is.
+    """
+    buf = control("buf", 0.0, "ir")
+    at = control("at", 0.0)        # where the region starts, in frames of the piece
+    span = control("span", 0.0)    # how long it lasts, in frames
+    amp = control("amp", 0.2, lag=0.02)
+    pos = transport_pos(at)
+    live = (pos >= 0.0) * (pos < span)
+    sig = buf_rd(buf, 0.0, pos) * live * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
 voice().send(server)
-glide().send(server)
+region().send(server)
+
+#: The takes, **on the server**: the same lists the lanes draw, installed as
+#: buffers so a region can read them. That is what makes "what sounds is what is
+#: drawn" literal rather than a claim about two descriptions agreeing -- the
+#: picture and the sound are one array in two places.
+BUFS = {name: Buffer.from_samples(samples[name], server=server) for name in samples}
+BUFS["sweep"] = Buffer.from_samples(sweep_samples, server=server)
 server.sync()
 
 # %% [markdown]
 # ## The arrangement: one description, two consumers
 # What follows is the piece — where each clip sits and what it sounds — and it is
-# read by *both* the lanes (which draw it) and the transport (which plays it).
-# That is the point of writing it down instead of freezing a `Timeline` at
-# startup: drag a clip and the next pass plays it where you dropped it, mute a
-# lane and it stops sounding. A picture built once and a timeline built once are
-# two things that drift; this is one thing seen twice.
+# read by *both* the lanes (which draw it) and whatever plays it. That is the
+# point of writing it down instead of freezing a picture at startup: drag a clip
+# and it sounds where you dropped it, mute a lane and it stops sounding.
+#
+# **The piece sounds two ways, and the difference is the whole design.** A clip
+# over samples is a **region**: one resident node reading its buffer at the
+# transport's position (`region`), so nothing is queued, nothing is scheduled and
+# nothing is re-cued — moving it is one ``/node_set`` and the engine does the
+# rest. A clip of **notes** has no reader to follow, because notes fire voices,
+# so the roll keeps a `clausters.seq.Timeline` a pass scans, cued by the
+# transport's own verbs. Many readers, one time; and beside them, one queue for
+# what cannot be read.
 
 # %%
 #: **What fills a clip sounds for all of it.** An `clausters.seq.Event` frees
@@ -234,17 +261,6 @@ server.sync()
 FULL = 1.0
 
 
-def tone_events(freq: float, decay: float, amp: float = 0.2):
-    """A take: one tone filling the clip. ``secs`` is the clip's own length, so a
-    resized clip sounds as long as it looks — and ``decay`` is the one the file
-    was written with, so it sounds the shape it draws."""
-    def events(beats, gain):
-        return [(0.0, Event(instrument="multi_tone", freq=freq, dur=beats,
-                            legato=FULL, secs=beats / TEMPO, decay=decay,
-                            amp=amp * gain))]
-    return events
-
-
 def lead_events(notes, amp: float = 0.14):
     """The lead: its notes, relative to the clip and **cut to it** — shortening
     the clip drops the notes past its end, the way a DAW trims a part."""
@@ -257,23 +273,16 @@ def lead_events(notes, amp: float = 0.14):
     return events
 
 
-def sweep_events(amp: float = 0.18):
-    """The spectral clip: one glide over the whole clip."""
-    def events(beats, gain):
-        return [(0.0, Event(instrument="multi_sweep", dur=beats, legato=FULL,
-                            secs=beats / TEMPO, amp=amp * gain))]
-    return events
-
-
-#: clip name -> where it sits (beats) and what it sounds. The `"clip"` edit-back
+#: clip name -> where it sits (beats) and what fills it. The `"clip"` edit-back
 #: writes `at`/`beats` here, which is why an edit is heard and not only seen.
-CLIPS = {name: {"lane": "takes", "at": at, "beats": beats,
-                "events": tone_events(freq, decay)}
-         for name, freq, beats, at, decay in TAKES}
+#: ``buf`` names a take on the server (a region reads it); ``events`` is the
+#: other kind of fill, a list of notes a pass renders.
+CLIPS = {name: {"lane": "takes", "at": at, "beats": beats, "buf": name}
+         for name, _freq, beats, at, _decay in TAKES}
 CLIPS["theme"] = {"lane": "lead", "at": LEAD_AT, "beats": 6.0,
                   "events": lead_events(LEAD)}
 CLIPS["sweep"] = {"lane": "spectrum", "at": SWEEP_AT, "beats": SWEEP_BEATS,
-                  "events": sweep_events()}
+                  "buf": "sweep"}
 
 #: lane name -> its header controls. The `"mute"`/`"solo"`/`"level"` edit-backs
 #: write here, and `lane_gain` is what the pass reads.
@@ -292,14 +301,17 @@ def lane_gain(lane: str) -> float:
 
 
 def build_timeline(target: int) -> Timeline:
-    """The arrangement as a `Timeline` the playhead can scan — built fresh for
-    every pass, so it is always the piece as it now stands.
+    """The **note** clips as a `Timeline` a pass can scan — built fresh for every
+    cue, so it is always the piece as it now stands.
 
-    Every event is aimed at ``target``, the group the pass owns: that is what
-    lets the *next* pass end this one's sound rather than leave it ringing
-    where the arrangement no longer says anything is."""
+    Only the clips with ``events``: a region reads its buffer at the transport's
+    position and is never in a queue. Every event is aimed at ``target``, the
+    group the pass owns, so cueing again ends this one's sound rather than
+    leaving it ringing where the arrangement no longer says anything is."""
     tl = Timeline()
     for spec in CLIPS.values():
+        if "events" not in spec:
+            continue
         gain = lane_gain(spec["lane"])
         if gain <= 0.0:
             continue
@@ -460,19 +472,63 @@ title="Clausters multitrack", w=1100, h=640, flow="col").open()
 print(f"opened window {win} -- menu bar, toolbar, ruler, {3} lanes, transport")
 
 # %% [markdown]
-# ## The transport
-# `Transport` drives the `Playhead` and the view's line together: `play` anchors
-# every lane's playhead to the engine clock (the host sweeps it, one message per
-# pass), `pause` parks the static cursor on what stopped, `stop` rewinds. Its
-# ``ids`` are read on each use, so the three lanes all carry the line.
+# ## The transport, and where the piece's time lives
+# **The server holds it.** ``head_clock="piece"`` says so once, and everything
+# follows: `Transport`'s four buttons become `/transport_play`,
+# `/transport_stop`, `/transport_locateSample` and `/transport_loop`; the host
+# draws the line from the engine's own position, so it holds while stopped, jumps
+# where a locate puts it and wraps where a loop wraps — with nothing sent per
+# frame and no anchor kept in step here. The piece's group is **governed**
+# (`transport_group`), which is what makes a pause a real pause: the subtree
+# freezes with every node's state intact, so playing again continues the sound
+# rather than starting it over.
+#
+# What is left for this script is the **notes**, and only them: a pass over the
+# roll's clip, cued when the transport is played or located and at no other time.
 
 # %%
-#: The group the pass in flight plays into — its voices, as one handle.
+#: The piece: everything that sounds, as one governed subtree. The transport
+#: freezes and thaws *this* and nothing else, which is why it is a group of its
+#: own rather than the root — the root would freeze every sound the session has.
+piece = Group(server=server)
+server.transport_group(piece)
+
+#: clip name -> its resident region node. One per clip over samples, created
+#: once and **never re-created**: an edit sets its controls.
+regions = {}
+
+#: The group the note pass plays into — its voices, as one handle, inside the
+#: piece so a pause freezes them too.
 pass_group = None
 
 
+def place(name: str):
+    """Put a region where the arrangement says it is, in frames of the piece.
+
+    The first call starts the node; every later one is a ``/node_set``. That is
+    the difference this milestone is about: a clip moved while the piece plays
+    is a control change on a node that is already running, so it lands wherever
+    the line already is — nothing is re-cued, and nothing that is sounding is cut
+    to make it happen."""
+    spec = CLIPS[name]
+    args = {"at": spec["at"] * BEAT, "span": spec["beats"] * BEAT,
+            "amp": 0.2 * lane_gain(spec["lane"])}
+    node = regions.get(name)
+    if node is None:
+        regions[name] = Synth("multi_region", {"buf": BUFS[spec["buf"]].bufnum,
+                                               **args},
+                              target=piece, server=server)
+    else:
+        node.set(args)
+
+
+for _name, _spec in CLIPS.items():
+    if "buf" in _spec:
+        place(_name)
+
+
 def silence():
-    """Free what the last pass started. Stopping a playhead only stops the
+    """Free what the last cue started. Stopping a playhead only stops the
     *scan* (`clausters.seq.Playhead.stop` says so: what is already rendered
     keeps sounding, its release scheduled), which is right for a library and
     wrong for a driver that just moved the clip those voices came from. Owning
@@ -484,39 +540,42 @@ def silence():
 
 
 def start_pass(at: float, **kw):
-    """Begin a pass at beat ``at``. The transport calls this on **every** play,
-    so the timeline is rebuilt from the arrangement each time — which is how a
-    clip dragged a beat later, or a lane muted, is heard on the next play.
+    """Cue the **notes** at beat ``at``. The transport calls this on a play and
+    on a locate, and on nothing else — the regions need neither.
 
-    And the pass gets a **group of its own**, the last one freed as this one
-    begins: an edit re-cues the piece, so what the previous arrangement had
-    already started has to end here — otherwise a clip dragged away keeps
-    sounding for as long as its note lasts, in the place it just left."""
+    The pass gets a group of its own inside the piece, the last one freed as
+    this one begins, so a cue ends what the previous one had already started.
+    Inside the piece, so a pause freezes these voices with the regions."""
     global pass_group
     silence()
-    pass_group = Group(server=server)
+    pass_group = Group(target=piece, server=server)
     head = Playhead(build_timeline(pass_group.id), session.clock, server)
     head.play(at=at)
     return head
 
 
-# `clock` is what lets the line cross the **last** clip: a scan runs out when it
-# renders its last item, and the piece ends where that item ends, so the
-# transport sweeps the tail on the clock rather than parking the cursor early.
 transport = Transport(gui, lambda: [win[name].id for name in LANES],
-                      source=start_pass, tempo=TEMPO, sample_rate=SR,
-                      extent=extent, clock=session.clock)
+                      head_clock="piece", source=start_pass,
+                      tempo=TEMPO, sample_rate=SR, extent=extent,
+                      clock=session.clock, governed=True)
 transport.server = server
 
 
-def follow():
-    """Re-schedule what is playing from where it is. An edit does not interrupt
-    the sound by itself (the playhead is scanning a list it already has), so a
-    driver that wants the edit *now* plays again from the current position — the
-    live-editing loop, and the reason a mute takes effect on the beat it is
-    clicked rather than on the next play."""
+def follow(name: str | None = None):
+    """Make an edit audible **now**.
+
+    A region needs only its controls: `place` is the whole of it, and it lands on
+    the running node. The notes are the other half and still need a cue, so an
+    edit that touched them re-cues the pass from where the piece is — which is
+    the one place this script still computes with a position, and the one
+    `clients/python/PLAN.md`'s `C54` is about."""
+    if name is not None and "buf" in CLIPS[name]:
+        place(name)
+        return
     if transport.playing:
-        transport.play(at=transport.position)
+        transport.refresh()
+        start_pass(transport.position)
+
 
 # %% [markdown]
 # ## The view state, and the two faces of it
@@ -601,7 +660,7 @@ def on_clip(name: str):
         CLIPS[name]["beats"] = max(float(vals[1]) / BEAT, 0.0)
         print(f"clip {name}: {CLIPS[name]['at']:.2f} .. "
               f"{CLIPS[name]['at'] + CLIPS[name]['beats']:.2f} beats")
-        follow()
+        follow(name)
     return handler
 
 
@@ -636,6 +695,11 @@ def on_lane(name: str):
         st = LANE_STATE[name]
         print(f"lane {name}: mute {int(st['mute'])} solo {int(st['solo'])} "
               f"level {st['level']:.2f} -> gain {lane_gain(name):.2f}")
+        # A lane's gain reaches every region on it as a control, and the notes
+        # through a cue -- the two halves again, one message each.
+        for clip, spec in CLIPS.items():
+            if spec["lane"] == name and "buf" in spec:
+                place(clip)
         follow()
     return handler
 
@@ -683,8 +747,12 @@ def on_ruler(tag, *payload):
 # button, so sliding off before letting go cancels it.
 win["b_play"].on_click(play_pause)
 def stop():
-    """Rewind, and end what is sounding — a stop that leaves the last clip
-    ringing over the rewound cursor is a pause with a different picture."""
+    """Rewind, and end the notes that are sounding.
+
+    The regions need nothing: stopped, they are frozen and located at 0, which
+    is what a rewound piece is. A voice a pass fired has no such position, so a
+    stop that left it ringing over the rewound cursor would be a pause with a
+    different picture."""
     transport.stop()
     silence()
 
@@ -723,10 +791,15 @@ def tick_counter():
     A read-out is not an event -- the transport's position is *read*, not
     reported -- so it belongs on the application clock
     (`clausters.base.appclock.AppClock`), where a function returning a number is
-    rescheduled by whatever it returns. Nothing here parks the cursor either:
-    the transport asks about the end of its own pass on the same clock.
+    rescheduled by whatever it returns.
+
+    `clausters.gui.Transport.refresh` is that read, and it is here and nowhere
+    else: the position is the **engine's**, so asking is a round trip and a
+    counter is exactly what should pay for one. The *line* pays nothing -- the
+    host draws it from the segment every frame, with nothing sent.
     """
     global _shown
+    transport.refresh()
     text = readout()
     if text != _shown:              # a stopped transport sends nothing
         win["counter"].set(text=text)

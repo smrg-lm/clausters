@@ -489,3 +489,28 @@ test("a piece transport loops in the engine", () => {
     tp.loop(null);
     assert.deepEqual(server.calls.at(-1), ["loop", null]);
 });
+
+test("a piece still cues a pass of voices, and only on a locate", async () => {
+    // The two halves meet in `play`: what follows the transport by itself needs
+    // no pass, and what fires voices does -- so a source is still called, and a
+    // locate cues it again while nothing re-cues on an edit.
+    const cued: number[] = [];
+    const host = new PieceHost();
+    const tp = new Transport(host as unknown as GuiHost, 7, {
+        headClock: "piece",
+        source: (at) => {
+            cued.push(at);
+            return null;
+        },
+        tempo: TEMPO,
+        sampleRate: SR,
+    });
+    tp.server = new PieceServer() as unknown as Server;
+    await tp.play();
+    assert.deepEqual(cued, [0.0]);
+    tp.locate(2.0);
+    assert.deepEqual(cued, [0.0, 2.0], "the one re-cue the piece keeps");
+    tp.pause();
+    tp.locate(4.0);
+    assert.deepEqual(cued, [0.0, 2.0], "stopped, there is no pass to cue");
+});

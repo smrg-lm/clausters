@@ -1,0 +1,5 @@
+[    4418ms] [LOG] clausters-gui web host starting @ http://localhost:8765/dist/gui-host/clausters_gui.js:1354
+[    4420ms] [LOG] audio-server leg attached to the in-page engine @ http://localhost:8765/dist/gui-host/clausters_gui.js:1354
+[    4593ms] [LOG] def 1000: canvas attached; requesting GPU adapter @ http://localhost:8765/dist/gui-host/clausters_gui.js:1354
+[    4599ms] [LOG] /gui_def 1000: opened from the page @ http://localhost:8765/dist/gui-host/clausters_gui.js:1354
+[    4632ms] [LOG] def 1000: GPU device ready; surface 1195x960 @ http://localhost:8765/dist/gui-host/clausters_gui.js:1354

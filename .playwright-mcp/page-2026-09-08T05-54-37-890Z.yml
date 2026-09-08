@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - text: "A desktop-shaped multitrack editor: menu bar, toolbar, ruler, lanes, transport. The other GUI examples each open one view. This one composes a whole application window out of the model, the shape a DAW has, top to bottom: a menu bar whose entries are the view's own options; a toolbar repeating the two worth one click plus a slider over how thick a lane is — the same thickness Ctrl+wheel over any lane sets, which arrives as a"
+      - code [ref=e4]: "\"height\""
+      - text: "edit; the time ruler, the only one in the window, since a lane's own ruler is reserved out of that lane's height — it carries the piece's markers and the two selections, so a drag scrolls the axis, Alt+drag sweeps a time range, Ctrl+click adds a marker (numbered) or removes the one under the pointer, and a click puts the cursor where it points, or on a marker's arrow at exactly the moment it was placed at (the arrow is what is aimed at; the label beside it is a name, not a target); the lanes in a scrolled stack; and a transport with a counter that reads the position in beats, seconds and samples at once. The window has one cursor and the content never moves it: a click puts it where it points — on the ruler, on empty lane space, and equally on a clip, since what took the press is not what names the time — and the host emits"
+      - code [ref=e5]: "\"locate\""
+      - text: so the pass seeks there. Click while it is playing and the line carries on from where you pointed. What sounds is what is drawn, including the edits. The lanes and the transport read one description of the piece, and the timeline is built afresh for every pass — so dragging or resizing a clip moves what you hear, and a lane's mute, solo and fader are the mixer they look like. Each edit re-schedules the pass from where it is, so it takes effect on the beat you click it rather than on the next play.
+    - button "open the editor" [disabled] [ref=e6]
+    - generic [ref=e8]: built 3 takes and a 6-beat sweep opened window 1000 — menu bar, toolbar, ruler, 3 lanes, transport
+  - textbox [aria-hidden]
