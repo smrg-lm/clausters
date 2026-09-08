@@ -3289,9 +3289,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   **Still open, and it is the client's half**: what *sounds* under the cursor --
   a clip picked up going quiet, one dropped ahead sounding at the sample it was
   placed at, one dropped under it entering at the offset its time implies, a
-  roll's event triggering only if the cursor passes its onset. That is "A pass
-  re-cued from the playhead drops the clip the playhead is inside" in
-  `clients/python/PLAN.md`, with the latent defect measured there.
+  roll's event triggering only if the cursor passes its onset. That is `C54` in
+  `clients/python/PLAN.md` ("A timeline plays what is under the cursor, and an
+  edit reaches the pass that is running"), opened 2026-09-08 when the by-ear
+  check of this work found the other half of it: a clip dragged while the line
+  is about to reach it is left sounding where it no longer is.
 
   **Related:** `O24`. This is what a multitrack's transport *is*, and doing it
   before the application is taking it off the application's first day.

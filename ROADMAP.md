@@ -496,6 +496,21 @@ its plan; the plan is where its acceptance is read.
   this file and of `APPLICATION-SCOPE.md` survives into the standing plans, and
   what goes with the branch.
 
+- ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
+  the pass that is running**, with its port **`W31`**
+  *(`clients/python/PLAN.md`; `clients/web/PLAN.md`)*. Opened 2026-09-08 by the
+  user, hearing the by-ear check of the host's cursor work: a clip dragged while
+  the line is about to reach it goes on sounding where it no longer is. Not the
+  branch's, and near work all the same - it is the **sound** half of the rule
+  whose drawn half shipped that day ("One cursor, it is the transport's, and the
+  content never moves it", `clients/gui/PLAN.md`), and `O24`'s multitrack is an
+  editor that rewrites a playing timeline by hand, which is exactly what
+  `seq.timeline` was not written for -- which is a mismatch and not a verdict on
+  the object: its first question is whether one structure serves both uses or the
+  live-edited one is a second beside it. Read before `O24` rather than during it,
+  for the reason the cursor was: an application that has to fix its own transport
+  on the first day is two pieces of work in one.
+
 - ⬜ **`W30` - the editing seam comes across, and the two clients are read
   against each other** *(`clients/web/PLAN.md`)*. The branch's last structural
   divergence, and the only one of these that is **not** the branch's to close:

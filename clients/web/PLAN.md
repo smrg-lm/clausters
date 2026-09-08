@@ -1879,6 +1879,37 @@ and the two `GuiHost` surfaces differ only where `docs/bindings.md` says
 turned up is fixed or written down.
 
 
+### W31 - The timeline plays what is under the cursor (port of `C54`)
+
+The port half of `C54` (`clients/python/PLAN.md`, "A timeline plays what is
+under the cursor, and an edit reaches the pass that is running"), which carries
+the problem, the shape and the acceptance -- read it there, and do not re-derive
+it here.
+
+**It waits on `C54`'s first question**, which is whether the live-edited case
+grows out of `Timeline` or becomes a **second structure beside it** (the user
+leans that way) -- for what it was written for (a bounced pattern, an offline
+render, a followed transport) the current shape is right, here as there. Port
+the answer, not this file's guess at it. And if the answer is a second
+structure, this milestone is likely a **binding** rather than a port: a player
+written once in Rust, bound here and in Python, is the standing rule and the
+only way the two clients cannot drift on it.
+
+`clients/web/src/seq/timeline.ts` is the Python module ported **verbatim**: the
+same sorted `(beat, item)` list, the same `indexAt`, the same `feed` generator
+walking an **index** and sleeping to each onset. So it has the same three faces
+-- a queue that holds onsets and no extent, a position stored in terms of the
+content, and no way for an edit to reach a running pass -- and one rule in two
+spellings is what the standing rule asks for. It lands **in the same commit** as
+`C54`: the two files are read against each other, call by call, before either is
+believed.
+
+**Acceptance:** the same by-ear pass over `examples/editors/multitrack.html`
+that `C54` asks of the Python example -- a clip dragged onto the line enters
+from the frame the line is at, one dragged away goes quiet as the hand lifts it
+-- plus the same three unit tests, and `./build.sh && ./test.sh` green.
+
+
 ## Parity gaps carried from the Python client
 
 - ⬜ **The editing seam: an application, and a widget id that names what it
