@@ -31,8 +31,10 @@ use crate::host::graphics::track;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::placement::{self, Bounds, Contents, Part, Placement};
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Take, TimeSpace};
+use crate::host::placement::{self, Bounds, Contents, Part, Placement, Placements};
+use crate::host::widget::element::{
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Swept, Take, TimeSpace,
+};
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{EditorProps, RulerY};
@@ -79,6 +81,19 @@ struct Grab {
     grabbed_at: f64,
 }
 
+/// A **fader** the hand is on, kept for the same reason a clip's grab is: the
+/// value is read from the pointer against the groove the press found.
+#[derive(Debug, Clone, Copy)]
+struct Fading {
+    lane: usize,
+    groove: Rect,
+}
+
+/// The block a hand took, as `(index, offset, row)` per clip — the snapshot
+/// `placement::move_block` clamps against, so a block stopped at an edge does
+/// not fold against it.
+type Block = Vec<(usize, f64, f32)>;
+
 /// The stack of lanes and the clips on them.
 #[derive(Debug, Clone)]
 pub struct Multitrack {
@@ -105,6 +120,10 @@ pub struct Multitrack {
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
+    /// The clips a body drag is carrying, snapshotted at the press.
+    block: Block,
+    /// The fader a drag is on, when it is on one.
+    fading: Option<Fading>,
 }
 
 impl Default for Multitrack {
@@ -119,6 +138,8 @@ impl Default for Multitrack {
             editor: EditorProps::body(),
             label: None,
             grab: None,
+            block: Vec::new(),
+            fading: None,
         }
     }
 }
@@ -143,6 +164,8 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         editor: EditorProps::parse(props, RulerY::Off),
         label: label(props),
         grab: None,
+        block: Vec::new(),
+        fading: None,
     }
 }
 
@@ -274,6 +297,90 @@ impl Multitrack {
         Events::message(args)
     }
 
+    /// The lane header band `y` falls in, and the part of it `(x, y)` hit.
+    fn header_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, track::HeaderPart)> {
+        let i = self.lane_at(input.rect, at.1)?;
+        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[i];
+        let band = crate::host::timeline::gutter_band(rect, input.indent);
+        let header = self.header(&self.lanes[i], input.indent);
+        let part = track::header_hit(band, &header, input.metrics, at.0, at.1)?;
+        Some((i, part))
+    }
+
+    /// **The edit-back for the mixer: the lanes as they now are.** The second
+    /// of the two payloads, and separate from the clips for the reason they are
+    /// two structures — a fader moved must not resend every clip.
+    fn lanes_event(&self) -> Events {
+        let mut args = vec![OscType::String("lanes".into())];
+        if let Value::Array(flat) = model::lanes_json(&self.lanes) {
+            args.extend(flat.into_iter().map(json_arg));
+        }
+        Events::message(args)
+    }
+
+    /// The clips the hand is holding: the selection when the grabbed clip is in
+    /// it, else the grabbed one alone.
+    ///
+    /// **Grabbing an unselected clip lets go of the block**, which is the rule a
+    /// lane already had: a hand that reaches past its selection meant the box it
+    /// reached for.
+    fn held(&self, clip: usize) -> Vec<usize> {
+        if self.selected.contains(&clip) {
+            self.selected.clone()
+        } else {
+            vec![clip]
+        }
+    }
+
+    /// A press on a lane's header: the two toggles land on the press, the fader
+    /// takes the drag.
+    ///
+    /// **The mixer state is the composition's**, so all three report — and they
+    /// report the `"lanes"` list, not the one lane, because what a report says
+    /// here is the piece as it now stands.
+    fn press_header(
+        &mut self,
+        lane: usize,
+        part: track::HeaderPart,
+        at: (f64, f64),
+        input: &Input,
+    ) -> Claim {
+        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[lane];
+        let band = crate::host::timeline::gutter_band(rect, input.indent);
+        let parts = track::header_parts(
+            band,
+            &self.header(&self.lanes[lane], input.indent),
+            input.metrics,
+        );
+        match part {
+            track::HeaderPart::Mute => {
+                self.lanes[lane].mute = !self.lanes[lane].mute;
+                Claim::Take(Take {
+                    events: self.lanes_event(),
+                    ..Take::default()
+                })
+            }
+            track::HeaderPart::Solo => {
+                self.lanes[lane].solo = !self.lanes[lane].solo;
+                Claim::Take(Take {
+                    events: self.lanes_event(),
+                    ..Take::default()
+                })
+            }
+            track::HeaderPart::Fader => {
+                let Some(groove) = parts.fader else {
+                    return Claim::Decline;
+                };
+                // **Absolute**: a position inside the groove *is* the value,
+                // snapshotted at the press because the groove may scroll under
+                // the hand.
+                self.lanes[lane].gain = track::level_at(groove, at.0);
+                self.fading = Some(Fading { lane, groove });
+                Claim::take()
+            }
+        }
+    }
+
     /// The lane header a lane's own props ask for. Presence-driven, like every
     /// header here: a lane that carries no mixer state offers no controls.
     fn header(&self, lane: &Lane, indent: f32) -> track::Header {
@@ -282,6 +389,39 @@ impl Multitrack {
             mute: Some(lane.mute),
             solo: Some(lane.solo),
             level: Some(lane.gain),
+        }
+    }
+}
+
+/// **The clips are boxes on rows**, which is the one thing the box arithmetic
+/// asks of whoever holds some.
+///
+/// The row is the **lane's index**, so `in_rect`, `move_block` and `quantize`
+/// — already written and already tested against a roll's notes and a lane's
+/// clips — work here unchanged. Writing the row back is what makes a block
+/// dragged across the stack change the lanes its clips name: one field each,
+/// with nothing removed and nothing inserted.
+impl Placements for Multitrack {
+    fn len(&self) -> usize {
+        self.clips.len()
+    }
+
+    fn placement(&self, i: usize) -> Placement {
+        self.clips[i].place
+    }
+
+    fn set_placement(&mut self, i: usize, p: Placement) {
+        self.clips[i].place = p;
+    }
+
+    fn row(&self, i: usize) -> f32 {
+        self.lane_of(&self.clips[i]).unwrap_or(0) as f32
+    }
+
+    fn set_row(&mut self, i: usize, r: f32) {
+        let at = r.round().max(0.0) as usize;
+        if let Some(lane) = self.lanes.get(at) {
+            self.clips[i].lane = lane.name.clone();
         }
     }
 }
@@ -369,18 +509,45 @@ impl Element for Multitrack {
         }
     }
 
-    /// **A press takes a clip, and declines everywhere else.** The slack
-    /// between clips and beside them is the container's — that is where a click
-    /// places the transport's cursor and a sweep starts a marquee — so a press
-    /// that found no box goes back to the chain rather than being swallowed.
+    /// **A press takes a clip or a header control, and declines everywhere
+    /// else.** The slack between clips and beside them is the container's —
+    /// that is where a click places the transport's cursor and a sweep starts a
+    /// marquee — so a press that found neither goes back to the chain rather
+    /// than being swallowed.
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        self.grab = None;
+        self.fading = None;
+        self.block.clear();
+        // The header band first: it is drawn over the gutter, and nothing of
+        // the axis is there.
+        if let Some((lane, part)) = self.header_at(input, at) {
+            return self.press_header(lane, part, at, input);
+        }
         let Some((clip, part)) = self.clip_at(input, at) else {
-            self.grab = None;
             return Claim::Decline;
         };
+        // **Alt adds or removes that one**, the same key that adds a note to a
+        // roll's selection.
+        if input.mods.alt {
+            placement::toggle_selected(&mut self.selected, clip);
+            return Claim::take();
+        }
         let Some(lane) = self.lane_of(&self.clips[clip]) else {
             return Claim::Decline;
         };
+        // **An edge is always one clip's**: two clips of different lengths have
+        // no one edge to pull, so a trim lets go of the block.
+        self.block = match part {
+            Part::Body => self
+                .held(clip)
+                .into_iter()
+                .map(|i| (i, self.clips[i].place.offset, self.row(i)))
+                .collect(),
+            _ => vec![(clip, self.clips[clip].place.offset, lane as f32)],
+        };
+        if part != Part::Body && !self.selected.contains(&clip) {
+            self.selected.clear();
+        }
         self.grab = Some(Grab {
             clip,
             part,
@@ -397,39 +564,81 @@ impl Element for Multitrack {
         })
     }
 
-    /// The clip follows the hand; **the edit leaves on release.**
+    /// **What a rectangle swept over the stack caught.** The marquee's one
+    /// question, answered with the clips the rectangle covered — of every lane
+    /// it crossed, since a selection the stack's sweep made is not one lane's.
+    fn select_in(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
+        let before = self.selected.len();
+        let (t0, t1) = (self.time_at(input, from.0), self.time_at(input, to.0));
+        let rows = |y: f64| {
+            let at = model::stack(&self.lanes, input.rect, self.scroll, self.gap);
+            at.iter()
+                .position(|r| y as f32 >= r.y && (y as f32) < r.y + r.h)
+                .map(|i| i as f32)
+        };
+        // A corner in the gap between two lanes still means the sweep passed
+        // through: it takes the nearer row rather than catching nothing.
+        let nearest = |y: f64| {
+            let at = model::stack(&self.lanes, input.rect, self.scroll, self.gap);
+            at.iter()
+                .enumerate()
+                .min_by(|a, b| {
+                    let d = |r: &Rect| (y as f32 - (r.y + r.h / 2.0)).abs();
+                    d(a.1).total_cmp(&d(b.1))
+                })
+                .map(|(i, _)| i as f32)
+                .unwrap_or(0.0)
+        };
+        let r0 = rows(from.1).unwrap_or_else(|| nearest(from.1));
+        let r1 = rows(to.1).unwrap_or_else(|| nearest(to.1));
+        self.selected = placement::in_rect(self, t0, t1, r0, r1);
+        Swept {
+            changed: before != self.selected.len() || !self.selected.is_empty(),
+            // **No band.** A multitrack's second axis is the stack of lanes,
+            // not a value, so a rectangle over it restricts no value range —
+            // the vertical half said *which clips*, and nothing else.
+            band: None,
+        }
+    }
+
+    /// The clips follow the hand; **the edit leaves on release.**
     ///
     /// One gesture is one edit — a placement per frame would be an undo step
     /// per frame, and a round trip whose acknowledgement the next frame
-    /// outruns. What moves here is the picture.
+    /// outruns. What moves here is the picture. The **fader** is the exception
+    /// and is not one: it is a control, its value *is* what the hand is doing,
+    /// and it reports as it goes exactly as every other control does.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        if let Some(f) = self.fading {
+            self.lanes[f.lane].gain = track::level_at(f.groove, at.0);
+            return self.lanes_event();
+        }
         let Some(grab) = self.grab else {
             return Events::none();
         };
         let now = self.time_at(input, at.0);
-        // A body is pulled by the **travel**, so the box keeps the grip the
-        // hand took it by; an edge is pulled to where the pointer is.
-        let target = match grab.part {
-            Part::Body => grab.orig.offset + (now - grab.grabbed_at),
-            Part::Start => now,
-            Part::End => now,
-        };
-        let place = placement::drag(
-            grab.part,
-            target,
-            grab.orig,
-            Contents::default(),
-            self.bounds(),
-        );
-        // **The vertical half of a body drag is the lane it lands on**, and it
-        // is one field: the clip names another lane and nothing is removed or
-        // inserted. An edge drag says nothing about which lane a clip is on.
-        if grab.part == Part::Body
-            && let Some(i) = self.lane_at(input.rect, at.1)
-        {
-            self.clips[grab.clip].lane = self.lanes[i].name.clone();
+        match grab.part {
+            // **A block travels in time and across the stack, rigidly.** The
+            // deltas are clamped as one, so a block stopped at an edge does not
+            // fold against it, and no clip is resized.
+            Part::Body => {
+                let dt = placement::snap(now - grab.grabbed_at, self.snap);
+                let dr = self
+                    .lane_at(input.rect, at.1)
+                    .map_or(0.0, |i| i as f32 - grab.lane as f32);
+                let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
+                let block = std::mem::take(&mut self.block);
+                placement::move_block(self, &block, dt, dr, rows, None);
+                self.block = block;
+            }
+            // **An edge is one clip's**, and it trims: the placement and the
+            // window over the contents move together.
+            part => {
+                let place =
+                    placement::drag(part, now, grab.orig, Contents::default(), self.bounds());
+                self.clips[grab.clip].place = place;
+            }
         }
-        self.clips[grab.clip].place = place;
         Events::none()
     }
 
@@ -439,15 +648,56 @@ impl Element for Multitrack {
     /// owner an intent to apply and a document an entry to undo, so looking at
     /// four clips would cost four undos.
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+        if self.fading.take().is_some() {
+            // Already reported on the way, like any other control.
+            return Events::none();
+        }
         let Some(grab) = self.grab.take() else {
             return Events::none();
         };
-        let moved = self.clips[grab.clip].place != grab.orig
-            || self.lane_of(&self.clips[grab.clip]) != Some(grab.lane);
+        let block = std::mem::take(&mut self.block);
+        let moved = block
+            .iter()
+            .any(|&(i, offset, row)| self.clips[i].place.offset != offset || self.row(i) != row)
+            || self.clips[grab.clip].place != grab.orig;
         if !moved {
             return Events::none();
         }
         self.clips_event()
+    }
+
+    fn accepts_focus(&self) -> bool {
+        true
+    }
+
+    /// The verbs a hand has over what it is holding.
+    ///
+    /// `q` quantizes onto the lane's own `snap` grid — the grid a drag already
+    /// lands on — and Delete removes. Both act on **the held set**, across the
+    /// stack, and both report the clips as they now stand, which is the one
+    /// payload every edit here has.
+    fn key(&mut self, key: &Key, _input: &mut KeyInput) -> Option<Events> {
+        if self.selected.is_empty() {
+            return None;
+        }
+        match key {
+            Key::Char('q') => {
+                let held = self.selected.clone();
+                placement::quantize(self, &held, self.snap).then(|| self.clips_event())
+            }
+            Key::Delete | Key::Backspace => {
+                let mut held = self.selected.clone();
+                held.sort_unstable();
+                for i in held.into_iter().rev() {
+                    if i < self.clips.len() {
+                        self.clips.remove(i);
+                    }
+                }
+                self.selected.clear();
+                Some(self.clips_event())
+            }
+            _ => None,
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Element> {
@@ -757,5 +1007,133 @@ mod tests {
         assert!(echo.set("clips", &model::clips_json(&mt.clips)));
         assert_eq!(echo.clips, mt.clips);
         assert_eq!(args.len(), 1 + 6 * 2, "the tag, then a sextuple per clip");
+    }
+    /// **A marquee catches the clips it covered, of every lane it crossed** — a
+    /// selection the stack's sweep made is not one lane's. And it writes no
+    /// band: the second axis here is the stack, not a value.
+    #[test]
+    fn a_sweep_catches_what_it_covered_across_the_stack() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+
+        let from = xy(&mt, &m, rect, 100.0, len, 0);
+        let to = xy(&mt, &m, rect, 900.0, len, 1);
+        let swept = mt.select_in(from, to, &input(&m, rect, len));
+        assert_eq!(mt.selected.len(), 2, "one from each lane");
+        assert!(swept.changed);
+        assert!(swept.band.is_none(), "the stack is not a value axis");
+
+        // A sweep over one lane's time only catches that lane's.
+        let a = xy(&mt, &m, rect, 100.0, len, 0);
+        let b = xy(&mt, &m, rect, 400.0, len, 0);
+        mt.select_in(a, b, &input(&m, rect, len));
+        assert_eq!(mt.selected, vec![0]);
+    }
+
+    /// **A block travels rigidly, and grabbing an unselected clip lets go of
+    /// it** — the hand that reached past its selection meant the box it reached
+    /// for.
+    #[test]
+    fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        let to = xy(&mt, &m, rect, 350.0, len, 0);
+        mt.press(from, &input(&m, rect, len));
+        mt.drag(to, &input(&m, rect, len));
+        mt.release(to, true, &input(&m, rect, len));
+        assert_eq!(mt.clips[0].place.offset, 100.0);
+        assert_eq!(mt.clips[1].place.offset, 600.0, "the other one came too");
+
+        // Now grab the one that is *not* selected.
+        let mut mt = piece();
+        mt.selected = vec![1];
+        let on_a = xy(&mt, &m, rect, 250.0, len, 0);
+        let over = xy(&mt, &m, rect, 350.0, len, 0);
+        mt.press(on_a, &input(&m, rect, len));
+        mt.drag(over, &input(&m, rect, len));
+        mt.release(over, true, &input(&m, rect, len));
+        assert_eq!(mt.clips[0].place.offset, 100.0);
+        assert_eq!(mt.clips[1].place.offset, 500.0, "it stayed where it was");
+    }
+
+    /// **The mixer is the second payload.** A fader and the two toggles report
+    /// `"lanes"` — the lanes as they now stand — and never the clips, which is
+    /// the whole reason the piece is written as two structures.
+    #[test]
+    fn the_header_reports_the_lanes_and_never_the_clips() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        let band = crate::host::timeline::gutter_band(at[0], 100.0);
+        let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
+
+        let mute = parts.mute.expect("the lane offers a mute");
+        let claim = mt.press(
+            (
+                f64::from(mute.x + mute.w / 2.0),
+                f64::from(mute.y + mute.h / 2.0),
+            ),
+            &input(&m, rect, len),
+        );
+        let Claim::Take(take) = claim else {
+            panic!("the header takes the press")
+        };
+        let msgs = take.events.into_messages();
+        assert_eq!(msgs[0][0], OscType::String("lanes".into()));
+        assert!(mt.lanes[0].mute, "and it flipped");
+        assert_eq!(
+            msgs[0].len(),
+            1 + 6 * 2,
+            "the tag, then a sextuple per lane"
+        );
+    }
+
+    /// `q` quantizes what the hand holds, across the stack, and Delete removes
+    /// it — both reporting the clips as they now stand, which is the one
+    /// payload every edit here has.
+    #[test]
+    fn the_key_verbs_act_on_the_held_set_and_report_the_piece() {
+        let mut mt = piece();
+        mt.snap = 400.0;
+        mt.selected = vec![0, 1];
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        fn ki(clip: &mut crate::host::clipboard::Clip) -> KeyInput<'_> {
+            KeyInput {
+                mods: Mods::default(),
+                clipboard: clip,
+                cursor: None,
+            }
+        }
+
+        let quantized = mt
+            .key(&Key::Char('q'), &mut ki(&mut clipboard))
+            .expect("something moved");
+        assert_eq!(
+            quantized.into_messages()[0][0],
+            OscType::String("clips".into())
+        );
+        assert_eq!(mt.clips[1].place.offset, 400.0, "500 onto a 400 grid");
+
+        let removed = mt
+            .key(&Key::Delete, &mut ki(&mut clipboard))
+            .expect("they went");
+        assert_eq!(
+            removed.into_messages()[0][0],
+            OscType::String("clips".into())
+        );
+        assert!(mt.clips.is_empty());
+        assert!(mt.selected.is_empty());
+
+        // With nothing held, the keys are not this widget's.
+        assert!(mt.key(&Key::Char('q'), &mut ki(&mut clipboard)).is_none());
     }
 }
