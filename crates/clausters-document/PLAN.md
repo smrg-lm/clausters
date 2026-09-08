@@ -1171,6 +1171,20 @@ DAW session, because that is what a DAW session is good at.
   | a **sequence of events** (MIDI, notes) | `Content::Window` over `SegmentSource::Node` - a window onto a node this document holds, which is what keeps a cut of notes a window and not a copy | voices fired on `/sched_atTransport`, re-cued on a locate |
   | a **processing chain** | a **GraphDef** named in the track's `config`, plus the bus its output goes to | `/graph_new`, which is already an auto-sorted group with its private buses allocated and wired |
 
+  **The multitrack editor waits on a widget that owns the arrangement**
+  *(`clients/gui/PLAN.md`, `G34` — "The multitrack is one widget, and it owns the
+  arrangement")*. The host has no multitrack container: `track` and `clip` are
+  widgets a script drops into whatever generic container it picked, so the
+  structure has no owner and a gesture reports *what the hand did* to whichever
+  widget it touched, under one of three tags. `G34` makes `multitrack` a heavy
+  widget on the `pianoroll`'s shape — lanes and clips become **data in its
+  props**, and it reports the arrangement as it now stands. This application
+  cannot be written before that, because there is nothing to write it against;
+  and once it is, the multitrack goes through `edit()` and has a history without
+  being given one. The decision that shapes it is taken there: **the multitrack
+  places, and a clip is entered to edit** — which is the same line these three
+  applications are drawn on.
+
   **None of the three needs a new mechanism, the chain least of all** *(the user,
   2026-09-08: "el ruteo y las cadenas se hacen con buses y synthdef/faustdef del
   servidor en grupos del servidor, debe ser lo mas simple de todo, ya corre de

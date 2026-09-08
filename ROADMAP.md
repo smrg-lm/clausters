@@ -514,6 +514,18 @@ its plan; the plan is where its acceptance is read.
   re-cue on a locate -- which is now near `O24` rather than before it, and small
   enough to land with the multitrack's roll lane.
 
+- ⬜ **`G34` - the multitrack is one widget, and it owns the arrangement**
+  *(`clients/gui/PLAN.md`)*. Designed 2026-09-08 after the same defect arrived
+  twice in two days as a playback bug: a clip's placement leaves the host under
+  one of three tags, the *gesture* picks which, and a reader that takes one is
+  silently wrong from the first marquee. Two independent readers got it wrong,
+  one of them the host's **own** document owner. The cause is that a multitrack
+  has no owner the way a `pianoroll` has one, so `track` and `clip` become data
+  in a heavy `multitrack` widget's props and the report becomes the arrangement
+  rather than the gesture. **`O24`'s multitrack waits on it** - the application
+  cannot be written against a widget tree with no owner - so this comes first of
+  the two.
+
 - ⬜ **`W30` - the editing seam comes across, and the two clients are read
   against each other** *(`clients/web/PLAN.md`)*. The branch's last structural
   divergence, and the only one of these that is **not** the branch's to close:

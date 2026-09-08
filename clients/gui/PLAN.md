@@ -616,6 +616,100 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
 
 **Acceptance:** a composition of a dozen lanes is navigable in a window that shows four, with the ruler above the stack labelling bars, the lanes aligned on one named group, and a transport strip that stays a strip — checked by eye through `composer.py`, and ported so the Python and web composers compose the same window.
 
+- ⬜ **G34 — The multitrack is one widget, and it owns the arrangement**
+  *(designed 2026-09-08 with the user, after two days of the same defect
+  arriving as a playback bug)*.
+
+  **The defect first, because the design is its shape.** A clip's placement
+  leaves the host under one of three tags and the *gesture* picks which:
+  `"clip"` for one clip inside its lane, `"clips"` once a selection exists
+  (addressed to the **lane**, naming every held clip by id), `"lane"` when the
+  clip crossed the stack (addressed to the **clip**). They replace each other
+  rather than accompanying each other, so a reader that takes `"clip"` alone is
+  correct until the first marquee and silently wrong after it — with no error
+  and no missing pixel, because the host has already moved the picture. Two
+  independent readers got this wrong: an example, and **the host's own document
+  owner** (`document.rs::read_event` handles `"clip"` and neither of the other
+  two, so a block move or a lane change in `--session` never reaches the
+  document).
+
+  **The cause is not the tags, it is that a multitrack has no owner.** A
+  `pianoroll` is one widget that holds its notes and reports `"notes"` — the
+  whole list, the *result* — after any gesture whatever, which is why it has
+  never had this bug. A multitrack's structure is spread over N `Track` widgets
+  under whatever generic container the script picked (`WidgetKind` is `Window |
+  Panel | Stack | Scroll | Track | TimeRuler | Clip | Custom | Unknown`: there
+  is no multitrack container, and `build.rs` never asks a `Track` who its parent
+  is). With nowhere to report *the arrangement*, a gesture reports *what the
+  hand did*, to whichever widget it touched.
+
+  **So: `multitrack` is a heavy widget, on the `pianoroll`'s shape.** It draws
+  its own ruler, its own lane headers (name, mute, solo, gain), its own vertical
+  scroll and the clips on the shared time axis — and `track` and `clip` stop
+  being widgets in the tree and become **data in its props**, exactly as a note
+  is data inside `notes`. A lane cannot sit in a void, which is the whole point:
+  it is always inside the view that owns it.
+
+  | prop | per entry |
+  |---|---|
+  | `lanes` | `id name height mute solo gain` |
+  | `clips` | `id lane offset dur start source label` |
+  | the axis props it already understands | `sample_rate`, `snap`, `view_*`, `playhead*`, `link`, `ruler` (or off) |
+
+  **Two edit-backs, each stating the result**: `"clips"` (the clips as they now
+  are) and `"lanes"` (the lanes as they now are, absorbing today's `"mute"`,
+  `"solo"` and `"level"`). Two structures, two payloads, one widget — the split
+  `notes`/`osc` already makes on the roll, and it keeps a gain drag from
+  resending every clip. Each is idempotent and its own inverse is the previous
+  list, which is the rule `clausters-document` states for `events`, `points` and
+  `samples`.
+
+  **What that does to the defect: it dissolves it rather than fixing it.** An
+  earlier proposal — one always-plural payload carrying the lane per clip —
+  repaired the symptom. This makes the question not arise: if the report is the
+  arrangement, nothing has to say *which* clips moved or *how*. Moving one,
+  moving a block, crossing a lane, trimming, quantizing, splitting, deleting are
+  all "the clips are now this". **No gesture is left on the wire**, and the
+  document owner's bug closes by construction because there is one tag to read.
+
+  **The client objects wire nothing.** A `Multitrack` view holds lanes and
+  clips, has verbs to add, move and remove them, and an `on_change` that hands
+  back the arrangement. It never sees a widget id and registers no per-clip
+  handler. Being a `View` over a structure with a `Domain`, it goes through
+  `edit()` and **inherits the history** — which closes "half the editors a hand
+  can use have no history" for the multitrack as a side effect rather than as a
+  second job.
+
+  **The multitrack places; a clip is entered to edit** *(decided by the user,
+  2026-09-08)*. This is the question that shapes everything else, because a clip
+  today may carry an editable body (a roll, a curve) with gestures and an
+  edit-back of its own. It does not follow the clips into the props: the
+  multitrack owns **placement** and draws bodies read-only, and a body that is
+  *edited* is entered — opening the clip shows its own editor. That is what a
+  DAW does, it keeps the heavy widget from becoming every widget, and it is the
+  same line the three applications are drawn on: the multitrack places, the
+  audio editor and the score editor edit.
+
+  **What it costs, recorded rather than discovered.** The whole list travels on
+  every edit, which is the trade the roll already makes with its notes and which
+  a piece of thousands of clips pays more for; the crate chose that shape
+  deliberately for this seam, so it is inherited knowingly. It **breaks the
+  multitrack surface in both clients** (pre-1.0 tier): `"clip"`, `"clips"` and
+  `"lane"` leave the wire, and so do `track` and `clip` as widgets. And the host
+  grows a large element — though almost none of it is new code: `graphics/track.rs`,
+  `placement.rs`, the gesture machine, the rulers, the layers and the playhead
+  all stay, and what changes is **what they take as input**, which is exactly
+  what `APPLICATION-SCOPE.md` predicted for `O24`.
+
+  **Acceptance:** the multitrack example composes a window by describing lanes
+  and clips and never registers a handler on one; every gesture — a drag, a
+  block drag, a lane change, a trim, a quantize — arrives as one `"clips"` or
+  one `"lanes"`; `Ctrl`+`Z` walks them; and `clausters-gui --session` applies a
+  block move and a lane change to its document, which it cannot do today.
+
+  It is `O24`'s multitrack seen from the host's side, and `O24` waits on it: the
+  application cannot be written against a widget tree that has no owner.
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Five design rules bound it, all in the direction of keeping the host light:
