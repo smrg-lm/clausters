@@ -1169,20 +1169,33 @@ DAW session, because that is what a DAW session is good at.
   |---|---|---|
   | an **audio file** | `Content::Window` over `SegmentSource::Samples`, with the session's `Source` table saying where | a `BufRd` on `TransportPos`, gated to the region's span, `playrate` scaling the phase and the fades an envelope over it |
   | a **sequence of events** (MIDI, notes) | `Content::Window` over `SegmentSource::Node` - a window onto a node this document holds, which is what keeps a cut of notes a window and not a copy | voices fired on `/sched_atTransport`, re-cued on a locate |
-  | a **processing chain** | **not modelled yet** - a `Track` today carries `config: Opaque` and nothing else | - |
+  | a **processing chain** | a **GraphDef** named in the track's `config`, plus the bus its output goes to | `/graph_new`, which is already an auto-sorted group with its private buses allocated and wired |
 
-  The first two need no new types. The **third is the milestone's one open design
-  decision**, and it is the crate's oldest unsettled question asked from the
-  application's side (see "What this turn does not settle" below): a `Track` in
-  the written model was to carry its kind, its routing and its authored mixer
-  state, and of that only `muted` and `soloed` exist. The line this crate has
-  already drawn twice answers it: **the processor is an opaque leaf** (which def,
-  with which arguments - because a def is code in the language of whoever wrote
-  it) **and the routing is the document's** (which bus a track feeds, what sends
-  it has, in what order the chain runs). That is exactly the split
-  `Automation.target` already lives on - the document knows *which parameter*,
-  never *what the parameter means*. Written here as the recommendation; it is
-  taken when it is taken, and until then a track's chain stays in `config`.
+  **None of the three needs a new mechanism, the chain least of all** *(the user,
+  2026-09-08: "el ruteo y las cadenas se hacen con buses y synthdef/faustdef del
+  servidor en grupos del servidor, debe ser lo mas simple de todo, ya corre de
+  por si, ya esta en el arbol y esta el mecanismo de buses automaticos")*. A
+  track's chain is a **GraphDef**: `/def_send graph` declares the members and
+  their wiring, `/graph_new` instantiates them as an **auto-sorted group** whose
+  execution order follows the bus connections, with the **private buses allocated
+  and wired for it**, and `/node_set` on the instance resolves **port names**
+  against the graph's surface rather than any member id. That is a mixer strip,
+  it is on the wire, it is tested, and both clients build it. A `Track` needs no
+  routing fields to use it.
+
+  So the document's share is small and is what it already knows how to carry:
+  **which graph, which port values, and the bus the track's output goes to** -
+  the `config: Opaque` a track already has, plus a number. `Automation.target`
+  then names a **port**, which is exactly the split that field was written on:
+  the document knows *which parameter*, never *what the parameter means*. What
+  the written model listed as a track's routing (inputs, outputs, sends) is a
+  bus each, and what it listed as its kind is a consequence of the graph it
+  holds rather than an enumeration the format has to close.
+
+  What this leaves genuinely open is narrower than "are plugins in the document":
+  it is whether a chain **saved** in a session names a GraphDef by name (and the
+  session is unopenable without it) or carries it, which is the same question
+  every `Lifetime` on a source already answers for samples.
 
 **None of this starts from nothing on the Rust side.** About 8000 lines of
 multitrack behaviour are already implemented in the GUI host - the shared box
@@ -1203,8 +1216,9 @@ whether the behaviour was correct.
 **What this turn does not settle**, and will not be settled in passing: whether
 plugins/processors are in the document at all (the leaf is opaque, and a plugin
 is a leaf - but a *send* is routing and routing is authored) - `O24`'s
-multitrack asks this one from the application's side and carries the
-recommendation, since a track with no chain is a mixer with no strip; and how a
+multitrack answers most of it from the application's side, where the chain turns
+out to be a **GraphDef** and the routing a bus, so what is left open is only
+whether a saved chain names its graph or carries it; and how a
 region's contents are addressed when the source is a function whose arguments
 differ per region - which is `O21`(a) asked from the other side, since REAPER's
 take is exactly *a reference plus the arguments of this appearance*.
