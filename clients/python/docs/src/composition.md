@@ -1,239 +1,27 @@
-# Composition: the arrangement, and the document under it
+# The document: what a composition is, and who edits it
 
 A `Timeline` places items at beats and a `Playhead` plays them. That is enough to
-sequence, but not enough to *compose*: a composition is not a flat list of events,
-it is an element inside an element — a phrase inside a section inside a piece, a
-take placed against a melody, a generator that has not been evaluated yet.
+sequence, but not enough to *compose*: a composition is a piece placed in time,
+with tracks, takes and curves that are **authored, durable and undoable** — state
+a picture cannot hold, because a picture is drawn and drawing frees.
 
-`clausters.form` is one such layer — a small, self-contained set of client-side
-data structures for placing elements in time. It is **relegated**: it has no view,
-it takes no new work, and the arrangement an application is built on lives in the
-**document** described in the second half of this chapter.
+That state lives in the **document** (`crates/clausters-document`), and this
+chapter is about it: the model a multitrack editor edits, the presentation beside
+it, and how an edit is applied, inverted and saved. It is one crate, bound by
+every client and by the `standalone` host, so what an edit *means* is defined
+once rather than re-derived per language.
 
-**And it is a layer, not the centre.** What is fundamental is the data — samples,
-notes, events, curves — and it is edited and drawn with no arrangement anywhere
-near it: `edit(x)` opens a buffer, a timeline or a curve on its own, and this
-chapter's editor composes those same editors rather than replacing them. So the
-pictures are independent of this module too: **a clip is a view configured by what
-it holds**, and the edits it admits — move, trim, split, join — come from the
-structure inside it, in the unit that structure measures. A clip over samples and a
-clip over a timeline of notes take the same actions; only the arithmetic differs.
+**The data is what is fundamental.** Samples, notes, events, curves — they are
+edited and drawn with no arrangement anywhere near them: `edit(x)` opens a
+buffer, a timeline or a curve on its own. So the pictures are independent of the
+model too — **a clip is a view configured by what it holds**, and the edits it
+admits (move, trim, split, join) come from the structure inside it, in the unit
+that structure measures. A clip over samples and a clip over a timeline of notes
+take the same actions; only the arithmetic differs.
 
-## Elements
-
-An **element** is any bounded thing that produces a unit of meaning and can be
-decomposed or combined — and it comes in two modes, which is the axis the whole
-layer turns on. An element is either **generated** (the rendered thing: samples in
-a buffer, a bounced timeline of events — data you can edit directly) or a
-**generator** (the algorithm that renders it: a def, a pattern, a routine).
-Evaluating a generator produces a generated element; that is the *change of
-state*, and it is what rendering does.
-
-The difference is not merely data versus process — it is what you can *do* with
-each. A generated element is **random-access**: an audio file can be read
-backwards, sliced, scrubbed, edited in place. A generator is **forward-only**: it
-can be evaluated, in order, and that is all. So the change of state is a
-compositional act, not an optimization — it is what turns something you can only
-*produce* into something you can *manipulate*, which is why a pattern is bounced to
-be drawn and edited on a lane. An element carries two optional temporal
-properties — an `onset` (where it starts, in beats, relative to its context) and a
-`duration` — and delegates the actual playing to the object it wraps.
-
-**The two are not in the same unit, and each takes its own from what it
-answers to.** An onset is in **beats**, always: placing something is a musical
-decision, and it takes the unit of what contains it. A duration is in the unit
-of the element's own data — **seconds** for a `Vector`, a `Segments` or a curve,
-because a recording's length is `frames / sample_rate` and no tempo change makes
-it shorter; **beats** for a `Clang`, a `Sequence` or a `Track`, because a note
-*is* musical and a tempo change is supposed to shorten it. `Element.duration_unit`
-says which, derived from what the element holds rather than stored beside it.
-The conversion happens where the tree is flattened for playback (`render`, which
-reads the clock's tempo) and never in the tree, since a timeline is ordered by
-one number and cannot hold two bases. The
-arrangement is a thin adornment over what the client already has, not a second
-implementation of it.
-
-Which of the two properties are present gives an element its temporal
-*character*: both is a **segment**, an onset alone is **punctual**, a duration
-alone is **relative** (it has a length but no place yet), neither is **abstract**
-— pure context, which only a parent gives concrete time.
-
-There are five kinds, and they map one to one onto objects you already use
-(`Segments` is not a sixth: it is the `Vector` primitive — a list at constant
-time — assembled from more than one window):
-
-| Element     | What it is                                       | Wraps                                   |
-| ----------- | ------------------------------------------------ | --------------------------------------- |
-| `Clang`     | parameters grouped into one action               | `clausters.seq.Event`                   |
-| `Sequence`  | strict order, no concrete time — only sequence   | a list, or a `Pattern`                  |
-| `Vector`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
-| `Segments`  | several windows onto samples, read as one       | a list of `(buffer, start, duration)`   |
-| `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
-| `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
-
-A `Sequence` of elements is laid out **one after another**, and what it advances
-by is each item's own `duration` — its stated length in its own unit. An item
-that states none is as long as *what it lays down*, which is what a `Sequence`
-of `Sequence`s relies on: a bar says nothing about its length, and the four
-notes in it say everything. (Mute and solo do not enter: they say what is
-heard, never where anything is, so silencing one member leaves the ones after
-it where they were.)
-
-A `Vector` is *data*, so it has no sound of its own: it sounds through the
-**instrument** named to play it — a def whose `buf` control takes the buffer
-number. That is the whole rule for an audio clip. A `Segments` is the same rule
-over several of them: it is what assembling samples out of pieces looks like
-when nothing is copied (see the editor's join, below).
-
-```python
-from clausters.form import Aggregate, Sequence, Track, Vector
-
-take = Vector(buf, duration=2.0, instrument="take")   # two seconds, a def plays it
-```
-
-## Grouping: the one new structure
-
-An `Aggregate` places elements by an offset, recursively — and that recursion is
-the whole idea. It comes in two kinds. A **concrete** aggregate is a relation *in
-time* between its members (a section holding clips, a melody holding notes). A
-**logical** aggregate is a relation of *processing*: the members are wired to
-each other through buses, which is exactly what a `GraphDef` expresses, so
-`Aggregate.to_graphdef()` translates one into it.
-
-```python
-song = Aggregate([
-    (0.0, Aggregate([(0.0, take), (4.0, take)], name="drums")),
-    (0.0, Aggregate([(0.0, bass)], name="bass")),
-    (2.0, Aggregate([(0.0, melody)], name="lead")),
-], name="song")
-```
-
-The `take` above is placed **twice**, which is the ordinary thing to write and
-means what it says: two clips, one take. A placement is a **window onto
-samples** — editing the samples through either window edits the one take, and
-moving one clip moves that clip. What can be placed twice is samples the
-element only *names*: a `Vector` over a server buffer, a `Generator` over a
-pattern or a def. An element that carries its samples *inside* it — a `Clang`,
-a `Track`, an `Aggregate` — is refused, because two placements of one of those
-would be two copies that diverge the moment you edit one; write two of them, or
-one element the two clips share.
-
-From how its members sit in time, an aggregate *derives* its temporal
-**relation**: `successive` when they tile contiguously, `simultaneous` when they
-start and end together, `mixed` otherwise. You do not set it; it is read from
-the placements.
-
-## Rendering: the change of state
-
-Rendering a composition **flattens** it — a tree-walk accumulating the nested
-offsets into absolute beats — into a flat `Timeline`, which a `Playhead` then
-plays. A generator contained in it is *bounced* in the same pass: that evaluation,
-the change from a process into a generated element, is the *change of state*.
-
-```python
-song.render(server, clock)        # live, through a playhead
-song.render(nrt.server, nrt.clock)  # offline: the same tree, a score
-```
-
-There is no second rendering path: RT and NRT are the same flattening, differing
-only in the destination, so the offline render is sample-identical to what you
-heard.
-
-The free-standing `clausters.render` verb carries the same seam: with a
-`destination` it delegates here; without one it **bounces** the element in an
-ephemeral offline session and returns the samples (`render(song, path="song.wav")`
-writes them out). Note the division of verbs it implies: an element is
-*rendered*, never played — `play` is for what already sounds directly — while a
-flat `Timeline`, being already generated, is playable
-(`play(timeline)` drives it through a playhead on the ambient clock).
-
-## What an editor is
-
-`clausters.gui.Editor` edits **one structure** — a buffer's samples, a
-break-point curve, a timeline of events — and it knows nothing about any
-arrangement. That is the whole of it, and it is deliberately the plain case:
-editing a curve is what an editor is for.
-
-An editor orchestrates rather than performs, and it is four collaborators
-(`clausters.gui.editing`):
-
-| | what it is | what it deliberately is not |
-|---|---|---|
-| `View` | the picture of one structure, and the registry from widget id to what it shows | not the vocabulary: one structure is drawn several ways |
-| `Domain` | gesture → payload, payload → the client object, the label, the coalesce key | not **how an edit inverts** — that is the shared crate's, so it is not written once per language — and it does not draw |
-| `Echo` | the acknowledgement: the stamp, the version, the corrections, the reason | not anything about what was edited |
-| `Editing` | the editing context: the history, and the views to tell | **not the editor's** — it is asked for, never built, which is what makes two windows walk one undo order |
-
-The rule that fixes all four: an editor owns **neither the data nor the
-history**.
-
-## `edit(x)`: one verb over the three structures
-
-`clausters.gui.edit` opens whichever editor the structure asks for, and it
-dispatches on **what the structure is** — that being the question a caller has
-already answered by holding one:
-
-| `edit(x)` where x is | opens | over | its vocabulary |
-|---|---|---|---|
-| a `clausters.defs.Buffer` | `SamplesEditor` | a `waveform` | `samples` |
-| a `clausters.seq.Automation` | `PointsEditor` | a `bpf` | `points` |
-| a `clausters.seq.Timeline` | `NotesEditor` | a `pianoroll` | `events` |
-
-```python
-from clausters.gui import edit
-
-edit(curve, sample_rate=48_000.0)     # the window is up
-
-curve.to_points()      # the edited curve, out of the object you already held
-```
-
-Nothing is handed back: the object passed in *is* the edited one. A composition
-is not one of the three: a whole arrangement is an **application** over a
-document rather than an editor over a structure, which is what the second half of
-this chapter is about.
-
-**Two calls over one structure give two windows and one stack.** The editing
-context belongs to the data, so an undo in either window steps the one order
-both of them made. And a window composing several structures passes one context
-(`edit(x, context=…)`), which is what makes it undo across a curve and a roll in
-the order the edits happened.
-
-**How an edit inverts is the shared crate's.** For a curve and a timeline the
-state goes in with the payload and comes back as what the structure now is *plus*
-what puts it back — one call, because the inverse has to be read before the edit
-lands. A span of samples is the exception, and a real one rather than an
-omission: the frames are in a server buffer, so the crate holds no state to
-invert. What it shares there is the payload's shape and its coalesce key, and
-the inverse rides on the wire — a stroke's event carries the run it wrote *and*
-the run it replaced.
-
-## The view it had, and where the multitrack went
-
-`clausters.form` had a multitrack editor projected out of it, and it does not any
-more: `FormEditor` was removed on 2026-09-06 with its examples and this chapter's
-pages about it. The module itself stays, self-contained, as the data structures
-described above — it simply has no view.
-
-The reason is structural rather than a defect count. A multitrack's own state —
-which track a thing is on, its order within the track, its placement and its
-identity — is **authored, durable and undoable**, and a projection has nowhere to
-keep it: it ended up in the widget tree, which is drawn, and drawing frees. So a
-clip changing track was a re-parent of a UI object, a clip appearing was a change
-of shape on a wire, and a track's zoom died because the only way to say *a clip
-arrived* was to rebuild the track.
-
-What replaces it is a **session** in the same document crate the rest of this
-chapter is about — source, region, playlist, track, automation, the vocabulary
-the field settled long ago — with three classic applications built over it: an
-audio editor, a multitrack editor and a score editor, each programmable from the
-GUI host and driven identically from every client.
-`crates/clausters-document/PLAN.md` carries that design.
-
-**What did not change** is everything below: the document, how an edit is
-applied, where undo lives, the typed selection and clipboard, and what a saved
-session is. Those are the crate's, they were never `form`'s, and they are what
-the three applications are built on.
-
+`clausters.form` is a **relegated** client-side layer for placing elements in
+time, kept frozen and taking no new work; it has no view and nothing is designed
+around it. See [`clausters.form`](form.md).
 
 ## The arrangement: tracks, lanes, regions
 

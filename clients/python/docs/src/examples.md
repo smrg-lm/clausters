@@ -42,9 +42,7 @@ the pair is easy to find.
 The GUI examples drive the **clausters GUI host**, a separate process (or a
 browser tab) this client talks to over the widget protocol. The host itself,
 including the browser quick-start, is documented in the [Clausters server
-book](https://clausters.readthedocs.io/)'s clients chapter. Two of them close
-the composition loop: `multitrack.py` lays out tracks of clips on one shared
-time axis, and `composer.py` drives that view from a composition — the
-arrangement drawn, dragged and re-rendered (see [Composition: the arrangement
-and the multitrack editor](composition.md), and the step-by-step tutorial
-[Composing a piece](composing.md), which builds the same piece interactively).
+book](https://clausters.readthedocs.io/)'s clients chapter. `editors/multitrack_audio.py` is the one to
+open first for a piece placed in time: lanes of audio clips on one shared axis,
+played by the server's transport (see
+[The document](composition.md)).

@@ -300,7 +300,10 @@ on trust, so that is where drift accumulates:
   view** — `FormEditor` was removed on 2026-09-06 along with its examples, its
   tests and the book chapter built on it. It takes no new work and nothing is
   designed around it; `clients/python/docs/src/form.md` is its whole
-  documentation and says why. Do not extend it, do not project a view out of it,
+  documentation and says why — the step-by-step tutorial that taught it as *the*
+  way to compose was deleted with it (2026-09-08), and
+  `clients/python/docs/src/composition.md` is the document's chapter, not
+  `form`'s. Do not extend it, do not project a view out of it,
   and do not treat its shape as the arrangement's.
 
 - **A view is configured by what it holds, never by which class built it.** What
