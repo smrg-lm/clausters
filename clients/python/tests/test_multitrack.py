@@ -1,4 +1,4 @@
-"""The arrangement's client side (`clausters.arrangement`).
+"""The arrangement's client side (`clausters.multitrack`).
 
 What the crate defines, written and read here. The crossing that proves the two
 agree is `crates/clausters-document/tests/arrangement_parity.rs`, over a vector
@@ -6,7 +6,7 @@ this client generates; what this suite checks is the surface a person actually
 types against, and the few rules that are the client's own to keep.
 """
 
-from clausters.arrangement import (Arrangement, Automation, Content, Fade,
+from clausters.multitrack import (Multitrack, Automation, Content, Fade,
                                    Lane, Marker, Meter, Region, Span, Tempo,
                                    Track)
 
@@ -69,7 +69,7 @@ def test_an_active_lane_that_is_not_there_answers_nothing():
 
 
 def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
-    piece = Arrangement()
+    piece = Multitrack()
     piece.set_tempo(Tempo(at=8.0, bpm=90.0))
     piece.set_tempo(Tempo(at=0.0, bpm=120.0))
     piece.set_tempo(Tempo(at=16.0, bpm=60.0, ramp=True))
@@ -82,19 +82,19 @@ def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
 def test_a_piece_that_never_said_a_tempo_says_nothing():
     # No 120 invented: naming a default would decide a musical question the
     # document has no business in.
-    assert Arrangement().tempo_at(0.0) is None
-    assert Arrangement().meter_at(0.0) is None
+    assert Multitrack().tempo_at(0.0) is None
+    assert Multitrack().meter_at(0.0) is None
 
 
 def test_two_tempos_at_one_beat_is_a_state_the_map_cannot_hold():
-    piece = Arrangement()
+    piece = Multitrack()
     piece.set_tempo(Tempo(at=4.0, bpm=120.0))
     piece.set_tempo(Tempo(at=4.0, bpm=90.0))
     assert len(piece.tempo) == 1 and piece.tempo_at(4.0).bpm == 90.0
 
 
 def test_two_markers_may_share_a_beat_because_people_do_that():
-    piece = Arrangement()
+    piece = Multitrack()
     piece.add_marker(Marker(id=1, at=16.0, name="B"))
     piece.add_marker(Marker(id=2, at=16.0, name="chorus"))
     piece.add_marker(Marker(id=3, at=0.0, name="A"))
@@ -109,7 +109,7 @@ def test_a_span_that_meets_the_next_one_covers_no_beat_twice():
 def test_nothing_said_is_nothing_written():
     # An empty piece writes an empty object rather than zero of everything, and
     # a plain region writes no layer, no fades, no mute and no playrate.
-    assert Arrangement().write() == {}
+    assert Multitrack().write() == {}
     written = region(1, 0.0, 4.0).write()
     assert set(written) == {"id", "position", "length", "content"}
     assert "playrate" not in written["content"]
@@ -120,16 +120,16 @@ def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
     # than the document's: an editor of one is not editing the other. It stays
     # out of the file while it is the first version, so an unedited piece still
     # writes an empty object and a file that never named one reads back at it.
-    assert Arrangement().version == 1
-    assert "version" not in Arrangement().write()
-    assert Arrangement.read({}).version == 1
-    edited = Arrangement(version=4)
+    assert Multitrack().version == 1
+    assert "version" not in Multitrack().write()
+    assert Multitrack.read({}).version == 1
+    edited = Multitrack(version=4)
     assert edited.write()["version"] == 4
-    assert Arrangement.read(edited.write()).version == 4
+    assert Multitrack.read(edited.write()).version == 4
 
 
 def test_a_whole_piece_round_trips():
-    piece = Arrangement()
+    piece = Multitrack()
     piece.set_tempo(Tempo(at=0.0, bpm=96.0))
     piece.set_meter(Meter(at=0.0, beats=7, unit=8))
     piece.loop_span = Span(0.0, 12.0)
@@ -145,7 +145,7 @@ def test_a_whole_piece_round_trips():
         points=[{"at": 0.0, "value": 0.0, "data": {}}]))
     piece.tracks.append(track)
 
-    back = Arrangement.read(piece.write())
+    back = Multitrack.read(piece.write())
     assert back == piece
     assert back.end == 32.0
     assert back.tracks[0].lanes[0].regions[1].content.playrate == 1.5
@@ -169,7 +169,7 @@ def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
         "tempo": [{"at": 0.0, "bpm": 120.0, "swing": 0.62}],
         "groove": {"name": "mpc60"},
     }
-    piece = Arrangement.read(written)
+    piece = Multitrack.read(written)
     assert piece.write() == written
 
 
@@ -179,7 +179,7 @@ def test_a_fill_this_build_does_not_know_is_carried_whole():
 
 
 def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
-    piece = Arrangement()
+    piece = Multitrack()
     track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)], active=0)
     track.lanes[0].place(region(4, 0.0, 4.0, source=700))
     track.lanes[1].place(region(5, 0.0, 4.0, source=701))
@@ -190,14 +190,14 @@ def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
 
 # ---- the session: the piece, and where its samples are ----
 
-from clausters.arrangement import FrozenSource, Session, Source  # noqa: E402
+from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 
 def test_a_session_round_trips_with_its_table():
-    piece = Arrangement()
+    piece = Multitrack()
     piece.tracks.append(Track(id=1, lanes=[Lane(id=2)]))
     piece.tracks[0].lanes[0].place(region(3, 0.0, 4.0, source=700))
-    session = Session(arrangement=piece,
+    session = Session(multitrack=piece,
                       sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
                       provenance={"script": "make.py"})
     written = session.write()
@@ -209,7 +209,7 @@ def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a piece, possibly
     # empty, so nothing downstream has to ask whether there is one.
     session = Session.read({"format": 1})
-    assert session.arrangement.tracks == []
+    assert session.multitrack.tracks == []
     assert session.write() == {"format": 1}
 
 
@@ -232,12 +232,12 @@ def test_a_save_knows_what_it_cannot_promise():
 
 
 def test_a_source_only_a_region_names_is_reported_missing():
-    piece = Arrangement()
+    piece = Multitrack()
     track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)])
     track.lanes[0].place(region(4, 0.0, 4.0, source=700))
     track.lanes[1].place(region(5, 0.0, 4.0, source=701))
     piece.tracks.append(track)
-    session = Session(arrangement=piece, sources={700: Source.file("one.wav")})
+    session = Session(multitrack=piece, sources={700: Source.file("one.wav")})
     # Every lane, not only the one that plays.
     assert session.dangling() == [701]
 
@@ -261,11 +261,11 @@ def test_a_session_field_a_newer_writer_added_survives():
 
 # ---- the presentation: what a window shows of a piece ----
 
-from clausters.arrangement import LaneView, TrackView, View  # noqa: E402
+from clausters.multitrack import LaneView, TrackView, View  # noqa: E402
 
 
-def a_piece() -> Arrangement:
-    piece = Arrangement()
+def a_piece() -> Multitrack:
+    piece = Multitrack()
     vocals = Track(id=10, lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(region(20, 0.0, 4.0, source=700))
     piece.tracks.extend([vocals, Track(id=30, lanes=[Lane(id=31)])])
@@ -285,9 +285,9 @@ def test_a_view_says_nothing_about_what_plays():
     written = piece.write()
     view = View(name="arranger", visible=Span(0.0, 32.0))
     view.track_view(10).height = 96.0
-    session = Session(arrangement=piece, views=[view])
+    session = Session(multitrack=piece, views=[view])
     back = Session.read(session.write())
-    assert back.arrangement.write() == written
+    assert back.multitrack.write() == written
     assert back.views[0].track(10).height == 96.0
 
 
@@ -296,7 +296,7 @@ def test_two_windows_over_one_piece_are_two_views_and_disagree_on_purpose():
     editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
                   autofit=False)
     editor.detail = 20
-    session = Session(arrangement=a_piece(), views=[arranger, editor])
+    session = Session(multitrack=a_piece(), views=[arranger, editor])
     back = Session.read(session.write())
     assert len(back.views) == 2
     assert back.views[0].quant == 4.0
@@ -345,6 +345,6 @@ def test_a_field_a_newer_window_wrote_survives_a_load_and_a_save():
 
 
 def test_a_session_written_without_views_reads_back_without_them():
-    session = Session(arrangement=a_piece())
+    session = Session(multitrack=a_piece())
     assert "views" not in session.write()
     assert Session.read(session.write()).views == []

@@ -410,13 +410,13 @@ export interface RecordedLeg {
 export const TREE = "tree";
 /**
  * The **piece's** vocabulary — what a multitrack editor does, in
- * `ArrangementIntent`'s words. See {@link TREE}.
+ * `MultitrackIntent`'s words. See {@link TREE}.
  *
  * A domain of its own rather than more of the tree's: the piece and the tree
  * are two descriptions, and one history holds both without either knowing the
  * other's words.
  */
-export const ARRANGEMENT = "arrangement";
+export const MULTITRACK = "multitrack";
 /** The break-point curve's vocabulary. See {@link TREE}. */
 export const POINTS = "points";
 /** A span of samples' vocabulary. See {@link TREE}. */

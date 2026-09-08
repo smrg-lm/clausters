@@ -4,7 +4,7 @@
 //! A [`History`](crate::History) reads no vocabulary: an entry's payload is
 //! opaque, and each leg names the structure it belongs to so a caller can route
 //! it to whatever reads that domain. That is what lets one pile hold the
-//! arrangement, a curve, a span of samples and a timeline at once.
+//! multitrack, a curve, a span of samples and a timeline at once.
 //!
 //! One thing does not survive that, and it is the reason this module exists:
 //! **the coalesce key is a sentence in a vocabulary**. "The same thing done the
@@ -23,11 +23,11 @@
 use serde::Serialize;
 
 use crate::Opaque;
-use crate::arrangement::Arrangement;
-use crate::arrangement::edit::{ARRANGEMENT, Piece};
 use crate::events::{EVENTS, Events};
 use crate::history::Editable;
 use crate::log::TREE;
+use crate::multitrack::Multitrack;
+use crate::multitrack::edit::{MULTITRACK, Piece};
 use crate::points::{POINTS, Points};
 use crate::samples::SAMPLES;
 
@@ -35,7 +35,7 @@ use crate::samples::SAMPLES;
 ///
 /// What a caller registers a structure under, and the whole of what
 /// [`coalesce_key`] dispatches on.
-pub const DOMAINS: [&str; 5] = [TREE, ARRANGEMENT, POINTS, SAMPLES, EVENTS];
+pub const DOMAINS: [&str; 5] = [TREE, MULTITRACK, POINTS, SAMPLES, EVENTS];
 
 /// Whether the crate knows this vocabulary.
 pub fn known(domain: &str) -> bool {
@@ -53,8 +53,8 @@ pub fn known(domain: &str) -> bool {
 pub fn coalesce_key(domain: &str, payload: &Opaque) -> Option<String> {
     match domain {
         TREE => crate::log::intent_of(payload).map(|intent| crate::log::coalesce_key(&intent)),
-        ARRANGEMENT => crate::arrangement::edit::intent_of(payload)
-            .map(|intent| crate::arrangement::edit::coalesce_key(&intent)),
+        MULTITRACK => crate::multitrack::edit::intent_of(payload)
+            .map(|intent| crate::multitrack::edit::coalesce_key(&intent)),
         POINTS => crate::points::coalesce_key(payload),
         SAMPLES => crate::samples::coalesce_key(payload),
         EVENTS => crate::events::coalesce_key(payload),
@@ -108,13 +108,13 @@ pub struct Edited {
 ///   state lives is the caller's, and reading a span back is what its inverse
 ///   costs.
 ///
-/// [`ARRANGEMENT`] is served, and it is the case that shows what the [`TREE`]
+/// [`MULTITRACK`] is served, and it is the case that shows what the [`TREE`]
 /// entry above is really about. A piece's whole state *is* one JSON value the
 /// caller holds, version included, so the door works — it simply applies
 /// against whatever that state says and snaps to nothing, which is exactly what
 /// a client that just read the piece wants. An editor that has a grid, or a
 /// claim about a picture drawn a moment ago, uses the typed door
-/// ([`arrangement::edit::apply`](crate::arrangement::edit::apply)) instead. The
+/// ([`multitrack::edit::apply`](crate::multitrack::edit::apply)) instead. The
 /// tree cannot be served this way for a different reason: what it edits is a
 /// handle that lives across the seam, not a value.
 ///
@@ -123,8 +123,8 @@ pub struct Edited {
 /// an ordinary list.
 pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
     match domain {
-        ARRANGEMENT => {
-            let mut piece: Arrangement = serde_json::from_value(state.0.clone()).ok()?;
+        MULTITRACK => {
+            let mut piece: Multitrack = serde_json::from_value(state.0.clone()).ok()?;
             let mut editing = Piece::new(&mut piece);
             let current = editing.current(payload);
             let applied = editing.apply(payload);

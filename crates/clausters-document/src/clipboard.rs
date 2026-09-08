@@ -41,7 +41,7 @@ use crate::{Member, NodeId};
 
 /// What was copied.
 ///
-/// **Not [`crate::arrangement::Content`]**, which is what fills a region. This
+/// **Not [`crate::multitrack::Content`]**, which is what fills a region. This
 /// one is the crate root's `Content`; that one is reached through its module.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -112,7 +112,7 @@ impl Content {
 pub struct Clipboard {
     /// What was copied.
     ///
-    /// **Not [`crate::arrangement::Content`]**, which is what fills a region. This
+    /// **Not [`crate::multitrack::Content`]**, which is what fills a region. This
     /// one is the crate root's `Content`; that one is reached through its module.
     pub content: Content,
     /// The element it was taken from, when that is known. A paste reads it to

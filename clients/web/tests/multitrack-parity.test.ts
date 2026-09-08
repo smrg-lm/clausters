@@ -1,6 +1,6 @@
-// The arrangement model against the Python client's, on the shared vector.
+// The multitrack model against the Python client's, on the shared vector.
 //
-// `gen-arrangement-vectors.py` writes out the piece the Rust suite already
+// `gen-multitrack-vectors.py` writes out the piece the Rust suite already
 // parses -- one definition, three readers: the Python client that built it, the
 // crate that defines the format, and this client. Here it is read, asked the
 // same questions the Rust test asks, and written back; what comes out must be
@@ -16,11 +16,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { Arrangement, Content, Fade, FrozenSource, Lane, LaneView, Region,
+import { Multitrack, Content, Fade, FrozenSource, Lane, LaneView, Region,
          Session, Source, Span, Tempo, Track, TrackView,
-         View } from "../src/arrangement.ts";
+         View } from "../src/multitrack.ts";
 
-const VECTOR = new URL("./arrangement-vectors.json", import.meta.url);
+const VECTOR = new URL("./multitrack-vectors.json", import.meta.url);
 
 async function vector(): Promise<Record<string, unknown>> {
     return JSON.parse(await readFile(VECTOR, "utf8"));
@@ -30,11 +30,11 @@ test("the client's arrangement parses and survives a round trip", async () => {
     const written = await vector();
     // Lossless rather than byte-identical: key order in JSON carries no
     // information, and each client writes what it holds in its own order.
-    assert.deepEqual(Arrangement.read(written).write(), written);
+    assert.deepEqual(Multitrack.read(written).write(), written);
 });
 
 test("the two sides agree about what the piece is", async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     assert.equal(piece.tracks.length, 3);
     assert.equal(piece.end, 48);
     assert.equal(piece.tempoAt(40)?.bpm, 120);
@@ -46,7 +46,7 @@ test("the two sides agree about what the piece is", async () => {
 });
 
 test("a comped track keeps every take and plays the one it names", async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     const vocals = piece.track(10);
     assert.equal(vocals?.lanes.length, 3, "the takes nobody chose are kept");
     assert.equal(vocals?.active, 1);
@@ -57,7 +57,7 @@ test("a comped track keeps every take and plays the one it names", async () => {
 });
 
 test("an overlap keeps its crossfade, its layer and its playrate", async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     const lane = piece.track(30)!.lanes[0];
     assert.ok(lane.regions[0].overlaps(lane.regions[1]));
     assert.equal(lane.regions[0].fadeOut?.length, 4);
@@ -70,7 +70,7 @@ test("an overlap keeps its crossfade, its layer and its playrate", async () => {
 });
 
 test("a composite region arrives as the general tree", async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     const region = piece.track(40)!.lanes[0].regions[0];
     assert.equal(region.content.fill, "composite");
     assert.equal(region.content.node?.id, 43);
@@ -78,7 +78,7 @@ test("a composite region arrives as the general tree", async () => {
 });
 
 test("an automation curve keeps the shapes neither side reads", async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     const curve = piece.track(30)!.automation[0];
     assert.ok(curve.visible && curve.enabled);
     assert.deepEqual(curve.target, { ctl: "level" });
@@ -87,7 +87,7 @@ test("an automation curve keeps the shapes neither side reads", async () => {
 
 test("a field the other client added and this build has no name for survives",
      async () => {
-    const piece = Arrangement.read(await vector());
+    const piece = Multitrack.read(await vector());
     assert.deepEqual(piece.extra.groove, { name: "mpc60" });
     const region = piece.track(40)!.lanes[0].regions[0];
     assert.deepEqual(region.extra.warp, { mode: "beats" });
@@ -131,17 +131,17 @@ test("a track spans every lane and plays one", () => {
 });
 
 test("two tempos at one beat is a state the map cannot hold", () => {
-    const piece = new Arrangement();
+    const piece = new Multitrack();
     piece.setTempo(new Tempo({ at: 4, bpm: 120 }));
     piece.setTempo(new Tempo({ at: 4, bpm: 90 }));
     assert.equal(piece.tempo.length, 1);
     assert.equal(piece.tempoAt(4)?.bpm, 90);
     // ...and a piece that never said a tempo says nothing: no 120 invented.
-    assert.equal(new Arrangement().tempoAt(0), undefined);
+    assert.equal(new Multitrack().tempoAt(0), undefined);
 });
 
 test("nothing said is nothing written", () => {
-    assert.deepEqual(new Arrangement().write(), {});
+    assert.deepEqual(new Multitrack().write(), {});
     const written = new Region({
         id: 1, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
     }).write();
@@ -155,13 +155,13 @@ test("the piece carries its own version and keeps it out of an empty file", () =
     // than the document's: an editor of one is not editing the other. It stays
     // out of the file while it is the first version, so an unedited piece still
     // writes an empty object and a file that never named one reads back at it.
-    assert.equal(new Arrangement().version, 1);
-    assert.equal(new Arrangement().write().version, undefined);
-    assert.equal(Arrangement.read({}).version, 1);
-    const edited = new Arrangement();
+    assert.equal(new Multitrack().version, 1);
+    assert.equal(new Multitrack().write().version, undefined);
+    assert.equal(Multitrack.read({}).version, 1);
+    const edited = new Multitrack();
     edited.version = 4;
     assert.equal(edited.write().version, 4);
-    assert.equal(Arrangement.read(edited.write()).version, 4);
+    assert.equal(Multitrack.read(edited.write()).version, 4);
 });
 
 test("a fill this build does not know is carried whole", () => {
@@ -178,7 +178,7 @@ test("a half-open span meets the next one without covering a beat twice", () => 
 
 // ---- the session: the piece, and where its samples are ----
 
-const SESSION = new URL("./arrangement-session-vectors.json", import.meta.url);
+const SESSION = new URL("./multitrack-session-vectors.json", import.meta.url);
 
 async function saved(): Promise<Record<string, unknown>> {
     return JSON.parse(await readFile(SESSION, "utf8"));
@@ -220,13 +220,13 @@ test("a save that cannot promise everything says which part", async () => {
 
 test("the piece inside the session is the same piece", async () => {
     const session = Session.read(await saved());
-    assert.deepEqual(session.arrangement.write(), await vector());
+    assert.deepEqual(session.multitrack.write(), await vector());
     assert.deepEqual(session.dangling(), []);
 });
 
-test("an absent arrangement reads as an empty one rather than as nothing", () => {
+test("an absent multitrack reads as an empty one rather than as nothing", () => {
     const session = Session.read({ format: 1 });
-    assert.deepEqual(session.arrangement.tracks, []);
+    assert.deepEqual(session.multitrack.tracks, []);
     assert.deepEqual(session.write(), { format: 1 });
 });
 
@@ -246,8 +246,8 @@ test("a session field a newer writer added survives", () => {
 
 // ---- the presentation: what a window shows of a piece ----
 
-function aPiece(): Arrangement {
-    const piece = new Arrangement();
+function aPiece(): Multitrack {
+    const piece = new Multitrack();
     const vocals = new Track({ id: 10, lanes: [new Lane({ id: 11 }), new Lane({ id: 12 })] });
     vocals.lanes[0].place(new Region({
         id: 20, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
@@ -298,10 +298,10 @@ test("a view says nothing about what plays", () => {
     view.visible = new Span(0, 32);
     view.trackView(10).height = 96;
     const session = new Session();
-    session.arrangement = piece;
+    session.multitrack = piece;
     session.views = [view];
     const back = Session.read(session.write());
-    assert.deepEqual(back.arrangement.write(), written);
+    assert.deepEqual(back.multitrack.write(), written);
     assert.equal(back.views[0].track(10).height, 96);
 });
 
@@ -346,7 +346,7 @@ test("a field a newer window wrote survives a load and a save", () => {
 
 test("a session written without views reads back without them", () => {
     const session = new Session();
-    session.arrangement = aPiece();
+    session.multitrack = aPiece();
     assert.equal(session.write().views, undefined);
     assert.deepEqual(Session.read(session.write()).views, []);
 });

@@ -1,7 +1,7 @@
 //! The **presentation**: what a window shows of a piece, beside the piece and
 //! never inside it.
 //!
-//! A [`View`] is one window's picture of one [`Arrangement`]: where it is
+//! A [`View`] is one window's picture of one [`Multitrack`]: where it is
 //! looking, how far it is zoomed, what the hand is holding, how tall each track
 //! is drawn. None of that is what the piece *is* — the four-layer rule, and this
 //! project has said three times that a selection and a zoom are each window's
@@ -14,7 +14,7 @@
 //! `Application.View` are objects **beside** their model objects rather than
 //! children, with presentation on one side and functional data on the other,
 //! both readable and writable by a script. So a [`TrackView`] is looked up by
-//! the track's id rather than held by the track, and an [`Arrangement`] round
+//! the track's id rather than held by the track, and an [`Multitrack`] round
 //! trips byte for byte whether or not a view of it exists.
 //!
 //! Two things follow, and both are the point:
@@ -56,7 +56,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::NodeId;
-use crate::arrangement::{Arrangement, Extra, Span};
+use crate::multitrack::{Extra, Multitrack, Span};
 use crate::timebase::Beat;
 
 /// One window's picture of one piece.
@@ -221,7 +221,7 @@ impl View {
     /// be quieter and worse: an id is reused by a client that mints them, and a
     /// zoom kept for a lane that is not the same lane is a defect that looks
     /// like a feature.
-    pub fn prune(&mut self, piece: &Arrangement) -> bool {
+    pub fn prune(&mut self, piece: &Multitrack) -> bool {
         let mut held: Vec<NodeId> = Vec::new();
         for track in &piece.tracks {
             held.push(track.id);

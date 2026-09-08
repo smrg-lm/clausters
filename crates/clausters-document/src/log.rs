@@ -1,4 +1,4 @@
-//! Undo for the arrangement, beside the data it inverts.
+//! Undo for the multitrack, beside the data it inverts.
 //!
 //! The pile itself is [`crate::history`], which knows no vocabulary at
 //! all. This module is its arrangement-shaped face: a [`Log`] is a
@@ -7,7 +7,7 @@
 //! There is one implementation of the pile, and this is not a second one.
 //!
 //! The placement is the whole of the design. A GUI host holding its own log
-//! knows only the gestures *it* made — so a script editing the arrangement, a
+//! knows only the gestures *it* made — so a script editing the multitrack, a
 //! second editor, or a re-render would leave that log describing a document
 //! that had moved on, and undo would write a state nobody was ever in. Here the
 //! log sees every edit, because every edit comes through
@@ -62,8 +62,8 @@ pub use crate::history::{DEFAULT_BUDGET, DEFAULT_SPILL_ABOVE, MemorySpill, Spill
 /// The tree's vocabulary is [`Intent`], and this is what a caller routing a
 /// history's payloads matches on to know it is holding one. The **piece** has a
 /// vocabulary of its own
-/// ([`ArrangementIntent`](crate::arrangement::edit::ArrangementIntent), under
-/// [`ARRANGEMENT`](crate::arrangement::edit::ARRANGEMENT)); the two are
+/// ([`MultitrackIntent`](crate::multitrack::edit::MultitrackIntent), under
+/// [`MULTITRACK`](crate::multitrack::edit::MULTITRACK)); the two are
 /// separate domains in one pile, which is what lets an undo cross from a region
 /// to a note in one order.
 pub const TREE: &str = "tree";

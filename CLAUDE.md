@@ -279,7 +279,7 @@ on trust, so that is where drift accumulates:
   - `clausters-cliente` / "clausters cliente" / "clausters client" — **an
     unspecified client** of the clausters server (a protocol consumer in
     general, not the Python one specifically).
-- **The three applications, and where the arrangement lives.** The project is
+- **The three applications, and where the multitrack lives.** The project is
   built around three classic applications over **one document**: the **audio
   editor**, the **multitrack editor** and the **score editor**. The document is
   `crates/clausters-document` and its vocabulary is the field's settled one —
@@ -289,9 +289,14 @@ on trust, so that is where drift accumulates:
   makes an application programmable from the host and identical from every
   client. The design is in `crates/clausters-document/PLAN.md` ("The turn: the
   arrangement stops being a projection", milestones `O21`-`O24`).
-  In prose the layer is *"the arrangement"* / "el arreglo"; the work itself is
-  *"the composition"* / *"the piece"*. Never the bare "the model" (it reads as
-  the node tree or a def). The verb for a generator becoming material is
+  In prose the layer is *"the multitrack"* / "el multipista" — the type is
+  `clausters_document::multitrack::Multitrack` and it holds tracks, lanes,
+  regions and the timeline they sit on, which are the multitrack editor's
+  elements and nobody else's *(renamed 2026-09-08; it was `Arrangement`, which
+  was `FormEditor`'s word for a layer that no longer exists, and "arrangement"
+  is retired as a term of art)*. The work itself is *"the composition"* /
+  *"the piece"*. Never the bare "the model" (it reads as the node tree or a
+  def). The verb for a generator becoming material is
   **render**, never "realize"; the *graphic* direction is **draw**.
 
 - **`clausters.form` is a frozen, secondary module and is not that model.** It is

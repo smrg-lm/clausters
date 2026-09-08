@@ -36,7 +36,7 @@ What is here
 - `domain_edit` and `domain_coalesce_key` — the same two questions for a
   structure that is **not** a document: a curve, a span of samples, a timeline
   of events.
-- `TREE`, `ARRANGEMENT`, `POINTS`, `SAMPLES`, `EVENTS` — the domain names those
+- `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `EVENTS` — the domain names those
   two answer for.
 - `FIRST_VERSION` and `SESSION_FORMAT` — the two version numbers the format
   itself carries.
@@ -53,7 +53,7 @@ Usage::
         written = doc.snapshot()
 """
 
-from ._native import (ARRANGEMENT, EVENTS, POINTS, SAMPLES, TREE, Document,
+from ._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
                       History, Log, domain_coalesce_key, domain_edit)
 
 #: The version an unedited document carries.
@@ -71,7 +71,7 @@ from ._native import document_apply as apply_intent
 from ._native import document_resolve as resolve_selection
 
 __all__ = [
-    "ARRANGEMENT",
+    "MULTITRACK",
     "EVENTS",
     "FIRST_VERSION",
     "SESSION_FORMAT",

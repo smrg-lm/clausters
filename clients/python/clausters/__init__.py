@@ -54,7 +54,7 @@ The layers:
   (`clausters.data.TapStream`) and a take as it records
   (`clausters.data.RecordingStream`). The GUI host reads the same three paths
   itself; this is them opened to the script.
-- `clausters.form` — the **arrangement**: a recursive algebra of elements
+- `clausters.form` — a **frozen** algebra of elements
   over the sequencing/def layers, for composing at any granularity.
 - `clausters.segments` — a **window onto contents** and a run of windows read
   as one: what a join assembles and a split takes apart, over samples
@@ -85,8 +85,8 @@ The layers:
 
 from . import _native
 from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
-from . import (arrangement, base, data, defs, document, errors, form, gui,
-               ipc, launch, segments, seq)
+from . import (base, data, defs, document, errors, form, gui, ipc, launch,
+               multitrack, segments, seq)
 from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock

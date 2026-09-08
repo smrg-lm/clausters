@@ -5020,6 +5020,15 @@
  },
  {
   "builder": "view",
+  "option": "status",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "status": 1
+  }
+ },
+ {
+  "builder": "view",
   "option": "theme",
   "value": {
    "accent": "#ff8800"
@@ -5557,6 +5566,15 @@
   "tree": {
    "type": "window",
    "hug": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "status",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "status": 1
   }
  },
  {

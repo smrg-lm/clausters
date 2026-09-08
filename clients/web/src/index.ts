@@ -198,8 +198,8 @@ export * as errors from "./errors.ts";
 export { ClaustersError } from "./errors.ts";
 
 /**
- * The **arrangement**: a recursive algebra of elements placed in time, grouped
- * and rendered — what a multitrack editor edits. See `./form/index.ts`.
+ * A **frozen** algebra of elements placed in time, grouped and rendered. It
+ * has no view and takes no new work. See `./form/index.ts`.
  */
 export * as form from "./form/index.ts";
 
@@ -219,12 +219,12 @@ export * as segments from "./segments.ts";
 export * as document from "./document.ts";
 
 /**
- * The arrangement: tracks, lanes, regions, and the timeline they sit on — the
- * model a multitrack editor edits. See `./arrangement.ts`.
+ * The multitrack: tracks, lanes, regions, and the timeline they sit on — the
+ * model a multitrack editor edits. See `./multitrack.ts`.
  */
-export * as arrangement from "./arrangement.ts";
+export * as multitrack from "./multitrack.ts";
 export {
-    Arrangement,
+    Multitrack,
     Automation,
     Fade,
     FrozenSource,
@@ -238,7 +238,7 @@ export {
     Track,
     TrackView,
     View,
-} from "./arrangement.ts";
+} from "./multitrack.ts";
 export {
     History,
     Log,

@@ -560,7 +560,7 @@ it nowhere to live but the widget tree, which is drawn, and drawing frees. It is
 being rebuilt as a **session** in `clausters-document` — source, region,
 lane, track, automation — with the three classic applications (audio editor,
 multitrack editor, score editor) over that one document. **The model landed on
-2026-09-06** (`clausters_document::arrangement`); what has not is the host
+2026-09-06** (`clausters_document::multitrack`); what has not is the host
 binding it, which is where the picture gets its single owner. See
 `crates/clausters-document/PLAN.md`.
 

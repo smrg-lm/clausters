@@ -17,7 +17,7 @@ See `clausters.form.element` for the primitives and the temporal *character*,
 **This module has no door to the shared document.** It had one — a bridge that
 converted these elements to the crate's JSON — and it was removed on 2026-09-06
 with the turn that made the arrangement a model of its own. What a multitrack is
-written with now is `clausters.arrangement`, and the crate is reached through
+written with now is `clausters.multitrack`, and the crate is reached through
 `clausters.document`. Nothing here converts, and nothing here is designed
 around: this is a frozen, secondary module of data structures.
 """

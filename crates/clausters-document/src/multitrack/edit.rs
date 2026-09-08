@@ -2,7 +2,7 @@
 //! does it.
 //!
 //! [`crate::intent`] is the same discipline over the general tree, and this is
-//! that discipline over [`Arrangement`]: an edit states the value it results
+//! that discipline over [`Multitrack`]: an edit states the value it results
 //! in, nothing else applies one, and what comes back is the **effective** edit
 //! rather than a bare success. The rules are unchanged; only the vocabulary is
 //! wider, because a DAW's gestures are wider than *place a node in an
@@ -11,7 +11,7 @@
 //! # Absolute, here, means the address as well as the value
 //!
 //! A region belongs to a lane and a lane to a track, so *where a region is* is
-//! three coordinates and not one. [`ArrangementIntent::PlaceRegion`] states all
+//! three coordinates and not one. [`MultitrackIntent::PlaceRegion`] states all
 //! of them together, which is why **moving a region to another track is one
 //! edit and not a remove plus an add** — one intent, one entry in a log, one
 //! undo. A vocabulary that spelled it as two would have a state between them
@@ -29,7 +29,7 @@
 //! its own frames per beat, states the halves' content and the crate does the
 //! rest.
 //!
-//! Both also invert as [`ArrangementIntent::SetLane`] — the lane's previous
+//! Both also invert as [`MultitrackIntent::SetLane`] — the lane's previous
 //! contents, whole. Nothing smaller describes putting back a region that was
 //! made out of two, and computing it back would be the same conversion refused
 //! one paragraph ago.
@@ -44,7 +44,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Arrangement, Content, Fade, Marker, Meter, Region, Span, Tempo, Track};
+use super::{Content, Fade, Marker, Meter, Multitrack, Region, Span, Tempo, Track};
 use crate::history::{Applied, Editable};
 use crate::intent::{Against, Outcome, Rules};
 use crate::timebase::Beat;
@@ -52,10 +52,10 @@ use crate::{NodeId, Opaque, Point};
 
 /// The domain name the piece's structure is registered under. See
 /// [`crate::domain`].
-pub const ARRANGEMENT: &str = "arrangement";
+pub const MULTITRACK: &str = "multitrack";
 
 /// Which of the piece's two spans an edit names. See
-/// [`ArrangementIntent::SetRange`].
+/// [`MultitrackIntent::SetRange`].
 ///
 /// Not `Range`, which this crate already spends on a span of frames
 /// ([`crate::Range`]), and not `Span`, which is the arrangement's own
@@ -73,7 +73,7 @@ pub enum SpanKind {
 /// in.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "lowercase")]
-pub enum ArrangementIntent {
+pub enum MultitrackIntent {
     /// What the piece's tracks are now, whole.
     ///
     /// Adding a track, removing one and reordering them are one verb, because
@@ -115,7 +115,7 @@ pub enum ArrangementIntent {
     /// **One edit, whatever moved.** A drag within a lane, a drag to another
     /// lane of the same track and a drag to another track are the same verb
     /// with different fields, so all three undo in one step. It never changes
-    /// what the region reads — that is [`ArrangementIntent::TrimRegion`] — so a
+    /// what the region reads — that is [`MultitrackIntent::TrimRegion`] — so a
     /// move cannot silently retime the material.
     PlaceRegion {
         /// The region being placed.
@@ -253,14 +253,14 @@ pub enum ArrangementIntent {
         tempo: Vec<Tempo>,
     },
     /// What the meter map is now, whole. See
-    /// [`ArrangementIntent::SetTempoMap`].
+    /// [`MultitrackIntent::SetTempoMap`].
     SetMeterMap {
         /// The entries; kept in position order.
         meter: Vec<Meter>,
     },
 }
 
-impl ArrangementIntent {
+impl MultitrackIntent {
     /// The kind of edit this is, as the coalesce key spells it.
     fn kind(&self) -> &'static str {
         match self {
@@ -315,11 +315,11 @@ impl ArrangementIntent {
 /// omission: no edit in this vocabulary writes samples, so a source being
 /// rewritten underneath a region does not make a move of that region wrong.
 pub fn apply(
-    piece: &mut Arrangement,
-    intent: &ArrangementIntent,
+    piece: &mut Multitrack,
+    intent: &MultitrackIntent,
     against: &Against,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     if against.is_stated() && against.version != piece.version {
         let reason = if against.version < piece.version {
             "the piece changed since this edit was made"
@@ -339,28 +339,28 @@ pub fn apply(
 }
 
 fn edit(
-    piece: &mut Arrangement,
-    intent: &ArrangementIntent,
+    piece: &mut Multitrack,
+    intent: &MultitrackIntent,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     match intent {
-        ArrangementIntent::SetTracks { tracks } => set_tracks(piece, tracks),
-        ArrangementIntent::SetActiveLane { track, lane } => set_active_lane(piece, *track, *lane),
-        ArrangementIntent::SetLane { lane, regions } => set_lane(piece, *lane, regions),
-        ArrangementIntent::PlaceRegion {
+        MultitrackIntent::SetTracks { tracks } => set_tracks(piece, tracks),
+        MultitrackIntent::SetActiveLane { track, lane } => set_active_lane(piece, *track, *lane),
+        MultitrackIntent::SetLane { lane, regions } => set_lane(piece, *lane, regions),
+        MultitrackIntent::PlaceRegion {
             region,
             track,
             lane,
             position,
             layer,
         } => place_region(piece, *region, *track, *lane, *position, *layer, rules),
-        ArrangementIntent::TrimRegion {
+        MultitrackIntent::TrimRegion {
             region,
             position,
             length,
             content,
         } => trim_region(piece, *region, *position, *length, content.as_ref(), rules),
-        ArrangementIntent::SplitRegion {
+        MultitrackIntent::SplitRegion {
             region,
             at,
             left,
@@ -377,26 +377,26 @@ fn edit(
             right_content.as_ref(),
             rules,
         ),
-        ArrangementIntent::JoinRegions {
+        MultitrackIntent::JoinRegions {
             regions,
             into,
             content,
         } => join_regions(piece, regions, *into, content.as_ref()),
-        ArrangementIntent::FadeRegion {
+        MultitrackIntent::FadeRegion {
             region,
             fade_in,
             fade_out,
         } => fade_region(piece, *region, fade_in.as_ref(), fade_out.as_ref()),
-        ArrangementIntent::SetAutomation { automation, points } => {
+        MultitrackIntent::SetAutomation { automation, points } => {
             set_automation(piece, *automation, points)
         }
-        ArrangementIntent::SetMarker { marker, at, name } => {
+        MultitrackIntent::SetMarker { marker, at, name } => {
             set_marker(piece, *marker, *at, name.as_deref(), rules)
         }
-        ArrangementIntent::RemoveMarker { marker } => remove_marker(piece, *marker),
-        ArrangementIntent::SetRange { range, span } => set_range(piece, *range, *span),
-        ArrangementIntent::SetTempoMap { tempo } => set_tempo_map(piece, tempo),
-        ArrangementIntent::SetMeterMap { meter } => set_meter_map(piece, meter),
+        MultitrackIntent::RemoveMarker { marker } => remove_marker(piece, *marker),
+        MultitrackIntent::SetRange { range, span } => set_range(piece, *range, *span),
+        MultitrackIntent::SetTempoMap { tempo } => set_tempo_map(piece, tempo),
+        MultitrackIntent::SetMeterMap { meter } => set_meter_map(piece, meter),
     }
 }
 
@@ -407,22 +407,22 @@ fn edit(
 /// `None` when the piece cannot describe it: the region is gone, the lane is
 /// not there. Those have their own refusals, with better reasons than
 /// staleness.
-pub fn current(piece: &Arrangement, intent: &ArrangementIntent) -> Option<ArrangementIntent> {
+pub fn current(piece: &Multitrack, intent: &MultitrackIntent) -> Option<MultitrackIntent> {
     match intent {
-        ArrangementIntent::SetTracks { .. } => Some(ArrangementIntent::SetTracks {
+        MultitrackIntent::SetTracks { .. } => Some(MultitrackIntent::SetTracks {
             tracks: piece.tracks.clone(),
         }),
-        ArrangementIntent::SetActiveLane { track, .. } => {
+        MultitrackIntent::SetActiveLane { track, .. } => {
             let held = piece.track(*track)?;
-            Some(ArrangementIntent::SetActiveLane {
+            Some(MultitrackIntent::SetActiveLane {
                 track: *track,
                 lane: held.active_lane()?.id,
             })
         }
-        ArrangementIntent::SetLane { lane, .. } => Some(lane_state(piece, *lane)?),
-        ArrangementIntent::PlaceRegion { region, .. } => {
+        MultitrackIntent::SetLane { lane, .. } => Some(lane_state(piece, *lane)?),
+        MultitrackIntent::PlaceRegion { region, .. } => {
             let (track, lane, held) = piece.locate(*region)?;
-            Some(ArrangementIntent::PlaceRegion {
+            Some(MultitrackIntent::PlaceRegion {
                 region: *region,
                 track: track.id,
                 lane: lane.id,
@@ -430,9 +430,9 @@ pub fn current(piece: &Arrangement, intent: &ArrangementIntent) -> Option<Arrang
                 layer: held.layer,
             })
         }
-        ArrangementIntent::TrimRegion { region, .. } => {
+        MultitrackIntent::TrimRegion { region, .. } => {
             let (_, _, held) = piece.locate(*region)?;
-            Some(ArrangementIntent::TrimRegion {
+            Some(MultitrackIntent::TrimRegion {
                 region: *region,
                 position: held.position,
                 length: held.length,
@@ -442,65 +442,64 @@ pub fn current(piece: &Arrangement, intent: &ArrangementIntent) -> Option<Arrang
         // The two that change how many regions there are invert as the lane's
         // previous contents. See the module docs: nothing smaller describes it,
         // and reconstructing it would need the conversion this crate refuses.
-        ArrangementIntent::SplitRegion { region, .. } => {
+        MultitrackIntent::SplitRegion { region, .. } => {
             let (_, lane, _) = piece.locate(*region)?;
             lane_state(piece, lane.id)
         }
-        ArrangementIntent::JoinRegions { regions, .. } => {
+        MultitrackIntent::JoinRegions { regions, .. } => {
             let (_, lane, _) = piece.locate(*regions.first()?)?;
             lane_state(piece, lane.id)
         }
-        ArrangementIntent::FadeRegion { region, .. } => {
+        MultitrackIntent::FadeRegion { region, .. } => {
             let (_, _, held) = piece.locate(*region)?;
-            Some(ArrangementIntent::FadeRegion {
+            Some(MultitrackIntent::FadeRegion {
                 region: *region,
                 fade_in: held.fade_in.clone(),
                 fade_out: held.fade_out.clone(),
             })
         }
-        ArrangementIntent::SetAutomation { automation, .. } => {
+        MultitrackIntent::SetAutomation { automation, .. } => {
             let curve = piece
                 .tracks
                 .iter()
                 .flat_map(|t| t.automation.iter())
                 .find(|a| a.id == *automation)?;
-            Some(ArrangementIntent::SetAutomation {
+            Some(MultitrackIntent::SetAutomation {
                 automation: *automation,
                 points: curve.points.clone(),
             })
         }
         // A marker that is not there is described by its absence, which is a
         // sentence this vocabulary has. Both verbs invert into the other.
-        ArrangementIntent::SetMarker { marker, .. }
-        | ArrangementIntent::RemoveMarker { marker } => {
+        MultitrackIntent::SetMarker { marker, .. } | MultitrackIntent::RemoveMarker { marker } => {
             Some(match piece.markers.iter().find(|m| m.id == *marker) {
-                Some(held) => ArrangementIntent::SetMarker {
+                Some(held) => MultitrackIntent::SetMarker {
                     marker: *marker,
                     at: held.at,
                     name: held.name.clone(),
                 },
-                None => ArrangementIntent::RemoveMarker { marker: *marker },
+                None => MultitrackIntent::RemoveMarker { marker: *marker },
             })
         }
-        ArrangementIntent::SetRange { range, .. } => Some(ArrangementIntent::SetRange {
+        MultitrackIntent::SetRange { range, .. } => Some(MultitrackIntent::SetRange {
             range: *range,
             span: match range {
                 SpanKind::Loop => piece.loop_span,
                 SpanKind::Punch => piece.punch,
             },
         }),
-        ArrangementIntent::SetTempoMap { .. } => Some(ArrangementIntent::SetTempoMap {
+        MultitrackIntent::SetTempoMap { .. } => Some(MultitrackIntent::SetTempoMap {
             tempo: piece.tempo.clone(),
         }),
-        ArrangementIntent::SetMeterMap { .. } => Some(ArrangementIntent::SetMeterMap {
+        MultitrackIntent::SetMeterMap { .. } => Some(MultitrackIntent::SetMeterMap {
             meter: piece.meter.clone(),
         }),
     }
 }
 
-fn lane_state(piece: &Arrangement, lane: NodeId) -> Option<ArrangementIntent> {
+fn lane_state(piece: &Multitrack, lane: NodeId) -> Option<MultitrackIntent> {
     let (_, held) = piece.lane(lane)?;
-    Some(ArrangementIntent::SetLane {
+    Some(MultitrackIntent::SetLane {
         lane,
         regions: held.regions.clone(),
     })
@@ -508,8 +507,8 @@ fn lane_state(piece: &Arrangement, lane: NodeId) -> Option<ArrangementIntent> {
 
 // ---- the verbs ----
 
-fn set_tracks(piece: &mut Arrangement, tracks: &[Track]) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::SetTracks {
+fn set_tracks(piece: &mut Multitrack, tracks: &[Track]) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::SetTracks {
         tracks: tracks.to_vec(),
     };
     if piece.tracks == tracks {
@@ -520,11 +519,11 @@ fn set_tracks(piece: &mut Arrangement, tracks: &[Track]) -> Outcome<ArrangementI
 }
 
 fn set_active_lane(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     track: NodeId,
     lane: NodeId,
-) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::SetActiveLane { track, lane };
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::SetActiveLane { track, lane };
     let Some(held) = piece.track_mut(track) else {
         return Outcome::refused(stated, "no such track");
     };
@@ -538,24 +537,20 @@ fn set_active_lane(
     Outcome::changed(stated)
 }
 
-fn set_lane(
-    piece: &mut Arrangement,
-    lane: NodeId,
-    regions: &[Region],
-) -> Outcome<ArrangementIntent> {
+fn set_lane(piece: &mut Multitrack, lane: NodeId, regions: &[Region]) -> Outcome<MultitrackIntent> {
     let mut ordered = regions.to_vec();
     ordered.sort_by(|a, b| {
         order(a)
             .partial_cmp(&order(b))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let stated = ArrangementIntent::SetLane {
+    let stated = MultitrackIntent::SetLane {
         lane,
         regions: ordered.clone(),
     };
     let Some(held) = piece.lane_mut(lane) else {
         return Outcome::refused(
-            ArrangementIntent::SetLane {
+            MultitrackIntent::SetLane {
                 lane,
                 regions: Vec::new(),
             },
@@ -578,16 +573,16 @@ fn order(region: &Region) -> (f64, u32) {
 
 #[allow(clippy::too_many_arguments)]
 fn place_region(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     region: NodeId,
     track: NodeId,
     lane: NodeId,
     position: Beat,
     layer: u32,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     let position = snap(rules, position);
-    let stated = ArrangementIntent::PlaceRegion {
+    let stated = MultitrackIntent::PlaceRegion {
         region,
         track,
         lane,
@@ -621,16 +616,16 @@ fn place_region(
 }
 
 fn trim_region(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     region: NodeId,
     position: Beat,
     length: Beat,
     content: Option<&Content>,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     let position = snap(rules, position);
     let length = snap(rules, length);
-    let stated = |content: Option<Content>| ArrangementIntent::TrimRegion {
+    let stated = |content: Option<Content>| MultitrackIntent::TrimRegion {
         region,
         position,
         length,
@@ -676,7 +671,7 @@ fn trim_region(
 
 #[allow(clippy::too_many_arguments)]
 fn split_region(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     region: NodeId,
     at: Beat,
     left: NodeId,
@@ -684,9 +679,9 @@ fn split_region(
     left_content: Option<&Content>,
     right_content: Option<&Content>,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     let at = snap(rules, at);
-    let stated = ArrangementIntent::SplitRegion {
+    let stated = MultitrackIntent::SplitRegion {
         region,
         at,
         left,
@@ -733,12 +728,12 @@ fn split_region(
 }
 
 fn join_regions(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     regions: &[NodeId],
     into: NodeId,
     content: Option<&Content>,
-) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::JoinRegions {
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::JoinRegions {
         regions: regions.to_vec(),
         into,
         content: content.cloned(),
@@ -781,12 +776,12 @@ fn join_regions(
 }
 
 fn fade_region(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     region: NodeId,
     fade_in: Option<&Fade>,
     fade_out: Option<&Fade>,
-) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::FadeRegion {
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::FadeRegion {
         region,
         fade_in: fade_in.cloned(),
         fade_out: fade_out.cloned(),
@@ -809,11 +804,11 @@ fn fade_region(
 }
 
 fn set_automation(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     automation: NodeId,
     points: &[Point],
-) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::SetAutomation {
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::SetAutomation {
         automation,
         points: points.to_vec(),
     };
@@ -828,14 +823,14 @@ fn set_automation(
 }
 
 fn set_marker(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     marker: NodeId,
     at: Beat,
     name: Option<&str>,
     rules: &Rules,
-) -> Outcome<ArrangementIntent> {
+) -> Outcome<MultitrackIntent> {
     let at = snap(rules, at);
-    let stated = ArrangementIntent::SetMarker {
+    let stated = MultitrackIntent::SetMarker {
         marker,
         at,
         name: name.map(str::to_string),
@@ -857,8 +852,8 @@ fn set_marker(
     }
 }
 
-fn remove_marker(piece: &mut Arrangement, marker: NodeId) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::RemoveMarker { marker };
+fn remove_marker(piece: &mut Multitrack, marker: NodeId) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::RemoveMarker { marker };
     let before = piece.markers.len();
     piece.markers.retain(|m| m.id != marker);
     if piece.markers.len() == before {
@@ -868,11 +863,11 @@ fn remove_marker(piece: &mut Arrangement, marker: NodeId) -> Outcome<Arrangement
 }
 
 fn set_range(
-    piece: &mut Arrangement,
+    piece: &mut Multitrack,
     range: SpanKind,
     span: Option<Span>,
-) -> Outcome<ArrangementIntent> {
-    let stated = ArrangementIntent::SetRange { range, span };
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::SetRange { range, span };
     let slot = match range {
         SpanKind::Loop => &mut piece.loop_span,
         SpanKind::Punch => &mut piece.punch,
@@ -884,10 +879,10 @@ fn set_range(
     Outcome::changed(stated)
 }
 
-fn set_tempo_map(piece: &mut Arrangement, tempo: &[Tempo]) -> Outcome<ArrangementIntent> {
+fn set_tempo_map(piece: &mut Multitrack, tempo: &[Tempo]) -> Outcome<MultitrackIntent> {
     let mut ordered = tempo.to_vec();
     ordered.sort_by(|a, b| a.at.partial_cmp(&b.at).unwrap_or(std::cmp::Ordering::Equal));
-    let stated = ArrangementIntent::SetTempoMap {
+    let stated = MultitrackIntent::SetTempoMap {
         tempo: ordered.clone(),
     };
     if piece.tempo == ordered {
@@ -897,10 +892,10 @@ fn set_tempo_map(piece: &mut Arrangement, tempo: &[Tempo]) -> Outcome<Arrangemen
     Outcome::changed(stated)
 }
 
-fn set_meter_map(piece: &mut Arrangement, meter: &[Meter]) -> Outcome<ArrangementIntent> {
+fn set_meter_map(piece: &mut Multitrack, meter: &[Meter]) -> Outcome<MultitrackIntent> {
     let mut ordered = meter.to_vec();
     ordered.sort_by(|a, b| a.at.partial_cmp(&b.at).unwrap_or(std::cmp::Ordering::Equal));
-    let stated = ArrangementIntent::SetMeterMap {
+    let stated = MultitrackIntent::SetMeterMap {
         meter: ordered.clone(),
     };
     if piece.meter == ordered {
@@ -913,7 +908,7 @@ fn set_meter_map(piece: &mut Arrangement, meter: &[Meter]) -> Outcome<Arrangemen
 // ---- the pieces the verbs share ----
 
 /// Lifts a region out of whatever lane holds it.
-fn take_region(piece: &mut Arrangement, region: NodeId) -> Option<Region> {
+fn take_region(piece: &mut Multitrack, region: NodeId) -> Option<Region> {
     for track in piece.tracks.iter_mut() {
         for lane in track.lanes.iter_mut() {
             if let Some(index) = lane.regions.iter().position(|r| r.id == region) {
@@ -925,7 +920,7 @@ fn take_region(piece: &mut Arrangement, region: NodeId) -> Option<Region> {
 }
 
 /// Puts a lane back in position order after an edit moved one of its regions.
-fn reorder(piece: &mut Arrangement, lane: NodeId) {
+fn reorder(piece: &mut Multitrack, lane: NodeId) {
     if let Some(held) = piece.lane_mut(lane) {
         held.regions.sort_by(|a, b| {
             order(a)
@@ -946,13 +941,13 @@ fn snapped(rules: &Rules) -> bool {
 // ---- the vocabulary as a history carries it ----
 
 /// A piece's edit as a history carries it.
-pub fn payload(intent: &ArrangementIntent) -> Opaque {
+pub fn payload(intent: &MultitrackIntent) -> Opaque {
     Opaque(serde_json::to_value(intent).unwrap_or(serde_json::Value::Null))
 }
 
 /// The edit a payload holds, or `None` when it is written in another
 /// vocabulary.
-pub fn intent_of(payload: &Opaque) -> Option<ArrangementIntent> {
+pub fn intent_of(payload: &Opaque) -> Option<MultitrackIntent> {
     serde_json::from_value(payload.0.clone()).ok()
 }
 
@@ -963,14 +958,14 @@ pub fn intent_of(payload: &Opaque) -> Option<ArrangementIntent> {
 /// not. The edits that name the piece itself key on the kind alone, which is
 /// right for them — a run of tempo adjustments is also one thing the person
 /// did.
-pub fn coalesce_key(intent: &ArrangementIntent) -> String {
+pub fn coalesce_key(intent: &MultitrackIntent) -> String {
     match intent.subject() {
         Some(id) => format!("{}:{}", intent.kind(), id.0),
         None => intent.kind().to_string(),
     }
 }
 
-/// The piece as an [`Editable`]: an arrangement, plus the two things an edit to
+/// The piece as an [`Editable`]: an multitrack, plus the two things an edit to
 /// this domain needs and a curve does not.
 ///
 /// The twin of [`crate::log::Tree`], and built for one call for the same
@@ -979,7 +974,7 @@ pub fn coalesce_key(intent: &ArrangementIntent) -> String {
 /// piece.
 pub struct Piece<'a> {
     /// The piece being edited.
-    pub arrangement: &'a mut Arrangement,
+    pub multitrack: &'a mut Multitrack,
     /// The state the edit was made against. See [`Against`].
     pub against: Against,
     /// How the owner transforms the edit as it applies it. See [`Rules`].
@@ -989,9 +984,9 @@ pub struct Piece<'a> {
 impl<'a> Piece<'a> {
     /// The piece, edited against whatever it currently says and snapping to
     /// nothing — what a script that just read it wants.
-    pub fn new(arrangement: &'a mut Arrangement) -> Self {
+    pub fn new(multitrack: &'a mut Multitrack) -> Self {
         Self {
-            arrangement,
+            multitrack,
             against: Against::unstated(),
             rules: Rules::none(),
         }
@@ -1006,7 +1001,7 @@ impl Editable for Piece<'_> {
                 "not an edit written in the piece's vocabulary",
             );
         };
-        let outcome = apply(self.arrangement, &intent, &self.against, &self.rules);
+        let outcome = apply(self.multitrack, &intent, &self.against, &self.rules);
         Applied {
             effective: payload(&outcome.effective),
             applied: outcome.applied,
@@ -1016,7 +1011,7 @@ impl Editable for Piece<'_> {
     }
 
     fn current(&self, load: &Opaque) -> Option<Opaque> {
-        current(self.arrangement, &intent_of(load)?).map(|intent| payload(&intent))
+        current(self.multitrack, &intent_of(load)?).map(|intent| payload(&intent))
     }
 
     fn coalesce_key(&self, load: &Opaque) -> Option<String> {

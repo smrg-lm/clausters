@@ -60,7 +60,7 @@ import time
 import wave
 
 from clausters import Session as Server
-from clausters.arrangement import (Arrangement, Content, Lane, Region, Session,
+from clausters.multitrack import (Multitrack, Content, Lane, Region, Session,
                                    Source, Span, Tempo, Track, View)
 from clausters.defs.buffer import Buffer
 from clausters.document import ARRANGEMENT, domain_edit
@@ -134,7 +134,7 @@ def window(start: float = 0.0, duration: float = take_seconds) -> dict:
             "start": start, "duration": duration}
 
 
-piece = Arrangement()
+piece = Multitrack()
 piece.set_tempo(Tempo(at=0.0, bpm=120.0))
 
 #: The take, twice, at two places: two regions, two identities, **one** source.
@@ -171,7 +171,7 @@ moved = domain_edit(
     {"intent": "placeregion", "region": 13, "track": 20, "lane": 21,
      "position": 12.0, "layer": 0},
 )
-after = Arrangement.read(moved["state"])
+after = Multitrack.read(moved["state"])
 where = next((t, l, r) for t in after.tracks for l in t.lanes
              for r in l.regions if r.id == 13)
 print(f"  moved:  region 13 is on track {where[0].id}, lane {where[1].id}, "
@@ -180,7 +180,7 @@ print(f"  and to put it back: {moved['current']}")
 
 #: The other direction, through the same door -- and the piece is exactly the
 #: one that was built above, which is what "absolute" buys.
-piece = Arrangement.read(domain_edit(ARRANGEMENT, moved["state"],
+piece = Multitrack.read(domain_edit(ARRANGEMENT, moved["state"],
                                      moved["current"])["state"])
 print(f"  undone: the piece is {piece.end:.0f} beats long again, "
       f"over {len(piece.tracks)} tracks")
@@ -205,7 +205,7 @@ window.track_view(10).lanes_shown = True
 window.track_view(20).color = "#4488cc"
 window.selected = [12]
 
-session = Session(arrangement=piece, views=[window])
+session = Session(multitrack=piece, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
     2, take_frames, float(SAMPLE_RATE))
 
@@ -268,7 +268,7 @@ def run() -> None:
         reopened, buffers = reopen(session_server)
         session_server.server.sync()
         print(f"reopened {os.path.basename(path)}: "
-              f"{len(reopened.arrangement.tracks)} tracks, "
+              f"{len(reopened.multitrack.tracks)} tracks, "
               f"{len(buffers)} source(s) read, "
               f"{reopened.volatile()} still volatile")
         #: The window comes back too, and it is *not* the piece: the track
@@ -280,7 +280,7 @@ def run() -> None:
                   f"track 10 at height {window.track(10).height}, "
                   f"holding {window.selected}")
 
-        for track in reopened.arrangement.tracks:
+        for track in reopened.multitrack.tracks:
             state = " (muted)" if track.muted else ""
             for region in track.active_lane.regions:
                 print(f"  {region.position:6.2f}  {track.name}{state}: "
@@ -289,7 +289,7 @@ def run() -> None:
 
         # The two regions of the first track name one source, and there is one
         # buffer behind them.
-        first = reopened.arrangement.track(10).active_lane.regions[0]
+        first = reopened.multitrack.track(10).active_lane.regions[0]
         named = first.content.window["source"]["source"]
         buffer = buffers.get(named)
         if buffer is None:

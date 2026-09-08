@@ -24,14 +24,14 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.arrangement import (Arrangement, Content, Lane,  # noqa: E402
+from clausters.multitrack import (Multitrack, Content, Lane,  # noqa: E402
                                    Region, Track)
 
 
 def piece() -> dict:
     """The piece the arrangement's edits are applied to, built with the client.
 
-    Written through `clausters.arrangement` rather than by hand, unlike the
+    Written through `clausters.multitrack` rather than by hand, unlike the
     composition below, and on purpose: what crosses here is a whole piece as
     JSON state, so the vector is worth more if the state is the one this client
     actually writes. Two tracks, two lanes on the first, one region on each --
@@ -47,7 +47,7 @@ def piece() -> dict:
                                      {"id": 2, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
     guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)])
-    return Arrangement(tracks=[vocals, guitar]).write()
+    return Multitrack(tracks=[vocals, guitar]).write()
 
 
 #: A region moved to the other track: one intent, because where a region is
@@ -129,8 +129,8 @@ CASES = [
 DOMAIN_PAYLOADS = [
     (_native.TREE, {"intent": "place", "node": 7, "offset": 1.0}),
     (_native.TREE, {"intent": "configure", "node": 2, "config": {}}),
-    (_native.ARRANGEMENT, MOVE_BETWEEN_TRACKS),
-    (_native.ARRANGEMENT, {"intent": "settempomap",
+    (_native.MULTITRACK, MOVE_BETWEEN_TRACKS),
+    (_native.MULTITRACK, {"intent": "settempomap",
                            "tempo": [{"at": 0.0, "bpm": 132.0}]}),
     (_native.POINTS, {"intent": "setpoints",
                       "points": [{"at": 0.0, "value": 1.0}]}),
@@ -155,10 +155,10 @@ DOMAIN_EDITS = [
     # in one call. This is the crossing O22 is worth having -- the client writes
     # the piece, the crate moves the region, and the other client reads back the
     # same two answers.
-    (_native.ARRANGEMENT, piece(), MOVE_BETWEEN_TRACKS),
-    (_native.ARRANGEMENT, piece(), {"intent": "splitregion", "region": 100,
+    (_native.MULTITRACK, piece(), MOVE_BETWEEN_TRACKS),
+    (_native.MULTITRACK, piece(), {"intent": "splitregion", "region": 100,
                                     "at": 2.0, "left": 110, "right": 111}),
-    (_native.ARRANGEMENT, piece(), {"intent": "placeregion", "region": 999,
+    (_native.MULTITRACK, piece(), {"intent": "placeregion", "region": 999,
                                     "track": 20, "lane": 21, "position": 0.0}),
     (_native.POINTS,
      [{"at": 0.0, "value": 1.0}, {"at": 1.0, "value": 0.0}],

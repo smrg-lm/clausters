@@ -45,7 +45,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::arrangement::{Arrangement, Extra};
+use crate::multitrack::{Extra, Multitrack};
 use crate::view::View;
 use crate::{Document, Lifetime, Opaque, SourceId};
 
@@ -184,15 +184,19 @@ impl Source {
     }
 }
 
-/// A composition, saved: the arrangement, and where its samples are.
+/// A composition, saved: the multitrack, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
     pub format: u32,
     /// **The piece**: its tracks, and the timeline they are placed on.
-    #[serde(default, skip_serializing_if = "is_empty_arrangement")]
-    pub arrangement: Arrangement,
-    /// The general tree, for what is not an arrangement.
+    #[serde(
+        default,
+        skip_serializing_if = "is_empty_multitrack",
+        alias = "arrangement"
+    )]
+    pub multitrack: Multitrack,
+    /// The general tree, for what is not an multitrack.
     ///
     /// **Absent means empty, not invalid** — a session that is only an
     /// arrangement is the shape this milestone is walking towards, and it has
@@ -203,7 +207,7 @@ pub struct Session {
     /// opens - the standalone host, the clients' save and reopen - so it stays
     /// until the host binds the arrangement instead, which is a milestone of
     /// its own. What replaces it is already here: a
-    /// [`Content::Composite`](crate::arrangement::Content::Composite) region
+    /// [`Content::Composite`](crate::multitrack::Content::Composite) region
     /// carries this same tree, placed, so nothing the general model can say is
     /// lost by the move - it gains a position.
     #[serde(
@@ -241,8 +245,8 @@ pub struct Session {
 
 /// Whether an arrangement says nothing at all, so an empty one stays out of the
 /// file rather than writing an empty object into every session ever saved.
-fn is_empty_arrangement(arrangement: &Arrangement) -> bool {
-    *arrangement == Arrangement::new()
+fn is_empty_multitrack(multitrack: &Multitrack) -> bool {
+    *multitrack == Multitrack::new()
 }
 
 impl Session {
@@ -250,7 +254,7 @@ impl Session {
     pub fn new(document: Document) -> Self {
         Self {
             format: FORMAT,
-            arrangement: Arrangement::new(),
+            multitrack: Multitrack::new(),
             views: Vec::new(),
             document,
             sources: BTreeMap::new(),
@@ -259,9 +263,9 @@ impl Session {
         }
     }
 
-    /// Carries this arrangement.
-    pub fn with_arrangement(mut self, arrangement: Arrangement) -> Self {
-        self.arrangement = arrangement;
+    /// Carries this multitrack.
+    pub fn with_multitrack(mut self, multitrack: Multitrack) -> Self {
+        self.multitrack = multitrack;
         self
     }
 
@@ -315,7 +319,7 @@ impl Session {
     /// material the other half plays.
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
-        for region in self.arrangement.regions() {
+        for region in self.multitrack.regions() {
             if let Some(window) = region.content.as_window()
                 && let Some(source) = window.source.samples()
                 && !self.sources.contains_key(&source.source)

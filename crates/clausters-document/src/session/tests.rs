@@ -328,7 +328,7 @@ fn an_unknown_body_survives_a_save_and_an_open() {
 
 #[test]
 fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
-    use crate::arrangement::{Arrangement, Content, Region, Tempo, Track};
+    use crate::multitrack::{Content, Multitrack, Region, Tempo, Track};
     use crate::timebase::Beat;
 
     // Nothing said, nothing written: every session saved before this existed
@@ -339,8 +339,8 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
     assert!(!json.contains("arrangement"), "{json}");
     assert_eq!(reopen(&plain), plain);
 
-    let mut arrangement = Arrangement::new();
-    arrangement.set_tempo(Tempo::at(Beat(0.0), 96.0));
+    let mut multitrack = Multitrack::new();
+    multitrack.set_tempo(Tempo::at(Beat(0.0), 96.0));
     let mut track = Track::new(NodeId(80), NodeId(81)).named("drums");
     track.active_lane_mut().unwrap().place(Region::new(
         NodeId(82),
@@ -356,17 +356,17 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
             )),
         },
     ));
-    arrangement.tracks.push(track);
-    let session = plain.with_arrangement(arrangement);
+    multitrack.tracks.push(track);
+    let session = plain.with_multitrack(multitrack);
     let opened = reopen(&session);
-    assert_eq!(opened.arrangement.end(), Beat(4.0));
-    assert_eq!(opened.arrangement.tempo_at(Beat(2.0)).unwrap().bpm, 96.0);
+    assert_eq!(opened.multitrack.end(), Beat(4.0));
+    assert_eq!(opened.multitrack.tempo_at(Beat(2.0)).unwrap().bpm, 96.0);
     assert_eq!(opened, session);
 }
 
 #[test]
 fn a_source_only_a_region_names_is_still_reported_missing() {
-    use crate::arrangement::{Arrangement, Content, Region, Track};
+    use crate::multitrack::{Content, Multitrack, Region, Track};
     use crate::timebase::Beat;
     use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
 
@@ -384,7 +384,7 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
         start: 0.0,
         duration: 1.0,
     };
-    let mut arrangement = Arrangement::new();
+    let mut multitrack = Multitrack::new();
     let mut track = Track::new(NodeId(90), NodeId(91));
     track.active_lane_mut().unwrap().place(Region::new(
         NodeId(92),
@@ -392,14 +392,14 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
         Beat(4.0),
         Content::window(window(700)),
     ));
-    track.lanes.push(crate::arrangement::Lane::new(NodeId(93)));
+    track.lanes.push(crate::multitrack::Lane::new(NodeId(93)));
     track.lanes[1].place(Region::new(
         NodeId(94),
         Beat(0.0),
         Beat(4.0),
         Content::window(window(701)),
     ));
-    arrangement.tracks.push(track);
+    multitrack.tracks.push(track);
 
     let session = Session::new(Document::new(Node::new(
         NodeId(1),
@@ -408,7 +408,7 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
             fires: None,
         },
     )))
-    .with_arrangement(arrangement);
+    .with_multitrack(multitrack);
     assert_eq!(session.dangling(), vec![SourceId(700), SourceId(701)]);
 }
 
@@ -432,8 +432,8 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
 /// drop the fade on the one that is not on top.
 #[test]
 fn a_whole_session_round_trips_losslessly() {
-    use crate::arrangement::{
-        Arrangement, Automation, Content, Fade, Lane, Marker, Meter, Region, Span, Tempo, Track,
+    use crate::multitrack::{
+        Automation, Content, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
     };
     use crate::timebase::Beat;
     use crate::{Lifetime, Point, SegmentRef, SegmentSource, SourceRef};
@@ -449,15 +449,15 @@ fn a_whole_session_round_trips_losslessly() {
         duration: 4.0,
     };
 
-    let mut arrangement = Arrangement::new();
-    arrangement.set_tempo(Tempo::at(Beat(0.0), 96.0));
-    arrangement.set_tempo(Tempo::at(Beat(32.0), 120.0).ramping());
-    arrangement.set_meter(Meter::at(Beat(0.0), 4, 4));
-    arrangement.set_meter(Meter::at(Beat(32.0), 7, 8));
-    arrangement.add_marker(Marker::new(NodeId(1), Beat(0.0)).named("intro"));
-    arrangement.add_marker(Marker::new(NodeId(2), Beat(32.0)).named("B"));
-    arrangement.loop_span = Some(Span::new(Beat(0.0), Beat(32.0)));
-    arrangement.punch = Some(Span::new(Beat(8.0), Beat(16.0)));
+    let mut multitrack = Multitrack::new();
+    multitrack.set_tempo(Tempo::at(Beat(0.0), 96.0));
+    multitrack.set_tempo(Tempo::at(Beat(32.0), 120.0).ramping());
+    multitrack.set_meter(Meter::at(Beat(0.0), 4, 4));
+    multitrack.set_meter(Meter::at(Beat(32.0), 7, 8));
+    multitrack.add_marker(Marker::new(NodeId(1), Beat(0.0)).named("intro"));
+    multitrack.add_marker(Marker::new(NodeId(2), Beat(32.0)).named("B"));
+    multitrack.loop_span = Some(Span::new(Beat(0.0), Beat(32.0)));
+    multitrack.punch = Some(Span::new(Beat(8.0), Beat(16.0)));
 
     // A track comped from three takes, playing the second.
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
@@ -546,16 +546,16 @@ fn a_whole_session_round_trips_losslessly() {
         },
     ));
 
-    arrangement.tracks.push(vocals);
-    arrangement.tracks.push(guitars);
-    arrangement.tracks.push(sections);
+    multitrack.tracks.push(vocals);
+    multitrack.tracks.push(guitars);
+    multitrack.tracks.push(sections);
 
-    let session = saved().with_arrangement(arrangement);
+    let session = saved().with_multitrack(multitrack);
     let opened = reopen(&session);
     assert_eq!(opened, session, "the whole session, unchanged");
 
     // ...and the details a whole-value comparison would not name if it failed.
-    let a = &opened.arrangement;
+    let a = &opened.multitrack;
     assert_eq!(a.tracks.len(), 3);
     assert_eq!(a.end(), Beat(48.0));
     assert_eq!(

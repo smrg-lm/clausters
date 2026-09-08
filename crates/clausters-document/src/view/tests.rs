@@ -1,8 +1,8 @@
 use super::*;
 use crate::NodeId;
-use crate::arrangement::{Content, Lane, Region, Track};
+use crate::multitrack::{Content, Lane, Region, Track};
 
-fn piece() -> Arrangement {
+fn piece() -> Multitrack {
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
     vocals.lanes.push(Lane::new(NodeId(12)));
     vocals.lanes[0].place(Region::new(
@@ -20,7 +20,7 @@ fn piece() -> Arrangement {
             )),
         },
     ));
-    let mut piece = Arrangement::new();
+    let mut piece = Multitrack::new();
     piece.tracks = vec![vocals, Track::new(NodeId(20), NodeId(21))];
     piece
 }
@@ -45,12 +45,12 @@ fn the_piece_round_trips_the_same_whether_or_not_a_view_of_it_exists() {
     view.selected = vec![NodeId(100)];
 
     let session = crate::Session::new(crate::Document::empty())
-        .with_arrangement(piece.clone())
+        .with_multitrack(piece.clone())
         .with_view(view);
     let back: crate::Session =
         serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
-    assert_eq!(back.arrangement, piece);
-    assert_eq!(serde_json::to_value(&back.arrangement).unwrap(), written);
+    assert_eq!(back.multitrack, piece);
+    assert_eq!(serde_json::to_value(&back.multitrack).unwrap(), written);
     assert_eq!(back.views.len(), 1);
     assert_eq!(back.views[0].name.as_deref(), Some("arranger"));
     assert_eq!(back.views[0].track(NodeId(10)).height, Some(96.0));
@@ -72,7 +72,7 @@ fn two_windows_over_one_piece_are_two_views_and_disagree_on_purpose() {
         v
     };
     let session = crate::Session::new(crate::Document::empty())
-        .with_arrangement(piece())
+        .with_multitrack(piece())
         .with_view(arranger)
         .with_view(editor);
     let back: crate::Session =
@@ -145,7 +145,7 @@ fn a_field_a_newer_writer_added_survives_the_round_trip() {
 
 #[test]
 fn a_session_written_without_views_reads_back_without_them() {
-    let session = crate::Session::new(crate::Document::empty()).with_arrangement(piece());
+    let session = crate::Session::new(crate::Document::empty()).with_multitrack(piece());
     let written = serde_json::to_value(&session).unwrap();
     assert!(
         written.get("views").is_none(),

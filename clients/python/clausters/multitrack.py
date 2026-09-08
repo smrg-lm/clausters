@@ -20,7 +20,7 @@ The vocabulary is the field's own and not this project's invention:
 - A `Track` holds several lanes and **plays one**, which is what comping is:
   record six passes into six lanes, then take from each.
 - An `Automation` is a curve over one parameter, in the arrangement's time.
-- An `Arrangement` is the tracks plus what the **piece** has one of: the tempo
+- An `Multitrack` is the tracks plus what the **piece** has one of: the tempo
   map, the meter map, the markers, the loop and punch spans. They are here and
   not on a track precisely so that no two tracks can disagree about them.
 
@@ -45,9 +45,9 @@ map is part of the piece.
 
 Usage::
 
-    from clausters.arrangement import Arrangement, Region, Track, Tempo
+    from clausters.multitrack import Multitrack, Region, Track, Tempo
 
-    piece = Arrangement()
+    piece = Multitrack()
     piece.set_tempo(Tempo(at=0.0, bpm=96.0))
     drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
     drums.active_lane.place(Region(id=3, position=0.0, length=4.0,
@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from .document import FIRST_VERSION
 
 __all__ = [
-    "Arrangement",
+    "Multitrack",
     "Automation",
     "Content",
     "Fade",
@@ -530,7 +530,7 @@ class Span:
 
 
 @dataclass
-class Arrangement:
+class Multitrack:
     """The tracks, and the timeline they are placed on.
 
     What is here rather than on a track is what the **piece** has one of: the
@@ -628,7 +628,7 @@ class Arrangement:
         return out
 
     @classmethod
-    def read(cls, written: dict) -> "Arrangement":
+    def read(cls, written: dict) -> "Multitrack":
         """An arrangement from the crate's JSON."""
         known = ("version", "tracks", "tempo", "meter", "markers", "loop_span",
                  "punch")
@@ -798,7 +798,7 @@ class FrozenSource:
 # Parallel to the model and never inside it, which is Live's shape and
 # deliberate: `Song.View`, `Track.View` and `Application.View` are objects
 # *beside* their model objects rather than children. So a `TrackView` is looked
-# up by the track's id, and an `Arrangement` round trips the same whether or not
+# up by the track's id, and an `Multitrack` round trips the same whether or not
 # a view of it exists.
 
 
@@ -925,7 +925,7 @@ class View:
         """How this lane is drawn, to be edited. See `track_view`."""
         return self.lanes.setdefault(int(id), LaneView())
 
-    def prune(self, piece: "Arrangement") -> bool:
+    def prune(self, piece: "Multitrack") -> bool:
         """Drops everything this view says about objects the piece no longer
         holds, and answers whether anything went.
 
@@ -1011,13 +1011,13 @@ class View:
 class Session:
     """A composition, saved: the arrangement, and where its samples are.
 
-    An `Arrangement` says *what plays when* and deliberately does not say where
+    An `Multitrack` says *what plays when* and deliberately does not say where
     a source lives, because inside a running system a source is a server buffer,
     a mapped file or a rendered result and the piece has no business knowing
     which. A session is the piece plus exactly that missing half.
 
     Not `clausters.Session`, which is a connection to a running server. Two
-    nouns, two modules; this one is reached as `clausters.arrangement.Session`
+    nouns, two modules; this one is reached as `clausters.multitrack.Session`
     and is a **file**.
 
     The `document` field carries the general tree for what is not an
@@ -1030,7 +1030,7 @@ class Session:
     format: int = 1
     #: The piece. Always present, possibly empty — which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
-    arrangement: "Arrangement" = field(default_factory=lambda: Arrangement())
+    multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())
     #: How the piece was being **looked at**: one entry per window. Carried for
     #: the reason every program in the field carries it -- reopening a piece
     #: into the window it was left in is what a person expects -- and a reader
@@ -1066,7 +1066,7 @@ class Session:
         take names its source whether or not anyone has chosen it yet.
         """
         missing = []
-        for region in self.arrangement.regions():
+        for region in self.multitrack.regions():
             named = (region.content.window or {}).get("source")
             id = named.get("source") if isinstance(named, dict) else None
             if id is not None and int(id) not in self.sources \
@@ -1097,9 +1097,9 @@ class Session:
     def write(self) -> dict:
         """The session as the crate's JSON."""
         out: dict = {"format": self.format}
-        written = self.arrangement.write()
+        written = self.multitrack.write()
         if written:
-            out["arrangement"] = written
+            out["multitrack"] = written
         if self.views:
             out["views"] = [v.write() for v in self.views]
         if self.document is not None:
@@ -1115,11 +1115,14 @@ class Session:
     @classmethod
     def read(cls, written: dict) -> "Session":
         """A session from the crate's JSON."""
-        known = ("format", "arrangement", "views", "document", "sources",
+        known = ("format", "multitrack", "views", "document", "sources",
                  "provenance")
         return cls(
             format=int(written.get("format", 1)),
-            arrangement=Arrangement.read(written.get("arrangement") or {}),
+            # `arrangement` is what the field was called before 2026-09-08, read
+            # so a session written then still opens.
+            multitrack=Multitrack.read(
+                written.get("multitrack") or written.get("arrangement") or {}),
             views=[View.read(v) for v in written.get("views", [])],
             document=written.get("document"),
             sources={int(id): Source.read(entry)

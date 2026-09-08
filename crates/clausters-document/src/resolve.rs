@@ -55,7 +55,7 @@ pub enum Unit {
 /// How to get from a selection's numbers to a source's frames.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mapping {
-    /// Frames of samples per beat of the arrangement. Supplied rather than
+    /// Frames of samples per beat of the multitrack. Supplied rather than
     /// derived: tempo and sample rate are the caller's.
     pub frames_per_beat: f64,
     /// Frames of samples per second — the sample rate, and what a length that
@@ -94,7 +94,7 @@ impl Mapping {
         }
     }
 
-    /// A length in its own unit, as beats of the arrangement.
+    /// A length in its own unit, as beats of the multitrack.
     ///
     /// A `Mapping` states its own `frames_per_beat`, so its tempo is a
     /// **constant by construction** and the multiplication is the right one

@@ -7,7 +7,7 @@
 //! because it has none.
 //!
 //! It is also the smallest instance of the shape the history exists to serve
-//! beyond the arrangement: a structure the client built, edited in a view and
+//! beyond the multitrack: a structure the client built, edited in a view and
 //! read back, with no [`Document`](crate::Document) behind it. A curve drawn in
 //! a window is registered in a history like anything else, and an application
 //! showing a roll and a curve together undoes across both in one order.

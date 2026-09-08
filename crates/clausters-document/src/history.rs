@@ -1,6 +1,6 @@
 //! A history, and the data it belongs to — **the pile, with no document in it**.
 //!
-//! [`log`](crate::log) placed the arrangement's undo beside the arrangement,
+//! [`log`](crate::log) placed the arrangement's undo beside the multitrack,
 //! and gave the reason: a history that sees only one editor's gestures
 //! describes data that has moved on. This module is that argument made
 //! structural and made general. Nothing here knows what an edit *is*: a

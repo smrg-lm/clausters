@@ -47,7 +47,7 @@ The vocabulary is the field's own:
   precisely so that no two tracks can disagree about them.
 
 ```python
-from clausters.arrangement import Arrangement, Content, Lane, Region, Tempo, Track
+from clausters.multitrack import Arrangement, Content, Lane, Region, Tempo, Track
 
 piece = Arrangement()
 piece.set_tempo(Tempo(at=0.0, bpm=96.0))
@@ -75,7 +75,7 @@ vocabulary. Hand over the piece as the crate's JSON and the edit; take back the
 piece as it now stands and the edit that puts it back.
 
 ```python
-from clausters.arrangement import Arrangement
+from clausters.multitrack import Arrangement
 from clausters.document import ARRANGEMENT, domain_edit
 
 edited = domain_edit(
@@ -134,11 +134,11 @@ The shape is Live's and it is deliberate: `Song.View`, `Track.View` and
 `Application.View` are objects parallel to their model objects rather than
 children, presentation on one side and functional data on the other, both
 readable and writable from a script. A `TrackView` is therefore looked up by the
-track's id, and an `Arrangement` round-trips the same whether or not a view of it
+track's id, and an `Multitrack` round-trips the same whether or not a view of it
 exists.
 
 ```python
-from clausters.arrangement import Session, Span, View
+from clausters.multitrack import Session, Span, View
 
 window = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
 window.track_view(10).height = 96.0
@@ -179,7 +179,7 @@ once you edit from more than one place, so this section says what crosses.
 **`clausters.form` has no door to it, and that is deliberate.** It had one until
 2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
 was removed with the turn that made the arrangement a model of its own. What a
-piece is written with now is `clausters.arrangement`, above; what the crate's
+piece is written with now is `clausters.multitrack`, above; what the crate's
 own document holds is a **leaf as an id, a kind and a configuration it never
 interprets**, and a generator travels as a *reference* the way a project file
 references a plugin rather than serializing it. A generator *is* code, in the
@@ -387,7 +387,7 @@ and the tree has no business knowing which. A **session** is the document plus
 that missing half:
 
 ```python
-from clausters.arrangement import Session, Source
+from clausters.multitrack import Session, Source
 
 session = Session(arrangement=piece, provenance={"script": "song.py"})
 session.sources[7] = Source.file("takes/vocal.wav", lifetime="external")
@@ -430,7 +430,7 @@ in a running system — a buffer to allocate, a file to map — is not the
 document's to decide:
 
 ```python
-from clausters.arrangement import Session
+from clausters.multitrack import Session
 from clausters.defs import Buffer
 
 with open(path) as f:

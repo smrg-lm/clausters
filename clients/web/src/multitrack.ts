@@ -1,8 +1,8 @@
 /**
- * The arrangement: tracks, lanes, regions, and the timeline they sit on
- * (mirrors `clausters/arrangement.py`).
+ * The multitrack: tracks, lanes, regions, and the timeline they sit on
+ * (mirrors `clausters/multitrack.py`).
  *
- * This is the client's side of `clausters_document::arrangement` — the model a
+ * This is the client's side of `clausters_document::multitrack` — the model a
  * multitrack editor edits, and the one the three classic applications (audio
  * editor, multitrack editor, score editor) are built over. The crate defines
  * the format; this module is the idiomatic way to write one and read one back,
@@ -23,7 +23,7 @@
  *   comping is: record six passes into six lanes, then take from each.
  * - An {@link Automation} is a curve over one parameter, in the arrangement's
  *   time.
- * - An {@link Arrangement} is the tracks plus what the **piece** has one of:
+ * - An {@link Multitrack} is the tracks plus what the **piece** has one of:
  *   the tempo map, the meter map, the markers, the loop and punch spans. They
  *   are here and not on a track precisely so that no two tracks can disagree
  *   about them.
@@ -622,7 +622,7 @@ export class Span {
  * never disagrees with another track about them, which is the whole argument
  * for where they live.
  */
-export class Arrangement {
+export class Multitrack {
     /**
      * What this piece is *at*, and the whole of what a stale edit is stale
      * against — the twin of the document's own version, and deliberately a
@@ -722,8 +722,8 @@ export class Arrangement {
     }
 
     /** An arrangement from the crate's JSON. */
-    static read(written: Extra): Arrangement {
-        const piece = new Arrangement();
+    static read(written: Extra): Multitrack {
+        const piece = new Multitrack();
         piece.version = (written.version as number) ?? FIRST_VERSION;
         piece.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
         piece.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
@@ -914,7 +914,7 @@ export class FrozenSource {
 // Parallel to the model and never inside it, which is Live's shape and
 // deliberate: `Song.View`, `Track.View` and `Application.View` are objects
 // *beside* their model objects rather than children. So a `TrackView` is looked
-// up by the track's id, and an `Arrangement` round trips the same whether or
+// up by the track's id, and an `Multitrack` round trips the same whether or
 // not a view of it exists.
 
 /** How one track is drawn. */
@@ -1068,7 +1068,7 @@ export class View {
      * height kept for a track that is not the same track is a defect that looks
      * like a feature.
      */
-    prune(piece: Arrangement): boolean {
+    prune(piece: Multitrack): boolean {
         const held = new Set<number>();
         for (const track of piece.tracks) {
             held.add(track.id);
@@ -1155,7 +1155,7 @@ export class View {
 /**
  * A composition, saved: the arrangement, and where its samples are.
  *
- * An {@link Arrangement} says *what plays when* and deliberately does not say
+ * An {@link Multitrack} says *what plays when* and deliberately does not say
  * where a source lives, because inside a running system a source is a server
  * buffer, a mapped file or a rendered result and the piece has no business
  * knowing which. A session is the piece plus exactly that missing half.
@@ -1170,7 +1170,7 @@ export class Session {
      * The piece. Always present, possibly empty — which mirrors the crate,
      * where an absent arrangement reads as an empty one rather than as nothing.
      */
-    arrangement = new Arrangement();
+    multitrack = new Multitrack();
     /**
      * How the piece was being **looked at**: one entry per window. Carried for
      * the reason every program in the field carries it — reopening a piece into
@@ -1225,7 +1225,7 @@ export class Session {
      */
     dangling(): number[] {
         const missing: number[] = [];
-        for (const region of this.arrangement.regions()) {
+        for (const region of this.multitrack.regions()) {
             const named = (region.content.window ?? {}).source as Extra | undefined;
             const id = named?.source;
             if (typeof id === "number" && !this.sources.has(id) && !missing.includes(id)) {
@@ -1262,8 +1262,8 @@ export class Session {
     /** The session as the crate's JSON. */
     write(): Extra {
         const out: Extra = { format: this.format };
-        const piece = this.arrangement.write();
-        if (Object.keys(piece).length) out.arrangement = piece;
+        const piece = this.multitrack.write();
+        if (Object.keys(piece).length) out.multitrack = piece;
         if (this.views.length) out.views = this.views.map((v) => v.write());
         if (this.document !== undefined) out.document = this.document;
         if (this.sources.size) {
@@ -1281,14 +1281,17 @@ export class Session {
     static read(written: Extra): Session {
         const session = new Session();
         session.format = num(written.format, 1);
-        session.arrangement = Arrangement.read((written.arrangement as Extra) ?? {});
+        // `arrangement` is what the field was called before 2026-09-08, read so a
+        // session written then still opens.
+        session.multitrack = Multitrack.read(
+            (written.multitrack as Extra) ?? (written.arrangement as Extra) ?? {});
         session.views = ((written.views as Extra[]) ?? []).map(View.read);
         if (written.document !== undefined) session.document = written.document as Extra;
         for (const [id, entry] of Object.entries((written.sources as Extra) ?? {})) {
             session.sources.set(Number(id), Source.read(entry as Extra));
         }
         if (written.provenance !== undefined) session.provenance = written.provenance;
-        session.extra = rest(written, "format", "arrangement", "views",
+        session.extra = rest(written, "format", "multitrack", "arrangement", "views",
                              "document", "sources", "provenance");
         return session;
     }

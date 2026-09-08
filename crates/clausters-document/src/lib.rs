@@ -24,7 +24,7 @@
 //!   widget tree, which is drawn, and drawing frees. So [`arrangement`] holds
 //!   the model the field actually has — source, region, lane, track, automation
 //!   — and the general tree is what a
-//!   [`Content::Composite`](arrangement::Content::Composite) region *places*.
+//!   [`Content::Composite`](multitrack::Content::Composite) region *places*.
 //!   Nothing the tree could say is lost; it gains a position.
 //! - **Sources are never overwritten.** A [`SourceRef`] names samples and
 //!   carries the [`Lifetime`] that says whether it outlives the session, which
@@ -54,13 +54,13 @@
 //! ([`Node::character`], [`Body::relation`]), exactly as they are in the
 //! client, so no edit can leave them stale.
 
-pub mod arrangement;
 pub mod clipboard;
 pub mod domain;
 pub mod events;
 pub mod history;
 pub mod intent;
 pub mod log;
+pub mod multitrack;
 pub mod points;
 pub mod resolve;
 pub mod samples;
@@ -69,10 +69,6 @@ pub mod session;
 pub mod timebase;
 pub mod view;
 
-pub use arrangement::edit::{ARRANGEMENT, ArrangementIntent, Piece, SpanKind};
-pub use arrangement::{
-    Arrangement, Automation, Extra, Fade, Lane, Marker, Meter, Region, Span, Tempo, Track,
-};
 pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
 pub use events::{Event, Events, EventsIntent};
@@ -80,6 +76,10 @@ pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{
     Entry, Log, MemorySpill, Redone, Spill, Step, Tree, Undone, apply_logged, inverse_of,
+};
+pub use multitrack::edit::{MULTITRACK, MultitrackIntent, Piece, SpanKind};
+pub use multitrack::{
+    Automation, Extra, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
 };
 pub use points::{Point, Points, PointsIntent};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
@@ -769,7 +769,7 @@ impl Body {
 /// [`SourceRef`]'s `generation`). It is what lets an intent made against a
 /// stale picture be reported as stale rather than applied blind — the case a
 /// log alone cannot see, because the document can move by routes that are not
-/// gestures: a script editing the arrangement, a second editor, a re-render.
+/// gestures: a script editing the multitrack, a second editor, a re-render.
 ///
 /// **A version starts at one**, because zero is what an
 /// [`intent::Against`] means by *unstated* — the same reservation the GUI

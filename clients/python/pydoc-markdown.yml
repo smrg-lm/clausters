@@ -25,7 +25,7 @@ loaders:
       - clausters.errors
       - clausters.data
       - clausters.document
-      - clausters.arrangement
+      - clausters.multitrack
       - clausters.base
       - clausters.base.builtins
       - clausters.base.absobject

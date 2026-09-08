@@ -2,8 +2,8 @@
 //!
 //! The crate's own suite proves the shape round-trips against itself, which
 //! says nothing about whether anyone else agrees with it. This does: the vector
-//! beside it is an arrangement built with `clausters.arrangement`, as that
-//! module writes it (`gen-arrangement-vector.py` writes the file, and it is
+//! beside it is an arrangement built with `clausters.multitrack`, as that
+//! module writes it (`gen-multitrack-vector.py` writes the file, and it is
 //! committed). Nothing in CI runs the Python client's call sites, so without a
 //! crossing like this one the two halves of O21 could drift until a user found
 //! out with a session that would not open.
@@ -11,12 +11,12 @@
 //! When the format changes on purpose: re-run the generator and commit whatever
 //! moved. When it changes by accident, this fails first.
 
-use clausters_document::arrangement::*;
+use clausters_document::multitrack::*;
 use clausters_document::timebase::Beat;
 
-const VECTOR: &str = include_str!("arrangement_vector.json");
+const VECTOR: &str = include_str!("multitrack_vector.json");
 
-fn vector() -> Arrangement {
+fn vector() -> Multitrack {
     serde_json::from_str(VECTOR).expect("the Python client's arrangement must parse here")
 }
 
@@ -123,7 +123,7 @@ use clausters_document::{Body, Lifetime, Location, NodeId, Session, SourceId};
 
 // ---- the session: the piece, and where its samples are ----
 
-const SESSION: &str = include_str!("arrangement_session_vector.json");
+const SESSION: &str = include_str!("multitrack_session_vector.json");
 
 fn saved() -> Session {
     serde_json::from_str(SESSION).expect("the Python client's session must parse here")
@@ -180,7 +180,7 @@ fn a_save_that_cannot_promise_everything_says_which_part() {
 #[test]
 fn the_piece_inside_the_session_is_the_same_piece() {
     let session = saved();
-    assert_eq!(session.arrangement, vector());
+    assert_eq!(session.multitrack, vector());
     // ...and the table covers what it plays.
     assert_eq!(session.dangling(), Vec::<SourceId>::new());
 }
@@ -230,10 +230,10 @@ fn a_view_says_nothing_about_what_plays() {
     // The whole argument for parallel rather than a field on the model: drop
     // every view and the piece is the same piece, byte for byte.
     let mut session = saved();
-    let piece = serde_json::to_value(&session.arrangement).unwrap();
+    let piece = serde_json::to_value(&session.multitrack).unwrap();
     session.views.clear();
-    assert_eq!(serde_json::to_value(&session.arrangement).unwrap(), piece);
-    assert_eq!(session.arrangement, vector());
+    assert_eq!(serde_json::to_value(&session.multitrack).unwrap(), piece);
+    assert_eq!(session.multitrack, vector());
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn a_view_of_a_track_that_is_gone_goes_with_it() {
     // named their region -- and leaves everything the piece still holds.
     let session = saved();
     let mut view = session.views[0].clone();
-    let mut piece = session.arrangement.clone();
+    let mut piece = session.multitrack.clone();
     piece.tracks.retain(|t| t.id != NodeId(30));
 
     assert!(view.prune(&piece));

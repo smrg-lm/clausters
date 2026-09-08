@@ -13,8 +13,8 @@ arrangement no longer goes through.
 """
 
 import clausters
-from clausters.arrangement import Arrangement, Content, Lane, Region, Track
-from clausters.document import (ARRANGEMENT, EVENTS, POINTS, SAMPLES, TREE,
+from clausters.multitrack import Multitrack, Content, Lane, Region, Track
+from clausters.document import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE,
                                 Document, History, Log, apply_intent,
                                 domain_coalesce_key, domain_edit,
                                 resolve_selection)
@@ -32,11 +32,11 @@ def test_the_door_carries_what_the_web_client_carries():
     # is how it would open again.
     assert {name for name in dir(clausters.document) if not name.startswith("_")} >= {
         "Document", "History", "Log", "apply_intent", "domain_coalesce_key",
-        "domain_edit", "resolve_selection", "TREE", "ARRANGEMENT", "POINTS",
+        "domain_edit", "resolve_selection", "TREE", "MULTITRACK", "POINTS",
         "SAMPLES", "EVENTS",
     }
-    assert (TREE, ARRANGEMENT, POINTS, SAMPLES, EVENTS) == (
-        "tree", "arrangement", "points", "samples", "events")
+    assert (TREE, MULTITRACK, POINTS, SAMPLES, EVENTS) == (
+        "tree", "multitrack", "points", "samples", "events")
 
 
 def test_an_empty_document_opens_and_says_what_it_holds():
@@ -92,7 +92,7 @@ def a_piece() -> dict:
                                      {"id": 1, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
     guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)])
-    return Arrangement(tracks=[vocals, guitar]).write()
+    return Multitrack(tracks=[vocals, guitar]).write()
 
 
 def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
@@ -103,23 +103,23 @@ def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
     # hands back with it is what puts it on the lane it came from.
     move = {"intent": "placeregion", "region": 100, "track": 20, "lane": 21,
             "position": 16.0, "layer": 1}
-    edited = domain_edit(ARRANGEMENT, a_piece(), move)
+    edited = domain_edit(MULTITRACK, a_piece(), move)
     assert edited is not None and edited["applied"]
 
-    moved = Arrangement.read(edited["state"])
+    moved = Multitrack.read(edited["state"])
     assert moved.track(20).lanes[0].regions[0].id == 100
     assert moved.track(10).lanes[0].regions == []
     assert moved.version == 2, "and the piece carries its own counter"
 
-    back = domain_edit(ARRANGEMENT, edited["state"], edited["current"])
+    back = domain_edit(MULTITRACK, edited["state"], edited["current"])
     assert back is not None
-    restored = Arrangement.read(back["state"])
+    restored = Multitrack.read(back["state"])
     assert restored.track(10).lanes[0].regions[0].position == 0.0
     assert restored.track(20).lanes[0].regions == []
 
 
 def test_a_refusal_says_why_rather_than_failing():
-    edited = domain_edit(ARRANGEMENT, a_piece(),
+    edited = domain_edit(MULTITRACK, a_piece(),
                          {"intent": "placeregion", "region": 999, "track": 20,
                           "lane": 21, "position": 0.0})
     assert edited is not None
@@ -129,14 +129,14 @@ def test_a_refusal_says_why_rather_than_failing():
 
 def test_the_pieces_coalesce_key_is_asked_here_and_not_spelled_again():
     assert domain_coalesce_key(
-        ARRANGEMENT, {"intent": "trimregion", "region": 100, "position": 0.0,
+        MULTITRACK, {"intent": "trimregion", "region": 100, "position": 0.0,
                       "length": 2.0}) == "trimregion:100"
-    assert domain_coalesce_key(ARRANGEMENT, {"intent": "setpoints",
+    assert domain_coalesce_key(MULTITRACK, {"intent": "setpoints",
                                              "points": []}) == ""
 
 
 def test_an_unedited_piece_writes_nothing_and_reads_back_at_the_first_version():
     # The counter stays out of the file while it is the first version, so a
     # piece that says nothing still writes an empty object.
-    assert Arrangement().write() == {}
-    assert Arrangement.read({}).version == 1
+    assert Multitrack().write() == {}
+    assert Multitrack.read({}).version == 1

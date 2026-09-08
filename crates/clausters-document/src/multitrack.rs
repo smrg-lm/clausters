@@ -1,4 +1,4 @@
-//! The arrangement: what a multitrack editor edits, written down.
+//! The multitrack: what a multitrack editor edits, written down.
 //!
 //! Source, **region**, **lane**, **track**, **automation** — the field's own
 //! vocabulary, not this project's invention, and the layer that was missing.
@@ -122,7 +122,7 @@ pub enum Content {
     },
     /// A **composite**: the general tree, placed as one region.
     ///
-    /// A section, a nested arrangement, anything the five primitives can build.
+    /// A section, a nested multitrack, anything the five primitives can build.
     /// It carries a [`Node`] unchanged, which is what keeps everything the
     /// document already models reachable from a session without restating it —
     /// and what makes "an arrangement of arrangements" cost nothing.
@@ -375,7 +375,7 @@ impl Automation {
     }
 }
 
-/// A row of the arrangement: several lanes, one of them playing, plus the
+/// A row of the multitrack: several lanes, one of them playing, plus the
 /// curves over it and whatever the client says it is.
 ///
 /// **What a track *is* — an instrument, a bus, a folder — is not here.** That
@@ -600,14 +600,14 @@ impl Span {
     }
 }
 
-/// The arrangement: the tracks, and the timeline they are placed on.
+/// The multitrack: the tracks, and the timeline they are placed on.
 ///
 /// What is here rather than on a track is what the **piece** has one of: the
 /// tempo map, the meter map, the markers, the loop. A track has none of them
 /// and never disagrees with another track about them, which is the whole
 /// argument for where they live.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Arrangement {
+pub struct Multitrack {
     /// What this piece is *at*, and the whole of what a stale edit is stale
     /// against.
     ///
@@ -657,7 +657,7 @@ fn is_first_version(version: &u64) -> bool {
     *version == crate::FIRST_VERSION
 }
 
-impl Default for Arrangement {
+impl Default for Multitrack {
     fn default() -> Self {
         Self {
             version: crate::FIRST_VERSION,
@@ -672,8 +672,8 @@ impl Default for Arrangement {
     }
 }
 
-impl Arrangement {
-    /// An empty arrangement: no tracks, and a timeline that says nothing.
+impl Multitrack {
+    /// An empty multitrack: no tracks, and a timeline that says nothing.
     pub fn new() -> Self {
         Self::default()
     }
@@ -762,7 +762,7 @@ impl Arrangement {
         self.meter.insert(at, meter);
     }
 
-    /// Every region in the arrangement, in track then lane then position
+    /// Every region in the multitrack, in track then lane then position
     /// order — **every** lane, not only the ones that play, because an
     /// alternate take still names the source it plays and a save that forgot
     /// it would reopen missing the take nobody chose yet.
@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn the_map_answers_the_entry_in_force_and_nothing_before_the_first() {
-        let mut a = Arrangement::new();
+        let mut a = Multitrack::new();
         a.set_tempo(Tempo::at(Beat(8.0), 90.0));
         a.set_tempo(Tempo::at(Beat(0.0), 120.0));
         a.set_tempo(Tempo::at(Beat(16.0), 60.0).ramping());
@@ -958,13 +958,13 @@ mod tests {
     fn a_piece_that_never_said_a_tempo_says_nothing() {
         // No 120 invented here: naming a default would be this crate deciding
         // a musical question it has no business in.
-        assert!(Arrangement::new().tempo_at(Beat(0.0)).is_none());
-        assert!(Arrangement::new().meter_at(Beat(0.0)).is_none());
+        assert!(Multitrack::new().tempo_at(Beat(0.0)).is_none());
+        assert!(Multitrack::new().meter_at(Beat(0.0)).is_none());
     }
 
     #[test]
     fn two_tempos_at_one_beat_is_a_state_the_map_cannot_hold() {
-        let mut a = Arrangement::new();
+        let mut a = Multitrack::new();
         a.set_tempo(Tempo::at(Beat(4.0), 120.0));
         a.set_tempo(Tempo::at(Beat(4.0), 90.0));
         assert_eq!(a.tempo.len(), 1);
@@ -973,7 +973,7 @@ mod tests {
 
     #[test]
     fn a_meter_re_bars_and_a_marker_may_share_a_beat_with_another() {
-        let mut a = Arrangement::new();
+        let mut a = Multitrack::new();
         a.set_meter(Meter::at(Beat(0.0), 4, 4));
         a.set_meter(Meter::at(Beat(16.0), 7, 8));
         assert_eq!(a.meter_at(Beat(20.0)).unwrap().beats, 7);
@@ -995,7 +995,7 @@ mod tests {
 
     #[test]
     fn an_arrangement_round_trips_and_spans_every_track() {
-        let mut a = Arrangement::new();
+        let mut a = Multitrack::new();
         a.set_tempo(Tempo::at(Beat(0.0), 96.0));
         a.set_meter(Meter::at(Beat(0.0), 3, 4));
         a.loop_span = Some(Span::new(Beat(0.0), Beat(12.0)));
@@ -1009,21 +1009,21 @@ mod tests {
         assert_eq!(a.track(NodeId(2)).unwrap().name.as_deref(), Some("bass"));
         let json = serde_json::to_string(&a).unwrap();
         assert!(!json.contains("punch"), "an unset span stays out: {json}");
-        assert_eq!(serde_json::from_str::<Arrangement>(&json).unwrap(), a);
+        assert_eq!(serde_json::from_str::<Multitrack>(&json).unwrap(), a);
     }
 
     #[test]
     fn an_empty_arrangement_writes_an_empty_object() {
         // Nothing derived, nothing defaulted, nothing invented: a piece with
         // nothing in it says nothing rather than saying zero of everything.
-        assert_eq!(serde_json::to_string(&Arrangement::new()).unwrap(), "{}");
+        assert_eq!(serde_json::to_string(&Multitrack::new()).unwrap(), "{}");
     }
 
     #[test]
     fn a_timeline_field_a_newer_writer_added_survives() {
         let json = r#"{"tempo":[{"at":0.0,"bpm":120.0,"swing":0.62}],
                        "groove":{"name":"mpc60"}}"#;
-        let a: Arrangement = serde_json::from_str(json).unwrap();
+        let a: Multitrack = serde_json::from_str(json).unwrap();
         assert!(a.extra.contains_key("groove"));
         assert!(a.tempo[0].extra.contains_key("swing"));
         let back = serde_json::to_value(&a).unwrap();

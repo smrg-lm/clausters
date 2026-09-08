@@ -3,7 +3,7 @@
 //! vocabulary whose refusals are guesses.
 
 use super::*;
-use crate::arrangement::{Automation, Lane};
+use crate::multitrack::{Automation, Lane};
 use crate::{Lifetime, SegmentSource, SourceId, SourceRef};
 
 fn window(source: u64) -> crate::SegmentRef {
@@ -25,7 +25,7 @@ fn region(id: u64, at: f64, len: f64) -> Region {
 
 /// Two tracks: the first comped from two lanes with a region on each, the
 /// second empty with one automation curve.
-fn piece() -> Arrangement {
+fn piece() -> Multitrack {
     let mut first = Track::new(NodeId(10), NodeId(11)).named("vocals");
     first.lanes[0].place(region(100, 0.0, 4.0));
     let mut second = Lane::new(NodeId(12)).named("take 2");
@@ -36,12 +36,12 @@ fn piece() -> Arrangement {
         NodeId(22),
         Opaque(serde_json::json!({ "ctl": "level" })),
     ));
-    let mut piece = Arrangement::new();
+    let mut piece = Multitrack::new();
     piece.tracks = vec![first, other];
     piece
 }
 
-fn edit(piece: &mut Arrangement, intent: ArrangementIntent) -> Outcome<ArrangementIntent> {
+fn edit(piece: &mut Multitrack, intent: MultitrackIntent) -> Outcome<MultitrackIntent> {
     apply(piece, &intent, &Against::unstated(), &Rules::none())
 }
 
@@ -53,7 +53,7 @@ fn adding_removing_and_reordering_tracks_are_one_verb() {
     let reordered = vec![piece.tracks[1].clone(), piece.tracks[0].clone()];
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::SetTracks { tracks: reordered },
+        MultitrackIntent::SetTracks { tracks: reordered },
     );
     assert!(outcome.applied);
     assert_eq!(piece.tracks[0].id, NodeId(20));
@@ -65,7 +65,7 @@ fn comping_names_the_lane_and_not_its_index() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::SetActiveLane {
+        MultitrackIntent::SetActiveLane {
             track: NodeId(10),
             lane: NodeId(12),
         },
@@ -79,7 +79,7 @@ fn comping_names_the_lane_and_not_its_index() {
     // A lane of another track is not this track's choice to make.
     let refused = edit(
         &mut piece,
-        ArrangementIntent::SetActiveLane {
+        MultitrackIntent::SetActiveLane {
             track: NodeId(10),
             lane: NodeId(21),
         },
@@ -90,7 +90,7 @@ fn comping_names_the_lane_and_not_its_index() {
         Some("that lane is not on that track")
     );
     assert!(
-        matches!(refused.effective, ArrangementIntent::SetActiveLane { lane, .. } if lane == NodeId(21)),
+        matches!(refused.effective, MultitrackIntent::SetActiveLane { lane, .. } if lane == NodeId(21)),
         "a refusal hands back what was asked when nothing else describes it"
     );
 }
@@ -100,7 +100,7 @@ fn a_lanes_contents_are_stated_whole_and_come_back_in_position_order() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::SetLane {
+        MultitrackIntent::SetLane {
             lane: NodeId(11),
             regions: vec![region(103, 16.0, 4.0), region(102, 4.0, 4.0)],
         },
@@ -125,7 +125,7 @@ fn a_region_moved_to_another_track_is_one_edit() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::PlaceRegion {
+        MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(20),
             lane: NodeId(21),
@@ -146,7 +146,7 @@ fn a_placement_snaps_and_says_what_it_snapped_to() {
     let mut piece = piece();
     let outcome = apply(
         &mut piece,
-        &ArrangementIntent::PlaceRegion {
+        &MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
@@ -156,7 +156,7 @@ fn a_placement_snaps_and_says_what_it_snapped_to() {
         &Against::unstated(),
         &Rules::quantized(1.0),
     );
-    let ArrangementIntent::PlaceRegion { position, .. } = outcome.effective else {
+    let MultitrackIntent::PlaceRegion { position, .. } = outcome.effective else {
         panic!("the effective edit is the one that landed");
     };
     assert_eq!(position, Beat(4.0));
@@ -168,7 +168,7 @@ fn a_trim_reports_the_effective_placement_after_snapping() {
     let mut piece = piece();
     let outcome = apply(
         &mut piece,
-        &ArrangementIntent::TrimRegion {
+        &MultitrackIntent::TrimRegion {
             region: NodeId(100),
             position: Beat(1.1),
             length: Beat(2.9),
@@ -177,7 +177,7 @@ fn a_trim_reports_the_effective_placement_after_snapping() {
         &Against::unstated(),
         &Rules::quantized(1.0),
     );
-    let ArrangementIntent::TrimRegion {
+    let MultitrackIntent::TrimRegion {
         position,
         length,
         content,
@@ -199,7 +199,7 @@ fn a_trim_that_moved_the_window_carries_the_window_it_moved_to() {
     let moved = Content::window(window(2));
     edit(
         &mut piece,
-        ArrangementIntent::TrimRegion {
+        MultitrackIntent::TrimRegion {
             region: NodeId(100),
             position: Beat(2.0),
             length: Beat(2.0),
@@ -214,7 +214,7 @@ fn a_region_cannot_be_trimmed_to_nothing() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::TrimRegion {
+        MultitrackIntent::TrimRegion {
             region: NodeId(100),
             position: Beat(0.0),
             length: Beat(0.0),
@@ -230,7 +230,7 @@ fn a_region_cannot_be_trimmed_to_nothing() {
 #[test]
 fn a_split_names_the_two_identities_and_applying_it_twice_changes_nothing() {
     let mut piece = piece();
-    let split = ArrangementIntent::SplitRegion {
+    let split = MultitrackIntent::SplitRegion {
         region: NodeId(100),
         at: Beat(1.0),
         left: NodeId(110),
@@ -271,7 +271,7 @@ fn a_cut_outside_the_region_is_refused_and_says_so() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::SplitRegion {
+        MultitrackIntent::SplitRegion {
             region: NodeId(100),
             at: Beat(9.0),
             left: NodeId(110),
@@ -296,7 +296,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
         .place(region(102, 4.0, 2.0));
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::JoinRegions {
+        MultitrackIntent::JoinRegions {
             regions: vec![NodeId(102), NodeId(100)],
             into: NodeId(120),
             content: None,
@@ -309,7 +309,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
 
     let across = edit(
         &mut piece,
-        ArrangementIntent::JoinRegions {
+        MultitrackIntent::JoinRegions {
             regions: vec![NodeId(120), NodeId(101)],
             into: NodeId(121),
             content: None,
@@ -327,7 +327,7 @@ fn a_join_of_one_region_is_not_a_join() {
     let mut piece = piece();
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::JoinRegions {
+        MultitrackIntent::JoinRegions {
             regions: vec![NodeId(100)],
             into: NodeId(120),
             content: None,
@@ -352,7 +352,7 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::FadeRegion {
+            MultitrackIntent::FadeRegion {
                 region: NodeId(100),
                 fade_in: None,
                 fade_out: Some(Fade::of(Beat(1.0))),
@@ -363,7 +363,7 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::FadeRegion {
+            MultitrackIntent::FadeRegion {
                 region: NodeId(102),
                 fade_in: Some(Fade::of(Beat(1.0))),
                 fade_out: None,
@@ -380,7 +380,7 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
     // Stated whole, so clearing one is stating it as absent.
     edit(
         &mut piece,
-        ArrangementIntent::FadeRegion {
+        MultitrackIntent::FadeRegion {
             region: NodeId(100),
             fade_in: None,
             fade_out: None,
@@ -409,7 +409,7 @@ fn an_automation_lane_is_edited_with_the_curves_own_verb() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::SetAutomation {
+            MultitrackIntent::SetAutomation {
                 automation: NodeId(22),
                 points: points.clone(),
             }
@@ -430,7 +430,7 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::SetMarker {
+            MultitrackIntent::SetMarker {
                 marker: NodeId(30),
                 at: Beat(8.0),
                 name: Some("chorus".into()),
@@ -441,7 +441,7 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
     assert_eq!(piece.markers.len(), 1);
     edit(
         &mut piece,
-        ArrangementIntent::SetMarker {
+        MultitrackIntent::SetMarker {
             marker: NodeId(30),
             at: Beat(12.0),
             name: Some("verse".into()),
@@ -452,7 +452,7 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::RemoveMarker { marker: NodeId(30) }
+            MultitrackIntent::RemoveMarker { marker: NodeId(30) }
         )
         .applied
     );
@@ -460,7 +460,7 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
     assert!(
         !edit(
             &mut piece,
-            ArrangementIntent::RemoveMarker { marker: NodeId(30) }
+            MultitrackIntent::RemoveMarker { marker: NodeId(30) }
         )
         .applied,
         "removing what is not there is not an edit"
@@ -472,14 +472,14 @@ fn the_loop_and_the_punch_are_two_spans_and_unset_is_a_value() {
     let mut piece = piece();
     edit(
         &mut piece,
-        ArrangementIntent::SetRange {
+        MultitrackIntent::SetRange {
             range: SpanKind::Loop,
             span: Some(Span::new(Beat(0.0), Beat(16.0))),
         },
     );
     edit(
         &mut piece,
-        ArrangementIntent::SetRange {
+        MultitrackIntent::SetRange {
             range: SpanKind::Punch,
             span: Some(Span::new(Beat(4.0), Beat(8.0))),
         },
@@ -489,7 +489,7 @@ fn the_loop_and_the_punch_are_two_spans_and_unset_is_a_value() {
     assert!(
         edit(
             &mut piece,
-            ArrangementIntent::SetRange {
+            MultitrackIntent::SetRange {
                 range: SpanKind::Loop,
                 span: None,
             }
@@ -504,7 +504,7 @@ fn the_two_maps_are_the_pieces_and_arrive_in_position_order() {
     let mut piece = piece();
     edit(
         &mut piece,
-        ArrangementIntent::SetTempoMap {
+        MultitrackIntent::SetTempoMap {
             tempo: vec![Tempo::at(Beat(16.0), 140.0), Tempo::at(Beat(0.0), 120.0)],
         },
     );
@@ -515,7 +515,7 @@ fn the_two_maps_are_the_pieces_and_arrive_in_position_order() {
     assert_eq!(piece.tempo_at(Beat(20.0)).unwrap().bpm, 140.0);
     edit(
         &mut piece,
-        ArrangementIntent::SetMeterMap {
+        MultitrackIntent::SetMeterMap {
             meter: vec![Meter::at(Beat(0.0), 7, 8)],
         },
     );
@@ -577,7 +577,7 @@ fn an_edit_against_a_superseded_piece_comes_back_stale() {
     let stale = Against::at(piece.version + 5);
     let outcome = apply(
         &mut piece,
-        &ArrangementIntent::PlaceRegion {
+        &MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
@@ -591,7 +591,7 @@ fn an_edit_against_a_superseded_piece_comes_back_stale() {
     assert!(!outcome.applied);
     assert_eq!(piece.locate(NodeId(100)).unwrap().2.position, Beat(0.0));
     assert!(
-        matches!(outcome.effective, ArrangementIntent::PlaceRegion { position, .. } if position == Beat(0.0)),
+        matches!(outcome.effective, MultitrackIntent::PlaceRegion { position, .. } if position == Beat(0.0)),
         "and what comes back is where the region actually is"
     );
 }
@@ -602,7 +602,7 @@ fn a_refused_edit_leaves_the_version_where_it_was() {
     let version = piece.version;
     let outcome = edit(
         &mut piece,
-        ArrangementIntent::PlaceRegion {
+        MultitrackIntent::PlaceRegion {
             region: NodeId(999),
             track: NodeId(10),
             lane: NodeId(11),
@@ -618,7 +618,7 @@ fn a_refused_edit_leaves_the_version_where_it_was() {
 #[test]
 fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
     let drag = |position: f64| {
-        coalesce_key(&ArrangementIntent::PlaceRegion {
+        coalesce_key(&MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
@@ -629,7 +629,7 @@ fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
     assert_eq!(drag(1.0), drag(2.0));
     assert_ne!(
         drag(1.0),
-        coalesce_key(&ArrangementIntent::TrimRegion {
+        coalesce_key(&MultitrackIntent::TrimRegion {
             region: NodeId(100),
             position: Beat(1.0),
             length: Beat(1.0),
@@ -638,7 +638,7 @@ fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
     );
     // The edits that name the piece itself key on the kind alone.
     assert_eq!(
-        coalesce_key(&ArrangementIntent::SetTempoMap { tempo: Vec::new() }),
+        coalesce_key(&MultitrackIntent::SetTempoMap { tempo: Vec::new() }),
         "settempomap"
     );
 }
@@ -651,7 +651,7 @@ fn the_wire_shape_is_one_tag_and_survives_a_round_trip() {
             json.get("intent").is_some(),
             "{intent:?} is not tagged like every other edit"
         );
-        let back: ArrangementIntent = serde_json::from_value(json).unwrap();
+        let back: MultitrackIntent = serde_json::from_value(json).unwrap();
         assert_eq!(back, intent);
     }
 }
@@ -659,33 +659,33 @@ fn the_wire_shape_is_one_tag_and_survives_a_round_trip() {
 /// One of each verb, so a test over "every intent" is a list nobody has to keep
 /// in their head -- and so adding a verb without a test fails to compile here
 /// rather than passing quietly.
-fn vocabulary() -> Vec<ArrangementIntent> {
+fn vocabulary() -> Vec<MultitrackIntent> {
     let all = vec![
-        ArrangementIntent::SetTracks {
+        MultitrackIntent::SetTracks {
             tracks: vec![piece().tracks[1].clone()],
         },
-        ArrangementIntent::SetActiveLane {
+        MultitrackIntent::SetActiveLane {
             track: NodeId(10),
             lane: NodeId(12),
         },
-        ArrangementIntent::SetLane {
+        MultitrackIntent::SetLane {
             lane: NodeId(11),
             regions: vec![region(102, 4.0, 4.0)],
         },
-        ArrangementIntent::PlaceRegion {
+        MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(20),
             lane: NodeId(21),
             position: Beat(16.0),
             layer: 1,
         },
-        ArrangementIntent::TrimRegion {
+        MultitrackIntent::TrimRegion {
             region: NodeId(100),
             position: Beat(1.0),
             length: Beat(2.0),
             content: Some(Content::window(window(2))),
         },
-        ArrangementIntent::SplitRegion {
+        MultitrackIntent::SplitRegion {
             region: NodeId(100),
             at: Beat(2.0),
             left: NodeId(110),
@@ -693,17 +693,17 @@ fn vocabulary() -> Vec<ArrangementIntent> {
             left_content: None,
             right_content: None,
         },
-        ArrangementIntent::JoinRegions {
+        MultitrackIntent::JoinRegions {
             regions: vec![NodeId(100), NodeId(101)],
             into: NodeId(120),
             content: None,
         },
-        ArrangementIntent::FadeRegion {
+        MultitrackIntent::FadeRegion {
             region: NodeId(100),
             fade_in: Some(Fade::of(Beat(1.0))),
             fade_out: None,
         },
-        ArrangementIntent::SetAutomation {
+        MultitrackIntent::SetAutomation {
             automation: NodeId(22),
             points: vec![Point {
                 at: 0.0,
@@ -711,20 +711,20 @@ fn vocabulary() -> Vec<ArrangementIntent> {
                 data: Opaque::none(),
             }],
         },
-        ArrangementIntent::SetMarker {
+        MultitrackIntent::SetMarker {
             marker: NodeId(30),
             at: Beat(8.0),
             name: Some("chorus".into()),
         },
-        ArrangementIntent::RemoveMarker { marker: NodeId(30) },
-        ArrangementIntent::SetRange {
+        MultitrackIntent::RemoveMarker { marker: NodeId(30) },
+        MultitrackIntent::SetRange {
             range: SpanKind::Loop,
             span: Some(Span::new(Beat(0.0), Beat(16.0))),
         },
-        ArrangementIntent::SetTempoMap {
+        MultitrackIntent::SetTempoMap {
             tempo: vec![Tempo::at(Beat(0.0), 132.0)],
         },
-        ArrangementIntent::SetMeterMap {
+        MultitrackIntent::SetMeterMap {
             meter: vec![Meter::at(Beat(0.0), 7, 8)],
         },
     ];
@@ -744,7 +744,7 @@ mod through_a_history {
     /// Undo, spelled the way a caller has to spell it: the pile hands back the
     /// inverses with the structure each belongs to, and the caller applies them
     /// through that domain's own door.
-    fn undo(history: &mut History, piece: &mut Arrangement) {
+    fn undo(history: &mut History, piece: &mut Multitrack) {
         let undone = history.undo().expect("something to undo");
         for (_, load) in undone.legs {
             Piece::new(piece).apply(&load);
@@ -758,12 +758,12 @@ mod through_a_history {
         // from.
         let mut piece = piece();
         let mut history = History::new();
-        let arrangement = history.register(ARRANGEMENT);
+        let multitrack = history.register(MULTITRACK);
 
         history.apply(
-            arrangement,
+            multitrack,
             &mut Piece::new(&mut piece),
-            &payload(&ArrangementIntent::PlaceRegion {
+            &payload(&MultitrackIntent::PlaceRegion {
                 region: NodeId(100),
                 track: NodeId(20),
                 lane: NodeId(21),
@@ -790,11 +790,11 @@ mod through_a_history {
         let mut piece = piece();
         let before = piece.lane(NodeId(11)).unwrap().1.clone();
         let mut history = History::new();
-        let arrangement = history.register(ARRANGEMENT);
+        let multitrack = history.register(MULTITRACK);
         history.apply(
-            arrangement,
+            multitrack,
             &mut Piece::new(&mut piece),
-            &payload(&ArrangementIntent::SplitRegion {
+            &payload(&MultitrackIntent::SplitRegion {
                 region: NodeId(100),
                 at: Beat(1.0),
                 left: NodeId(110),
@@ -817,11 +817,11 @@ mod through_a_history {
     fn a_refused_edit_leaves_no_entry() {
         let mut piece = piece();
         let mut history = History::new();
-        let arrangement = history.register(ARRANGEMENT);
+        let multitrack = history.register(MULTITRACK);
         history.apply(
-            arrangement,
+            multitrack,
             &mut Piece::new(&mut piece),
-            &payload(&ArrangementIntent::RemoveMarker {
+            &payload(&MultitrackIntent::RemoveMarker {
                 marker: NodeId(999),
             }),
             "remove",
@@ -838,13 +838,13 @@ mod through_a_history {
         let mut piece = piece();
         let mut curve = Points::new(Vec::new());
         let mut history = History::new();
-        let arrangement = history.register(ARRANGEMENT);
+        let multitrack = history.register(MULTITRACK);
         let points = history.register(POINTS);
 
         history.apply(
-            arrangement,
+            multitrack,
             &mut Piece::new(&mut piece),
-            &payload(&ArrangementIntent::SetMarker {
+            &payload(&MultitrackIntent::SetMarker {
                 marker: NodeId(30),
                 at: Beat(8.0),
                 name: Some("chorus".into()),
@@ -864,9 +864,9 @@ mod through_a_history {
             "draw",
         );
         history.apply(
-            arrangement,
+            multitrack,
             &mut Piece::new(&mut piece),
-            &payload(&ArrangementIntent::SetRange {
+            &payload(&MultitrackIntent::SetRange {
                 range: SpanKind::Loop,
                 span: Some(Span::new(Beat(0.0), Beat(16.0))),
             }),
@@ -874,10 +874,10 @@ mod through_a_history {
         );
         assert_eq!(history.len(), 3, "one pile over both");
 
-        for expected in [arrangement, points, arrangement] {
+        for expected in [multitrack, points, multitrack] {
             for (structure, load) in history.undo().expect("something to undo").legs {
                 assert_eq!(structure, expected);
-                if structure == arrangement {
+                if structure == multitrack {
                     Piece::new(&mut piece).apply(&load);
                 } else {
                     curve.apply(&load);
@@ -901,26 +901,26 @@ fn the_piece_is_edited_across_the_seam_as_state_and_an_inverse() {
     // which is what keeps the two from growing different doors to one
     // vocabulary.
     let state = Opaque(serde_json::to_value(piece()).unwrap());
-    let load = payload(&ArrangementIntent::PlaceRegion {
+    let load = payload(&MultitrackIntent::PlaceRegion {
         region: NodeId(100),
         track: NodeId(20),
         lane: NodeId(21),
         position: Beat(16.0),
         layer: 0,
     });
-    let edited = crate::domain::edit(ARRANGEMENT, &state, &load).expect("the piece is served");
+    let edited = crate::domain::edit(MULTITRACK, &state, &load).expect("the piece is served");
     assert!(edited.applied);
 
-    let moved: Arrangement = serde_json::from_value(edited.state.0.clone()).unwrap();
+    let moved: Multitrack = serde_json::from_value(edited.state.0.clone()).unwrap();
     assert_eq!(
         moved.locate(NodeId(100)).map(|(t, _, _)| t.id),
         Some(NodeId(20))
     );
     assert_eq!(moved.version, crate::FIRST_VERSION + 1);
 
-    let back = crate::domain::edit(ARRANGEMENT, &edited.state, &edited.current.unwrap())
+    let back = crate::domain::edit(MULTITRACK, &edited.state, &edited.current.unwrap())
         .expect("and the inverse goes back through the same door");
-    let restored: Arrangement = serde_json::from_value(back.state.0).unwrap();
+    let restored: Multitrack = serde_json::from_value(back.state.0).unwrap();
     assert_eq!(
         restored.locate(NodeId(100)).map(|(t, l, _)| (t.id, l.id)),
         Some((NodeId(10), NodeId(11)))
@@ -929,20 +929,20 @@ fn the_piece_is_edited_across_the_seam_as_state_and_an_inverse() {
 
 #[test]
 fn the_crate_names_the_pieces_vocabulary_where_a_caller_asks_for_it() {
-    assert!(crate::domain::known(ARRANGEMENT));
-    let load = payload(&ArrangementIntent::TrimRegion {
+    assert!(crate::domain::known(MULTITRACK));
+    let load = payload(&MultitrackIntent::TrimRegion {
         region: NodeId(100),
         position: Beat(0.0),
         length: Beat(2.0),
         content: None,
     });
     assert_eq!(
-        crate::domain::coalesce_key(ARRANGEMENT, &load).as_deref(),
+        crate::domain::coalesce_key(MULTITRACK, &load).as_deref(),
         Some("trimregion:100"),
         "asked once here rather than spelled again per language"
     );
     assert_eq!(
-        crate::domain::coalesce_key(ARRANGEMENT, &Opaque(serde_json::json!({"intent": "nope"}))),
+        crate::domain::coalesce_key(MULTITRACK, &Opaque(serde_json::json!({"intent": "nope"}))),
         None,
         "and a payload written in another vocabulary says so"
     );

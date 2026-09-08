@@ -354,7 +354,7 @@ The shape is Live's and it is deliberate: `Song.View`, `Track.View` and
 `Application.View` are objects parallel to their model objects rather than
 children, presentation on one side and functional data on the other, both
 readable and writable from a script. A `TrackView` is therefore looked up by the
-track's id, and an `Arrangement` round-trips the same whether or not a view of it
+track's id, and an `Multitrack` round-trips the same whether or not a view of it
 exists.
 
 ```javascript

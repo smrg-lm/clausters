@@ -1,5 +1,5 @@
 """Write the parity vector the Rust suite reads: an arrangement built with the
-Python client's `clausters.arrangement`, as it writes it.
+Python client's `clausters.multitrack`, as it writes it.
 
 Nothing checks that the two sides agree on the format unless something crosses
 between them, and no build ever reaches this client's call sites. So the vector
@@ -19,7 +19,7 @@ because a piece drawn in two windows has two and they disagree on purpose.
 
 Run from the repo root, and commit whatever moves:
 
-    python3 crates/clausters-document/tests/gen-arrangement-vector.py
+    python3 crates/clausters-document/tests/gen-multitrack-vector.py
 """
 
 import json
@@ -28,7 +28,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
-from clausters.arrangement import (Arrangement, Automation, Content, Fade,  # noqa: E402
+from clausters.multitrack import (Multitrack, Automation, Content, Fade,  # noqa: E402
                                    Lane, Marker, Meter, Region, Session, Span,
                                    Source, Tempo, Track, View)
 
@@ -42,8 +42,8 @@ def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
     }
 
 
-def build() -> Arrangement:
-    piece = Arrangement()
+def build() -> Multitrack:
+    piece = Multitrack()
     piece.set_tempo(Tempo(at=0.0, bpm=96.0))
     piece.set_tempo(Tempo(at=32.0, bpm=120.0, ramp=True))
     piece.set_meter(Meter(at=0.0, beats=4, unit=4))
@@ -132,7 +132,7 @@ def saved() -> Session:
     that is there, samples nobody wrote down, and a working copy whose
     destructive edit is still open.
     """
-    session = Session(arrangement=build(), provenance={"script": "make.py"},
+    session = Session(multitrack=build(), provenance={"script": "make.py"},
                       views=views())
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
@@ -146,8 +146,8 @@ def saved() -> Session:
 
 if __name__ == "__main__":
     here = pathlib.Path(__file__).resolve().parent
-    (here / "arrangement_vector.json").write_text(
+    (here / "multitrack_vector.json").write_text(
         json.dumps(build().write(), indent=1) + "\n")
-    (here / "arrangement_session_vector.json").write_text(
+    (here / "multitrack_session_vector.json").write_text(
         json.dumps(saved().write(), indent=1) + "\n")
-    print(f"wrote {here / 'arrangement_vector.json'} and its session")
+    print(f"wrote {here / 'multitrack_vector.json'} and its session")

@@ -2028,7 +2028,7 @@
       "key": "configure:2"
     },
     {
-      "domain": "arrangement",
+      "domain": "multitrack",
       "payload": {
         "intent": "placeregion",
         "region": 100,
@@ -2040,7 +2040,7 @@
       "key": "placeregion:100"
     },
     {
-      "domain": "arrangement",
+      "domain": "multitrack",
       "payload": {
         "intent": "settempomap",
         "tempo": [
@@ -2128,7 +2128,7 @@
   ],
   "edited": [
     {
-      "domain": "arrangement",
+      "domain": "multitrack",
       "state": {
         "tracks": [
           {
@@ -2264,7 +2264,7 @@
       }
     },
     {
-      "domain": "arrangement",
+      "domain": "multitrack",
       "state": {
         "tracks": [
           {
@@ -2422,7 +2422,7 @@
       }
     },
     {
-      "domain": "arrangement",
+      "domain": "multitrack",
       "state": {
         "tracks": [
           {

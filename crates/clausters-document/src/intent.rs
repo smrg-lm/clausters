@@ -44,7 +44,7 @@
 //! [`Intent::SetMembers`] states an aggregate's contents *whole*, so one made against a
 //! stale picture silently deletes whatever arrived in between. The document can
 //! move by routes that are not gestures at all — a script editing the
-//! arrangement, a second editor, a re-render — and none of them is visible to a
+//! multitrack, a second editor, a re-render — and none of them is visible to a
 //! log.
 //!
 //! So [`apply`] takes an [`Against`]: the state the editor believed it was
@@ -251,7 +251,7 @@ pub struct Outcome<I = Intent> {
     ///
     /// The type parameter is which vocabulary the effective edit is written in:
     /// [`Intent`] for the tree, and
-    /// [`ArrangementIntent`](crate::arrangement::edit::ArrangementIntent) for
+    /// [`MultitrackIntent`](crate::multitrack::edit::MultitrackIntent) for
     /// the piece. One shape, because the rules it reports — verbatim,
     /// transformed, refused, stale — are the vocabulary's rules and not any one
     /// vocabulary's.

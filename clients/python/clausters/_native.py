@@ -1137,7 +1137,7 @@ TREE = "tree"
 #: own rather than more of the tree's: the piece and the tree are two
 #: descriptions, and one history holds both without either knowing the other's
 #: words.
-ARRANGEMENT = "arrangement"
+MULTITRACK = "multitrack"
 POINTS = "points"
 SAMPLES = "samples"
 EVENTS = "events"
@@ -1178,7 +1178,7 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
     wrong thing.
 
     Args:
-        domain: the vocabulary — `ARRANGEMENT`, `POINTS` or `EVENTS`.
+        domain: the vocabulary — `MULTITRACK`, `POINTS` or `EVENTS`.
         state: the structure in that vocabulary (a piece, a curve's points, a
             timeline's events), as plain JSON-able data.
         payload: the edit.
