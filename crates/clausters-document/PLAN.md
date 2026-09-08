@@ -1207,6 +1207,16 @@ DAW session, because that is what a DAW session is good at.
   a GraphDef is what a *fixed* instrument is, where atomic instantiation and a
   named port surface are the point. Neither needs anything built.
 
+  **And the tracks run in parallel for free** *(the user, 2026-09-08: "incluso
+  hay procesamiento en paralelo")*. The same bus-connection analysis that orders
+  an auto-sorted group also powers `/group_parallel groupID 1`, which runs a
+  group's **independent** children on several cores (`--workers N`),
+  bit-identically to the sequential result. A multitrack's tracks are exactly
+  that -- independent children of the piece's group, joined only where they meet
+  a bus -- so the arrangement's own shape is what the analysis is looking for,
+  and the editor gets multicore playback by marking the group rather than by
+  anything the application has to build. See `docs/parallel.md`.
+
   What this leaves genuinely open is narrower than "are plugins in the document":
   it is whether a chain **saved** in a session names a GraphDef by name (and the
   session is unopenable without it) or carries it, which is the same question
