@@ -780,6 +780,25 @@ a bare ruler — and over a navigable `signal`, and why a plain drag on a
 modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 **plan**: the step names in order, separated by spaces.
 
+**A step declines, or it refuses; the two are not the same and the difference
+is what a plan is made of.** A step that finds *nothing to act on* where the
+picture is perfectly good — the samples are not drawn one by one, the view
+measures no second axis — is not that gesture's press to take: it **declines**,
+and the plan tries its next step. That is what a composed plan means, and why
+`"sample select"` edits where the samples are visible and sweeps where they are
+not. A step that finds the *picture wrong* — a view holding no samples at all,
+one that cannot hold an edit in flight — has hit a **fault**, and a fault is
+said out loud (`"refused" <verb> <reason>`) and **consumes** the press. Falling
+through there is how a pencil silently becomes a selection tool: the reader
+aims to write, gets a sweep, and learns that the tool sometimes does not work.
+
+So a step's own row below says which of the two each of its dead ends is, and
+where two steps look like they disagree — the pencil refuses at a zoom the
+`sample` grab declines at — they are answering different questions. There is
+nothing to *grab* on a summarized trace, and the plan is welcome to sweep
+instead; a *stroke* that fell through would turn a refused edit into a
+selection, which is the one thing it must never do.
+
 | Step | What it does |
 | --- | --- |
 | `element` | Hands the press to whatever is under the cursor — the widget the pointer found, or the clip, note or box the container drew there. It may decline (empty space), and the plan goes on |
@@ -787,8 +806,8 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | `select` | Sweeps a **time range**: the container's shared selection, the span every linked view draws and the transport loops inside. It is a *state* — the span itself is what is selected, so it outlives the gesture. A view holding contents of its own is also asked what the rectangle covered (a roll's notes, in the band of semitones it reports), because there the span and the notes under it are one hand's one meaning |
 | `marquee` | Sweeps a **selection of objects**: the clips of a multitrack, the boxes of a patcher, the notes of a roll — the things the rectangle covered, and no span. It asks both of whoever holds contents: the lanes of the stack it sweeps down, and the element it was begun on. The rectangle is the gesture's own picture and is gone when the hand lets go; what stays is what is selected, drawn as selected. A press is that rectangle at no size, which is how a click lets go of everything. It is the plain drag of a `track`, and a `plane`'s element claims the press for it, because only that element knows where its own paper ends |
 | `select_box` | The same sweep **restricted on the second axis**: a rectangle over a view that measures a value, reported as the two further arguments of `"selection"`. It **declines** where the picture has one measured axis, so `"select_box select"` is the plan for a mixed stack — a rectangle where there is one to draw, the plain span where there is not |
-| `sample` | Grabs the **sample** under the pointer on a navigable trace and drags it vertically — the smallest destructive edit. It **declines where a sample is not a thing on screen**: below the zoom at which the trace marks each sample with a disc there is nothing to grab, and the plan falls through to its next step, so `"sample select"` edits where the samples are visible and sweeps where they are not. One intent leaves, on release, as `"sample"` |
-| `draw` | **Draws** over the samples: a press-drag writes the value under the pointer for every sample it passes — the ones *between* two motion events included, by interpolation, or a fast stroke would leave the samples combed with holes — and emits one `"draw"` on release. **Refused until the picture draws its samples one by one** — the trace's own dot threshold, asked rather than restated, so the pencil is allowed exactly where the reader can see which sample they are aiming at — visibly (`"refused" "draw" <reason>`) and consuming the press, so a plan naming a sweep behind it cannot turn a refused stroke into a selection |
+| `sample` | Grabs the **sample** under the pointer on a navigable trace and drags it vertically — the smallest destructive edit. It **declines where a sample is not a thing on screen**: below the zoom at which the trace marks each sample with a disc there is nothing to grab, and the plan falls through to its next step, so `"sample select"` edits where the samples are visible and sweeps where they are not — deliberately the opposite of what `draw` does at the same zoom, for the reason above. A **fault** it still refuses out loud and consumes: a view holding no samples at all has nothing to grab for a different reason, and one the reader needs told. One intent leaves, on release, as `"sample"` |
+| `draw` | **Draws** over the samples: a press-drag writes the value under the pointer for every sample it passes — the ones *between* two motion events included, by interpolation, or a fast stroke would leave the samples combed with holes — and emits one `"draw"` on release. **Refused until the picture draws its samples one by one** — the trace's own dot threshold, asked rather than restated, so the pencil is allowed exactly where the reader can see which sample they are aiming at — visibly (`"refused" "draw" <reason>`) and consuming the press, so a plan naming a sweep behind it cannot turn a refused stroke into a selection. **Every other way it can fail is refused the same way** — a view holding no samples, a view that cannot hold an edit in flight, a press before the take begins — because past the point where the pointer is inside the trace's own body, the press is the pencil's and a silent fall-through is a pencil that became a selection tool |
 | `marker` | Adds a **marker** under the pointer, or removes the one already there, and emits `"markers"`. A new one is *numbered* (`"1"`, `"2"`, …), which is what makes the gesture usable with no text entry in front of it; renaming and recolouring are the owner's, through the `markers` prop. It **declines where there is no ruler** to put one on |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` — or, when the pointer is within reach of a **marker's arrow**, at that marker's own time |
 | `none` | Nothing |

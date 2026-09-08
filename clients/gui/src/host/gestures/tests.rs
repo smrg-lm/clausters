@@ -5099,3 +5099,42 @@ fn the_pencil_waits_for_the_dots_the_trace_draws() {
     );
     assert!(g.dragging(), "the stroke is open");
 }
+
+/// **A fault is said out loud and consumed; nothing to act on is declined.**
+///
+/// The two are one line apart in the arms and they are not the same thing. A
+/// step that finds nothing to act on where the picture is good — the samples
+/// are not drawn one by one — is not this gesture's press, so the plan tries
+/// its next step, which is what `"sample select"` is composed of and what
+/// `docs/gui-protocol.md` specifies for `sample`. A step that finds the picture
+/// *wrong* — a view holding no samples at all — has hit a fault, and falling
+/// through there is how the pencil silently became a selection tool after an
+/// undo (found 2026-09-07, `editors/edit_samples`).
+#[test]
+fn a_view_with_no_samples_refuses_instead_of_sweeping() {
+    // `bulk` with a path nothing resolves: the element names a resource, so it
+    // holds no inline samples, and the zoom is well inside where dots are
+    // drawn. Nothing is on screen to draw *on*, and that is a fault.
+    let def = r#"{"type":"window","status":0,"children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "path":"nothing.f32","bulk":true,"channels":1,
+             "gestures":{"drag":"draw","ctrl":"sample select"}}]}"#;
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 20);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0);
+    let args = emitted_args(&effects, 50).expect("the pencil says so");
+    assert_eq!(args[0], OscType::String("refused".into()));
+    assert_eq!(args[1], OscType::String("draw".into()));
+    assert!(!g.dragging(), "and no stroke was opened");
+
+    // The press was **consumed**: the sweep behind it never ran, which is the
+    // whole of the fix. A drag after it reports no selection.
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
+    assert!(
+        !has_emit_tag(&effects, 50, "selection"),
+        "a refused stroke does not become a selection: {effects:?}"
+    );
+}

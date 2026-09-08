@@ -25,6 +25,46 @@ use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
 use clausters_core::osc::OscType;
 
+/// The reasons the two sample-editing arms give, written once because both give
+/// them and a reason spelled twice is a reason that will be spelled two ways.
+///
+/// **What earns a reason, and what earns a decline.** A step that finds nothing
+/// to act on where the picture is perfectly good — the samples are not drawn one
+/// by one, the view starts before the take does — is not this gesture's press to
+/// take: it declines and the plan tries its next step, which is what
+/// `"sample select"` is composed of. A step that finds the *picture* wrong — a
+/// view holding no samples at all, one that cannot hold an edit in flight — has
+/// hit a fault, and a fault is said out loud and consumed, because falling
+/// through there is how a pencil silently becomes a selection tool.
+///
+/// A refusal that reads as an internal note is still better than the silence it
+/// replaced: it tells the reader the gesture arrived and did not work, which is
+/// the one thing the silence could not.
+const BEFORE_THE_START: &str = "there is no sample here: the view starts before the take does";
+const NO_SAMPLES: &str = "these samples are not loaded yet: the view is drawing a summary, and a stroke needs the \
+     frames themselves";
+const NO_PENDING: &str = "this view cannot hold an edit in flight";
+
+/// **Zoom in until the samples are dots** — the one refusal with something to
+/// aim at, in two readings of one fact, each in the unit that is legible in its
+/// own range: far out a pixel holds many samples, and close in a sample holds a
+/// fraction of a pixel.
+fn zoom_in(per_px: f64, radius: f32) -> String {
+    let need = 1.0 / trace::drawable_per_px(radius);
+    if per_px > 1.0 {
+        format!(
+            "zoom in until the samples are dots: one pixel is {per_px:.0} samples, and a dot \
+             needs {need:.0} px per sample"
+        )
+    } else {
+        format!(
+            "zoom in until the samples are dots: one sample is {:.1} px, and a dot needs \
+             {need:.0}",
+            1.0 / per_px.max(f64::MIN_POSITIVE)
+        )
+    }
+}
+
 impl Gestures {
     /// Press: run the **containers' gesture plans** over the hit, innermost
     /// first, until one of their steps consumes it.
@@ -390,18 +430,11 @@ impl Gestures {
                 true
             }
             (GestureStep::Sample, interact::Coords::Time(axis)) => {
+                // **Outside the surface this arm acts on: not mine.** These two
+                // are the only declines left in the arm -- past them the press
+                // is this gesture's, and every way it can fail is refused out
+                // loud (`effects::refuse`) rather than handed to a sweep.
                 if !axis.spans(cx) {
-                    return false;
-                }
-                // A sample is grabbable exactly where it is **drawn**: the
-                // trace marks each one with a disc only when they are far
-                // enough apart to be told apart, and the same question decides
-                // whether there is anything here to take hold of. Read from the
-                // drawing's own rule rather than restated, so the two can never
-                // drift into offering a grab on a picture that shows no points.
-                let spacing = (axis.body.w as f64 / axis.nav.len.max(1e-9)) as f32;
-                let radius = host.metrics_for(ctx.def_id).point_radius;
-                if !crate::host::graphics::signal::trace::dots_fit(spacing, radius) {
                     return false;
                 }
                 let Some(value) =
@@ -409,6 +442,26 @@ impl Gestures {
                 else {
                     return false;
                 };
+                // A sample is grabbable exactly where it is **drawn**: the
+                // trace marks each one with a disc only when they are far
+                // enough apart to be told apart, and the same question decides
+                // whether there is anything here to take hold of. Read from the
+                // drawing's own rule rather than restated, so the two can never
+                // drift into offering a grab on a picture that shows no points.
+                //
+                // **And this one declines rather than refusing**, which is the
+                // opposite of what the pencil's identical gate does one arm
+                // below. Both are specified, one line apart, and the difference
+                // is the point: there is nothing here to *grab*, so the plan
+                // falls through and `"sample select"` edits where the samples
+                // are visible and sweeps where they are not -- while a stroke
+                // that fell through would turn a refused edit into a selection,
+                // which is what a pencil must never do.
+                let radius = host.metrics_for(ctx.def_id).point_radius;
+                let per_px = axis.nav.len / axis.body.w.max(1.0) as f64;
+                if !crate::host::graphics::signal::trace::samples_are_drawn(per_px, radius) {
+                    return false;
+                }
                 let frames = interact::sample_at(
                     axis.nav.start,
                     axis.nav.len,
@@ -416,6 +469,8 @@ impl Gestures {
                     axis.body.w as f64,
                     cx,
                 );
+                // Before the take begins: still "not a thing on screen", so it
+                // declines with the gate above rather than refusing.
                 if frames < 0.0 {
                     return false;
                 }
@@ -428,12 +483,12 @@ impl Gestures {
                     .and_then(|t| t.find(id))
                     .and_then(|w| w.kind.sample_value(channel, index))
                 else {
-                    return false; // an overview with no samples has none to grab
+                    return refuse(host, out, def_id, id, "sample", NO_SAMPLES.into());
                 };
                 let held =
                     PendingEdit::one(channel, index, value.value_in(channel, cy) as f32, previous);
                 if !set_pending(host, def_id, id, Some(held)) {
-                    return false;
+                    return refuse(host, out, def_id, id, "sample", NO_PENDING.into());
                 }
                 self.drag = Some(Drag::Sample {
                     id,
@@ -446,6 +501,9 @@ impl Gestures {
                 true
             }
             (GestureStep::Draw, interact::Coords::Time(axis)) => {
+                // **Outside the surface this arm acts on: not mine.** As in the
+                // `Sample` arm above -- past these two the press is the
+                // pencil's, and every way it can fail is said out loud.
                 if !axis.spans(cx) {
                     return false;
                 }
@@ -470,35 +528,7 @@ impl Gestures {
                 let radius = host.metrics_for(def_id).point_radius;
                 let per_px = axis.nav.len / axis.body.w.max(1.0) as f64;
                 if !trace::samples_are_drawn(per_px, radius) {
-                    let ceiling = trace::drawable_per_px(radius);
-                    // Two readings of one fact, each in the unit that is legible
-                    // in its own range: far out a pixel holds many samples, and
-                    // close in a sample holds a fraction of a pixel.
-                    let need = 1.0 / ceiling;
-                    let why = if per_px > 1.0 {
-                        format!(
-                            "zoom in until the samples are dots to draw: one pixel is \
-                             {per_px:.0} samples, and a dot needs {need:.0} px per sample"
-                        )
-                    } else {
-                        format!(
-                            "zoom in until the samples are dots to draw: one sample is \
-                             {:.1} px, and a dot needs {need:.0}",
-                            1.0 / per_px.max(f64::MIN_POSITIVE)
-                        )
-                    };
-                    emit(
-                        host,
-                        out,
-                        def_id,
-                        id,
-                        vec![
-                            OscType::String("refused".into()),
-                            OscType::String("draw".into()),
-                            OscType::String(why),
-                        ],
-                    );
-                    return true; // consumed: the plan must not fall through to a sweep
+                    return refuse(host, out, def_id, id, "draw", zoom_in(per_px, radius));
                 }
                 let frames = interact::sample_at(
                     axis.nav.start,
@@ -508,7 +538,7 @@ impl Gestures {
                     cx,
                 );
                 if frames < 0.0 {
-                    return false;
+                    return refuse(host, out, def_id, id, "draw", BEFORE_THE_START.into());
                 }
                 let index = frames.round().max(0.0) as usize;
                 let channel = crate::host::frame::channel_at(value.body, value.rows.max(1), cy);
@@ -517,7 +547,7 @@ impl Gestures {
                     .and_then(|t| t.find(id))
                     .and_then(|w| w.kind.sample_value(channel, index))
                 else {
-                    return false;
+                    return refuse(host, out, def_id, id, "draw", NO_SAMPLES.into());
                 };
                 let v = value.value_in(channel, cy) as f32;
                 if !set_pending(
@@ -526,7 +556,7 @@ impl Gestures {
                     id,
                     Some(PendingEdit::one(channel, index, v, previous)),
                 ) {
-                    return false;
+                    return refuse(host, out, def_id, id, "draw", NO_PENDING.into());
                 }
                 self.drag = Some(Drag::Draw {
                     id,

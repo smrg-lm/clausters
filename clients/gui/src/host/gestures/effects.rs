@@ -46,6 +46,44 @@ pub(super) fn emit(
     });
 }
 
+/// **Refuses the gesture this arm resolved to**, out loud, and consumes the
+/// press.
+///
+/// The other half of the plan's fall-through rule. `GestureMap::plan` resolves
+/// `ctrl -> alt -> shift -> plain`, and an arm that returns `false` is saying
+/// *this press was not mine* — the press walks on down the chain and the plain
+/// arm sweeps a selection. That is right for a press outside the surface an arm
+/// acts on, and wrong for every other way an arm gives up: a pencil that
+/// resolved and then could not act would become a selection tool, silently.
+///
+/// So the rule this expresses is **the press is mine once the plan named my
+/// gesture and the pointer is inside the surface I act on** — after that, every
+/// failure is mine, is said, and is consumed. `docs/gui-protocol.md` has
+/// specified it since the pencil's zoom gate was written; this is the door that
+/// makes it cheap enough to hold everywhere rather than in the one arm that
+/// spelled it out by hand.
+pub(super) fn refuse(
+    host: &Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    verb: &str,
+    why: String,
+) -> bool {
+    emit(
+        host,
+        out,
+        def_id,
+        widget_id,
+        vec![
+            OscType::String("refused".into()),
+            OscType::String(verb.into()),
+            OscType::String(why),
+        ],
+    );
+    true // consumed: a plan that resolved does not fall through to a sweep
+}
+
 /// Routes a widget's new `value` where it is bound (`/gui_bind`: the audio
 /// server on the low-latency path, or another widget's prop), or to the script
 /// as a `/gui_event` otherwise. Every interaction that produces a value goes

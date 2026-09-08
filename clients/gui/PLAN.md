@@ -3615,30 +3615,57 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   zoom gate's, so the next thing that goes wrong inside one will fall through
   to a sweep exactly as this did.
 
-- ⬜ **A press arm that resolved to a gesture does not consume the press**
-  *(split out 2026-09-07 from the entry above, whose bug it carried in)*. The
-  host's own standard, turned on itself. `GestureMap::plan` resolves
-  `ctrl -> alt -> shift -> plain` and a step that returns `false` means *this
-  press was not mine*, so the press walks on down the chain. The zoom gate in
-  the pencil's arm is the only place that gets this right, and it says so:
+- ✅ **A press arm that hit a fault let the press through to a sweep**
+  *(split out 2026-09-07 from the entry above, whose bug it carried in; fixed
+  the same day)*. `GestureMap::plan` resolves `ctrl -> alt -> shift -> plain`
+  and a step that returns `false` means *this press was not mine*, so the press
+  walks on down the chain. The pencil's zoom gate was the only place that
+  consumed instead, and it said so:
   `return true; // consumed: the plan must not fall through to a sweep`. Every
-  other way the same arm gives up returns `false`, so a pencil that resolved
-  and then could not act becomes a selection tool, silently.
+  other way the same arm gave up returned `false` -- including the one an undo
+  produced -- so a pencil that could not read its samples became a selection
+  tool, silently.
 
-  The protocol document already specifies the rule, twice, for the two cases it
-  had reason to name -- `draw` is *"refused ... visibly and consuming the
-  press, so a plan naming a sweep behind it cannot turn a refused stroke into a
-  selection"*, and a locked clip body the same. So this is not a design
-  question: it is the host keeping its own published contract in one arm and
-  breaking it in the others.
+  **This entry was filed with the wrong shape and the reading is worth keeping,
+  because it was wrong twice in the same direction.** It said the host was
+  breaking one published rule in most of its arms, and that the work was
+  therefore mechanical. Reading the arms says otherwise: `docs/gui-protocol.md`
+  specifies the two cases *separately and oppositely*, one line apart -- `sample`
+  *"declines where a sample is not a thing on screen ... so `"sample select"`
+  edits where the samples are visible and sweeps where they are not"*, and
+  `draw` *"refused ... and consuming the press"*. Both were implemented as
+  written, and there is a test pinning the decline. The general rule this entry
+  asserted does not exist, and asserting it would have deleted a composition the
+  protocol offers on purpose.
 
-  **Also closes a second defect for the price of one**: a press on an empty
-  staff space that answers with the engraver's drawing instead of writing a
-  note ("A press on empty staff answers with the engraver's drawing", below) is
-  the same shape -- an arm that meant to write, could not resolve, and let the
-  press through to a selection. Reading each `return false` in
-  `gestures/press.rs` and asking *was this press mine* is the whole of the
-  work; the answers are in the code, not in a decision.
+  **What is true is narrower and is the actual bug.** A step has two kinds of
+  dead end and only one of them is the plan's business:
+
+  - **nothing to act on, over a good picture** -- the samples are not drawn one
+    by one, the view measures no second axis, the view starts before the take
+    does. Not this gesture's press: it declines, the plan tries its next step,
+    and that is what a composed plan is *for*.
+  - **a fault** -- a view holding no samples at all, one that cannot hold an
+    edit in flight. The picture is wrong, not empty. It is said out loud and the
+    press is consumed, because falling through there is a pencil turning into a
+    selection tool with nothing said.
+
+  The distinction is now written where the reasons live (`gestures/press.rs`),
+  stated in the protocol's gesture-plan preamble, and carried by one door
+  (`effects::refuse`) so a new arm gets it by using it. The `sample` arm keeps
+  its documented decline at the zoom gate and refuses its faults; the `draw` arm
+  refuses both, as its own row always said.
+
+  **And the second defect it claimed to close is not the same shape at all.**
+  A press on an empty staff space answering with the engraver's drawing was
+  filed here as an arm that meant to write and fell through. It is not: the
+  score's press reaches the element, `data.hit` **resolves** -- it returns the
+  staff -- and the note-entry branch is guarded by `picked.is_none()`, so it is
+  never evaluated. That is hit-test precedence, a big box winning over blank
+  paper, and it is its own work. Kept as the record of how a defect gets
+  mis-shelved: two symptoms that look alike from the window ("the press became a
+  selection") had nothing in common underneath, and the resemblance was mine
+  rather than the code's.
 
 - ✅ **The pencil drew before the samples were drawn, and wrote hundreds at a
   time** *(found and fixed 2026-09-07, by the user, by eye: "me esta dejando
