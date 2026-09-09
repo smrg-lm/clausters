@@ -143,75 +143,6 @@ pub fn extent(clips: &[Clip]) -> f64 {
     clips.iter().map(Clip::end).fold(0.0, f64::max)
 }
 
-/// **The stack as bands**, one per lane, each carrying its own `gap` with it.
-///
-/// The gap is *inside* the band rather than between two of them, and that is
-/// the whole of how a stack has no holes: a **gap belongs to the lane above
-/// it**, so a pointer between two lanes is on one rather than on nothing
-/// (`gestures/nav.rs` states the same rule for the widget-tree stack). A hit
-/// test that answers "nowhere" there is what makes a dragged clip snap back for
-/// those frames and jump again on the far side.
-///
-/// [`Bands`] is the shared vertical axis a roll's semitone rows use, which is
-/// why the clamping past either end comes with it rather than being written
-/// again here.
-pub fn bands(lanes: &[Lane], gap: f32) -> Bands {
-    Bands::table(lanes.iter().map(|l| l.height + gap))
-}
-
-/// How tall the stack is with `gap` between lanes — a scroll's content height,
-/// and what says whether it scrolls at all.
-///
-/// The trailing gap of the last band is not counted: it is the room a drop
-/// below the stack lands in, not room the stack occupies.
-pub fn content_height(lanes: &[Lane], gap: f32) -> f32 {
-    if lanes.is_empty() {
-        return 0.0;
-    }
-    bands(lanes, gap).total() - gap
-}
-
-/// Where each lane lands inside `rect`, scrolled down by `scroll` pixels.
-///
-/// One entry per lane, in stacking order, **including the ones off the top or
-/// the bottom** — a caller that draws skips what does not intersect, and a
-/// caller that hit-tests needs the same rects the drawing used or the two
-/// disagree in exactly the cases nobody tests.
-pub fn stack(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32) -> Vec<Rect> {
-    let bands = bands(lanes, gap);
-    (0..lanes.len())
-        .map(|i| {
-            let (y, _) = bands.band(i);
-            // The band carries the gap; the lane is drawn in the top of it.
-            Rect::new(rect.x, rect.y - scroll + y, rect.w, lanes[i].height)
-        })
-        .collect()
-}
-
-/// The lane a pointer is **on**, or `None` where it is off the stack entirely.
-///
-/// The gap is the lane above's, so this answers for it — the rule the module's
-/// [`bands`] states. It is the *press*' question; a drag asks
-/// [`lane_toward`] instead, which never answers nothing.
-pub fn lane_at(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32, y: f64) -> Option<usize> {
-    bands(lanes, gap).index_at(y as f32 - rect.y + scroll)
-}
-
-/// The lane a hand **is heading for**, always: the nearest band, clamped to the
-/// stack at both ends.
-///
-/// A drag has to answer for every pixel the pointer crosses, including the gaps
-/// between lanes and the space past either end — answering "nowhere" there is
-/// what made a dragged clip jump, and answering "wrap" is what made one held
-/// past the last lane oscillate back to the first.
-pub fn lane_toward(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32, y: f64) -> usize {
-    if lanes.is_empty() {
-        return 0;
-    }
-    let at = bands(lanes, gap).index_of(y as f32 - rect.y + scroll);
-    (at.floor() as usize).min(lanes.len() - 1)
-}
-
 /// The clips on `lane`, in the order they are held — which is the order they
 /// draw in, so two that overlap stack predictably.
 pub fn clips_on<'a>(clips: &'a [Clip], lane: &'a str) -> impl Iterator<Item = &'a Clip> + 'a {
@@ -226,6 +157,228 @@ pub fn clips_on<'a>(clips: &'a [Clip], lane: &'a str) -> impl Iterator<Item = &'
 /// a clip nobody can grab.
 pub fn clip_x(clip: &Clip, body: Rect, nav: &View, min_w: f32) -> Option<(f32, f32)> {
     super::track::clip_x_range(body, nav, clip.place.offset, clip.place.dur, min_w)
+}
+
+/// A break-point automation, and **the same element in two places**.
+///
+/// A curve that names a **lane** is a track automation: a row of its own under
+/// that lane, as tall as it asks and as long as the timeline — a track's gain
+/// does not begin and end with a box. A curve that names a **box** is a clip
+/// envelope: a layer drawn inside that box's rectangle, over whatever the box
+/// draws, and lasting exactly as long as the box does.
+///
+/// The distinction is where it hangs and nothing else. Both are drawn by the
+/// `curve` element in its body form, both take the same break-points, and both
+/// report through the same `"points"` payload — which is why they are one type
+/// with two lists rather than two types.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Curve {
+    /// Its identity, the client's own name — what a point names to say which
+    /// curve it is on, and what a report names it back with.
+    pub name: String,
+    /// The lane this is a row under, or the box this is a layer on.
+    pub owner: String,
+    /// What is written on it; the name is drawn when this is empty.
+    pub label: String,
+    /// The value domain the points are read and drawn over.
+    pub min: f32,
+    pub max: f32,
+    /// How tall its row is — a **row's** only; a layer is as tall as the box
+    /// it is drawn on.
+    pub height: f32,
+}
+
+impl Curve {
+    /// What is drawn on it: its label, or its name when it carries none.
+    pub fn shown(&self) -> &str {
+        if self.label.is_empty() {
+            &self.name
+        } else {
+            &self.label
+        }
+    }
+}
+
+/// What one row of the stack is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Row {
+    /// A lane, by index into the lanes.
+    Lane(usize),
+    /// A track automation drawn under that lane, by index into the curves.
+    Curve(usize),
+}
+
+/// **The stack as rows**: every lane, each followed by the automation rows that
+/// name it.
+///
+/// The vertical axis of a multitrack was the lanes and is now the rows, because
+/// a track automation is a row of its own — a lane of curve under the lane of
+/// boxes, spanning the whole timeline the way the track does. Everything that
+/// reads the vertical axis reads it here, so the drawing and the hit test
+/// cannot disagree about where a row begins.
+///
+/// A curve naming a lane that is not here is **kept and drawn nowhere**, the
+/// rule a clip already keeps: what cannot be placed can still be reported.
+#[derive(Debug, Clone)]
+pub struct Stack {
+    /// One entry per row, top to bottom: what it is and how tall it is.
+    entries: Vec<(Row, f32)>,
+    gap: f32,
+}
+
+impl Stack {
+    /// The rows the lanes and the curves make, in the order they are drawn.
+    pub fn new(lanes: &[Lane], curves: &[Curve], gap: f32) -> Stack {
+        let mut entries = Vec::with_capacity(lanes.len() + curves.len());
+        for (i, lane) in lanes.iter().enumerate() {
+            entries.push((Row::Lane(i), lane.height));
+            for (n, curve) in curves.iter().enumerate() {
+                if curve.owner == lane.name {
+                    entries.push((Row::Curve(n), curve.height));
+                }
+            }
+        }
+        Stack { entries, gap }
+    }
+
+    /// The bands the rows make, each carrying its own gap.
+    ///
+    /// The gap is *inside* the band rather than between two of them, and that
+    /// is the whole of how a stack has no holes: a **gap belongs to the row
+    /// above it**, so a pointer between two rows is on one rather than on
+    /// nothing (`gestures/nav.rs` states the same rule for the widget-tree
+    /// stack). A hit test that answers "nowhere" there is what makes a dragged
+    /// clip snap back for those frames and jump again on the far side.
+    ///
+    /// [`Bands`] is the shared vertical axis a roll's semitone rows use, which
+    /// is why the clamping past either end comes with it rather than being
+    /// written again here.
+    fn bands(&self) -> Bands {
+        Bands::table(self.entries.iter().map(|(_, h)| h + self.gap))
+    }
+
+    /// How many rows there are.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// What row `i` is.
+    pub fn row(&self, i: usize) -> Option<Row> {
+        self.entries.get(i).map(|(r, _)| *r)
+    }
+
+    /// How tall the stack is — a scroll's content height, and what says whether
+    /// it scrolls at all. The last band's trailing gap is not counted: it is
+    /// the room a drop below the stack lands in, not room the stack occupies.
+    pub fn content_height(&self) -> f32 {
+        if self.entries.is_empty() {
+            return 0.0;
+        }
+        self.bands().total() - self.gap
+    }
+
+    /// Where each row lands inside `rect`, scrolled down by `scroll` pixels —
+    /// **including the ones off either end**, so a caller that hit-tests reads
+    /// the same rects the drawing used.
+    pub fn rects(&self, rect: Rect, scroll: f32) -> Vec<Rect> {
+        let bands = self.bands();
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(i, (_, h))| {
+                let (y, _) = bands.band(i);
+                Rect::new(rect.x, rect.y - scroll + y, rect.w, *h)
+            })
+            .collect()
+    }
+
+    /// The row a pointer is **on**, or `None` off the stack entirely — the
+    /// *press*' question.
+    pub fn row_at(&self, rect: Rect, scroll: f32, y: f64) -> Option<usize> {
+        self.bands().index_at(y as f32 - rect.y + scroll)
+    }
+
+    /// The **lane** a pointer is on, or `None` off the stack and `None` on an
+    /// automation row: nothing of a lane is drawn there, so a press that lands
+    /// on one is not a press on the lane above it.
+    pub fn lane_at(&self, rect: Rect, scroll: f32, y: f64) -> Option<usize> {
+        match self.row(self.row_at(rect, scroll, y)?)? {
+            Row::Lane(i) => Some(i),
+            Row::Curve(_) => None,
+        }
+    }
+
+    /// The lane a hand **is heading for**, always: the nearest row's lane,
+    /// clamped to the stack at both ends.
+    ///
+    /// A drag has to answer for every pixel the pointer crosses — the gaps, the
+    /// automation rows, the space past either end. An automation row answers
+    /// with the lane it belongs to, which is the only lane a clip dropped there
+    /// could sensibly mean.
+    pub fn lane_toward(&self, rect: Rect, scroll: f32, y: f64) -> usize {
+        if self.entries.is_empty() {
+            return 0;
+        }
+        let at = self.bands().index_of(y as f32 - rect.y + scroll);
+        let i = (at.floor() as usize).min(self.entries.len() - 1);
+        // Walk back to the lane that owns the row: the entries are built lane
+        // first, so there is always one at or above any curve row.
+        self.entries[..=i]
+            .iter()
+            .rev()
+            .find_map(|(r, _)| match r {
+                Row::Lane(n) => Some(*n),
+                Row::Curve(_) => None,
+            })
+            .unwrap_or(0)
+    }
+
+    /// Where each **lane** lands, by lane index — what places the clips.
+    pub fn lane_rects(&self, rect: Rect, scroll: f32, lanes: usize) -> Vec<Rect> {
+        let rects = self.rects(rect, scroll);
+        let mut out = vec![Rect::new(rect.x, rect.y, rect.w, 0.0); lanes];
+        for (i, (row, _)) in self.entries.iter().enumerate() {
+            if let Row::Lane(n) = row
+                && let Some(slot) = out.get_mut(*n)
+            {
+                *slot = rects[i];
+            }
+        }
+        out
+    }
+}
+
+/// The `curves` wire form: the flat `name lane label min max height` sextuple
+/// array. The inverse of the prop's parse, as every non-scalar here is.
+pub fn curves_json(curves: &[Curve]) -> Value {
+    let mut out = Vec::with_capacity(curves.len() * 6);
+    for c in curves {
+        out.push(Value::from(c.name.clone()));
+        out.push(Value::from(c.owner.clone()));
+        out.push(Value::from(c.label.clone()));
+        out.push(Value::from(c.min));
+        out.push(Value::from(c.max));
+        out.push(Value::from(c.height));
+    }
+    Value::Array(out)
+}
+
+/// The `layers` wire form: the flat `name box label min max` quintuple array —
+/// a layer has no height of its own, since it is as tall as the box it is on.
+pub fn layers_json(layers: &[Curve]) -> Value {
+    let mut out = Vec::with_capacity(layers.len() * 5);
+    for c in layers {
+        out.push(Value::from(c.name.clone()));
+        out.push(Value::from(c.owner.clone()));
+        out.push(Value::from(c.label.clone()));
+        out.push(Value::from(c.min));
+        out.push(Value::from(c.max));
+    }
+    Value::Array(out)
 }
 
 /// The `lanes` wire form: the flat `name label height mute solo gain` sextuple
@@ -310,19 +463,76 @@ mod tests {
     fn the_stack_lays_the_lanes_at_their_own_heights() {
         let lanes = lanes();
         let rect = Rect::new(10.0, 20.0, 400.0, 300.0);
-        let at = stack(&lanes, rect, 0.0, 4.0);
+        let stack = Stack::new(&lanes, &[], 4.0);
+        let at = stack.rects(rect, 0.0);
         assert_eq!(at.len(), 2);
         assert_eq!((at[0].y, at[0].h), (20.0, 100.0));
         assert_eq!((at[1].y, at[1].h), (124.0, 60.0)); // 20 + 100 + 4
         assert_eq!(at[0].x, 10.0);
 
-        let scrolled = stack(&lanes, rect, 30.0, 4.0);
+        let scrolled = stack.rects(rect, 30.0);
         assert_eq!(scrolled[0].y, -10.0, "a lane off the top is still reported");
         assert_eq!(scrolled[1].y, 94.0);
 
         // The content height is what says whether it scrolls at all.
-        assert_eq!(content_height(&lanes, 4.0), 164.0);
-        assert_eq!(content_height(&[], 4.0), 0.0);
+        assert_eq!(stack.content_height(), 164.0);
+        assert_eq!(Stack::new(&[], &[], 4.0).content_height(), 0.0);
+    }
+
+    fn curve(name: &str, owner: &str, height: f32) -> Curve {
+        Curve {
+            name: name.into(),
+            owner: owner.into(),
+            label: String::new(),
+            min: 0.0,
+            max: 1.0,
+            height,
+        }
+    }
+
+    /// **A track automation is a row of its own, under the lane it names** —
+    /// not a layer on it and not a lane of clips. So the vertical axis is the
+    /// rows, and the lane below an automation is where the automation left it.
+    #[test]
+    fn an_automation_row_sits_under_its_lane_and_pushes_the_next_one_down() {
+        let lanes = lanes();
+        let curves = vec![curve("gain", "noise", 40.0)];
+        let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let stack = Stack::new(&lanes, &curves, 4.0);
+        assert_eq!(stack.len(), 3);
+        assert_eq!(stack.row(1), Some(Row::Curve(0)));
+
+        let at = stack.rects(rect, 0.0);
+        assert_eq!((at[1].y, at[1].h), (104.0, 40.0));
+        assert_eq!(at[2].y, 148.0, "the second lane is below the row");
+
+        // The lanes are still addressed by lane index.
+        let lane_rects = stack.lane_rects(rect, 0.0, lanes.len());
+        assert_eq!(lane_rects[1].y, 148.0);
+    }
+
+    /// **A press on an automation row is not a press on a lane** — nothing of
+    /// a lane is drawn there — but a *drag* still has to answer, and it answers
+    /// with the lane the row belongs to.
+    #[test]
+    fn a_curve_row_answers_a_drag_and_not_a_press() {
+        let lanes = lanes();
+        let curves = vec![curve("gain", "noise", 40.0)];
+        let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let stack = Stack::new(&lanes, &curves, 4.0);
+        assert_eq!(stack.lane_at(rect, 0.0, 50.0), Some(0));
+        assert_eq!(stack.lane_at(rect, 0.0, 120.0), None, "an automation row");
+        assert_eq!(stack.lane_toward(rect, 0.0, 120.0), 0);
+        assert_eq!(stack.lane_toward(rect, 0.0, 160.0), 1);
+        assert_eq!(stack.lane_toward(rect, 0.0, 9_000.0), 1, "clamped");
+    }
+
+    /// A curve naming a lane that is not here is kept and drawn nowhere, the
+    /// rule a clip already keeps.
+    #[test]
+    fn a_curve_naming_no_lane_takes_no_row() {
+        let stack = Stack::new(&lanes(), &[curve("gain", "vanished", 40.0)], 4.0);
+        assert_eq!(stack.len(), 2);
     }
 
     /// The two lists report independently: a fader moved resends the lanes and

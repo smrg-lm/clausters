@@ -99,6 +99,23 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
+/// The **body** flavor: the same element, drawn inside a rectangle a container
+/// already decided and over the axis that container hands it.
+///
+/// It is the same parse as a standalone curve's — one product of one set of
+/// props, which is what keeps the two placements from drifting — with the
+/// chrome dropped and the placement told. What a multitrack builds through this
+/// is both of its curves: a track automation's row and a box's envelope layer
+/// are the same element in two places, and the only difference between them is
+/// the rectangle and the span they are handed.
+pub(crate) fn body(props: &Map<String, Value>) -> Curve {
+    Curve {
+        editor: EditorProps::body(),
+        body: true,
+        ..from_props(props)
+    }
+}
+
 fn from_props(props: &Map<String, Value>) -> Curve {
     let min = number(props, "min", 0.0);
     let max = number(props, "max", 1.0);
@@ -276,6 +293,13 @@ impl Curve {
 
     /// The edit-back payload: the `"points"` tag plus the flat `t v shape curve`
     /// list — the envelope's own units, which is what its owner applies.
+    /// The break-points as they now stand — what a container holding this as
+    /// a layer reports them *with its own identity* in front of, since there
+    /// the payload is the whole piece's curves and not this one's.
+    pub(crate) fn points(&self) -> &[BpfPoint] {
+        &self.points
+    }
+
     fn points_event(&self) -> Events {
         let mut args = vec![OscType::String("points".into())];
         args.extend(bpf::points_args(&self.points));

@@ -1935,6 +1935,75 @@ def _flat_box_notes(notes) -> list:
     return out
 
 
+def _flat_curves(curves) -> list:
+    """Normalizes ``curves`` to the flat ``name lane label min max height``
+    sextuples the host reads — a **track automation**, a row of its own under
+    the lane it names, as long as the timeline."""
+    out: list = []
+    for curve in curves:
+        if isinstance(curve, dict):
+            got = (curve.get("name"), curve.get("lane"), curve.get("label"),
+                   curve.get("min"), curve.get("max"), curve.get("height"))
+        elif isinstance(curve, (tuple, list)):
+            got = tuple(curve) + (None,) * (6 - len(curve))
+        else:
+            got = (curve, None, None, None, None, None)
+        name, lane, label, lo, hi, height = got[:6]
+        out += [str(name), "" if lane is None else str(lane),
+                "" if label is None else str(label),
+                0.0 if lo is None else float(lo),
+                1.0 if hi is None else float(hi),
+                40.0 if height is None else float(height)]
+    return out
+
+
+def _flat_layers(layers) -> list:
+    """Normalizes ``layers`` to the flat ``name box label min max`` quintuples
+    the host reads — a **clip envelope**, drawn inside the box it names.
+
+    It carries no height, and the shape is the statement: a layer is as tall as
+    the box it is drawn on, where a row is as tall as it asks."""
+    out: list = []
+    for curve in layers:
+        if isinstance(curve, dict):
+            got = (curve.get("name"), curve.get("box"), curve.get("label"),
+                   curve.get("min"), curve.get("max"))
+        elif isinstance(curve, (tuple, list)):
+            got = tuple(curve) + (None,) * (5 - len(curve))
+        else:
+            got = (curve, None, None, None, None)
+        name, box, label, lo, hi = got[:5]
+        out += [str(name), "" if box is None else str(box),
+                "" if label is None else str(label),
+                0.0 if lo is None else float(lo),
+                1.0 if hi is None else float(hi)]
+    return out
+
+
+def _flat_curve_points(points) -> list:
+    """Normalizes ``points`` to the flat ``curve time value shape amount``
+    quintuples the host reads — a break-point per entry, each naming the curve
+    it is on.
+
+    One list for every curve there is, rows and layers alike: a break-point is
+    a break-point wherever the curve hangs, the way a note is a note whichever
+    box holds it."""
+    out: list = []
+    for point in points:
+        if isinstance(point, dict):
+            got = (point.get("curve"), point.get("time"), point.get("value"),
+                   point.get("shape"), point.get("amount"))
+        else:
+            got = tuple(point) + (None,) * (5 - len(point))
+        curve, time, value, shape, amount = got[:5]
+        out += [str(curve),
+                0.0 if time is None else float(time),
+                0.0 if value is None else float(value),
+                1.0 if shape is None else float(shape),
+                0.0 if amount is None else float(amount)]
+    return out
+
+
 def _flat_clips(clips) -> list:
     """Normalizes ``clips`` to the flat ``name lane offset dur start label
     source`` septuples the host reads. Same shapes as `_flat_lanes`."""
@@ -2157,7 +2226,9 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
         extra.update(_score_props(display_list))
     return node("score", id=id, **extra, **props)
 
-def multitrack(*, lanes=(), clips=(), notes=(), view: str | None = None,
+def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
+               points=(), layer: str | None = None,
+               hidden: str | None = None, view: str | None = None,
                gap: float | None = None,
                snap: float | None = None, label: str | None = None,
                autofit: bool | None = None, ruler: str | None = None,
@@ -2209,6 +2280,26 @@ def multitrack(*, lanes=(), clips=(), notes=(), view: str | None = None,
     it is in, and ``view`` chooses how a clip of samples is drawn (``"trace"``,
     the default, or ``"spectrogram"``) for every clip at once.
 
+    **The curves are the light views, and they are editable.** A break-point
+    automation is one element in two places, and the place is the whole
+    difference. ``curves`` is a sequence of
+    ``(name, lane, label, min, max, height)``: a **track automation**, which
+    takes a row of its own under the lane it names and runs the whole timeline,
+    because a track's gain does not begin and end with a clip. ``layers`` is a
+    sequence of ``(name, box, label, min, max)``: a **clip envelope**, drawn
+    inside the clip it names, over whatever that clip draws and lasting exactly
+    as long as it does — a clip's own dynamic envelope, its pan, its per-clip
+    effect parameters. A layer takes no height, because it is as tall as the
+    clip it is on. ``points`` is a sequence of
+    ``(curve, time, value, shape, amount)`` for **every** curve there is, each
+    naming the curve it is on the way a note names its box.
+
+    A press lands on a curve's own points and the line between them, never on
+    the rectangle it shares, so an envelope drawn across a clip leaves that clip
+    draggable. ``layer`` names the curve a hand is on (``"placement"`` is the
+    clips themselves) and ``hidden`` the curves that are not drawn,
+    space-separated; what is hidden is not edited either.
+
     It **places**; a clip is entered to edit. The contents of a clip draw
     read-only here — this widget owns *where* things are, not what is inside
     them::
@@ -2222,6 +2313,10 @@ def multitrack(*, lanes=(), clips=(), notes=(), view: str | None = None,
     extra = _drop_none(lanes=_held(lanes or None, _flat_lanes),
                        clips=_held(clips or None, _flat_clips),
                        notes=_held(notes or None, _flat_box_notes),
+                       curves=_held(curves or None, _flat_curves),
+                       layers=_held(layers or None, _flat_layers),
+                       points=_held(points or None, _flat_curve_points),
+                       layer=layer, hidden=hidden,
                        view=view, gap=gap,
                        snap=snap, label=label, theme=theme)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler,

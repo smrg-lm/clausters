@@ -2521,6 +2521,81 @@ export function flatBoxNotes(notes: BoxNoteSpec): (number | string)[] {
 }
 
 /**
+ * One **track automation** of a {@link multitrack}: a row of its own under the
+ * lane it names, as long as the timeline.
+ */
+export type CurveSpec = readonly (readonly [
+    name: string,
+    lane?: string,
+    label?: string,
+    min?: number,
+    max?: number,
+    height?: number,
+])[];
+
+/**
+ * One **clip envelope** of a {@link multitrack}: a layer drawn inside the box
+ * it names, over whatever that box draws.
+ *
+ * It carries no height, and the shape is the statement: a layer is as tall as
+ * the box it is on, where a row is as tall as it asks.
+ */
+export type LayerSpec = readonly (readonly [
+    name: string,
+    box?: string,
+    label?: string,
+    min?: number,
+    max?: number,
+])[];
+
+/** One break-point of a {@link multitrack}'s curve, naming the curve it is on. */
+export type CurvePointSpec = readonly (readonly [
+    curve: string,
+    time: number,
+    value: number,
+    shape?: number,
+    amount?: number,
+])[];
+
+/** The flat `name lane label min max height` sextuples the host reads. */
+export function flatCurves(curves: CurveSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [name, lane, label, min, max, height] of curves) {
+        out.push(String(name), lane === undefined ? "" : String(lane),
+            label === undefined ? "" : String(label),
+            Number(min ?? 0), Number(max ?? 1), Number(height ?? 40));
+    }
+    return out;
+}
+
+/** The flat `name box label min max` quintuples the host reads. */
+export function flatLayers(layers: LayerSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [name, box, label, min, max] of layers) {
+        out.push(String(name), box === undefined ? "" : String(box),
+            label === undefined ? "" : String(label),
+            Number(min ?? 0), Number(max ?? 1));
+    }
+    return out;
+}
+
+/**
+ * The flat `curve time value shape amount` quintuples the host reads — a
+ * break-point per entry, each naming the curve it is on.
+ *
+ * One list for every curve there is, rows and layers alike: a break-point is a
+ * break-point wherever the curve hangs.
+ */
+export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [curve, time, value, shape, amount] of points) {
+        out.push(String(curve), Number(time ?? 0), Number(value ?? 0),
+            Number(shape ?? 1), Number(amount ?? 0));
+    }
+    return out;
+}
+
+/**
  * A **multitrack**: one widget holding a stack of lanes and the clips on them,
  * drawn on one shared time axis.
  *
@@ -2551,6 +2626,24 @@ export function flatBoxNotes(notes: BoxNoteSpec): (number | string)[] {
  * samples is drawn (`"trace"`, the default, or `"spectrogram"`) for every clip
  * at once.
  *
+ * **The curves are the light views, and they are editable.** A break-point
+ * automation is one element in two places, and the place is the whole
+ * difference. `curves` is `[name, lane, label, min, max, height]`: a **track
+ * automation**, which takes a row of its own under the lane it names and runs
+ * the whole timeline, because a track's gain does not begin and end with a
+ * clip. `layers` is `[name, box, label, min, max]`: a **clip envelope**, drawn
+ * inside the clip it names, over whatever that clip draws and lasting exactly
+ * as long as it does — a clip's own dynamic envelope, its pan, its per-clip
+ * effect parameters. A layer takes no height, because it is as tall as the clip
+ * it is on. `points` is `[curve, time, value, shape, amount]` for **every**
+ * curve there is, each naming the curve it is on the way a note names its box.
+ *
+ * A press lands on a curve's own points and the line between them, never on the
+ * rectangle it shares, so an envelope drawn across a clip leaves that clip
+ * draggable. `layer` names the curve a hand is on (`"placement"` is the clips
+ * themselves) and `hidden` the curves that are not drawn, space-separated; what
+ * is hidden is not edited either.
+ *
  * It **places**; a clip is entered to edit. The contents of a clip draw
  * read-only here — this widget owns *where* things are, not what is inside them.
  */
@@ -2560,6 +2653,16 @@ export function multitrack(
         clips?: ClipSpec;
         /** The notes of the boxes that hold them, each naming its box. */
         notes?: BoxNoteSpec;
+        /** The track automations: a row of its own under the lane it names. */
+        curves?: CurveSpec;
+        /** The clip envelopes: a layer inside the box it names. */
+        layers?: LayerSpec;
+        /** Every curve's break-points, each naming the curve it is on. */
+        points?: CurvePointSpec;
+        /** The curve a hand is on; `"placement"` is the clips themselves. */
+        layer?: string;
+        /** The curves that are not drawn, space-separated. */
+        hidden?: string;
         /** How a box of samples is drawn: `"trace"` or `"spectrogram"`. */
         view?: string;
         /** The space between lanes, in logical pixels. */
@@ -2570,13 +2673,21 @@ export function multitrack(
         theme?: Record<string, string>;
     } = {},
 ): GuiNode {
-    const { lanes, clips, notes, view, gap, snap, label: text, theme, ...timeline } = options;
+    const {
+        lanes, clips, notes, curves, layers, points, layer, hidden,
+        view, gap, snap, label: text, theme, ...timeline
+    } = options;
     return node("multitrack", {
         ...timelineProps(timeline),
         ...drop([
             ["lanes", lanes === undefined ? undefined : flatLanes(lanes)],
             ["clips", clips === undefined ? undefined : flatClips(clips)],
             ["notes", notes === undefined ? undefined : flatBoxNotes(notes)],
+            ["curves", curves === undefined ? undefined : flatCurves(curves)],
+            ["layers", layers === undefined ? undefined : flatLayers(layers)],
+            ["points", points === undefined ? undefined : flatCurvePoints(points)],
+            ["layer", layer],
+            ["hidden", hidden],
             ["view", view],
             ["gap", gap],
             ["snap", snap],

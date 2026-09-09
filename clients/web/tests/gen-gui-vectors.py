@@ -281,6 +281,11 @@ REQUIRED: dict = {}
 #: not about the builder.
 PER_BUILDER = {
     ("multitrack", "notes"): [["a", 0.0, 1.0, 60], ["a", 1.0, 0.5, 64, 90, 1]],
+    ("multitrack", "curves"): [["gain", "one", "Gain", 0.0, 1.0, 40.0],
+                               ["pan", "one"]],
+    ("multitrack", "layers"): [["env", "a", "", -1.0, 1.0], ["fx", "a"]],
+    ("multitrack", "points"): [["gain", 0.0, 1.0], ["gain", 1.0, 0.0, 5, 4.0],
+                               ["env", 0.5, 0.25]],
 }
 
 #: The payload options, whose value is a shape rather than a scalar. Every one

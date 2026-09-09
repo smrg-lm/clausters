@@ -61,6 +61,10 @@ const GAP: f32 = 4.0;
 /// A lane's thickness when nothing says otherwise.
 const LANE_H: f32 = 96.0;
 
+/// An automation row's thickness when nothing says otherwise — shorter than a
+/// lane, because what it draws is one line and not a stack of boxes.
+const CURVE_H: f32 = 40.0;
+
 /// The narrowest a clip's box is drawn at, so one nobody can see never becomes
 /// one nobody can grab.
 const MIN_CLIP_W: f32 = 3.0;
@@ -114,6 +118,38 @@ pub struct Multitrack {
     pub(crate) lanes: Vec<Lane>,
     /// The clips, each naming the lane it is on.
     pub(crate) clips: Vec<Clip>,
+    /// **The track automations**: each a row of its own under the lane it
+    /// names, as long as the timeline is. A track's gain does not begin and
+    /// end with a box, so it is not drawn inside one.
+    pub(crate) curves: Vec<model::Curve>,
+    /// **The clip envelopes**: each a layer drawn inside the box it names, over
+    /// whatever that box draws and lasting exactly as long as it does.
+    ///
+    /// The same type as a track's automation and the same element draws it —
+    /// what differs is where it hangs, which is the whole of the distinction.
+    pub(crate) layers: Vec<model::Curve>,
+    /// **The break-point element per curve, by name** — rows and layers alike,
+    /// each the `curve` element in its body form.
+    ///
+    /// A curve is the one content here a hand may *edit*, so unlike a take or a
+    /// roll its element is asked for presses as well as for pixels: the light
+    /// views are editable layers over a read-only base, which is what a box
+    /// being a window onto a picture leaves room for.
+    bodies: HashMap<String, crate::host::elements::curve::Curve>,
+    /// **Which layer the hand is on**, by curve name; `None` is the placement —
+    /// the boxes themselves.
+    ///
+    /// One layer is active at a time and it is the only one that acts or offers
+    /// an affordance. Here a layer has a name, so it is named: the `points:1`
+    /// ordinal is what a container whose layers are anonymous falls back to.
+    layer: Option<String>,
+    /// Which layers are **not drawn**, by curve name. What is hidden is not
+    /// edited either, so hiding the layer in hand hands it back to the
+    /// placement.
+    hidden: Vec<String>,
+    /// The curve a press handed the drag to, and its break-points as they stood
+    /// when the press landed — what says on release whether anything changed.
+    holding: Option<(String, Value)>,
     /// Which clips the hand is holding, by index. **The hand's, not the
     /// piece's**: nothing on the wire sets or reports it, exactly as nothing
     /// reports which notes a roll has selected.
@@ -186,6 +222,12 @@ impl Default for Multitrack {
         Self {
             lanes: Vec::new(),
             clips: Vec::new(),
+            curves: Vec::new(),
+            layers: Vec::new(),
+            bodies: HashMap::new(),
+            layer: None,
+            hidden: Vec::new(),
+            holding: None,
             selected: Vec::new(),
             scroll: 0.0,
             gap: GAP,
@@ -234,9 +276,17 @@ pub(super) fn build(
 /// The props a `multitrack` node carries, read once — shared by the constructor
 /// and by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Multitrack {
+    let curves = parse_curves(props);
+    let layers = parse_layers(props);
     Multitrack {
         lanes: parse_lanes(props),
         clips: parse_clips(props),
+        bodies: curve_bodies(&curves, &layers, &parse_points(props)),
+        curves,
+        layers,
+        layer: props.get("layer").and_then(Value::as_str).and_then(named),
+        hidden: parse_hidden(props),
+        holding: None,
         selected: Vec::new(),
         scroll: 0.0,
         gap: number(props, "gap", GAP).max(0.0),
@@ -307,6 +357,119 @@ fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
                 label: c[5].as_str().unwrap_or_default().to_string(),
                 source: c[6].as_i64().unwrap_or(i64::from(model::NO_SOURCE)) as i32,
             })
+        })
+        .collect()
+}
+
+/// The `curves` prop: the flat `name lane label min max height` sextuple array
+/// — a **track automation**, a row of its own under the lane it names.
+fn parse_curves(props: &Map<String, Value>) -> Vec<model::Curve> {
+    let Some(Value::Array(items)) = props.get("curves") else {
+        return Vec::new();
+    };
+    items
+        .as_chunks::<6>()
+        .0
+        .iter()
+        .filter_map(|c| {
+            Some(model::Curve {
+                name: c[0].as_str()?.to_string(),
+                owner: c[1].as_str().unwrap_or_default().to_string(),
+                label: c[2].as_str().unwrap_or_default().to_string(),
+                min: c[3].as_f64().unwrap_or(0.0) as f32,
+                max: c[4].as_f64().unwrap_or(1.0) as f32,
+                height: c[5].as_f64().unwrap_or(f64::from(CURVE_H)) as f32,
+            })
+        })
+        .collect()
+}
+
+/// The `layers` prop: the flat `name box label min max` quintuple array — a
+/// **clip envelope**, drawn inside the box it names.
+///
+/// It carries no height, and that is the shape saying what it is: a layer is as
+/// tall as the box it is on, and a row is as tall as it asks.
+fn parse_layers(props: &Map<String, Value>) -> Vec<model::Curve> {
+    let Some(Value::Array(items)) = props.get("layers") else {
+        return Vec::new();
+    };
+    items
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .filter_map(|c| {
+            Some(model::Curve {
+                name: c[0].as_str()?.to_string(),
+                owner: c[1].as_str().unwrap_or_default().to_string(),
+                label: c[2].as_str().unwrap_or_default().to_string(),
+                min: c[3].as_f64().unwrap_or(0.0) as f32,
+                max: c[4].as_f64().unwrap_or(1.0) as f32,
+                height: CURVE_H,
+            })
+        })
+        .collect()
+}
+
+/// The `points` prop: the flat `curve time value shape amount` quintuples,
+/// gathered into the `time value shape amount` quads a curve reads.
+///
+/// **One list for every curve there is**, rows and layers alike, because a
+/// break-point is a break-point wherever the curve hangs — the same carrier a
+/// roll's `notes` rides, with the curve's name in front the way a note names
+/// its box. A point naming a curve that is not there is dropped.
+fn parse_points(props: &Map<String, Value>) -> HashMap<String, Vec<f64>> {
+    let Some(Value::Array(items)) = props.get("points") else {
+        return HashMap::new();
+    };
+    let mut out: HashMap<String, Vec<f64>> = HashMap::new();
+    for q in items.as_chunks::<5>().0 {
+        let Some(name) = q[0].as_str() else {
+            continue;
+        };
+        out.entry(name.to_string())
+            .or_default()
+            .extend(q[1..].iter().map(|v| v.as_f64().unwrap_or(0.0)));
+    }
+    out
+}
+
+/// The `hidden` prop: the layers that are not drawn, space-separated.
+fn parse_hidden(props: &Map<String, Value>) -> Vec<String> {
+    props
+        .get("hidden")
+        .and_then(Value::as_str)
+        .map(|s| s.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// A layer name, or `None` for the two spellings that mean the placement — the
+/// boxes themselves, which is what a multitrack owns when no curve is in hand.
+fn named(v: &str) -> Option<String> {
+    (!v.is_empty() && v != "placement").then(|| v.to_string())
+}
+
+/// The **body element** every curve is drawn and edited through: the `curve`
+/// element this build already has, over that curve's own points and value
+/// domain, with no chrome of its own.
+///
+/// Built once per curve rather than per placement, because the element *is* the
+/// curve: a row and a layer differ in the rectangle and the span they are
+/// handed at draw time, and in nothing they hold.
+fn curve_bodies(
+    rows: &[model::Curve],
+    layers: &[model::Curve],
+    points: &HashMap<String, Vec<f64>>,
+) -> HashMap<String, crate::host::elements::curve::Curve> {
+    rows.iter()
+        .chain(layers)
+        .map(|c| {
+            let mut props = Map::new();
+            props.insert("min".into(), Value::from(c.min));
+            props.insert("max".into(), Value::from(c.max));
+            if let Some(flat) = points.get(&c.name) {
+                props.insert("points".into(), Value::from(flat.clone()));
+            }
+            (c.name.clone(), crate::host::elements::curve::body(&props))
         })
         .collect()
 }
@@ -383,7 +546,19 @@ impl Multitrack {
     /// The lane a pointer is **on**, or `None` off the stack — the *press*'
     /// question, over the same bands the drawing used.
     fn lane_at(&self, rect: Rect, y: f64) -> Option<usize> {
-        model::lane_at(&self.lanes, rect, self.scroll, self.gap, y)
+        self.stack().lane_at(rect, self.scroll, y)
+    }
+
+    /// **The vertical axis**: the lanes and the automation rows under them, in
+    /// the order they are drawn. Built per ask rather than kept, because it is
+    /// derived from two lists a `/gui_set` replaces whole.
+    fn stack(&self) -> model::Stack {
+        model::Stack::new(&self.lanes, &self.curves, self.gap)
+    }
+
+    /// Where each **lane** lands, by lane index.
+    fn lane_rects(&self, rect: Rect) -> Vec<Rect> {
+        self.stack().lane_rects(rect, self.scroll, self.lanes.len())
     }
 
     /// The lane a hand **is heading for**, always — the *drag*'s question, and
@@ -391,7 +566,7 @@ impl Multitrack {
     /// either end, which is the whole of why a dragged clip neither jumps nor
     /// oscillates.
     fn lane_toward(&self, rect: Rect, y: f64) -> usize {
-        model::lane_toward(&self.lanes, rect, self.scroll, self.gap, y)
+        self.stack().lane_toward(rect, self.scroll, y)
     }
 
     /// The clip under `(x, y)`, and which part of it — **the topmost first**,
@@ -399,7 +574,7 @@ impl Multitrack {
     /// one it can see.
     fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
         let i = self.lane_at(input.rect, at.1)?;
-        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[i];
+        let rect = self.lane_rects(input.rect)[i];
         // A band carries its gap, and nothing of a lane is drawn there: a press
         // in it is a press on bare stack, which the container sweeps.
         if (at.1 as f32) >= rect.y + rect.h {
@@ -475,7 +650,7 @@ impl Multitrack {
     /// The lane header band `y` falls in, and the part of it `(x, y)` hit.
     fn header_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, track::HeaderPart)> {
         let i = self.lane_at(input.rect, at.1)?;
-        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[i];
+        let rect = self.lane_rects(input.rect)[i];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
         let header = self.header(&self.lanes[i], input.indent);
         let part = track::header_hit(band, &header, input.metrics, at.0, at.1)?;
@@ -520,7 +695,7 @@ impl Multitrack {
         at: (f64, f64),
         input: &Input,
     ) -> Claim {
-        let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[lane];
+        let rect = self.lane_rects(input.rect)[lane];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
         let parts = track::header_parts(
             band,
@@ -658,16 +833,22 @@ impl Multitrack {
     /// A box whose lane is gone, whose lane is scrolled off, or which is off
     /// the window is absent rather than reported at zero size: what a caller
     /// wants is what it can draw.
-    fn boxes_on_screen(&self, ctx: &Ctx) -> Vec<(usize, Rect, View)> {
-        let nav = self.view(ctx.time);
-        let at = model::stack(&self.lanes, ctx.rect, self.scroll, self.gap);
-        let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
+    fn boxes_on_screen(
+        &self,
+        rect: Rect,
+        indent: f32,
+        metrics: &Metrics,
+        time: Option<TimeSpace>,
+    ) -> Vec<(usize, Rect, View)> {
+        let nav = self.view(time);
+        let at = self.lane_rects(rect);
+        let shown = |r: Rect| r.y + r.h >= rect.y && r.y <= rect.y + rect.h;
         let mut out = Vec::new();
         for (n, clip) in self.clips.iter().enumerate() {
             let Some(i) = self.lane_of(clip).filter(|i| shown(at[*i])) else {
                 continue;
             };
-            let body = track::lane_body(at[i], false, ctx.indent, ctx.metrics);
+            let body = track::lane_body(at[i], false, indent, metrics);
             if body.w <= 0.0 || body.h <= 0.0 {
                 continue;
             }
@@ -679,6 +860,270 @@ impl Multitrack {
             out.push((n, cr, local));
         }
         out
+    }
+
+    /// **Where every drawn curve is, and the space it is drawn against** — the
+    /// rows under their lanes and the layers inside their boxes, in the order
+    /// they are drawn.
+    ///
+    /// One answer for the drawing and for the hit test, which is what keeps a
+    /// break-point grabbed on the pixels it was painted on. A hidden layer is
+    /// absent: what is not drawn is not edited either.
+    ///
+    /// The two placements differ in exactly two facts, and this is where they
+    /// are decided. A **row** spans the whole timeline — a track's gain does not
+    /// begin and end with a box — so it is handed the shared window over the
+    /// piece's own extent. A **layer** spans its box, so it is handed the box's
+    /// local window over the box's own duration, the same [`TimeSpace`] the base
+    /// view under it draws through.
+    fn curves_on_screen(
+        &self,
+        rect: Rect,
+        indent: f32,
+        metrics: &Metrics,
+        time: Option<TimeSpace>,
+    ) -> Vec<(&str, Rect, TimeSpace)> {
+        let nav = self.view(time);
+        let stack = self.stack();
+        let rows = stack.rects(rect, self.scroll);
+        let shown = |r: Rect| r.y + r.h >= rect.y && r.y <= rect.y + rect.h;
+        let span = model::extent(&self.clips).max(nav.start + nav.len);
+        let mut out = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            let Some(model::Row::Curve(n)) = stack.row(i) else {
+                continue;
+            };
+            let Some(curve) = self.curves.get(n).filter(|c| !self.is_hidden(&c.name)) else {
+                continue;
+            };
+            if !shown(*row) {
+                continue;
+            }
+            let body = track::lane_body(*row, false, indent, metrics);
+            if body.w <= 0.0 || body.h <= 0.0 {
+                continue;
+            }
+            out.push((
+                curve.name.as_str(),
+                body,
+                self.space(nav, span, &curve.name),
+            ));
+        }
+        for (n, cr, local) in self.boxes_on_screen(rect, indent, metrics, time) {
+            let clip = &self.clips[n];
+            for curve in &self.layers {
+                if curve.owner != clip.name || self.is_hidden(&curve.name) {
+                    continue;
+                }
+                let mut space = self.space(local, clip.place.dur, &curve.name);
+                space.window = SourceWindow {
+                    start: clip.place.start,
+                    ..SourceWindow::default()
+                };
+                out.push((curve.name.as_str(), cr, space));
+            }
+        }
+        out
+    }
+
+    /// The space a curve is drawn against, with the one fact a container
+    /// decides for its layers: **whether this is the active one**.
+    fn space(&self, view: View, span: f64, name: &str) -> TimeSpace {
+        let mut space = TimeSpace::of(view, span);
+        space.active = self.layer.as_deref() == Some(name);
+        space
+    }
+
+    /// Whether a layer is one of the ones that are not drawn.
+    fn is_hidden(&self, name: &str) -> bool {
+        self.hidden.iter().any(|h| h == name)
+    }
+
+    /// The gesture a curve reads its own geometry from: the rectangle it was
+    /// drawn in, and the axis it was drawn against. A body has no gutter of its
+    /// own — the header band is the multitrack's — so the indent is zero.
+    fn on_curve<'a>(input: &Input<'a>, rect: Rect, space: TimeSpace) -> Input<'a> {
+        Input {
+            rect,
+            indent: 0.0,
+            time: Some(space),
+            ..*input
+        }
+    }
+
+    /// **The edit-back for the curves: every break-point of every one of
+    /// them.** The third of the payloads, and the whole list for the same
+    /// reason the other two are whole: applying what came back is the identity,
+    /// and its own inverse is the list that was there.
+    fn points_event(&self) -> Events {
+        Events::message(self.points_args())
+    }
+
+    /// The `"points"` payload's arguments, so a press that both moves the layer
+    /// and edits it reports two messages rather than choosing one.
+    fn points_args(&self) -> Vec<OscType> {
+        let mut args = vec![OscType::String("points".into())];
+        for curve in self.curves.iter().chain(&self.layers) {
+            let Some(body) = self.bodies.get(&curve.name) else {
+                continue;
+            };
+            for p in body.points() {
+                args.push(OscType::String(curve.name.clone()));
+                args.push(OscType::Float(p.time as f32));
+                args.push(OscType::Float(p.value));
+                args.push(OscType::Int(p.shape));
+                args.push(OscType::Float(p.curve));
+            }
+        }
+        args
+    }
+
+    /// The `points` prop as a `/gui_set` would take it: every break-point of
+    /// every curve, each naming the curve it is on.
+    fn points_json(&self) -> Value {
+        let mut out = Vec::new();
+        for curve in self.curves.iter().chain(&self.layers) {
+            let Some(body) = self.bodies.get(&curve.name) else {
+                continue;
+            };
+            for p in body.points() {
+                out.push(Value::from(curve.name.clone()));
+                out.push(Value::from(p.time));
+                out.push(Value::from(p.value));
+                out.push(Value::from(p.shape));
+                out.push(Value::from(p.curve));
+            }
+        }
+        Value::Array(out)
+    }
+
+    /// **The layer the hand is on**, reported when a press moved it.
+    fn layer_args(&self) -> Vec<OscType> {
+        vec![
+            OscType::String("layer".into()),
+            OscType::String(
+                self.layer
+                    .clone()
+                    .unwrap_or_else(|| "placement".to_string()),
+            ),
+        ]
+    }
+
+    /// Where a curve by name was drawn, and the space it was drawn against —
+    /// the geometry a gesture on it is read with, taken from the one answer the
+    /// drawing used.
+    fn curve_place(&self, name: &str, input: &Input) -> Option<(Rect, TimeSpace)> {
+        self.curves_on_screen(input.rect, input.indent, input.metrics, input.time)
+            .into_iter()
+            .find(|(n, ..)| *n == name)
+            .map(|(_, rect, space)| (rect, space))
+    }
+
+    /// The break-points of a curve as one comparable value — what says on
+    /// release whether the gesture changed anything, since a drag that came
+    /// back to where it began is not an edit.
+    fn points_of(&self, name: &str) -> Value {
+        self.bodies
+            .get(name)
+            .map(|b| crate::host::graphics::bpf::points_json(b.points()))
+            .unwrap_or(Value::Null)
+    }
+
+    /// The bodies a new list of curves gets: **the elements that survive keep
+    /// their points**, so renaming a lane or adding a curve does not flatten
+    /// the ones that were already drawn.
+    fn rebuilt(
+        &self,
+        rows: &[model::Curve],
+        layers: &[model::Curve],
+    ) -> HashMap<String, crate::host::elements::curve::Curve> {
+        let kept = rows
+            .iter()
+            .chain(layers)
+            .filter_map(|c| {
+                let flat = self
+                    .bodies
+                    .get(&c.name)?
+                    .points()
+                    .iter()
+                    .flat_map(|p| {
+                        [
+                            p.time,
+                            f64::from(p.value),
+                            f64::from(p.shape),
+                            f64::from(p.curve),
+                        ]
+                    })
+                    .collect();
+                Some((c.name.clone(), flat))
+            })
+            .collect();
+        curve_bodies(rows, layers, &kept)
+    }
+
+    /// **A press on a curve's own contents** — a break-point, or the line
+    /// between two of them — never on the rectangle it shares with what is
+    /// under it.
+    ///
+    /// That is what leaves the background to the container: a press on a box's
+    /// empty pixels moves the box and takes the hand off the envelope drawn
+    /// across it. **The active layer is asked first**, so what is already in
+    /// hand keeps the pixels it draws on.
+    fn curve_at(&self, at: (f64, f64), input: &Input) -> Option<String> {
+        let drawn = self.curves_on_screen(input.rect, input.indent, input.metrics, input.time);
+        let ask = |name: &str, rect: Rect, space: TimeSpace| {
+            let body = self.bodies.get(name)?;
+            body.layer_hit(at, &Self::on_curve(input, rect, space))
+                .then(|| name.to_string())
+        };
+        drawn
+            .iter()
+            .find(|(name, ..)| self.layer.as_deref() == Some(*name))
+            .and_then(|&(name, rect, space)| ask(name, rect, space))
+            .or_else(|| {
+                drawn
+                    .iter()
+                    .rev()
+                    .find_map(|&(name, rect, space)| ask(name, rect, space))
+            })
+    }
+
+    /// A press the curves answered, or `None` for one none of them wanted.
+    ///
+    /// The layer moves to whatever was pressed and is reported once; the edit
+    /// itself leaves on release, as every gesture here does. What the curve
+    /// reports for itself is dropped: its payload is its own points, and the
+    /// payload here is **every** curve's, so forwarding one would hand an owner
+    /// a list that is not the piece.
+    fn press_curve(&mut self, at: (f64, f64), input: &Input) -> Option<Claim> {
+        let name = self.curve_at(at, input)?;
+        let (rect, mut space) = self.curve_place(&name, input)?;
+        let moved = self.layer.as_deref() != Some(name.as_str());
+        // The press is read as the active layer's, since that is what it just
+        // became -- the curve offers a segment's bend only when it is in hand.
+        space.active = true;
+        self.layer = Some(name.clone());
+        let before = self.points_of(&name);
+        let sub = Self::on_curve(input, rect, space);
+        let claim = self.bodies.get_mut(&name)?.press(at, &sub);
+        let Claim::Take(take) = claim else {
+            // The curve wanted none of it after all: the press goes on to the
+            // box, and the layer it moved to stays where it moved.
+            return moved.then(|| Claim::events(Events::message(self.layer_args())));
+        };
+        self.holding = Some((name.clone(), before.clone()));
+        let mut events = Events::none();
+        if moved {
+            events = events.and(self.layer_args());
+        }
+        if self.points_of(&name) != before {
+            events = events.and(self.points_args());
+        }
+        Some(Claim::Take(Take {
+            events,
+            edge_scroll: true,
+            ..take
+        }))
     }
 
     /// The lane header a lane's own props ask for. Presence-driven, like every
@@ -740,6 +1185,41 @@ impl Element for Multitrack {
                 self.selected.clear();
                 true
             }
+            // **The track automations**: rows of their own under the lanes
+            // they name, replaced whole like every other list here.
+            "curves" => {
+                self.curves = parse_curves(&parse::as_array_props("curves", v));
+                self.bodies = self.rebuilt(&self.curves, &self.layers);
+                true
+            }
+            // **The clip envelopes**: layers inside the boxes they name.
+            "layers" => {
+                self.layers = parse_layers(&parse::as_array_props("layers", v));
+                self.bodies = self.rebuilt(&self.curves, &self.layers);
+                true
+            }
+            // The break-points of every curve there is, in one list: a curve
+            // the list says nothing about is emptied, because the payload is
+            // the whole of them and its own inverse is what was there.
+            "points" => {
+                let points = parse_points(&parse::as_array_props("points", v));
+                for (name, body) in &mut self.bodies {
+                    let flat = points.get(name).cloned().unwrap_or_default();
+                    body.set("points", &Value::from(flat));
+                }
+                true
+            }
+            "layer" => {
+                self.layer = v.as_str().and_then(named);
+                true
+            }
+            "hidden" => {
+                self.hidden = v
+                    .as_str()
+                    .map(|s| s.split_whitespace().map(str::to_string).collect())
+                    .unwrap_or_default();
+                true
+            }
             "gap" => {
                 self.gap = v.as_f64().unwrap_or(f64::from(GAP)).max(0.0) as f32;
                 true
@@ -758,7 +1238,7 @@ impl Element for Multitrack {
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let nav = self.view(ctx.time);
-        let at = model::stack(&self.lanes, ctx.rect, self.scroll, self.gap);
+        let at = self.lane_rects(ctx.rect);
         // A lane scrolled off either end is skipped rather than drawn and
         // clipped: `stack` reports every lane so a hit test reads the same
         // rects, and the drawing is what decides it has nothing to do.
@@ -775,10 +1255,37 @@ impl Element for Multitrack {
                 );
             }
         }
+        // **A track automation is a row of its own**, under the lane it names
+        // and with no boxes on it: what it draws runs the whole timeline the
+        // track does, so it is a row and not a layer.
+        let stack = self.stack();
+        for (i, row) in stack.rects(ctx.rect, self.scroll).iter().enumerate() {
+            let Some(model::Row::Curve(n)) = stack.row(i) else {
+                continue;
+            };
+            let Some(curve) = self.curves.get(n) else {
+                continue;
+            };
+            if shown(*row) {
+                track::draw(
+                    d,
+                    *row,
+                    Some(curve.shown()),
+                    &track::Header {
+                        w: (ctx.indent > 0.0).then_some(ctx.indent),
+                        mute: None,
+                        solo: None,
+                        level: None,
+                    },
+                    false,
+                    ctx.indent,
+                );
+            }
+        }
         // **One pass over the clips, each onto the lane it names.** A clip
         // whose lane is gone draws nowhere and is still held, which is what
         // lets it come back in a report to be re-homed.
-        for (n, cr, local) in self.boxes_on_screen(ctx) {
+        for (n, cr, local) in self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time) {
             let clip = &self.clips[n];
             track::draw_clip(d, cr, self.selected.contains(&n));
             // **The take, drawn from the source per visible pixel**, mapped
@@ -816,6 +1323,17 @@ impl Element for Multitrack {
                 && let Some((grip, side)) = track::clip_grip_at(cr, ends, ctx.metrics, cx as f32)
             {
                 track::draw_clip_grip(d, grip, side);
+            }
+        }
+        // **The light views, over the base ones.** A curve is drawn last of
+        // the contents, whether it is a row of its own or a layer inside a box:
+        // it is the one thing here a hand may edit, and it has to be on top of
+        // what it shapes to be reached.
+        for (name, rect, space) in
+            self.curves_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
+        {
+            if let Some(body) = self.bodies.get(name) {
+                body.draw_body(d, rect, &space);
             }
         }
         // **The axis' own chrome, over the clips**: the shared selection band
@@ -860,11 +1378,19 @@ impl Element for Multitrack {
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.grab = None;
         self.fading = None;
+        self.holding = None;
         self.block.clear();
         // The header band first: it is drawn over the gutter, and nothing of
         // the axis is there.
         if let Some((lane, part)) = self.header_at(input, at) {
             return self.press_header(lane, part, at, input);
+        }
+        // **A press selects the layer it lands on**, and what lands on a curve
+        // is its own points and the line between them — never the rectangle it
+        // shares with the box under it. So an envelope drawn across a box
+        // leaves that box draggable by every pixel the line is not on.
+        if let Some(claim) = self.press_curve(at, input) {
+            return claim;
         }
         let Some((clip, part)) = self.clip_at(input, at) else {
             return Claim::Decline;
@@ -936,6 +1462,17 @@ impl Element for Multitrack {
     /// and is not one: it is a control, its value *is* what the hand is doing,
     /// and it reports as it goes exactly as every other control does.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        // A curve in hand follows it, and reports nothing on the way: what it
+        // says for itself is one curve's points, and one gesture is one edit.
+        if let Some((name, _)) = self.holding.clone()
+            && let Some((rect, space)) = self.curve_place(&name, input)
+        {
+            let sub = Self::on_curve(input, rect, space);
+            if let Some(body) = self.bodies.get_mut(&name) {
+                body.drag(at, &sub);
+            }
+            return Events::none();
+        }
         if let Some(f) = self.fading {
             self.lanes[f.lane].gain = track::level_at(f.groove, at.0);
             return self.lanes_event();
@@ -972,7 +1509,20 @@ impl Element for Multitrack {
     /// it began is the same thing by another road: reporting it would hand the
     /// owner an intent to apply and a document an entry to undo, so looking at
     /// four clips would cost four undos.
-    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+    fn release(&mut self, at: (f64, f64), inside: bool, input: &Input) -> Events {
+        if let Some((name, before)) = self.holding.take() {
+            if let Some((rect, space)) = self.curve_place(&name, input) {
+                let sub = Self::on_curve(input, rect, space);
+                if let Some(body) = self.bodies.get_mut(&name) {
+                    body.release(at, inside, &sub);
+                }
+            }
+            return if self.points_of(&name) == before {
+                Events::none()
+            } else {
+                self.points_event()
+            };
+        }
         if self.fading.take().is_some() {
             // Already reported on the way, like any other control.
             return Events::none();
@@ -1138,7 +1688,7 @@ impl Element for Multitrack {
     /// Empty unless the widget's `view` asks for one, and empty for a box whose
     /// take has not arrived: a picture of nothing is the frame around it.
     fn texture_bodies(&self, ctx: &Ctx) -> Vec<TextureBody> {
-        self.boxes_on_screen(ctx)
+        self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
             .into_iter()
             .filter_map(|(n, rect, local)| {
                 let clip = self.clips.get(n)?;
@@ -1271,6 +1821,9 @@ impl Element for Multitrack {
         vec![
             ("lanes".into(), model::lanes_json(&self.lanes)),
             ("clips".into(), model::clips_json(&self.clips)),
+            ("curves".into(), model::curves_json(&self.curves)),
+            ("layers".into(), model::layers_json(&self.layers)),
+            ("points".into(), self.points_json()),
         ]
     }
 }
@@ -1307,7 +1860,7 @@ mod tests {
     fn xy(mt: &Multitrack, m: &Metrics, rect: Rect, t: f64, len: f64, i: usize) -> (f64, f64) {
         let body = track::lane_body(rect, false, 100.0, m);
         let x = f64::from(body.x) + t / len * f64::from(body.w);
-        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        let at = mt.lane_rects(rect);
         (x, f64::from(at[i].y + at[i].h / 2.0))
     }
 
@@ -1603,6 +2156,167 @@ mod tests {
         assert!(mt.grab.is_none());
     }
 
+    /// A piece with both kinds of curve: a track automation under `noise` and
+    /// an envelope inside the box `a`.
+    fn curved() -> Multitrack {
+        from_props(&props(
+            r#"{"lanes": ["noise", "", 100, 0, 0, 1, "tone", "", 100, 0, 0, 1],
+                "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0],
+                "curves": ["gain", "noise", "Gain", 0, 1, 40],
+                "layers": ["env", "a", "", 0, 1],
+                "points": ["gain", 0, 1, 1, 0, "gain", 1000, 0, 1, 0,
+                           "env", 0, 0, 1, 0, "env", 500, 1, 1, 0]}"#,
+        ))
+    }
+
+    /// **The same element in two places, and the places are the difference.**
+    /// A track automation takes a row of its own under its lane and runs the
+    /// whole timeline; a clip envelope is a layer inside its box and runs as
+    /// long as the box does.
+    #[test]
+    fn an_automation_is_a_row_and_an_envelope_is_a_layer() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let mt = curved();
+        assert_eq!(mt.bodies.len(), 2, "one element per curve, however placed");
+
+        // The row is under `noise`, and the second lane sits below it.
+        let stack = mt.stack();
+        assert_eq!(stack.len(), 3);
+        assert_eq!(stack.row(1), Some(model::Row::Curve(0)));
+        assert_eq!(mt.lane_rects(rect)[1].y, 100.0 + 40.0 + 2.0 * GAP);
+
+        let drawn = mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0));
+        let row = drawn.iter().find(|(n, ..)| *n == "gain").expect("the row");
+        let layer = drawn.iter().find(|(n, ..)| *n == "env").expect("the layer");
+        assert_eq!(row.2.span, 1000.0, "a row is as long as the piece");
+        assert_eq!(layer.2.span, 500.0, "a layer is as long as its box");
+        assert!(layer.1.w < row.1.w, "the box is narrower than the timeline");
+    }
+
+    /// The shared axis a curved piece is read against.
+    fn mt_time(len: f64) -> Option<TimeSpace> {
+        Some(TimeSpace::of(
+            View {
+                start: 0.0,
+                len: len * 2.0,
+            },
+            len * 2.0,
+        ))
+    }
+
+    /// **A hidden layer is not drawn, and what is not drawn is not edited.**
+    #[test]
+    fn hiding_a_layer_takes_it_out_of_the_picture_and_out_of_reach() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let mut mt = curved();
+        assert!(mt.set("hidden", &Value::from("env gain")));
+        assert!(
+            mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0))
+                .is_empty(),
+            "neither is drawn"
+        );
+    }
+
+    /// **A press lands on a curve's own points, never on the rectangle it
+    /// shares** — so an envelope drawn across a box leaves the box draggable,
+    /// and the press that misses the line moves the box instead.
+    #[test]
+    fn a_press_beside_the_line_still_moves_the_box() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = curved();
+        // The envelope on `a` runs from its floor to its ceiling, so the top
+        // left corner of the box is far from the line.
+        let at = mt.lane_rects(rect);
+        let body = track::lane_body(at[0], false, 100.0, &m);
+        let corner = (f64::from(body.x) + 2.0, f64::from(at[0].y) + 3.0);
+        assert!(matches!(
+            mt.press(corner, &input(&m, rect, len)),
+            Claim::Take(_)
+        ));
+        assert!(mt.grab.is_some(), "the box took it");
+        assert!(mt.holding.is_none(), "and no curve did");
+        assert_eq!(mt.layer, None, "the placement is still what is in hand");
+    }
+
+    /// **A break-point is grabbed on the pixels it was drawn on**, and moving
+    /// one reports every curve there is — the payload is the piece's, so a
+    /// `/gui_set points` of what came back is the identity.
+    #[test]
+    fn dragging_a_point_reports_every_curve() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = curved();
+        let (_, row, space) = *mt
+            .curves_on_screen(rect, 100.0, &m, mt_time(500.0))
+            .iter()
+            .find(|(n, ..)| *n == "gain")
+            .expect("the row");
+        // The first point of `gain` is at time zero and value one: the top
+        // left of its row.
+        let start = space.view.start;
+        let x = f64::from(row.x) + (0.0 - start) / space.view.len * f64::from(row.w);
+        let from = (x, f64::from(row.y) + 1.0);
+        let inp = Input {
+            time: mt_time(500.0),
+            ..input(&m, rect, len)
+        };
+        assert!(matches!(mt.press(from, &inp), Claim::Take(_)));
+        assert_eq!(
+            mt.layer.as_deref(),
+            Some("gain"),
+            "the press took the layer"
+        );
+        let to = (x, f64::from(row.y + row.h) - 1.0);
+        mt.drag(to, &inp);
+        let msgs = mt.release(to, true, &inp).into_messages();
+        let args = msgs.first().expect("an edit");
+        assert_eq!(args[0], OscType::String("points".into()));
+        assert_eq!(
+            args.len(),
+            1 + 5 * 4,
+            "the tag, then a quintuple per point of every curve"
+        );
+        assert_eq!(args[1], OscType::String("gain".into()));
+        assert_eq!(args[11], OscType::String("env".into()), "the layer too");
+    }
+
+    /// A `/gui_set` of what a query reported is the identity, for the curves as
+    /// for the two lists that were here before them.
+    #[test]
+    fn the_curves_read_back_as_they_were_reported() {
+        let mt = curved();
+        let reported: Map<String, Value> = mt.info().into_iter().collect();
+        let mut echo = Multitrack::default();
+        assert!(echo.set("lanes", &reported["lanes"]));
+        assert!(echo.set("clips", &reported["clips"]));
+        assert!(echo.set("curves", &reported["curves"]));
+        assert!(echo.set("layers", &reported["layers"]));
+        assert!(echo.set("points", &reported["points"]));
+        assert_eq!(echo.curves, mt.curves);
+        assert_eq!(echo.layers, mt.layers);
+        assert_eq!(echo.points_json(), mt.points_json());
+    }
+
+    /// A curve that survives a new list keeps its points: replacing the
+    /// declarations is not an edit of what they hold.
+    #[test]
+    fn a_curve_that_survives_a_redeclaration_keeps_its_points() {
+        let mut mt = curved();
+        let before = mt.points_of("gain");
+        assert!(mt.set(
+            "curves",
+            &Value::from(r#"["gain", "noise", "Gain", 0, 1, 60, "pan", "tone", "", -1, 1, 30]"#)
+        ));
+        assert_eq!(mt.points_of("gain"), before);
+        assert_eq!(mt.curves[0].height, 60.0, "and takes its new row height");
+        assert!(mt.bodies.contains_key("pan"), "the new one is built empty");
+    }
+
     /// The report is the same list a `/gui_set clips` would take, so applying
     /// what came back is the identity — which is what makes the payload a
     /// *state* rather than a description of a gesture.
@@ -1689,7 +2403,7 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
         let len = 1000.0;
         let mut mt = piece();
-        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        let at = mt.lane_rects(rect);
         let band = crate::host::timeline::gutter_band(at[0], 100.0);
         let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
 
@@ -1895,7 +2609,7 @@ mod tests {
         ));
         mt.gap = 8.0;
 
-        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        let at = mt.lane_rects(rect);
         let from = xy(&mt, &m, rect, 250.0, len, 0);
         mt.press(from, &input(&m, rect, len));
 
@@ -1981,12 +2695,7 @@ mod tests {
         let len = 1000.0;
         let mt = piece();
 
-        let body = track::lane_body(
-            model::stack(&mt.lanes, rect, mt.scroll, mt.gap)[0],
-            false,
-            100.0,
-            &m,
-        );
+        let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
         let nav = View { start: 0.0, len };
         let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
         let cr = track::clip_rect(body, x0, x1);
@@ -2075,12 +2784,7 @@ mod tests {
         let len = 1000.0;
         let mut mt = piece();
 
-        let body = track::lane_body(
-            model::stack(&mt.lanes, rect, mt.scroll, mt.gap)[0],
-            false,
-            100.0,
-            &m,
-        );
+        let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
         let nav = View { start: 0.0, len };
         let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
         let cr = track::clip_rect(body, x0, x1);

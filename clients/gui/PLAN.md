@@ -771,15 +771,39 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   A roll body is fitted by the crate's own `pitch_window`, so a box and a window
   over the same notes are the same height.
 
-  **Still open, and each has its home:** the **spectrogram** body, which
-  `view: "spectrogram"` names and which draws a trace today — a time-frequency
-  picture samples a texture, so it goes through the GPU pass rather than the
-  mesh, and the door the old clip used (`WidgetKind::texture_body`, read by the
-  frame off a *child widget*) cannot see inside an element. It needs a way for
-  an element to declare the texture bodies it wants drawn, with their rects and
-  axes. Then: assembled samples (a box over several segments of several files);
-  the editable light layer (`points`) over a base view; entering a box to edit
-  it; and `multitrack_audio.html`, the web twin of the Python example.
+  **The spectrogram body landed 2026-09-09**, and it took a slot growing a
+  second half to its key. A GPU slot was addressed by the widget alone, so a
+  widget could hold one picture; it is `(widget, key)` now, and a multitrack
+  keeps one per buffer its boxes are windows onto. The samples reach it twice on
+  purpose: a time-frequency preset asks for the bulk in pyramid form, so a body
+  over a *server buffer* never sees raw frames and its slot is never dirtied —
+  the element keeps the frames it was handed and runs the transform itself when
+  the slot is filled, which is what a standalone spectral view has its loader
+  do.
+
+  **The light views landed 2026-09-09, and there are two of them.** A
+  break-point automation is one element in two places, and the place is the
+  whole difference — the user's rule, stated 2026-09-09: a **track
+  automation** is a row of its own under its lane and runs the whole timeline
+  (`curves`, the flat `name lane label min max height` sextuples), a **clip
+  envelope** is a layer inside its box and runs as long as the box does
+  (`layers`, the flat `name box label min max` quintuples — no height, because a
+  layer is as tall as what it is drawn on). `points` carries every curve's
+  break-points in one list, each naming its curve the way a note names its box.
+  Both are drawn and edited by the `curve` element in its body form, so the
+  light views are editable where the base view is read-only, and `layers.rs`'
+  one-at-a-time rule finally has the container it was written for: `layer` names
+  the curve in hand (a curve has a name, so it is named — the `points:1` ordinal
+  is for containers whose layers are anonymous) and `hidden` the ones that are
+  not drawn. The vertical axis stopped being the lanes and became the **rows**
+  (`graphics::multitrack::Stack`), since an automation row pushes the lane under
+  it down.
+
+  **Still open, and each has its home:** assembled samples (a box over several
+  segments of several files); the curves reaching the clients' editing objects,
+  so a piece's automation is a document `Automation` on both sides; entering a
+  box to edit it; and `multitrack_audio.html`, the web twin of the Python
+  example.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 

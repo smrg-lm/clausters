@@ -839,6 +839,134 @@
  },
  {
   "builder": "multitrack",
+  "option": "curves",
+  "value": [
+   [
+    "gain",
+    "one",
+    "Gain",
+    0.0,
+    1.0,
+    40.0
+   ],
+   [
+    "pan",
+    "one"
+   ]
+  ],
+  "tree": {
+   "type": "multitrack",
+   "curves": [
+    "gain",
+    "one",
+    "Gain",
+    0.0,
+    1.0,
+    40.0,
+    "pan",
+    "one",
+    "",
+    0.0,
+    1.0,
+    40.0
+   ]
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "layers",
+  "value": [
+   [
+    "env",
+    "a",
+    "",
+    -1.0,
+    1.0
+   ],
+   [
+    "fx",
+    "a"
+   ]
+  ],
+  "tree": {
+   "type": "multitrack",
+   "layers": [
+    "env",
+    "a",
+    "",
+    -1.0,
+    1.0,
+    "fx",
+    "a",
+    "",
+    0.0,
+    1.0
+   ]
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "points",
+  "value": [
+   [
+    "gain",
+    0.0,
+    1.0
+   ],
+   [
+    "gain",
+    1.0,
+    0.0,
+    5,
+    4.0
+   ],
+   [
+    "env",
+    0.5,
+    0.25
+   ]
+  ],
+  "tree": {
+   "type": "multitrack",
+   "points": [
+    "gain",
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    "gain",
+    1.0,
+    0.0,
+    5.0,
+    4.0,
+    "env",
+    0.5,
+    0.25,
+    1.0,
+    0.0
+   ]
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "layer",
+  "value": "take",
+  "tree": {
+   "type": "multitrack",
+   "layer": "take"
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "hidden",
+  "value": "sel",
+  "tree": {
+   "type": "multitrack",
+   "hidden": "sel"
+  }
+ },
+ {
+  "builder": "multitrack",
   "option": "view",
   "value": "spectrogram",
   "tree": {
