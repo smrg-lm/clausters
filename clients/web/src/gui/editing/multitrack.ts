@@ -217,6 +217,28 @@ export class Bridge {
     }
 
     /** The beat a frame falls on: the inverse, and the way an edit comes back. */
+    /**
+     * Where a beat measured **from `base`** falls, in frames from `base` — what
+     * a box's own axis counts in.
+     *
+     * A layer is drawn inside its box, so its break-points are the box's own
+     * time and not the timeline's. That is a *length* from the box's start,
+     * which is why it goes through {@link Bridge.framesOver} rather than
+     * {@link Bridge.frameAt}: four beats are not one length under a tempo that
+     * moves.
+     */
+    frameIn(base: number, at: number): number {
+        return this.framesOver(base, at);
+    }
+
+    /**
+     * The inverse: the beat, measured from `base`, that a frame from `base`
+     * falls on.
+     */
+    beatIn(base: number, frame: number): number {
+        return this.beatAt(this.frameAt(base) + Number(frame)) - Number(base);
+    }
+
     beatAt(frame: number): number {
         return this.tempo.beatsAt(frame / (this.rate || 1.0));
     }
@@ -263,7 +285,11 @@ export class MultitrackDomain extends Domain<Multitrack> {
         if (tag === "clips") return multitrackRead(this.state(piece), this.placed(values));
         if (tag === "lanes") return this.strips(piece, values);
         if (tag === "points") {
-            return multitrackReadPoints(this.state(piece), this.curved(values));
+            const state = this.state(piece);
+            return multitrackReadPoints(
+                state,
+                this.curved(values, basesOf(multitrackPicture(state))),
+            );
         }
         return [];
     }
@@ -315,13 +341,17 @@ export class MultitrackDomain extends Domain<Multitrack> {
      * gathered by name here — the crate reads the difference and says nothing
      * about the ones that did not move.
      */
-    private curved(values: readonly unknown[]): Curved[] {
+    private curved(values: readonly unknown[], bases: Map<string, number>): Curved[] {
         const found = new Map<string, Curved["points"]>();
         for (const group of groups(values, POINT_QUINTUPLE)) {
             const [name, at, value, shape, amount] = group;
             const points = found.get(String(name)) ?? [];
+            // **Against the same base the picture was drawn from**: a layer's
+            // time is its box's own, so a break-point inside one comes back as
+            // a beat from that box's start.
+            const base = bases.get(String(name)) ?? 0;
             points.push({
-                at: this.bridge.beatAt(Number(at)),
+                at: this.bridge.beatIn(base, Number(at)),
                 value: Number(value),
                 // **What a shape is stays the page's**: the crate carries a
                 // point's data and never reads it, which is what keeps an undo
@@ -462,16 +492,39 @@ function domainOf(curve: Curve): [number, number] {
 }
 
 /**
+ * **What each curve's time is measured from**, by curve name.
+ *
+ * A track automation runs the timeline, so it is measured from the origin; a
+ * clip envelope is drawn inside its box and is measured from where that box
+ * starts. It is the one thing that differs between the two on the wire, and the
+ * reason it is worked out here is that the beat→frame crossing is the page's.
+ */
+function basesOf(picture: { boxes: readonly Box[]; curves: readonly Curve[]; layers: readonly Curve[] }): Map<string, number> {
+    const where = new Map(picture.boxes.map((box) => [String(box.region), Number(box.position)]));
+    const bases = new Map<string, number>();
+    for (const curve of picture.curves) bases.set(String(curve.automation), 0);
+    for (const curve of picture.layers) {
+        bases.set(String(curve.automation), where.get(String(curve.owner)) ?? 0);
+    }
+    return bases;
+}
+
+/**
  * Every curve's break-points as the widget's flat quintuples, each naming the
  * curve it is on — one list for the rows and the layers alike.
  */
-function pointProps(curves: readonly Curve[], bridge: Bridge): unknown[] {
+function pointProps(
+    curves: readonly Curve[],
+    bridge: Bridge,
+    bases: Map<string, number>,
+): unknown[] {
     const out: unknown[] = [];
     for (const curve of curves) {
         const name = String(curve.automation);
+        const base = bases.get(name) ?? 0;
         for (const point of curve.points ?? []) {
             const data = (point.data ?? {}) as Record<string, unknown>;
-            out.push(name, bridge.frameAt(Number(point.at ?? 0)),
+            out.push(name, bridge.frameIn(base, Number(point.at ?? 0)),
                      Number(point.value ?? 0),
                      Number(data.shape ?? 1), Number(data.curve ?? 0));
         }
@@ -539,7 +592,11 @@ export class MultitrackView extends View<Multitrack> {
             clips: clipProps(picture.boxes, this.bridge) as PropValue,
             curves: curveProps(picture.curves) as PropValue,
             layers: layerProps(picture.layers) as PropValue,
-            points: pointProps([...picture.curves, ...picture.layers], this.bridge) as PropValue,
+            points: pointProps(
+                [...picture.curves, ...picture.layers],
+                this.bridge,
+                basesOf(picture),
+            ) as PropValue,
             // **What is drawn is what the piece says was open.** Which curves a
             // person had showing is part of reopening the piece as they left
             // it, so it is read out of the document rather than kept here.

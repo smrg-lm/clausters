@@ -171,6 +171,22 @@ class Bridge:
         back."""
         return self.tempo.beats_at(float(frame) / (self.rate or 1.0))
 
+    def frame_in(self, base: float, at: float) -> float:
+        """Where a beat measured **from ``base``** falls, in frames from
+        ``base`` — what a box's own axis counts in.
+
+        A layer is drawn inside its box, so its break-points are the box's own
+        time and not the timeline's. That is a *length* from the box's start,
+        which is why it goes through `frames_over` rather than through
+        `frame_at`: four beats are not one length under a tempo that moves.
+        """
+        return self.frames_over(base, at)
+
+    def beat_in(self, base: float, frame: float) -> float:
+        """The inverse: the beat, measured from ``base``, that a frame from
+        ``base`` falls on."""
+        return self.beat_at(self.frame_at(base) + float(frame)) - float(base)
+
 
 class MultitrackDomain(Domain):
     """A piece's vocabulary: the crate's `MultitrackIntent`, both ways.
@@ -195,8 +211,10 @@ class MultitrackDomain(Domain):
         if tag == "lanes":
             return self._strips(structure, values)
         if tag == "points":
-            return _native.multitrack_read_points(self.state(structure),
-                                                  self._curved(values))
+            state = self.state(structure)
+            return _native.multitrack_read_points(
+                state, self._curved(values,
+                                    _bases(_native.multitrack_picture(state))))
         return []
 
     def payload(self, structure, tag: str, values) -> "dict | None":
@@ -235,7 +253,7 @@ class MultitrackDomain(Domain):
             })
         return out
 
-    def _curved(self, values) -> list:
+    def _curved(self, values, bases: dict) -> list:
         """The flat ``points`` payload as the crate's curves: one entry per
         curve named, its break-points back on the musical axis.
 
@@ -246,8 +264,12 @@ class MultitrackDomain(Domain):
         found: dict = {}
         for group in _groups(values, POINT_QUINTUPLE):
             name, at, value, shape, amount = group
+            # **Against the same base the picture was drawn from**: a layer's
+            # time is its box's own, so a break-point inside one comes back as
+            # a beat from that box's start.
+            base = float(bases.get(str(name), 0.0))
             found.setdefault(str(name), []).append(
-                {"at": self.bridge.beat_at(float(at)),
+                {"at": self.bridge.beat_in(base, float(at)),
                  "value": float(value),
                  # **What a shape is stays the client's**: the crate carries a
                  # point's data and never reads it, which is what keeps an undo
@@ -376,7 +398,8 @@ class MultitrackView(View):
             "clips": _clips(picture.get("boxes", []), self.bridge),
             "curves": _curves(curves),
             "layers": _layers(layers),
-            "points": _points(curves + layers, self.bridge),
+            "points": _points(curves + layers, self.bridge,
+                              _bases(picture)),
             # **What is drawn is what the piece says was open.** Which curves a
             # person had showing is part of reopening the piece as they left
             # it, so it is read out of the document rather than kept here.
@@ -449,15 +472,33 @@ def _domain(curve) -> tuple:
     return float(target.get("min", 0.0)), float(target.get("max", 1.0))
 
 
-def _points(curves, bridge: Bridge) -> list:
+def _bases(picture) -> dict:
+    """**What each curve's time is measured from**, by curve name.
+
+    A track automation runs the timeline, so it is measured from the origin; a
+    clip envelope is drawn inside its box and is measured from where that box
+    starts. It is the one thing that differs between the two on the wire, and
+    the reason it is worked out here is that the beat→frame crossing is the
+    client's.
+    """
+    where = {str(box["region"]): float(box["position"])
+             for box in picture.get("boxes", [])}
+    bases = {str(c["automation"]): 0.0 for c in picture.get("curves", [])}
+    for curve in picture.get("layers", []):
+        bases[str(curve["automation"])] = where.get(str(curve["owner"]), 0.0)
+    return bases
+
+
+def _points(curves, bridge: Bridge, bases: dict) -> list:
     """Every curve's break-points as the widget's flat quintuples, each naming
     the curve it is on — one list for the rows and the layers alike."""
     out = []
     for curve in curves:
         name = str(curve["automation"])
+        base = float(bases.get(name, 0.0))
         for point in curve.get("points", []):
             data = point.get("data") or {}
-            out += [name, bridge.frame_at(float(point.get("at", 0.0))),
+            out += [name, bridge.frame_in(base, float(point.get("at", 0.0))),
                     float(point.get("value", 0.0)),
                     float(data.get("shape", 1)), float(data.get("curve", 0.0))]
     return out

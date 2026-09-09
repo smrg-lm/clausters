@@ -117,6 +117,14 @@ class Editor:
         #: script's — the editor never touches their ids — so keep them clear of
         #: ``base_id``.
         self.extra = list(extra)
+        #: Called with no arguments after any gesture that **changed the
+        #: data** — this window's, another window's over the same structure, or
+        #: a step of the history. ``None`` to be told nothing.
+        #:
+        #: The script's door onto an edit, and the same verb
+        #: `clausters.gui.Multitrack.on_change` carries. One call per gesture
+        #: however many edits it took, because that is what a hand did.
+        self.on_change = None
         #: The editor this one was **composed inside**, when it was one.
         #:
         #: A structure is not a piece: it has no transport, so a click on a
@@ -664,6 +672,17 @@ class Editor:
         none, which is why this is nothing here and something in a tree's view.
         """
         return False
+
+    def data_changed(self) -> None:
+        """The structure changed in a turn — this editor's own gesture,
+        another window's, or a step of the history.
+
+        Separate from `adopt`, which is about *drawing*: a script that sounds a
+        piece or writes a file wants to be told whoever made the edit, and the
+        window that made it is not exempt from having changed.
+        """
+        if self.on_change is not None:
+            self.on_change()
 
     def adopt(self, intents: list, whole: bool) -> None:
         """Another view of this structure edited it: bring this window in step.

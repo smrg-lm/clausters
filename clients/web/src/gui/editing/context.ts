@@ -55,6 +55,15 @@ export interface Adopting {
      */
     adopt(intents: readonly Intent[], whole: boolean): void;
     /**
+     * The data changed in a turn — this view's own gesture, another's, or a
+     * step of the history.
+     *
+     * Separate from {@link Adopting.adopt}, which is about *drawing*: a page
+     * that sounds a piece or writes a file wants to be told whoever made the
+     * edit, and the window that made it is not exempt from having changed.
+     */
+    dataChanged?(): void;
+    /**
      * Put back the legs of a history step that name **this** participant's
      * structure, and say whether anything moved.
      *
@@ -291,6 +300,21 @@ export class Editing {
                         if (view === undefined) this.attached.delete(held);
                         else if (view !== source) view.adopt(intents, whole);
                     }
+                    // ...and **every** view is told the data changed, the one
+                    // that made the gesture included. See
+                    // {@link Adopting.dataChanged} for why that is a different
+                    // question from bringing a window in step.
+                    // The source is told whether or not it is **attached**: a
+                    // view attaches when its window opens, and an editor
+                    // driving something off the data is entitled to be told
+                    // before it is on screen.
+                    const tell: Adopting[] = [];
+                    for (const held of [...this.attached]) {
+                        const view = held.deref();
+                        if (view !== undefined) tell.push(view);
+                    }
+                    if (source !== null && !tell.includes(source)) tell.push(source);
+                    for (const view of tell) view.dataChanged?.();
                 }
             }
         }

@@ -232,6 +232,23 @@ class Editing:
                     for view in self.views():
                         if view is not source:
                             view.adopt(intents, whole)
+                    # ...and **every** view is told the data changed, the one
+                    # that made the gesture included. That is a different
+                    # question from bringing a window in step: a script driving
+                    # something off the data — sounding a piece, writing a file
+                    # — wants one answer per gesture whoever made it, and the
+                    # window that made it is not exempt from having changed.
+                    # The source is told whether or not it is **attached**:
+                    # a view attaches when its window opens, and an editor
+                    # driving something off the data is entitled to be told
+                    # before it is on screen.
+                    tell = list(self.views())
+                    if source is not None and not any(v is source for v in tell):
+                        tell.append(source)
+                    for view in tell:
+                        told = getattr(view, "data_changed", None)
+                        if told is not None:
+                            told()
 
     def close(self):
         """Release the crate's handles. What the data going away leaves behind;

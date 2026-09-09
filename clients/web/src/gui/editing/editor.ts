@@ -839,6 +839,28 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
+     * Called with no arguments after any gesture that **changed the data** —
+     * this window's, another window's over the same structure, or a step of the
+     * history. `null` to be told nothing.
+     *
+     * The page's door onto an edit. One call per gesture however many edits it
+     * took, because that is what a hand did.
+     */
+    onChange: (() => void) | null = null;
+
+    /**
+     * The structure changed in a turn — this editor's own gesture, another
+     * window's, or a step of the history.
+     *
+     * Separate from {@link Editor.adopt}, which is about *drawing*: a page that
+     * sounds a piece or writes a file wants to be told whoever made the edit,
+     * and the window that made it is not exempt from having changed.
+     */
+    dataChanged(): void {
+        this.onChange?.();
+    }
+
+    /**
      * Another view of this structure edited it: bring this window in step. A
      * window that is not open has nothing to bring in step.
      */

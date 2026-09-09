@@ -357,3 +357,78 @@ def test_the_windows_entered_from_a_piece_close_with_it():
     opened = ed.entered["12"]
     ed.close()
     assert opened.closed and not ed.entered
+
+
+def test_a_gesture_that_changed_the_data_says_so_once():
+    """The script's door onto an edit: one call per gesture however many edits
+    it took, because that is what a hand did — and a window is not exempt from
+    being told about its own gesture."""
+    ed = editor(piece())
+    told = []
+    ed.on_change = lambda: told.append(1)
+
+    def gesture(boxes) -> bool:
+        """One `/gui_event`, through the door the host uses."""
+        ed.draw()
+        wid = next(iter(ed.view.widgets))
+        values = []
+        for name, row, at, dur in boxes:
+            values += [name, row, at, dur, 0.0, "", 7]
+        return ed.apply("/gui_event", [wid, 0, 0, "clips", *values])
+
+    # A block move: two clips, one gesture.
+    assert gesture([("12", "10", 1.0 * SR, 2.0 * SR),
+                    ("13", "10", 5.0 * SR, 2.0 * SR),
+                    ("22", "20", 0.0, 2.0 * SR)])
+    assert len(told) == 1
+
+    assert ed.undo()
+    assert len(told) == 2, "a step of the history changed the data too"
+
+    # A report of what already holds is not a change, so nothing is said.
+    assert not gesture([("12", "10", 0.0, 2.0 * SR),
+                        ("13", "10", 4.0 * SR, 2.0 * SR),
+                        ("22", "20", 0.0, 2.0 * SR)])
+    assert len(told) == 2
+
+
+def test_a_layer_s_points_are_its_box_s_own_time():
+    """A track automation runs the timeline and is measured from the origin; a
+    clip envelope is drawn inside its box and is measured from where that box
+    starts. It is the one thing that differs between the two on the wire."""
+    from clausters.multitrack import Automation
+
+    written = piece()
+    # The box at beat 4 on the second track, with an envelope of its own.
+    late = written.tracks[1].lanes[0].regions[0]
+    late.position = 4.0
+    late.automation.append(
+        Automation(id=40, name="fade", visible=True,
+                   points=[{"at": 0.0, "value": 0.0},
+                           {"at": 2.0, "value": 1.0}]))
+    written.tracks[0].automation.append(
+        Automation(id=41, name="gain", visible=True,
+                   points=[{"at": 4.0, "value": 0.5}]))
+
+    ed = editor(written)
+    flat = props(ed)["points"]
+    points = {}
+    for i in range(0, len(flat), 5):
+        points.setdefault(flat[i], []).append(flat[i + 1])
+    assert points["40"] == [0.0, pytest.approx(2.0 * SR)], "from the box's start"
+    assert points["41"] == [pytest.approx(4.0 * SR)], "from the origin"
+
+    # ...and back: a point dragged inside the box comes back as a beat from the
+    # box's start, not from the piece's.
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    edited = list(flat)
+    for i in range(0, len(edited), 5):
+        if edited[i] == "40" and edited[i + 1] == 0.0:
+            edited[i + 2] = 0.25
+    assert ed._route([wid, "points", *edited])
+    # The piece is re-read on an edit, so the region is looked up again.
+    fade = written.tracks[1].lanes[0].regions[0].automation[0]
+    assert fade.points[0]["at"] == pytest.approx(0.0)
+    assert fade.points[0]["value"] == pytest.approx(0.25)
+    assert fade.points[1]["at"] == pytest.approx(2.0)

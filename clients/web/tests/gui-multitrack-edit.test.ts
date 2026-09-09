@@ -402,3 +402,86 @@ test("the windows entered from a piece close with it", async () => {
     assert.ok(opened!.closed);
     assert.equal(ed.entered.size, 0);
 });
+
+test("a gesture that changed the data says so once", () => {
+    // The page's door onto an edit: one call per gesture however many edits it
+    // took, because that is what a hand did — and a window is not exempt from
+    // being told about its own gesture.
+    const ed = editor(piece());
+    let told = 0;
+    ed.onChange = () => {
+        told += 1;
+    };
+
+    /** One `/gui_event`, through the door the host uses. */
+    const gesture = (boxes: [string, string, number, number][]): boolean => {
+        ed.draw();
+        const wid = [...ed.view!.widgets.keys()][0];
+        const values: unknown[] = [];
+        for (const [name, row, at, dur] of boxes) values.push(name, row, at, dur, 0.0, "", 7);
+        return ed.apply("/gui_event", [wid, 0, 0, "clips", ...values]);
+    };
+
+    // A block move: two clips, one gesture.
+    assert.ok(gesture([["12", "10", 1.0 * SR, 2.0 * SR],
+                       ["13", "10", 5.0 * SR, 2.0 * SR],
+                       ["22", "20", 0.0, 2.0 * SR]]));
+    assert.equal(told, 1);
+
+    assert.ok(ed.undo());
+    assert.equal(told, 2, "a step of the history changed the data too");
+
+    // A report of what already holds is not a change, so nothing is said.
+    assert.ok(!gesture([["12", "10", 0.0, 2.0 * SR],
+                        ["13", "10", 4.0 * SR, 2.0 * SR],
+                        ["22", "20", 0.0, 2.0 * SR]]));
+    assert.equal(told, 2);
+});
+
+test("a layer's points are its box's own time", () => {
+    // A track automation runs the timeline and is measured from the origin; a
+    // clip envelope is drawn inside its box and is measured from where that box
+    // starts. It is the one thing that differs between the two on the wire.
+    const written = piece();
+    const late = written.tracks[1].lanes[0].regions[0];
+    late.position = 4.0;
+    late.automation.push(new Automation({
+        id: 40,
+        name: "fade",
+        visible: true,
+        points: [{ at: 0.0, value: 0.0 }, { at: 2.0, value: 1.0 }],
+    }));
+    written.tracks[0].automation.push(new Automation({
+        id: 41,
+        name: "gain",
+        visible: true,
+        points: [{ at: 4.0, value: 0.5 }],
+    }));
+
+    const ed = editor(written);
+    const flat = props(ed).points as unknown[];
+    const points = new Map<string, number[]>();
+    for (let i = 0; i + 5 <= flat.length; i += 5) {
+        const at = points.get(String(flat[i])) ?? [];
+        at.push(Number(flat[i + 1]));
+        points.set(String(flat[i]), at);
+    }
+    assert.deepEqual(points.get("40"), [0.0, 2.0 * SR], "from the box's start");
+    assert.deepEqual(points.get("41"), [4.0 * SR], "from the origin");
+
+    // ...and back: a point dragged inside the box comes back as a beat from the
+    // box's start, not from the piece's.
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    const edited = [...flat];
+    for (let i = 0; i + 5 <= edited.length; i += 5) {
+        if (edited[i] === "40" && edited[i + 1] === 0.0) edited[i + 2] = 0.25;
+    }
+    assert.ok((ed as unknown as { route(args: unknown[]): boolean })
+        .route([wid, "points", ...edited]));
+    // The piece is re-read on an edit, so the region is looked up again.
+    const fade = written.tracks[1].lanes[0].regions[0].automation[0];
+    near(Number(fade.points[0].at), 0.0);
+    near(Number(fade.points[0].value), 0.25);
+    near(Number(fade.points[1].at), 2.0);
+});
