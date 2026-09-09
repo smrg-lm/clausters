@@ -126,3 +126,23 @@ def test_polytempo_is_several_named_clocks():
     read = [TempoClock.load(j) for j in written]
     assert [c.name for c in read] == ["voice 0", "voice 1", "voice 2"]
     assert [c.tempo for c in read] == [1.0, 1.5, 2.0]
+
+
+def test_a_pieces_authored_tempo_entries_become_a_map():
+    # The three decisions a reader of a document would otherwise write: the
+    # default holds until the first entry, a ramp reaches the next one, and
+    # the last entry holds past itself.
+    tempo_map = TempoMap.from_changes(
+        [{"beats": 4.0, "tempo": 4.0}, {"beats": 8.0, "tempo": 2.0, "ramp": True}],
+        2.0,
+    )
+    assert tempo_map.tempo_at(0.0) == 2.0, "the default holds until the entry"
+    assert tempo_map.tempo_at(4.0) == 4.0
+    assert tempo_map.secs_at(4.0) == 2.0
+
+    # A piece that said nothing is the default alone.
+    bare = TempoMap.from_changes([], 2.0)
+    assert bare.secs_at(4.0) == 2.0, "four beats at two a second"
+
+    with pytest.raises(ValueError):
+        TempoMap.from_changes([{"beats": 4.0, "tempo": 0.0}], 1.0)

@@ -110,7 +110,7 @@ export {
     secsToSamples,
     tempoEnv,
     tempoSegments } from "./base/time.ts";
-export type { CurveSpec, TempoEnvelope, TimeUnit } from "./base/time.ts";
+export type { CurveSpec, TempoChange, TempoEnvelope, TimeUnit } from "./base/time.ts";
 export {
     ManualTimebase,
     MonotonicTimebase,

@@ -105,6 +105,18 @@ import {
  * uninitialised binding — or, at a module's top level, taking the whole module
  * down with no message at all.
  */
+/**
+ * One entry of a piece's authored tempo list, as {@link TempoMap.fromChanges}
+ * reads it: the beat it takes effect on, the tempo in beats **per second** (a
+ * document writing beats per minute divides once, where it reads its own
+ * field), and whether it ramps to the next entry rather than stepping.
+ */
+export interface TempoChange {
+    beats: number;
+    tempo: number;
+    ramp?: boolean;
+}
+
 export class TempoMap extends CoreTempoMap {
     constructor(tempo = 1.0) {
         requireCore("a TempoMap");
@@ -121,6 +133,31 @@ export class TempoMap extends CoreTempoMap {
     ): TempoMap | undefined {
         requireCore("TempoMap.anchored");
         return CoreTempoMap.anchored(tempo, baseBeats, baseSeconds) as TempoMap | undefined;
+    }
+
+    /**
+     * **A map from a piece's authored tempo entries**, plus the tempo a piece
+     * that never said one leaves to its reader.
+     *
+     * The bridge a reader of a document would otherwise take three decisions to
+     * write: a ramp reaches the *next* entry, the default is prepended when the
+     * first entry is past beat 0, and no entries at all is the default alone.
+     * `undefined` for entries the crate will not take — out of order, or a
+     * tempo that is not finite and positive.
+     *
+     * The entries go in as a list, the way the Python client takes them; the
+     * JSON the wasm boundary reads is accepted too, since a document's `tempo`
+     * field often arrives as text and re-parsing it to re-serialize it is work
+     * for nothing.
+     */
+    static fromChanges(
+        changes: readonly TempoChange[] | string, defaultTempo = 1.0,
+    ): TempoMap | undefined {
+        requireCore("TempoMap.fromChanges");
+        const text = typeof changes === "string"
+            ? changes
+            : JSON.stringify([...changes]);
+        return CoreTempoMap.fromChanges(text, defaultTempo) as TempoMap | undefined;
     }
 
     /**

@@ -129,3 +129,25 @@ test("polytempo is several named clocks", () => {
     assert.deepEqual(read.map((c) => c.name), ["voice 0", "voice 1", "voice 2"]);
     assert.deepEqual(read.map((c) => c.tempo), [1.0, 1.5, 2.0]);
 });
+
+test("a piece's authored tempo entries become a map", () => {
+    // The three decisions a reader of a document would otherwise write: the
+    // default holds until the first entry, a ramp reaches the next one, and
+    // the last entry holds past itself.
+    const map = TempoMap.fromChanges(
+        [{ beats: 4.0, tempo: 4.0 }, { beats: 8.0, tempo: 2.0, ramp: true }],
+        2.0,
+    );
+    assert.ok(map);
+    assert.equal(map.tempoAt(0.0), 2.0, "the default holds until the entry");
+    assert.equal(map.tempoAt(4.0), 4.0);
+    assert.equal(map.secsAt(4.0), 2.0);
+
+    // A piece that said nothing is the default alone, and the JSON the wasm
+    // boundary reads is taken as well as the list.
+    const bare = TempoMap.fromChanges("[]", 2.0);
+    assert.ok(bare);
+    assert.equal(bare.secsAt(4.0), 2.0, "four beats at two a second");
+
+    assert.equal(TempoMap.fromChanges("not json", 1.0), undefined);
+});

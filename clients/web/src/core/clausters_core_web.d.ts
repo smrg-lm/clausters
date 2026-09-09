@@ -609,6 +609,19 @@ export class TempoMap {
      */
     env(at: number, tempos: Float64Array, extents: Float64Array, shapes: Uint32Array, curvatures: Float64Array, seconds: boolean): boolean;
     /**
+     * **A map from a piece's authored tempo entries** — the JSON array a
+     * document's `tempo` list is, plus the tempo a piece that never said one
+     * leaves to its reader. `undefined` when the text is not such a list.
+     *
+     * The bridge a reader of a document would otherwise take three decisions
+     * to write: a ramp reaches the *next* entry, the default is prepended when
+     * the first entry is past beat 0, and no entries at all is the default
+     * alone. Each entry is `{beats, tempo, ramp}` with the tempo in beats
+     * **per second**, as every tempo here is — a document writing beats per
+     * minute divides once, where it reads its own field.
+     */
+    static fromChanges(changes: string, default_tempo: number): TempoMap | undefined;
+    /**
      * The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
      * what a clock caches so reading *now* stays three float operations with
      * no search.
@@ -982,6 +995,40 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
 
 /**
+ * **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
+ * or an empty string for a piece that will not parse.
+ *
+ * The multitrack view's own mapping, and there is one of it: what a row and a
+ * box *are* is the format's business, so the standalone host and every client
+ * draw the same picture of the same piece rather than each deriving one.
+ *
+ * **In beats and seconds.** A timeline axis counts sample frames and this
+ * crate has no tempo function; a page crosses with the tempo-map calls it
+ * already binds, and a *length* is the difference of two positions there.
+ * `source` is the document's source id, not a server buffer: which buffer a
+ * source was read into is the page's own table.
+ */
+export function multitrackPicture(piece: string): string;
+
+/**
+ * **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
+ * the piece's own vocabulary, or an empty string for input that will not
+ * parse.
+ *
+ * The reader every multitrack view needs and none should write: the report is
+ * the *piece* rather than the gesture, so a move, a block drag, a trim, a
+ * split, a delete and a paste all arrive as one list, and telling them apart
+ * is one rule written once. `placed` is a JSON array of the boxes as they now
+ * stand.
+ *
+ * A box whose name is not a region's id is a **new** region — a split names
+ * its halves after the box they came from — and one over samples the caller
+ * could not resolve is not invented at all, since the document would name a
+ * source nobody can open.
+ */
+export function multitrackRead(piece: string, placed: string): string;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -1144,6 +1191,20 @@ export function unix_to_ntp(unix_secs: number): bigint;
 export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;
 
 /**
+ * **The tags a view reports that are not edits**, as a JSON array of strings.
+ *
+ * A page routes an incoming `/gui_event` by its tag: screen state is answered
+ * generically and never reaches a domain, and everything else is the domain's
+ * to read. Which tags those are is one list, and it was written once per
+ * client until this call existed — a table small enough that two copies look
+ * harmless and drift silently, since a tag missing from one makes that client
+ * *edit* with a gesture the other one merely looks at.
+ *
+ * Read once and kept, not called per event: it answers a constant.
+ */
+export function viewNotAnEdit(): string;
+
+/**
  * Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
  * note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
  *
@@ -1231,6 +1292,8 @@ export interface InitOutput {
     readonly mel_to_hz: (a: number) => number;
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly multitrackPicture: (a: number, b: number) => [number, number];
+    readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1308,6 +1371,7 @@ export interface InitOutput {
     readonly tempomap_copy: (a: number) => number;
     readonly tempomap_dump: (a: number) => [number, number];
     readonly tempomap_env: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly tempomap_fromChanges: (a: number, b: number, c: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
     readonly tempomap_last: (a: number) => [number, number];
     readonly tempomap_len: (a: number) => number;
@@ -1326,6 +1390,7 @@ export interface InitOutput {
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
+    readonly viewNotAnEdit: () => [number, number];
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly voiceToSheet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly widgetids_alloc: (a: number) => [number, number];
