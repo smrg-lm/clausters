@@ -122,6 +122,7 @@ mod tests {
             scale: 1.0,
             mods: Mods::default(),
             viewport: (400.0, 300.0),
+            clicks: 1,
             time: None,
         };
         n.press((40.0, 12.0), &input);

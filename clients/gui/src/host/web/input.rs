@@ -53,6 +53,11 @@ impl WebApp {
         // reason: a click that locates while the transport runs re-anchors the
         // sweep, and it must land where the line is drawn.
         ctx.sample_clock = self.host.playhead_clock(Some(self.buses.as_ref()));
+        // ...and this front's own wall clock, which is what tells one press
+        // from the second of a double click. The rule is the machine's; the
+        // clock is the platform's, because there is none in the shared core --
+        // the same seam that made the browser's frame tick a `setInterval`.
+        ctx.now_ms = js_sys::Date::now();
         (ctx.shift, ctx.ctrl, ctx.alt) = slot.modifiers();
         if let Some(render) = slot.render.as_ref() {
             // **The widget's own picture, not a body's**: the row count a

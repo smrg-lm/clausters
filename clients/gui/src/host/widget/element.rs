@@ -886,6 +886,17 @@ pub struct Input<'a> {
     /// The container's coordinate system (see [`Ctx::time`]), so a grab lands
     /// on the axis the element was drawn against.
     pub time: Option<TimeSpace>,
+    /// **Which press in a run this one is**: `1` for a press on its own, `2`
+    /// for the second of a double click, and on up while a hand keeps pressing
+    /// in the same place.
+    ///
+    /// The machine counts it, from the clock the front hands it
+    /// ([`GestureCtx::now_ms`](crate::host::gestures::GestureCtx::now_ms)), so
+    /// there is one answer to "how close is close" and not one per platform. It
+    /// is `1` outside a press — a drag and a key are not clicks — so an element
+    /// that opens something on a double click tests for `>= 2` and needs no
+    /// state of its own.
+    pub clicks: u32,
 }
 
 /// The modifier keys a gesture was made with.

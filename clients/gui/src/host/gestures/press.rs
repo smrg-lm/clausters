@@ -105,6 +105,11 @@ impl Gestures {
         if self.dragging() {
             return out;
         }
+        // **Which press in a run this is**, counted before anything else can
+        // return early: a double click is two presses close in time and place,
+        // and the run has to be tracked whether or not either press ends up
+        // reaching an element.
+        self.count_press(ctx, cx, cy);
         self.click = None;
         // An element that **declared** an overlay is modal: it is over
         // everything, so it is tested before the tree and it swallows the press
@@ -114,7 +119,10 @@ impl Gestures {
         if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
             out.push(GestureEffect::Redraw(ctx.def_id));
             // An overlay stands over the window, on nobody's axis.
-            let at = element::At::widget(id, rect, scale, 0.0);
+            let at = element::At {
+                clicks: self.clicks(),
+                ..element::At::widget(id, rect, scale, 0.0)
+            };
             // Not through `element::press`: that door filters the point against
             // the element's declared shape, and an overlay is offered the press
             // **because it is outside** as often as because it is inside — a
@@ -659,7 +667,10 @@ impl Gestures {
             return self.element_at(
                 host,
                 ctx,
-                element::At::widget(id, rect, scale, indent),
+                element::At {
+                    clicks: self.clicks(),
+                    ..element::At::widget(id, rect, scale, indent)
+                },
                 cx,
                 cy,
                 out,

@@ -363,6 +363,7 @@ mod tests {
             scale: 1.0,
             mods: Mods::default(),
             viewport: (600.0, 400.0),
+            clicks: 1,
             time: None,
         }
     }

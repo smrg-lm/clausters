@@ -102,6 +102,9 @@ pub(super) struct App {
     /// line is one a second rather than one a frame.
     pub(super) head_said: u64,
     /// Next scheduled repaint for animated (meter/scope) windows.
+    /// When this front started — what a wall clock in milliseconds is measured
+    /// from, since the gesture machine wants elapsed time and not a date.
+    pub(super) started: Instant,
     pub(super) next_frame: Instant,
     /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
     /// shared with the browser front.
@@ -156,6 +159,7 @@ impl App {
             pending: Vec::new(),
             resumed: false,
             head_said: u64::MAX,
+            started: Instant::now(),
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
             node_trees: HashMap::new(),

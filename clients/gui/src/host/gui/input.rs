@@ -24,6 +24,10 @@ impl App {
         // reason: a click that locates while the transport runs re-anchors the
         // sweep, and it must land where the line is drawn.
         ctx.sample_clock = self.host.playhead_clock(self.shm.as_deref());
+        // ...and this front's own wall clock, which is what tells one press
+        // from the second of a double click. The rule is the machine's; the
+        // clock is the platform's, because there is none in the shared core.
+        ctx.now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
         if let Some(ws) = self.windows.get(&def_id) {
             ctx.shift = ws.shift;
             ctx.ctrl = ws.ctrl;

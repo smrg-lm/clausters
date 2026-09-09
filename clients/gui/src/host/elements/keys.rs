@@ -375,6 +375,7 @@ mod tests {
             scale: 1.0,
             mods: Mods::default(),
             viewport: (rect.w, rect.h),
+            clicks: 1,
             time: None,
         }
     }

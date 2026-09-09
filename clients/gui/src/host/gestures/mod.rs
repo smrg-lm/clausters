@@ -100,6 +100,17 @@ pub struct GestureCtx {
     /// click that lands while the transport is running re-anchors the sweep, and
     /// the anchor is a clock value.
     pub sample_clock: f64,
+    /// **The front's wall clock, in milliseconds** (`0.0` when this front has
+    /// none), monotonic within a run.
+    ///
+    /// The one fact a double click needs and the machine cannot have: two
+    /// presses are one gesture when they are close in *time* as well as in
+    /// space, and there is no clock in the agnostic core — `std::time::Instant`
+    /// does not exist on wasm, which is the same seam that made the browser's
+    /// frame tick a `setInterval`. So the front reads its own (`Instant` here,
+    /// `Date.now` in a page) and the **rule** — how close is close — stays
+    /// here, where there is one of it.
+    pub now_ms: f64,
 }
 
 impl GestureCtx {
@@ -116,6 +127,7 @@ impl GestureCtx {
             slot_channels: HashMap::new(),
             sample_rate: 0.0,
             sample_clock: 0.0,
+            now_ms: 0.0,
         }
     }
 
@@ -303,13 +315,59 @@ struct Click {
 /// One window's gesture state: the in-progress drag, if any, and where the press
 /// under it landed on the axis. The front holds one per window (the browser's
 /// single canvas holds one).
+/// How close in time two presses must be to be one double click, in
+/// milliseconds — the platform-neutral value, since the machine has no system
+/// preference to read and both fronts must answer the same way.
+const DOUBLE_MS: f64 = 400.0;
+
+/// ...and how close in space, in window pixels. A hand that pressed twice
+/// meant one place; a hand that pressed and then pressed somewhere else meant
+/// two things, however fast it was.
+const DOUBLE_PX: f64 = 6.0;
+
 #[derive(Default)]
 pub struct Gestures {
     drag: Option<Drag>,
     click: Option<Click>,
+    /// Where and when the last press landed, and what number it was — the whole
+    /// of what a double click is made of. See [`GestureCtx::now_ms`] for why
+    /// the clock comes from the front.
+    repeat: Option<(f64, f64, f64, u32)>,
 }
 
 impl Gestures {
+    /// **Which press in a run this one is**: `1` for a press on its own, `2`
+    /// for the second of a double click, and on up while a hand keeps pressing
+    /// in the same place.
+    ///
+    /// Counted here rather than in either front because it is a rule and not a
+    /// platform fact: winit reports no click count at all, a browser reports
+    /// one of its own, and two fronts answering differently is exactly the
+    /// divergence the shared machine exists to prevent. A front that hands over
+    /// no clock (`now_ms` of zero) sees every press as a single one, which is
+    /// what a front with no clock can honestly say.
+    fn count_press(&mut self, ctx: &GestureCtx, cx: f64, cy: f64) -> u32 {
+        let count = match self.repeat {
+            Some((x, y, at, n))
+                if ctx.now_ms > 0.0
+                    && ctx.now_ms - at <= DOUBLE_MS
+                    && (cx - x).abs() <= DOUBLE_PX
+                    && (cy - y).abs() <= DOUBLE_PX =>
+            {
+                n + 1
+            }
+            _ => 1,
+        };
+        self.repeat = Some((cx, cy, ctx.now_ms, count));
+        count
+    }
+
+    /// What [`count_press`](Self::count_press) last answered — how the press
+    /// hands the number to whichever element ends up taking it, without
+    /// threading it through every step on the way.
+    fn clicks(&self) -> u32 {
+        self.repeat.map_or(1, |(.., n)| n)
+    }
     /// Whether a drag is in progress (the front routes cursor motion here).
     pub fn dragging(&self) -> bool {
         self.drag.is_some()

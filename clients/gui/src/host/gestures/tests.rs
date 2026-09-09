@@ -3463,3 +3463,47 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
         "a press beside the axis names no time"
     );
 }
+
+/// **A double click is two presses close in time and in place** — and the rule
+/// is the machine's, counted from the clock the front hands it, because winit
+/// reports no click count and a browser reports one of its own. Two fronts
+/// answering differently is exactly the divergence the shared machine is for.
+#[test]
+fn two_presses_close_in_time_and_place_are_one_double_click() {
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+
+    ctx.now_ms = 1_000.0;
+    assert_eq!(g.count_press(&ctx, 100.0, 50.0), 1);
+    ctx.now_ms = 1_200.0;
+    assert_eq!(
+        g.count_press(&ctx, 102.0, 51.0),
+        2,
+        "close enough, both ways"
+    );
+    ctx.now_ms = 1_300.0;
+    assert_eq!(
+        g.count_press(&ctx, 102.0, 51.0),
+        3,
+        "a run goes on counting"
+    );
+
+    // Too slow.
+    ctx.now_ms = 5_000.0;
+    assert_eq!(g.count_press(&ctx, 102.0, 51.0), 1);
+    // ...and too far: a hand that pressed somewhere else meant two things,
+    // however fast it was.
+    ctx.now_ms = 5_100.0;
+    assert_eq!(g.count_press(&ctx, 400.0, 51.0), 1);
+}
+
+/// A front with no clock sees every press as a single one — which is what a
+/// front with no clock can honestly say, and it is what every test that never
+/// sets `now_ms` is relying on.
+#[test]
+fn a_front_that_hands_over_no_clock_never_doubles() {
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    assert_eq!(g.count_press(&ctx, 10.0, 10.0), 1);
+    assert_eq!(g.count_press(&ctx, 10.0, 10.0), 1);
+}

@@ -1395,6 +1395,17 @@ impl Element for Multitrack {
         let Some((clip, part)) = self.clip_at(input, at) else {
             return Claim::Decline;
         };
+        // **A box is entered to edit it**, and entering is a double click —
+        // the gesture a desktop already spends on "open this". What leaves is
+        // the box's name and nothing else: which editor that box asks for is a
+        // question about its *contents*, and this widget owns where things are
+        // rather than what is inside them.
+        if input.clicks >= 2 {
+            return Claim::events(Events::message(vec![
+                OscType::String("enter".into()),
+                OscType::String(self.clips[clip].name.clone()),
+            ]));
+        }
         // **Alt adds or removes that one**, the same key that adds a note to a
         // roll's selection.
         if input.mods.alt {
@@ -1843,6 +1854,7 @@ mod tests {
             scale: 1.0,
             mods: Mods::default(),
             viewport: (rect.w, rect.h),
+            clicks: 1,
             time: Some(TimeSpace::of(View { start: 0.0, len }, len)),
         }
     }
@@ -2283,6 +2295,54 @@ mod tests {
         );
         assert_eq!(args[1], OscType::String("gain".into()));
         assert_eq!(args[11], OscType::String("env".into()), "the layer too");
+    }
+
+    /// **A box is entered with a double click**, and what leaves is its name.
+    ///
+    /// The widget owns *where* things are and not what is inside them, so it
+    /// says which box was opened and stops there: which editor that box asks
+    /// for is a question about its contents, and whoever holds the piece is
+    /// the one that can answer it.
+    #[test]
+    fn a_second_press_on_a_box_enters_it() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let on_a = xy(&mt, &m, rect, 250.0, len, 0);
+
+        let once = input(&m, rect, len);
+        assert!(matches!(mt.press(on_a, &once), Claim::Take(_)));
+        assert!(mt.grab.is_some(), "one press grabs the box");
+
+        let twice = Input {
+            clicks: 2,
+            ..input(&m, rect, len)
+        };
+        let Claim::Take(take) = mt.press(on_a, &twice) else {
+            panic!("the second press is taken");
+        };
+        let msgs = take.events.into_messages();
+        let args = msgs.first().expect("one message");
+        assert_eq!(args[0], OscType::String("enter".into()));
+        assert_eq!(args[1], OscType::String("a".into()));
+        assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// A double click on bare stack enters nothing: there is no box there, and
+    /// the press goes back to the container the way a single one does.
+    #[test]
+    fn a_double_press_off_the_boxes_still_declines() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let bare = xy(&mt, &m, rect, 800.0, len, 0);
+        let twice = Input {
+            clicks: 2,
+            ..input(&m, rect, len)
+        };
+        assert!(matches!(mt.press(bare, &twice), Claim::Decline));
     }
 
     /// A `/gui_set` of what a query reported is the identity, for the curves as

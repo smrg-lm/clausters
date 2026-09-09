@@ -35,6 +35,13 @@ pub(super) struct At {
     /// Where the shared axis begins inside `rect` (see [`Input::indent`]).
     pub indent: f32,
     pub scale: f32,
+    /// **Which press in a run this is** (see [`Input::clicks`]) — `1` for a
+    /// press on its own, `2` for the second of a double click.
+    ///
+    /// It rides on the address because the address is what the machine hands
+    /// every phase, and only the press has a number worth carrying: a drag and
+    /// a key are not clicks, so both leave it at one.
+    pub clicks: u32,
     /// The **container's** axis, for a body — a clip's own span, resolved by
     /// the container that offered the press.
     ///
@@ -57,6 +64,7 @@ impl At {
             rect,
             indent,
             scale,
+            clicks: 1,
             time: None,
         }
     }
@@ -84,6 +92,7 @@ pub(super) fn input<'a>(
             alt: ctx.alt,
         },
         viewport: (ctx.fb_w as f32, ctx.fb_h as f32),
+        clicks: at.clicks,
         time,
     }
 }
