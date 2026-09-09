@@ -235,12 +235,6 @@ impl Gestures {
         // space over a take the monitor is not holding plays that one instead,
         // so a window of several takes is driven by pointing at them. Over
         // nothing at all it is the transport that is meant, and there is one.
-        // **A piece is already loaded**, always: its readers are resident and
-        // follow the transport, so there is no take to pick and nothing to
-        // point at -- space is the transport, wherever the pointer is.
-        if host.roll_piece().is_some() {
-            return Some(Vec::new());
-        }
         let over = hit(host, ctx, cx, cy).map(|Hit { id, .. }| id);
         if let Some(loaded) = host.monitor()
             && over.is_none_or(|id| id == loaded.widget)

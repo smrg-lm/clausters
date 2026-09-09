@@ -324,6 +324,14 @@ pub fn draw_shown(
     // does not re-frame itself on one. The extent is still registered; only the
     // window stays put.
     props.insert("autofit".into(), json!(false));
+    // **The head is anchored at 0, and that is the whole of drawing it.** A
+    // session's clock is the *piece's position* rather than the device's
+    // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the position
+    // itself: it stands still while the transport is stopped, jumps where a
+    // locate puts it and wraps where the engine wraps it. Without the anchor
+    // there is no line at all -- which is what a piece that plays with nothing
+    // moving on screen looks like.
+    props.insert("playhead_at".into(), json!(0.0));
     props.insert("lanes".into(), piece.lanes_prop.clone());
     props.insert("clips".into(), piece.clips_prop.clone());
 

@@ -85,6 +85,15 @@ pub const PIECE_NODE: i32 = TAKE_NODE + MAX_CHANNELS as i32;
 /// so the gate is one comparison whoever is playing.
 const NO_END: f64 = 1.0e12;
 
+/// How long each edge of a region's gate takes, in frames — about five
+/// milliseconds at 48 kHz.
+///
+/// Short enough that nobody hears it as a fade and long enough that nobody
+/// hears the edge as a click, which is the whole of what a declick is. It is
+/// **not** the fades a region carries: those are the piece's and are authored,
+/// and this is the one every edge needs whether or not anybody asked.
+const RAMP: f64 = 240.0;
+
 /// The most channels the monitor will play at once — a bound rather than a
 /// judgement about contents: it is what keeps a malformed channel count from
 /// filling the node tree, and it is well past any take a person mixes by hand.
@@ -122,18 +131,31 @@ pub fn take_def_message() -> OscMessage {
             {"kind": "Add", "inputs": [{"ugen": 0}, {"control": 5}]},
             {"kind": "BufRd", "inputs": [
                 {"control": 0}, {"control": 1}, {"ugen": 1}, {"const": 0.0}]},
-            // **The gate is the region's span**, and it is what tells a reader
-            // that has not started from one that is over. Without it `BufRd`
-            // clamps past the end and holds the last sample, which is a tone
-            // where a piece has silence.
-            {"kind": "BinaryOpUGen", "op": "ge", "inputs": [
-                {"ugen": 0}, {"const": 0.0}]},
-            {"kind": "BinaryOpUGen", "op": "lt", "inputs": [
-                {"ugen": 0}, {"control": 6}]},
-            {"kind": "Mul", "inputs": [{"ugen": 3}, {"ugen": 4}]},
-            {"kind": "Mul", "inputs": [{"ugen": 2}, {"ugen": 5}]},
-            {"kind": "Mul", "inputs": [{"ugen": 6}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 7}]},
+            // **The gate is the region's span, with a ramp at each edge.**
+            // What it has to say is three things at once: a reader that has
+            // not started is silent, one that is over is silent, and neither
+            // edge is a step. Without the gate `BufRd` clamps past the end and
+            // holds the last sample -- a tone where the piece has silence --
+            // and without the ramp both edges click, which is what a hard cut
+            // at a non-zero sample is.
+            //
+            // It is one expression rather than two comparisons and an
+            // envelope: the distance to the nearer edge, over the ramp,
+            // clamped to `[0, 1]`. Outside the span that distance is negative,
+            // so the clamp *is* the gate; inside, it is 1 everywhere but the
+            // ramp. A region shorter than two ramps gets a triangle, which is
+            // the right answer rather than a special case.
+            {"kind": "Sub", "inputs": [{"control": 6}, {"ugen": 0}]},
+            {"kind": "BinaryOpUGen", "op": "min", "inputs": [
+                {"ugen": 0}, {"ugen": 3}]},
+            {"kind": "Mul", "inputs": [{"ugen": 4}, {"const": 1.0 / RAMP}]},
+            {"kind": "BinaryOpUGen", "op": "max", "inputs": [
+                {"ugen": 5}, {"const": 0.0}]},
+            {"kind": "BinaryOpUGen", "op": "min", "inputs": [
+                {"ugen": 6}, {"const": 1.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 2}, {"ugen": 7}]},
+            {"kind": "Mul", "inputs": [{"ugen": 8}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 9}]},
         ],
     });
     OscMessage {
@@ -363,9 +385,11 @@ mod tests {
                 "TransportPos",
                 "Add",
                 "BufRd",
-                "BinaryOpUGen",
+                "Sub",
                 "BinaryOpUGen",
                 "Mul",
+                "BinaryOpUGen",
+                "BinaryOpUGen",
                 "Mul",
                 "Mul",
                 "Out"
@@ -386,8 +410,14 @@ mod tests {
         // **The gate is the region's span**, and it is what a piece of many
         // regions needs: a reader before its own start and one past its end are
         // both silent, so the boxes on a lane do not bleed into each other.
-        assert_eq!(spec["ugens"][3]["op"], "ge");
-        assert_eq!(spec["ugens"][4]["op"], "lt");
+        // The gate: the distance to the nearer edge, over the ramp, clamped
+        // to `[0, 1]` -- so outside the span the clamp is the gate and inside
+        // it is 1 everywhere but the ramp, which is what keeps both edges from
+        // clicking.
+        assert_eq!(spec["ugens"][4]["op"], "min", "the nearer edge");
+        assert_eq!(spec["ugens"][6]["op"], "max", "clamped below");
+        assert_eq!(spec["ugens"][7]["op"], "min", "and above");
+        assert_eq!(spec["ugens"][5]["inputs"][1]["const"], 1.0 / RAMP);
         let span = spec["controls"]
             .as_array()
             .expect("controls")

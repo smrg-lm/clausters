@@ -257,9 +257,17 @@ impl App {
         true
     }
 
-    /// The space bar over the view under the cursor: play its samples, or stop
+    /// The space bar: roll the piece, or play what the cursor is over and stop
     /// what is playing. Returns whether it was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
+        // **A piece is the window's, not the pointer's.** Its readers are
+        // resident and follow the transport, so there is nothing to point at --
+        // and requiring a pointer is what made the first press after opening a
+        // window do nothing at all, since the cursor is unknown until it moves.
+        // The same reason `Ctrl`+`Z` and `Ctrl`+`S` are the window's.
+        if self.host.roll_piece().is_some() {
+            return true;
+        }
         let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
             return false;
         };

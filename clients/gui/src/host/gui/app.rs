@@ -98,6 +98,9 @@ pub(super) struct App {
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
     pub(super) resumed: bool,
+    /// The last whole second the playhead clock was logged at, so the debug
+    /// line is one a second rather than one a frame.
+    pub(super) head_said: u64,
     /// Next scheduled repaint for animated (meter/scope) windows.
     pub(super) next_frame: Instant,
     /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
@@ -152,6 +155,7 @@ impl App {
             ws_conns: HashMap::new(),
             pending: Vec::new(),
             resumed: false,
+            head_said: u64::MAX,
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
             node_trees: HashMap::new(),
@@ -442,7 +446,21 @@ impl App {
                 node_trees: &self.node_trees,
                 server_attached,
                 sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
-                sample_clock: self.host.playhead_clock(self.shm.as_deref()),
+                sample_clock: {
+                    let now = self.host.playhead_clock(self.shm.as_deref());
+                    // Once a second, and only under `debug`: what the head is
+                    // being drawn from. A line that does not move is either a
+                    // transport that is not rolling or a segment nobody is
+                    // publishing into, and from the outside those look the same.
+                    if tracing::enabled!(tracing::Level::DEBUG) {
+                        let whole = now as u64 / 48_000;
+                        if self.head_said != whole {
+                            self.head_said = whole;
+                            tracing::debug!("playhead clock: {now}");
+                        }
+                    }
+                    now
+                },
                 cursor,
                 timelines: self.host.timelines(),
             },

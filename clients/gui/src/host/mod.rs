@@ -2040,6 +2040,24 @@ impl Host {
                 }
                 return true;
             }
+            // **A locate is not an edit, and for a piece it is the one thing
+            // that moves the music.** The host owns where the cursor *is* and
+            // a script owns what sounds under it -- but a session host has no
+            // script, so the seek stops here or the transport never leaves
+            // where the last press left it. Answered rather than emitted, so
+            // the outbox does not wait for an acknowledgement nobody will
+            // send.
+            Some(OscType::String(tag)) if tag == "locate" && owner.draws_piece() => {
+                let at = match args.get(1) {
+                    Some(OscType::Float(v)) => f64::from(*v),
+                    Some(OscType::Double(v)) => *v,
+                    Some(OscType::Int(v)) => f64::from(*v),
+                    Some(OscType::Long(v)) => *v as f64,
+                    _ => return false,
+                };
+                self.locate(at.max(0.0) as u64);
+                return true;
+            }
             // **The piece stated whole**: one payload naming every clip or
             // every strip, so what it means is however many intents it takes
             // to make the document say that -- and they are one entry, because
