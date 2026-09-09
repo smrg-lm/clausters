@@ -5478,3 +5478,82 @@ fn a_click_on_a_clip_reports_no_edit_and_a_drag_still_does() {
         "back where it began: nothing to report"
     );
 }
+
+/// **A click on a multitrack places the cursor.** The gesture the widget's own
+/// map does not name and the machine owns: a press that never left the slop is
+/// where the hand pointed, so it locates over bare stack and over a clip alike
+/// — and a sweep, which left a rectangle, does not.
+///
+/// It is the one verb of the whole vocabulary that a `multitrack` inherits
+/// rather than implements, which is exactly why nothing tested it.
+#[test]
+fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
+    let mut host = host_from(
+        r#"{"type":"window","status":0,"margin":0,"layout":"col","children":[
+            {"id":70,"type":"multitrack","link":"a","ruler":"samples",
+             "sample_rate":48000,
+             "lanes":["one","",120,0,0,1.0],
+             "clips":["a","one",0,1000,0,"",-1, "b","one",9000,1000,0,"",-1]}]}"#,
+    );
+    host.sync_track_totals();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let rect = placed_rect(&host, &ctx, 70);
+    let midy = (rect.y + rect.h * 0.5) as f64;
+    // The **axis' own body**, not the widget's: a multitrack keeps a header
+    // gutter beside it, and a press there names no time at all.
+    let body = {
+        let h = interact::hit(
+            &host,
+            1,
+            800,
+            400,
+            (rect.x + rect.w * 0.5) as f64,
+            midy,
+            &|_, _| 1,
+        )
+        .unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let empty = body.x as f64 + body.w as f64 * 0.5;
+
+    let mut g = Gestures::default();
+    let effects = g.press(&mut host, &ctx, empty, midy);
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a press does not know yet whether it is a click"
+    );
+    let effects = g.release(&mut host, &ctx, empty, midy);
+    assert!(
+        has_emit_tag(&effects, 70, "locate"),
+        "a click on bare stack is a cursor: {effects:?}"
+    );
+
+    // A sweep left a rectangle, and a rectangle is not a place.
+    g.press(&mut host, &ctx, empty, midy);
+    g.drag_to(&mut host, &ctx, empty + 90.0, midy);
+    let effects = g.release(&mut host, &ctx, empty + 90.0, midy);
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a rectangle is not a cursor"
+    );
+
+    // And a click on a clip locates too: the box is drawn on the axis, not
+    // instead of it.
+    let on_clip = body.x as f64 + body.w as f64 * 0.02;
+    g.press(&mut host, &ctx, on_clip, midy);
+    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    assert!(
+        has_emit_tag(&effects, 70, "locate"),
+        "a click on a clip is a cursor too: {effects:?}"
+    );
+
+    // Beside the axis — the header gutter — there is no position and no click.
+    let effects = {
+        g.press(&mut host, &ctx, body.x as f64 - 10.0, midy);
+        g.release(&mut host, &ctx, body.x as f64 - 10.0, midy)
+    };
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a press beside the axis names no time"
+    );
+}
