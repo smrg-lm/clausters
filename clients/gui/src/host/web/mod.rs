@@ -45,7 +45,7 @@ use crate::view::Renderers;
 use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep, SpanUse, align_span};
-use super::frame::{self, SpectrogramSlot, WaveformSlot};
+use super::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use super::gestures::{ClipVerb, GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;

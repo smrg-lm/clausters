@@ -21,8 +21,8 @@ pub(super) struct WindowRender {
     pub(super) painter: Painter,
     /// The editor-chrome overlay pass (selection, playhead, rulers, readout).
     pub(super) overlay: Painter,
-    pub(super) waveforms: HashMap<i32, WaveformSlot>,
-    pub(super) spectrograms: HashMap<i32, SpectrogramSlot>,
+    pub(super) waveforms: HashMap<SlotAt, WaveformSlot>,
+    pub(super) spectrograms: HashMap<SlotAt, SpectrogramSlot>,
     /// One compiled view per `canvas` widget — the script's own shader, and
     /// the pipeline it became. Kept here for the reason the two above are: it
     /// is a GPU resource of this surface, and rebuilding it per frame would

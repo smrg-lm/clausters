@@ -37,7 +37,8 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::placement::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, Swept, Take, TimeSpace,
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, SlotFill, SlotKey, Swept,
+    Take, TextureBody, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -146,7 +147,7 @@ pub struct Multitrack {
     ///
     /// Each is a **signal element in its body form** — the very element that
     /// stands on its own elsewhere, drawn through
-    /// [`Element::draw_body`](crate::host::widget::Element::draw_body) against
+    /// [`Element::draw_body`] against
     /// the box's own axis and with no chrome of its own. A box is a window onto
     /// a picture, not a second implementation of one: what changes between the
     /// standalone view and this is the axis it is handed, and nothing else.
@@ -159,6 +160,18 @@ pub struct Multitrack {
     /// element is the roll that stands on its own elsewhere, drawn through its
     /// body door with no keyboard, no strips and no chrome.
     rolls: HashMap<String, Notes>,
+    /// **The samples a spectral box owes its slot**, by buffer — kept when they
+    /// land and transformed by the next [`Element::fills`], which takes them.
+    ///
+    /// A time-frequency picture is a texture, and a texture is uploaded rather
+    /// than drawn. The samples are kept rather than the analysis because the
+    /// element is cloned on a redefine and an analysis is neither cloneable nor
+    /// worth cloning; they are held only until the next tick asks.
+    ///
+    /// It is the multitrack's and not the body element's because a body over a
+    /// *server buffer* resolves its samples as a pyramid — the right answer for
+    /// a trace, and nothing a transform can read.
+    pending: HashMap<i32, (Vec<f32>, usize)>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
@@ -182,6 +195,7 @@ impl Default for Multitrack {
             view: Presentation::Signal,
             takes: HashMap::new(),
             rolls: HashMap::new(),
+            pending: HashMap::new(),
             grab: None,
             block: Vec::new(),
             fading: None,
@@ -239,6 +253,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
             .into_iter()
             .map(|(name, notes)| (name, roll_body(&notes)))
             .collect(),
+        pending: HashMap::new(),
         grab: None,
         block: Vec::new(),
         fading: None,
@@ -636,6 +651,36 @@ impl Multitrack {
         true
     }
 
+    /// **Where each box is on screen, and the slice of its own span it shows** —
+    /// the geometry the drawing and the texture pass both read, so a picture
+    /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
+    ///
+    /// A box whose lane is gone, whose lane is scrolled off, or which is off
+    /// the window is absent rather than reported at zero size: what a caller
+    /// wants is what it can draw.
+    fn boxes_on_screen(&self, ctx: &Ctx) -> Vec<(usize, Rect, View)> {
+        let nav = self.view(ctx.time);
+        let at = model::stack(&self.lanes, ctx.rect, self.scroll, self.gap);
+        let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
+        let mut out = Vec::new();
+        for (n, clip) in self.clips.iter().enumerate() {
+            let Some(i) = self.lane_of(clip).filter(|i| shown(at[*i])) else {
+                continue;
+            };
+            let body = track::lane_body(at[i], false, ctx.indent, ctx.metrics);
+            if body.w <= 0.0 || body.h <= 0.0 {
+                continue;
+            }
+            let Some((x0, x1)) = model::clip_x(clip, body, &nav, MIN_CLIP_W) else {
+                continue;
+            };
+            let cr = track::clip_rect(body, x0, x1);
+            let local = track::clip_local_view(body, &nav, clip.place.offset, clip.place.dur, cr);
+            out.push((n, cr, local));
+        }
+        out
+    }
+
     /// The lane header a lane's own props ask for. Presence-driven, like every
     /// header here: a lane that carries no mixer state offers no controls.
     fn header(&self, lane: &Lane, indent: f32) -> track::Header {
@@ -733,23 +778,9 @@ impl Element for Multitrack {
         // **One pass over the clips, each onto the lane it names.** A clip
         // whose lane is gone draws nowhere and is still held, which is what
         // lets it come back in a report to be re-homed.
-        for (n, clip) in self.clips.iter().enumerate() {
-            let Some(i) = self.lane_of(clip) else {
-                continue;
-            };
-            if !shown(at[i]) {
-                continue;
-            }
-            let body = track::lane_body(at[i], false, ctx.indent, ctx.metrics);
-            if body.w <= 0.0 || body.h <= 0.0 {
-                continue;
-            }
-            let Some((x0, x1)) = model::clip_x(clip, body, &nav, MIN_CLIP_W) else {
-                continue;
-            };
-            let cr = track::clip_rect(body, x0, x1);
+        for (n, cr, local) in self.boxes_on_screen(ctx) {
+            let clip = &self.clips[n];
             track::draw_clip(d, cr, self.selected.contains(&n));
-            let local = track::clip_local_view(body, &nav, clip.place.offset, clip.place.dur, cr);
             // **The take, drawn from the source per visible pixel**, mapped
             // back through the clip's own window onto it — which is what makes
             // the picture scroll and trim *with* the box instead of squashing
@@ -1099,6 +1130,51 @@ impl Element for Multitrack {
         true
     }
 
+    /// **The spectral boxes**, each over its own take's texture: a
+    /// time-frequency picture samples one, so it is drawn in the GPU pass and
+    /// not into the mesh — and this element holds several, one per buffer its
+    /// boxes are windows onto, which is why they are named by a key.
+    ///
+    /// Empty unless the widget's `view` asks for one, and empty for a box whose
+    /// take has not arrived: a picture of nothing is the frame around it.
+    fn texture_bodies(&self, ctx: &Ctx) -> Vec<TextureBody> {
+        self.boxes_on_screen(ctx)
+            .into_iter()
+            .filter_map(|(n, rect, local)| {
+                let clip = self.clips.get(n)?;
+                let look = self.takes.get(&clip.source)?.texture_body()?;
+                Some(TextureBody {
+                    key: SlotKey(i64::from(clip.source)),
+                    rect,
+                    local,
+                    look,
+                })
+            })
+            .collect()
+    }
+
+    /// **What each take body has for its slot**, under the buffer it draws.
+    ///
+    /// One entry per source rather than per box: the analysis is the take's, so
+    /// six boxes over one recording are one upload — the same rule that makes
+    /// them one download.
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        let pending: Vec<(i32, (Vec<f32>, usize))> = self.pending.drain().collect();
+        pending
+            .into_iter()
+            .filter_map(|(bufnum, (samples, channels))| {
+                let body = self.takes.get(&bufnum)?;
+                let stfts = crate::host::frame::stft_channels(
+                    crate::host::frame::deinterleave(&samples, channels),
+                    body.spectral.fft_size,
+                    body.spectral.hop,
+                    body.editor.sample_rate,
+                );
+                Some((SlotKey(i64::from(bufnum)), SlotFill::Texture(stfts)))
+            })
+            .collect()
+    }
+
     /// **The takes its clips are windows onto**, by server buffer number.
     ///
     /// The plural of the one source a picture asks for: this element holds
@@ -1147,10 +1223,23 @@ impl Element for Multitrack {
     /// resolving a pyramid means is its answer and not a second copy of one.
     fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
         let view = self.view;
+        // **The transform happens here for a spectral box**, because a body
+        // over a server buffer resolves its samples as a pyramid — the right
+        // answer for a trace, and nothing a transform can read. The loader does
+        // exactly this for a standalone spectral view, from the same samples.
+        if view == Presentation::TimeFrequency
+            && let Loaded::Raw { samples, channels } = &data
+        {
+            self.pending
+                .insert(bufnum, (samples.clone(), (*channels).max(1)));
+        }
+        // **The unlabelled door**, because a body element asked for one source
+        // and not for several: the plural ask is this widget's, and by the time
+        // the samples reach the body they are the only ones it wanted.
         self.takes
             .entry(bufnum)
             .or_insert_with(|| take_body(bufnum, view))
-            .bulk_of(bufnum, data)
+            .bulk(data)
     }
 
     /// **The plan a hand on the stack runs.** The element first — that is a
@@ -1257,6 +1346,49 @@ mod tests {
             mt.takes.is_empty(),
             "a take body is built when its samples arrive, not before"
         );
+    }
+
+    /// **A spectral box is a texture of its own**, named by the take it draws:
+    /// a time-frequency picture samples one, so it goes to the GPU pass rather
+    /// than into the mesh, and this element holds one per buffer its boxes are
+    /// windows onto.
+    #[test]
+    fn a_spectral_box_names_the_take_its_texture_is() {
+        use crate::host::widget::element::SlotKey;
+        let mut mt = from_props(&props(
+            r#"{"view": "spectrogram",
+                "lanes": ["one", "", 100, 0, 0, 1.0],
+                "clips": ["a", "one", 0, 48000, 0, "", 3]}"#,
+        ));
+        let world = crate::host::world::World::default();
+        let metrics = crate::host::metrics::Metrics::default();
+        let ctx = Ctx {
+            world: &world,
+            metrics: &metrics,
+            rect: Rect::new(0.0, 0.0, 800.0, 200.0),
+            indent: 0.0,
+            scale: 1.0,
+            time: None,
+            clip: None,
+            focused: false,
+        };
+        assert!(
+            mt.texture_bodies(&ctx).is_empty(),
+            "a picture of nothing is the frame around it"
+        );
+        mt.bulk_of(
+            3,
+            Loaded::Raw {
+                samples: vec![0.0; 4096],
+                channels: 1,
+            },
+        );
+        let bodies = mt.texture_bodies(&ctx);
+        assert_eq!(bodies.len(), 1, "one box, one picture");
+        assert_eq!(bodies[0].key, SlotKey(3), "named by the take it draws");
+        let fills = mt.fills();
+        assert_eq!(fills.len(), 1, "and one upload, however many boxes read it");
+        assert_eq!(fills[0].0, SlotKey(3));
     }
 
     /// The pitch window a roll body is fitted to is the crate's rule, so a box

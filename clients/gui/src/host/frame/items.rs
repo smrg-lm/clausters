@@ -9,7 +9,7 @@
 //! they draw straight into the mesh during the same walk, having nothing to
 //! defer.
 
-use super::super::widget::element::TextureLook;
+use super::super::widget::element::{SlotKey, TextureLook};
 use super::*;
 
 /// A placed `track` lane and its clips, copied out of the host tree so the
@@ -32,6 +32,10 @@ pub(super) struct RulerItem {
 
 pub(super) struct SpectralBodyItem {
     pub(super) id: i32,
+    /// Which of the widget's pictures this is — the pair `(id, key)` addresses
+    /// a slot, so a view holding several boxes over several takes has one entry
+    /// per take rather than one per widget.
+    pub(super) key: SlotKey,
     pub(super) rect: Rect,
     pub(super) local: View,
     pub(super) clip: Option<Rect>,
@@ -73,6 +77,8 @@ pub(super) enum TimelineKind {
 /// roll included.
 pub(super) struct TimelineItem {
     pub(super) id: i32,
+    /// Which of the widget's pictures this is: `(id, key)` addresses a slot.
+    pub(super) key: SlotKey,
     pub(super) rect: Rect,
     /// Where the picture goes, as the element resolved it out of `rect`.
     pub(super) body: Rect,
@@ -126,7 +132,7 @@ pub(super) fn collect_widgets(
     theme: &Theme,
 ) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
-    let spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
+    let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     for p in placed {
@@ -189,7 +195,31 @@ pub(super) fn collect_widgets(
                 // claimed slot draws this frame. The set of slots is closed and
                 // is the frame's, so this match is over pipelines the window
                 // already has -- never over what the element is.
-                if let (Some(id), Some(slot)) = (p.widget.id, el.slot(&ctx)) {
+                // The time-frequency pictures a container draws **inside**
+                // itself, each over its own box: they sample a texture, so they
+                // go to the GPU pass rather than into the mesh, keyed by the
+                // slot they come from.
+                if let Some(id) = p.widget.id {
+                    for body in el.texture_bodies(&ctx) {
+                        spectral_bodies.push(SpectralBodyItem {
+                            id,
+                            key: body.key,
+                            rect: body.rect,
+                            local: body.local,
+                            clip: p.clip,
+                            db_floor: body.look.db_floor,
+                            db_ceil: body.look.db_ceil,
+                            freq_scale: body.look.freq_scale,
+                            colormap: body.look.colormap,
+                        });
+                    }
+                }
+                for (key, slot) in p.widget.id.into_iter().flat_map(|id| {
+                    el.slots(&ctx)
+                        .into_iter()
+                        .map(move |(key, s)| ((id, key), s))
+                }) {
+                    let (id, slot_key) = key;
                     // A timeline slot is half an item: the element said where
                     // its picture goes and at what vertical window, the axis
                     // says the rest (the chrome every group member shares).
@@ -197,6 +227,7 @@ pub(super) fn collect_widgets(
                         if let Some(editor) = p.widget.kind.editor() {
                             timeline_items.push(TimelineItem {
                                 id,
+                                key: slot_key,
                                 rect: p.rect,
                                 body,
                                 clip: p.clip,

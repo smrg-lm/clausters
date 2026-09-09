@@ -212,21 +212,27 @@ mod tests {
                 histories: &histories,
             },
         );
-        let Some(SlotFill::Columns {
-            columns,
-            window_size,
-            hop,
-            capacity,
-            ..
-        }) = tree.kind.fill()
+        let [
+            (
+                _,
+                SlotFill::Columns {
+                    columns,
+                    window_size,
+                    hop,
+                    capacity,
+                    ..
+                },
+            ),
+        ] = &tree.kind.fills()[..]
         else {
             panic!("a ticked waterfall hands its columns over")
         };
+        let (window_size, hop, capacity) = (*window_size, *hop, *capacity);
         assert_eq!((window_size, hop), (256, 128));
         assert_eq!(capacity, (0.05 * rate / 128.0).ceil() as usize);
         assert!(!columns.is_empty());
         // And the next tick uploads nothing until another column lands.
-        assert!(tree.kind.fill().is_none());
+        assert!(tree.kind.fills().is_empty());
     }
 
     /// A named resource is the loader's: the element hands back nothing rather

@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::host::frame::Owed;
+use crate::host::widget::element::SlotKey;
 
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
 /// Bidirectional: outbound frames carry bound-widget values and the host's own
@@ -602,7 +603,7 @@ impl WebApp {
                     .canvases
                     .get_mut(&want.def_id)
                     .and_then(|c| c.render.as_mut())
-                    .and_then(|r| r.waveforms.get_mut(&want.widget_id))
+                    .and_then(|r| r.waveforms.get_mut(&(want.widget_id, SlotKey::SELF)))
                 {
                     slot.view.release_data();
                 }
@@ -645,7 +646,7 @@ impl WebApp {
                             .canvases
                             .get_mut(&def_id)
                             .and_then(|c| c.render.as_mut())
-                            .and_then(|r| r.waveforms.get_mut(&widget_id))
+                            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
                         {
                             slot.view.release_data();
                         }
@@ -760,7 +761,7 @@ impl WebApp {
         }
         let mut asked: Vec<(i32, i32, usize, Owed)> = Vec::new();
         if let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) {
-            for (widget_id, slot) in &render.waveforms {
+            for ((widget_id, _key), slot) in &render.waveforms {
                 let Some(owed) = slot.owed.take() else {
                     continue;
                 };
@@ -820,7 +821,7 @@ impl WebApp {
             .canvases
             .get_mut(&def_id)
             .and_then(|c| c.render.as_mut())
-            .and_then(|r| r.waveforms.get_mut(&widget_id))
+            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
         {
             slot.view.release_data();
         }
@@ -874,7 +875,7 @@ impl WebApp {
                     .canvases
                     .get_mut(&def_id)
                     .and_then(|c| c.render.as_mut())
-                    .and_then(|r| r.waveforms.get_mut(&widget_id))
+                    .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
                 {
                     slot.view.release_data();
                 }

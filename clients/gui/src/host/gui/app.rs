@@ -19,7 +19,7 @@ use winit::window::WindowId;
 use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
-use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
+use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{ClipVerb, Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
@@ -41,9 +41,9 @@ use super::{FRAME, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
 /// of truth).
 pub(super) struct WindowState {
     pub(super) gpu: Gpu,
-    pub(super) waveforms: HashMap<i32, WaveformSlot>,
+    pub(super) waveforms: HashMap<SlotAt, WaveformSlot>,
     /// Per-`spectrogram` GPU resources (one STFT view per channel lane).
-    pub(super) spectrograms: HashMap<i32, SpectrogramSlot>,
+    pub(super) spectrograms: HashMap<SlotAt, SpectrogramSlot>,
     /// Per-`canvas` GPU resources (the compiled user shader + uniforms).
     pub(super) canvases: HashMap<i32, CanvasView>,
     /// The heavy views' shared pipelines — one set per window, drawing every

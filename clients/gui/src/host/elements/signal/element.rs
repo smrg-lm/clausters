@@ -13,7 +13,7 @@
 //!
 //! **What is drawn here and what is not.** The four presentations that go into
 //! the window's one mesh draw in [`Element::draw`]; the two that cannot claim a
-//! slot and describe their frame in [`Element::slot`], because a trace
+//! slot and describe their frame in [`Element::slots`], because a trace
 //! decimated per pixel and a texture sampled per texel are pipelines the window
 //! owns. The chrome *around* a heavy view — the rulers, the playhead, the
 //! selection, the readout — stays the frame's: it is shared with the lane, the
@@ -32,7 +32,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
-    Ctx, Element, FreqAxis, Input, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame,
+    Ctx, Element, FreqAxis, Input, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame, SlotKey,
     TextureLook, TimeSpace, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
@@ -241,8 +241,11 @@ impl Element for SignalElement {
         SignalElement::summary_bucket(self)
     }
 
-    fn fill(&mut self) -> Option<SlotFill> {
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
         SignalElement::fill(self)
+            .map(|fill| (SlotKey::SELF, fill))
+            .into_iter()
+            .collect()
     }
 
     fn slot_dropped(&mut self) {
@@ -252,32 +255,11 @@ impl Element for SignalElement {
     /// What a claimed slot draws this frame. The horizontal window is not here:
     /// it is the **navigation group's**, which is addressed by an id this
     /// element does not carry, and the lane count is the slot's own.
-    fn slot(&self, ctx: &Ctx) -> Option<SlotFrame> {
-        if !self.caps.navigable {
-            return None;
-        }
-        let body = crate::host::frame::timeline_body(
-            ctx.rect,
-            &self.editor,
-            self.display.label.is_some(),
-            ctx.indent,
-            ctx.metrics,
-        );
-        match self.presentation {
-            Presentation::Signal => Some(SlotFrame::Waveform {
-                body,
-                domain: self.domain(),
-                amp: self.editor.y_view(),
-                overlay: self.display.overlay,
-                measures: self.measures,
-            }),
-            Presentation::TimeFrequency => Some(SlotFrame::Spectrogram {
-                body,
-                freq: self.editor.y_view(),
-                look: self.look(),
-            }),
-            _ => None,
-        }
+    fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        self.one_slot(ctx)
+            .map(|frame| (SlotKey::SELF, frame))
+            .into_iter()
+            .collect()
     }
 
     /// Where the axis lies inside the rect, and whether a vertical surface sits
@@ -498,6 +480,37 @@ impl SignalElement {
             label: self.display.label.as_deref(),
             measures: self.measures,
             written: self.written_frames(),
+        }
+    }
+}
+
+impl SignalElement {
+    /// The one picture a signal is, or `None` when it draws on the mesh.
+    fn one_slot(&self, ctx: &Ctx) -> Option<SlotFrame> {
+        if !self.caps.navigable {
+            return None;
+        }
+        let body = crate::host::frame::timeline_body(
+            ctx.rect,
+            &self.editor,
+            self.display.label.is_some(),
+            ctx.indent,
+            ctx.metrics,
+        );
+        match self.presentation {
+            Presentation::Signal => Some(SlotFrame::Waveform {
+                body,
+                domain: self.domain(),
+                amp: self.editor.y_view(),
+                overlay: self.display.overlay,
+                measures: self.measures,
+            }),
+            Presentation::TimeFrequency => Some(SlotFrame::Spectrogram {
+                body,
+                freq: self.editor.y_view(),
+                look: self.look(),
+            }),
+            _ => None,
         }
     }
 }

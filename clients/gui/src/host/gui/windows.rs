@@ -16,8 +16,9 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::bulk::MmapLoader;
 use crate::host::elements::signal;
-use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
+use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;
+use crate::host::widget::element::SlotKey;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
@@ -33,8 +34,8 @@ use super::{NODETREE_POLL, PLACEHOLDER_ORIGIN};
 /// the four travel together out of one call and a bare tuple of maps says
 /// nothing about which is which.
 type DefResources = (
-    HashMap<i32, WaveformSlot>,
-    HashMap<i32, SpectrogramSlot>,
+    HashMap<SlotAt, WaveformSlot>,
+    HashMap<SlotAt, SpectrogramSlot>,
     HashMap<i32, CanvasView>,
     Vec<(i32, i32, bool)>,
 );
@@ -250,12 +251,19 @@ impl App {
         self.apply_extents(extents);
         // Register each loaded view's data extent with its navigation group
         // (the group timeline spans the longest member).
-        for (wid, slot) in &waveforms {
-            self.host
-                .set_timeline_total(*wid, slot.view.total_samples());
+        // **The widget's own picture registers its extent**, not a body's: the
+        // group's span is what its members show, and a box inside a view spans
+        // the view rather than the axis.
+        for ((wid, key), slot) in &waveforms {
+            if *key == SlotKey::SELF {
+                self.host
+                    .set_timeline_total(*wid, slot.view.total_samples());
+            }
         }
-        for (wid, slot) in &spectrograms {
-            self.host.set_timeline_total(*wid, slot.total_samples());
+        for ((wid, key), slot) in &spectrograms {
+            if *key == SlotKey::SELF {
+                self.host.set_timeline_total(*wid, slot.total_samples());
+            }
         }
         (waveforms, spectrograms, canvases, buffer_refs)
     }
@@ -300,13 +308,18 @@ impl App {
         // half of the bug that made the window *look* right while the element
         // behind it held nothing.
         if let Some(ws) = self.windows.get_mut(&def_id) {
-            for (id, slot) in waveforms {
-                self.host.set_timeline_total(id, slot.view.total_samples());
-                ws.waveforms.insert(id, slot);
+            for (at, slot) in waveforms {
+                if at.1 == SlotKey::SELF {
+                    self.host
+                        .set_timeline_total(at.0, slot.view.total_samples());
+                }
+                ws.waveforms.insert(at, slot);
             }
-            for (id, slot) in spectrograms {
-                self.host.set_timeline_total(id, slot.total_samples());
-                ws.spectrograms.insert(id, slot);
+            for (at, slot) in spectrograms {
+                if at.1 == SlotKey::SELF {
+                    self.host.set_timeline_total(at.0, slot.total_samples());
+                }
+                ws.spectrograms.insert(at, slot);
             }
         }
         self.start_buffer_fetches(def_id, buffer_refs);
@@ -377,8 +390,8 @@ impl App {
 /// the tree and hands them back to one caller — three out-params threaded
 /// through a recursion is the same thing spelled longer.
 struct BulkOut<'a> {
-    waveforms: &'a mut HashMap<i32, WaveformSlot>,
-    spectrograms: &'a mut HashMap<i32, SpectrogramSlot>,
+    waveforms: &'a mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &'a mut HashMap<SlotAt, SpectrogramSlot>,
     /// `(widget_id, bufnum, shape_only)` — the deferred half.
     buffers: &'a mut Vec<(i32, i32, bool)>,
 }
@@ -426,7 +439,7 @@ fn load_bulk(
                         frame::keep_data(widget, &loaded);
                         frame::place_in_slot(
                             loaded,
-                            id,
+                            (id, SlotKey::SELF),
                             gpu,
                             renderers,
                             out.waveforms,

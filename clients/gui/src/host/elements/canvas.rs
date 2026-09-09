@@ -23,7 +23,7 @@ use crate::canvas::{DEFAULT_SHADER, PARAM_COUNT};
 use crate::host::font;
 use crate::host::graphics::controls;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKind};
+use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKey, SlotKind};
 use crate::host::widget::parse;
 
 /// A shader view. `params` are the four floats fed to the shader; a `buses`
@@ -121,12 +121,15 @@ impl Element for Canvas {
         }
     }
 
-    fn slot(&self, ctx: &Ctx) -> Option<SlotFrame> {
-        Some(SlotFrame::Shader {
-            body: controls::body_rect(ctx.rect, self.label.is_some(), ctx.metrics),
-            source: self.shader.clone(),
-            params: self.resolved(ctx),
-        })
+    fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        vec![(
+            SlotKey::SELF,
+            SlotFrame::Shader {
+                body: controls::body_rect(ctx.rect, self.label.is_some(), ctx.metrics),
+                source: self.shader.clone(),
+                params: self.resolved(ctx),
+            },
+        )]
     }
 
     fn clone_box(&self) -> Box<dyn Element> {
@@ -222,10 +225,10 @@ mod tests {
             clip: None,
             focused: false,
         };
-        let Some(SlotFrame::Shader { body, params, .. }) = c.slot(&ctx) else {
+        let [(_, SlotFrame::Shader { body, params, .. })] = &c.slots(&ctx)[..] else {
             panic!("a canvas claims the shader slot");
         };
-        assert_eq!(params, [9.0, 2.0, 9.0, 9.0]);
-        assert_eq!(body, controls::body_rect(ctx.rect, false, &metrics));
+        assert_eq!(*params, [9.0, 2.0, 9.0, 9.0]);
+        assert_eq!(*body, controls::body_rect(ctx.rect, false, &metrics));
     }
 }

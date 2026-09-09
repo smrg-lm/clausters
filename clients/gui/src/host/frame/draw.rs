@@ -407,8 +407,8 @@ pub(super) fn draw_timeline_meshes(
     mesh: &mut Mesh,
     over: &mut Mesh,
     collected: &Collected,
-    waveforms: &HashMap<i32, WaveformSlot>,
-    spectrograms: &HashMap<i32, SpectrogramSlot>,
+    waveforms: &HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
@@ -434,7 +434,7 @@ pub(super) fn draw_timeline_meshes(
                 amp,
                 measures,
             } => {
-                let Some(slot) = waveforms.get(&item.id) else {
+                let Some(slot) = waveforms.get(&(item.id, item.key)) else {
                     over.border(body, 1.0, th.view_frame);
                     continue;
                 };
@@ -544,7 +544,7 @@ pub(super) fn draw_timeline_meshes(
                 );
             }
             TimelineKind::Spectrogram { freq, look } => {
-                let Some(slot) = spectrograms.get(&item.id) else {
+                let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
                     over.border(body, 1.0, th.view_frame);
                     continue;
                 };

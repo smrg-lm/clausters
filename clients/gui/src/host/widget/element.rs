@@ -16,7 +16,7 @@
 //! | [`apply`](super::apply) | [`Element::set`] |
 //! | [`size`](super::size) | [`Element::natural`] |
 //! | the frame's flat draw | [`Element::draw`] |
-//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], drawn by [`Element::slot`] and fed by [`Element::fill`] |
+//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], drawn by [`Element::slots`] and fed by [`Element::fills`] |
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
@@ -140,6 +140,20 @@ pub struct TextureLook {
     pub freq_scale: crate::spectrogram::FreqScale,
     /// The colormap index the texture pipeline resolves.
     pub colormap: i32,
+}
+
+/// One time-frequency picture a container draws **inside itself**: which of its
+/// slots the texture is, where it goes, and the window onto it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextureBody {
+    /// Which of the element's slots holds the analysis.
+    pub key: SlotKey,
+    /// Where the picture goes, in window pixels.
+    pub rect: Rect,
+    /// The slice of the box's own span its rectangle shows.
+    pub local: crate::viewport::View,
+    /// How it is coloured and scaled.
+    pub look: TextureLook,
 }
 
 /// **An element's own measured x axis**: the body its picture is drawn in, the
@@ -550,6 +564,21 @@ pub enum Loaded {
     /// copy the form cannot avoid.
     Shared(std::sync::Arc<crate::waveform::WaveformData>),
 }
+/// **Which of an element's pictures a GPU slot is**, inside the widget that
+/// holds it.
+///
+/// A slot is addressed by the pair `(widget id, key)`: the widget says *whose*
+/// picture, the key says *which of its own*. Almost every element has one and
+/// answers [`SELF`](SlotKey::SELF); a view that holds several — a multitrack's
+/// boxes over several takes — keys them by its own word for each, which for a
+/// take is the server buffer it is a window onto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SlotKey(pub i64);
+
+impl SlotKey {
+    /// The element's own one picture — what a view with a single slot answers.
+    pub const SELF: SlotKey = SlotKey(-1);
+}
 
 /// The GPU slot an element claims because it cannot draw into the window's one
 /// mesh: it needs a texture, a vertex buffer or a shader of its own.
@@ -758,7 +787,7 @@ pub enum SlotFrame {
 /// The two are separate because they run on different rhythms and in different
 /// directions. A [`SlotFrame`] is produced per repaint out of a borrowed
 /// element, and carries the frame's own reading of the world; a `SlotFill` is
-/// **taken** from the element ([`Element::fill`]) at the front's tick, and is
+/// **taken** from the element ([`Element::fills`]) at the front's tick, and is
 /// the data itself. An element with nothing new hands back `None`, which is
 /// what keeps a still picture at zero uploads.
 ///
@@ -1591,6 +1620,22 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **The time-frequency pictures this element wants drawn inside itself**,
+    /// each in its own rectangle and against its own local axis — empty for
+    /// every element but the one that holds boxes.
+    ///
+    /// A spectral picture samples a texture, so it is drawn in the GPU pass and
+    /// not into the shared mesh: an element that draws one of its own says so
+    /// through [`slots`](Element::slots), and an element that holds *several*
+    /// — a multitrack's boxes over several takes — says so here, because each
+    /// is a window onto a different texture at a different place.
+    ///
+    /// The key names which of this element's slots the picture comes from, so
+    /// the pair `(widget id, key)` addresses it exactly as a slot is addressed.
+    fn texture_bodies(&self, _ctx: &Ctx) -> Vec<TextureBody> {
+        Vec::new()
+    }
+
     /// **What this element draws as a clip's body**, into the clip's rectangle
     /// and against the clip's own local axis (`dur` is the clip's span).
     ///
@@ -1912,21 +1957,29 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// What the GPU slot this element claimed draws this frame, or `None` for
-    /// an element that claimed none (the default). An element that claims one
-    /// usually still [`draw`](Element::draw)s — a label, a frame — into the
+    /// What the GPU slots this element claimed draw this frame, each under the
+    /// [`SlotKey`] that addresses it **within the element**. Empty for an
+    /// element that claimed none, which is the default. An element that claims
+    /// one usually still [`draw`](Element::draw)s — a label, a frame — into the
     /// shared mesh around it.
-    fn slot(&self, _ctx: &Ctx) -> Option<SlotFrame> {
-        None
+    ///
+    /// **Plural because a view may hold several pictures.** A signal is one
+    /// picture and answers with one entry under [`SlotKey::SELF`]; a multitrack
+    /// is a stack of boxes over several takes, and a time-frequency box samples
+    /// a texture of its own — so the key is what tells them apart, and it is the
+    /// element's own word for the picture (a server buffer number, there)
+    /// rather than anything the front invents.
+    fn slots(&self, _ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        Vec::new()
     }
 
-    /// **What the claimed slot is fed**, or `None` (the default) when the
-    /// element has nothing new for it — which is every element that claimed no
-    /// slot, and every frame of one whose picture did not move.
+    /// **What the claimed slots are fed**, empty (the default) when the element
+    /// has nothing new for them — which is every element that claimed none, and
+    /// every frame of one whose picture did not move.
     ///
     /// It is a *taking*: the element hands the content over and marks itself
     /// clean, so the front's walk uploads once per change rather than once per
-    /// tick. That is why it is separate from [`slot`](Element::slot), which
+    /// tick. That is why it is separate from [`slots`](Element::slots), which
     /// describes a draw and borrows.
     ///
     /// Only the element knows when its picture moved and what shape the upload
@@ -1934,8 +1987,8 @@ pub trait Element: fmt::Debug {
     /// hop, the columns a rolling transform just produced — so the front's walk
     /// asks every widget the same question and learns nothing about any of
     /// them.
-    fn fill(&mut self) -> Option<SlotFill> {
-        None
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        Vec::new()
     }
 
     /// **This element was told its resource moved**, and this is what it wants
@@ -1943,7 +1996,7 @@ pub trait Element: fmt::Debug {
     /// nothing.
     ///
     /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
-    /// the reason [`fill`](Element::fill) is: **asking clears the ask**, so one
+    /// the reason [`fills`](Element::fills) is: **asking clears the ask**, so one
     /// `reload` produces one load. A front's per-repaint walk can call it every
     /// frame and it answers once, which is what a fetch in flight needs — an
     /// element with no body yet is indistinguishable from one that has not
@@ -1956,7 +2009,7 @@ pub trait Element: fmt::Debug {
     /// **The slot's contents are gone**: the window's GPU resources were
     /// rebuilt (a fresh device, a page's canvas re-attached), so whatever this
     /// element handed over is no longer on the card and the next
-    /// [`fill`](Element::fill) has to hand it over again.
+    /// [`fills`](Element::fills) has to hand it over again.
     ///
     /// It is the one thing a filling element cannot work out for itself — the
     /// device is the front's — and it is why a fill can be a taking at all: an

@@ -15,7 +15,7 @@ use crate::host::fetch::{FetchStep, SpanUse, WaveWant, align_span};
 use crate::host::frame::{self, Owed};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::widget::Widget;
-use crate::host::widget::element::{Bulk, Loaded, SlotKind};
+use crate::host::widget::element::{Bulk, Loaded, SlotKey, SlotKind};
 use crate::waveform::WaveformData;
 
 use super::app::App;
@@ -137,7 +137,8 @@ impl App {
                     rate,
                 );
                 if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {
-                    ws.spectrograms.insert(want.widget_id, slot);
+                    ws.spectrograms
+                        .insert((want.widget_id, SlotKey::SELF), slot);
                 }
                 ws.gpu.window.request_redraw();
                 self.finish_placement(want, frames, sample_rate);
@@ -167,8 +168,10 @@ impl App {
                 })
                 .clone();
             if matches!(slot, Some(SlotKind::Geometry { .. })) {
-                ws.waveforms
-                    .insert(want.widget_id, frame::waveform_slot(data.clone()));
+                ws.waveforms.insert(
+                    (want.widget_id, SlotKey::SELF),
+                    frame::waveform_slot(data.clone()),
+                );
             }
             ws.gpu.window.request_redraw();
             if let Some(w) = self
@@ -483,8 +486,10 @@ impl App {
                         channels,
                         base_bucket,
                     ));
-                    ws.waveforms
-                        .insert(want.widget_id, frame::waveform_slot(data.clone()));
+                    ws.waveforms.insert(
+                        (want.widget_id, SlotKey::SELF),
+                        frame::waveform_slot(data.clone()),
+                    );
                     // ...and the element keeps the same pyramid, so a copy over
                     // a fetched buffer reads the samples it is drawing.
                     if let Some(w) = self
@@ -512,7 +517,8 @@ impl App {
                         rate,
                     );
                     if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {
-                        ws.spectrograms.insert(want.widget_id, slot);
+                        ws.spectrograms
+                            .insert((want.widget_id, SlotKey::SELF), slot);
                     }
                 }
                 // Mesh-drawn (a clip's take, a plot): the samples go home to
@@ -564,7 +570,7 @@ impl App {
         if let Some(slot) = self
             .windows
             .get_mut(&want.def_id)
-            .and_then(|ws| ws.waveforms.get_mut(&want.widget_id))
+            .and_then(|ws| ws.waveforms.get_mut(&(want.widget_id, SlotKey::SELF)))
         {
             slot.view.release_data();
         }
@@ -600,7 +606,7 @@ impl App {
         }
         let mut asked: Vec<(i32, i32, i32, usize, Owed)> = Vec::new();
         for (def_id, ws) in &self.windows {
-            for (widget_id, slot) in &ws.waveforms {
+            for ((widget_id, _key), slot) in &ws.waveforms {
                 let Some(owed) = slot.owed.take() else {
                     continue;
                 };
@@ -659,7 +665,7 @@ impl App {
         if let Some(slot) = self
             .windows
             .get_mut(&def_id)
-            .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+            .and_then(|ws| ws.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
         {
             slot.view.release_data();
         }
@@ -715,8 +721,10 @@ impl App {
                         .and_then(|w| w.bulk_target().kind.needs().slot),
                     Some(SlotKind::Geometry { .. })
                 ) {
-                    ws.waveforms
-                        .insert(want.widget_id, frame::waveform_slot(data.clone()));
+                    ws.waveforms.insert(
+                        (want.widget_id, SlotKey::SELF),
+                        frame::waveform_slot(data.clone()),
+                    );
                 }
                 ws.gpu.window.request_redraw();
             }
@@ -840,7 +848,7 @@ impl App {
                 if let Some(slot) = self
                     .windows
                     .get_mut(&def_id)
-                    .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+                    .and_then(|ws| ws.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
                 {
                     slot.view.release_data();
                 }
@@ -914,7 +922,7 @@ impl App {
                 if let Some(slot) = self
                     .windows
                     .get_mut(&def_id)
-                    .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+                    .and_then(|ws| ws.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
                 {
                     slot.view.release_data();
                 }
@@ -1032,7 +1040,7 @@ impl App {
             if let Some(slot) = self
                 .windows
                 .get_mut(&def_id)
-                .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+                .and_then(|ws| ws.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
             {
                 slot.view.release_data();
             }

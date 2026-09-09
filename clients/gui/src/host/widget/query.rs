@@ -458,11 +458,14 @@ impl WidgetKind {
     /// new for it.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::fill`]) — the single door, so the
-    /// front's upload walk asks the tree what to upload instead of deriving it
-    /// from what each kind happens to be.
-    pub fn fill(&mut self) -> Option<super::element::SlotFill> {
-        self.as_element_mut()?.fill()
+    /// ([`Element::fills`]) — the single door, so the front's upload walk asks
+    /// the tree what to upload instead of deriving it from what each kind
+    /// happens to be.
+    pub fn fills(&mut self) -> Vec<(super::element::SlotKey, super::element::SlotFill)> {
+        match self.as_element_mut() {
+            Some(el) => el.fills(),
+            None => Vec::new(),
+        }
     }
 
     /// **What this widget was told to read again**, when it was

@@ -13,7 +13,7 @@
 //! JSON over OSC.
 
 use super::*;
-use crate::host::widget::element::Bulk;
+use crate::host::widget::element::{Bulk, SlotKey};
 
 /// Every element's **declared** bulk resource, as fetches to start — and the
 /// server buffers to pull over the client leg, which are the one resource a
@@ -260,7 +260,7 @@ impl WebApp {
         // place (`frame::place_in_slot`).
         let total = frame::place_in_slot(
             data,
-            widget_id,
+            (widget_id, SlotKey::SELF),
             &render.gpu,
             &render.renderers,
             &mut render.waveforms,

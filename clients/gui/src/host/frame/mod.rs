@@ -183,11 +183,11 @@ pub(crate) fn keep_data(widget: &mut Widget, data: &Loaded) {
 /// loader forked on `Needs::slot` before calling.
 pub(crate) fn place_in_slot(
     data: Loaded,
-    id: i32,
+    id: SlotAt,
     gpu: &Gpu,
     renderers: &Renderers,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    waveforms: &mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
 ) -> Option<usize> {
     match data {
         // A pyramid fills the geometry slot whether it summarizes a copy or a
@@ -205,7 +205,7 @@ pub(crate) fn place_in_slot(
             Some(total)
         }
         Loaded::Samples(_) | Loaded::Raw { .. } => {
-            warn!("widget {id}: raw samples cannot fill a GPU slot");
+            warn!("widget {}: raw samples cannot fill a GPU slot", id.0);
             None
         }
     }
@@ -225,8 +225,8 @@ pub(crate) fn place_in_slot(
 /// Both fronts call it, which is what keeps a browser waterfall and a desktop
 /// one the same picture built the same way.
 fn roll_into_slot(
-    slots: &mut HashMap<i32, SpectrogramSlot>,
-    id: i32,
+    slots: &mut HashMap<SlotAt, SpectrogramSlot>,
+    id: SlotAt,
     columns: &[f32],
     (window_size, hop, sample_rate): (usize, usize, f32),
     capacity: usize,
@@ -323,6 +323,13 @@ pub(crate) fn slots_dropped(widget: &mut Widget) {
         slots_dropped(child);
     }
 }
+/// **Which GPU slot**: the widget that holds the picture, and which of its own
+/// pictures it is ([`SlotKey`](super::widget::element::SlotKey)).
+///
+/// A pair rather than an id because a view may hold several: a multitrack's
+/// boxes are windows onto several takes, and a time-frequency box samples a
+/// texture of its own.
+pub(crate) type SlotAt = (i32, super::widget::element::SlotKey);
 
 /// **Uploads whatever the tree has for its GPU slots**, keyed by the id that
 /// addresses each widget: its own, or — for a clip's body, which carries none —
@@ -331,7 +338,7 @@ pub(crate) fn slots_dropped(widget: &mut Widget) {
 ///
 /// This is the filling half of the slot seam, and the whole of it: an element
 /// hands over a pyramid, a set of analyses or the columns its rolling transform
-/// just produced ([`WidgetKind::fill`]), and this walk uploads them. It asks
+/// just produced ([`WidgetKind::fills`]), and this walk uploads them. It asks
 /// every widget the same question and learns nothing about any of them — where
 /// the two fronts each used to walk the tree twice, once matching on the
 /// presentation to build a slot out of an element's inline samples and once
@@ -344,12 +351,19 @@ pub(crate) fn fill_slots(
     owner: Option<i32>,
     gpu: &Gpu,
     renderers: &Renderers,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    waveforms: &mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
     out: &mut Vec<(i32, Extent)>,
 ) {
     let owner = widget.id.or(owner);
-    if let (Some(id), Some(fill)) = (owner, widget.kind.fill()) {
+    for (key, fill) in owner.into_iter().flat_map(|id| {
+        widget
+            .kind
+            .fills()
+            .into_iter()
+            .map(move |(key, f)| ((id, key), f))
+    }) {
+        let id = key;
         let extent = match fill {
             // A fill over a slot that is already there **keeps the view**: the
             // picture is the element's and the navigation is the eye's, so a
@@ -392,7 +406,7 @@ pub(crate) fn fill_slots(
             )
             .map(Extent::Rolling),
         };
-        out.extend(extent.map(|e| (id, e)));
+        out.extend(extent.map(|e| (id.0, e)));
     }
     for child in &mut widget.children {
         fill_slots(child, owner, gpu, renderers, waveforms, spectrograms, out);
@@ -747,8 +761,8 @@ pub(crate) fn render(
     renderers: &mut Renderers,
     painter: &mut Painter,
     overlay: &mut Painter,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    waveforms: &mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
     tree: &Widget,
     inputs: &FrameInputs,
@@ -799,7 +813,7 @@ pub(crate) fn render(
             // window's mesh with the rest of the chrome: nothing to prepare.
             TimelineKind::Waveform { .. } => {}
             TimelineKind::Spectrogram { freq, look } => {
-                if let Some(slot) = spectrograms.get_mut(&item.id) {
+                if let Some(slot) = spectrograms.get_mut(&(item.id, item.key)) {
                     let nav = chrome_for(inputs, item.id, &item.editor, || {
                         View::full(slot.total_samples())
                     })
@@ -831,7 +845,7 @@ pub(crate) fn render(
     // own axis instead of the group's window — which is the whole difference
     // between a spectral *view* of a file and a spectral *clip* of it.
     for item in &collected.spectral_bodies {
-        if let Some(slot) = spectrograms.get_mut(&item.id) {
+        if let Some(slot) = spectrograms.get_mut(&(item.id, item.key)) {
             let channels = slot.views.len();
             for (ch, view) in slot.views.iter_mut().enumerate() {
                 view.set_display(
@@ -927,7 +941,7 @@ pub(crate) fn render(
             match &item.kind {
                 TimelineKind::Waveform { .. } => {}
                 TimelineKind::Spectrogram { .. } => {
-                    let Some(slot) = spectrograms.get(&item.id) else {
+                    let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
                         continue;
                     };
                     let channels = slot.views.len();
@@ -943,7 +957,7 @@ pub(crate) fn render(
             }
         }
         for item in &collected.spectral_bodies {
-            let Some(slot) = spectrograms.get(&item.id) else {
+            let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
                 continue;
             };
             if item.rect.w < 1.0

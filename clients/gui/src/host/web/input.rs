@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::host::gestures::{Wheel, WheelDelta};
+use crate::host::widget::element::SlotKey;
 
 /// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
 /// (the browser front's twin of the native `to_key`), or `None` for a key
@@ -54,11 +55,18 @@ impl WebApp {
         ctx.sample_clock = self.host.playhead_clock(Some(self.buses.as_ref()));
         (ctx.shift, ctx.ctrl, ctx.alt) = slot.modifiers();
         if let Some(render) = slot.render.as_ref() {
-            for (id, view) in &render.waveforms {
-                ctx.slot_channels.insert(*id, view.view.num_channels());
+            // **The widget's own picture, not a body's**: the row count a
+            // gesture divides by is the view's, and a box inside a view has
+            // rows of its own that mean nothing to the axis around it.
+            for ((id, key), view) in &render.waveforms {
+                if *key == SlotKey::SELF {
+                    ctx.slot_channels.insert(*id, view.view.num_channels());
+                }
             }
-            for (id, view) in &render.spectrograms {
-                ctx.slot_channels.insert(*id, view.views.len());
+            for ((id, key), view) in &render.spectrograms {
+                if *key == SlotKey::SELF {
+                    ctx.slot_channels.insert(*id, view.views.len());
+                }
             }
         }
         Some((ctx, slot.cursor?))

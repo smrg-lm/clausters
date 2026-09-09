@@ -6,6 +6,7 @@
 
 use crate::host::gestures::{ClipVerb, GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
+use crate::host::widget::element::SlotKey;
 
 use super::app::App;
 
@@ -27,11 +28,18 @@ impl App {
             ctx.shift = ws.shift;
             ctx.ctrl = ws.ctrl;
             ctx.alt = ws.alt;
-            for (id, slot) in &ws.waveforms {
-                ctx.slot_channels.insert(*id, slot.view.num_channels());
+            // **The widget's own picture, not a body's**: the row count a
+            // gesture divides by is the view's, and a box inside a view has
+            // rows of its own that mean nothing to the axis around it.
+            for ((id, key), slot) in &ws.waveforms {
+                if *key == SlotKey::SELF {
+                    ctx.slot_channels.insert(*id, slot.view.num_channels());
+                }
             }
-            for (id, slot) in &ws.spectrograms {
-                ctx.slot_channels.insert(*id, slot.views.len());
+            for ((id, key), slot) in &ws.spectrograms {
+                if *key == SlotKey::SELF {
+                    ctx.slot_channels.insert(*id, slot.views.len());
+                }
             }
         }
         ctx
