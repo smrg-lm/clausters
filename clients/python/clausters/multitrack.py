@@ -200,6 +200,13 @@ class Region:
     fade_in: "Fade | None" = None
     fade_out: "Fade | None" = None
     muted: bool = False
+    #: The curves that act on **this placement alone** — its own gain, its pan,
+    #: the parameters of whatever fills it. The same `Automation` a track
+    #: carries, in the other place it belongs: a track's curve runs the length
+    #: of the track and is drawn in a lane beside it, a region's runs the length
+    #: of the region and is drawn **inside** it. A clip that has curves is a
+    #: small track acting on itself alone.
+    automation: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
     @property
@@ -228,13 +235,15 @@ class Region:
             out["fade_out"] = self.fade_out.write()
         if self.muted:
             out["muted"] = True
+        if self.automation:
+            out["automation"] = [a.write() for a in self.automation]
         out.update(self.extra)
         return out
 
     @classmethod
     def read(cls, written: dict) -> "Region":
         known = ("id", "position", "length", "content", "name", "layer",
-                 "fade_in", "fade_out", "muted")
+                 "fade_in", "fade_out", "muted", "automation")
         fade = written.get("fade_in")
         out = written.get("fade_out")
         return cls(
@@ -247,6 +256,8 @@ class Region:
             fade_in=None if fade is None else Fade.read(fade),
             fade_out=None if out is None else Fade.read(out),
             muted=bool(written.get("muted", False)),
+            automation=[Automation.read(a)
+                        for a in written.get("automation") or ()],
             extra=_rest(written, *known),
         )
 

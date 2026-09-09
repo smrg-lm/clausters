@@ -459,11 +459,7 @@ pub fn current(piece: &Multitrack, intent: &MultitrackIntent) -> Option<Multitra
             })
         }
         MultitrackIntent::SetAutomation { automation, .. } => {
-            let curve = piece
-                .tracks
-                .iter()
-                .flat_map(|t| t.automation.iter())
-                .find(|a| a.id == *automation)?;
+            let curve = piece.automation(*automation)?;
             Some(MultitrackIntent::SetAutomation {
                 automation: *automation,
                 points: curve.points.clone(),

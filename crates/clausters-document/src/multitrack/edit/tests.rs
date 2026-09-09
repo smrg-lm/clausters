@@ -392,6 +392,72 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
 // ---- the curves, the markers and the timeline ----
 
 #[test]
+fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
+    // A track's curve runs the length of the track and is drawn in a lane
+    // beside it; a region's runs the length of the region and is drawn inside
+    // it. Both exist, neither stands in for the other, and **the verb is one**
+    // — which is the whole reason a region carries the same `Automation` a
+    // track does rather than a second type.
+    let mut piece = piece();
+    let curve = Automation::new(NodeId(30), Opaque(serde_json::json!({ "ctl": "gain" })));
+    piece.tracks[0].lanes[0].regions[0].automation.push(curve);
+
+    let points = vec![Point {
+        at: 0.0,
+        value: 0.5,
+        data: Opaque::none(),
+    }];
+    let before = current(
+        &piece,
+        &MultitrackIntent::SetAutomation {
+            automation: NodeId(30),
+            points: points.clone(),
+        },
+    )
+    .expect("a region's curve is found wherever a track's is");
+    assert!(
+        edit(
+            &mut piece,
+            MultitrackIntent::SetAutomation {
+                automation: NodeId(30),
+                points: points.clone(),
+            }
+        )
+        .applied
+    );
+    assert_eq!(
+        piece.tracks[0].lanes[0].regions[0].automation[0].points,
+        points
+    );
+    // And it inverts: the curve as it was, read before the edit landed.
+    edit(&mut piece, before);
+    assert!(
+        piece.tracks[0].lanes[0].regions[0].automation[0]
+            .points
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_curve_a_region_carries_is_not_the_tracks_and_is_addressed_apart() {
+    let mut piece = piece();
+    piece.tracks[0].lanes[0].regions[0]
+        .automation
+        .push(Automation::new(
+            NodeId(30),
+            Opaque(serde_json::json!({ "ctl": "gain" })),
+        ));
+    assert_eq!(
+        piece.automations().count(),
+        2,
+        "the track's and the region's"
+    );
+    assert!(piece.automation(NodeId(22)).is_some(), "the track's");
+    assert!(piece.automation(NodeId(30)).is_some(), "the region's");
+    assert!(piece.track(NodeId(10)).unwrap().automation.is_empty());
+}
+
+#[test]
 fn an_automation_lane_is_edited_with_the_curves_own_verb() {
     let mut piece = piece();
     let points = vec![

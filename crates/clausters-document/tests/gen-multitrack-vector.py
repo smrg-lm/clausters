@@ -10,8 +10,9 @@ that will not open.
 What it deliberately covers is everything a whole-value comparison would not
 name if it broke one of them: a track comped from three takes playing the
 second, two regions overlapping with a crossfade and a layer order saying which
-is on top, a composite region placing the general tree, an automation curve
-whose point shapes nothing here reads, a tempo map that ramps, a meter change,
+is on top, a composite region placing the general tree, an automation curve on a
+track and another on a region, whose point shapes nothing here reads, a tempo
+map that ramps, a meter change,
 markers sharing a beat, a loop and a punch, and a field a newer writer added.
 The session it also writes carries **two views** of that one piece, which is
 where the presentation lives: parallel to the model, never inside it, and two
@@ -77,6 +78,13 @@ def build() -> Multitrack:
         id=34, name="level", target={"ctl": "level"}, visible=True,
         points=[{"at": 0.0, "value": 0.0, "data": {}},
                 {"at": 16.0, "value": 1.0, "data": {"shape": "exp"}}]))
+    # ...and a curve on the **region**, which is the other place one belongs: a
+    # track's runs the length of the track and is drawn beside it, this one runs
+    # the length of the region and is drawn inside it.
+    guitars.lanes[0].regions[0].automation.append(Automation(
+        id=35, name="gain", target={"ctl": "gain"},
+        points=[{"at": 0.0, "value": 1.0, "data": {}},
+                {"at": 20.0, "value": 0.0, "data": {}}]))
 
     # The general tree, placed: what a composite region is for.
     sections = Track(id=40, name="sections", lanes=[Lane(id=41)])

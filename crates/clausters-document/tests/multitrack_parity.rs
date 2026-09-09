@@ -112,6 +112,26 @@ fn an_automation_curve_keeps_the_shapes_neither_side_reads() {
 }
 
 #[test]
+fn a_region_carries_curves_of_its_own_and_they_are_not_its_tracks() {
+    // The two places a curve belongs: a track's runs the length of the track
+    // and is drawn in a lane beside it, a region's runs the length of the
+    // region and is drawn inside it. One type, so one reader — which is what
+    // this asserts, since the Python client wrote both through one class.
+    let piece = vector();
+    let region = &piece.track(NodeId(30)).unwrap().lanes[0].regions[0];
+    let own = &region.automation[0];
+    assert_eq!(own.id, NodeId(35));
+    assert_eq!(own.target.0["ctl"], "gain");
+    assert_eq!(own.points.len(), 2);
+    assert_eq!(
+        piece.automations().count(),
+        2,
+        "the track's and the region's, and one walk finds both"
+    );
+    assert_eq!(piece.automation(NodeId(35)).map(|a| a.id), Some(NodeId(35)));
+}
+
+#[test]
 fn a_field_the_client_added_and_this_build_has_no_name_for_survives() {
     let piece = vector();
     assert_eq!(piece.extra["groove"]["name"], "mpc60");

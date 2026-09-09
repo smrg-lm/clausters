@@ -1085,6 +1085,25 @@ DAW session, because that is what a DAW session is good at.
   scales need not match** - aligned by default only when their units agree - and
   panes stacked in a window align on the same sample frame at their centres.
 
+  **A region carries curves of its own, since 2026-09-09** — the first piece of
+  the multitrack editor's own model to land against this milestone, and it is
+  one field: `Region.automation`, the same `Automation` a track already
+  carries. What tells the two apart is not what they *are* but **where they hang
+  and how far they run**: a track's runs the length of the track and is drawn in
+  a lane beside it, a region's runs the length of the region and is drawn
+  **inside** it. A clip that has curves is a small track acting on itself alone.
+
+  One type in two places rather than two types, and the reason is the rule this
+  file already states about naming the structure: what a curve *is* — a target
+  in the caller's terms, points on the musical axis, whether it is shown — does
+  not change with its scope. A second type would be a second vocabulary, a
+  second domain and a second editor for the same picture. The verb did not move
+  either: `SetAutomation` addresses a curve **wherever it is**, so widening the
+  lookup was the whole of it, and the inverse came for free.
+
+  It is what the GUI wire needs before a box can draw an editable layer, which
+  is why it landed first: the wire can carry a curve a client cannot save.
+
   What that buys, and it is the reason it is wanted here: the layers that
   **display audio** (waveform, spectrogram, spectrum, colour 3D plot) and the
   layers that **annotate it** (time instants, time values, notes, regions, text,

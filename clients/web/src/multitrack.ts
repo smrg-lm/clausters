@@ -198,6 +198,17 @@ export class Region {
     fadeIn?: Fade;
     fadeOut?: Fade;
     muted: boolean;
+    /**
+     * The curves that act on **this placement alone** — its own gain, its pan,
+     * the parameters of whatever fills it.
+     *
+     * The same {@link Automation} a track carries, in the other place it
+     * belongs: a track's curve runs the length of the track and is drawn in a
+     * lane beside it, a region's runs the length of the region and is drawn
+     * **inside** it. A clip that has curves is a small track acting on itself
+     * alone.
+     */
+    automation: Automation[];
     extra: Extra;
 
     constructor(fields: {
@@ -210,6 +221,7 @@ export class Region {
         fadeIn?: Fade;
         fadeOut?: Fade;
         muted?: boolean;
+        automation?: Automation[];
         extra?: Extra;
     }) {
         this.id = fields.id;
@@ -221,6 +233,7 @@ export class Region {
         this.fadeIn = fields.fadeIn;
         this.fadeOut = fields.fadeOut;
         this.muted = fields.muted ?? false;
+        this.automation = fields.automation ?? [];
         this.extra = fields.extra ?? {};
     }
 
@@ -250,6 +263,7 @@ export class Region {
         if (this.fadeIn) out.fade_in = this.fadeIn.write();
         if (this.fadeOut) out.fade_out = this.fadeOut.write();
         if (this.muted) out.muted = true;
+        if (this.automation.length) out.automation = this.automation.map((a) => a.write());
         return { ...out, ...this.extra };
     }
 
@@ -264,8 +278,9 @@ export class Region {
             fadeIn: written.fade_in ? Fade.read(written.fade_in as Extra) : undefined,
             fadeOut: written.fade_out ? Fade.read(written.fade_out as Extra) : undefined,
             muted: Boolean(written.muted),
+            automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
             extra: rest(written, "id", "position", "length", "content", "name",
-                        "layer", "fade_in", "fade_out", "muted"),
+                        "layer", "fade_in", "fade_out", "muted", "automation"),
         });
     }
 }

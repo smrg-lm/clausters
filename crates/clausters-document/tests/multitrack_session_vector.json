@@ -106,7 +106,28 @@
         },
         "fade_out": {
          "length": 4.0
-        }
+        },
+        "automation": [
+         {
+          "id": 35,
+          "name": "gain",
+          "target": {
+           "ctl": "gain"
+          },
+          "points": [
+           {
+            "at": 0.0,
+            "value": 1.0,
+            "data": {}
+           },
+           {
+            "at": 20.0,
+            "value": 0.0,
+            "data": {}
+           }
+          ]
+         }
+        ]
        },
        {
         "id": 33,

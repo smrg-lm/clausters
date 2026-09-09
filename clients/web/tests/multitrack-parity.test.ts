@@ -85,6 +85,18 @@ test("an automation curve keeps the shapes neither side reads", async () => {
     assert.deepEqual(curve.points[1].data, { shape: "exp" });
 });
 
+test("a region carries curves of its own and they are not its track's", async () => {
+    // The two places a curve belongs: a track's runs the length of the track and
+    // is drawn in a lane beside it, a region's runs the length of the region and
+    // is drawn inside it. One type, so one reader.
+    const piece = Multitrack.read(await vector());
+    const region = piece.track(30)!.lanes[0].regions[0];
+    assert.equal(region.automation[0].id, 35);
+    assert.deepEqual(region.automation[0].target, { ctl: "gain" });
+    assert.equal(region.automation[0].points.length, 2);
+    assert.ok(piece.track(30)!.automation[0].id !== region.automation[0].id);
+});
+
 test("a field the other client added and this build has no name for survives",
      async () => {
     const piece = Multitrack.read(await vector());

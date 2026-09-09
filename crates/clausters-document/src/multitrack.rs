@@ -205,6 +205,23 @@ pub struct Region {
     /// Silenced without being removed. The region's own, not its track's.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub muted: bool,
+    /// The curves that act on **this placement alone** — its own gain, its pan,
+    /// the parameters of whatever fills it.
+    ///
+    /// The same [`Automation`] a track carries, in the other place it belongs,
+    /// and the difference is only *where it hangs*: a track's curve runs the
+    /// length of the track and is drawn in a lane beside it, a region's runs the
+    /// length of the region and is drawn **inside** it. Both exist and neither
+    /// stands in for the other — a clip that has curves is a small track acting
+    /// on itself alone.
+    ///
+    /// One type in two places rather than two types, because what a curve *is*
+    /// does not change with its scope: a target in the caller's terms, points on
+    /// the musical axis, and whether it is shown. A second type would be a
+    /// second vocabulary, a second domain and a second editor for the same
+    /// picture.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub automation: Vec<Automation>,
     /// What fills it.
     pub content: Content,
     /// Fields a newer writer wrote. See [`Extra`].
@@ -228,6 +245,7 @@ impl Region {
             fade_in: None,
             fade_out: None,
             muted: false,
+            automation: Vec::new(),
             content,
             extra: Extra::new(),
         }
@@ -704,12 +722,39 @@ impl Multitrack {
             .find_map(|t| t.lanes.iter().find_map(|l| l.region(id).map(|r| (t, l, r))))
     }
 
+    /// Every automation curve in the piece — a track's, and the ones a region
+    /// carries for itself.
+    ///
+    /// One walk, because a curve is a curve: what tells the two apart is how
+    /// long they run and where they are drawn, which is the caller's question
+    /// and not the lookup's.
+    pub fn automations(&self) -> impl Iterator<Item = &Automation> {
+        self.tracks.iter().flat_map(|t| {
+            t.automation.iter().chain(
+                t.lanes
+                    .iter()
+                    .flat_map(|l| l.regions.iter().flat_map(|r| r.automation.iter())),
+            )
+        })
+    }
+
     /// The automation curve with this id, wherever it is.
+    pub fn automation(&self, id: NodeId) -> Option<&Automation> {
+        self.automations().find(|a| a.id == id)
+    }
+
+    /// The automation curve with this id, wherever it is, to be edited.
     pub fn automation_mut(&mut self, id: NodeId) -> Option<&mut Automation> {
-        self.tracks
-            .iter_mut()
-            .flat_map(|t| t.automation.iter_mut())
-            .find(|a| a.id == id)
+        self.tracks.iter_mut().find_map(|t| {
+            if let Some(found) = t.automation.iter_mut().find(|a| a.id == id) {
+                return Some(found);
+            }
+            t.lanes
+                .iter_mut()
+                .flat_map(|l| l.regions.iter_mut())
+                .flat_map(|r| r.automation.iter_mut())
+                .find(|a| a.id == id)
+        })
     }
 
     /// The track with this id.

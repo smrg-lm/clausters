@@ -152,6 +152,22 @@ def test_a_whole_piece_round_trips():
     assert second.overlaps(first)
 
 
+def test_a_region_carries_curves_of_its_own_and_they_are_not_its_tracks():
+    """The two places a curve belongs: a track's runs the length of the track
+    and is drawn in a lane beside it, a region's runs the length of the region
+    and is drawn inside it. One type, so one reader — which is what a round trip
+    checks."""
+    r = region(3, 0.0, 20.0)
+    r.automation.append(Automation(
+        id=9, name="gain", target={"ctl": "gain"},
+        points=[{"at": 0.0, "value": 1.0, "data": {}}]))
+    back = Region.read(r.write())
+    assert back == r
+    assert back.automation[0].target == {"ctl": "gain"}
+    # A region with none writes none: nothing said is nothing written.
+    assert "automation" not in region(4, 0.0, 4.0).write()
+
+
 def test_a_composite_region_carries_the_general_tree_unchanged():
     node = {"id": 50, "kind": "aggregate", "grouping": "concrete", "members": []}
     r = Region(id=1, position=0.0, length=8.0, content=Content.composite(node))
