@@ -21,7 +21,7 @@
 //!   no lane, no vertical position and no type-per-container here", with a
 //!   multitrack as a *projection* of the general tree — and a projection has
 //!   nowhere to keep the state a multitrack has, so that state ended up in the
-//!   widget tree, which is drawn, and drawing frees. So [`arrangement`] holds
+//!   widget tree, which is drawn, and drawing frees. So [`multitrack`] holds
 //!   the model the field actually has — source, region, lane, track, automation
 //!   — and the general tree is what a
 //!   [`Content::Composite`](multitrack::Content::Composite) region *places*.
