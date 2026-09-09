@@ -37,8 +37,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::multitrack::edit::MultitrackIntent;
-use crate::multitrack::{Content, Lane, Multitrack, Region, Track};
-use crate::{Beat, NodeId, SourceId};
+use crate::multitrack::{Automation, Content, Lane, Multitrack, Region, Track};
+use crate::{Beat, NodeId, Opaque, Point, SourceId};
 
 /// One row of the view: a track, and the strip that is drawn beside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,6 +141,114 @@ pub fn boxes(piece: &Multitrack) -> Vec<Box> {
         }
     }
     out
+}
+
+/// One **curve** of the view: an automation, and where it hangs.
+///
+/// The same shape for both places a curve lives, because it is the same curve:
+/// a track's automation is drawn as a **row of its own** under that track and
+/// runs the whole timeline, a region's is drawn as a **layer inside that box**
+/// and runs as long as the box does. `owner` says which — a track's id for a
+/// row, a region's for a layer — and the two are handed out by two calls
+/// ([`curves`] and [`layers`]) rather than one with a flag, since a caller
+/// draws them in two different places and never mixes them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Curve {
+    /// The automation it draws — its identity, and its name on the wire.
+    pub automation: NodeId,
+    /// What it hangs from: a track (a row) or a region (a layer).
+    pub owner: NodeId,
+    /// What is drawn on it.
+    pub label: String,
+    /// **What it automates**, in the client's own terms and never read here.
+    ///
+    /// It travels because the value *domain* is decided from it and the domain
+    /// is the client's: a gain runs over one range and a pan over another, and
+    /// which is which is a fact about the parameter, not about the curve.
+    #[serde(default, skip_serializing_if = "Opaque::is_empty")]
+    pub target: Opaque,
+    /// The break-points. `at` is on the musical axis, like every placement here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<Point>,
+    /// Whether the row or layer is shown — the view's own state, kept in the
+    /// piece because which curves a person had open is part of reopening it as
+    /// they left it.
+    pub visible: bool,
+    /// Whether the curve is being applied.
+    pub enabled: bool,
+}
+
+/// The **track automations**: one row of its own under each track that has one.
+pub fn curves(piece: &Multitrack) -> Vec<Curve> {
+    piece
+        .tracks
+        .iter()
+        .flat_map(|track| track.automation.iter().map(|a| curve(a, track.id)))
+        .collect()
+}
+
+/// The **region automations**: one layer inside each box that has one.
+///
+/// Only the boxes that are drawn — the active lane's — because a layer with no
+/// box under it has nowhere to be.
+pub fn layers(piece: &Multitrack) -> Vec<Curve> {
+    piece
+        .tracks
+        .iter()
+        .filter_map(active_lane)
+        .flat_map(|lane| &lane.regions)
+        .flat_map(|region| region.automation.iter().map(|a| curve(a, region.id)))
+        .collect()
+}
+
+fn curve(automation: &Automation, owner: NodeId) -> Curve {
+    Curve {
+        automation: automation.id,
+        owner,
+        label: automation
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("automation {}", automation.id.0)),
+        target: automation.target.clone(),
+        points: automation.points.clone(),
+        visible: automation.visible,
+        enabled: automation.enabled,
+    }
+}
+
+/// A curve as a hand left it — what [`read_points`] is given.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Curved {
+    /// The name it came back under, which is its automation's id.
+    pub name: String,
+    /// Its break-points, in order.
+    #[serde(default)]
+    pub points: Vec<Point>,
+}
+
+/// **What a `"points"` report means**, as edits in the piece's own vocabulary.
+///
+/// The report is every curve there is, rows and layers alike, for the same
+/// reason a box report is every box: applying what came back is the identity.
+/// So what comes out is the difference — a
+/// [`MultitrackIntent::SetAutomation`] per curve whose points actually moved,
+/// and nothing at all for a hand that looked without editing.
+///
+/// A name that is no automation's id is dropped rather than minted: a curve is
+/// declared by whoever holds the piece, and a hand that dragged a break-point
+/// made no new one.
+pub fn read_points(piece: &Multitrack, reported: &[Curved]) -> Vec<MultitrackIntent> {
+    reported
+        .iter()
+        .filter_map(|curve| {
+            let id = curve.name.parse::<u64>().ok().map(NodeId)?;
+            let held = piece.automation(id)?;
+            (held.points != curve.points).then(|| MultitrackIntent::SetAutomation {
+                automation: id,
+                points: curve.points.clone(),
+            })
+        })
+        .collect()
 }
 
 /// A box as a hand left it — what [`read`] is given, and the same shape
@@ -362,4 +470,106 @@ fn find_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> 
             .find_map(|lane| lane.regions.iter().find(|r| r.id == region))
             .map(|found| (track.id, found))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::multitrack::{Automation, Track};
+
+    /// A piece of one track with one box on it, a track automation and a box
+    /// envelope.
+    fn piece() -> Multitrack {
+        let mut region = Region::new(
+            NodeId(3),
+            Beat(0.0),
+            Beat(4.0),
+            Content::Unknown(serde_json::Value::Null),
+        );
+        region.automation.push(curve_at(NodeId(5), 0.25));
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        track.lanes[0].regions.push(region);
+        track.automation.push(curve_at(NodeId(4), 0.5));
+        let mut piece = Multitrack::default();
+        piece.tracks.push(track);
+        piece
+    }
+
+    fn curve_at(id: NodeId, value: f64) -> Automation {
+        let mut a = Automation::new(id, Opaque::none());
+        a.name = Some(format!("curve {}", id.0));
+        a.points = vec![Point {
+            at: 0.0,
+            value,
+            data: Opaque::none(),
+        }];
+        a
+    }
+
+    /// **The same curve in two places, handed out by two calls** — a track's is
+    /// a row of its own, a region's a layer inside its box, and a caller draws
+    /// them somewhere different, so it never has to tell them apart.
+    #[test]
+    fn a_track_curve_is_a_row_and_a_region_curve_is_a_layer() {
+        let piece = piece();
+        let rows = curves(&piece);
+        let layers = layers(&piece);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].automation, NodeId(4));
+        assert_eq!(rows[0].owner, NodeId(1), "the track it is under");
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].owner, NodeId(3), "the box it is inside");
+        assert_eq!(rows[0].label, "curve 4");
+    }
+
+    /// A curve with no name is still addressable: the label falls back to
+    /// something a header can draw, and the identity stays the id.
+    #[test]
+    fn a_nameless_curve_is_labelled_by_its_id() {
+        let mut piece = piece();
+        piece.tracks[0].automation[0].name = None;
+        assert_eq!(curves(&piece)[0].label, "automation 4");
+    }
+
+    /// **What a report of the points means**: one edit per curve that actually
+    /// moved, and nothing at all for a hand that looked without editing.
+    #[test]
+    fn the_points_report_is_read_as_the_difference() {
+        let piece = piece();
+        let same: Vec<Curved> = curves(&piece)
+            .into_iter()
+            .chain(layers(&piece))
+            .map(|c| Curved {
+                name: c.automation.0.to_string(),
+                points: c.points,
+            })
+            .collect();
+        assert!(read_points(&piece, &same).is_empty(), "nothing moved");
+
+        let mut moved = same.clone();
+        moved[0].points[0].value = 0.9;
+        let intents = read_points(&piece, &moved);
+        assert_eq!(intents.len(), 1, "the one that moved");
+        assert!(matches!(
+            &intents[0],
+            MultitrackIntent::SetAutomation { automation, points }
+                if *automation == NodeId(4) && points[0].value == 0.9
+        ));
+    }
+
+    /// A name that is no automation's id is dropped rather than minted: a
+    /// curve is declared by whoever holds the piece.
+    #[test]
+    fn a_curve_the_piece_never_declared_is_not_made_by_dragging_it() {
+        let piece = piece();
+        let stray = vec![Curved {
+            name: "hello".into(),
+            points: vec![Point {
+                at: 0.0,
+                value: 1.0,
+                data: Opaque::none(),
+            }],
+        }];
+        assert!(read_points(&piece, &stray).is_empty());
+    }
 }

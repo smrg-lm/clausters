@@ -219,3 +219,77 @@ def test_two_windows_over_one_piece_walk_one_stack():
                         ("22", "20", 0.0, 2.0 * SR)])
     assert two.undo(), "the history is the data's, not the window's"
     assert held.track(10).lanes[0].regions[0].position == pytest.approx(0.0)
+
+
+# ---- the curves: the light views, in the two places one lives ----
+
+def curved() -> Multitrack:
+    """The same piece, with a track automation on the first track and an
+    envelope inside its first box."""
+    from clausters.multitrack import Automation
+
+    written = piece()
+    written.tracks[0].automation.append(
+        Automation(id=30, name="gain", target={"ctl": "gain", "max": 2.0},
+                   points=[{"at": 0.0, "value": 1.0},
+                           {"at": 4.0, "value": 0.0,
+                            "data": {"shape": 5, "curve": 4.0}}],
+                   visible=True))
+    written.tracks[0].lanes[0].regions[0].automation.append(
+        Automation(id=31, name="env", target={"ctl": "amp"},
+                   points=[{"at": 0.0, "value": 0.0}], visible=True))
+    return written
+
+
+def test_a_track_curve_is_a_row_and_a_box_curve_is_a_layer():
+    """The same curve in two places, and the place is the whole difference: a
+    track's runs the timeline under its row, a region's is drawn inside its
+    box. So they reach the widget as two props, not one with a flag."""
+    ed = editor(curved())
+    drawn = props(ed)
+    assert drawn["curves"][:3] == ["30", "10", "gain"], "the track it is under"
+    assert drawn["curves"][4] == 2.0, "the domain, read out of the target"
+    assert len(drawn["curves"]) == 6, "one row, six numbers"
+    assert drawn["layers"][:3] == ["31", "12", "env"], "the box it is inside"
+    assert len(drawn["layers"]) == 5, "a layer states no height"
+
+
+def test_every_curve_s_points_travel_in_one_list_on_this_window_s_axis():
+    ed = editor(curved())
+    flat = props(ed)["points"]
+    points = [flat[i:i + 5] for i in range(0, len(flat), 5)]
+    assert [p[0] for p in points] == ["30", "30", "31"]
+    # A beat is a second at the reader's default, so the second break-point of
+    # `gain` is at four seconds' worth of frames.
+    assert points[1][1] == pytest.approx(4.0 * SR)
+    assert points[1][3] == 5.0 and points[1][4] == 4.0, "the shape is carried"
+
+
+def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
+    """The report is every curve there is, so what it means is the difference —
+    and an undo puts the shape back, since the crate carries a point's data
+    without reading it."""
+    written = curved()
+    ed = editor(written)
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    flat = list(props(ed)["points"])
+    flat[2] = 0.25   # the first point of `gain`, moved
+    assert ed._route([wid, "points", *flat])
+    gain = next(a for a in written.tracks[0].automation if a.id == 30)
+    assert gain.points[0]["value"] == pytest.approx(0.25)
+    assert gain.points[1]["data"] == {"shape": 5, "curve": 4.0}
+    env = written.tracks[0].lanes[0].regions[0].automation[0]
+    assert env.points[0]["value"] == 0.0, "the curve nobody touched"
+
+    assert ed.undo()
+    gain = next(a for a in written.tracks[0].automation if a.id == 30)
+    assert gain.points[0]["value"] == pytest.approx(1.0)
+
+
+def test_a_curve_the_piece_hid_is_drawn_nowhere():
+    """Which curves a person had open is part of reopening the piece as they
+    left it, so it is read out of the document rather than kept in the view."""
+    written = curved()
+    written.tracks[0].automation[0].visible = False
+    assert props(editor(written))["hidden"] == "30"

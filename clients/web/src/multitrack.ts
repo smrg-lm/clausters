@@ -55,7 +55,11 @@
  * @module
  */
 
-import { multitrackPicture as corePicture, multitrackRead as coreRead } from "./core/clausters_core_web.js";
+import {
+    multitrackPicture as corePicture,
+    multitrackRead as coreRead,
+    multitrackReadPoints as coreReadPoints,
+} from "./core/clausters_core_web.js";
 import { FIRST_VERSION } from "./document.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
@@ -1342,6 +1346,37 @@ export interface Box {
     muted: boolean;
 }
 
+/**
+ * One **curve** of a multitrack view: an automation, and where it hangs.
+ *
+ * The same shape for both places a curve lives, because it is the same curve: a
+ * track's automation is drawn as a **row of its own** under that track and runs
+ * the whole timeline, a region's is drawn as a **layer inside that box** and
+ * runs as long as the box does. `owner` says which — a track's id for a row, a
+ * region's for a layer.
+ */
+export interface Curve {
+    /** The automation it draws — its identity, and its name on the wire. */
+    automation: number;
+    /** What it hangs from: a track (a row) or a region (a layer). */
+    owner: number;
+    label: string;
+    /** What it automates, in the page's own terms: the value domain is decided
+     * from this, and which domain a parameter has is the page's to know. */
+    target?: unknown;
+    /** The break-points; `at` is on the musical axis. */
+    points?: { at: number; value: number; data?: unknown }[];
+    visible: boolean;
+    enabled: boolean;
+}
+
+/** A curve as a hand left it, for {@link multitrackReadPoints}. */
+export interface Curved {
+    /** The automation's id. */
+    name: string;
+    points: { at: number; value: number; data?: unknown }[];
+}
+
 /** A box as a hand left it, for {@link multitrackRead} to make sense of. */
 export interface Placed {
     /** The region's id, or a name no region has — which is how a **new** box is
@@ -1357,7 +1392,7 @@ export interface Placed {
 }
 
 /**
- * **The rows and boxes a piece draws as** — the multitrack view's own mapping,
+ * **The rows, boxes and curves a piece draws as** — the multitrack view's own mapping,
  * and there is one of it (`clausters_document::multitrack::picture`), so a page,
  * the Python client and the standalone host draw the same picture of the same
  * piece rather than each deriving one.
@@ -1367,12 +1402,19 @@ export interface Placed {
  * it already binds, and a *length* is the difference of two positions there.
  * `source` is the document's source id and not a server buffer: which buffer a
  * source was read into is the page's own table.
+ *
+ * The curves come in two lists because they are drawn in two places: `curves`
+ * are the track automations, each a row of its own, and `layers` the region
+ * ones, each inside its box.
  */
-export function multitrackPicture(piece: unknown): { rows: Row[]; boxes: Box[] } {
+export function multitrackPicture(
+    piece: unknown,
+): { rows: Row[]; boxes: Box[]; curves: Curve[]; layers: Curve[] } {
     const answer = corePicture(JSON.stringify(piece));
-    return answer
-        ? (JSON.parse(answer) as { rows: Row[]; boxes: Box[] })
-        : { rows: [], boxes: [] };
+    const empty = { rows: [], boxes: [], curves: [], layers: [] };
+    if (!answer) return empty;
+    const read = JSON.parse(answer) as Partial<ReturnType<typeof multitrackPicture>>;
+    return { ...empty, ...read };
 }
 
 /**
@@ -1386,6 +1428,26 @@ export function multitrackPicture(piece: unknown): { rows: Row[]; boxes: Box[] }
  */
 export function multitrackRead(piece: unknown, placed: readonly Placed[]): unknown[] {
     const answer = coreRead(JSON.stringify(piece), JSON.stringify(placed));
+    if (!answer) return [];
+    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
+}
+
+/**
+ * **What a report of a multitrack's curves means**, in the piece's own
+ * vocabulary.
+ *
+ * The twin of {@link multitrackRead} for the light views. A multitrack reports
+ * every curve there is — the rows a track's automations draw as and the layers
+ * inside the boxes — for the same reason it reports every box, so what comes
+ * out is the difference: one `setautomation` per curve whose break-points
+ * actually moved, and nothing at all for a hand that looked without editing.
+ *
+ * A name that is no automation's id is dropped rather than minted: a curve is
+ * declared by whoever holds the piece, and a hand that dragged a break-point
+ * made no new one.
+ */
+export function multitrackReadPoints(piece: unknown, reported: readonly Curved[]): unknown[] {
+    const answer = coreReadPoints(JSON.stringify(piece), JSON.stringify(reported));
     if (!answer) return [];
     return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
 }

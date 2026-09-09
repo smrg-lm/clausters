@@ -1032,6 +1032,23 @@ export function multitrackPicture(piece: string): string;
 export function multitrackRead(piece: string, placed: string): string;
 
 /**
+ * **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
+ * the piece's own vocabulary, or an empty string for input that will not
+ * parse.
+ *
+ * The twin of {@link multitrackRead} for the light views. The report is every
+ * curve there is, rows and layers alike, for the same reason a box report is
+ * every box, so what comes out is the difference: one `SetAutomation` per
+ * curve whose break-points actually moved, and nothing at all for a hand that
+ * looked without editing.
+ *
+ * A name that is no automation's id is dropped rather than minted: a curve is
+ * declared by whoever holds the piece, and a hand that dragged a break-point
+ * made no new one.
+ */
+export function multitrackReadPoints(piece: string, reported: string): string;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -1312,6 +1329,7 @@ export interface InitOutput {
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly multitrackPicture: (a: number, b: number) => [number, number];
     readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly multitrackReadPoints: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];

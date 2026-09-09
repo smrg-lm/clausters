@@ -30,7 +30,9 @@
 
 import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit } from "../../document.ts";
-import { Multitrack, multitrackPicture, multitrackRead } from "../../multitrack.ts";
+import type { Curve, Curved } from "../../multitrack.ts";
+import { Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints }
+    from "../../multitrack.ts";
 import type { Box, Placed, Row } from "../../multitrack.ts";
 import { node, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -54,6 +56,18 @@ const SEPTUPLE = 7;
 
 /** The thickness a row is drawn at, in logical pixels. */
 const ROW_H = 96.0;
+
+/**
+ * The thickness an automation row is drawn at — shorter than a track's row,
+ * because what it draws is one line and not a stack of boxes.
+ */
+const CURVE_H = 40.0;
+
+/**
+ * What the widget's `points` prop takes and reports: flat
+ * `curve t v shape amount` quintuples, each naming the curve it is on.
+ */
+const POINT_QUINTUPLE = 5;
 
 /**
  * The tempo a piece that never said one is read at, in beats per second — one,
@@ -198,6 +212,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
         settracks: "mix a track",
         splitregion: "split a clip",
         joinregions: "join the clips",
+        setautomation: "draw a curve",
     };
 
     constructor(bridge: Bridge) {
@@ -210,6 +225,9 @@ export class MultitrackDomain extends Domain<Multitrack> {
     override payloads(piece: Multitrack, tag: string, values: readonly unknown[]): unknown[] {
         if (tag === "clips") return multitrackRead(this.state(piece), this.placed(values));
         if (tag === "lanes") return this.strips(piece, values);
+        if (tag === "points") {
+            return multitrackReadPoints(this.state(piece), this.curved(values));
+        }
         return [];
     }
 
@@ -250,6 +268,32 @@ export class MultitrackDomain extends Domain<Multitrack> {
             });
         }
         return out;
+    }
+
+    /**
+     * The flat `points` payload as the crate's curves: one entry per curve
+     * named, its break-points back on the musical axis.
+     *
+     * The widget reports **every** curve there is, in one list, so they are
+     * gathered by name here — the crate reads the difference and says nothing
+     * about the ones that did not move.
+     */
+    private curved(values: readonly unknown[]): Curved[] {
+        const found = new Map<string, Curved["points"]>();
+        for (const group of groups(values, POINT_QUINTUPLE)) {
+            const [name, at, value, shape, amount] = group;
+            const points = found.get(String(name)) ?? [];
+            points.push({
+                at: this.bridge.beatAt(Number(at)),
+                value: Number(value),
+                // **What a shape is stays the page's**: the crate carries a
+                // point's data and never reads it, which is what keeps an undo
+                // from putting a bent curve back straight.
+                data: { shape: Math.trunc(Number(shape)), curve: Number(amount) },
+            });
+            found.set(String(name), points);
+        }
+        return [...found].map(([name, points]) => ({ name, points }));
     }
 
     /**
@@ -337,6 +381,67 @@ function laneProps(rows: readonly Row[]): unknown[] {
     return out;
 }
 
+/**
+ * The crate's **track automations** as the widget's flat sextuples: a row of
+ * its own under the track it names.
+ */
+function curveProps(curves: readonly Curve[]): unknown[] {
+    const out: unknown[] = [];
+    for (const curve of curves) {
+        const [lo, hi] = domainOf(curve);
+        out.push(String(curve.automation), String(curve.owner),
+                 String(curve.label ?? ""), lo, hi, CURVE_H);
+    }
+    return out;
+}
+
+/**
+ * The crate's **region automations** as the widget's flat quintuples: a layer
+ * inside the box it names, and no height, because it is as tall as that box.
+ */
+function layerProps(layers: readonly Curve[]): unknown[] {
+    const out: unknown[] = [];
+    for (const curve of layers) {
+        const [lo, hi] = domainOf(curve);
+        out.push(String(curve.automation), String(curve.owner),
+                 String(curve.label ?? ""), lo, hi);
+    }
+    return out;
+}
+
+/**
+ * The value range a curve is drawn over.
+ *
+ * **The page's, and read out of the target.** The document says what a curve
+ * automates and never reads it; which range that parameter has — a gain over
+ * one, a pan over another — is a fact about the parameter, so it is stated
+ * where the parameter is. Unity is the default, which is what an unlabelled
+ * level means.
+ */
+function domainOf(curve: Curve): [number, number] {
+    const target = curve.target as Record<string, unknown> | undefined;
+    if (!target || typeof target !== "object") return [0.0, 1.0];
+    return [Number(target.min ?? 0.0), Number(target.max ?? 1.0)];
+}
+
+/**
+ * Every curve's break-points as the widget's flat quintuples, each naming the
+ * curve it is on — one list for the rows and the layers alike.
+ */
+function pointProps(curves: readonly Curve[], bridge: Bridge): unknown[] {
+    const out: unknown[] = [];
+    for (const curve of curves) {
+        const name = String(curve.automation);
+        for (const point of curve.points ?? []) {
+            const data = (point.data ?? {}) as Record<string, unknown>;
+            out.push(name, bridge.frameAt(Number(point.at ?? 0)),
+                     Number(point.value ?? 0),
+                     Number(data.shape ?? 1), Number(data.curve ?? 0));
+        }
+    }
+    return out;
+}
+
 /** The crate's boxes as the widget's flat septuples, on this axis. */
 function clipProps(boxes: readonly Box[], bridge: Bridge): unknown[] {
     const out: unknown[] = [];
@@ -395,6 +500,16 @@ export class MultitrackView extends View<Multitrack> {
         const props: Record<string, PropValue> = {
             lanes: laneProps(picture.rows) as PropValue,
             clips: clipProps(picture.boxes, this.bridge) as PropValue,
+            curves: curveProps(picture.curves) as PropValue,
+            layers: layerProps(picture.layers) as PropValue,
+            points: pointProps([...picture.curves, ...picture.layers], this.bridge) as PropValue,
+            // **What is drawn is what the piece says was open.** Which curves a
+            // person had showing is part of reopening the piece as they left
+            // it, so it is read out of the document rather than kept here.
+            hidden: [...picture.curves, ...picture.layers]
+                .filter((c) => !c.visible)
+                .map((c) => String(c.automation))
+                .join(" "),
             weight: 1.0,
             ruler: "beats",
             sample_rate: this.bridge.rate,

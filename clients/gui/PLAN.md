@@ -799,11 +799,21 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   (`graphics::multitrack::Stack`), since an automation row pushes the lane under
   it down.
 
+  **The curves reached the document the same day.** A piece's picture carries
+  them — `curves` for a track's automations and `layers` for a region's, the two
+  lists a caller draws in two different places — and a report of them is read by
+  the crate too (`multitrack_read_points`), as one `SetAutomation` per curve
+  whose break-points actually moved. Both clients' editors bind those two, so a
+  break-point dragged in a piece is an entry in the piece's own history and an
+  undo puts the *shape* back, since a point's `data` is carried and never read.
+  The one thing left to the client is the **value domain**: the document says
+  what a curve automates and never reads it, so which range that parameter has
+  is stated where the parameter is — in the target — and unity is what an
+  unlabelled level means.
+
   **Still open, and each has its home:** assembled samples (a box over several
-  segments of several files); the curves reaching the clients' editing objects,
-  so a piece's automation is a document `Automation` on both sides; entering a
-  box to edit it; and `multitrack_audio.html`, the web twin of the Python
-  example.
+  segments of several files); entering a box to edit it; and
+  `multitrack_audio.html`, the web twin of the Python example.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 

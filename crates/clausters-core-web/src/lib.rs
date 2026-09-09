@@ -2331,8 +2331,36 @@ pub fn multitrack_picture(piece: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "rows": clausters_document::multitrack::picture::rows(&piece),
         "boxes": clausters_document::multitrack::picture::boxes(&piece),
+        "curves": clausters_document::multitrack::picture::curves(&piece),
+        "layers": clausters_document::multitrack::picture::layers(&piece),
     }))
     .unwrap_or_default()
+}
+
+/// **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
+/// the piece's own vocabulary, or an empty string for input that will not
+/// parse.
+///
+/// The twin of {@link multitrackRead} for the light views. The report is every
+/// curve there is, rows and layers alike, for the same reason a box report is
+/// every box, so what comes out is the difference: one `SetAutomation` per
+/// curve whose break-points actually moved, and nothing at all for a hand that
+/// looked without editing.
+///
+/// A name that is no automation's id is dropped rather than minted: a curve is
+/// declared by whoever holds the piece, and a hand that dragged a break-point
+/// made no new one.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackReadPoints)]
+pub fn multitrack_read_points(piece: &str, reported: &str) -> String {
+    let (Ok(piece), Ok(reported)) = (
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
+        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Curved>>(reported),
+    ) else {
+        return String::new();
+    };
+    let intents = clausters_document::multitrack::picture::read_points(&piece, &reported);
+    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
 }
 
 /// **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in

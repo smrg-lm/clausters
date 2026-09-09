@@ -16,7 +16,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
-import { Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
+import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
 
@@ -264,4 +264,84 @@ test("two windows over one piece walk one stack", () => {
     ]));
     assert.ok(two.undo(), "the history is the data's, not the window's");
     near(held.track(10)!.lanes[0].regions[0].position, 0.0);
+});
+
+// ---- the curves: the light views, in the two places one lives ----
+
+/** The same piece, with a track automation on the first track and an envelope
+ * inside its first box. */
+function curved(): Multitrack {
+    const written = piece();
+    written.tracks[0].automation.push(new Automation({
+        id: 30,
+        name: "gain",
+        target: { ctl: "gain", max: 2.0 },
+        points: [{ at: 0.0, value: 1.0 },
+                 { at: 4.0, value: 0.0, data: { shape: 5, curve: 4.0 } }],
+        visible: true,
+    }));
+    written.tracks[0].lanes[0].regions[0].automation.push(new Automation({
+        id: 31,
+        name: "env",
+        target: { ctl: "amp" },
+        points: [{ at: 0.0, value: 0.0 }],
+        visible: true,
+    }));
+    return written;
+}
+
+test("a track curve is a row and a box curve is a layer", () => {
+    // The same curve in two places, and the place is the whole difference: a
+    // track's runs the timeline under its row, a region's is drawn inside its
+    // box. So they reach the widget as two props, not one with a flag.
+    const drawn = props(editor(curved()));
+    const curves = drawn.curves as unknown[];
+    const layers = drawn.layers as unknown[];
+    assert.deepEqual(curves.slice(0, 3), ["30", "10", "gain"], "the track it is under");
+    assert.equal(curves[4], 2.0, "the domain, read out of the target");
+    assert.equal(curves.length, 6, "one row, six numbers");
+    assert.deepEqual(layers.slice(0, 3), ["31", "12", "env"], "the box it is inside");
+    assert.equal(layers.length, 5, "a layer states no height");
+});
+
+test("every curve's points travel in one list on this window's axis", () => {
+    const flat = props(editor(curved())).points as unknown[];
+    const points: unknown[][] = [];
+    for (let i = 0; i + 5 <= flat.length; i += 5) points.push(flat.slice(i, i + 5));
+    assert.deepEqual(points.map((p) => p[0]), ["30", "30", "31"]);
+    // A beat is a second at the reader's default, so the second break-point of
+    // `gain` is at four seconds' worth of frames.
+    near(Number(points[1][1]), 4.0 * SR);
+    assert.equal(points[1][3], 5.0);
+    assert.equal(points[1][4], 4.0, "the shape is carried");
+});
+
+test("a point dragged is one edit and the curve that did not move is not", () => {
+    // The report is every curve there is, so what it means is the difference —
+    // and an undo puts the shape back, since the crate carries a point's data
+    // without reading it.
+    const written = curved();
+    const ed = editor(written);
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    const flat = [...(props(ed).points as unknown[])];
+    flat[2] = 0.25; // the first point of `gain`, moved
+    assert.ok((ed as unknown as { route(args: unknown[]): boolean })
+        .route([wid, "points", ...flat]));
+    const gain = () => written.tracks[0].automation.find((a) => a.id === 30)!;
+    near(Number(gain().points[0].value), 0.25);
+    assert.deepEqual(gain().points[1].data, { shape: 5, curve: 4.0 });
+    const env = written.tracks[0].lanes[0].regions[0].automation[0];
+    assert.equal(env.points[0].value, 0.0, "the curve nobody touched");
+
+    assert.ok(ed.undo());
+    near(Number(gain().points[0].value), 1.0);
+});
+
+test("a curve the piece hid is drawn nowhere", () => {
+    // Which curves a person had open is part of reopening the piece as they
+    // left it, so it is read out of the document rather than kept in the view.
+    const written = curved();
+    written.tracks[0].automation[0].visible = false;
+    assert.equal(props(editor(written)).hidden, "30");
 });

@@ -313,7 +313,15 @@ pub use time::*;
 /// so a caller of the old pair fails to link rather than keeping its own copy
 /// of the two rules that moved: which side of an entry a direction reads, and
 /// which legs a structure owns.
-pub const CORE_ABI_VERSION: u32 = 46;
+/// **v47 a piece's curves are in its picture, and a report of them is read
+/// here.** `clausters_multitrack_picture` answers `curves` (a track's
+/// automations, each a row of its own) and `layers` (a region's, each inside
+/// its box) beside the rows and boxes, and `clausters_multitrack_read_points`
+/// answers what a report of every curve *means* -- one `SetAutomation` per
+/// curve whose break-points moved. **Additive**, and the counter moves for the
+/// reason v43's pair did: a client that cannot find them writes the mapping
+/// again in its own language.
+pub const CORE_ABI_VERSION: u32 = 47;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

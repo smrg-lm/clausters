@@ -47,6 +47,19 @@ SEPTUPLE = 7
 #: The thickness a row is drawn at, in logical pixels.
 ROW_H = 96.0
 
+#: The thickness an automation row is drawn at — shorter than a track's row,
+#: because what it draws is one line and not a stack of boxes.
+CURVE_H = 40.0
+
+#: What the widget's ``curves`` prop takes: flat ``name lane label min max
+#: height`` sextuples. Its ``layers`` prop takes the same without the height,
+#: since a layer is as tall as the box it is drawn on.
+CURVE_SEXTUPLE = 6
+
+#: What its ``points`` prop takes and reports: flat ``curve t v shape amount``
+#: quintuples, each naming the curve it is on.
+POINT_QUINTUPLE = 5
+
 #: The tempo a piece that never said one is read at, in beats per second — one,
 #: so a beat is a second. It is the **reader's** default and not the document's:
 #: a piece that said no tempo did not say one, and writing 120 into the format
@@ -156,6 +169,9 @@ class MultitrackDomain(Domain):
                                            self._placed(values))
         if tag == "lanes":
             return self._strips(structure, values)
+        if tag == "points":
+            return _native.multitrack_read_points(self.state(structure),
+                                                  self._curved(values))
         return []
 
     def payload(self, structure, tag: str, values) -> "dict | None":
@@ -193,6 +209,28 @@ class MultitrackDomain(Domain):
                 "source": self.bridge.sources.source(int(source)),
             })
         return out
+
+    def _curved(self, values) -> list:
+        """The flat ``points`` payload as the crate's curves: one entry per
+        curve named, its break-points back on the musical axis.
+
+        The widget reports **every** curve there is, in one list, so they are
+        gathered by name here — the crate reads the difference and says nothing
+        about the ones that did not move.
+        """
+        found: dict = {}
+        for group in _groups(values, POINT_QUINTUPLE):
+            name, at, value, shape, amount = group
+            found.setdefault(str(name), []).append(
+                {"at": self.bridge.beat_at(float(at)),
+                 "value": float(value),
+                 # **What a shape is stays the client's**: the crate carries a
+                 # point's data and never reads it, which is what keeps an undo
+                 # from putting a bent curve back straight.
+                 "data": {"shape": int(float(shape)),
+                          "curve": float(amount)}})
+        return [{"name": name, "points": points}
+                for name, points in found.items()]
 
     def _strips(self, structure, values) -> list:
         """The mixer's payload: mute, solo and the fader, in the piece's one
@@ -267,7 +305,8 @@ class MultitrackDomain(Domain):
               "setlane": "edit the clips",
               "settracks": "mix a track",
               "splitregion": "split a clip",
-              "joinregions": "join the clips"}
+              "joinregions": "join the clips",
+              "setautomation": "draw a curve"}
 
     def label(self, payload: dict) -> str:
         return self.LABELS.get(str(payload.get("intent", "")), "edit the piece")
@@ -305,9 +344,19 @@ class MultitrackView(View):
 
     def props(self, editor, widget_id: int) -> dict:
         picture = _native.multitrack_picture(editor.structure.write())
+        curves = picture.get("curves", [])
+        layers = picture.get("layers", [])
         props = {
             "lanes": _lanes(picture.get("rows", [])),
             "clips": _clips(picture.get("boxes", []), self.bridge),
+            "curves": _curves(curves),
+            "layers": _layers(layers),
+            "points": _points(curves + layers, self.bridge),
+            # **What is drawn is what the piece says was open.** Which curves a
+            # person had showing is part of reopening the piece as they left
+            # it, so it is read out of the document rather than kept here.
+            "hidden": " ".join(str(c["automation"]) for c in curves + layers
+                               if not c.get("visible", True)),
             "weight": 1.0,
             "ruler": "beats",
             "sample_rate": self.bridge.rate,
@@ -334,6 +383,58 @@ def _lanes(rows) -> list:
         out += [str(row["track"]), str(row.get("label", "")), ROW_H,
                 bool(row.get("mute")), bool(row.get("solo")),
                 float(row.get("gain", 1.0))]
+    return out
+
+
+def _curves(curves) -> list:
+    """The crate's **track automations** as the widget's flat sextuples: a row
+    of its own under the track it names."""
+    out = []
+    for curve in curves:
+        lo, hi = _domain(curve)
+        out += [str(curve["automation"]), str(curve["owner"]),
+                str(curve.get("label", "")), lo, hi, CURVE_H]
+    return out
+
+
+def _layers(layers) -> list:
+    """The crate's **region automations** as the widget's flat quintuples: a
+    layer inside the box it names, and no height, because it is as tall as
+    that box."""
+    out = []
+    for curve in layers:
+        lo, hi = _domain(curve)
+        out += [str(curve["automation"]), str(curve["owner"]),
+                str(curve.get("label", "")), lo, hi]
+    return out
+
+
+def _domain(curve) -> tuple:
+    """The value range a curve is drawn over.
+
+    **The client's, and read out of the target.** The document says what a
+    curve automates and never reads it; which range that parameter has — a gain
+    over one, a pan over another — is a fact about the parameter, so it is
+    stated where the parameter is. Unity is the default, which is what an
+    unlabelled level means.
+    """
+    target = curve.get("target") or {}
+    if not isinstance(target, dict):
+        return 0.0, 1.0
+    return float(target.get("min", 0.0)), float(target.get("max", 1.0))
+
+
+def _points(curves, bridge: Bridge) -> list:
+    """Every curve's break-points as the widget's flat quintuples, each naming
+    the curve it is on — one list for the rows and the layers alike."""
+    out = []
+    for curve in curves:
+        name = str(curve["automation"])
+        for point in curve.get("points", []):
+            data = point.get("data") or {}
+            out += [name, bridge.frame_at(float(point.get("at", 0.0))),
+                    float(point.get("value", 0.0)),
+                    float(data.get("shape", 1)), float(data.get("curve", 0.0))]
     return out
 
 

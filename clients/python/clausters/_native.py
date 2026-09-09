@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 46
+CORE_ABI_VERSION = 47
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -512,6 +512,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_multitrack_read.restype = ctypes.c_size_t
     lib.clausters_multitrack_read.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_multitrack_read_points.restype = ctypes.c_size_t
+    lib.clausters_multitrack_read_points.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_view_not_an_edit.restype = ctypes.c_size_t
@@ -1238,8 +1242,8 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
 
 
 def multitrack_picture(piece) -> dict:
-    """The **rows and boxes a piece draws as** — ``{"rows": [...],
-    "boxes": [...]}``.
+    """The **rows, boxes and curves a piece draws as** — ``{"rows": [...],
+    "boxes": [...], "curves": [...], "layers": [...]}``.
 
     The multitrack view's own mapping, and there is one of it: what a row and a
     box *are* is the format's business, so the standalone host and every client
@@ -1255,8 +1259,14 @@ def multitrack_picture(piece) -> dict:
         piece: the piece, as plain JSON-able data (`clausters.multitrack`'s
             ``write``).
 
+    The curves come in two lists because they are drawn in two places: a
+    track's automation is a **row of its own** under that track and runs the
+    whole timeline, a region's is a **layer inside that box** and runs as long
+    as the box does. Same shape either way — it is the same curve — with
+    ``owner`` naming the track or the region it hangs from.
+
     Returns:
-        The two lists, or ``{}`` for a piece the crate will not read.
+        The four lists, or ``{}`` for a piece the crate will not read.
     """
     answer = _read_json(lib().clausters_multitrack_picture, piece)
     return answer if isinstance(answer, dict) else {}
@@ -1286,6 +1296,33 @@ def multitrack_read(piece, placed) -> list:
         The intents, in order; ``[]`` for input the crate will not read.
     """
     answer = _read_json(lib().clausters_multitrack_read, piece, placed)
+    return answer.get("intents", []) if isinstance(answer, dict) else []
+
+
+def multitrack_read_points(piece, reported) -> list:
+    """**What a report of a multitrack's curves means**, in the piece's own
+    vocabulary.
+
+    The twin of `multitrack_read` for the light views. A multitrack reports
+    every curve there is — the rows a track's automations draw as and the
+    layers inside the boxes — for the same reason it reports every box, so what
+    comes out is the difference: one ``setautomation`` per curve whose
+    break-points actually moved, and nothing at all for a hand that looked
+    without editing.
+
+    A name that is no automation's id is dropped rather than minted: a curve is
+    declared by whoever holds the piece, and a hand that dragged a break-point
+    made no new one.
+
+    Args:
+        piece: the piece as plain JSON-able data.
+        reported: the curves as they now stand, each ``{"name", "points"}`` —
+            ``name`` the automation's id, the points on the musical axis.
+
+    Returns:
+        The intents, in order; ``[]`` for input the crate will not read.
+    """
+    answer = _read_json(lib().clausters_multitrack_read_points, piece, reported)
     return answer.get("intents", []) if isinstance(answer, dict) else []
 
 

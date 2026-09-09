@@ -800,6 +800,8 @@ pub unsafe extern "C" fn clausters_multitrack_picture(
     let answer = serde_json::json!({
         "rows": clausters_document::multitrack::picture::rows(&piece),
         "boxes": clausters_document::multitrack::picture::boxes(&piece),
+        "curves": clausters_document::multitrack::picture::curves(&piece),
+        "layers": clausters_document::multitrack::picture::layers(&piece),
     });
     let Ok(answer) = serde_json::to_string(&answer) else {
         return 0;
@@ -850,6 +852,54 @@ pub unsafe extern "C" fn clausters_multitrack_read(
     };
     let next = clausters_document::multitrack::picture::fresh_id(&piece);
     let intents = clausters_document::multitrack::picture::read(&piece, &placed, next);
+    let Ok(answer) = serde_json::to_string(&serde_json::json!({ "intents": intents })) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
+/// the piece's own vocabulary.
+///
+/// The twin of [`clausters_multitrack_read`] for the light views. The report is
+/// every curve there is, rows and layers alike, for the same reason a box
+/// report is every box, so what comes out is the difference: one
+/// `SetAutomation` per curve whose break-points actually moved, and nothing at
+/// all for a hand that looked without editing. `reported` is a JSON array of
+/// [`clausters_document::multitrack::picture::Curved`].
+///
+/// A name that is no automation's id is dropped rather than minted: a curve is
+/// declared by whoever holds the piece, and a hand that dragged a break-point
+/// made no new one.
+///
+/// # Safety
+/// `piece` must be null or readable for `piece_len` bytes, `reported` null or
+/// readable for `reported_len` bytes, and `out` null or writable for `out_cap`
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_multitrack_read_points(
+    piece: *const u8,
+    piece_len: usize,
+    reported: *const u8,
+    reported_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(raw_piece), Some(raw_curves)) = (unsafe { text(piece, piece_len) }, unsafe {
+        text(reported, reported_len)
+    }) else {
+        return 0;
+    };
+    let (Ok(piece), Ok(reported)) = (
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(&raw_piece),
+        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Curved>>(&raw_curves),
+    ) else {
+        return 0;
+    };
+    let intents = clausters_document::multitrack::picture::read_points(&piece, &reported);
     let Ok(answer) = serde_json::to_string(&serde_json::json!({ "intents": intents })) else {
         return 0;
     };
