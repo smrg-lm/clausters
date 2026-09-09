@@ -345,3 +345,60 @@ test("a curve the piece hid is drawn nowhere", () => {
     written.tracks[0].automation[0].visible = false;
     assert.equal(props(editor(written)).hidden, "30");
 });
+
+// ---- entering a box ----
+
+/** The smallest thing `edit` opens as a take: a buffer number and samples it
+ * can write back. */
+class FakeTake {
+    bufnum = 7;
+    channels = 1;
+    name = "take";
+    frames = [0.0, 0.5, 1.0];
+
+    toSamples(): number[] {
+        return [...this.frames];
+    }
+
+    setSamples(samples: readonly number[]): void {
+        this.frames = [...samples];
+    }
+}
+
+test("entering a box opens its contents on the piece's history", async () => {
+    // The multitrack places; a box is entered to edit. What a box holds is a
+    // structure like any other, so entering one is `edit` over that structure —
+    // and it is opened on the **piece's** editing context, so one undo order
+    // walks both.
+    const take = new FakeTake();
+    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const opened = await ed.enter("12");
+    assert.ok(opened, "the box opened");
+    assert.equal(
+        (opened as unknown as { editing: unknown }).editing,
+        (ed as unknown as { editing: unknown }).editing,
+        "one undo order, and it is the piece's",
+    );
+    // A second double click on the same box raises the one already open.
+    assert.equal(await ed.enter("12"), opened);
+});
+
+test("a box with nothing to open opens nothing", async () => {
+    // A source named by number alone is a box the caller gave no structure for,
+    // and a name no region has is no box at all.
+    const ed = editor(piece());
+    assert.equal(await ed.enter("12"), null, "the source is a bare buffer number");
+    assert.equal(await ed.enter("nowhere"), null);
+});
+
+test("the windows entered from a piece close with it", async () => {
+    // A window entered *from* the piece is part of looking at the piece. What
+    // outlives both is the history, which is the data's and was never a
+    // window's.
+    const take = new FakeTake();
+    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const opened = await ed.enter("12");
+    ed.close();
+    assert.ok(opened!.closed);
+    assert.equal(ed.entered.size, 0);
+});

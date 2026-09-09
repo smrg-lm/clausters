@@ -293,3 +293,67 @@ def test_a_curve_the_piece_hid_is_drawn_nowhere():
     written = curved()
     written.tracks[0].automation[0].visible = False
     assert props(editor(written))["hidden"] == "30"
+
+
+# ---- entering a box ----
+
+class FakeTake:
+    """The smallest thing `edit` opens as a take: a buffer number and samples
+    it can write back."""
+
+    def __init__(self, bufnum: int):
+        self.bufnum = bufnum
+        self.frames = [0.0, 0.5, 1.0]
+        self.rate = SR
+        self.channels = 1
+        self.frames_count = len(self.frames)
+        self.name = "take"
+
+    def to_samples(self):
+        return list(self.frames)
+
+    def set_samples(self, samples):
+        self.frames = list(samples)
+
+
+def test_entering_a_box_opens_its_contents_on_the_piece_s_history():
+    """The multitrack places; a box is entered to edit. What a box holds is a
+    structure like any other, so entering one is `edit` over that structure —
+    and it is opened on the **piece's** editing context, so one undo order
+    walks both."""
+    take = FakeTake(7)
+    written = piece()
+    ed = MultitrackEditor(written, sample_rate=SR, sources={1: take})
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+
+    assert ed._route([wid, "enter", "12"]) is False, "entering is not an edit"
+    opened = ed.entered["12"]
+    assert opened is not None
+    assert opened._editing is ed._editing, "one undo order, and it is the piece's"
+
+    # A second double click on the same box raises the one already open.
+    ed._route([wid, "enter", "12"])
+    assert ed.entered["12"] is opened
+
+
+def test_a_box_with_nothing_to_open_opens_nothing():
+    """A source named by number alone is a box the caller gave no structure
+    for, and a name no region has is no box at all."""
+    ed = editor(piece())
+    assert ed.enter("12") is None, "the source is a bare buffer number"
+    assert ed.enter("nowhere") is None
+
+
+def test_the_windows_entered_from_a_piece_close_with_it():
+    """A window entered *from* the piece is part of looking at the piece. What
+    outlives both is the history, which is the data's and was never a
+    window's."""
+    take = FakeTake(7)
+    ed = MultitrackEditor(piece(), sample_rate=SR, sources={1: take})
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    ed._route([wid, "enter", "12"])
+    opened = ed.entered["12"]
+    ed.close()
+    assert opened.closed and not ed.entered

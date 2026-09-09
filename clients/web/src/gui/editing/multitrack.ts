@@ -33,7 +33,7 @@ import { MULTITRACK, domainEdit } from "../../document.ts";
 import type { Curve, Curved } from "../../multitrack.ts";
 import { Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints }
     from "../../multitrack.ts";
-import type { Box, Placed, Row } from "../../multitrack.ts";
+import type { Box, Placed, Region, Row } from "../../multitrack.ts";
 import { node, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
@@ -105,20 +105,34 @@ export function tempoMap(piece: Multitrack): TempoMap {
  * source.
  */
 export class Sources {
-    /** source id → buffer number. */
-    readonly buffers: Map<number, number>;
+    /**
+     * source id → the buffer number it was read into, or **the object that
+     * holds it** — a `Buffer`, a `Timeline`. Both are accepted because they
+     * answer two different questions and a caller usually has the object: which
+     * buffer to draw from is {@link Sources.bufnum}, and what a box **opens as**
+     * is {@link Sources.structure}.
+     */
+    readonly buffers: Map<number, number | object>;
 
-    constructor(buffers?: Iterable<readonly [number, number]> | Record<number, number>) {
+    constructor(
+        buffers?:
+            | Iterable<readonly [number, number | object]>
+            | Record<number, number | object>,
+    ) {
         this.buffers =
             buffers === undefined
                 ? new Map()
                 : buffers instanceof Map
                   ? new Map(buffers)
                   : Symbol.iterator in Object(buffers)
-                    ? new Map(buffers as Iterable<readonly [number, number]>)
+                    ? new Map(buffers as Iterable<readonly [number, number | object]>)
                     : new Map(
-                          Object.entries(buffers as Record<number, number>).map(
-                              ([source, buf]) => [Number(source), Number(buf)] as const,
+                          Object.entries(buffers as Record<number, number | object>).map(
+                              ([source, held]) =>
+                                  [
+                                      Number(source),
+                                      typeof held === "object" ? held : Number(held),
+                                  ] as const,
                           ),
                       );
     }
@@ -127,17 +141,40 @@ export class Sources {
      * The buffer a source was read into; `-1` for one nobody loaded.
      *
      * **Negative and not zero**, because buffer 0 is a buffer — the first one an
-     * allocator hands out.
+     * allocator hands out. A source given as an object answers with the buffer
+     * it holds, and one that holds none is a box with no samples to draw, which
+     * is honest rather than empty.
      */
     bufnum(source: number | undefined | null): number {
         if (source === undefined || source === null) return -1;
-        return this.buffers.get(Math.trunc(source)) ?? -1;
+        const held = this.buffers.get(Math.trunc(source));
+        if (held === undefined) return -1;
+        if (typeof held === "number") return held;
+        return Math.trunc(Number((held as { bufnum?: unknown }).bufnum ?? -1)) || -1;
+    }
+
+    /**
+     * **What a box over this source opens as** — the object a caller gave, or
+     * `undefined` for a source it named by number alone.
+     *
+     * A piece names a source and an editor edits a structure; only whoever
+     * loaded the samples holds both, which is the same reason this class exists
+     * at all.
+     */
+    structure(source: number | undefined | null): object | undefined {
+        if (source === undefined || source === null) return undefined;
+        const held = this.buffers.get(Math.trunc(source));
+        return typeof held === "object" ? held : undefined;
     }
 
     /** The source a buffer number came from, or `undefined`. */
     source(bufnum: number): number | undefined {
-        for (const [source, buf] of this.buffers) {
-            if (buf === Math.trunc(bufnum)) return source;
+        for (const [source, held] of this.buffers) {
+            const number =
+                typeof held === "number"
+                    ? held
+                    : Number((held as { bufnum?: unknown }).bufnum ?? NaN);
+            if (number === Math.trunc(bufnum)) return source;
         }
         return undefined;
     }
@@ -532,7 +569,10 @@ export class MultitrackView extends View<Multitrack> {
 /** What {@link MultitrackEditor} is built with, beside a generic editor's. */
 export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack> {
     /** Which server buffer each source was read into. */
-    sources?: Sources | Iterable<readonly [number, number]> | Record<number, number>;
+    sources?:
+        | Sources
+        | Iterable<readonly [number, number | object]>
+        | Record<number, number | object>;
     /** The navigation group the view joins. */
     link?: number;
 }
@@ -554,6 +594,13 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     readonly bridge: Bridge;
 
+    /**
+     * The editors a hand opened by entering a box, by box name — held so a
+     * second double click on the same box raises the one that is already open
+     * rather than a second window over one structure.
+     */
+    readonly entered = new Map<string, Editor<never>>();
+
     constructor(piece: Multitrack, options: MultitrackEditorOptions) {
         const { sources, link, title = "Multitrack", ...rest } = options;
         const bridge = new Bridge(
@@ -570,6 +617,120 @@ export class MultitrackEditor extends Editor<Multitrack> {
         });
         this.bridge = bridge;
     }
+
+    /**
+     * **A box was entered** — the double click the multitrack reports as
+     * `"enter"`, with the box's name.
+     */
+    protected override interface(
+        _widgetId: number,
+        tag: string,
+        values: readonly unknown[],
+    ): boolean {
+        if (tag !== "enter" || values.length === 0) return false;
+        void this.enter(String(values[0]));
+        return true;
+    }
+
+    /**
+     * Open the contents of the box called `name` in an editor of its own, and
+     * hand it back (`null` for a box with nothing to open).
+     *
+     * **The multitrack places; a box is entered to edit.** What a box holds is
+     * a structure like any other — a take's samples, a timeline of notes — so
+     * entering one is {@link edit} over that structure, with no second
+     * implementation of any editor.
+     *
+     * **One undo order, and it is the piece's.** The editor is opened on this
+     * piece's editing context, so a note written inside a box and a box dragged
+     * on the stack walk one history: an undo that needed a window reopened to
+     * reach it is a hole in the order that does not announce itself. What that
+     * costs is that the entered structure stays in the context while the piece
+     * is open even if its window is closed — which the context already does,
+     * since it holds what it registered.
+     *
+     * The object comes from {@link Sources}, which is where the one fact about
+     * a piece that is not in the piece already lives: the document names a
+     * source and only whoever loaded it holds the structure.
+     */
+    async enter(name: string): Promise<Editor<never> | null> {
+        const { edit } = await import("./edit.ts");
+        const found = this.entered.get(name);
+        if (found !== undefined) return found;
+        const region = regionNamed(this.structure, name);
+        if (region === null) return null;
+        const held = this.bridge.sources.structure(sourceOf(region));
+        if (held === undefined) return null;
+        const opened = await edit(held, {
+            sampleRate: this.bridge.rate,
+            context: this.editing,
+            host: this.host ?? undefined,
+            title: String(region.name ?? name),
+            // **On the host the piece is on, or on no screen at all.** A piece
+            // that was never opened has no window to enter one *from*, and
+            // resolving an ambient host there would put a box on screen while
+            // the piece it belongs to is not.
+            open: this.host !== null,
+        });
+        this.entered.set(name, opened);
+        // **A window the reader closed is enterable again**, and it is the only
+        // way one leaves this table: an editor that is merely not on screen is
+        // still the one that box is open in, so a second double click raises it
+        // rather than making a second editor over one structure.
+        if (this.host !== null) opened.onClosed(() => this.entered.delete(name));
+        return opened;
+    }
+
+    /**
+     * Close this piece's window, and the boxes opened out of it with it.
+     *
+     * A window entered *from* the piece is part of looking at the piece: what
+     * outlives both is the history, which is the data's and was never a
+     * window's.
+     */
+    override close(): this {
+        for (const opened of [...this.entered.values()]) {
+            if (!opened.closed) opened.close();
+        }
+        // The handlers cleared their own entries; this is for the ones that
+        // were never on screen to clear.
+        this.entered.clear();
+        return super.close();
+    }
+}
+
+/**
+ * The region of this name, wherever it is, and `null` for a box the piece has
+ * none of.
+ *
+ * A box is named by its region's id, so the name is the address — the same
+ * thing that makes a report readable with no map on the side.
+ */
+function regionNamed(piece: Multitrack, name: string): Region | null {
+    const wanted = Number(name);
+    if (!Number.isFinite(wanted)) return null;
+    for (const track of piece.tracks) {
+        for (const lane of track.lanes) {
+            for (const region of lane.regions) {
+                if (Number(region.id) === Math.trunc(wanted)) return region;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * The source a region is a window onto, or `undefined` for a box that is a
+ * window onto something else.
+ */
+function sourceOf(region: Region): number | undefined {
+    const content = region.content as unknown as { write?(): unknown };
+    const written = (typeof content?.write === "function" ? content.write() : content) as
+        | Record<string, unknown>
+        | undefined;
+    const onto = (written?.window ?? {}) as Record<string, unknown>;
+    const source = ((onto.source ?? {}) as Record<string, unknown>).source;
+    return source === undefined || source === null ? undefined : Number(source);
 }
 
 /** Whether {@link edit} should open this as a multitrack. */

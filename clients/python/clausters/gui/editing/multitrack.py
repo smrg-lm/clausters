@@ -93,23 +93,48 @@ class Sources:
     """
 
     def __init__(self, buffers=None):
-        #: source id -> buffer number.
+        #: source id -> the buffer number it was read into, or **the object
+        #: that holds it** — a `clausters.defs.Buffer`, a
+        #: `clausters.seq.Timeline`. Both are accepted because they answer two
+        #: different questions and a caller usually has the object: which buffer
+        #: to draw from is `bufnum`, and what a box **opens as** is `structure`.
         self.buffers = dict(buffers or {})
 
     def bufnum(self, source) -> int:
         """The buffer a source was read into; ``-1`` for one nobody loaded.
 
         **Negative and not zero**, because buffer 0 is a buffer — the first one
-        an allocator hands out.
+        an allocator hands out. A source given as an object answers with the
+        buffer it holds, and one that holds none is a box with no samples to
+        draw, which is honest rather than empty.
         """
         if source is None:
             return -1
-        return int(self.buffers.get(int(source), -1))
+        found = self.buffers.get(int(source))
+        if found is None:
+            return -1
+        if isinstance(found, (int, float)):
+            return int(found)
+        return int(getattr(found, "bufnum", -1) or -1)
+
+    def structure(self, source):
+        """**What a box over this source opens as** — the object a caller gave,
+        or ``None`` for a source it named by number alone.
+
+        A piece names a source and an editor edits a structure; only whoever
+        loaded the samples holds both, which is the same reason this class
+        exists at all.
+        """
+        if source is None:
+            return None
+        found = self.buffers.get(int(source))
+        return None if isinstance(found, (int, float)) else found
 
     def source(self, bufnum: int):
         """The source a buffer number came from, or ``None``."""
-        for source, buf in self.buffers.items():
-            if int(buf) == int(bufnum):
+        for source, held in self.buffers.items():
+            number = held if isinstance(held, (int, float)) else getattr(held, "bufnum", None)
+            if number is not None and int(number) == int(bufnum):
                 return int(source)
         return None
 
@@ -478,11 +503,119 @@ class MultitrackEditor(Editor):
         #: The axis and the buffer table this window crosses to — the two things
         #: about a piece that are not in the piece.
         self.bridge = bridge
+        #: The editors a hand opened by entering a box, by box name — held so a
+        #: second double click on the same box raises the one that is already
+        #: open rather than a second window over one structure.
+        self.entered: dict = {}
         super().__init__(piece, sample_rate=sample_rate,
                          tempo_map=bridge.tempo,
                          domain=MultitrackDomain(bridge),
                          view=MultitrackView(bridge, link=link),
                          title=title, **options)
+
+    def interface(self, widget_id: int, tag: str, values) -> bool:
+        """**A box was entered** — the double click the multitrack reports as
+        ``"enter"``, with the box's name."""
+        if tag != "enter" or not values:
+            return False
+        self.enter(str(values[0]))
+        return True
+
+    def enter(self, name: str):
+        """Open the contents of the box called ``name`` in an editor of its
+        own, and return it (``None`` for a box with nothing to open).
+
+        **The multitrack places; a box is entered to edit.** What a box holds
+        is a structure like any other — a take's samples, a timeline of notes —
+        so entering one is `clausters.gui.editing.edit` over that structure,
+        with no second implementation of any editor.
+
+        **One undo order, and it is the piece's.** The editor is opened on this
+        piece's editing context, so a note written inside a box and a box
+        dragged on the stack walk one history: an undo that needed a window
+        reopened to reach it is a hole in the order that does not announce
+        itself. What that costs is that the entered structure stays in the
+        context while the piece is open even if its window is closed — which
+        the context already does, since it holds what it registered.
+
+        The object comes from `Sources`, which is where the one fact about a
+        piece that is not in the piece already lives: the document names a
+        source and only whoever loaded it holds the structure.
+        """
+        from .edit import edit
+
+        found = self.entered.get(name)
+        if found is not None:
+            return found
+        region = _region(self.structure, name)
+        if region is None:
+            return None
+        held = self.bridge.sources.structure(_source_of(region))
+        if held is None:
+            return None
+        opened = edit(held, sample_rate=self.bridge.rate,
+                      context=self._editing, host=self._host,
+                      title=str(region.name or name),
+                      # **On the host the piece is on, or on no screen at
+                      # all.** A piece that was never opened has no window to
+                      # enter one *from*, and resolving an ambient host there
+                      # would put a box on screen while the piece it belongs to
+                      # is not.
+                      open=self._host is not None)
+        self.entered[name] = opened
+        # **A window the reader closed is enterable again**, and it is the only
+        # way one leaves this table: an editor that is merely not on screen is
+        # still the one that box is open in, so a second double click raises it
+        # rather than making a second editor over one structure.
+        if self._host is not None:
+            opened.on_closed(lambda: self.entered.pop(name, None))
+        return opened
+
+    def close(self):
+        """Close this piece's window, and the boxes opened out of it with it.
+
+        A window entered *from* the piece is part of looking at the piece: what
+        outlives both is the history, which is the data's and was never a
+        window's.
+        """
+        for opened in list(self.entered.values()):
+            if not opened.closed:
+                opened.close()
+        # The handlers cleared their own entries; this is for the ones that
+        # were never on screen to clear.
+        self.entered.clear()
+        super().close()
+
+
+def _region(piece: Multitrack, name: str):
+    """The region of this name, wherever it is, and ``None`` for a box the
+    piece has none of.
+
+    A box is named by its region's id, so the name is the address — the same
+    thing that makes a report readable with no map on the side.
+    """
+    try:
+        wanted = int(name)
+    except ValueError:
+        return None
+    for track in piece.tracks:
+        for lane in track.lanes:
+            for region in lane.regions:
+                if int(region.id) == wanted:
+                    return region
+    return None
+
+
+def _source_of(region):
+    """The source a region is a window onto, or ``None`` for a box that is a
+    window onto something else."""
+    window = (region.content.write() if hasattr(region.content, "write")
+              else region.content)
+    if not isinstance(window, dict):
+        return None
+    onto = window.get("window") or {}
+    source = (onto.get("source") or {}).get("source")
+    return None if source is None else int(source)
 
 
 def is_piece(structure) -> bool:

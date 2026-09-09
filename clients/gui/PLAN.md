@@ -811,8 +811,29 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   is stated where the parameter is — in the target — and unity is what an
   unlabelled level means.
 
+  **Entering a box landed 2026-09-09**, and it needed a gesture the host did
+  not have. A double click is now the machine's — winit reports no click count
+  and a browser reports one of its own, so the rule lives beside the other
+  gesture rules and each front hands over only its own wall clock, which the
+  agnostic core cannot have. A double click on a box reports `"enter"` with its
+  name and nothing else; what that box *opens as* is the client's, out of the
+  same `Sources` table that already holds the one fact about a piece that is not
+  in the piece.
+
+  **One undo order, and it is the piece's** *(decided by the user, 2026-09-09,
+  against the alternative of a window with an order of its own)*. An undo that
+  needs a window reopened to reach it is a hole in the history that does not
+  announce itself, so the entered editor is opened on the piece's editing
+  context. What it costs is that the entered structure stays registered in that
+  context while the piece is open even if its window closes — which the context
+  already did, since it holds what it registered. An editor grew a third kind of
+  event for it: beside an edit and screen state, an **interface event** is a tag
+  that asks the editor for a *window*, which is not something a vocabulary of
+  edits can say.
+
   **Still open, and each has its home:** assembled samples (a box over several
-  segments of several files); entering a box to edit it; and
+  segments of several files); a box of notes reaching the editor's picture (the
+  widget draws one, and `MultitrackView` states no `notes` yet); and
   `multitrack_audio.html`, the web twin of the Python example.
 
 ## L track — the look: layout, sizing and themes for the light widgets

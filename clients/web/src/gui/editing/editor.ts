@@ -644,6 +644,7 @@ export class Editor<S = unknown> implements Adopting {
         const tag = String(args[1]);
         const rest = args.slice(2);
         if (notAnEdit().includes(tag)) return this.observe(id, tag, rest);
+        if (this.interface(id, tag, rest)) return false;
         if (this.domain === null) return false;
         const payloads = this.domain.payloads(this.structure, tag, rest);
         if (payloads.length === 0) {
@@ -660,6 +661,23 @@ export class Editor<S = unknown> implements Adopting {
         const label = this.domain.label(payloads[0]);
         if (payloads.length === 1) return this.edit(payloads[0], label);
         return this.editAll(payloads, label);
+    }
+
+    /**
+     * **An interface event**: a tag that asks this editor for something rather
+     * than stating an edit or saying what a view is looking at.
+     *
+     * The third kind, and it is the editor's rather than the domain's because
+     * what it asks for is a *window* — a multitrack's `"enter"` opens the box
+     * that was double clicked, and opening a window is not something a
+     * vocabulary of edits can say. Nothing here reaches a history: what the
+     * editor it opened does afterwards is what lands in one.
+     *
+     * Answers whether it was handled, so an editor that says no leaves the tag
+     * to the domain exactly as before.
+     */
+    protected interface(_widgetId: number, _tag: string, _values: readonly unknown[]): boolean {
+        return false;
     }
 
     /**

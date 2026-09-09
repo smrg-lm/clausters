@@ -508,6 +508,9 @@ class Editor:
         if tag in not_an_edit():
             log.debug("event  %s %r -> screen state", wid, tag)
             return self._observe(wid, tag, values)
+        if self.interface(wid, tag, values):
+            log.debug("event  %s %r -> this editor's own", wid, tag)
+            return False
         if self.domain is None:
             return False
         payloads = self.domain.payloads(self.structure, tag, values)
@@ -526,6 +529,21 @@ class Editor:
         if len(payloads) == 1:
             return self._edit(payloads[0], self.domain.label(payloads[0]))
         return self._edit_all(payloads, self.domain.label(payloads[0]))
+
+    def interface(self, widget_id: int, tag: str, values) -> bool:
+        """**An interface event**: a tag that asks this editor for something
+        rather than stating an edit or saying what a view is looking at.
+
+        The third kind, and it is the editor's rather than the domain's because
+        what it asks for is a *window* — a multitrack's ``"enter"`` opens the
+        box that was double clicked, and opening a window is not something a
+        vocabulary of edits can say. Nothing here reaches a history: what the
+        editor it opened does afterwards is what lands in one.
+
+        Returns whether it was handled, so an editor that answers no leaves the
+        tag to the domain exactly as before.
+        """
+        return False
 
     def _observe(self, wid: int, tag: str, values) -> bool:
         """A tag that says what the view is looking at rather than what changed.
