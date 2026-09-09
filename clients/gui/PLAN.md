@@ -5980,3 +5980,32 @@ finished work, where a pending item reads as done.
   -- a request beside `Events::and_select`, and the same door a step-recording
   roll would need to scroll the view it is writing past the end of. Worth doing
   with whatever else needs that door rather than as a special case for `midi`.
+
+- ⬜ **A `multitrack` clip draws one waveform body and nothing else**
+  *(found 2026-09-08, porting `--session`'s tree onto the widget)*. A box is a
+  window onto **one server buffer** (`Clip::source`), so the three bodies the
+  old `clip` widget could carry no longer draw: a **roll** (an aggregate of
+  clangs, which is what a track of notes is), a **spectrogram** (which wants a
+  GPU slot per clip — the "N slots in one element" question again), and
+  **assembled samples**, where several windows sit back to back inside one box.
+  The session host lost all three when its tree became one widget: a piece of
+  notes draws as named rectangles, and a joined clip draws empty rather than as
+  a third of itself, which is at least honest.
+
+  The multitrack **places**, so none of these is an editing surface — what is
+  missing is the read-only picture inside the box, which is what tells a reader
+  which clip is which without entering it. The roll is the cheap one (the notes
+  are mesh, like the waveform); the spectrogram is the one that needs a design.
+
+- ⬜ **A left trim does not travel with the clip**
+  *(found 2026-09-08, same port)*. The `"clips"` payload carries `start` — the
+  source frame the box's own zero reads — and the document's tree vocabulary
+  has nowhere to put it: `Intent::Place` states an offset and a length, so a
+  trim of the **left** edge reaches the document as a move plus a resize and the
+  window into the samples stays where it was. The picture is right (the widget
+  holds it) and the saved session is not, which is the worst of the two.
+
+  It is the shape `MultitrackIntent::TrimRegion` already has in the crate, and
+  the honest fix is the owner speaking that vocabulary rather than a fourth
+  field on `Place` — so it waits on the document's own multitrack (`O21`-`O24`)
+  rather than growing a stopgap here.

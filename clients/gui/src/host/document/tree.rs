@@ -105,25 +105,104 @@ impl Default for Look<'_> {
     }
 }
 
-/// The window a document draws as, plus what each widget in it is a picture of.
+/// The window a document draws as, plus what it drew it from.
 pub struct Drawn {
     /// The GuiDef, ready for `/gui_def`.
     pub def: Value,
-    /// Every clip's widget, and the node it draws.
-    pub bindings: Vec<Bound>,
-    /// Every **lane's** widget, and the node its header configures.
+    /// The `multitrack` widget's id — the **one** widget the whole piece is
+    /// drawn by, and the one an edit-back arrives on.
+    pub multitrack: i32,
+    /// The piece as the widget's two props, and the nodes behind them.
+    pub piece: Piece,
+    /// Every take editor's widget, and the node it draws.
     ///
-    /// Kept apart from the clips rather than folded in with them, because the
-    /// two answer different questions: a clip is a placement a hand moves, a
-    /// lane is an element a hand mutes. Both are bound the same way and by the
-    /// same call — what is separate is only the *counting*, so "twelve clips"
-    /// goes on meaning twelve clips.
-    pub headers: Vec<Bound>,
+    /// Only the editors: a clip is not a widget any more, so there is nothing
+    /// per clip to bind. What is left here is the pane under the stack, which
+    /// *is* its own widget because it is a different view of the same node.
+    pub bindings: Vec<Bound>,
     /// The next free widget id, so a caller can keep allocating after it.
     pub next_id: i32,
 }
 
-/// Draws `document` as a window of lanes.
+/// One lane of the multitrack, and the two things a lane change has to know
+/// about it.
+///
+/// A lane is not a container in the document — the document has aggregates —
+/// so a picture of one has to record which aggregate its clips are *members
+/// of*, and where that aggregate sits on the shared axis. Without the first, a
+/// clip that crossed the stack has nowhere to be moved to; without the second,
+/// it arrives at the right pixel and the wrong beat.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LaneRow {
+    /// The node the lane draws. Its **identity on the wire is its number**, as
+    /// a string, which is what makes a `"clips"` payload readable with no map
+    /// on the side: a name is a node id and nothing else.
+    pub node: NodeId,
+    /// The aggregate whose members are this lane's clips.
+    pub holder: NodeId,
+    /// Where that aggregate starts, in beats — the offsets its members are
+    /// relative to.
+    pub base: Beats,
+}
+
+/// One clip, and the lane it was drawn on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipRow {
+    /// The node the box draws; its name on the wire is this number.
+    pub node: NodeId,
+    /// The lane it sits on ([`LaneRow::node`]).
+    pub lane: NodeId,
+}
+
+/// The piece as the `multitrack` widget takes it, and as the owner reads it
+/// back.
+///
+/// Both halves come out of one walk, because they have to agree: the props are
+/// what the hand moves and the rows are what an edit-back is resolved against,
+/// and deriving them separately is how a name comes to mean two nodes.
+#[derive(Debug, Clone, Default)]
+pub struct Piece {
+    /// The lanes, top to bottom.
+    pub lanes: Vec<LaneRow>,
+    /// The clips, in document order.
+    pub clips: Vec<ClipRow>,
+    /// The `lanes` prop: flat `name label height mute solo gain` sextuples.
+    pub lanes_prop: Value,
+    /// The `clips` prop: flat `name lane offset dur start label source`
+    /// septuples.
+    pub clips_prop: Value,
+}
+
+impl Piece {
+    /// The lane of this node, if the piece has one.
+    pub fn lane(&self, node: NodeId) -> Option<&LaneRow> {
+        self.lanes.iter().find(|l| l.node == node)
+    }
+
+    /// The lane a clip is drawn on, if the piece holds it.
+    pub fn lane_of(&self, clip: NodeId) -> Option<&LaneRow> {
+        let row = self.clips.iter().find(|c| c.node == clip)?;
+        self.lane(row.lane)
+    }
+}
+
+/// A node's name on the wire: its number, which is its identity.
+fn name_of(node: NodeId) -> String {
+    node.0.to_string()
+}
+
+/// The node a name on the wire stands for. A name this host did not write is
+/// `None` rather than a guess — the same rule [`super::Owner::read_event`]
+/// follows for a payload it does not recognize.
+pub(crate) fn node_named(name: &str) -> Option<NodeId> {
+    name.parse::<u64>().ok().map(NodeId)
+}
+
+/// The lane height a lane is drawn at, in logical pixels.
+const LANE_H: f64 = 96.0;
+
+/// The lanes and clips a document draws as — the whole piece, in the widget's
+/// own vocabulary.
 ///
 /// One lane per top-level member: an **aggregate** becomes a lane of its
 /// members' clips (which is what a track is), and anything else becomes a lane
@@ -131,32 +210,16 @@ pub struct Drawn {
 /// aggregate inside an aggregate is one lane of its own, in document order —
 /// because an expanded/collapsed state is a thing the *editor* holds and this
 /// has nowhere yet to keep one.
-pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
-    let mut ids = Ids {
-        next: look.first_id,
-    };
-    let mut bindings = Vec::new();
-    let mut headers = Vec::new();
-    let mut lanes: Vec<Value> = Vec::new();
-    // The content is the document's, so it is filled in here rather than asked
-    // of a caller that would have to remember.
+pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
     let look = &Look {
         content: Some(&document.content),
         ..*look
     };
-
+    let mut built: Vec<LaneBuild> = Vec::new();
     match &document.root.body {
         Body::Aggregate { members, .. } => {
             for member in members {
-                lane_of(
-                    member,
-                    0.0,
-                    look,
-                    &mut ids,
-                    &mut bindings,
-                    &mut headers,
-                    &mut lanes,
-                );
+                lane_of(member, document.root.id, 0.0, look, &mut built);
             }
         }
         // A document that is one thing is one lane holding it.
@@ -166,30 +229,91 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
                 dur: None,
                 node: document.root.clone(),
             };
-            lane_of(
-                &member,
-                0.0,
-                look,
-                &mut ids,
-                &mut bindings,
-                &mut headers,
-                &mut lanes,
-            );
+            lane_of(&member, document.root.id, 0.0, look, &mut built);
         }
     }
+    let mut lanes = Vec::with_capacity(built.len());
+    let mut clips = Vec::new();
+    let mut lanes_prop = Vec::with_capacity(built.len() * 6);
+    let mut clips_prop = Vec::new();
+    for lane in built {
+        lanes.push(LaneRow {
+            node: lane.node,
+            holder: lane.holder,
+            base: lane.base,
+        });
+        lanes_prop.extend([
+            json!(name_of(lane.node)),
+            json!(lane.label),
+            json!(LANE_H),
+            json!(lane.mute),
+            json!(lane.solo),
+            json!(lane.gain),
+        ]);
+        for clip in lane.clips {
+            clips.push(ClipRow {
+                node: clip.node,
+                lane: lane.node,
+            });
+            clips_prop.extend([
+                json!(name_of(clip.node)),
+                json!(name_of(lane.node)),
+                json!(clip.offset),
+                json!(clip.dur),
+                json!(clip.start),
+                json!(clip.label),
+                json!(clip.source),
+            ]);
+        }
+    }
+    Piece {
+        lanes,
+        clips,
+        lanes_prop: Value::Array(lanes_prop),
+        clips_prop: Value::Array(clips_prop),
+    }
+}
 
-    // The ruler joins the lanes' navigation group rather than owning a strip
-    // inside one of them, exactly as the Python editor places it.
-    lanes.push(json!({
-        "id": ids.take(),
-        "type": "field",
-        "h": 20.0,
-        "ruler": "beats",
-        "sample_rate": look.sample_rate,
-        "tempo": look.tempo,
-    }));
+/// Draws `document` as a window: **one `multitrack`**, and the take editors
+/// under it.
+///
+/// One widget for the whole piece rather than a lane per track and a clip per
+/// element, because the piece is what a gesture reports: a block move and a
+/// lane change say *the clips are now these*, and nothing has to say which of
+/// them the hand touched. It is the same shape a `pianoroll` has always had,
+/// and the reason this driver had a bug the roll never could.
+pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
+    let mut ids = Ids {
+        next: look.first_id,
+    };
+    let mut bindings = Vec::new();
+    let look = &Look {
+        content: Some(&document.content),
+        ..*look
+    };
+    let piece = piece(document, look);
+    let multitrack = ids.take();
+    let mut props = Map::new();
+    props.insert("id".into(), json!(multitrack));
+    props.insert("type".into(), json!("multitrack"));
+    props.insert("weight".into(), json!(1.0));
+    props.insert("ruler".into(), json!("beats"));
+    props.insert("sample_rate".into(), json!(look.sample_rate));
+    props.insert("tempo".into(), json!(look.tempo));
+    if look.quant > 0.0 {
+        props.insert("snap".into(), json!(look.quant * look.units_per_beat));
+    }
+    // **The window is the reader's.** A session host is an editor, and in an
+    // editor a content change is mostly the reader's own edit -- undoing a
+    // trim, splitting a clip, dragging one onto another lane -- so the axis
+    // does not re-frame itself on one. The extent is still registered; only the
+    // window stays put.
+    props.insert("autofit".into(), json!(false));
+    props.insert("lanes".into(), piece.lanes_prop.clone());
+    props.insert("clips".into(), piece.clips_prop.clone());
 
-    lanes.extend(take_editors(document, look, &mut ids, &mut bindings));
+    let mut children = vec![Value::Object(props)];
+    children.extend(take_editors(document, look, &mut ids, &mut bindings));
 
     let def = json!({
         "type": "window",
@@ -197,12 +321,13 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
         "layout": "col",
         "w": 1000,
         "h": 640,
-        "children": lanes,
+        "children": children,
     });
     Drawn {
         def,
+        multitrack,
+        piece,
         bindings,
-        headers,
         next_id: ids.next,
     }
 }
@@ -249,28 +374,50 @@ impl Ids {
     }
 }
 
+/// One lane under construction: the row, plus what the props need.
+struct LaneBuild {
+    node: NodeId,
+    holder: NodeId,
+    base: Beats,
+    label: String,
+    mute: bool,
+    solo: bool,
+    gain: f64,
+    clips: Vec<ClipBuild>,
+}
+
+/// One box under construction, in **timeline units** — the axis' own — because
+/// that is what the widget takes.
+struct ClipBuild {
+    node: NodeId,
+    offset: f64,
+    dur: f64,
+    start: f64,
+    label: String,
+    source: i32,
+}
+
 /// Turns one member into lanes, **recursing while it is aggregates all the way
 /// down**.
 ///
-/// The rule is the shape of the samples rather than a depth: an aggregate
-/// whose members are leaves is a lane of clips (that is what a lane *is*), and
-/// an aggregate of aggregates is not one lane but each of theirs. A composition
-/// is nested as deeply as the author nested it — a piece of aggregates of
-/// tracks of clangs is three deep before a single note is reached — so anything
-/// that stops at a fixed depth draws the containers and calls it a picture,
-/// which is an empty clip where the music was.
+/// The rule is the shape of the piece rather than a depth: an aggregate whose
+/// members are leaves is a lane of clips (that is what a lane *is*), and an
+/// aggregate of aggregates is not one lane but each of theirs. A composition is
+/// nested as deeply as the author nested it — a piece of aggregates of tracks
+/// of clangs is three deep before a single note is reached — so anything that
+/// stops at a fixed depth draws the containers and calls it a picture, which is
+/// an empty clip where the music was.
 ///
 /// `base` accumulates the offsets on the way down, because a clip's offset is
-/// absolute on the shared axis while a member's is relative to its aggregate.
-#[allow(clippy::too_many_arguments)] // one accumulator per thing being built
+/// absolute on the shared axis while a member's is relative to its aggregate;
+/// `parent` is the aggregate `member` is a member of, which is where a clip
+/// this lane holds is removed from when it crosses to another lane.
 fn lane_of(
     member: &Member,
+    parent: NodeId,
     base: Beats,
     look: &Look<'_>,
-    ids: &mut Ids,
-    bindings: &mut Vec<Bound>,
-    headers: &mut Vec<Bound>,
-    lanes: &mut Vec<Value>,
+    out: &mut Vec<LaneBuild>,
 ) {
     let here = base + member.offset;
     if let Body::Aggregate { members, .. } = &member.node.body
@@ -279,167 +426,74 @@ fn lane_of(
             .any(|inner| matches!(inner.node.body, Body::Aggregate { .. }))
     {
         for inner in members {
-            lane_of(inner, here, look, ids, bindings, headers, lanes);
+            lane_of(inner, member.node.id, here, look, out);
         }
         return;
     }
-    let label = label_of(&member.node);
-    let clips = match &member.node.body {
-        // **An aggregate of clangs is one clip with a roll in it**, not a lane of
-        // clips: that is what a track *is* in every editor, and drawing each
-        // note as its own clip gives a row of empty rectangles where the music
-        // was. The notes go in the clip's own axis, so their starts are
-        // relative to it.
+    let (mute, solo, gain) = mixing_of(&member.node);
+    // Which aggregate holds this lane's clips, and what their offsets are
+    // relative to. A lane of clips holds its own; a lane that *is* one element
+    // borrows its parent's, because that is where the element is a member.
+    let (holder, clip_base, clips) = match &member.node.body {
+        // **An aggregate of clangs is one clip**, not a lane of clips: that is
+        // what a track *is* in every editor, and drawing each note as its own
+        // box gives a row of empty rectangles where the music was.
         Body::Aggregate { members, .. } if !members.is_empty() && notes_of(members).is_some() => {
-            let notes = notes_of(members).expect("checked");
-            vec![roll_clip(member, here, notes, look, ids, bindings)]
+            (parent, base, vec![clip_of(member, base, look)])
         }
-        // A **window onto a timeline**: what a cut over notes leaves. The notes
-        // are content the document holds once, and this half shows the stretch
-        // of them its window names.
+        // A **window onto a timeline**: what a cut over notes leaves.
         Body::Segments { .. } if windowed_notes(&member.node, look).is_some() => {
-            let notes = windowed_notes(&member.node, look).expect("checked");
-            vec![roll_clip(member, here, notes, look, ids, bindings)]
+            (parent, base, vec![clip_of(member, base, look)])
         }
-        Body::Aggregate { members, .. } => members
-            .iter()
-            .map(|inner| match windowed_notes(&inner.node, look) {
-                // A lane of clips, one of which is a window onto notes: the two
-                // halves of a cut sit on the lane like any other pair of clips.
-                Some(notes) => roll_clip(inner, here, notes, look, ids, bindings),
-                None => clip_of(inner, here, look, ids, bindings),
-            })
-            .collect(),
-        _ => vec![clip_of(member, base, look, ids, bindings)],
+        Body::Aggregate { members, .. } => (
+            member.node.id,
+            here,
+            members.iter().map(|i| clip_of(i, here, look)).collect(),
+        ),
+        _ => (parent, base, vec![clip_of(member, base, look)]),
     };
-    let widget = ids.take();
-    // **The lane is bound to what it draws.** Its header's mute, solo and level
-    // are the *element's* configuration, so a press on one has to name a node —
-    // and until this binding existed only the clips inside a lane named
-    // anything, which left a header a person could press and nothing could
-    // read.
-    headers.push(Bound {
-        widget,
+    out.push(LaneBuild {
         node: member.node.id,
+        holder,
+        base: clip_base,
+        label: label_of(&member.node),
+        mute,
+        solo,
+        gain,
+        clips,
     });
-    let mut props = Map::new();
-    props.insert("id".into(), json!(widget));
-    props.insert("type".into(), json!("field"));
-    props.insert("label".into(), json!(label));
-    props.insert("sample_rate".into(), json!(look.sample_rate));
-    props.insert("tempo".into(), json!(look.tempo));
-    // The mixing the piece carries. A node's configuration is opaque here and
-    // is round-tripped whole, so it was already saved and already restored;
-    // what was missing was drawing it, which is why a piece muted in a client
-    // opened audible.
-    for (key, value) in mixing_of(&member.node) {
-        props.insert(key.into(), value);
-    }
-    if look.quant > 0.0 {
-        props.insert("snap".into(), json!(look.quant * look.units_per_beat));
-    }
-    // **The window is the reader's.** A session host is an editor, and in an
-    // editor a content change is mostly the reader's own edit -- undoing a
-    // trim, splitting a clip, dragging one onto another lane -- so the axis
-    // does not re-frame itself on one. The extent is still registered; only the
-    // window stays put.
-    props.insert("autofit".into(), json!(false));
-    props.insert("children".into(), Value::Array(clips));
-    lanes.push(Value::Object(props));
 }
 
-fn clip_of(
-    member: &Member,
-    base: Beats,
-    look: &Look<'_>,
-    ids: &mut Ids,
-    bindings: &mut Vec<Bound>,
-) -> Value {
-    let widget = ids.take();
-    bindings.push(Bound {
-        widget,
+/// One box: where it sits on the shared axis, and the buffer it is a window
+/// onto.
+fn clip_of(member: &Member, base: Beats, look: &Look<'_>) -> ClipBuild {
+    ClipBuild {
         node: member.node.id,
-    });
-    let take = take_of(&member.node, look);
-    let dur = clip_units(member, look.takes, look);
-    let mut props = Map::new();
-    props.insert("id".into(), json!(widget));
-    props.insert("type".into(), json!("field"));
-    props.insert(
-        "offset".into(),
-        json!((base + member.offset) * look.units_per_beat),
-    );
-    props.insert("dur".into(), json!(dur));
-    props.insert("label".into(), json!(label_of(&member.node)));
-    // The samples, as a **server buffer**: the clip's take body fetches it
-    // over the host's client leg, which is the same route a script's clip
-    // takes. What is drawn is then what an edit writes — one copy, not a
-    // picture of one and a write to another.
-    if let Some(take) = take {
-        props.insert("buffer".into(), json!(take.bufnum));
-        if let Some(channels) = take.channels {
-            props.insert("channels".into(), json!(channels));
-        }
+        offset: (base + member.offset) * look.units_per_beat,
+        dur: clip_units(member, look.takes, look),
+        // What frame of the source the box's own zero reads. The document keeps
+        // it in the source reference's range, and a member that names none
+        // starts at the beginning of what it names.
+        start: start_of(&member.node),
+        label: label_of(&member.node),
+        // The samples, as a **server buffer**: the clip's body is drawn from
+        // it, which is the same buffer an edit writes. One copy, not a picture
+        // of one and a write to another. A negative number is a box over
+        // nothing -- and negative rather than zero, because buffer 0 is a
+        // buffer.
+        source: take_of(&member.node, look).map_or(-1, |t| t.bufnum),
     }
-    // **Assembled samples draw a take per window**, each over its own stretch
-    // of the clip: one clip, because that is what the element is, and one body
-    // per piece, because each reads a different part of different samples.
-    if let Body::Segments { segments, .. } = &member.node.body {
-        let mut children = Vec::new();
-        let mut cursor = 0.0f64;
-        for segment in segments {
-            // A window's length is in seconds -- these are samples -- so it is
-            // drawn against the rate and not against the tempo.
-            let len = segment.duration * look.units_per_second;
-            let at = cursor;
-            cursor += len;
-            // A window onto a **node** draws nothing here: what it reads is
-            // content of the document, not a take, and the body that shows it
-            // is the one its own kind asks for.
-            let Some(source) = segment.source.samples() else {
-                continue;
-            };
-            let Some(take) = look.takes.and_then(|t| t.get(source.source)) else {
-                continue;
-            };
-            let mut body = Map::new();
-            body.insert("type".into(), json!("signal"));
-            body.insert("view".into(), json!("trace"));
-            body.insert("buffer".into(), json!(take.bufnum));
-            if let Some(channels) = take.channels {
-                body.insert("channels".into(), json!(channels));
-            }
-            body.insert("at".into(), json!(at));
-            body.insert("dur".into(), json!(len));
-            if segment.start != 0.0 {
-                body.insert("start".into(), json!(segment.start));
-            }
-            children.push(Value::Object(body));
-        }
-        if !children.is_empty() {
-            props.insert("children".into(), json!(children));
-        }
-    }
-    Value::Object(props)
 }
 
-/// **One editor per take**, under the tracks: the samples as a navigable
-/// picture of themselves, where they can be zoomed to the sample and drawn over.
-///
-/// The arrangement says *where* samples are and the editor is where they are
-/// *edited*, and the two views are of one thing — the same server buffer, the
-/// same node — so a stroke here moves the clip's picture above it without
-/// anything being told. That is the whole reason a take opens as a second view
-/// rather than as a mode over the clip: a lane measures beats and a pencil
-/// measures samples, and one axis cannot be both.
-///
-/// It stays **out of the tracks' navigation group** for that same reason: the
-/// arrangement's zoom is where the piece is, the editor's is how close the hand
-/// is, and joining them would make drawing a sample scroll the whole session.
-///
-/// A source drawn by several clips opens once (the first node that names it):
-/// the buffer is one, and editing it twice would be two pictures of the same
-/// buffer disagreeing while the hand is down.
+/// The source frame a node's own zero reads.
+fn start_of(node: &Node) -> f64 {
+    match &node.body {
+        Body::Vector { source, .. } => source.range.map_or(0.0, |r| r.start as f64),
+        Body::Segments { segments, .. } => segments.first().map_or(0.0, |s| s.start),
+        _ => 0.0,
+    }
+}
+
 fn take_editors(
     document: &Document,
     look: &Look<'_>,
@@ -553,11 +607,24 @@ pub(crate) fn clip_units(
         .unwrap_or(look.units_per_beat)
 }
 
+/// The samples a box is a window onto, when it is a window onto exactly one.
+///
+/// A **take** is one buffer, and so is a clip left by a *trim*: a single window
+/// onto one file, which is what a cut leaves on each side. A clip assembled
+/// from several windows is drawn empty rather than as its first piece — an
+/// honest "the samples are elsewhere" instead of a picture of a third of them
+/// (the widget draws one body per box; see `clients/gui/PLAN.md`, "Found by
+/// use").
 fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
-    let Body::Vector { source, .. } = &node.body else {
-        return None;
+    let source = match &node.body {
+        Body::Vector { source, .. } => source.source,
+        Body::Segments { segments, .. } => match segments.as_slice() {
+            [one] => one.source.samples()?.source,
+            _ => return None,
+        },
+        _ => return None,
     };
-    look.takes?.get(source.source)
+    look.takes?.get(source)
 }
 
 /// The notes a **window onto content** shows, placed from the window's own zero.
@@ -630,74 +697,26 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     (!out.is_empty()).then_some(out)
 }
 
-/// One clip drawing an aggregate of clangs as a roll.
-fn roll_clip(
-    member: &Member,
-    base: Beats,
-    notes: Vec<(Beats, Beats, f32)>,
-    look: &Look<'_>,
-    ids: &mut Ids,
-    bindings: &mut Vec<Bound>,
-) -> Value {
-    let widget = ids.take();
-    // The clip draws the **aggregate**, so a drag on it moves the track: a note
-    // inside it edits through the roll's own payload, which addresses the note.
-    bindings.push(Bound {
-        widget,
-        node: member.node.id,
-    });
-    let span = notes
-        .iter()
-        .map(|(start, dur, _)| start + dur)
-        .fold(0.0f64, f64::max);
-    let dur = member
-        .dur
-        .or(member.node.duration)
-        .filter(|d| *d > 0.0)
-        .unwrap_or(span.max(1.0));
-    let flat: Vec<Value> = notes
-        .iter()
-        .flat_map(|(start, dur, pitch)| {
-            [
-                json!(start * look.units_per_beat),
-                json!(dur * look.units_per_beat),
-                json!(pitch),
-                json!(100), // the roll's default velocity
-                json!(0),   // and channel
-            ]
-        })
-        .collect();
-    json!({
-        "id": widget,
-        "type": "field",
-        "offset": base * look.units_per_beat,
-        "dur": dur * look.units_per_beat,
-        "label": label_of(&member.node),
-        "notes": flat,
-    })
-}
-
-/// What a node is called on screen. The document holds no names — a name is a
-/// client's idea — so this says what it *is*, which is what a reader needs from
-/// a picture drawn by a host that was handed a file.
-/// The three mixing props a lane header draws, as the node carries them.
+/// The mixing a lane's strip draws, as the node carries it: muted, soloed and
+/// its fader.
 ///
-/// Only what is actually written: a lane with no `mute` in its configuration is
-/// not muted, and saying so with a `false` would be this driver inventing a
-/// value the document does not hold. The keys are the clients' own
-/// (`clausters.form.document`'s `MIXING`), which is what makes a piece muted in
-/// a script open muted here.
-fn mixing_of(node: &Node) -> Vec<(&'static str, Value)> {
-    let Some(config) = node.body.config() else {
-        return Vec::new();
-    };
-    let Some(table) = config.0.as_object() else {
-        return Vec::new();
-    };
-    ["mute", "solo", "level"]
-        .into_iter()
-        .filter_map(|key| table.get(key).map(|value| (key, value.clone())))
-        .collect()
+/// The keys are the clients' own (`clausters.form.document`'s `MIXING`), which
+/// is what makes a piece muted in a script open muted here. A lane whose
+/// configuration says nothing is not muted and is at unity — the widget's props
+/// are three values and not three optional ones, so *absent* is drawn as the
+/// default rather than left unsaid.
+///
+/// `Owner::read_lanes` writes the same three keys back, which is what makes a
+/// strip pressed here a fact about the piece rather than about the window.
+fn mixing_of(node: &Node) -> (bool, bool, f64) {
+    let table = node
+        .body
+        .config()
+        .and_then(|c| c.0.as_object().cloned())
+        .unwrap_or_default();
+    let flag = |key: &str| table.get(key).and_then(Value::as_bool).unwrap_or(false);
+    let level = table.get("level").and_then(Value::as_f64).unwrap_or(1.0);
+    (flag("mute"), flag("solo"), level)
 }
 
 fn label_of(node: &Node) -> String {
@@ -746,12 +765,32 @@ mod tests {
         )
     }
 
-    fn children(def: &Value) -> &Vec<Value> {
-        def["children"].as_array().expect("a window has children")
+    /// The `multitrack` the window's first child is.
+    fn view(def: &Value) -> &Value {
+        &def["children"][0]
     }
 
+    /// The flat props, back as groups — the reading every payload of this
+    /// shape gets.
+    fn groups(prop: &Value, n: usize) -> Vec<Vec<Value>> {
+        let flat = prop.as_array().expect("a flat array");
+        flat.chunks_exact(n).map(<[Value]>::to_vec).collect()
+    }
+
+    fn lanes(def: &Value) -> Vec<Vec<Value>> {
+        groups(&view(def)["lanes"], 6)
+    }
+
+    fn clips(def: &Value) -> Vec<Vec<Value>> {
+        groups(&view(def)["clips"], 7)
+    }
+
+    /// **One widget for the whole piece**, and the lanes are its data. The
+    /// milestone's shape, and the thing the old tree could not say: with the
+    /// stack spread over N widgets there was nowhere to report *the
+    /// arrangement*, so a gesture reported what the hand did.
     #[test]
-    fn an_aggregate_of_aggregates_draws_one_lane_each_and_a_ruler_under_them() {
+    fn a_document_draws_as_one_multitrack_holding_every_lane() {
         let doc = Document::new(aggregate(
             1,
             vec![
@@ -768,20 +807,62 @@ mod tests {
             ],
         ));
         let drawn = draw(&doc, &Look::default(), "session");
-        let kids = children(&drawn.def);
-        assert_eq!(kids.len(), 3, "two lanes and the ruler");
-        // All three are `field` on the wire and told apart by their props: the
-        // lanes carry children, the ruler carries a height and no children.
-        for kid in kids {
-            assert_eq!(kid["type"], "field");
-        }
-        assert!(kids[0]["children"].is_array() && kids[1]["children"].is_array());
-        assert!(kids[2].get("children").is_none() && kids[2]["ruler"] == "beats");
+        let kids = drawn.def["children"].as_array().expect("children");
+        assert_eq!(kids.len(), 1, "one widget, not a lane each and a ruler");
+        assert_eq!(view(&drawn.def)["type"], "multitrack");
+        assert_eq!(view(&drawn.def)["id"], drawn.multitrack);
+        // It draws its own ruler, which is why there is no strip beside it.
+        assert_eq!(view(&drawn.def)["ruler"], "beats");
+        assert_eq!(lanes(&drawn.def).len(), 2, "one lane per track");
+        assert_eq!(clips(&drawn.def).len(), 2, "one clip each");
+    }
+
+    /// **A name on the wire is a node id**, which is what lets an edit-back be
+    /// read with no map on the side: the payload says which node moved because
+    /// that is what it calls it.
+    #[test]
+    fn every_lane_and_clip_is_named_by_the_node_it_draws() {
+        let doc = Document::new(aggregate(
+            1,
+            vec![placed(
+                0.0,
+                None,
+                aggregate(
+                    2,
+                    vec![placed(0.0, None, clang(7)), placed(1.0, None, clang(8))],
+                ),
+            )],
+        ));
+        let drawn = draw(&doc, &Look::default(), "session");
+        assert_eq!(lanes(&drawn.def)[0][0], "2", "the lane is the track");
+        let boxes = clips(&drawn.def);
+        let names: Vec<&str> = boxes
+            .iter()
+            .map(|c| c[0].as_str().expect("a name"))
+            .collect();
+        assert_eq!(names, vec!["7", "8"], "the clips, in document order");
+        let on: Vec<&str> = boxes
+            .iter()
+            .map(|c| c[1].as_str().expect("a lane"))
+            .collect();
+        assert_eq!(on, vec!["2", "2"], "both on the lane that holds them");
+
+        // ...and the rows say the same thing to the owner, which is what an
+        // edit-back is resolved against.
+        assert_eq!(
+            drawn.piece.clips.iter().map(|c| c.node).collect::<Vec<_>>(),
+            vec![NodeId(7), NodeId(8)]
+        );
+        assert_eq!(
+            drawn.piece.lane_of(NodeId(7)).map(|l| l.holder),
+            Some(NodeId(2))
+        );
     }
 
     /// A clip's offset is **absolute on the shared axis** while a member's is
-    /// relative to its aggregate: the two are added once, here, or every lane after
-    /// the first would draw in the wrong place.
+    /// relative to its aggregate: the two are added once, here, or every lane
+    /// after the first would draw in the wrong place — and the lane records
+    /// what they were added *to*, so an edit-back can subtract it again.
     #[test]
     fn a_nested_placement_is_absolute_on_the_shared_axis() {
         let doc = Document::new(aggregate(
@@ -797,41 +878,13 @@ mod tests {
             ..Look::default()
         };
         let drawn = draw(&doc, &look, "session");
-        let clip = &children(&drawn.def)[0]["children"][0];
-        assert_eq!(clip["offset"], 500.0, "4 + 1 beats, in units");
-        assert_eq!(clip["dur"], 200.0);
-    }
-
-    /// Every clip says which node it draws — the one thing only what built the
-    /// tree can know, and what an intent needs to name.
-    #[test]
-    fn every_clip_is_bound_to_the_node_it_draws() {
-        let doc = Document::new(aggregate(
-            1,
-            vec![placed(
-                0.0,
-                None,
-                aggregate(
-                    2,
-                    vec![placed(0.0, None, clang(7)), placed(1.0, None, clang(8))],
-                ),
-            )],
-        ));
-        let drawn = draw(&doc, &Look::default(), "session");
-        let nodes: Vec<u64> = drawn.bindings.iter().map(|b| b.node.0).collect();
-        assert_eq!(nodes, vec![7, 8], "the clips, in document order");
-        let clips = children(&drawn.def)[0]["children"].as_array().unwrap();
-        let widgets: Vec<i64> = clips.iter().map(|c| c["id"].as_i64().unwrap()).collect();
+        let clip = &clips(&drawn.def)[0];
+        assert_eq!(clip[2], 500.0, "4 + 1 beats, in units");
+        assert_eq!(clip[3], 200.0);
         assert_eq!(
-            widgets,
-            drawn
-                .bindings
-                .iter()
-                .map(|b| b.widget as i64)
-                .collect::<Vec<_>>(),
-            "and the bindings name those very widgets"
+            drawn.piece.lanes[0].base, 4.0,
+            "and the lane says what the offset was measured from"
         );
-        assert!(drawn.next_id > widgets.iter().max().copied().unwrap() as i32);
     }
 
     /// A document that is one thing is still a window: a host handed a file
@@ -840,10 +893,9 @@ mod tests {
     fn a_document_that_is_not_an_aggregate_still_draws() {
         let doc = Document::new(clang(1));
         let drawn = draw(&doc, &Look::default(), "one thing");
-        let kids = children(&drawn.def);
-        assert_eq!(kids.len(), 2, "one lane and the ruler");
-        assert_eq!(drawn.bindings.len(), 1);
-        assert_eq!(drawn.bindings[0].node, NodeId(1));
+        assert_eq!(lanes(&drawn.def).len(), 1);
+        assert_eq!(clips(&drawn.def).len(), 1);
+        assert_eq!(drawn.piece.clips[0].node, NodeId(1));
     }
 
     /// **A piece muted in a client opens muted here.** A node's configuration
@@ -856,19 +908,16 @@ mod tests {
         }
         let doc = Document::new(aggregate(1, vec![placed(0.0, None, track)]));
         let drawn = draw(&doc, &Look::default(), "session");
-        let lane = &children(&drawn.def)[0];
-        assert_eq!(lane["mute"], true);
-        assert_eq!(lane["level"], 0.25);
-        assert!(
-            lane.get("solo").is_none(),
-            "only what the document holds: an absent key is not a false one"
-        );
+        let lane = &lanes(&drawn.def)[0];
+        assert_eq!(lane[3], true, "muted");
+        assert_eq!(lane[4], false, "and not soloed");
+        assert_eq!(lane[5], 0.25, "at the fader the piece carries");
     }
 
-    /// And the header is bound, so a press on it names the node it configures —
-    /// which is what the clips inside the lane had and the lane itself did not.
+    /// A lane with no strip in its configuration is not muted and is at unity:
+    /// the widget's props are three values, not three optional ones.
     #[test]
-    fn a_lane_is_bound_to_the_element_its_header_configures() {
+    fn a_lane_with_no_mixing_is_audible_at_unity() {
         let doc = Document::new(aggregate(
             1,
             vec![placed(
@@ -878,23 +927,18 @@ mod tests {
             )],
         ));
         let drawn = draw(&doc, &Look::default(), "session");
+        let lane = &lanes(&drawn.def)[0];
         assert_eq!(
-            drawn.headers.iter().map(|b| b.node).collect::<Vec<_>>(),
-            vec![NodeId(2)],
-            "one lane, bound to the track it draws"
-        );
-        assert_eq!(drawn.headers[0].widget, children(&drawn.def)[0]["id"]);
-        assert!(
-            drawn.bindings.iter().all(|b| b.node != NodeId(2)),
-            "and the clips are still the clips"
+            (&lane[3], &lane[4], &lane[5]),
+            (&json!(false), &json!(false), &json!(1.0))
         );
     }
 
     #[test]
-    fn a_grid_reaches_the_lane_and_nothing_reaches_it_when_there_is_none() {
+    fn a_grid_reaches_the_view_and_nothing_reaches_it_when_there_is_none() {
         let doc = Document::new(aggregate(1, vec![placed(0.0, None, clang(2))]));
         let plain = draw(&doc, &Look::default(), "t");
-        assert!(children(&plain.def)[0].get("snap").is_none());
+        assert!(view(&plain.def).get("snap").is_none());
         let snapped = draw(
             &doc,
             &Look {
@@ -904,7 +948,7 @@ mod tests {
             },
             "t",
         );
-        assert_eq!(children(&snapped.def)[0]["snap"], 50.0);
+        assert_eq!(view(&snapped.def)["snap"], 50.0);
     }
 }
 
@@ -945,6 +989,11 @@ mod take_tests {
         ))
     }
 
+    /// The first clip's septuple.
+    fn clip(def: &Value) -> Vec<Value> {
+        def["children"][0]["clips"].as_array().expect("clips")[..7].to_vec()
+    }
+
     /// A resolved take draws the **buffer**, which is the same samples an edit
     /// writes: the picture and the samples are one thing, or the host is
     /// showing one copy and editing another.
@@ -964,21 +1013,21 @@ mod take_tests {
             ..Look::default()
         };
         let drawn = draw(&session.document, &look, "take");
-        let clip = &drawn.def["children"][0]["children"][0];
-        assert_eq!(clip["buffer"], 7, "the buffer it was read into");
-        assert_eq!(clip["channels"], 2);
+        let clip = clip(&drawn.def);
+        assert_eq!(clip[6], 7, "the buffer it was read into");
         assert_eq!(
-            clip["dur"], 96_000.0,
+            clip[3], 96_000.0,
             "as long as the samples, in timeline units"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **Assembled samples draw one clip and a take per window**, each over
-    /// its own stretch of it — the standalone host reading what a joined clip
-    /// was saved as, which is the one path a script is not there to draw.
+    /// **A trim is still one window onto one file**, so the box it leaves draws
+    /// that file and reads from the frame the trim moved it to. A clip
+    /// assembled from *several* windows draws empty instead — one box, one
+    /// body, and a picture of a third of the samples would be worse than none.
     #[test]
-    fn segments_draw_one_clip_with_a_take_per_window() {
+    fn one_window_draws_its_samples_from_where_it_starts_and_several_draw_none() {
         use clausters_document::SegmentRef;
 
         let dir = std::env::temp_dir().join(format!("clausters_gui_segs_{}", std::process::id()));
@@ -995,53 +1044,58 @@ mod take_tests {
             start,
             duration,
         };
-        let node = Node::new(
-            NodeId(2),
-            Body::Segments {
-                segments: vec![segment(3, 0.0, 1.0), segment(4, 480.0, 2.0)],
-                config: Default::default(),
-            },
-        );
-        let document = Document::new(Node::new(
-            NodeId(1),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: None,
-                    node,
-                }],
-                config: Opaque::none(),
-            },
-        ));
-        let session = Session::new(document)
-            .with_source(
-                SourceId(3),
-                Source::file("a.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
-            )
-            .with_source(
-                SourceId(4),
-                Source::file("b.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
+        let piece = |segments: Vec<SegmentRef>| {
+            let node = Node::new(
+                NodeId(2),
+                Body::Segments {
+                    segments,
+                    config: Default::default(),
+                },
             );
-        let load = sources::plan(&session, &dir, 7);
+            let document = Document::new(Node::new(
+                NodeId(1),
+                Body::Aggregate {
+                    grouping: Grouping::Concrete,
+                    members: vec![Member {
+                        offset: 0.0,
+                        dur: None,
+                        node,
+                    }],
+                    config: Opaque::none(),
+                },
+            ));
+            Session::new(document)
+                .with_source(
+                    SourceId(3),
+                    Source::file("a.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
+                )
+                .with_source(
+                    SourceId(4),
+                    Source::file("b.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
+                )
+        };
+
+        let one = piece(vec![segment(3, 480.0, 1.0)]);
+        let load = sources::plan(&one, &dir, 7);
         let look = Look {
             takes: Some(&load.takes),
             ..Look::default()
         };
-        let drawn = draw(&session.document, &look, "joined");
-        let clip = &drawn.def["children"][0]["children"][0];
-        let takes = clip["children"].as_array().expect("a body per window");
-        assert_eq!(takes.len(), 2);
-        assert_eq!(takes[0]["buffer"], 7, "the first window's samples");
-        assert_eq!(takes[1]["buffer"], 8, "and the second's, a different file");
-        // Each on its own stretch of the clip, in timeline units.
-        assert_eq!(takes[0]["at"], 0.0);
-        // A window's length is in seconds, so it is drawn against the rate.
-        assert_eq!(takes[1]["at"], look.units_per_second);
-        assert_eq!(takes[1]["dur"], 2.0 * look.units_per_second);
-        // ...and the second reads its own frame, which the first does not name.
-        assert_eq!(takes[1]["start"], 480.0);
-        assert!(takes[0].get("start").is_none());
+        let trimmed = clip(&draw(&one.document, &look, "trimmed").def);
+        assert_eq!(trimmed[6], 7, "the file the window is onto");
+        assert_eq!(trimmed[4], 480.0, "read from the frame the trim left it at");
+
+        let joined = piece(vec![segment(3, 0.0, 1.0), segment(4, 480.0, 2.0)]);
+        let load = sources::plan(&joined, &dir, 7);
+        let look = Look {
+            takes: Some(&load.takes),
+            ..Look::default()
+        };
+        let clip = clip(&draw(&joined.document, &look, "joined").def);
+        assert_eq!(
+            clip[6], -1,
+            "two files in one box: drawn empty, and honestly"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1072,14 +1126,13 @@ mod take_tests {
                 config: Opaque::none(),
             },
         ));
-        let drawn = draw(&document, &look, "rates");
-        let clip = &drawn.def["children"][0]["children"][0];
-        assert_eq!(clip["offset"], 4.0 * 24_000.0, "a placement is musical");
-        assert_eq!(clip["dur"], 3.0 * 48_000.0, "a recording is not");
+        let clip = clip(&draw(&document, &look, "rates").def);
+        assert_eq!(clip[2], 4.0 * 24_000.0, "a placement is musical");
+        assert_eq!(clip[3], 3.0 * 48_000.0, "a recording is not");
     }
 
     /// A resolved take also **opens as an editor**, on its own axis and bound
-    /// to the same node the clip is: the arrangement is where the samples are
+    /// to the node the clip draws: the arrangement is where the samples are
     /// placed and this is where it is drawn over, and both write the one buffer.
     #[test]
     fn a_resolved_take_opens_an_editor_bound_to_the_same_node() {
@@ -1096,7 +1149,7 @@ mod take_tests {
             ..Look::default()
         };
         let drawn = draw(&session.document, &look, "take");
-        let children = drawn.def["children"].as_array().expect("lanes");
+        let children = drawn.def["children"].as_array().expect("children");
         let editor = children.last().expect("the editor pane");
         assert_eq!(editor["type"], "signal", "a picture of the samples");
         assert_eq!(editor["buffer"], 7, "the very buffer the clip draws");
@@ -1112,11 +1165,17 @@ mod take_tests {
             editor["h"], EDITOR_ROW_H,
             "one channel, one row's worth of height"
         );
-        let bound: Vec<NodeId> = drawn.bindings.iter().map(|b| b.node).collect();
+        // **The only bindings left are the editors.** A clip is not a widget
+        // any more, so there is nothing per clip to bind -- the piece is one
+        // widget and its boxes name their nodes themselves.
         assert_eq!(
-            bound,
-            vec![NodeId(2), NodeId(2)],
-            "the clip and the editor are two views of one node"
+            drawn.bindings.iter().map(|b| b.node).collect::<Vec<_>>(),
+            vec![NodeId(2)],
+        );
+        assert_eq!(
+            drawn.piece.clips[0].node,
+            NodeId(2),
+            "the same node, drawn twice"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1137,17 +1196,17 @@ mod take_tests {
         );
     }
 
-    /// Unresolved — no session, no server, a missing file — is a clip with a
+    /// Unresolved — no session, no server, a missing file — is a box with a
     /// name and no body, and **not** a refusal: what the document says still
     /// moves, undoes and saves.
     #[test]
     fn an_unresolved_take_still_draws_as_a_clip() {
         let doc = one_take(3);
         let drawn = draw(&doc, &Look::default(), "take");
-        let clip = &drawn.def["children"][0]["children"][0];
-        assert!(clip.get("buffer").is_none(), "nothing to draw it with");
-        assert_eq!(clip["dur"], 48_000.0, "one beat, for want of a length");
-        assert_eq!(drawn.bindings.len(), 1, "and it is still bound");
+        let clip = clip(&drawn.def);
+        assert_eq!(clip[6], -1, "nothing to draw it with");
+        assert_eq!(clip[3], 48_000.0, "one beat, for want of a length");
+        assert_eq!(drawn.piece.clips.len(), 1, "and it is still a box");
     }
 }
 
@@ -1223,10 +1282,10 @@ mod registry_tests {
     /// Written for a bug that shipped: a def's id *is* its root widget's, so a
     /// tree numbered from 1 handed to `/gui_def 1` collided with itself, the
     /// registry dropped the whole subtree, and the window came up **empty**
-    /// with one warning in the log. Every clip being findable afterwards is
-    /// what says the picture exists.
+    /// with one warning in the log. The multitrack being findable, and holding
+    /// the piece, is what says the picture exists.
     #[test]
-    fn every_drawn_widget_reaches_the_registry() {
+    fn the_multitrack_reaches_the_registry_holding_the_piece() {
         let def_id = 1;
         let drawn = draw(
             &doc(),
@@ -1238,24 +1297,27 @@ mod registry_tests {
         );
         let mut host = Host::new();
         open(&mut host, def_id, &drawn);
-        for bound in &drawn.bindings {
-            let kind = host.widget_kind(def_id, bound.widget);
-            assert!(
-                kind.is_some(),
-                "clip widget {} is missing from the registry",
-                bound.widget
-            );
-            // And it built as a **clip**: the three lane-ish widgets share one
-            // wire name and are told apart by their props, so a clip that came
-            // out a lane would pass a presence check and draw nothing of what
-            // it is.
-            assert!(
-                matches!(kind, Some(crate::host::widget::WidgetKind::Clip { .. })),
-                "widget {} built as {:?} rather than a clip",
-                bound.widget,
-                kind.map(std::mem::discriminant)
-            );
-        }
+        let kind = host.widget_kind(def_id, drawn.multitrack);
+        assert!(
+            kind.is_some(),
+            "the multitrack is missing from the registry"
+        );
+        // And it built as the **element**, not as an unknown type laid out and
+        // never painted -- which is what a name this host did not know would
+        // give, and would pass a presence check.
+        let info = host
+            .widget_kind(def_id, drawn.multitrack)
+            .and_then(|k| {
+                k.as_element()
+                    .map(crate::host::widget::element::Element::info)
+            })
+            .expect("an element with something to say");
+        let clips = info
+            .iter()
+            .find(|(k, _)| k == "clips")
+            .map(|(_, v)| v.as_array().map_or(0, Vec::len))
+            .expect("the clips it holds");
+        assert_eq!(clips, 2 * 7, "both boxes, as septuples");
     }
 
     /// And the failure itself, pinned: numbering from the def's own id loses
@@ -1265,21 +1327,20 @@ mod registry_tests {
     fn numbering_from_the_defs_own_id_loses_the_tree() {
         let def_id = 1;
         let drawn = draw(&doc(), &Look::default(), "session"); // first_id: 1
-        assert!(
-            drawn.bindings.iter().any(|b| b.widget == def_id),
+        assert_eq!(
+            drawn.multitrack, def_id,
             "the tree numbered over the def's id, which is the collision"
         );
         let mut host = Host::new();
         open(&mut host, def_id, &drawn);
         // The collided id still *resolves* — to the window itself — which is
         // exactly why presence is the wrong question and the kind is the right
-        // one: what was dropped is the clip, not the number.
+        // one: what was dropped is the multitrack, not the number.
         assert!(
-            drawn.bindings.iter().any(|b| !matches!(
-                host.widget_kind(def_id, b.widget),
-                Some(crate::host::widget::WidgetKind::Clip { .. })
-            )),
-            "and the registry dropped the clip that collided"
+            host.widget_kind(def_id, drawn.multitrack)
+                .and_then(|k| k.as_element())
+                .is_none(),
+            "and the registry dropped the widget that collided"
         );
     }
 }
@@ -1325,7 +1386,7 @@ mod depth_tests {
     /// drew the containers and called it a picture, which is an empty clip
     /// where the music was.
     #[test]
-    fn a_piece_of_aggregates_of_tracks_draws_the_notes_and_not_the_containers() {
+    fn a_piece_of_aggregates_of_tracks_draws_the_leaves_and_not_the_containers() {
         let doc = Document::new(aggregate(
             1,
             vec![
@@ -1333,137 +1394,51 @@ mod depth_tests {
                     0.0,
                     aggregate(
                         2,
-                        vec![at(
-                            0.0,
-                            aggregate(3, vec![at(0.0, clang(4)), at(2.0, clang(5))]),
-                        )],
+                        vec![
+                            at(
+                                0.0,
+                                aggregate(3, vec![at(0.0, clang(4)), at(1.0, clang(5))]),
+                            ),
+                            at(0.0, aggregate(6, vec![at(2.0, clang(7))])),
+                        ],
                     ),
                 ),
-                at(
-                    0.0,
-                    aggregate(6, vec![at(0.0, aggregate(7, vec![at(0.0, clang(8))]))]),
-                ),
+                at(0.0, aggregate(8, vec![at(0.0, clang(9))])),
             ],
         ));
-        let drawn = draw(&doc, &Look::default(), "piece");
-        let nodes: Vec<u64> = drawn.bindings.iter().map(|b| b.node.0).collect();
+        let drawn = draw(&doc, &Look::default(), "deep");
+        let names: Vec<NodeId> = drawn.piece.lanes.iter().map(|l| l.node).collect();
         assert_eq!(
-            nodes,
-            vec![4, 5, 8],
-            "the clips are the clangs, not the tracks that hold them"
+            names,
+            vec![NodeId(3), NodeId(6), NodeId(8)],
+            "a lane per track, wherever it sits -- not one per container"
         );
-        let kids = drawn.def["children"].as_array().unwrap();
-        assert_eq!(kids.len(), 3, "one lane per track, and the ruler");
-        assert_eq!(
-            kids[0]["children"].as_array().unwrap().len(),
-            2,
-            "the first track's two notes"
-        );
+        let clips: Vec<NodeId> = drawn.piece.clips.iter().map(|c| c.node).collect();
+        assert_eq!(clips, vec![NodeId(4), NodeId(5), NodeId(7), NodeId(9)]);
     }
 
-    /// **A cut over notes draws as two clips of one timeline**, and the host
-    /// has to read the window to do it: the notes are content the document
-    /// holds once, each half names it, and a host that stopped at the tree
-    /// would draw two empty rectangles where the phrase is.
-    #[test]
-    fn a_window_onto_content_draws_the_notes_its_window_names() {
-        use clausters_document::{SegmentRef, SegmentSource};
-
-        let note = |id: u64, pitch: f64| {
-            Node::new(
-                NodeId(id),
-                Body::Clang {
-                    config: Opaque(json!({ "midinote": pitch, "dur": 1.0 })),
-                    fires: None,
-                },
-            )
-        };
-        let held = aggregate(10, vec![at(0.0, note(11, 60.0)), at(2.0, note(12, 64.0))]);
-        let half = |id: u64, start: Beats, dur: Beats| {
-            Node::new(
-                NodeId(id),
-                Body::Segments {
-                    segments: vec![SegmentRef {
-                        source: SegmentSource::Node { node: NodeId(10) },
-                        start,
-                        duration: dur,
-                    }],
-                    config: Opaque::none(),
-                },
-            )
-        };
-        let doc = Document::new(aggregate(
-            1,
-            vec![at(
-                0.0,
-                aggregate(
-                    4,
-                    vec![at(0.0, half(2, 0.0, 2.0)), at(2.0, half(3, 2.0, 2.0))],
-                ),
-            )],
-        ))
-        .with_content(vec![held]);
-
-        let drawn = draw(&doc, &Look::default(), "piece");
-        let clips = drawn.def["children"][0]["children"].as_array().unwrap();
-        assert_eq!(clips.len(), 2, "one clip per window");
-        assert_eq!(
-            windowed_notes(
-                &Node::new(
-                    NodeId(9),
-                    Body::Segments {
-                        segments: vec![
-                            SegmentRef {
-                                source: SegmentSource::Node { node: NodeId(10) },
-                                start: 0.0,
-                                duration: 2.0,
-                            },
-                            SegmentRef {
-                                source: SegmentSource::Node { node: NodeId(10) },
-                                start: 2.0,
-                                duration: 2.0,
-                            },
-                        ],
-                        config: Opaque::none(),
-                    },
-                ),
-                &Look {
-                    content: Some(&doc.content),
-                    ..Look::default()
-                },
-            )
-            .map(|notes| notes.iter().map(|(at, _, _)| *at).collect::<Vec<_>>()),
-            Some(vec![0.0, 2.0]),
-            "a run of two windows reads them back to back"
-        );
-        // Each half draws the note its window holds, placed from its own zero --
-        // and the second's note is *not* drawn at beat two, which is where it
-        // sits on the timeline they share.
-        for clip in clips {
-            let notes = clip["notes"].as_array().unwrap();
-            assert_eq!(notes.len() / 5, 1, "one note in each window");
-            assert_eq!(notes[0], 0.0, "placed from the window's own start");
-        }
-    }
-
-    /// The offsets accumulate all the way down: a note two beats into a track
-    /// that starts four beats into the piece sits at six on the shared axis.
+    /// And the offsets accumulate through every level, so a track nested two
+    /// aggregates deep still draws where it sounds.
     #[test]
     fn offsets_accumulate_through_every_level() {
         let doc = Document::new(aggregate(
             1,
             vec![at(
-                4.0,
-                aggregate(2, vec![at(0.0, aggregate(3, vec![at(2.0, clang(4))]))]),
+                2.0,
+                aggregate(2, vec![at(3.0, aggregate(3, vec![at(4.0, clang(4))]))]),
             )],
         ));
         let look = Look {
             units_per_beat: 10.0,
             ..Look::default()
         };
-        let drawn = draw(&doc, &look, "piece");
-        let clip = &drawn.def["children"][0]["children"][0];
-        assert_eq!(clip["offset"], 60.0, "4 + 0 + 2 beats, in units");
+        let drawn = draw(&doc, &look, "deep");
+        let clips = drawn.def["children"][0]["clips"].as_array().expect("clips");
+        assert_eq!(clips[2], 90.0, "2 + 3 + 4 beats, in units");
+        assert_eq!(
+            drawn.piece.lanes[0].base, 5.0,
+            "and the lane holds the 2 + 3 its member's own offset is measured from"
+        );
     }
 }
 
@@ -1501,11 +1476,16 @@ mod roll_tests {
         }
     }
 
-    /// **A track is one clip with a roll in it**, which is what a track is in
-    /// every editor — and what a document of clangs has to become to be read as
-    /// music rather than as a row of empty rectangles.
+    /// **A track is one clip**, which is what a track is in every editor — and
+    /// what a document of clangs has to become to be read as music rather than
+    /// as a row of empty rectangles.
+    ///
+    /// The notes themselves are not drawn inside it: the multitrack **places**,
+    /// and a body that is edited is entered. Drawing the roll read-only inside
+    /// the box is a widget feature this host does not have yet
+    /// (`clients/gui/PLAN.md`, "Found by use").
     #[test]
-    fn an_aggregate_of_clangs_is_one_clip_carrying_the_notes() {
+    fn an_aggregate_of_clangs_is_one_clip_as_long_as_the_notes_reach() {
         let doc = Document::new(aggregate(
             1,
             vec![at(
@@ -1521,32 +1501,19 @@ mod roll_tests {
             ..Look::default()
         };
         let drawn = draw(&doc, &look, "t");
-        let lane = &drawn.def["children"][0];
-        let clips = lane["children"].as_array().expect("a lane of clips");
-        assert_eq!(clips.len(), 1, "one clip, not one per note");
-
-        // The notes ride in the clip's **own** axis, so their starts are
-        // relative to it: the second note is two beats in, not two beats from
-        // the window's origin.
-        let notes = clips[0]["notes"].as_array().expect("a roll");
-        assert_eq!(notes.len(), 10, "five numbers a note: {notes:?}");
-        assert_eq!(notes[0], 0.0, "the first note's start");
-        assert_eq!(notes[2], 72.0, "and its pitch");
-        assert_eq!(notes[5], 200.0, "the second note, two beats in");
-        assert_eq!(notes[7], 76.0);
-        assert_eq!(
-            clips[0]["dur"], 300.0,
-            "the clip spans to the last note's end"
-        );
-
-        // The clip draws the **aggregate**, so a drag on it moves the track; a note
-        // inside edits through the roll's own payload.
-        assert_eq!(drawn.bindings.len(), 1);
-        assert_eq!(drawn.bindings[0].node, NodeId(2));
+        assert_eq!(drawn.piece.clips.len(), 1, "one clip, not one per note");
+        // The clip draws the **aggregate**, so a drag on it moves the track.
+        assert_eq!(drawn.piece.clips[0].node, NodeId(2));
+        // ...and its lane is the track too, held by the piece above it: a lane
+        // that *is* one element borrows its parent's members, because that is
+        // where the element is a member.
+        assert_eq!(drawn.piece.lanes[0].node, NodeId(2));
+        assert_eq!(drawn.piece.lanes[0].holder, NodeId(1));
     }
 
-    /// An aggregate that is **not** all pitched clangs stays a lane of clips: a roll
-    /// drawn over half an aggregate would leave samples out without saying so.
+    /// An aggregate that is **not** all pitched clangs stays a lane of clips: a
+    /// roll drawn over half an aggregate would leave elements out without
+    /// saying so.
     #[test]
     fn an_aggregate_that_is_not_all_notes_stays_a_lane_of_clips() {
         let doc = Document::new(aggregate(
@@ -1573,8 +1540,15 @@ mod roll_tests {
             )],
         ));
         let drawn = draw(&doc, &Look::default(), "t");
-        let clips = drawn.def["children"][0]["children"].as_array().unwrap();
-        assert_eq!(clips.len(), 2, "one clip each, and no roll");
-        assert!(clips[0].get("notes").is_none());
+        assert_eq!(
+            drawn.piece.clips.iter().map(|c| c.node).collect::<Vec<_>>(),
+            vec![NodeId(3), NodeId(4)],
+            "two boxes on the lane, not one carrying half a roll"
+        );
+        assert_eq!(
+            drawn.piece.lanes[0].holder,
+            NodeId(2),
+            "and the lane holds them"
+        );
     }
 }

@@ -2024,6 +2024,25 @@ impl Host {
                 }
                 return true;
             }
+            // **The piece stated whole**: one payload naming every clip or
+            // every strip, so what it means is however many intents it takes
+            // to make the document say that -- and they are one entry, because
+            // a block move is one thing a hand did.
+            Some(OscType::String(tag)) if tag == "clips" || tag == "lanes" => {
+                let intents = owner.read_events(widget_id, args);
+                let applied = if intents.is_empty() {
+                    Vec::new()
+                } else {
+                    owner.apply_all(&intents, &clausters_document::Against::default())
+                };
+                self.adopt(def_id, &applied);
+                self.settle(ack::Acked {
+                    seq,
+                    doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                    ..Default::default()
+                });
+                return true;
+            }
             _ => {}
         }
         let Some((intent, label)) = owner.read_event(widget_id, args) else {
@@ -2323,6 +2342,30 @@ impl Host {
                 _ => None,
             })
             .collect();
+        // **The piece is redrawn from the document, never patched.** The
+        // multitrack is one widget holding two lists, so what an applied edit
+        // leaves is simply what the document now says -- derived by the walk
+        // that drew it, so the picture and the piece cannot disagree. It is
+        // also the only thing that can adopt a *structural* edit: an undo of a
+        // lane change puts a clip back in another aggregate, which no
+        // per-widget patch could express.
+        if !applied.iter().any(|a| a.applied) {
+            return;
+        }
+        let piece = owner.multitrack().map(|widget| (widget, owner.piece()));
+        if let Some((widget, piece)) = piece {
+            // The effects are `Redraw`, and the front already repaints after an
+            // answered gesture -- there is nothing here for a caller to carry.
+            let mut fx = Vec::new();
+            self.set_props(
+                widget,
+                vec![
+                    ("lanes".into(), piece.lanes_prop),
+                    ("clips".into(), piece.clips_prop),
+                ],
+                &mut fx,
+            );
+        }
         for (widget, offset, dur) in moves {
             if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
                 && let WidgetKind::Clip {

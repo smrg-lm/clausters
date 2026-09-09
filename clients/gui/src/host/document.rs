@@ -66,6 +66,18 @@ fn channel_at(args: &[OscType]) -> u32 {
     }
 }
 
+/// A flag as any of the three ways a client may have written it.
+fn truthy_at(args: &[OscType], n: usize) -> bool {
+    match args.get(n) {
+        Some(OscType::Int(v)) => *v != 0,
+        Some(OscType::Long(v)) => *v != 0,
+        Some(OscType::Bool(v)) => *v,
+        Some(OscType::Float(v)) => *v != 0.0,
+        Some(OscType::Double(v)) => *v != 0.0,
+        _ => false,
+    }
+}
+
 fn long_at(args: &[OscType], n: usize) -> Option<u64> {
     match args.get(n) {
         Some(OscType::Long(v)) if *v >= 0 => Some(*v as u64),
@@ -121,6 +133,13 @@ pub struct Owner {
     /// And which node each **lane header** configures. See
     /// [`Owner::bind_header`] for why it is not the same map.
     headers: HashMap<i32, NodeId>,
+    /// The widget drawing the whole piece, when the tree has one.
+    ///
+    /// Not a map, because there is nothing to map: the multitrack names its
+    /// lanes and its clips by the nodes' own numbers, so a payload is read
+    /// without asking anything which widget it came from. What the id is for is
+    /// the other direction — writing an applied edit back onto the picture.
+    multitrack: Option<i32>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -153,6 +172,7 @@ impl Owner {
             takes: sources::Takes::default(),
             nodes: HashMap::new(),
             headers: HashMap::new(),
+            multitrack: None,
         }
     }
 
@@ -309,6 +329,262 @@ impl Owner {
         self.headers
             .iter()
             .find_map(|(widget, bound)| (*bound == node).then_some(*widget))
+    }
+
+    /// Says which widget draws **the whole piece**.
+    ///
+    /// The multitrack needs no per-clip binding — a clip's name on the wire is
+    /// its node's number — so what is recorded is only the widget id, and only
+    /// because an applied edit has to be written back onto *some* widget.
+    pub fn bind_multitrack(&mut self, widget_id: i32) {
+        self.multitrack = Some(widget_id);
+    }
+
+    /// The widget drawing the piece, if one does.
+    pub fn multitrack(&self) -> Option<i32> {
+        self.multitrack
+    }
+
+    /// The piece as it now stands, in the widget's own vocabulary — the lanes
+    /// and clips a `/gui_set` would carry, and the nodes behind them.
+    ///
+    /// Re-derived rather than remembered: the document is the state, and a
+    /// second copy of the piece kept beside it is a second copy to keep in
+    /// step. It is the same walk the tree was drawn with, so what an edit-back
+    /// is resolved against cannot disagree with what is on screen.
+    pub fn piece(&self) -> tree::Piece {
+        tree::piece(&self.document, &self.look())
+    }
+
+    /// Reads a widget's `/gui_event` payload as **the edits it stands for**.
+    ///
+    /// The plural door, and the one the multitrack comes through. A payload
+    /// that states the piece — `"clips"`, `"lanes"` — is one message describing
+    /// every box or every strip, so what it means is however many intents it
+    /// takes to make the document say that; a payload that states one thing is
+    /// one intent, and goes through [`Self::read_event`] unchanged.
+    ///
+    /// **They are one transaction.** A block move is one thing a hand did, so
+    /// `Ctrl`+`Z` walks back over all of it at once — which is why this returns
+    /// the run rather than the caller applying them one at a time.
+    pub fn read_events(&self, widget_id: i32, args: &[OscType]) -> Vec<(Intent, &'static str)> {
+        match args.first() {
+            Some(OscType::String(tag)) if tag == "clips" => self.read_clips(&args[1..]),
+            Some(OscType::String(tag)) if tag == "lanes" => self.read_lanes(&args[1..]),
+            _ => self.read_event(widget_id, args).into_iter().collect(),
+        }
+    }
+
+    /// **The piece's clips, as they now stand** — the one payload every
+    /// placement gesture leaves.
+    ///
+    /// A move, a trim, a block drag and a lane change all arrive here, and
+    /// nothing in the payload says which of them it was: what is compared is
+    /// the list against the document, and what comes out is the difference.
+    /// That is the whole reason the widget reports the piece — the reader has
+    /// no case to get wrong.
+    ///
+    /// Two shapes come out of it. A clip that stayed on its lane is a
+    /// [`Intent::Place`], which is what a placement is. A clip that **crossed**
+    /// is not a placement at all — it left one aggregate and joined another —
+    /// so it is a pair of [`Intent::SetMembers`], one per aggregate, stating
+    /// what each now holds. Both are absolute, so applying the run twice leaves
+    /// the same piece.
+    fn read_clips(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
+        let units = self.units_per_beat.max(f64::MIN_POSITIVE);
+        let now = self.piece();
+        // What each aggregate ends up holding, for the clips that crossed.
+        let mut leaving: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        let mut joining: HashMap<NodeId, Vec<clausters_document::Member>> = HashMap::new();
+        let mut placed = Vec::new();
+        for clip in args.as_chunks::<7>().0 {
+            let (Some(OscType::String(name)), Some(OscType::String(lane))) =
+                (clip.first(), clip.get(1))
+            else {
+                continue;
+            };
+            let (Some(node), Some(lane)) = (tree::node_named(name), tree::node_named(lane)) else {
+                continue;
+            };
+            // A clip naming a lane the document has none of is **kept where it
+            // is** rather than dropped: the widget hands back what it could not
+            // place so it can be re-homed, and a reader that acted on it would
+            // be moving a box into a container that does not exist.
+            let Some(dest) = now.lane(lane) else { continue };
+            let Some(was) = now.lane_of(node) else {
+                continue;
+            };
+            let offset = float_at(clip, 2).unwrap_or(0.0) as f64 / units;
+            // **And the length leaves by the unit of its own data.** A take's
+            // seconds are a wall-clock fact; dividing them by the beat would
+            // write a length that the next tempo change moves.
+            let per_length = match self.document.find(node).map(|n| n.duration_unit()) {
+                Some(TimeUnit::Seconds) => self.units_per_second.max(f64::MIN_POSITIVE),
+                _ => units,
+            };
+            let dur = float_at(clip, 3)
+                .map(|d| d as f64 / per_length)
+                .filter(|d| *d > 0.0);
+            if was.holder == dest.holder {
+                // Same aggregate: a placement, whatever the picture called it.
+                placed.push((node, offset - dest.base, dur));
+                continue;
+            }
+            let Some(held) = self.document.find(node).cloned() else {
+                continue;
+            };
+            leaving.entry(was.holder).or_default().push(node);
+            joining
+                .entry(dest.holder)
+                .or_default()
+                .push(clausters_document::Member {
+                    offset: offset - dest.base,
+                    dur,
+                    node: held,
+                });
+        }
+        let mut out: Vec<(Intent, &'static str)> = Vec::new();
+        for holder in leaving
+            .keys()
+            .chain(joining.keys())
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let Some(members) = self.members_of(holder) else {
+                continue;
+            };
+            let gone = leaving.get(&holder).cloned().unwrap_or_default();
+            let mut members: Vec<clausters_document::Member> = members
+                .iter()
+                .filter(|m| !gone.contains(&m.node.id))
+                .cloned()
+                .collect();
+            members.extend(joining.get(&holder).cloned().unwrap_or_default());
+            out.push((
+                Intent::SetMembers {
+                    node: holder,
+                    members,
+                },
+                "move a clip to another lane",
+            ));
+        }
+        out.extend(
+            placed
+                .into_iter()
+                .map(|(node, offset, dur)| (Intent::Place { node, offset, dur }, "move a clip")),
+        );
+        out
+    }
+
+    /// **The piece's lanes, as they now stand** — the mixer's payload.
+    ///
+    /// Separate from the clips for the reason they are two structures: a fader
+    /// moved must not resend every clip. What is written is the *element's*
+    /// configuration, so a mute survives a save and undoes like a move — the
+    /// same [`Intent::Configure`] a script emits, which is why the undo comes
+    /// out of the document identically whoever made the edit.
+    ///
+    /// A configuration is replaced **whole**, so each starts from what the node
+    /// already carries and writes the three keys over it; a lane whose strip
+    /// says what the document already says is not an edit, which is what keeps
+    /// a drag on one fader from logging every other lane.
+    fn read_lanes(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
+        let mut out = Vec::new();
+        for lane in args.as_chunks::<6>().0 {
+            let Some(OscType::String(name)) = lane.first() else {
+                continue;
+            };
+            let Some(node) = tree::node_named(name) else {
+                continue;
+            };
+            let Some(held) = self.document.find(node) else {
+                continue;
+            };
+            let held_config = held
+                .body
+                .config()
+                .and_then(|c| c.0.as_object().cloned())
+                .unwrap_or_default();
+            let (mute, solo, level) = (
+                truthy_at(lane, 3),
+                truthy_at(lane, 4),
+                float_at(lane, 5).unwrap_or(1.0) as f64,
+            );
+            // **Compared against what the lane was drawn with**, not against
+            // the keys the configuration happens to hold: a lane that says
+            // nothing is drawn audible at unity, so a strip reporting exactly
+            // that is not an edit. Comparing the raw tables instead would make
+            // the first fader drag log a `Configure` for every other lane --
+            // and one undo per lane to take it back.
+            let held_flag = |key: &str| {
+                held_config
+                    .get(key)
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            };
+            let held_level = held_config
+                .get("level")
+                .and_then(Value::as_f64)
+                .unwrap_or(1.0);
+            if (held_flag("mute"), held_flag("solo"), held_level) == (mute, solo, level) {
+                continue;
+            }
+            let mut config = held_config;
+            config.insert("mute".into(), Value::from(mute));
+            config.insert("solo".into(), Value::from(solo));
+            config.insert("level".into(), Value::from(level));
+            out.push((
+                Intent::Configure {
+                    node,
+                    config: Opaque(Value::Object(config)),
+                },
+                "mix a lane",
+            ));
+        }
+        out
+    }
+
+    /// The members of an aggregate, wherever it sits.
+    fn members_of(&self, node: NodeId) -> Option<&[clausters_document::Member]> {
+        self.document
+            .find(node)
+            .map(clausters_document::Node::members)
+    }
+
+    /// Applies a run of intents as **one entry** in the log, so a block move
+    /// undoes the way it was made.
+    ///
+    /// The inverse of each is read out of the document *before* that one lands,
+    /// which is the same rule [`apply_logged`] follows — it is spelled out here
+    /// only because there is no one-call form for a transaction.
+    pub fn apply_all(
+        &mut self,
+        intents: &[(Intent, &'static str)],
+        against: &Against,
+    ) -> Vec<Applied> {
+        use clausters_document::log::{Entry, Step, inverse_of};
+
+        let mut entry: Option<Entry> = None;
+        let mut out = Vec::with_capacity(intents.len());
+        for (intent, label) in intents {
+            let backward = inverse_of(&self.document, intent);
+            let outcome =
+                clausters_document::apply(&mut self.document, intent, against, &self.rules);
+            if outcome.applied
+                && let Some(backward) = backward
+            {
+                let forward = Step::Edit(outcome.effective.clone());
+                entry = Some(match entry.take() {
+                    Some(e) => e.and(forward, backward),
+                    None => Entry::new(*label, forward, backward),
+                });
+            }
+            out.push(self.report(outcome));
+        }
+        if let Some(entry) = entry {
+            self.log.record(entry);
+        }
+        out
     }
 
     /// Reads a widget's `/gui_event` payload as an edit to the document, with
@@ -947,29 +1223,74 @@ mod window_verb_tests {
     use crate::host::{Host, OscType};
     use clausters_document::{Body, Grouping, Member, Node, Opaque};
 
-    fn owner_with_a_clip() -> Owner {
-        // One unit to the beat: these tests are about the verbs, not the scale.
-        let mut owner = Owner::new(Document::new(Node::new(
-            NodeId(1),
+    fn clang(id: u64) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Clang {
+                config: Opaque::default(),
+                fires: None,
+            },
+        )
+    }
+
+    fn aggregate(id: u64, config: Value, members: Vec<Member>) -> Node {
+        Node::new(
+            NodeId(id),
             Body::Aggregate {
                 grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: None,
-                    node: Node::new(
-                        NodeId(2),
-                        Body::Clang {
-                            config: Opaque::default(),
-                            fires: None,
-                        },
-                    ),
-                }],
-                config: Opaque::none(),
+                members,
+                config: match config {
+                    Value::Null => Opaque::none(),
+                    table => Opaque(table),
+                },
             },
-        )))
-        .with_units_per_beat(1.0);
-        owner.bind(50, NodeId(2));
+        )
+    }
+
+    fn at(offset: f64, dur: Option<f64>, node: Node) -> Member {
+        Member { offset, dur, node }
+    }
+
+    /// One clang on the piece, at one unit to the beat: the verbs' own tests
+    /// are about the verbs, not the scale.
+    fn owner_with_a_clip() -> Owner {
+        let doc = Document::new(aggregate(1, Value::Null, vec![at(0.0, None, clang(2))]));
+        let mut owner = Owner::new(doc).with_units_per_beat(1.0);
+        owner.bind_multitrack(50);
         owner
+    }
+
+    /// The `"clips"` payload for one box: the piece as a hand left it.
+    fn clips(entries: &[(&str, &str, f32, f32)]) -> Vec<OscType> {
+        let mut args = vec![OscType::String("clips".into())];
+        for (name, lane, at, dur) in entries {
+            args.extend([
+                OscType::String((*name).into()),
+                OscType::String((*lane).into()),
+                OscType::Float(*at),
+                OscType::Float(*dur),
+                OscType::Float(0.0),
+                OscType::String(String::new()),
+                OscType::Int(-1),
+            ]);
+        }
+        args
+    }
+
+    /// The `"lanes"` payload: name, label, height, mute, solo, gain.
+    fn lanes(entries: &[(&str, bool, bool, f32)]) -> Vec<OscType> {
+        let mut args = vec![OscType::String("lanes".into())];
+        for (name, mute, solo, gain) in entries {
+            args.extend([
+                OscType::String((*name).into()),
+                OscType::String(String::new()),
+                OscType::Float(96.0),
+                OscType::Int(i32::from(*mute)),
+                OscType::Int(i32::from(*solo)),
+                OscType::Float(*gain),
+            ]);
+        }
+        args
     }
 
     fn offset(owner: &Owner) -> f64 {
@@ -977,6 +1298,65 @@ mod window_verb_tests {
             panic!("an aggregate")
         };
         members[0].offset
+    }
+
+    /// A session host over `doc`, drawn the way `--session` draws it: the
+    /// window opened on the real tree, the owner bound to the multitrack. The
+    /// widget id comes back, because everything a hand does arrives on it.
+    fn opened(doc: Document, units_per_beat: f64) -> (Host, i32, i32) {
+        let def_id = 1;
+        let drawn = super::tree::draw(
+            &doc,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat,
+                ..super::tree::Look::default()
+            },
+            "t",
+        );
+        let mut owner = Owner::new(doc).with_units_per_beat(units_per_beat);
+        for b in &drawn.bindings {
+            owner.bind(b.widget, b.node);
+        }
+        owner.bind_multitrack(drawn.multitrack);
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+        (host, def_id, drawn.multitrack)
+    }
+
+    /// What the **widget** holds, as groups — the picture, not the document.
+    fn drawn_prop(host: &Host, def_id: i32, widget: i32, key: &str, n: usize) -> Vec<Vec<Value>> {
+        let info = host
+            .widget_kind(def_id, widget)
+            .and_then(|k| {
+                k.as_element()
+                    .map(crate::host::widget::element::Element::info)
+            })
+            .unwrap_or_else(|| panic!("widget {widget} is not the multitrack"));
+        let flat = info
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.as_array().cloned())
+            .unwrap_or_default();
+        flat.chunks_exact(n).map(<[Value]>::to_vec).collect()
+    }
+
+    fn drawn_clips(host: &Host, def_id: i32, widget: i32) -> Vec<Vec<Value>> {
+        drawn_prop(host, def_id, widget, "clips", 7)
+    }
+
+    fn drawn_lanes(host: &Host, def_id: i32, widget: i32) -> Vec<Vec<Value>> {
+        drawn_prop(host, def_id, widget, "lanes", 6)
     }
 
     /// Undo and redo reach the **owner** where there is one, which is what
@@ -988,19 +1368,10 @@ mod window_verb_tests {
         let mut host = Host::new();
         host.owner = Some(owner_with_a_clip());
         let seq = host.outbox.borrow_mut().stamp(1, 50);
-        assert!(host.answer_own(
-            1,
-            50,
-            seq,
-            &[
-                OscType::String("clip".into()),
-                OscType::Float(4.0),
-                OscType::Float(0.0)
-            ]
-        ));
+        assert!(host.answer_own(1, 50, seq, &clips(&[("2", "2", 4.0, 0.0)])));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0);
 
-        // Addressed to the window (id 1 here), not to the clip.
+        // Addressed to the window (id 1 here), not to the piece.
         let seq = host.outbox.borrow_mut().stamp(1, 1);
         assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 0.0, "taken back");
@@ -1011,81 +1382,30 @@ mod window_verb_tests {
     }
 
     /// **An undo has to move the picture, not only the document.** A drag needs
-    /// no help — the gesture already moved the clip on screen — so the failure
+    /// no help — the gesture already moved the box on screen — so the failure
     /// this pins is the one that looks like the key doing nothing: the document
     /// goes back, the widget stays where the hand left it, and nothing on
     /// screen changes.
     #[test]
-    fn an_undo_moves_the_widget_back_and_not_only_the_document() {
-        use crate::host::widget::WidgetKind;
-
-        let def_id = 1;
-        let doc = Document::new(Node::new(
-            NodeId(1),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: Some(1.0),
-                    node: Node::new(
-                        NodeId(2),
-                        Body::Clang {
-                            config: Opaque::default(),
-                            fires: None,
-                        },
-                    ),
-                }],
-                config: Opaque::none(),
-            },
+    fn an_undo_moves_the_picture_back_and_not_only_the_document() {
+        let doc = Document::new(aggregate(
+            1,
+            Value::Null,
+            vec![at(0.0, Some(1.0), clang(2))],
         ));
-        // Drawn as the session mode draws it, so the widget ids are real.
-        let drawn = super::tree::draw(
-            &doc,
-            &super::tree::Look {
-                first_id: def_id + 1,
-                units_per_beat: 100.0,
-                ..super::tree::Look::default()
-            },
-            "t",
-        );
-        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
-        for b in &drawn.bindings {
-            owner.bind(b.widget, b.node);
-        }
-        let clip = drawn.bindings[0].widget;
-
-        let mut host = Host::new();
-        host.handle_packet(
-            crate::host::OscPacket::Message(crate::host::OscMessage {
-                addr: "/gui_def".into(),
-                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
-            }),
-            crate::host::ClientId::Udp(std::net::SocketAddr::from((
-                std::net::Ipv4Addr::LOCALHOST,
-                9000,
-            ))),
-        );
-        host.owner = Some(owner);
-
-        let offset_of = |host: &Host| match host.widget_kind(def_id, clip) {
-            Some(WidgetKind::Clip { offset, .. }) => *offset,
-            other => panic!("clip {clip} is {other:?}"),
-        };
+        let (mut host, def_id, view) = opened(doc, 100.0);
+        let offset_of = |host: &Host| drawn_clips(host, def_id, view)[0][2].as_f64().unwrap();
         assert_eq!(offset_of(&host), 0.0);
 
-        // The edit a drag reports, in the widget's own unit.
-        let seq = host.outbox.borrow_mut().stamp(def_id, clip);
-        assert!(host.answer_own(
-            def_id,
-            clip,
-            seq,
-            &[
-                OscType::String("clip".into()),
-                OscType::Float(400.0),
-                OscType::Float(100.0),
-            ]
-        ));
-        assert_eq!(offset_of(&host), 400.0, "4 beats at 100 units a beat");
+        // The edit a drag reports: the piece as it now stands, in the axis'
+        // own unit.
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &clips(&[("2", "2", 400.0, 100.0)])));
+        assert_eq!(
+            host.owner.as_ref().map(offset),
+            Some(4.0),
+            "4 beats at 100 units a beat"
+        );
 
         // ...and taken back: the widget follows the document.
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
@@ -1097,93 +1417,30 @@ mod window_verb_tests {
         );
     }
 
-    /// The header, end to end in a host that owns what it draws: press mute,
-    /// and the document is muted; undo, and the **button** comes back up with
-    /// it.
+    /// The strip, end to end in a host that owns what it draws: press mute, and
+    /// the document is muted; undo, and the **lane** comes back up with it.
     #[test]
-    fn a_muted_lane_undoes_the_button_and_not_only_the_document() {
-        use crate::host::widget::WidgetKind;
-
-        let def_id = 1;
-        let mut track = Node::new(
-            NodeId(2),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: Some(1.0),
-                    node: Node::new(
-                        NodeId(3),
-                        Body::Clang {
-                            config: Opaque::default(),
-                            fires: None,
-                        },
-                    ),
-                }],
-                config: Opaque::none(),
-            },
-        );
-        // A lane whose element says it is not muted: the header has the button,
-        // because the document holds the key.
-        if let Body::Aggregate { config, .. } = &mut track.body {
-            *config = Opaque(serde_json::json!({"mute": false}));
-        }
-        let doc = Document::new(Node::new(
-            NodeId(1),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: None,
-                    node: track,
-                }],
-                config: Opaque::none(),
-            },
+    fn a_muted_lane_undoes_the_strip_and_not_only_the_document() {
+        let doc = Document::new(aggregate(
+            1,
+            Value::Null,
+            vec![at(
+                0.0,
+                None,
+                aggregate(
+                    2,
+                    serde_json::json!({"mute": false}),
+                    vec![at(0.0, Some(1.0), clang(3))],
+                ),
+            )],
         ));
-        let drawn = super::tree::draw(
-            &doc,
-            &super::tree::Look {
-                first_id: def_id + 1,
-                units_per_beat: 100.0,
-                ..super::tree::Look::default()
-            },
-            "t",
-        );
-        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
-        for b in &drawn.bindings {
-            owner.bind(b.widget, b.node);
-        }
-        for b in &drawn.headers {
-            owner.bind_header(b.widget, b.node);
-        }
-        let lane = drawn.headers[0].widget;
+        let (mut host, def_id, view) = opened(doc, 100.0);
+        // The widget carries a flag as the wire's own 0/1.
+        let muted = |host: &Host| drawn_lanes(host, def_id, view)[0][3].as_i64();
+        assert_eq!(muted(&host), Some(0), "drawn from the document");
 
-        let mut host = Host::new();
-        host.handle_packet(
-            crate::host::OscPacket::Message(crate::host::OscMessage {
-                addr: "/gui_def".into(),
-                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
-            }),
-            crate::host::ClientId::Udp(std::net::SocketAddr::from((
-                std::net::Ipv4Addr::LOCALHOST,
-                9000,
-            ))),
-        );
-        host.owner = Some(owner);
-
-        let muted = |host: &Host| match host.widget_kind(def_id, lane) {
-            Some(WidgetKind::Track { header, .. }) => header.mute,
-            other => panic!("lane {lane} is {other:?}"),
-        };
-        assert_eq!(muted(&host), Some(false), "drawn from the document");
-
-        let seq = host.outbox.borrow_mut().stamp(def_id, lane);
-        assert!(host.answer_own(
-            def_id,
-            lane,
-            seq,
-            &[OscType::String("mute".into()), OscType::Int(1)]
-        ));
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &lanes(&[("2", true, false, 1.0)])));
         assert_eq!(
             host.owner
                 .as_ref()
@@ -1198,96 +1455,177 @@ mod window_verb_tests {
         assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
         assert_eq!(
             muted(&host),
-            Some(false),
-            "the undo lifted the button, not only the document"
+            Some(0),
+            "the undo lifted the strip, not only the document"
         );
+    }
+
+    /// **A lane a hand did not touch is not an edit.** The mixer reports every
+    /// strip after any of them moves, so a reader that took the payload at face
+    /// value would log a `Configure` per lane on every fader drag — and the
+    /// undo of one fader would be one step per lane.
+    #[test]
+    fn only_the_strip_that_moved_becomes_an_edit() {
+        let doc = Document::new(aggregate(
+            1,
+            Value::Null,
+            vec![
+                at(
+                    0.0,
+                    None,
+                    aggregate(2, Value::Null, vec![at(0.0, None, clang(3))]),
+                ),
+                at(
+                    0.0,
+                    None,
+                    aggregate(4, Value::Null, vec![at(0.0, None, clang(5))]),
+                ),
+            ],
+        ));
+        let owner = {
+            let mut owner = Owner::new(doc).with_units_per_beat(1.0);
+            owner.bind_multitrack(50);
+            owner
+        };
+        let payload = lanes(&[("2", false, false, 1.0), ("4", false, false, 0.5)]);
+        let edits = owner.read_events(50, &payload);
+        assert_eq!(edits.len(), 1, "one fader moved: {edits:?}");
+        assert!(matches!(edits[0].0, Intent::Configure { node, .. } if node == NodeId(4)));
     }
 
     /// The length half of the same rule, and the case that was broken: a clip
     /// whose placement states **no** length is drawn at the element's own, so
     /// the inverse of the first resize of one carries no `dur` at all — and an
-    /// adopter reading that as "leave the width alone" left the clip at the
-    /// size the hand had given it while the document went back.
+    /// adopter reading that as "leave the width alone" left the box at the size
+    /// the hand had given it while the document went back.
     #[test]
     fn an_undone_first_resize_puts_the_clips_width_back() {
-        use crate::host::widget::WidgetKind;
-
-        let def_id = 1;
-        let mut clang = Node::new(
-            NodeId(2),
-            Body::Clang {
-                config: Opaque::default(),
-                fires: None,
-            },
-        );
+        let mut clang = clang(2);
         // The element's own length, and no placement length over it: exactly
         // what a clip nobody has resized yet is.
         clang.duration = Some(2.0);
-        let doc = Document::new(Node::new(
-            NodeId(1),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: vec![Member {
-                    offset: 0.0,
-                    dur: None,
-                    node: clang,
-                }],
-                config: Opaque::none(),
-            },
-        ));
-        let drawn = super::tree::draw(
-            &doc,
-            &super::tree::Look {
-                first_id: def_id + 1,
-                units_per_beat: 100.0,
-                ..super::tree::Look::default()
-            },
-            "t",
-        );
-        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
-        for b in &drawn.bindings {
-            owner.bind(b.widget, b.node);
-        }
-        let clip = drawn.bindings[0].widget;
-        let mut host = Host::new();
-        host.handle_packet(
-            crate::host::OscPacket::Message(crate::host::OscMessage {
-                addr: "/gui_def".into(),
-                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
-            }),
-            crate::host::ClientId::Udp(std::net::SocketAddr::from((
-                std::net::Ipv4Addr::LOCALHOST,
-                9000,
-            ))),
-        );
-        host.owner = Some(owner);
+        let doc = Document::new(aggregate(1, Value::Null, vec![at(0.0, None, clang)]));
+        let (mut host, def_id, view) = opened(doc, 100.0);
+        let width = |host: &Host| drawn_clips(host, def_id, view)[0][3].as_f64().unwrap();
+        assert_eq!(width(&host), 200.0, "two beats, the element's own length");
 
-        let dur_of = |host: &Host| match host.widget_kind(def_id, clip) {
-            Some(WidgetKind::Clip { dur, .. }) => *dur,
-            other => panic!("clip {clip} is {other:?}"),
-        };
-        assert_eq!(dur_of(&host), 200.0, "two beats at 100 units a beat");
-
-        let seq = host.outbox.borrow_mut().stamp(def_id, clip);
-        assert!(host.answer_own(
-            def_id,
-            clip,
-            seq,
-            &[
-                OscType::String("clip".into()),
-                OscType::Float(0.0),
-                OscType::Float(100.0),
-            ]
-        ));
-        assert_eq!(dur_of(&host), 100.0, "the hand shortened it to one beat");
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &clips(&[("2", "2", 0.0, 500.0)])));
+        assert_eq!(width(&host), 500.0, "the hand's");
 
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
         assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
         assert_eq!(
-            dur_of(&host),
+            width(&host),
             200.0,
             "and the undo gave the element's own length back to the picture"
         );
+    }
+
+    /// **The milestone's own acceptance, and the bug it was named for.** A
+    /// block move and a lane change reach the document, which they could not
+    /// before: the host's own owner read `"clip"` and neither of the two tags a
+    /// gesture switched to, so a selection dragged in `--session` moved on
+    /// screen and nowhere else.
+    ///
+    /// They arrive as one payload with no gesture in it — the clips, as they
+    /// now stand — and they undo as **one step**, because a block move is one
+    /// thing a hand did.
+    #[test]
+    fn a_block_move_and_a_lane_change_reach_the_document() {
+        let doc = Document::new(aggregate(
+            1,
+            Value::Null,
+            vec![
+                at(
+                    0.0,
+                    None,
+                    aggregate(
+                        2,
+                        Value::Null,
+                        vec![at(0.0, Some(1.0), clang(3)), at(1.0, Some(1.0), clang(4))],
+                    ),
+                ),
+                at(
+                    0.0,
+                    None,
+                    aggregate(5, Value::Null, vec![at(0.0, Some(1.0), clang(6))]),
+                ),
+            ],
+        ));
+        let (mut host, def_id, view) = opened(doc, 100.0);
+        let where_is = |host: &Host, node: u64| {
+            host.owner
+                .as_ref()
+                .and_then(|o| o.piece().lane_of(NodeId(node)).map(|l| l.holder))
+        };
+        assert_eq!(where_is(&host, 3), Some(NodeId(2)));
+
+        // **Both boxes of the first lane, dragged two beats along** — the
+        // payload a marquee's block drag leaves, addressed to the one widget
+        // and naming every clip there is.
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &clips(&[
+                ("3", "2", 200.0, 100.0),
+                ("4", "2", 300.0, 100.0),
+                ("6", "5", 0.0, 100.0),
+            ])
+        ));
+        let placed = |host: &Host, node: u64| {
+            host.owner
+                .as_ref()
+                .and_then(|o| o.member_of(NodeId(node)).map(|m| m.offset))
+        };
+        assert_eq!(placed(&host, 3), Some(2.0), "both moved, in one message");
+        assert_eq!(placed(&host, 4), Some(3.0));
+        assert_eq!(
+            placed(&host, 6),
+            Some(0.0),
+            "and the one nobody touched did not"
+        );
+
+        // **And a lane crossed**: clip 4 leaves the first track and joins the
+        // second. That is not a placement at all — it changes which aggregate
+        // holds it — which is why a reader of `"clip"` could never have done it.
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &clips(&[
+                ("3", "2", 200.0, 100.0),
+                ("4", "5", 400.0, 100.0),
+                ("6", "5", 0.0, 100.0),
+            ])
+        ));
+        assert_eq!(where_is(&host, 4), Some(NodeId(5)), "it changed lanes");
+        assert_eq!(placed(&host, 4), Some(4.0), "at the beat the hand left it");
+        assert_eq!(
+            drawn_clips(&host, def_id, view)
+                .iter()
+                .find(|c| c[0] == "4")
+                .map(|c| c[1].clone()),
+            Some(Value::from("5")),
+            "and the picture says so too, redrawn from the document"
+        );
+
+        // One gesture, one step back.
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(where_is(&host, 4), Some(NodeId(2)), "back on its own lane");
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(
+            placed(&host, 3),
+            Some(0.0),
+            "and the block, in one more step"
+        );
+        assert_eq!(placed(&host, 4), Some(1.0));
     }
 
     /// A save writes where the caller said and nowhere else: overwriting what

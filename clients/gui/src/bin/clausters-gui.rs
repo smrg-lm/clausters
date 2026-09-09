@@ -723,12 +723,13 @@ fn run_session(
         },
         &title,
     );
+    // The take editors are bound one by one -- each is a widget drawing a node
+    // -- and the piece is bound once: the multitrack names its lanes and clips
+    // by the nodes' own numbers, so there is nothing per clip to record.
     for bound in &drawn.bindings {
         owner.bind(bound.widget, bound.node);
     }
-    for bound in &drawn.headers {
-        owner.bind_header(bound.widget, bound.node);
-    }
+    owner.bind_multitrack(drawn.multitrack);
 
     // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
     // and it writes only where `--save-to` named a file, since overwriting what
@@ -751,17 +752,11 @@ fn run_session(
         }),
         origin,
     );
-    // Counted by what each child *is* rather than by arithmetic on the list:
-    // the window holds lanes, one ruler and an editor per take, and a count
-    // that subtracts a constant goes quietly wrong the day another pane joins.
     let editors = load.takes.len();
-    let lanes = drawn.def["children"]
-        .as_array()
-        .map_or(0, |c| c.len())
-        .saturating_sub(1 + editors);
     tracing::info!(
-        "session: opened {path} — {} clip(s), {lanes} lane(s) + a ruler, {editors} take editor(s)",
-        drawn.bindings.len(),
+        "session: opened {path} — {} clip(s) on {} lane(s), {editors} take editor(s)",
+        drawn.piece.clips.len(),
+        drawn.piece.lanes.len(),
     );
     match save_to {
         Some(out) => tracing::info!("session: Ctrl+S writes {out}"),
