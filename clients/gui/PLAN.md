@@ -6052,7 +6052,7 @@ finished work, where a pending item reads as done.
   whose names no region has, so the reader drops them — the piece's own
   `SplitRegion`/`JoinRegions` exist and nothing reaches them yet.
 
-- ⬜ **The piece is drawn and sounded through one tempo, and it carries a map**
+- ✅ **The piece is drawn and sounded through one tempo, and it carries a map**
   *(found 2026-09-09, auditing what the standalone host reimplements)*.
   `document/piece.rs` and `document/sound.rs` both convert a region's beats to
   frames with a single ratio (`units_per_beat`), and `Multitrack::tempo` is a
@@ -6067,10 +6067,17 @@ finished work, where a pending item reads as done.
   `clausters_core::tempomap::TempoMap`, which models exactly this and is already
   bound by both clients.
 
-  Where the bridge goes is decided by a boundary rather than by taste:
+  Where the bridge goes was decided by a boundary rather than by taste:
   `clausters-document` depends on **serde and nothing else**, deliberately, so
-  the conversion cannot live beside `Tempo`. `TempoMap::from_breakpoints`
-  already takes a list of points, so what is missing is one core function over
-  `(at, bpm, ramp)` triples plus the default a piece that never said a tempo
-  leaves to its reader — and each consumer maps its own list into that shape,
-  which is a binding and not a second implementation.
+  the conversion cannot live beside `Tempo`.
+
+  **Fixed 2026-09-09.** `TempoMap::from_changes` takes a run of authored
+  entries (`TempoChange`: a beat, a tempo, and whether it *ramps*) plus the
+  default a piece that never said a tempo leaves to its reader, and it holds the
+  three decisions that would otherwise be written per reader: a ramp reaches the
+  next entry, the default is prepended when the first entry is past beat 0, and
+  no entries is the default alone. The host maps its own `Tempo` list into that
+  shape, which is one line and a binding. `piece::Look` then places a position
+  as `secs_at(beat) × rate` and a **length as the difference of two of them**,
+  since four beats are longer later than earlier under a ritardando; the ruler
+  is handed the same map so its labels and the boxes agree.

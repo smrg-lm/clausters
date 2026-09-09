@@ -295,6 +295,23 @@ pub fn draw_shown(
     title: &str,
     shown: Option<Piece>,
 ) -> Drawn {
+    draw_ruled(document, look, title, shown, None)
+}
+
+/// The same window, told the piece's **tempo map** — what rules its beat ruler.
+///
+/// Separate from the scales the boxes are placed with because it answers a
+/// different question: a client converts a placement through the map before it
+/// sends one, so the clips are already where they belong and only the *marks*
+/// move. Without it a piece whose tempo changes is ruled by whatever tempo held
+/// at its start, and the labels disagree with the boxes drawn beside them.
+pub fn draw_ruled(
+    document: &Document,
+    look: &Look<'_>,
+    title: &str,
+    shown: Option<Piece>,
+    tempo_map: Option<Value>,
+) -> Drawn {
     let mut ids = Ids {
         next: look.first_id,
     };
@@ -315,6 +332,11 @@ pub fn draw_shown(
     props.insert("ruler".into(), json!("beats"));
     props.insert("sample_rate".into(), json!(look.sample_rate));
     props.insert("tempo".into(), json!(look.tempo));
+    // Where the piece states a map it wins over the single `tempo` above, and
+    // it is what makes a beat ruler right on a piece whose tempo moves.
+    if let Some(map) = tempo_map {
+        props.insert("tempo_map".into(), map);
+    }
     if look.quant > 0.0 {
         props.insert("snap".into(), json!(look.quant * look.units_per_beat));
     }

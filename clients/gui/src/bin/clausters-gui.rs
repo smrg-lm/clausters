@@ -716,7 +716,14 @@ fn run_session(
     // takes lanes and clips and does not care which walk produced them.
     let mut owner = owner.with_takes(load.takes.clone());
     let shown = owner.draws_piece().then(|| owner.shown());
-    let drawn = tree::draw_shown(
+    // The ruler is told the piece's own map, so its beats are labelled where
+    // they actually fall rather than at the tempo that held at bar one. Only
+    // the marks move: the boxes were already placed through the same map.
+    let tempo_map = owner.draws_piece().then(|| {
+        serde_json::to_value(owner.piece_look().tempo.breakpoints())
+            .unwrap_or(serde_json::Value::Null)
+    });
+    let drawn = tree::draw_ruled(
         &owner.document,
         &tree::Look {
             // Past the window's own id: a GuiDef's id *is* its root widget's,
@@ -729,6 +736,7 @@ fn run_session(
         },
         &title,
         shown,
+        tempo_map,
     );
     // The take editors are bound one by one -- each is a widget drawing a node
     // -- and the piece is bound once: the multitrack names its lanes and clips

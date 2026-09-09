@@ -316,6 +316,30 @@ fn step_curve() -> Curve {
     Curve::Step
 }
 
+/// **One entry of a piece's tempo map, as a document keeps it**: from here on,
+/// this tempo, stepping or ramping to the next one.
+///
+/// The other spelling of a [`Breakpoint`], and the one an *authored* map has.
+/// The two differ on where a ramp's far end lives: a `Breakpoint` carries it
+/// ([`Curve::Shaped`] holds its own `end_beats`/`end_tempo`, so a segment
+/// answers without looking forward), and an entry a person edits cannot —
+/// moving one tempo would mean rewriting the one before it. So an authored
+/// entry says only *ramp*, and turning a run of them into a map is
+/// [`TempoMap::from_changes`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TempoChange {
+    /// The beat it takes effect at.
+    pub beats: f64,
+    /// Beats per second from here on. **Per second**, like every tempo in this
+    /// module and unlike the beats-per-minute a score is written in — the
+    /// caller divides, once, where it reads its own field.
+    pub tempo: f64,
+    /// Whether the tempo **ramps** from here to the next entry rather than
+    /// stepping. A ritardando is a ramp; a section change is a step. A ramp on
+    /// the last entry has nothing to reach and holds, which is a step.
+    pub ramp: bool,
+}
+
 /// One segment of a [`TempoMap`], starting at `beats` (and at the second
 /// `secs`, which is the integral evaluated at that breakpoint).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -590,6 +614,53 @@ impl TempoMap {
     /// file is the door that checks it.
     ///
     /// An empty list is refused: a map always maps.
+    /// A map from a piece's **authored** tempo entries, with the tempo a piece
+    /// that never said one leaves to its reader.
+    ///
+    /// Three rules live here rather than in each reader of a document, which is
+    /// the whole reason it is a function:
+    ///
+    /// - **A ramp reaches the next entry.** A [`TempoChange`] says only that it
+    ///   ramps; where to is the entry after it, and the last one has nowhere to
+    ///   go and holds.
+    /// - **The default comes first.** A map whose first entry is not at beat 0
+    ///   would leave everything before it unsaid — and a map anchored at that
+    ///   entry would put beat 0 at a negative second — so the default is
+    ///   prepended as a step.
+    /// - **No entries at all is the default alone**, which is a one-segment map
+    ///   and the affine ratio every caller used before there was a map.
+    ///
+    /// Entries are read in the order given and must be non-decreasing in
+    /// `beats`, which is the order a document keeps them in.
+    pub fn from_changes(changes: &[TempoChange], default_tempo: f64) -> Result<Self, TempoError> {
+        let mut points: Vec<Breakpoint> = Vec::with_capacity(changes.len() + 1);
+        if changes.first().is_none_or(|first| first.beats > 0.0) {
+            points.push(Breakpoint {
+                beats: 0.0,
+                tempo: default_tempo,
+                curve: Curve::Step,
+            });
+        }
+        for (i, change) in changes.iter().enumerate() {
+            // A ramp's far end is the next entry; the last one has none, and a
+            // `Shaped` with nowhere to reach is a step by the curve's own rule.
+            let curve = match changes.get(i + 1).filter(|_| change.ramp) {
+                Some(next) => Curve::Shaped {
+                    shape: Shape::Linear,
+                    end_beats: next.beats,
+                    end_tempo: next.tempo,
+                },
+                None => Curve::Step,
+            };
+            points.push(Breakpoint {
+                beats: change.beats,
+                tempo: change.tempo,
+                curve,
+            });
+        }
+        Self::from_breakpoints(&points)
+    }
+
     pub fn from_breakpoints(points: &[Breakpoint]) -> Result<Self, TempoError> {
         let first = points.first().ok_or(TempoError::Beats)?;
         let mut map = Self::anchored(first.tempo, first.beats, 0.0)?;
@@ -875,6 +946,95 @@ fn check_tempo(tempo: f64) -> Result<(), TempoError> {
     match tempo.is_finite() && tempo > 0.0 {
         true => Ok(()),
         false => Err(TempoError::Tempo),
+    }
+}
+
+#[cfg(test)]
+mod change_tests {
+    use super::*;
+
+    fn at(beats: f64, tempo: f64, ramp: bool) -> TempoChange {
+        TempoChange { beats, tempo, ramp }
+    }
+
+    /// **No entries is the default alone**, which is the affine ratio every
+    /// caller used before there was a map — so a piece that never said a tempo
+    /// behaves exactly as it did.
+    #[test]
+    fn a_piece_with_no_tempo_is_one_segment_at_the_default() {
+        let map = TempoMap::from_changes(&[], 2.0).expect("a map");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.tempo_at(0.0), 2.0);
+        assert_eq!(map.secs_at(4.0), 2.0, "four beats at two a second");
+    }
+
+    /// **The default comes first** when the first entry is not at beat 0:
+    /// otherwise everything before it is unsaid, and a map anchored there puts
+    /// beat 0 at a negative second.
+    #[test]
+    fn a_first_entry_past_zero_is_preceded_by_the_default() {
+        let map = TempoMap::from_changes(&[at(4.0, 4.0, false)], 2.0).expect("a map");
+        assert_eq!(map.tempo_at(0.0), 2.0, "the default holds until the entry");
+        assert_eq!(map.tempo_at(4.0), 4.0);
+        assert_eq!(map.secs_at(0.0), 0.0, "and beat zero is second zero");
+        assert_eq!(map.secs_at(4.0), 2.0);
+        assert_eq!(
+            map.secs_at(8.0),
+            3.0,
+            "the next four beats at twice the rate"
+        );
+    }
+
+    /// An entry **at** beat 0 replaces the default rather than sitting after it.
+    #[test]
+    fn an_entry_at_zero_is_the_first_segment() {
+        let map = TempoMap::from_changes(&[at(0.0, 4.0, false)], 2.0).expect("a map");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.tempo_at(0.0), 4.0);
+    }
+
+    /// **A ramp reaches the next entry.** An authored entry says only that it
+    /// ramps — where to is the entry after it, which is what this function is
+    /// for and what every reader of a document would otherwise write again.
+    #[test]
+    fn a_ramp_reaches_the_next_entry_and_the_last_one_holds() {
+        let map =
+            TempoMap::from_changes(&[at(0.0, 1.0, true), at(4.0, 2.0, true)], 1.0).expect("a map");
+        assert_eq!(map.tempo_at(0.0), 1.0);
+        assert_eq!(map.tempo_at(4.0), 2.0);
+        let mid = map.tempo_at(2.0);
+        assert!(
+            mid > 1.0 && mid < 2.0,
+            "halfway up the ramp, not a step: {mid}"
+        );
+        // The last entry ramps to nothing, so it holds -- and a step is what
+        // holding is.
+        assert_eq!(map.tempo_at(8.0), 2.0);
+
+        // ...and a stepped pair does not: the tempo is the first one right up
+        // to the change.
+        let stepped = TempoMap::from_changes(&[at(0.0, 1.0, false), at(4.0, 2.0, false)], 1.0)
+            .expect("a map");
+        assert_eq!(stepped.tempo_at(2.0), 1.0);
+    }
+
+    /// The map answers in **seconds**, which is what a placement crosses to the
+    /// timeline through — and a ramp's seconds are its integral, not an average
+    /// of the two tempos.
+    #[test]
+    fn a_ramp_is_integrated_rather_than_averaged() {
+        let ramped =
+            TempoMap::from_changes(&[at(0.0, 1.0, true), at(4.0, 2.0, false)], 1.0).expect("a map");
+        let averaged = 4.0 / 1.5;
+        let secs = ramped.secs_at(4.0);
+        assert!(
+            (secs - averaged).abs() > 1e-6,
+            "an accelerando's integral is a logarithm, not an average: {secs}"
+        );
+        assert!(
+            secs > 4.0 / 2.0 && secs < 4.0 / 1.0,
+            "and it is between the two"
+        );
     }
 }
 

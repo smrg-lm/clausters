@@ -24,10 +24,19 @@
 //! # What the picture is measured in
 //!
 //! The piece measures **beats** and the shared time axis measures timeline
-//! samples, so every number crossing this seam is multiplied or divided by one
-//! ratio, once — and a region's window into its samples is in **seconds**,
-//! which meets the axis through the rate and never through the tempo.
+//! samples, and what crosses between them is the piece's own **tempo map**
+//! rather than a ratio: a position is `secs_at(beat) × rate`, and a *length* is
+//! the difference of two of those, because how long four beats last depends on
+//! where they start. A single ratio is right only for a piece that never
+//! changes tempo, and getting it wrong is silent — the boxes are drawn and the
+//! readers placed in the same wrong place, so the picture and the sound agree
+//! about it.
+//!
+//! A region's window into its samples is in **seconds**, which meets the axis
+//! through the rate and never through the tempo: a recording's length is a
+//! wall-clock fact.
 
+use clausters_core::tempomap::{TempoChange, TempoMap};
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::{Content, Lane, Multitrack, Region, Track};
 use clausters_document::{Beat, NodeId};
@@ -44,14 +53,27 @@ const LANE_H: f64 = 96.0;
 /// carried in the client's own table, because the document holds no mixer.
 const LEVEL: &str = "level";
 
+/// The tempo a piece that never said one is read at, in beats per second —
+/// one, so a beat is a second and a piece with no tempo behaves exactly as it
+/// did before there was a map.
+///
+/// It is the **reader's** default and not the document's: a piece that said no
+/// tempo did not say one, and writing 120 into the format would be the crate
+/// deciding a musical question ([`clausters_document::multitrack::Multitrack::tempo`]).
+pub const DEFAULT_TEMPO: f64 = 1.0;
+
 /// How the picture is scaled.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Look<'a> {
-    /// Samples per beat — what a region's position and length are drawn with.
-    pub units_per_beat: f64,
-    /// Samples per second — what a **window** into samples is measured in, so
-    /// no tempo scales a recording.
-    pub units_per_second: f64,
+    /// Beats to seconds, as the piece itself states it — steps, ramps and all.
+    ///
+    /// Owned rather than borrowed, and rebuilt from the piece each time it is
+    /// asked for: it is a handful of segments, and a copy kept beside the piece
+    /// is a copy to keep in step with every edit that moves a tempo.
+    pub tempo: TempoMap,
+    /// Frames a second — where the musical axis and the wall clock both meet
+    /// the timeline.
+    pub rate: f64,
     /// The session's samples, once somebody resolved them to server buffers.
     pub takes: Option<&'a Takes>,
 }
@@ -59,11 +81,52 @@ pub struct Look<'a> {
 impl Default for Look<'_> {
     fn default() -> Self {
         Self {
-            units_per_beat: 48_000.0,
-            units_per_second: 48_000.0,
+            tempo: TempoMap::new(DEFAULT_TEMPO),
+            rate: 48_000.0,
             takes: None,
         }
     }
+}
+
+impl Look<'_> {
+    /// Where a beat falls on the timeline, in frames.
+    pub fn frame_at(&self, beats: f64) -> f64 {
+        self.tempo.secs_at(beats) * self.rate
+    }
+
+    /// How long a stretch of beats lasts there — **the difference of two
+    /// positions**, because four beats are not one length: under a ritardando
+    /// they are longer later than earlier.
+    pub fn frames_over(&self, from: f64, len: f64) -> f64 {
+        self.frame_at(from + len) - self.frame_at(from)
+    }
+
+    /// The beat a frame falls on: the inverse, and the way an edit comes back.
+    pub fn beat_at(&self, frame: f64) -> f64 {
+        self.tempo
+            .beats_at(frame / self.rate.max(f64::MIN_POSITIVE))
+    }
+}
+
+/// The map a piece states, with the reader's default where it states nothing.
+///
+/// One line, and it is a **binding** rather than a rule: the three decisions a
+/// run of authored entries needs — a ramp reaching the next one, the default
+/// before the first, an empty list being the default alone — are
+/// [`TempoMap::from_changes`]'s, in the crate that models tempo.
+pub fn tempo_map(piece: &Multitrack) -> TempoMap {
+    let changes: Vec<TempoChange> = piece
+        .tempo
+        .iter()
+        .map(|t| TempoChange {
+            beats: t.at.0,
+            // The document writes beats per **minute**, as a score does; every
+            // tempo in the map is per second.
+            tempo: t.bpm / 60.0,
+            ramp: t.ramp,
+        })
+        .collect();
+    TempoMap::from_changes(&changes, DEFAULT_TEMPO).unwrap_or_else(|_| TempoMap::new(DEFAULT_TEMPO))
 }
 
 /// The piece as the `multitrack` widget takes it, and as an edit-back is
@@ -107,9 +170,9 @@ pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
             clips_prop.extend([
                 json!(region.id.0.to_string()),
                 json!(track.id.0.to_string()),
-                json!(region.position.0 * look.units_per_beat),
-                json!(region.length.0 * look.units_per_beat),
-                json!(start_of(region) * look.units_per_second),
+                json!(look.frame_at(region.position.0)),
+                json!(look.frames_over(region.position.0, region.length.0)),
+                json!(start_of(region) * look.rate),
                 json!(label_of(region)),
                 json!(buffer_of(region, look)),
             ]);
@@ -186,7 +249,6 @@ pub fn read_clips(
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    let per_beat = look.units_per_beat.max(f64::MIN_POSITIVE);
     let shown = shown(piece, look);
     let mut out = Vec::new();
     let mut seen: Vec<NodeId> = Vec::new();
@@ -207,8 +269,10 @@ pub fn read_clips(
             continue;
         };
         seen.push(region_id);
-        let position = Beat(float_at(clip, 2) / per_beat);
-        let length = Beat(float_at(clip, 3) / per_beat);
+        // Back the way they were drawn: through the map, and a length as the
+        // difference of two positions.
+        let position = Beat(look.beat_at(float_at(clip, 2)));
+        let length = Beat(look.beat_at(float_at(clip, 2) + float_at(clip, 3)) - position.0);
         let crossed = track != track_id;
         let moved = (position - region.position).0.abs() > f64::EPSILON;
         let resized = (length - region.length).0.abs() > f64::EPSILON;
@@ -412,10 +476,13 @@ mod tests {
         }
     }
 
+    /// A hundred frames a beat and forty-eight thousand a second: the two
+    /// scales stay apart in the tests, so a length converted through the wrong
+    /// one is obvious rather than plausible.
     fn look() -> Look<'static> {
         Look {
-            units_per_beat: 100.0,
-            units_per_second: 48_000.0,
+            tempo: TempoMap::new(480.0), // 480 beats a second: 100 frames each
+            rate: 48_000.0,
             takes: None,
         }
     }
@@ -459,6 +526,69 @@ mod tests {
         assert_eq!(clips[1], "10", "on the row of the track that holds it");
         assert_eq!(clips[2], 0.0, "beats, in timeline units");
         assert_eq!(clips[3], 200.0, "two beats at a hundred units each");
+    }
+
+    /// **A piece with a ritardando is not placed by one ratio.** Four beats are
+    /// not one length: under a tempo that changes they last longer later than
+    /// earlier, so a position is the map's second times the rate and a length
+    /// is the difference of two of those.
+    ///
+    /// The defect this pins is silent — the boxes and the readers are both
+    /// derived here, so a single ratio draws and sounds the same wrong place
+    /// and the two agree about it.
+    #[test]
+    fn a_tempo_change_moves_the_boxes_and_a_ratio_would_not() {
+        use clausters_document::multitrack::Tempo;
+
+        let mut piece = piece();
+        // Sixty a minute — a beat a second — and half that from beat 4 on.
+        piece.set_tempo(Tempo {
+            at: Beat(0.0),
+            bpm: 60.0,
+            ramp: false,
+            extra: Default::default(),
+        });
+        piece.set_tempo(Tempo {
+            at: Beat(4.0),
+            bpm: 30.0,
+            ramp: false,
+            extra: Default::default(),
+        });
+        let look = Look {
+            tempo: tempo_map(&piece),
+            rate: 48_000.0,
+            takes: None,
+        };
+        // The region at beat 4 lasting 2 beats: it starts one second per beat
+        // in, and lasts *two* seconds a beat.
+        assert_eq!(look.frame_at(4.0), 4.0 * 48_000.0);
+        assert_eq!(
+            look.frames_over(4.0, 2.0),
+            4.0 * 48_000.0,
+            "two beats at half the tempo are four seconds"
+        );
+        // ...and the same two beats before the change are half that, which is
+        // the whole of what one ratio cannot say.
+        assert_eq!(look.frames_over(0.0, 2.0), 2.0 * 48_000.0);
+
+        // And it comes back the way it went: a payload in frames reads as the
+        // beats it was drawn from.
+        assert!((look.beat_at(4.0 * 48_000.0) - 4.0).abs() < 1e-9);
+        assert!((look.beat_at(8.0 * 48_000.0) - 6.0).abs() < 1e-9);
+    }
+
+    /// A piece that never said a tempo reads at the reader's default, which is
+    /// a beat a second — so nothing about a piece without tempo changed when
+    /// the map arrived.
+    #[test]
+    fn a_piece_with_no_tempo_is_a_beat_a_second() {
+        let look = Look {
+            tempo: tempo_map(&piece()),
+            rate: 48_000.0,
+            takes: None,
+        };
+        assert_eq!(look.frame_at(3.0), 3.0 * 48_000.0);
+        assert_eq!(look.frames_over(3.0, 2.0), 2.0 * 48_000.0);
     }
 
     /// **A move is a `PlaceRegion` and never changes what the region reads**;

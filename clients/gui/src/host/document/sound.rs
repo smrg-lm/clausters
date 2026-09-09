@@ -40,7 +40,6 @@ use clausters_document::NodeId;
 use clausters_document::multitrack::{Content, Multitrack, Region, Track};
 
 use crate::host::Host;
-use crate::host::document::sources::Takes;
 
 /// One sounding reader: which region it plays, and which channel of it.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -80,12 +79,7 @@ const MAX_CHANNELS: u32 = 32;
 /// A pure function of the piece and its resolved samples, so it is testable
 /// without a server and cannot disagree with the picture: both are derived from
 /// the same `Multitrack`.
-pub fn reading(
-    piece: &Multitrack,
-    takes: &Takes,
-    per_beat: f64,
-    per_second: f64,
-) -> Vec<(Voice, Reading)> {
+pub fn reading(piece: &Multitrack, look: &super::piece::Look<'_>) -> Vec<(Voice, Reading)> {
     let soloing = piece.tracks.iter().any(|t| t.soloed);
     let mut out = Vec::new();
     for track in &piece.tracks {
@@ -99,7 +93,7 @@ pub fn reading(
                 channels,
                 start,
                 content,
-            }) = sounds(region, takes, per_second)
+            }) = sounds(region, look)
             else {
                 continue;
             };
@@ -115,7 +109,7 @@ pub fn reading(
                     },
                     Reading {
                         bufnum,
-                        offset: region.position.0 * per_beat,
+                        offset: look.frame_at(region.position.0),
                         start,
                         // **A region may be longer than what fills it**, and
                         // then it is silent for the rest: the gate closes at
@@ -124,7 +118,9 @@ pub fn reading(
                         // is held -- a tone where the piece has nothing, which
                         // is exactly what a four-beat region over two seconds
                         // of audio sounded like.
-                        span: (region.length.0 * per_beat).min(content),
+                        span: look
+                            .frames_over(region.position.0, region.length.0)
+                            .min(content),
                         amp,
                     },
                 ));
@@ -166,20 +162,20 @@ struct Samples {
 }
 
 /// What a region plays — `None` for one that is drawn but does not sound here.
-fn sounds(region: &Region, takes: &Takes, per_second: f64) -> Option<Samples> {
+fn sounds(region: &Region, look: &super::piece::Look<'_>) -> Option<Samples> {
     let Content::Window { window, .. } = &region.content else {
         return None;
     };
     let source = window.source.samples()?;
-    let take = takes.get(source.source)?;
+    let take = look.takes?.get(source.source)?;
     // The window's own start and duration are in **seconds** — a recording's
     // units — so they meet the timeline through the rate and never through the
     // tempo.
     Some(Samples {
         bufnum: take.bufnum,
         channels: take.channels.unwrap_or(1).max(1),
-        start: window.start * per_second,
-        content: window.duration * per_second,
+        start: window.start * look.rate,
+        content: window.duration * look.rate,
     })
 }
 
@@ -200,14 +196,9 @@ impl Host {
         if !owner.draws_piece() || self.player().is_none() {
             return 0;
         }
-        let want: HashMap<Voice, Reading> = reading(
-            &owner.piece,
-            &owner.takes,
-            owner.units_per_beat,
-            owner.units_per_second,
-        )
-        .into_iter()
-        .collect();
+        let want: HashMap<Voice, Reading> = reading(&owner.piece, &owner.piece_look())
+            .into_iter()
+            .collect();
         let mut messages = Vec::new();
         // Gone: the regions that were removed, or stopped naming samples.
         let leaving: Vec<Voice> = self
@@ -376,7 +367,10 @@ mod tests {
         Beat, Lifetime, Opaque, SegmentRef, SegmentSource, SourceId, SourceRef,
     };
 
+    use crate::host::document::piece::Look;
     use crate::host::document::sources::Take;
+    use crate::host::document::sources::Takes;
+    use clausters_core::tempomap::TempoMap;
 
     fn window(source: u64, start: f64) -> Content {
         Content::Window {
@@ -408,6 +402,16 @@ mod tests {
         takes
     }
 
+    /// A hundred frames a beat, forty-eight thousand a second — the two scales
+    /// stay apart so a length converted through the wrong one is obvious.
+    fn look(takes: &Takes) -> Look<'_> {
+        Look {
+            tempo: TempoMap::new(480.0),
+            rate: 48_000.0,
+            takes: Some(takes),
+        }
+    }
+
     fn piece() -> Multitrack {
         let mut first = Track::new(NodeId(10), NodeId(11));
         first.name = Some("one".into());
@@ -435,7 +439,8 @@ mod tests {
     /// a recording's seconds are a wall-clock fact no tempo scales.
     #[test]
     fn every_region_reads_its_own_window_at_its_own_place() {
-        let want = reading(&piece(), &takes(), 100.0, 48_000.0);
+        let resolved = takes();
+        let want = reading(&piece(), &look(&resolved));
         assert_eq!(want.len(), 4, "two regions, stereo: {want:?}");
         let (_, first) = want
             .iter()
@@ -453,7 +458,13 @@ mod tests {
         if let Content::Window { window, .. } = &mut brief.tracks[0].lanes[0].regions[0].content {
             window.duration = 1.0;
         }
-        let (_, clipped) = reading(&brief, &takes(), 48_000.0, 48_000.0)
+        let held = takes();
+        let seconds = Look {
+            tempo: TempoMap::new(1.0), // a beat a second, so the two are comparable
+            rate: 48_000.0,
+            takes: Some(&held),
+        };
+        let (_, clipped) = reading(&brief, &seconds)
             .into_iter()
             .find(|(v, _)| v.region == NodeId(12) && v.channel == 0)
             .expect("still a reader");
@@ -483,7 +494,7 @@ mod tests {
                 .and_then(|t| t.lanes[0].regions.first())
                 .map(|r| r.id)
                 .expect("a region");
-            reading(piece, &takes(), 100.0, 48_000.0)
+            reading(piece, &look(&takes()))
                 .into_iter()
                 .find(|(v, _)| v.region == region && v.channel == 0)
                 .map(|(_, r)| r.amp)
@@ -516,7 +527,8 @@ mod tests {
     /// composite is a tree, and a source nobody read in has nothing to play.
     #[test]
     fn a_region_with_no_samples_behind_it_sounds_through_nothing() {
-        let mut piece = piece();
+        let whole = piece;
+        let mut piece = whole();
         piece.tracks[0].lanes[0].regions[0].content = Content::Composite {
             node: Box::new(clausters_document::Node::new(
                 NodeId(99),
@@ -526,7 +538,8 @@ mod tests {
                 },
             )),
         };
-        let want = reading(&piece, &takes(), 100.0, 48_000.0);
+        let takes = takes();
+        let want = reading(&piece, &look(&takes));
         assert!(
             want.iter().all(|(v, _)| v.region != NodeId(12)),
             "no reader for it: {want:?}"
@@ -534,8 +547,9 @@ mod tests {
         assert_eq!(want.len(), 2, "and the other region still sounds");
 
         // ...and neither does one whose source nobody resolved.
-        let fresh = super::tests::piece();
-        let unresolved = reading(&fresh, &Takes::default(), 100.0, 48_000.0);
+        let fresh = whole();
+        let nothing = Takes::default();
+        let unresolved = reading(&fresh, &look(&nothing));
         assert!(unresolved.is_empty(), "{unresolved:?}");
     }
 }

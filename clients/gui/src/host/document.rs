@@ -412,10 +412,14 @@ impl Owner {
     }
 
     /// The scales the piece is drawn with.
-    pub(crate) fn piece_look(&self) -> piece::Look<'_> {
+    pub fn piece_look(&self) -> piece::Look<'_> {
         piece::Look {
-            units_per_beat: self.units_per_beat,
-            units_per_second: self.units_per_second,
+            // **The piece's own map, not a ratio.** A placement is musical time
+            // and the axis counts frames, and what crosses between them is the
+            // tempo the piece states -- so a ritardando moves the boxes and the
+            // readers together rather than leaving both a ratio behind.
+            tempo: piece::tempo_map(&self.piece),
+            rate: self.units_per_second,
             takes: Some(&self.takes),
         }
     }
