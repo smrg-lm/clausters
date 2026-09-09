@@ -36,10 +36,12 @@
 //! through the rate and never through the tempo: a recording's length is a
 //! wall-clock fact.
 
+use std::collections::HashMap;
+
 use clausters_core::tempomap::{TempoChange, TempoMap};
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::{Content, Lane, Multitrack, Region, Track};
-use clausters_document::{Beat, NodeId};
+use clausters_document::{Beat, Lifetime, NodeId, SegmentRef, SegmentSource, SourceRef};
 use serde_json::{Value, json};
 
 use super::sources::Takes;
@@ -252,11 +254,17 @@ pub fn read_clips(
     let shown = shown(piece, look);
     let mut out = Vec::new();
     let mut seen: Vec<NodeId> = Vec::new();
+    // Boxes the piece has no region for, by the lane they landed on.
+    let mut fresh: HashMap<NodeId, Vec<(Beat, Beat, Content)>> = HashMap::new();
     for clip in args.as_chunks::<7>().0 {
         let (Some(name), Some(lane)) = (string_at(clip, 0), string_at(clip, 1)) else {
             continue;
         };
-        let (Some(region_id), Some(track_id)) = (node_named(name), node_named(lane)) else {
+        // The lane's name **is** an id, always: the drawing writes it and a
+        // hand never renames a row. A box's name is not -- a split names its
+        // halves after the box they came from -- which is exactly how a new one
+        // is told from a moved one.
+        let Some(track_id) = node_named(lane) else {
             continue;
         };
         // A box naming a row the piece has none of is **kept where it is**: the
@@ -265,14 +273,28 @@ pub fn read_clips(
         let Some(row) = shown.lane(track_id) else {
             continue;
         };
-        let Some((track, region)) = find_region(piece, region_id) else {
-            continue;
-        };
-        seen.push(region_id);
         // Back the way they were drawn: through the map, and a length as the
         // difference of two positions.
         let position = Beat(look.beat_at(float_at(clip, 2)));
         let length = Beat(look.beat_at(float_at(clip, 2) + float_at(clip, 3)) - position.0);
+        let found = node_named(name).and_then(|id| find_region(piece, id).map(|f| (id, f)));
+        let Some((region_id, (track, region))) = found else {
+            // **A box the piece has no region for is a new one.** A split's
+            // tail, a paste, anything a hand made: the payload says which lane
+            // it landed on, which buffer it is a window onto and where in that
+            // buffer it opens, which is everything a region needs -- so it is
+            // built rather than inferred, and one rule serves whatever gesture
+            // produced it.
+            let start = float_at(clip, 4) / look.rate.max(f64::MIN_POSITIVE);
+            if let Some(content) = window_onto(int_at(clip, 6), start, position, length, look) {
+                fresh
+                    .entry(row.holder)
+                    .or_default()
+                    .push((position, length, content));
+            }
+            continue;
+        };
+        seen.push(region_id);
         let crossed = track != track_id;
         let moved = (position - region.position).0.abs() > f64::EPSILON;
         let resized = (length - region.length).0.abs() > f64::EPSILON;
@@ -311,16 +333,75 @@ pub fn read_clips(
             ));
         }
     }
-    out.extend(removals(piece, &shown, &seen));
+    out.extend(lane_lists(piece, &shown, &seen, &fresh));
     out
 }
 
-/// The regions the payload left out, as what each of their lanes now holds.
-fn removals(
+/// The **source** a buffer number came from, which is the reverse of the lookup
+/// that drew it.
+///
+/// A box names a server buffer because that is what a picture is drawn from;
+/// the document names a source. The table that resolved one to the other is the
+/// only thing that can read it back, which is why a new box can only be built
+/// where the session actually loaded its samples.
+fn window_onto(
+    bufnum: i64,
+    start: f64,
+    position: Beat,
+    length: Beat,
+    look: &Look<'_>,
+) -> Option<Content> {
+    let takes = look.takes?;
+    let source = takes.source_of(i32::try_from(bufnum).ok()?)?;
+    Some(Content::Window {
+        window: SegmentRef {
+            source: SegmentSource::Samples(SourceRef {
+                source,
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start,
+            // How much of the source it shows, in **seconds** — and taken
+            // over the stretch it actually occupies, since the same length in
+            // beats lasts differently depending on where it sits.
+            duration: look
+                .tempo
+                .span_secs(position.0, position.0 + length.0)
+                .max(0.0),
+        },
+        playrate: 1.0,
+        args: clausters_document::Opaque::none(),
+    })
+}
+
+/// **What each lane now holds**, for the two changes a placement cannot state:
+/// a region the payload no longer names (removed) and a box the piece has no
+/// region for (added).
+///
+/// One verb for both, because the piece has one: a lane's whole list. That is
+/// also what a split, a join and a paste invert to, so none of them needs a
+/// reader that guesses which of the three a payload was.
+fn lane_lists(
     piece: &Multitrack,
     shown: &Piece,
     seen: &[NodeId],
+    fresh: &HashMap<NodeId, Vec<(Beat, Beat, Content)>>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
+    // Ids for the new regions, past **everything** the piece already names --
+    // its tracks, its lanes and its regions, which share one id space. An id is
+    // the piece's and a hand that made a box has none to offer.
+    let mut next = piece
+        .tracks
+        .iter()
+        .flat_map(|track| {
+            std::iter::once(track.id.0).chain(track.lanes.iter().flat_map(|lane| {
+                std::iter::once(lane.id.0).chain(lane.regions.iter().map(|r| r.id.0))
+            }))
+        })
+        .max()
+        .unwrap_or(0)
+        + 1;
     let mut out = Vec::new();
     for row in &shown.lanes {
         let Some(lane) = piece
@@ -331,24 +412,50 @@ fn removals(
         else {
             continue;
         };
-        if lane.regions.iter().all(|r| seen.contains(&r.id)) {
+        let added = fresh.get(&lane.id).map(Vec::as_slice).unwrap_or_default();
+        let gone = lane.regions.iter().any(|r| !seen.contains(&r.id));
+        if added.is_empty() && !gone {
             continue;
         }
-        let regions: Vec<Region> = lane
+        let mut regions: Vec<Region> = lane
             .regions
             .iter()
             .filter(|r| seen.contains(&r.id))
             .cloned()
             .collect();
+        for (position, length, content) in added {
+            regions.push(Region::new(
+                NodeId(next),
+                *position,
+                *length,
+                content.clone(),
+            ));
+            next += 1;
+        }
         out.push((
             MultitrackIntent::SetLane {
                 lane: lane.id,
                 regions,
             },
-            "remove a clip",
+            if added.is_empty() {
+                "remove a clip"
+            } else {
+                "add a clip"
+            },
         ));
     }
     out
+}
+
+/// An OSC integer, however it was written.
+fn int_at(args: &[clausters_core::osc::OscType], n: usize) -> i64 {
+    match args.get(n) {
+        Some(clausters_core::osc::OscType::Int(v)) => i64::from(*v),
+        Some(clausters_core::osc::OscType::Long(v)) => *v,
+        Some(clausters_core::osc::OscType::Float(v)) => *v as i64,
+        Some(clausters_core::osc::OscType::Double(v)) => *v as i64,
+        _ => -1,
+    }
 }
 
 /// **The piece's strips, as they now stand** — the mixer's payload.
@@ -431,6 +538,7 @@ fn truthy_at(args: &[clausters_core::osc::OscType], n: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::document::sources::Takes;
     use clausters_core::osc::OscType;
     use clausters_document::multitrack::{Content, Track};
     use clausters_document::{Against, Opaque, Rules, SegmentRef, SegmentSource, SourceId};
@@ -694,6 +802,114 @@ mod tests {
             regions.iter().map(|r| r.id).collect::<Vec<_>>(),
             vec![NodeId(12)],
             "what the lane now holds, and not what left it"
+        );
+    }
+
+    /// **A box the piece has no region for becomes one.** A split's tail, a
+    /// paste, anything a hand made: the payload says which lane it landed on,
+    /// which buffer it is a window onto and where in that buffer it opens,
+    /// which is everything a region needs — so it is *built* rather than
+    /// inferred, and the same rule serves whatever gesture produced it.
+    ///
+    /// The defect this closes: a split names its halves `"12 2"`, which is no
+    /// node id, so the reader dropped the tail and kept the `TrimRegion` that
+    /// shortened the original — a cut that silently truncated a region and lost
+    /// the rest of it.
+    #[test]
+    fn a_box_the_piece_does_not_know_becomes_a_region_on_its_lane() {
+        let piece = piece();
+        let takes = {
+            let mut takes = Takes::default();
+            takes.insert(
+                SourceId(1),
+                crate::host::document::sources::Take {
+                    bufnum: 7,
+                    channels: Some(1),
+                    frames: Some(96_000),
+                },
+            );
+            takes
+        };
+        let look = Look {
+            tempo: TempoMap::new(1.0), // a beat a second
+            rate: 48_000.0,
+            takes: Some(&takes),
+        };
+        // The piece as a split of region 12 leaves it: the original shortened,
+        // and a tail beside it under a name that is not an id.
+        let mut args = clips(&[("12", "10", 0.0, 48_000.0)]);
+        args.extend([
+            OscType::String("12 2".into()),
+            OscType::String("10".into()),
+            OscType::Float(48_000.0),
+            OscType::Float(48_000.0),
+            OscType::Float(24_000.0), // half a second into the source
+            OscType::String(String::new()),
+            OscType::Int(7),
+        ]);
+        // The rest of the piece, in this look's own units (a beat a second).
+        args.extend(clips(&[
+            ("13", "10", 4.0 * 48_000.0, 2.0 * 48_000.0),
+            ("22", "20", 0.0, 2.0 * 48_000.0),
+        ]));
+        let edits = read_clips(&piece, &args, &look);
+
+        let lane = edits.iter().find_map(|(i, _)| match i {
+            MultitrackIntent::SetLane { lane, regions } => Some((*lane, regions)),
+            _ => None,
+        });
+        let Some((lane, regions)) = lane else {
+            panic!("the lane, whole: {edits:?}")
+        };
+        assert_eq!(lane, NodeId(11));
+        assert_eq!(regions.len(), 3, "the two that stayed and the new one");
+        let made = regions.last().expect("the new one");
+        assert!(
+            piece.regions().all(|r| r.id != made.id),
+            "it took an id the piece did not already use"
+        );
+        assert_eq!(made.position, Beat(1.0), "where the payload put it");
+        assert_eq!(made.length, Beat(1.0));
+        match &made.content {
+            Content::Window { window, .. } => {
+                assert_eq!(
+                    window.source.samples().map(|s| s.source),
+                    Some(SourceId(1)),
+                    "the source its buffer number resolves to"
+                );
+                assert_eq!(window.start, 0.5, "half a second in, as the box said");
+                assert_eq!(window.duration, 1.0);
+            }
+            other => panic!("a window onto the samples it named: {other:?}"),
+        }
+    }
+
+    /// ...and a box naming a buffer this session never read is **not** made
+    /// into a region: the document would name a source nobody can resolve, and
+    /// a piece that cannot be reopened is worse than a box that did not stick.
+    #[test]
+    fn a_box_over_a_buffer_nobody_loaded_is_not_invented() {
+        let piece = piece();
+        let mut args = clips(&[("12", "10", 0.0, 200.0)]);
+        args.extend([
+            OscType::String("nowhere".into()),
+            OscType::String("10".into()),
+            OscType::Float(400.0),
+            OscType::Float(200.0),
+            OscType::Float(0.0),
+            OscType::String(String::new()),
+            OscType::Int(-1),
+        ]);
+        args.extend(clips(&[
+            ("13", "10", 400.0, 200.0),
+            ("22", "20", 0.0, 200.0),
+        ]));
+        let edits = read_clips(&piece, &args, &look());
+        assert!(
+            !edits
+                .iter()
+                .any(|(i, _)| matches!(i, MultitrackIntent::SetLane { .. })),
+            "nothing added, and nothing removed either: {edits:?}"
         );
     }
 

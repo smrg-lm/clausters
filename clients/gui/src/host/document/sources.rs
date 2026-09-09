@@ -66,6 +66,16 @@ impl Takes {
         self.map.insert(source, take);
     }
 
+    /// **The source a buffer number came from** — the lookup read the other
+    /// way, which is what a box built by a hand needs: a picture names a server
+    /// buffer and the document names a source, and this table is the only thing
+    /// that knows they are the same samples.
+    pub fn source_of(&self, bufnum: i32) -> Option<SourceId> {
+        self.map
+            .iter()
+            .find_map(|(id, take)| (take.bufnum == bufnum).then_some(*id))
+    }
+
     /// The take a source became, if it became one.
     pub fn get(&self, source: SourceId) -> Option<Take> {
         self.map.get(&source).copied()

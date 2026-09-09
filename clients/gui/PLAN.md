@@ -6048,9 +6048,24 @@ finished work, where a pending item reads as done.
   instead. The window-level pair is dead code for a multitrack and goes when
   `track`/`clip` leave the tree (`G34`).
 
-  The half that is not dead code: over a **piece**, a split produces two boxes
-  whose names no region has, so the reader drops them — the piece's own
-  `SplitRegion`/`JoinRegions` exist and nothing reaches them yet.
+  **The half that was not dead code is fixed (2026-09-09).** Over a piece a
+  split names its halves after the box they came from (`"12 2"`), which is no
+  node id, so the reader dropped the tail and kept the trim that had shortened
+  the original — a cut that silently truncated a region and lost the rest of
+  it. The rule now is general and infers nothing: **a box the piece has no
+  region for is a new region on the lane it landed on**, built from what the
+  payload already carries — the buffer it is a window onto, where in that buffer
+  it opens, where it sits and how long it is — and the lane is stated whole
+  (`SetLane`), which is also what a removal and a paste are. So the reader never
+  asks which gesture a payload was.
+
+  What that leaves, small and written down rather than discovered: a box over a
+  buffer this session never read is **not** invented (the document would name a
+  source nobody can resolve, and a piece that cannot be reopened is worse than a
+  box that did not stick); and a *join* of two windows that are not contiguous
+  in their source becomes one window claiming the stretch between them, because
+  a box is one window and `JoinRegions`' composite is not reachable from a flat
+  payload.
 
 - ✅ **The piece is drawn and sounded through one tempo, and it carries a map**
   *(found 2026-09-09, auditing what the standalone host reimplements)*.
