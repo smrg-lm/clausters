@@ -63,7 +63,7 @@ from clausters import Session as Server
 from clausters.multitrack import (Multitrack, Content, Lane, Region, Session,
                                    Source, Span, Tempo, Track, View)
 from clausters.defs.buffer import Buffer
-from clausters.document import ARRANGEMENT, domain_edit
+from clausters.document import MULTITRACK, domain_edit
 from clausters.play import play
 
 SAMPLE_RATE = 48_000
@@ -167,7 +167,7 @@ print(f"the piece is {piece.end:.0f} beats long, over {len(piece.tracks)} tracks
 
 # %%
 moved = domain_edit(
-    ARRANGEMENT, piece.write(),
+    MULTITRACK, piece.write(),
     {"intent": "placeregion", "region": 13, "track": 20, "lane": 21,
      "position": 12.0, "layer": 0},
 )
@@ -180,7 +180,7 @@ print(f"  and to put it back: {moved['current']}")
 
 #: The other direction, through the same door -- and the piece is exactly the
 #: one that was built above, which is what "absolute" buys.
-piece = Multitrack.read(domain_edit(ARRANGEMENT, moved["state"],
+piece = Multitrack.read(domain_edit(MULTITRACK, moved["state"],
                                      moved["current"])["state"])
 print(f"  undone: the piece is {piece.end:.0f} beats long again, "
       f"over {len(piece.tracks)} tracks")
