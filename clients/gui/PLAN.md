@@ -6051,3 +6051,26 @@ finished work, where a pending item reads as done.
   The half that is not dead code: over a **piece**, a split produces two boxes
   whose names no region has, so the reader drops them — the piece's own
   `SplitRegion`/`JoinRegions` exist and nothing reaches them yet.
+
+- ⬜ **The piece is drawn and sounded through one tempo, and it carries a map**
+  *(found 2026-09-09, auditing what the standalone host reimplements)*.
+  `document/piece.rs` and `document/sound.rs` both convert a region's beats to
+  frames with a single ratio (`units_per_beat`), and `Multitrack::tempo` is a
+  **map** with steps and ramps. So a piece with a ritardando draws its boxes and
+  places its readers in the wrong place, together — which at least keeps the
+  picture and the sound agreeing about being wrong.
+
+  It is the defect this plan already recorded for the rulers ("A time axis is
+  labelled by one tempo, and a piece can have several"), now on the other side
+  of the seam, and it is the worse shape of a repeated rule: not a second copy
+  of the relation but a **simpler** one, standing in for
+  `clausters_core::tempomap::TempoMap`, which models exactly this and is already
+  bound by both clients.
+
+  Where the bridge goes is decided by a boundary rather than by taste:
+  `clausters-document` depends on **serde and nothing else**, deliberately, so
+  the conversion cannot live beside `Tempo`. `TempoMap::from_breakpoints`
+  already takes a list of points, so what is missing is one core function over
+  `(at, bpm, ramp)` triples plus the default a piece that never said a tempo
+  leaves to its reader — and each consumer maps its own list into that shape,
+  which is a binding and not a second implementation.
