@@ -6096,3 +6096,18 @@ finished work, where a pending item reads as done.
   as `secs_at(beat) × rate` and a **length as the difference of two of them**,
   since four beats are longer later than earlier under a ritardando; the ruler
   is handed the same map so its labels and the boxes agree.
+
+- ⬜ **A session snaps to nothing, and its grid is musical while the prop is in
+  frames** *(found 2026-09-09, reading why a dragged region landed at beat
+  8.0558)*. `--session` never sets `Look::quant`, so the `multitrack` gets no
+  `snap` and a drag lands wherever the pixel was; `q` over a selection
+  quantizes to that same nothing.
+
+  Setting it is not a one-liner, and that is the entry: `snap` is a number of
+  **frames**, and under a tempo map a beat is not a fixed number of frames — so
+  a grid of one beat cannot be stated as a frame count at all, and the obvious
+  fix reintroduces exactly the single-ratio defect the tempo map just removed.
+  The piece already carries what the grid should come from (its meter map), so
+  what is missing is a **musical** snap: the widget's own axis knows the map
+  (`tempo_map`), which is what makes the ruler right, and the snap has to be
+  read off the same one instead of off a number the wire converted once.
