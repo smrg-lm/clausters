@@ -1791,4 +1791,51 @@ mod tests {
         mt.set("playhead_at", &Value::from(0.0));
         assert!(mt.needs().clock, "and an anchored one drives the window");
     }
+    /// **A held grip is shown because it is held.** The edge moves under the
+    /// hand, so asking where the pointer is each frame makes the mark blink as
+    /// the box catches up with it — which is what a trim looked like.
+    #[test]
+    fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+
+        let body = track::lane_body(
+            model::stack(&mt.lanes, rect, mt.scroll, mt.gap)[0],
+            false,
+            100.0,
+            &m,
+        );
+        let nav = View { start: 0.0, len };
+        let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
+        let cr = track::clip_rect(body, x0, x1);
+        let (_, right) = {
+            let local = track::clip_local_view(
+                body,
+                &nav,
+                mt.clips[0].place.offset,
+                mt.clips[0].place.dur,
+                cr,
+            );
+            let ends = track::clip_ends_on_screen(&local, mt.clips[0].place.dur);
+            track::clip_grips(cr, ends, &m)
+        };
+        let right = right.expect("its end is on screen");
+        let on_grip = (
+            f64::from(right.x + right.w / 2.0),
+            f64::from(cr.y + cr.h / 2.0),
+        );
+
+        mt.press(on_grip, &input(&m, rect, len));
+        assert!(matches!(mt.grab.map(|g| g.part), Some(Part::End)));
+        // Pull it well left: the edge is now nowhere near where the press was,
+        // and the drag still knows which side it took.
+        mt.drag((on_grip.0 - 60.0, on_grip.1), &input(&m, rect, len));
+        assert!(mt.clips[0].place.dur < 500.0);
+        assert!(
+            matches!(mt.grab.map(|g| g.part), Some(Part::End)),
+            "the side is the drag's, not the pointer's"
+        );
+    }
 }
