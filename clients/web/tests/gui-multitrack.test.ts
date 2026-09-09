@@ -65,8 +65,8 @@ test("one subscription carries the whole piece", () => {
     mt.attach(w);
 
     // A hand dragged `a` onto the other lane and moved it.
-    w.report("clips", "a", "tone", 100.0, 500.0, 0.0, "",
-        "b", "tone", 500.0, 500.0, 0.0, "");
+    w.report("clips", "a", "tone", 100.0, 500.0, 0.0, "", -1,
+        "b", "tone", 500.0, 500.0, 0.0, "", -1);
     assert.deepEqual(seen, ["clips"]);
     assert.equal(mt.clip("a")?.lane, "tone");
     assert.equal(mt.clip("a")?.at, 100.0);
@@ -89,7 +89,7 @@ test("a change from the script reaches the widget", () => {
     assert.equal(w.sets.length, 1);
     assert.ok("clips" in w.sets[w.sets.length - 1]);
     const clips = w.sets[w.sets.length - 1].clips as unknown[][];
-    assert.deepEqual(clips[clips.length - 1], ["c", "noise", 1000.0, 200.0, 0.0, ""]);
+    assert.deepEqual(clips[clips.length - 1], ["c", "noise", 1000.0, 200.0, 0.0, "", -1]);
 
     // `place` is one verb: the piece is a statement, so moving is saying where.
     mt.place("c", "tone", 1200.0, 200.0);
@@ -116,7 +116,7 @@ test("a partial group is dropped rather than half read", () => {
     const mt = piece();
     const w = new FakeWidget();
     mt.attach(w);
-    w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", "b", "tone", 500.0);
+    w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", -1, "b", "tone", 500.0);
     assert.deepEqual(mt.clips.map((c) => c.name), ["a"]);
 });
 
@@ -129,7 +129,7 @@ test("the view is built from what the object holds", () => {
     const spec = mt.view({ name: "piece", weight: 1.0 }) as Record<string, unknown>;
     assert.equal(spec.type, "multitrack");
     assert.deepEqual(spec.lanes, ["one", "", 60.0, 0, 0, 1.0]);
-    assert.deepEqual(spec.clips, ["x", "one", 0.0, 10.0, 0.0, ""]);
+    assert.deepEqual(spec.clips, ["x", "one", 0.0, 10.0, 0.0, "", -1]);
     assert.equal(spec.snap, 4.0);
     assert.equal(spec.name, "piece");
 });
@@ -153,7 +153,7 @@ test("attach takes the window and remembers its own name", () => {
     const mt = piece();
     mt.view({ name: "piece" });
     mt.attach(win);
-    w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "");
+    w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "", -1);
     assert.equal(mt.clip("a")?.lane, "tone");
 
     // A view with no name cannot be searched for, and says so.

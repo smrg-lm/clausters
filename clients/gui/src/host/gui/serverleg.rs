@@ -74,6 +74,7 @@ impl App {
         let (channels, _, sample_rate) = take.shape();
         debug!("gui_def {def_id}: widget {widget_id} maps buffer {bufnum}, nothing sent");
         self.place_mapped_buffer_data(
+            bufnum,
             Arc::new(take),
             channels,
             sample_rate,
@@ -93,6 +94,7 @@ impl App {
     #[cfg(unix)]
     fn place_mapped_buffer_data(
         &mut self,
+        bufnum: i32,
         take: Arc<crate::host::mapped::MappedBuffer>,
         channels: usize,
         sample_rate: f64,
@@ -174,7 +176,7 @@ impl App {
                 .window_def_mut(want.def_id)
                 .and_then(|t| t.find_mut(want.widget_id))
             {
-                w.take_bulk(|| Loaded::Shared(data.clone()));
+                w.take_bulk_of(bufnum, || Loaded::Shared(data.clone()));
             }
             if matches!(slot, Some(SlotKind::Geometry { .. })) {
                 self.finish_placement(want, frames, sample_rate);
@@ -527,8 +529,10 @@ impl App {
                             channels,
                         };
                         // A clip addressed the fetch for its body, so the
-                        // door looks one level in for itself.
-                        w.take_bulk(raw);
+                        // door looks one level in for itself — and the buffer
+                        // number goes with it, for the element that asked for
+                        // several and has to put each where it belongs.
+                        w.take_bulk_of(bufnum, raw);
                     }
                     continue; // no navigation group, no ruler rate: a lane owns those
                 }

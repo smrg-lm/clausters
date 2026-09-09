@@ -57,6 +57,12 @@ class Clip:
     dur: float = 0.0
     start: float = 0.0
     label: str = ""
+    #: The **server buffer** this box is a window onto; a negative number (the
+    #: default) draws an empty box. A number and not samples: they are the
+    #: server's, and the host maps or fetches them, so two clips over one take
+    #: cost one download. **Negative and not zero**, because buffer 0 is a
+    #: buffer — the first one an allocator hands out.
+    source: int = -1
 
     @property
     def end(self) -> float:
@@ -136,16 +142,17 @@ class Multitrack:
         return self._pushed("lanes")
 
     def place(self, name: str, lane: str, at: float, dur: float,
-              start: float = 0.0, label: str = "") -> "Multitrack":
+              start: float = 0.0, label: str = "", source: int = -1) -> "Multitrack":
         """Put a clip where you say — adding it, or moving the one of that
         name. The verb is one because *the piece is a statement*: what you hand
         over is where the clip is, not how it got there."""
         found = self.clip(name)
         if found is None:
-            self.clips.append(Clip(name, lane, at, dur, start, label))
+            self.clips.append(Clip(name, lane, at, dur, start, label, source))
         else:
             self.clips[self.clips.index(found)] = replace(
-                found, lane=lane, at=at, dur=dur, start=start, label=label)
+                found, lane=lane, at=at, dur=dur, start=start, label=label,
+                source=source)
         return self._pushed("clips")
 
     def remove(self, name: str) -> "Multitrack":
@@ -210,8 +217,8 @@ class Multitrack:
         """Both edit-backs, each the whole list — the piece as it now stands."""
         if tag == "clips":
             self.clips = [Clip(str(n), str(lane), float(at), float(dur),
-                               float(start), str(label))
-                          for n, lane, at, dur, start, label in _six(vals)]
+                               float(start), str(label), int(source))
+                          for n, lane, at, dur, start, label, source in _seven(vals)]
         elif tag == "lanes":
             self.lanes = [Lane(str(n), str(label), float(h), bool(int(m)),
                                bool(int(s)), float(g))
@@ -242,11 +249,20 @@ class Multitrack:
                 for l in self.lanes]
 
     def _clip_tuples(self) -> list:
-        return [(c.name, c.lane, c.at, c.dur, c.start, c.label)
+        return [(c.name, c.lane, c.at, c.dur, c.start, c.label, c.source)
                 for c in self.clips]
 
 
 def _six(vals) -> list:
     """The flat payload as sextuples; a trailing partial group is dropped rather
     than half-read, the rule every flat payload here follows."""
-    return [vals[i:i + 6] for i in range(0, len(vals) - len(vals) % 6, 6)]
+    return _groups(vals, 6)
+
+
+def _seven(vals) -> list:
+    """The same, for the clips' septuples."""
+    return _groups(vals, 7)
+
+
+def _groups(vals, n: int) -> list:
+    return [vals[i:i + n] for i in range(0, len(vals) - len(vals) % n, n)]

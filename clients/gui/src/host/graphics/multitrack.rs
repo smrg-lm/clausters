@@ -27,6 +27,9 @@ use crate::host::layout::Rect;
 use crate::host::placement::Placement;
 use crate::viewport::View;
 
+/// What a clip's `source` says when it is a window onto nothing.
+pub const NO_SOURCE: i32 = -1;
+
 /// One row of the multitrack: a track's lane, named and sized.
 ///
 /// The name is the **identity** and it is the client's own word, not a widget
@@ -87,6 +90,21 @@ pub struct Clip {
     pub place: Placement,
     /// What is drawn on it. Empty draws the name.
     pub label: String,
+    /// **The server buffer this box is a window onto**, or a **negative** number
+    /// for a box with no contents — a placeholder, a region of something the
+    /// host cannot draw.
+    ///
+    /// Negative and not zero, because **buffer 0 is a buffer**: it is the first
+    /// one an allocator hands out, so a zero sentinel makes the first take a
+    /// script loads the one take it cannot draw. The wire spells "none" with a
+    /// negative number everywhere it has to (`playhead_at`, the transport's
+    /// group), and this is the same word.
+    ///
+    /// A number and not a payload: the samples are the *server's*, and the host
+    /// either maps them out of the shared segment or fetches them over the leg.
+    /// So two clips over one take cost one download and one pyramid, which is
+    /// what makes a piece of six views of one recording cheap.
+    pub source: i32,
 }
 
 impl Clip {
@@ -97,6 +115,7 @@ impl Clip {
             lane: lane.into(),
             place,
             label: String::new(),
+            source: NO_SOURCE,
         }
     }
 
@@ -227,10 +246,10 @@ pub fn lanes_json(lanes: &[Lane]) -> Value {
     Value::Array(out)
 }
 
-/// The `clips` wire form: the flat `name lane offset dur start label` sextuple
-/// array.
+/// The `clips` wire form: the flat `name lane offset dur start label source`
+/// septuple array.
 pub fn clips_json(clips: &[Clip]) -> Value {
-    let mut out = Vec::with_capacity(clips.len() * 6);
+    let mut out = Vec::with_capacity(clips.len() * 7);
     for c in clips {
         out.push(Value::from(c.name.clone()));
         out.push(Value::from(c.lane.clone()));
@@ -238,6 +257,7 @@ pub fn clips_json(clips: &[Clip]) -> Value {
         out.push(Value::from(c.place.dur));
         out.push(Value::from(c.place.start));
         out.push(Value::from(c.label.clone()));
+        out.push(Value::from(i64::from(c.source)));
     }
     Value::Array(out)
 }
@@ -324,7 +344,7 @@ mod tests {
         let Value::Array(written) = clips_json(&clips()) else {
             panic!("an array");
         };
-        assert_eq!(written.len(), 12, "six per clip");
+        assert_eq!(written.len(), 14, "seven per clip");
         assert_eq!(written[0], Value::from("a"));
         assert_eq!(written[1], Value::from("noise"), "the lane it is on");
         assert_eq!(written[3], Value::from(48_000.0));

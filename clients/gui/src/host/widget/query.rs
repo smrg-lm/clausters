@@ -457,6 +457,23 @@ impl WidgetKind {
         self.as_element_mut().is_some_and(|el| el.bulk(data))
     }
 
+    /// [`take_bulk`](Self::take_bulk) for one of a plural asker's
+    /// [`Needs::takes`](super::element::Needs::takes): the buffer says which.
+    ///
+    /// It falls back to the unlabelled door, so a widget that asked for exactly
+    /// one source is served by either path and nothing has to know which kind
+    /// of asker it was.
+    pub fn take_bulk_of(
+        &mut self,
+        bufnum: i32,
+        data: &impl Fn() -> super::element::Loaded,
+    ) -> bool {
+        match self.as_element_mut() {
+            Some(el) => el.bulk_of(bufnum, data()) || el.bulk(data()),
+            None => false,
+        }
+    }
+
     /// **What this widget's claimed GPU slot is fed**, when it has something
     /// new for it.
     ///
@@ -545,6 +562,18 @@ impl Widget {
             return true;
         }
         self.children.iter_mut().any(|b| b.kind.take_bulk(data()))
+    }
+
+    /// [`take_bulk`](Self::take_bulk) for one of a plural asker's
+    /// [`Needs::takes`](super::element::Needs::takes), routed the same way: the
+    /// buffer number says which of several a widget asked for.
+    pub fn take_bulk_of(&mut self, bufnum: i32, data: impl Fn() -> super::element::Loaded) -> bool {
+        if self.kind.take_bulk_of(bufnum, &data) {
+            return true;
+        }
+        self.children
+            .iter_mut()
+            .any(|b| b.kind.take_bulk_of(bufnum, &data))
     }
 
     /// **What a gesture has changed on this widget** — its own kind's

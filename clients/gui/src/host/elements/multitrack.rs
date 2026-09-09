@@ -23,22 +23,27 @@
 //! score editor edit.
 
 use clausters_core::osc::OscType;
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use serde_json::{Map, Value};
 
 use crate::host::font;
 use crate::host::graphics::multitrack::{self as model, Clip, Lane};
+use crate::host::graphics::signal::trace::{Measures, Trace};
 use crate::host::graphics::track;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::placement::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Swept, Take, TimeSpace,
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, Swept, Take, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
-use crate::host::widget::{EditorProps, GestureMap, RulerY};
+use crate::host::widget::{EditorProps, GestureMap, RulerY, SourceWindow};
 use crate::viewport::View;
+use crate::waveform::WaveformData;
 
 /// One JSON scalar as the OSC primitive it is — **flat primitives at the
 /// boundary**, which is what every edit-back payload here rides as.
@@ -125,6 +130,13 @@ pub struct Multitrack {
     pub(crate) editor: EditorProps,
     /// A caption drawn in the corner.
     pub(crate) label: Option<String>,
+    /// **The takes, by server buffer number** — what a clip's body is drawn
+    /// from, one entry however many clips read it.
+    ///
+    /// It is the element's because the samples are: a buffer arrives once
+    /// ([`Element::bulk_of`]) and every clip over it draws the same pyramid,
+    /// which is what makes six views of one recording cost one download.
+    takes: HashMap<i32, Arc<WaveformData>>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
@@ -145,6 +157,7 @@ impl Default for Multitrack {
             snap: 0.0,
             editor: EditorProps::body(),
             label: None,
+            takes: HashMap::new(),
             grab: None,
             block: Vec::new(),
             fading: None,
@@ -171,6 +184,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         snap: number_f64(props, "snap", 0.0).max(0.0),
         editor: EditorProps::parse(props, RulerY::Off),
         label: label(props),
+        takes: HashMap::new(),
         grab: None,
         block: Vec::new(),
         fading: None,
@@ -202,13 +216,14 @@ fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
         .collect()
 }
 
-/// The `clips` prop: the flat `name lane offset dur start label` sextuple array.
+/// The `clips` prop: the flat `name lane offset dur start label source`
+/// septuple array.
 fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
     let Some(Value::Array(items)) = props.get("clips") else {
         return Vec::new();
     };
     items
-        .as_chunks::<6>()
+        .as_chunks::<7>()
         .0
         .iter()
         .filter_map(|c| {
@@ -221,6 +236,7 @@ fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
                     start: c[4].as_f64().unwrap_or(0.0),
                 },
                 label: c[5].as_str().unwrap_or_default().to_string(),
+                source: c[6].as_i64().unwrap_or(i64::from(model::NO_SOURCE)) as i32,
             })
         })
         .collect()
@@ -630,18 +646,68 @@ impl Element for Multitrack {
             };
             let cr = track::clip_rect(body, x0, x1);
             track::draw_clip(d, cr, self.selected.contains(&n));
+            let local = track::clip_local_view(body, &nav, clip.place.offset, clip.place.dur, cr);
+            // **The take, drawn from the source per visible pixel**, mapped
+            // back through the clip's own window onto it — which is what makes
+            // the picture scroll and trim *with* the box instead of squashing
+            // into whatever rectangle it currently has. One pyramid however
+            // many clips read it.
+            if let Some(take) = self.takes.get(&clip.source) {
+                let window = SourceWindow {
+                    start: clip.place.start,
+                    ..SourceWindow::default()
+                };
+                track::draw_take(
+                    d,
+                    cr,
+                    &local,
+                    &window,
+                    clip.place.dur,
+                    &Trace::Data(take),
+                    -1.0,
+                    1.0,
+                    Measures::default(),
+                    false,
+                    ctx.world.sample_rate,
+                    None,
+                );
+            }
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
             // off screen has no grip, because a handle for an edge nobody can
             // see is a handle for nothing — the same rule a lane's clip keeps.
-            let local = track::clip_local_view(body, &nav, clip.place.offset, clip.place.dur, cr);
+            // **A grip is an affordance, so it is shown where the hand is.**
+            // Drawn always, every clip carries two marks nobody is reaching
+            // for; drawn on the side the pointer is over, it says *this edge
+            // moves* at the moment that is worth saying.
             let ends = track::clip_ends_on_screen(&local, clip.place.dur);
-            let (left, right) = track::clip_grips(cr, ends, ctx.metrics);
-            if let Some(grip) = left {
-                track::draw_clip_grip(d, grip, track::ClipSide::Start);
+            if let Some((cx, cy)) = ctx.world.cursor
+                && cy as f32 >= cr.y
+                && (cy as f32) < cr.y + cr.h
+                && let Some((grip, side)) = track::clip_grip_at(cr, ends, ctx.metrics, cx as f32)
+            {
+                track::draw_clip_grip(d, grip, side);
             }
-            if let Some(grip) = right {
-                track::draw_clip_grip(d, grip, track::ClipSide::End);
+        }
+        // **The axis' own chrome, over the clips**: the shared selection band
+        // and the playhead. A lane widget gets these drawn for it by the frame;
+        // an element draws its own, from the same facts (`Ctx::time`).
+        if let Some(time) = ctx.time {
+            let over = track::lane_body(ctx.rect, false, ctx.indent, ctx.metrics);
+            crate::host::graphics::selection::draw_span(
+                d,
+                over,
+                &nav,
+                time.sel,
+                1,
+                None,
+                crate::host::graphics::selection::Vertical::Whole,
+            );
+            if let Some(pos) = time.head
+                && let Some(x) = track::playhead_x(over, &nav, pos)
+            {
+                let (mesh, m, theme) = d.parts();
+                mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), theme.playhead);
             }
         }
         if let Some(text) = &self.label {
@@ -927,6 +993,62 @@ impl Element for Multitrack {
         true
     }
 
+    /// **The takes its clips are windows onto**, by server buffer number.
+    ///
+    /// The plural of the one source a picture asks for: this element holds
+    /// boxes, and every one of them is a window onto samples the server has.
+    /// Named once each, because the fetch is keyed by buffer and two clips over
+    /// one recording are one download.
+    /// **What a lane's header asks for, left of the axis.**
+    ///
+    /// It is the group's answer and not this widget's: the layout stamps the
+    /// widest wish any member of the navigation group made, so a ruler stacked
+    /// with these lanes starts its ticks over the same sample. Without it there
+    /// is no band, and a lane draws no name and no controls at all.
+    fn gutter(&self, m: &Metrics) -> f32 {
+        let header = track::Header {
+            w: None,
+            mute: Some(false),
+            solo: Some(false),
+            level: Some(1.0),
+        };
+        header.width(m)
+    }
+
+    fn needs(&self) -> Needs {
+        let mut takes: Vec<i32> = self
+            .clips
+            .iter()
+            .map(|c| c.source)
+            .filter(|n| *n >= 0)
+            .collect();
+        takes.sort_unstable();
+        takes.dedup();
+        Needs {
+            takes,
+            // **A swept line is a picture driven by the clock**, so the window
+            // has to be told: an anchored playhead moves with no message and
+            // nothing else would ask for the frame it moves on.
+            clock: self.editor.playhead_at >= 0.0,
+            ..Needs::default()
+        }
+    }
+
+    /// One of them arrived. Every clip over it draws the same pyramid.
+    fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
+        let peaks = match data {
+            Loaded::Peaks(peaks) | Loaded::Shared(peaks) => peaks,
+            Loaded::Raw { samples, channels } => Arc::new(WaveformData::from_interleaved(
+                &samples,
+                channels.max(1),
+                crate::host::elements::signal::DEFAULT_BASE_BUCKET,
+            )),
+            _ => return false,
+        };
+        self.takes.insert(bufnum, peaks);
+        true
+    }
+
     /// **The plan a hand on the stack runs.** The element first — that is a
     /// clip and a header control — then a marquee over what it declined, which
     /// is the bare stack. Shift pans the shared axis, as it does everywhere.
@@ -984,7 +1106,7 @@ mod tests {
     fn piece() -> Multitrack {
         from_props(&props(
             r#"{"lanes": ["noise", "", 100, 0, 0, 1, "tone", "", 100, 0, 0, 1],
-                "clips": ["a", "noise", 0, 500, 0, "", "b", "tone", 500, 500, 0, ""]}"#,
+                "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0]}"#,
         ))
     }
 
@@ -1005,7 +1127,8 @@ mod tests {
 
     const TWO: &str = r#"{
         "lanes": ["noise", "", 100, 0, 0, 0.8, "tone", "Lead", 60, 1, 0, 0.5],
-        "clips": ["a", "noise", 0, 48000, 0, "", "b", "tone", 96000, 48000, 0, "take 2"]
+        "clips": ["a", "noise", 0, 48000, 0, "", 0,
+                  "b", "tone", 96000, 48000, 0, "take 2", 0]
     }"#;
 
     /// **A client describes the piece; it does not compose a tree of it.** The
@@ -1037,7 +1160,7 @@ mod tests {
     fn a_partial_group_is_dropped_rather_than_half_read() {
         let mt = from_props(&props(
             r#"{"lanes": ["one", "", 100, 0, 0, 1, "two", ""],
-                "clips": ["a", "one", 0, 10, 0]}"#,
+                "clips": ["a", "one", 0, 10, 0, ""]}"#,
         ));
         assert_eq!(mt.lanes.len(), 1, "the second group is short");
         assert!(mt.clips.is_empty(), "so is the only clip");
@@ -1074,7 +1197,7 @@ mod tests {
     fn a_clip_on_a_lane_that_is_gone_is_kept_and_not_placed() {
         let mt = from_props(&props(
             r#"{"lanes": ["one", "", 100, 0, 0, 1],
-                "clips": ["a", "one", 0, 10, 0, "", "b", "vanished", 0, 10, 0, ""]}"#,
+                "clips": ["a", "one", 0, 10, 0, "", 0, "b", "vanished", 0, 10, 0, "", 0]}"#,
         ));
         assert_eq!(mt.clips.len(), 2);
         assert!(mt.lane_of(&mt.clips[0]).is_some());
@@ -1083,7 +1206,7 @@ mod tests {
         let Value::Array(written) = model::clips_json(&mt.clips) else {
             panic!("an array");
         };
-        assert_eq!(written.len(), 12);
+        assert_eq!(written.len(), 14);
     }
 
     /// **Its size is the caller's, never its content's.** A lane added by a
@@ -1226,7 +1349,7 @@ mod tests {
         let args = msgs.first().expect("an edit");
         assert!(echo.set("clips", &model::clips_json(&mt.clips)));
         assert_eq!(echo.clips, mt.clips);
-        assert_eq!(args.len(), 1 + 6 * 2, "the tag, then a sextuple per clip");
+        assert_eq!(args.len(), 1 + 7 * 2, "the tag, then a septuple per clip");
     }
     /// **A marquee catches the clips it covered, of every lane it crossed** — a
     /// selection the stack's sweep made is not one lane's. And it writes no
@@ -1494,7 +1617,7 @@ mod tests {
         let mut mt = from_props(&props(
             r#"{"lanes": ["one", "", 100, 0, 0, 1, "two", "", 100, 0, 0, 1,
                           "three", "", 100, 0, 0, 1],
-                "clips": ["a", "one", 0, 500, 0, ""]}"#,
+                "clips": ["a", "one", 0, 500, 0, "", 0]}"#,
         ));
         mt.gap = 8.0;
 
@@ -1621,5 +1744,51 @@ mod tests {
             mt.clip_at(&input(&m, rect, len), middle),
             Some((0, Part::Body))
         );
+    }
+    /// **Buffer 0 is a buffer.** It is the first one an allocator hands out, so
+    /// a zero sentinel would make the first take a script loads the one take it
+    /// cannot draw — which is exactly how this was found, by eye, on the first
+    /// clip of a piece.
+    #[test]
+    fn a_clip_over_buffer_zero_has_a_source() {
+        let mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 10, 0, "", 0,
+                          "b", "one", 20, 10, 0, "", -1]}"#,
+        ));
+        assert_eq!(mt.clips[0].source, 0, "a window onto buffer 0");
+        assert_eq!(mt.clips[1].source, model::NO_SOURCE, "and one onto nothing");
+        assert_eq!(mt.needs().takes, vec![0], "so exactly one take is fetched");
+
+        // A clip written with no source at all is a window onto nothing, not
+        // onto buffer 0.
+        let bare = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1], "clips": ["a", "one", 0, 10, 0, ""]}"#,
+        ));
+        assert!(bare.clips.is_empty(), "six fields is a partial septuple");
+    }
+    /// **A lane's header is a gutter the group reserves.** It is asked of the
+    /// element and stamped by the layout as the widest wish on the axis, so a
+    /// ruler stacked with these lanes starts its ticks over the same sample.
+    /// Answering zero is a stack with no names and no controls on it.
+    #[test]
+    fn the_lanes_ask_for_the_band_their_headers_need() {
+        let m = Metrics::default();
+        let mt = piece();
+        assert!(
+            mt.gutter(&m) >= m.header_w,
+            "a header carrying a name, two toggles and a fader is at least the role"
+        );
+    }
+
+    /// **A swept line is a picture driven by the clock**, so the window has to
+    /// be told: an anchored playhead moves with no message, and nothing else in
+    /// a multitrack would ask for the frame it moves on.
+    #[test]
+    fn an_anchored_playhead_asks_the_window_for_frames() {
+        let mut mt = piece();
+        assert!(!mt.needs().clock, "a stopped transport drives nothing");
+        mt.set("playhead_at", &Value::from(0.0));
+        assert!(mt.needs().clock, "and an anchored one drives the window");
     }
 }

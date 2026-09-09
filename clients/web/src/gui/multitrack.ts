@@ -70,6 +70,14 @@ export class Clip {
     dur: number;
     start: number;
     label: string;
+    /**
+     * The **server buffer** this box is a window onto; a negative number (the
+     * default) draws an empty box. A number and not samples: they are the
+     * server's, and the host maps or fetches them, so two clips over one take
+     * cost one download. **Negative and not zero**, because buffer 0 is a
+     * buffer — the first one an allocator hands out.
+     */
+    source: number;
 
     constructor(
         name: string,
@@ -78,6 +86,7 @@ export class Clip {
         dur = 0.0,
         start = 0.0,
         label = "",
+        source = -1,
     ) {
         this.name = name;
         this.lane = lane;
@@ -85,6 +94,7 @@ export class Clip {
         this.dur = dur;
         this.start = start;
         this.label = label;
+        this.source = source;
     }
 
     /** Where it ends on the axis. */
@@ -101,7 +111,7 @@ export type LaneLike =
 /** A clip as a script types one: the object, or the tuple it takes. */
 export type ClipLike =
     | Clip
-    | readonly [string, string, number?, number?, number?, string?];
+    | readonly [string, string, number?, number?, number?, string?, number?];
 
 /** What `attach` needs of a widget: one subscription and one way to set. */
 export interface MultitrackWidget {
@@ -225,16 +235,18 @@ export class Multitrack {
         dur: number,
         start = 0.0,
         label = "",
+        source = -1,
     ): this {
         const found = this.clip(name);
         if (found === null) {
-            this.clips.push(new Clip(name, lane, at, dur, start, label));
+            this.clips.push(new Clip(name, lane, at, dur, start, label, source));
         } else {
             found.lane = lane;
             found.at = at;
             found.dur = dur;
             found.start = start;
             found.label = label;
+            found.source = source;
         }
         return this.pushed("clips");
     }
@@ -316,11 +328,12 @@ export class Multitrack {
     /** Both edit-backs, each the whole list — the piece as it now stands. */
     private edited(tag: string, vals: unknown[]): void {
         if (tag === "clips") {
-            this.clips = six(vals).map(([n, lane, at, dur, start, label]) =>
-                new Clip(String(n), String(lane), Number(at), Number(dur),
-                    Number(start), String(label)));
+            this.clips = groups(vals, 7).map(
+                ([n, lane, at, dur, start, label, source]) =>
+                    new Clip(String(n), String(lane), Number(at), Number(dur),
+                        Number(start), String(label), Math.trunc(Number(source))));
         } else if (tag === "lanes") {
-            this.lanes = six(vals).map(([n, label, h, m, s, g]) =>
+            this.lanes = groups(vals, 6).map(([n, label, h, m, s, g]) =>
                 new Lane(String(n), String(label), Number(h), Boolean(Number(m)),
                     Boolean(Number(s)), Number(g)));
         } else if (tag === "locate") {
@@ -347,17 +360,19 @@ export class Multitrack {
         return this.lanes.map((l) => [l.name, l.label, l.height, l.mute, l.solo, l.gain]);
     }
 
-    private clipTuples(): [string, string, number, number, number, string][] {
-        return this.clips.map((c) => [c.name, c.lane, c.at, c.dur, c.start, c.label]);
+    private clipTuples(): [string, string, number, number, number, string, number][] {
+        return this.clips.map(
+            (c) => [c.name, c.lane, c.at, c.dur, c.start, c.label, c.source],
+        );
     }
 }
 
 /**
- * The flat payload as sextuples; a trailing partial group is dropped rather
+ * The flat payload in groups of `n`; a trailing partial group is dropped rather
  * than half-read, the rule every flat payload here follows.
  */
-function six(vals: unknown[]): unknown[][] {
+function groups(vals: unknown[], n: number): unknown[][] {
     const out: unknown[][] = [];
-    for (let i = 0; i + 6 <= vals.length; i += 6) out.push(vals.slice(i, i + 6));
+    for (let i = 0; i + n <= vals.length; i += n) out.push(vals.slice(i, i + n));
     return out;
 }

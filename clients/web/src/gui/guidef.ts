@@ -2581,6 +2581,7 @@ export type ClipSpec = readonly (readonly [
     dur?: number,
     start?: number,
     label?: string,
+    source?: number,
 ])[];
 
 /** The flat `name label height mute solo gain` sextuples the host reads. */
@@ -2595,13 +2596,16 @@ export function flatLanes(lanes: LaneSpec): (number | string)[] {
     return out;
 }
 
-/** The flat `name lane offset dur start label` sextuples the host reads. */
+/** The flat `name lane offset dur start label source` septuples the host reads. */
 export function flatClips(clips: ClipSpec): (number | string)[] {
     const out: (number | string)[] = [];
-    for (const [name, lane, offset, dur, start, label] of clips) {
+    for (const [name, lane, offset, dur, start, label, source] of clips) {
         out.push(String(name), lane === undefined ? "" : String(lane),
             Number(offset ?? 0), Number(dur ?? 0), Number(start ?? 0),
-            label === undefined ? "" : String(label));
+            label === undefined ? "" : String(label),
+            // **Buffer 0 is a buffer** — the first one an allocator hands out —
+            // so "no source" is spelled negative, as every other absence here.
+            Math.trunc(source ?? -1));
     }
     return out;
 }
@@ -2617,8 +2621,12 @@ export function flatClips(clips: ClipSpec): (number | string)[] {
  * cannot sit in a void: it is a row of this widget, never a box you place.
  *
  * `lanes` is `[name, label, height, mute, solo, gain]` and `clips`
- * `[name, lane, offset, dur, start, label]`, with `offset`/`dur`/`start` in
- * timeline samples and `lane` naming one of the lanes. **The name is the
+ * `[name, lane, offset, dur, start, label, source]`, with `offset`/`dur`/`start`
+ * in timeline samples, `lane` naming one of the lanes and `source` the **server
+ * buffer** the clip is a window onto (a negative number, the default, draws an
+ * empty box — `0` is a real buffer). The samples are
+ * the server's: the host maps them out of the shared segment or fetches them
+ * over its leg, so two clips over one take cost one download. **The name is the
  * identity** — the client's own word, not a widget id — so a clip is addressed,
  * drawn and reported by the same name the script already calls it. A clip
  * naming a lane that is not there is kept and drawn nowhere, so renaming a lane

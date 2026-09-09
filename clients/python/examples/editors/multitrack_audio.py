@@ -119,17 +119,20 @@ server.transport_group(multitrack_group)
 #: clip name -> the node playing it.
 nodes = {}
 
+#: clip name -> the take it reads. It is the **same buffer** the widget draws
+#: and the `reader` node sounds: one array, on the server, for the picture and
+#: for the sound.
+TAKE_OF = {"white": "white", "glide": "glide", "saw": "saw", "pink": "pink"}
+
 piece = Multitrack(
     lanes=[("noise",), ("tone",), ("bass",)],
-    clips=[("white", "noise", 0.0, TAKE_DUR * SR, 0.0, "white"),
-           ("glide", "tone", 2.0 * SR, TAKE_DUR * SR, 0.0, "glide"),
-           ("saw", "bass", 4.0 * SR, TAKE_DUR * SR, 0.0, "saw"),
-           ("pink", "noise", 6.0 * SR, TAKE_DUR * SR, 0.0, "pink")],
+    clips=[(name, lane, at * SR, TAKE_DUR * SR, 0.0, name,
+            BUFS[TAKE_OF[name]].bufnum)
+           for name, lane, at in [("white", "noise", 0.0),
+                                  ("glide", "tone", 2.0),
+                                  ("saw", "bass", 4.0),
+                                  ("pink", "noise", 6.0)]],
 )
-
-#: clip name -> the take it reads. The widget **places**; what a clip holds is
-#: this script's, and it is what a reader node is pointed at.
-TAKE_OF = {"white": "white", "glide": "glide", "saw": "saw", "pink": "pink"}
 
 
 def lane_gain(lane: str) -> float:

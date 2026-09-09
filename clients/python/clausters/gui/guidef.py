@@ -1947,23 +1947,28 @@ def _flat_lanes(lanes) -> list:
 
 
 def _flat_clips(clips) -> list:
-    """Normalizes ``clips`` to the flat ``name lane offset dur start label``
-    sextuples the host reads. Same shapes as `_flat_lanes`."""
+    """Normalizes ``clips`` to the flat ``name lane offset dur start label
+    source`` septuples the host reads. Same shapes as `_flat_lanes`."""
     out: list = []
     for clip in clips:
         if isinstance(clip, dict):
             got = (clip.get("name"), clip.get("lane"), clip.get("offset"),
-                   clip.get("dur"), clip.get("start"), clip.get("label"))
+                   clip.get("dur"), clip.get("start"), clip.get("label"),
+                   clip.get("source"))
         elif isinstance(clip, (tuple, list)):
-            got = tuple(clip) + (None,) * (6 - len(clip))
+            got = tuple(clip) + (None,) * (7 - len(clip))
         else:
-            got = (clip, None, None, None, None, None)
-        name, lane, offset, dur, start, label = got[:6]
+            got = (clip, None, None, None, None, None, None)
+        name, lane, offset, dur, start, label, source = got[:7]
         out += [str(name), "" if lane is None else str(lane),
                 0.0 if offset is None else float(offset),
                 0.0 if dur is None else float(dur),
                 0.0 if start is None else float(start),
-                "" if label is None else str(label)]
+                "" if label is None else str(label),
+                # **Buffer 0 is a buffer** -- the first one an allocator hands
+                # out -- so "no source" is spelled negative, as every other
+                # absence on this wire is.
+                -1 if source is None else int(source)]
     return out
 
 
@@ -2284,9 +2289,13 @@ def multitrack(*, lanes=(), clips=(), gap: float | None = None,
     of this widget, never a box you place somewhere.
 
     ``lanes`` is a sequence of ``(name, label, height, mute, solo, gain)`` and
-    ``clips`` a sequence of ``(name, lane, offset, dur, start, label)``, with
-    ``offset``/``dur``/``start`` in timeline samples and ``lane`` naming one of
-    the lanes. **The name is the identity** — the client's own word, not a widget
+    ``clips`` a sequence of ``(name, lane, offset, dur, start, label, source)``,
+    with ``offset``/``dur``/``start`` in timeline samples, ``lane`` naming one of
+    the lanes and ``source`` the **server buffer** the clip is a window onto
+    (a negative number, the default, draws an empty box — ``0`` is a real
+    buffer). The samples are the server's: the host maps them
+    out of the shared segment or fetches them over its leg, so two clips over one
+    take cost one download. **The name is the identity** — the client's own word, not a widget
     id — so a clip is addressed, drawn and reported by the same name the script
     already calls it. A clip naming a lane that is not there is kept and drawn
     nowhere, so renaming a lane loses nothing.

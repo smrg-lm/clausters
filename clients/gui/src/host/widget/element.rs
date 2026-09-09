@@ -422,6 +422,19 @@ pub struct Needs {
     /// for it (`/clock_query` per tick), and neither wants to pay when nothing
     /// in the window follows a clock.
     pub clock: bool,
+    /// **Server buffers this element draws, several.** The plural of the one
+    /// source a [`bulk`](Self::bulk) want names, for the element that holds
+    /// *boxes* rather than a picture: a multitrack places N clips over N takes,
+    /// and every one of them is a buffer the leg has to fetch or the segment
+    /// has to map.
+    ///
+    /// It is a second field rather than a list of `Bulk` because what comes
+    /// back has to be told apart: a `bulk` want is *the* source and arrives
+    /// unlabelled ([`Element::bulk`]), while these arrive by number
+    /// ([`Element::bulk_of`]) so the element can put each where it belongs.
+    /// Duplicates cost nothing — the fetch machine is keyed by buffer and one
+    /// download serves every view waiting on it.
+    pub takes: Vec<i32>,
     /// The GPU slot this element claims, for a view that cannot draw into the
     /// shared mesh. `None` — the default — is an element that draws.
     pub slot: Option<SlotKind>,
@@ -1712,6 +1725,15 @@ pub trait Element: fmt::Debug {
     /// which is the half of the bulk seam that cannot be a declaration: what
     /// comes back is a pyramid, a set of analyses or a run of samples, and only
     /// the element knows what it is for.
+    /// **One of the [`Needs::takes`] arrived**, named by its buffer number.
+    ///
+    /// The plural door: an element drawing several server buffers is handed
+    /// each one labelled, because "the samples" is not an answer when there are
+    /// six of them. `false` — the default — is an element that asked for none.
+    fn bulk_of(&mut self, _bufnum: i32, _data: Loaded) -> bool {
+        false
+    }
+
     fn bulk(&mut self, _data: Loaded) -> bool {
         false
     }
@@ -2235,6 +2257,7 @@ mod tests {
                 taps: vec![self.bus + 2],
                 retention: 0.5,
                 node_groups: vec![self.bus + 3],
+                takes: vec![self.bus + 4],
                 animated: true,
                 clock: true,
                 midi: false,

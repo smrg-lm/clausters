@@ -402,6 +402,14 @@ fn load_bulk(
         widget.kind.needs().bulk
     };
     let needs_slot = widget.kind.needs().slot.is_some();
+    // **The plural asker.** An element drawing several server buffers names
+    // them all; the fetch machine is keyed by buffer, so one download serves
+    // every view waiting on it and a duplicate costs nothing.
+    if let Some(id) = owner {
+        for bufnum in widget.kind.needs().takes {
+            out.buffers.push((id, bufnum, false));
+        }
+    }
     if let (Some(id), Some(want)) = (owner, want) {
         match want {
             // A server buffer names no local file: the leg fetches it, and the

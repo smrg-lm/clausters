@@ -59,8 +59,8 @@ def test_one_subscription_carries_the_whole_piece():
     mt.attach(w)
 
     # A hand dragged `a` onto the other lane and moved it.
-    w.report("clips", "a", "tone", 100.0, 500.0, 0.0, "",
-             "b", "tone", 500.0, 500.0, 0.0, "")
+    w.report("clips", "a", "tone", 100.0, 500.0, 0.0, "", -1,
+             "b", "tone", 500.0, 500.0, 0.0, "", -1)
     assert seen == ["clips"]
     assert mt.clip("a").lane == "tone"
     assert mt.clip("a").at == 100.0
@@ -80,7 +80,7 @@ def test_a_change_from_the_script_reaches_the_widget():
 
     mt.place("c", "noise", 1000.0, 200.0)
     assert len(w.sets) == 1 and "clips" in w.sets[-1]
-    assert w.sets[-1]["clips"][-1] == ("c", "noise", 1000.0, 200.0, 0.0, "")
+    assert w.sets[-1]["clips"][-1] == ("c", "noise", 1000.0, 200.0, 0.0, "", -1)
 
     # `place` is one verb: the piece is a statement, so moving is saying where.
     mt.place("c", "tone", 1200.0, 200.0)
@@ -105,7 +105,7 @@ def test_a_partial_group_is_dropped_rather_than_half_read():
     mt = piece()
     w = FakeWidget()
     mt.attach(w)
-    w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", "b", "tone", 500.0)
+    w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", -1, "b", "tone", 500.0)
     assert [c.name for c in mt.clips] == ["a"]
 
 
@@ -115,7 +115,7 @@ def test_the_view_is_built_from_what_the_object_holds():
     spec = dict(mt.view(name="piece", weight=1.0))
     assert spec["type"] == "multitrack"
     assert spec["lanes"] == ["one", "", 60.0, 0, 0, 1.0]
-    assert spec["clips"] == ["x", "one", 0.0, 10.0, 0.0, ""]
+    assert spec["clips"] == ["x", "one", 0.0, 10.0, 0.0, "", -1]
     assert spec["snap"] == 4.0 and spec["name"] == "piece"
 
 
@@ -142,7 +142,7 @@ def test_attach_takes_the_window_and_remembers_its_own_name():
     w = FakeWidget()
     mt.view(name="piece")
     mt.attach(FakeWindow(w))
-    w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "")
+    w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "", -1)
     assert mt.clip("a").lane == "tone"
 
     # A view with no name cannot be searched for, and says so.

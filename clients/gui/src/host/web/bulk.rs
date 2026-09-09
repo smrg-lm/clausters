@@ -40,6 +40,14 @@ fn collect_bulk(
     } else {
         widget.kind.needs().bulk
     };
+    // **The plural asker**, exactly as the native walk collects it: an element
+    // drawing several server buffers names them all, and the fetch machine's
+    // buffer key means one download serves every view waiting on it.
+    if let Some(id) = id {
+        for bufnum in widget.kind.needs().takes {
+            buffer_refs.push((id, bufnum, false));
+        }
+    }
     if let (Some(id), Some(want)) = (id, want) {
         match want {
             Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum, false)),

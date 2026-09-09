@@ -503,7 +503,7 @@ impl WebApp {
                                     samples: samples.to_vec(),
                                     channels,
                                 };
-                                w.take_bulk(raw);
+                                w.take_bulk_of(bufnum, raw);
                             }
                         }
                     }
