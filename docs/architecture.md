@@ -625,7 +625,13 @@ reasoning:
   `clausters_view_not_an_edit` / `viewNotAnEdit`), because an editor routes by
   it: those tags are answered generically and never reach a domain, and a
   client holding its own copy would edit with a gesture the other one merely
-  looks at.
+  looks at. The **catalogue views** are the crate's the same way
+  (`clausters_document::view::catalogue`, bound as `clausters_view_props` /
+  `viewProps`): which widget draws a take, a curve or a roll — and the gesture
+  plan and pitch window that go with them — is one answer, and the standalone
+  host, the Python client and the web client are its three callers. The window
+  around the picture, the widget's id and where a number came from stay each
+  caller's.
 - **A leaf is opaque.** The document holds a leaf as an id, a kind and a
   configuration blob it never interprets — never the samples and never the
   algorithm. A generator *is code*, in the language of whoever wrote it, so no

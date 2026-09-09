@@ -25,7 +25,7 @@ import { curveAxis as coreCurveAxis } from "../../core/clausters_core_web.js";
 import { POINTS, domainEdit } from "../../document.ts";
 import { pointsToEnv } from "../../defs/ugens/env.ts";
 import { Automation } from "../../seq/automation.ts";
-import { bpf, window as guiWindow } from "../guidef.ts";
+import { window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -183,17 +183,15 @@ export class PointsView extends View<Automation> {
     }
 
     build(editor: Editor<Automation>): GuiNode {
-        const wid = this.register(editor.newId(), editor.structure);
         const points = editor.structure.toPoints();
         const [min, max, duration] = this.axis(editor.structure, points);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            bpf({
-                id: wid,
-                points,
+            this.catalogue(editor, "bpf", editor.structure, {
+                points: [...points],
                 min,
                 max,
-                ...(duration > 0 ? { duration } : {}),
+                duration,
                 label: nameOf(editor.structure),
             }),
             ...editor.extra,

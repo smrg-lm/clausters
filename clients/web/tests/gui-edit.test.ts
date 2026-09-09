@@ -456,3 +456,25 @@ test("the routing table is the crate's and not this module's", async () => {
     assert.ok(!notAnEdit().includes("notes"), "an edit is not screen state");
     assert.equal(notAnEdit(), notAnEdit(), "read once and kept");
 });
+
+test("a catalogue view is described by the crate and not by this client", async () => {
+    // Which widget draws a take, and the three gestures it offers, were written
+    // here, in the Python client and in the standalone host. One answer now.
+    await loadCore();
+    const { viewProps } = await import("../src/core/clausters_core_web.js");
+    const said = JSON.parse(
+        viewProps("waveform", JSON.stringify({ buffer: 3, channels: 1, ruler: "time", sample_rate: SR })),
+    ) as Record<string, unknown>;
+    assert.equal(said.type, "signal");
+    assert.equal(said.view, "trace");
+    assert.deepEqual(said.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
+    assert.equal(said.id, undefined, "which number a widget gets is the caller's");
+
+    // And the roll's pitch window, the other rule that travelled with the
+    // picture: one note is its own window, padded.
+    const roll = JSON.parse(
+        viewProps("pianoroll", JSON.stringify({ notes: [0.0, 1.0, 60.0, 100.0, 0.0] })),
+    ) as { axes: { y: unknown } };
+    assert.deepEqual(roll.axes.y, { min: 56.0, max: 64.0 });
+    assert.equal(viewProps("clip", "{}"), "", "a kind the crate does not draw");
+});

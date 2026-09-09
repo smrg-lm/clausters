@@ -51,6 +51,8 @@
 //! [`crate::Log`] that recorded a zoom would make the person's own last edit
 //! two steps away.
 
+pub mod catalogue;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};

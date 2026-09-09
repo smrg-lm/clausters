@@ -518,6 +518,58 @@ pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize
     unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+/// a roll *is*, and what is on it.
+///
+/// `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
+/// the JSON that kind is written from
+/// (`clausters_document::view::catalogue`). The answer carries the widget's
+/// `type` and its props and **no id**: which number a widget gets is the
+/// caller's, and nothing in the crate knows it.
+///
+/// It is one door with the kind named rather than one symbol per view, the way
+/// [`clausters_domain_edit`](crate::history::clausters_domain_edit) names its
+/// vocabulary: a client
+/// binds it once and every view the crate learns to draw arrives without a new
+/// symbol. `0` for a kind this crate does not draw, or facts that will not read
+/// as that kind's.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface.
+///
+/// # Safety
+/// `kind` must be null or readable for `kind_len` bytes, `facts` null or
+/// readable for `facts_len` bytes, and `out` null or writable for `out_cap`
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_view_props(
+    kind: *const u8,
+    kind_len: usize,
+    facts: *const u8,
+    facts_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(kind), Some(facts)) = (unsafe { text(kind, kind_len) }, unsafe {
+        text(facts, facts_len)
+    }) else {
+        return 0;
+    };
+    let Ok(facts) = serde_json::from_str::<serde_json::Value>(&facts) else {
+        return 0;
+    };
+    let Some(props) = clausters_document::view::catalogue::props(&kind, &facts) else {
+        return 0;
+    };
+    let Ok(answer) = serde_json::to_string(&props) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -839,5 +891,48 @@ mod tests {
         assert!(tags.iter().any(|t| t == "selection"));
         assert!(tags.iter().all(|t| !t.is_empty()));
         assert_eq!(tags.len(), clausters_document::view::NOT_AN_EDIT.len());
+    }
+
+    #[test]
+    fn a_catalogue_view_crosses_as_its_props() {
+        let kind = "pianoroll";
+        let facts = r#"{"notes":[0.0,1.0,60.0,100.0,0.0],"tempo":1.0}"#;
+        let call = |out: *mut u8, cap: usize| unsafe {
+            clausters_view_props(
+                kind.as_ptr(),
+                kind.len(),
+                facts.as_ptr(),
+                facts.len(),
+                out,
+                cap,
+            )
+        };
+        let n = call(std::ptr::null_mut(), 0);
+        let mut buf = vec![0u8; n];
+        assert_eq!(
+            call(buf.as_mut_ptr(), buf.len()),
+            n,
+            "sizing and filling agree"
+        );
+        let props: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(props["type"], "notes");
+        assert_eq!(props["axes"]["y"]["min"], 56.0);
+        assert!(props.get("id").is_none(), "the id is the caller's");
+
+        let bad = "clip";
+        assert_eq!(
+            unsafe {
+                clausters_view_props(
+                    bad.as_ptr(),
+                    bad.len(),
+                    facts.as_ptr(),
+                    facts.len(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            },
+            0,
+            "a kind the crate does not draw is nothing"
+        );
     }
 }

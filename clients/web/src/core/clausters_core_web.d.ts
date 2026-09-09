@@ -1205,6 +1205,22 @@ export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sa
 export function viewNotAnEdit(): string;
 
 /**
+ * **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+ * a roll *is*, and what is on it, or an empty string for a kind this crate
+ * does not draw.
+ *
+ * `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
+ * the JSON that kind is written from. The answer carries the widget's `type`
+ * and its props and **no id**: which number a widget gets is the page's, and
+ * nothing in the crate knows it.
+ *
+ * One door with the kind named rather than one export per view, the way
+ * {@link domainCoalesceKey} names its vocabulary: bound once, and every view
+ * the crate learns to draw arrives without a new export.
+ */
+export function viewProps(kind: string, facts: string): string;
+
+/**
  * Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
  * note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
  *
@@ -1391,6 +1407,7 @@ export interface InitOutput {
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
     readonly viewNotAnEdit: () => [number, number];
+    readonly viewProps: (a: number, b: number, c: number, d: number) => [number, number];
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly voiceToSheet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly widgetids_alloc: (a: number) => [number, number];

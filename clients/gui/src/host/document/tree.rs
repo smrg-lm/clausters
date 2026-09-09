@@ -33,6 +33,7 @@
 //! than the session. Given none, a take is still drawn: its placement and its
 //! name, honest about the rest.
 
+use clausters_document::view::catalogue;
 use clausters_document::{Beats, Body, Document, Member, Node, NodeId, TimeUnit};
 use serde_json::{Map, Value, json};
 
@@ -576,18 +577,13 @@ fn take_editors(
                 widget,
                 node: node.id,
             });
-            let mut props = Map::new();
-            props.insert("id".into(), json!(widget));
-            props.insert("type".into(), json!("signal"));
-            props.insert("view".into(), json!("trace"));
-            props.insert("buffer".into(), json!(take.bufnum));
-            if let Some(channels) = take.channels {
-                props.insert("channels".into(), json!(channels));
-            }
-            props.insert("label".into(), json!(label_of(node)));
-            props.insert("h".into(), json!(editor_height(take.channels)));
-            props.insert("sample_rate".into(), json!(look.sample_rate));
-            props.insert("ruler".into(), json!("samples"));
+            // **The picture is the catalogue's**, not this module's: which
+            // widget a take draws as, and the three-gesture plan it offers, are
+            // one rule the clients draw by too
+            // (`clausters_document::view::catalogue`). What is stated here is
+            // only what is this pane's — where it sits in the stack, and that
+            // its ruler counts frames because it is beside a document that does.
+            //
             // **The head is anchored at 0, and that is the whole of drawing it.**
             // A session's clock is the *piece's position* rather than the device's
             // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the
@@ -595,16 +591,17 @@ fn take_editors(
             // jumps where a locate puts it and wraps where the engine wraps it.
             // No `playhead_loop` here for the same reason — the loop is the
             // transport's, and wrapping an already-wrapped number would double it.
-            props.insert("playhead_at".into(), json!(0.0));
-            // The plan, and it is three gestures rather than a mode: a plain drag
-            // sweeps a selection (what an editor does by default), Alt draws over
-            // the samples and Ctrl grabs one. `draw` refuses out loud below the
-            // zoom where a pixel is one sample, so it never silently paints what
-            // the eye cannot check.
-            props.insert(
-                "gestures".into(),
-                json!({"drag": "select", "alt": "draw", "ctrl": "sample"}),
-            );
+            let mut props = catalogue::waveform(&catalogue::Waveform {
+                buffer: Some(i64::from(take.bufnum)),
+                channels: take.channels,
+                ruler: "samples".into(),
+                sample_rate: look.sample_rate,
+                label: label_of(node),
+                height: Some(editor_height(take.channels)),
+                playhead_at: Some(0.0),
+                ..catalogue::Waveform::default()
+            });
+            props.insert("id".into(), json!(widget));
             out.push(Value::Object(props));
         }
     });

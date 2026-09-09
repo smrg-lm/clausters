@@ -423,6 +423,29 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     assert curve.to_points()[1] == pytest.approx(200.0)
 
 
+# ---- the picture a view draws is the crate's ----
+
+
+def test_a_catalogue_view_is_described_by_the_crate_and_not_by_this_client():
+    # Which widget draws a take, and the three gestures it offers, were written
+    # here, in the web client and in the standalone host. One answer now.
+    from clausters import _native
+
+    said = _native.view_props("waveform", {"buffer": 3, "channels": 1,
+                                           "ruler": "time",
+                                           "sample_rate": SR})
+    assert said["type"] == "signal" and said["view"] == "trace"
+    assert said["gestures"] == {"drag": "select", "alt": "draw",
+                                "ctrl": "sample"}
+    assert "id" not in said, "which number a widget gets is the caller's"
+
+    # And the roll's pitch window, which is the other rule that travelled with
+    # the picture: one note is its own window, padded.
+    roll = _native.view_props("pianoroll", {"notes": [0.0, 1.0, 60.0, 100.0, 0.0]})
+    assert roll["axes"]["y"] == {"min": 56.0, "max": 64.0}
+    assert _native.view_props("clip", {}) == {}, "a kind the crate does not draw"
+
+
 # ---- the axis a curve is drawn against ----
 
 

@@ -301,7 +301,13 @@ pub use time::*;
 /// each client held as its own literal list. **Additive**, and the counter
 /// moves for the same reason v43 did: a client that cannot find it writes the
 /// list again, which is the divergence the symbol exists to end.
-pub const CORE_ABI_VERSION: u32 = 44;
+/// **v45 the catalogue views are the crate's.** `clausters_view_props` answers
+/// the widget a waveform, a curve or a roll is and what is on it, from the
+/// facts a caller states -- one door with the kind named, so a view the crate
+/// learns to draw needs no new symbol. **Additive**, and it moves the counter
+/// because a client that cannot find it assembles the picture itself, which is
+/// the third implementation this ends.
+pub const CORE_ABI_VERSION: u32 = 45;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

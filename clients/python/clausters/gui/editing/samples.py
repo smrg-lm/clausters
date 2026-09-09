@@ -154,9 +154,6 @@ class SamplesDomain(Domain):
 #: only select — which is what this editor was doing while its own docstring
 #: promised a stroke. It is the plan the standalone host builds the same view
 #: with (`clients/gui/src/host/document/tree.rs`), and one view is one plan.
-GESTURES = {"drag": "select", "alt": "draw", "ctrl": "sample"}
-
-
 class SamplesView(View):
     """One `clausters.gui.guidef.waveform`: the take on its own axis, drawn by
     the host straight from the server buffer, with the measures it stacks as a
@@ -168,17 +165,19 @@ class SamplesView(View):
         self.layers = measures(layers)
 
     def build(self, editor) -> dict:
-        from ..guidef import waveform, window
+        from ..guidef import window
 
         take = editor.structure
-        wid = self.widget(editor, "waveform", take)
-        return window(waveform(id=wid, buffer=int(take.bufnum),
-                               channels=max(1, int(take.channels or 1)),
-                               measure=" ".join(self.layers),
-                               ruler="time", sample_rate=editor.sample_rate,
-                               tempo=editor.tempo, label=_name(take),
-                               gestures=GESTURES),
-                      *editor.extra,
+        picture = self.catalogue(editor, "waveform", "waveform", take, {
+            "buffer": int(take.bufnum),
+            "channels": max(1, int(take.channels or 1)),
+            "measure": " ".join(self.layers),
+            "ruler": "time",
+            "sample_rate": editor.sample_rate,
+            "tempo": editor.tempo,
+            "label": _name(take),
+        })
+        return window(picture, *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 

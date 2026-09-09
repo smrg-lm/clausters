@@ -12,6 +12,8 @@ drawn several ways while its vocabulary is one: a curve is a `bpf` on its own
 axis and a body inside a clip, and both send the same `points` payload.
 """
 
+from ... import _native
+
 
 class View:
     """One structure on screen.
@@ -81,6 +83,24 @@ class View:
         """What that widget draws, or ``None``."""
         return self.widgets.get(int(widget_id))
 
+    def catalogue(self, editor, kind: str, role: str, showing, facts: dict,
+                  key: str = "") -> dict:
+        """One widget of the **catalogue**, named and registered in one call.
+
+        The door a `build` takes for a picture the crate already knows how to
+        describe: `clausters._native.view_props` says which widget a waveform,
+        a curve or a roll is and what is on it, and this stamps the id — which
+        is the one thing the crate cannot know, since ids are a client's.
+
+        It is here rather than in each view because every one of them takes the
+        same three steps in the same order, and because the standalone host and
+        the web client take them too: what a picture *is* has one answer, and
+        the place a client differs is what it wraps that picture in.
+        """
+        props = dict(_native.view_props(kind, facts))
+        widget = self.widget(editor, role, showing, key)
+        return _node(str(props.pop("type", "")) or kind, widget, props)
+
     def props(self, editor, widget_id: int) -> dict:
         """**Everything the widget should be drawing**, for a resync.
 
@@ -90,3 +110,14 @@ class View:
         which is what a view with no editable props says.
         """
         return {}
+
+
+def _node(kind: str, widget_id: int, props: dict) -> dict:
+    """The widget as a `clausters.gui.guidef` node.
+
+    Imported where it is used rather than at the top: `guidef` reaches back
+    into this package, and a module-level import of it would close the loop.
+    """
+    from ..guidef import node
+
+    return node(kind, id=widget_id, **props)

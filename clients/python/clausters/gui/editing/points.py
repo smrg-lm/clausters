@@ -138,15 +138,18 @@ class PointsView(View):
         return lo, hi, span
 
     def build(self, editor) -> dict:
-        from ..guidef import bpf, window
+        from ..guidef import window
 
-        wid = self.widget(editor, "curve", editor.structure)
         points = editor.structure.to_points()
         lo, hi, span = self.axis(editor.structure, points)
-        return window(bpf(id=wid, points=points, min=lo, max=hi,
-                          duration=span or None,
-                          label=_name(editor.structure)),
-                      *editor.extra,
+        picture = self.catalogue(editor, "bpf", "curve", editor.structure, {
+            "points": list(points),
+            "min": lo,
+            "max": hi,
+            "duration": span,
+            "label": _name(editor.structure),
+        })
+        return window(picture, *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 

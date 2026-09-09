@@ -2370,6 +2370,29 @@ pub fn multitrack_read(piece: &str, placed: &str) -> String {
     serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
 }
 
+/// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+/// a roll *is*, and what is on it, or an empty string for a kind this crate
+/// does not draw.
+///
+/// `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
+/// the JSON that kind is written from. The answer carries the widget's `type`
+/// and its props and **no id**: which number a widget gets is the page's, and
+/// nothing in the crate knows it.
+///
+/// One door with the kind named rather than one export per view, the way
+/// {@link domainCoalesceKey} names its vocabulary: bound once, and every view
+/// the crate learns to draw arrives without a new export.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = viewProps)]
+pub fn view_props(kind: &str, facts: &str) -> String {
+    let Ok(facts) = serde_json::from_str::<serde_json::Value>(facts) else {
+        return String::new();
+    };
+    clausters_document::view::catalogue::props(kind, &facts)
+        .and_then(|props| serde_json::to_string(&props).ok())
+        .unwrap_or_default()
+}
+
 /// **The tags a view reports that are not edits**, as a JSON array of strings.
 ///
 /// A page routes an incoming `/gui_event` by its tag: screen state is answered

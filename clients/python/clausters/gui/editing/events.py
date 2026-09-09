@@ -235,30 +235,22 @@ class NotesView(View):
     """One `clausters.gui.guidef.pianoroll`: the timeline's notes on the beat
     grid."""
 
-    #: The pitch window a roll falls back to when the timeline is empty.
-    DEFAULT_PITCH = (48, 84)
-    PAD = 4
-
     def build(self, editor) -> dict:
-        from ..guidef import pianoroll, window
+        from ..guidef import _flat_notes, _flat_osc, window
 
-        wid = self.widget(editor, "roll", editor.structure)
-        notes = _notes(editor)
-        body: dict = {}
-        if notes:
-            pitches = [n[2] for n in notes]
-            body["min"] = min(min(pitches) - self.PAD, self.DEFAULT_PITCH[1])
-            body["max"] = max(max(pitches) + self.PAD, self.DEFAULT_PITCH[0])
-        # **Say it before the hand tries.** A roll over what a generator
-        # produced has nothing to write onto, so the widget refuses the press
+        # The pitch window the roll fits to its notes is the crate's, and so is
+        # saying **before the hand tries** that a roll over what a generator
+        # produced has nothing to write onto — the widget refuses the press
         # instead of offering a drag it will unwind.
-        if not getattr(editor.domain, "editable", True):
-            body["notes_editable"] = False
-        osc = _osc(editor)
-        return window(pianoroll(id=wid, notes=notes or None, osc=osc or None,
-                                ruler="beats", tempo=editor.tempo,
-                                sample_rate=editor.sample_rate, **body),
-                      *editor.extra,
+        picture = self.catalogue(editor, "pianoroll", "roll", editor.structure, {
+            "notes": _flat_notes(_notes(editor)),
+            "osc": _flat_osc(_osc(editor)),
+            "ruler": "beats",
+            "tempo": editor.tempo,
+            "sample_rate": editor.sample_rate,
+            "editable": bool(getattr(editor.domain, "editable", True)),
+        })
+        return window(picture, *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 

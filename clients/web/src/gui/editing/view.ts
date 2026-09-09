@@ -18,6 +18,8 @@
  * @module
  */
 
+import { viewProps } from "../../core/clausters_core_web.js";
+import { node } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Editor } from "./editor.ts";
@@ -47,6 +49,34 @@ export abstract class View<S = unknown> {
 
     /** The tree itself. Register each widget as it is made ({@link register}). */
     abstract build(editor: Editor<S>): GuiNode;
+
+    /**
+     * One widget of the **catalogue**, made and registered in one call.
+     *
+     * The door a `build` takes for a picture the crate already knows how to
+     * describe: `viewProps` says which widget a waveform, a curve or a roll is
+     * and what is on it, and this stamps the id — the one thing the crate
+     * cannot know, since ids are a client's.
+     *
+     * It is here rather than in each view because every one of them takes the
+     * same three steps in the same order, and because the Python client and the
+     * standalone host take them too: what a picture *is* has one answer, and
+     * the place a client differs is what it wraps that picture in.
+     */
+    catalogue(
+        editor: Editor<S>,
+        kind: string,
+        showing: unknown,
+        facts: Record<string, unknown>,
+    ): GuiNode {
+        const answered = JSON.parse(viewProps(kind, JSON.stringify(facts)) || "{}") as Record<
+            string,
+            PropValue
+        >;
+        const { type, ...props } = answered;
+        const id = this.register(editor.newId(), showing);
+        return node(typeof type === "string" ? type : kind, { id, ...props });
+    }
 
     /**
      * Remembers that `widgetId` draws `showing`, and hands the id back so a

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 44
+CORE_ABI_VERSION = 45
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -516,6 +516,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_view_not_an_edit.restype = ctypes.c_size_t
     lib.clausters_view_not_an_edit.argtypes = [u8p, ctypes.c_size_t]
+    lib.clausters_view_props.restype = ctypes.c_size_t
+    lib.clausters_view_props.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_history_free.restype = None
@@ -1308,6 +1312,31 @@ def view_not_an_edit() -> tuple:
     out = (ctypes.c_ubyte * need)()
     n = lib().clausters_view_not_an_edit(out, need)
     return tuple(json.loads(ctypes.string_at(out, n).decode("utf-8")))
+
+
+
+def view_props(kind: str, facts) -> dict:
+    """**One catalogue view's props**: the widget a waveform, a curve or a roll
+    *is*, and what is on it.
+
+    Which widget draws which structure is a rule and not a convention — a
+    waveform is a ``signal`` shown as a ``trace``, a curve is a ``curve``, a
+    roll is ``notes`` — and so are the two that travel with them: the sample
+    editor's three-gesture plan, and the pitch window a roll fits to its notes.
+    Each was assembled once here, once in the web client and once more in the
+    standalone host, and the three agreed only because they were written to.
+
+    The answer carries no ``id``: which number a widget gets is the caller's.
+
+    Args:
+        kind: the view's name — ``"waveform"``, ``"bpf"`` or ``"pianoroll"``.
+        facts: what that kind is written from, as plain JSON-able data.
+
+    Returns:
+        The props, or ``{}`` for a kind the crate does not draw.
+    """
+    answer = _read_json(lib().clausters_view_props, kind, facts)
+    return answer if isinstance(answer, dict) else {}
 
 
 def _read_json(fn, *values):

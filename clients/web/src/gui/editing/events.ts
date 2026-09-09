@@ -19,7 +19,7 @@
 import { EVENTS, domainEdit } from "../../document.ts";
 import { Event as SeqEvent } from "../../seq/event.ts";
 import { MidiItem, OscItem, Timeline, itemData, itemFromData } from "../../seq/timeline.ts";
-import { flatNotes, flatOsc, pianoroll, window as guiWindow } from "../guidef.ts";
+import { flatNotes, flatOsc, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -313,36 +313,21 @@ export class NotesDomain extends Domain<Timeline> {
 
 /** One `pianoroll`: the timeline's notes on the beat grid. */
 export class NotesView extends View<Timeline> {
-    /** The pitch window a roll falls back to when the timeline is empty. */
-    static readonly DEFAULT_PITCH: [number, number] = [48, 84];
-    static readonly PAD = 4;
-
     build(editor: Editor<Timeline>): GuiNode {
-        const wid = this.register(editor.newId(), editor.structure);
-        const notes = drawn(editor);
-        const body: { min?: number; max?: number; notesEditable?: boolean } = {};
-        if (notes.length > 0) {
-            const pitches = notes.map((n) => n[2]);
-            body.min = Math.min(Math.min(...pitches) - NotesView.PAD, NotesView.DEFAULT_PITCH[1]);
-            body.max = Math.max(Math.max(...pitches) + NotesView.PAD, NotesView.DEFAULT_PITCH[0]);
-        }
-        // **Say it before the hand tries.** A roll over what a generator
-        // produced has nothing to write onto, so the widget refuses the press
+        // The pitch window the roll fits to its notes is the crate's, and so is
+        // saying **before the hand tries** that a roll over what a generator
+        // produced has nothing to write onto — the widget refuses the press
         // instead of offering a drag it will unwind.
-        if (editor.domain instanceof NotesDomain && !editor.domain.editable) {
-            body.notesEditable = false;
-        }
-        const osc = markers(editor);
+        const editable = !(editor.domain instanceof NotesDomain) || editor.domain.editable;
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            pianoroll({
-                id: wid,
-                notes: notes.length > 0 ? notes : undefined,
-                osc: osc.length > 0 ? osc : undefined,
+            this.catalogue(editor, "pianoroll", editor.structure, {
+                notes: flatNotes(drawn(editor)),
+                osc: flatOsc(markers(editor)),
                 ruler: "beats",
                 tempo: editor.tempo,
-                sampleRate: editor.sampleRate,
-                ...body,
+                sample_rate: editor.sampleRate,
+                editable,
             }),
             ...editor.extra,
         );

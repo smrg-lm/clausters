@@ -614,6 +614,20 @@ Only now, and only what AP0-AP4 have already proven is common.
   clips) build through `tree.rs`, so the standalone host gets the same function
   from the same code rather than from a second implementation.
 
+  **Landed 2026-09-09, and not through `tree.rs`.** The direction is right and
+  the address was wrong: `tree.rs` is the *host's*, and a client cannot call
+  into the host any more than the host can call into a client. So the views
+  went where the multitrack's picture had already gone — the document crate,
+  `view::catalogue` — and `tree.rs` became one of its three callers. What is
+  there is what every caller shares: which widget draws which structure (a
+  waveform is a `signal` shown as a `trace`, a curve is a `curve`, a roll is
+  `notes`), the sample editor's three-gesture plan, the pitch window a roll
+  fits to its notes, and the axis chrome nested the way the protocol declares
+  it. What is not there is the window around it, the id and where a number came
+  from, which are the caller's. One door names the kind
+  (`clausters_view_props` / `viewProps`, core ABI v45), so a view the crate
+  learns to draw needs no new symbol.
+
 **Acceptance:** the same gestures applied from Python, from the web client and
 from a standalone host produce the same document *and the same tree of widget
 ids*; the `editing/` line count in both clients drops to the domains, the views
@@ -1561,7 +1575,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the undo/redo walk and the catalogue views, in "Found by use" or owed to `O24`; the routing table is down, core ABI v44)*
+- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the undo/redo walk, which wants a milestone of its own; the routing table and the catalogue views are down, core ABI v45)*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

@@ -34,7 +34,7 @@
 
 import { SAMPLES } from "../../document.ts";
 import type { Buffer } from "../../defs/buffer.ts";
-import { waveform, window as guiWindow } from "../guidef.ts";
+import { window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -209,17 +209,6 @@ export class SamplesDomain extends Domain<Buffer> {
  * One `waveform`: the take on its own axis, drawn by the host straight from the
  * server buffer.
  */
-/**
- * **What a hand may do to the samples**, and it is three gestures rather than a
- * mode: a plain drag sweeps a selection (what an editor does by default), Alt
- * draws over the samples and Ctrl grabs one. A navigable `signal` declares only
- * the first of those, so an editor that says nothing opens a window that can
- * only select — which is what this editor was doing while its own docstring
- * promised a stroke. It is the plan the standalone host builds the same view
- * with (`clients/gui/src/host/document/tree.rs`), and one view is one plan.
- */
-const GESTURES = { drag: "select", alt: "draw", ctrl: "sample" };
-
 export class SamplesView extends View<Buffer> {
     /** What the picture measures, innermost last. */
     layers: Measure[];
@@ -231,19 +220,16 @@ export class SamplesView extends View<Buffer> {
 
     build(editor: Editor<Buffer>): GuiNode {
         const take = editor.structure;
-        const wid = this.register(editor.newId(), take);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            waveform({
-                id: wid,
+            this.catalogue(editor, "waveform", take, {
                 buffer: Math.trunc(take.bufnum),
                 channels: Math.max(1, Math.trunc(take.channels || 1)),
-                measure: this.layers.join(" ") as "peak" | "rms" | "peak rms",
+                measure: this.layers.join(" "),
                 ruler: "time",
-                sampleRate: editor.sampleRate,
+                sample_rate: editor.sampleRate,
                 tempo: editor.tempo,
                 label: nameOf(take),
-                gestures: GESTURES,
             }),
             ...editor.extra,
         );
