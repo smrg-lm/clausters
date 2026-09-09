@@ -9,7 +9,7 @@
 //! # One lane per track, and it shows the track's active lane
 //!
 //! A track holds several lanes because that is what comping is made of, and
-//! which one plays is the track's own choice ([`Track::active`]). So a row on
+//! which one plays is the track's own choice ([`clausters_document::multitrack::Track::active`]). So a row on
 //! screen is a **track**, showing the lane it plays; the others are the takes
 //! behind it, and showing them is an expansion the view has no state for yet.
 //! A region dragged onto another row therefore names that row's track *and*
