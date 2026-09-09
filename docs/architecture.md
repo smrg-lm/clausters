@@ -631,7 +631,13 @@ reasoning:
   plan and pitch window that go with them — is one answer, and the standalone
   host, the Python client and the web client are its three callers. The window
   around the picture, the widget's id and where a number came from stay each
-  caller's.
+  caller's. A **history walk** is one call for the same
+  reason (`History::walk`, `clausters_history_walk` / `JsHistory.walk`): moving
+  the cursor is the crate's, and so are the two rules a caller used to add — which
+  side of an entry a direction reads, and which legs a structure owns. What comes
+  back is routed per structure, and what stays each client's is finding the
+  objects that hold those structures and redrawing, which is object handling and
+  not a rule.
 - **A leaf is opaque.** The document holds a leaf as an id, a kind and a
   configuration blob it never interprets — never the samples and never the
   algorithm. A generator *is code*, in the language of whoever wrote it, so no

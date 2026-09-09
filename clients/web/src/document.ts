@@ -340,8 +340,19 @@ export interface Undone {
     /** The inverses, in the order they were applied. */
     undone: Intent[];
     /**
+     * The legs of the step that belong to another structure, left alone — which
+     * a `Log` never sees unless somebody else registered a structure in the
+     * same history.
+     */
+    others: (Leg | RemainingLeg)[];
+    /**
+     * See {@link Redone.remaining}. Always empty here: an inverse is always an
+     * edit, and the two directions answer the same shape so a caller reads one.
+     */
+    remaining: Step[];
+    /**
      * The entries the walk passed over because nothing can invert them, by
-     * label. See {@link Inverses.skipped}.
+     * label. See {@link Walked.skipped}.
      */
     skipped: string[];
 }
@@ -364,9 +375,11 @@ export interface Redone {
     remaining: Step[];
     /** What the entry being redone was called. */
     label: string;
+    /** See {@link Undone.others}. */
+    others: (Leg | RemainingLeg)[];
     /**
      * The entries the walk passed over because nothing can invert them, by
-     * label. See {@link Inverses.skipped}.
+     * label. See {@link Walked.skipped}.
      */
     skipped: string[];
 }
@@ -502,56 +515,47 @@ export function domainEdit(
     return answer ? (JSON.parse(answer) as Edited) : undefined;
 }
 
-/** One leg of an entry: the structure it belongs to, and the payload. */
+/** What one structure has to apply for a step, in the order it must apply it. */
 export interface Leg {
     /** The identity {@link History.register} handed back. */
     structure: number;
-    /** The edit, in that structure's own vocabulary. */
-    payload: unknown;
+    /** The edits, in that structure's own vocabulary. */
+    payloads: unknown[];
 }
 
-/** One leg of a redo the crate could not describe as an edit. */
+/** What one structure's **owner** has to re-run for a step. */
 export interface RemainingLeg {
     /** The identity {@link History.register} handed back. */
     structure: number;
-    /** The step, for the owner to re-run. */
-    step: Step;
+    /** The steps, for the owner to re-run in order. */
+    steps: Step[];
 }
 
-/** What an undo hands back, applied by nobody. */
-export interface Inverses {
-    /** What the entry that inverted was called. */
+/** What a step of the pile hands back, applied by nobody. */
+export interface Walked {
+    /** What the entry the walk lands on was called. */
     label: string;
     /**
-     * The inverses, each with the structure it belongs to, **in the order they
-     * must be applied**.
+     * What each structure has to apply — **one entry per structure**, not one
+     * per leg, each structure's payloads in the order it must apply them. The
+     * order kept is the order *within* a structure: a caller applies through
+     * one vocabulary at a time.
      */
-    inverses: Leg[];
+    legs: Leg[];
+    /**
+     * What each structure's owner has to re-run, from the first step the crate
+     * cannot describe as an edit onward — a deterministic operation kept as its
+     * parameters, which you re-run because the crate holds no algorithms. It
+     * stops at the first rather than skipping it, so a later edit is never
+     * applied over a state the operation before it was meant to produce. Going
+     * back it is always empty: an inverse is always an edit.
+     */
+    remaining: RemainingLeg[];
     /**
      * The entries the walk passed over because nothing can invert them, by
      * label. A hole in the history that announces itself is what lets a person
      * understand why an undo did not go where they expected.
      */
-    skipped: string[];
-}
-
-/** What a redo hands back, applied by nobody. */
-export interface Steps {
-    /** What the entry being redone was called. */
-    label: string;
-    /**
-     * The leading run of ordinary edits, for you to apply **in order**.
-     */
-    edits: Leg[];
-    /**
-     * The steps from the first one the crate cannot describe as an edit onward
-     * — a deterministic operation kept as its parameters, which you re-run
-     * because the crate holds no algorithms. It stops at the first rather than
-     * skipping it, so a later edit is never applied over a state the operation
-     * before it was meant to produce. Usually empty.
-     */
-    remaining: RemainingLeg[];
-    /** The entries the walk passed over. See {@link Inverses.skipped}. */
     skipped: string[];
 }
 
@@ -682,23 +686,21 @@ export class History {
     }
 
     /**
-     * Undo the last thing done: the inverses of the entry the walk lands on,
-     * each with the structure it belongs to and **in the order they must be
-     * applied**, or `undefined` when there is nothing to undo.
+     * **One step of the pile, routed** — what each structure has to apply, in
+     * order, and what only its owner can re-run. `undefined` when there was
+     * nothing to walk.
+     *
+     * One call and not two because picking the side a direction reads, and
+     * keeping the legs one structure owns, are rules rather than plumbing, and
+     * every caller was writing both for itself.
      *
      * It applies nothing: a history holds structures the crate cannot reach, so
      * applying the legs it *could* would leave the rest to you out of order,
      * which is how a transaction half-happens.
      */
-    undo(): Inverses | undefined {
-        const result = this.#inner.undo();
-        return result === undefined ? undefined : (JSON.parse(result) as Inverses);
-    }
-
-    /** Redo what was last undone, or `undefined` when there is nothing. */
-    redo(): Steps | undefined {
-        const result = this.#inner.redo();
-        return result === undefined ? undefined : (JSON.parse(result) as Steps);
+    walk(direction: "undo" | "redo"): Walked | undefined {
+        const result = this.#inner.walk(direction);
+        return result === undefined ? undefined : (JSON.parse(result) as Walked);
     }
 
     /** Whether there is anything to undo. */
@@ -899,13 +901,11 @@ export class Log {
      * `undefined` when there is nothing to undo.
      */
     undo(document: Document): Undone | undefined {
-        const reply = this.history.undo();
-        if (reply === undefined) return undefined;
-        return {
-            label: reply.label,
-            undone: this.#walk(reply.inverses, document),
-            skipped: reply.skipped,
-        };
+        const walked = this.#step("undo", document);
+        return walked === undefined
+            ? undefined
+            : { label: walked.label, undone: walked.mine, others: walked.others,
+                remaining: walked.remaining, skipped: walked.skipped };
     }
 
     /**
@@ -913,29 +913,48 @@ export class Log {
      * `undefined` when there is nothing.
      */
     redo(document: Document): Redone | undefined {
-        const steps = this.history.redo();
-        if (steps === undefined) return undefined;
-        return {
-            label: steps.label,
-            redone: this.#walk(steps.edits, document),
-            remaining: steps.remaining
-                .filter((leg) => leg.structure === this.structure)
-                .map((leg) => leg.step),
-            skipped: steps.skipped,
-        };
+        const walked = this.#step("redo", document);
+        return walked === undefined
+            ? undefined
+            : { label: walked.label, redone: walked.mine, others: walked.others,
+                remaining: walked.remaining, skipped: walked.skipped };
     }
 
-    /** Applies the legs addressed to this document, and reports them. */
-    #walk(legs: Leg[], document: Document): Intent[] {
+    /**
+     * One step, applying the legs addressed to this document and reporting the
+     * rest.
+     *
+     * The routing is the crate's ({@link History.walk}): which side of an entry
+     * a direction reads, and which legs a structure owns, are the two rules this
+     * used to write for itself.
+     */
+    #step(
+        direction: "undo" | "redo",
+        document: Document,
+    ): { label: string; mine: Intent[]; others: (Leg | RemainingLeg)[];
+         remaining: Step[]; skipped: string[] } | undefined {
+        const walked = this.history.walk(direction);
+        if (walked === undefined) return undefined;
         const mine: Intent[] = [];
-        for (const leg of legs) {
-            if (leg.structure !== this.structure) continue;
-            // An undo is authoritative: it states what the document was, so it
-            // is not checked against a version it predates.
-            document.apply(leg.payload as Intent);
-            mine.push(leg.payload as Intent);
+        const others: (Leg | RemainingLeg)[] = [];
+        for (const leg of walked.legs) {
+            if (leg.structure !== this.structure) {
+                others.push(leg);
+                continue;
+            }
+            for (const payload of leg.payloads) {
+                // An undo is authoritative: it states what the document was, so
+                // it is not checked against a version it predates.
+                document.apply(payload as Intent);
+                mine.push(payload as Intent);
+            }
         }
-        return mine;
+        const remaining: Step[] = [];
+        for (const leg of walked.remaining) {
+            if (leg.structure === this.structure) remaining.push(...leg.steps);
+            else others.push(leg);
+        }
+        return { label: walked.label, mine, others, remaining, skipped: walked.skipped };
     }
 
     /** Whether there is anything to undo. */

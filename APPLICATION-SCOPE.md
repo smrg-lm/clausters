@@ -854,10 +854,11 @@ client and from a standalone host because it is one piece of code.
 
 **What AP5 still owes, and why each is where it is.**
 
-- **The routing table** and **the undo/redo walk** are both open, and both are
+- **The routing table** and **the undo/redo walk** were both open, both filed
   in "Found by use" below with a checkbox — this list says what the milestone
   did not do, and a pending item filed only among the reasons for not doing it
-  is a pending item that reads as closed.
+  is a pending item that reads as closed. Both closed 2026-09-09, and the walk's
+  entry carries the decision it was waiting for.
 - **The web client**, which has neither the `Application` this milestone is
   about nor the `GuiHost.redefine` its granularity is sent through. Both are in
   "Found by use" below and both are owned by **`W30`**
@@ -1408,8 +1409,8 @@ owner moved is how a working editor becomes a new set of defects.
   somebody writing a wire word needed the door to send it through. A gap that
   costs nothing to have is a gap nothing will find.
 
-- ⬜ **The undo/redo walk is still each client's, and lowering it is a design
-  step rather than a move** *(found 2026-09-06, scoping AP5)*.
+- ✅ **The undo/redo walk is still each client's, and lowering it is a design
+  step rather than a move** *(found 2026-09-06, scoping AP5; settled 2026-09-09)*.
   `Application.step` asks the editing context for a step's legs and hands them
   round the registered editors, each projecting the ones it owns through its own
   domain. Every part of that orchestrates **client objects**, so it cannot be
@@ -1420,6 +1421,33 @@ owner moved is how a working editor becomes a new set of defects.
   what a binding may call back into — not a function to move. It is the last
   thing in the application core that is written twice once AP6 has taken the
   views, so it wants a milestone of its own and does not have one.
+
+  **The decision, and it is that the decision was not needed.** The walk reads
+  as one thing from outside — one keystroke — and is five acts: move the
+  cursor; pick the side of the entry the direction reads; split the legs by the
+  structure each names; find the objects holding those structures and hand each
+  its payloads through its own domain; then bump the version, resync and tell
+  the host. Acts two and three are functions of data. Acts four and five are
+  functions of the client's object graph.
+
+  So the part that is written twice is **not** the part that would need
+  control. Worse than twice: picking the side and keeping one structure's legs
+  were written *four* times — both editing clients and both document logs — and
+  a fifth would have arrived with the standalone host. Acts four and five are
+  ten lines of object handling per client, which is what a client is for.
+
+  `History::walk` takes the direction and answers the legs already gathered per
+  structure (`clausters_history_walk` / `JsHistory.walk`, core ABI v46,
+  **replacing** the undo/redo pair so there is one way to say it). The clients
+  keep four and five. No callback crosses either binding, and none was needed.
+
+  Two things fell out rather than being fixed. `distribute`'s rule — offer the
+  step to every participant, including the walker whether or not it is
+  registered — stopped being a rule, because an answer keyed by structure is
+  looked up rather than offered around. And `remaining`, the steps only an
+  owner can re-run, was **silently dropped by both GUI clients**: only the two
+  document logs read it. One door answers the same shape in both directions, so
+  dropping it now takes a deliberate line rather than an omission.
 
 - ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
   it** *(found 2026-09-06, auditing AP4's premise)*. The crate's `samples`
@@ -1575,7 +1603,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the undo/redo walk, which wants a milestone of its own; the routing table and the catalogue views are down, core ABI v45)*
+- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - the routing table, the catalogue views and the undo/redo walk are all down, core ABI v46)*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

@@ -252,7 +252,6 @@ export type {
     Applied,
     ClaustersDocument,
     Intent,
-    Inverses,
     Leg,
     NodeId,
     Outcome,
@@ -262,8 +261,8 @@ export type {
     Resolved,
     Selection,
     Step,
-    Steps,
-    Undone } from "./document.ts";
+    Undone,
+    Walked } from "./document.ts";
 
 /**
  * The page's own filesystem (OPFS) — where a soundfile a tab reads actually

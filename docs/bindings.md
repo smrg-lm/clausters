@@ -305,8 +305,7 @@ to, in the order they must be applied.
 | `clausters_history_register` | `JsHistory.register` | |
 | `clausters_history_apply` | `JsHistory.apply` | |
 | `clausters_history_record` | `JsHistory.record` | `idiom` — C returns 0/-1, wasm a boolean. One call carries the whole entry, legs and all: several legs are one transaction, and half of one is worse than none |
-| `clausters_history_undo` | `JsHistory.undo` | |
-| `clausters_history_redo` | `JsHistory.redo` | |
+| `clausters_history_walk` | `JsHistory.walk` | one step of the pile, **routed**: the legs each structure has to apply, in order, and what only its owner can re-run. One door with the direction named rather than an `undo` and a `redo`, because what a caller was writing per client was two rules and not plumbing — which side of an entry a direction reads, and which legs a structure owns. Four callers wrote both (two editing clients and both document logs). The order kept is the order *within* a structure, since a caller applies through one vocabulary at a time |
 | `clausters_history_can_undo` | `JsHistory.can_undo` | `idiom` — a getter |
 | `clausters_history_can_redo` | `JsHistory.can_redo` | `idiom` — a getter |
 | `clausters_history_undo_label` | `JsHistory.undo_label` | `idiom` — a getter returning a string, where C sizes and fills |

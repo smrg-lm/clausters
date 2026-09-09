@@ -181,15 +181,16 @@ export class Editing {
     }
 
     /**
-     * Take one step off the pile and give back its legs, in the order they must
-     * be applied — `undefined` when there was nothing to take.
+     * Take one step off the pile and give back what each structure must apply —
+     * `undefined` when there was nothing to take.
+     *
+     * The legs come **routed**: one entry per structure, its payloads in the
+     * order it must apply them. Which side of an entry a direction reads and
+     * which legs a structure owns are the crate's ({@link History.walk}),
+     * because every client was writing both for itself.
      */
     step(direction: "undo" | "redo"): unknown[] | undefined {
-        const walked = direction === "undo" ? this.history.undo() : this.history.redo();
-        if (walked === undefined) return undefined;
-        return ((direction === "undo"
-            ? (walked as { inverses?: unknown[] }).inverses
-            : (walked as { edits?: unknown[] }).edits) ?? []) as unknown[];
+        return this.history.walk(direction)?.legs;
     }
 
     /**
@@ -198,8 +199,8 @@ export class Editing {
      *
      * One entry can name several structures — a stroke over a take and a bend of
      * the curve above it are one order, and so is an edit to a page beside a
-     * lane — so the step is offered to every participant and each projects the
-     * legs it owns. Whoever is walking is included whether or not it is in the
+     * lane — so the step is offered to every participant and each takes the
+     * legs naming the structure it holds. Whoever is walking is included whether or not it is in the
      * list, since a structure with no window open still holds legs the step may
      * name.
      *

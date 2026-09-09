@@ -142,6 +142,41 @@ def test_a_redo_puts_back_exactly_what_the_undo_took():
         assert redone["remaining"] == [], "nothing for the owner to re-run"
 
 
+def test_a_walk_is_one_door_and_comes_back_routed_per_structure():
+    """Which side of an entry a direction reads, and which legs a structure
+    owns, were written once per client and once per document log. Now the walk
+    answers both."""
+    from clausters._native import History
+
+    with History() as history:
+        curve = history.register("points")
+        roll = history.register("events")
+        history.record(
+            [{"structure": curve, "forward": {"edit": {"points": [1]}},
+              "backward": {"points": [0]}},
+             {"structure": roll, "forward": {"edit": {"notes": [1]}},
+              "backward": {"notes": [0]}},
+             {"structure": curve, "forward": {"edit": {"points": [2]}},
+              "backward": {"points": [1]}}],
+            label="a gesture over both")
+
+        walked = history.walk("undo")
+        assert walked["label"] == "a gesture over both"
+        assert [leg["structure"] for leg in walked["legs"]] == [curve, roll], \
+            "one entry per structure, not one per leg"
+        assert walked["legs"][0]["payloads"] == [{"points": [1]}, {"points": [0]}], \
+            "a transaction unwinds the way it was laid down"
+        assert walked["remaining"] == [], "an inverse is always an edit"
+        assert history.walk("undo") is None
+
+        back = history.walk("redo")
+        assert back["legs"][0]["payloads"] == [{"points": [1]}, {"points": [2]}]
+
+    with History() as history:
+        with pytest.raises(ValueError):
+            history.walk("backwards")
+
+
 def test_what_the_grid_did_is_what_gets_replayed():
     """The forward half records the *effective* edit, so a redo does not snap a
     second time — harmless with a grid, wrong the moment a rule is not

@@ -463,6 +463,75 @@ pub struct Redone {
     to: usize,
 }
 
+/// Which way a walk of the pile goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// Back over the last thing done.
+    Undo,
+    /// Forward into the last thing undone.
+    Redo,
+}
+
+impl Direction {
+    /// The direction a caller named, or `None` for a word that is neither.
+    ///
+    /// The two words cross every binding as text, so reading them is a rule
+    /// like any other and belongs here rather than in each caller.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "undo" => Some(Self::Undo),
+            "redo" => Some(Self::Redo),
+            _ => None,
+        }
+    }
+}
+
+/// One step of the pile, **routed**: what each structure has to apply, and what
+/// only its owner can run.
+///
+/// [`Undone`] and [`Redone`] are what the two directions hand back; this is the
+/// two of them said once, with the legs already gathered per structure. That
+/// grouping is the whole of it, and it is here because it was the piece every
+/// caller wrote for itself: pick the side the direction reads, then keep the
+/// legs whose structure is mine. Four callers wrote those two lines — two
+/// editing clients and both document logs — and neither line is a caller's
+/// business.
+///
+/// **The order that is kept is the order within a structure.** A caller applies
+/// through one vocabulary at a time, so an entry naming two structures is
+/// unwound one structure at a time, each in its own order; between two
+/// structures there is nothing to keep, because an entry's changes to different
+/// structures are independent by construction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Walked {
+    /// What the entry the walk lands on was called. Empty when the walk found
+    /// nothing to apply and only passed things over.
+    pub label: String,
+    /// What each structure has to apply, in order, first-named first.
+    pub legs: Vec<(StructureId, Vec<Opaque>)>,
+    /// What each structure's **owner** has to re-run, in order — a
+    /// deterministic operation kept as its parameters, which the crate holds no
+    /// algorithm for. Always empty going back: an inverse is always an edit.
+    pub remaining: Vec<(StructureId, Vec<Step>)>,
+    /// The labels of the entries the walk passed over because nothing can
+    /// invert them, oldest last. See [`Undone::skipped`].
+    pub skipped: Vec<String>,
+}
+
+/// Gathers legs per structure, keeping the order each was first named in and
+/// the order within each.
+fn per_structure<T>(legs: Vec<(StructureId, T)>) -> Vec<(StructureId, Vec<T>)> {
+    let mut out: Vec<(StructureId, Vec<T>)> = Vec::new();
+    for (structure, leg) in legs {
+        match out.iter_mut().find(|(held, _)| *held == structure) {
+            Some((_, held)) => held.push(leg),
+            None => out.push((structure, vec![leg])),
+        }
+    }
+    out
+}
+
 /// What a structure is, to a history: an identity and the name of the
 /// vocabulary its payloads are written in.
 #[derive(Debug, Clone, PartialEq)]
@@ -931,6 +1000,49 @@ impl History {
             skipped,
             to: self.entries.len(),
         })
+    }
+
+    /// What a step in `direction` *would* hand back, routed per structure and
+    /// without moving the cursor — [`History::peek_undo`] and
+    /// [`History::peek_redo`] said once, with the two lines every caller was
+    /// writing already done.
+    ///
+    /// The pair with [`History::step`] is the same one `peek_undo` explains: a
+    /// binding that sizes a buffer and then fills it must be able to ask twice
+    /// and get one answer.
+    #[must_use]
+    pub fn peek_walk(&self, direction: Direction) -> Option<Walked> {
+        match direction {
+            Direction::Undo => self.peek_undo().map(|undone| Walked {
+                label: undone.label,
+                legs: per_structure(undone.legs),
+                remaining: Vec::new(),
+                skipped: undone.skipped,
+            }),
+            Direction::Redo => self.peek_redo().map(|redone| Walked {
+                label: redone.label,
+                legs: per_structure(redone.edits),
+                remaining: per_structure(redone.remaining),
+                skipped: redone.skipped,
+            }),
+        }
+    }
+
+    /// Moves the cursor one step in `direction`, if it can — the commit half of
+    /// [`History::peek_walk`].
+    pub fn step(&mut self, direction: Direction) -> bool {
+        match direction {
+            Direction::Undo => self.step_back(),
+            Direction::Redo => self.step_forward(),
+        }
+    }
+
+    /// One step of the pile, routed and taken: [`History::peek_walk`] and
+    /// [`History::step`] together, which is what a caller inside Rust wants.
+    pub fn walk(&mut self, direction: Direction) -> Option<Walked> {
+        let walked = self.peek_walk(direction)?;
+        self.step(direction);
+        Some(walked)
     }
 
     /// Moves the cursor back one entry, if it can. The commit half of

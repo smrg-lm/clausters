@@ -40,6 +40,7 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
+use clausters_document::history::Direction;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::{MULTITRACK, MultitrackIntent};
 use clausters_document::{
@@ -924,21 +925,28 @@ impl Owner {
     /// the log and not a new entry in it, which is what makes redo the other
     /// direction of one stack rather than a second one.
     pub fn undo(&mut self) -> Vec<Applied> {
-        let Some(undone) = self.log.history_mut().undo() else {
-            return Vec::new();
-        };
-        self.replay(&undone.legs)
+        self.walk(Direction::Undo)
     }
 
     /// Redoes the last undone edit, in the direction it was made.
     pub fn redo(&mut self) -> Vec<Applied> {
-        let Some(redone) = self.log.history_mut().redo() else {
+        // What the walk leaves behind is `remaining`, which only its owner can
+        // re-run -- and the host holds no algorithms, so a redo here applies
+        // the ordinary edits and stops where the crate stopped.
+        self.walk(Direction::Redo)
+    }
+
+    /// One step of the pile, in either direction.
+    ///
+    /// The step arrives **routed**: one run of payloads per structure, which is
+    /// the same call the two clients make. Picking the side a direction reads
+    /// and keeping the legs a structure owns are rules, and this is the third
+    /// caller that would otherwise write them again.
+    fn walk(&mut self, direction: Direction) -> Vec<Applied> {
+        let Some(walked) = self.log.history_mut().walk(direction) else {
             return Vec::new();
         };
-        // `remaining` is what only its owner can re-run, and the host holds no
-        // algorithms -- so a redo here applies the ordinary edits and stops
-        // where the crate stopped.
-        self.replay(&redone.edits)
+        self.replay(&walked.legs)
     }
 
     pub fn can_undo(&self) -> bool {
@@ -958,37 +966,39 @@ impl Owner {
     /// stroke walk back in the order the hand made them, not in two orders.
     fn replay(
         &mut self,
-        legs: &[(clausters_document::history::StructureId, Opaque)],
+        legs: &[(clausters_document::history::StructureId, Vec<Opaque>)],
     ) -> Vec<Applied> {
         let tree = self.log.structure();
-        let mut out = Vec::with_capacity(legs.len());
-        for (structure, load) in legs {
-            if *structure == self.piece_structure {
-                let Some(intent) = clausters_document::multitrack::edit::intent_of(load) else {
-                    continue;
-                };
-                let outcome = clausters_document::multitrack::edit::apply(
-                    &mut self.piece,
-                    &intent,
-                    &Against::default(),
-                    &Rules::none(),
-                );
-                out.push(Applied {
-                    effective: None,
-                    version: self.piece.version,
-                    applied: outcome.applied,
-                });
-            } else if *structure == tree {
-                let Some(intent) = clausters_document::log::intent_of(load) else {
-                    continue;
-                };
-                let outcome = clausters_document::apply(
-                    &mut self.document,
-                    &intent,
-                    &Against::default(),
-                    &Rules::none(),
-                );
-                out.push(self.report(outcome));
+        let mut out = Vec::new();
+        for (structure, loads) in legs {
+            for load in loads {
+                if *structure == self.piece_structure {
+                    let Some(intent) = clausters_document::multitrack::edit::intent_of(load) else {
+                        continue;
+                    };
+                    let outcome = clausters_document::multitrack::edit::apply(
+                        &mut self.piece,
+                        &intent,
+                        &Against::default(),
+                        &Rules::none(),
+                    );
+                    out.push(Applied {
+                        effective: None,
+                        version: self.piece.version,
+                        applied: outcome.applied,
+                    });
+                } else if *structure == tree {
+                    let Some(intent) = clausters_document::log::intent_of(load) else {
+                        continue;
+                    };
+                    let outcome = clausters_document::apply(
+                        &mut self.document,
+                        &intent,
+                        &Against::default(),
+                        &Rules::none(),
+                    );
+                    out.push(self.report(outcome));
+                }
             }
         }
         out

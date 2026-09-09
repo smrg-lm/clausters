@@ -1791,64 +1791,57 @@ impl JsHistory {
         Ok(self.0.record(entry))
     }
 
-    /// Undo the last thing done: the inverses of the entry the walk lands on,
-    /// each with the structure it belongs to and **in the order they must be
-    /// applied**. Returns `{ label, inverses, skipped }`, or `undefined` when
-    /// there was nothing to undo.
+    /// **One step of the pile, routed** — the legs each structure has to
+    /// apply, in order, and what only its owner can re-run. `direction` is
+    /// `"undo"` or `"redo"`; `undefined` when there was nothing to walk, and a
+    /// throw for a word that is neither.
     ///
-    /// `skipped` names the entries the walk had to pass over because nothing
-    /// can invert them — a hole in the history that announces itself, which is
-    /// what lets a person understand why an undo did not go where they
-    /// expected.
+    /// Returns `{ label, legs, remaining, skipped }`, where `legs` is
+    /// `[{ structure, payloads }, …]` — one entry per structure rather than
+    /// one per leg. It is one call and not two because picking the side a
+    /// direction reads, and keeping the legs one structure owns, are rules and
+    /// not plumbing, and every caller was writing both for itself.
+    ///
+    /// `remaining` holds the steps from the first one the crate cannot describe
+    /// as an edit onward, for the owner to re-run; it stops at the first rather
+    /// than skipping it, so a later edit is never applied over a state the
+    /// operation before it was meant to produce. Going back it is always empty:
+    /// an inverse is always an edit. `skipped` names the entries the walk had
+    /// to pass over because nothing can invert them — a hole in the history
+    /// that announces itself, which is what lets a person understand why an
+    /// undo did not go where they expected.
+    ///
+    /// **The order kept is the order within a structure.** A caller applies
+    /// through one vocabulary at a time, so an entry naming two structures is
+    /// walked one structure at a time.
     ///
     /// It applies nothing: a history holds structures this surface cannot
     /// reach, so applying the legs it *could* would leave the rest to the
     /// caller out of order, which is how a transaction half-happens.
-    pub fn undo(&mut self) -> Result<Option<String>, JsError> {
-        let Some(undone) = self.0.undo() else {
+    pub fn walk(&mut self, direction: &str) -> Result<Option<String>, JsError> {
+        let Some(direction) = clausters_document::history::Direction::parse(direction) else {
+            return Err(JsError::new("a walk goes \"undo\" or \"redo\""));
+        };
+        let Some(walked) = self.0.walk(direction) else {
             return Ok(None);
         };
-        let legs: Vec<_> = undone
+        let legs: Vec<_> = walked
             .legs
             .into_iter()
-            .map(|(structure, load)| serde_json::json!({"structure": structure.0, "payload": load}))
+            .map(|(structure, payloads)| {
+                serde_json::json!({"structure": structure.0, "payloads": payloads})
+            })
             .collect();
-        serde_json::to_string(&serde_json::json!({
-            "label": undone.label,
-            "inverses": legs,
-            "skipped": undone.skipped,
-        }))
-        .map(Some)
-        .map_err(|e| JsError::new(&e.to_string()))
-    }
-
-    /// Redo what was last undone: the steps of the entry the walk lands on,
-    /// each with the structure it belongs to, in order. Returns
-    /// `{ label, edits, remaining, skipped }` — `edits` is the leading run of
-    /// ordinary edits for the caller to apply, and `remaining` holds the steps
-    /// from the first one the crate cannot describe as an edit onward, for the
-    /// owner to re-run. It stops at the first rather than skipping it, so a
-    /// later edit is never applied over a state the operation before it was
-    /// meant to produce. `undefined` when there was nothing to redo.
-    pub fn redo(&mut self) -> Result<Option<String>, JsError> {
-        let Some(redone) = self.0.redo() else {
-            return Ok(None);
-        };
-        let edits: Vec<_> = redone
-            .edits
-            .into_iter()
-            .map(|(structure, load)| serde_json::json!({"structure": structure.0, "payload": load}))
-            .collect();
-        let remaining: Vec<_> = redone
+        let remaining: Vec<_> = walked
             .remaining
             .into_iter()
-            .map(|(structure, step)| serde_json::json!({"structure": structure.0, "step": step}))
+            .map(|(structure, steps)| serde_json::json!({"structure": structure.0, "steps": steps}))
             .collect();
         serde_json::to_string(&serde_json::json!({
-            "label": redone.label,
-            "edits": edits,
+            "label": walked.label,
+            "legs": legs,
             "remaining": remaining,
-            "skipped": redone.skipped,
+            "skipped": walked.skipped,
         }))
         .map(Some)
         .map_err(|e| JsError::new(&e.to_string()))

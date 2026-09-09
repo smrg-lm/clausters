@@ -307,7 +307,13 @@ pub use time::*;
 /// learns to draw needs no new symbol. **Additive**, and it moves the counter
 /// because a client that cannot find it assembles the picture itself, which is
 /// the third implementation this ends.
-pub const CORE_ABI_VERSION: u32 = 45;
+/// **v46 a history walk is one door.** `clausters_history_walk` takes the
+/// direction and answers the legs already gathered per structure, replacing
+/// `clausters_history_undo` and `clausters_history_redo`. **Removing symbols**,
+/// so a caller of the old pair fails to link rather than keeping its own copy
+/// of the two rules that moved: which side of an entry a direction reads, and
+/// which legs a structure owns.
+pub const CORE_ABI_VERSION: u32 = 46;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

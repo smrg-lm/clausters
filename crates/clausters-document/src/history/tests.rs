@@ -701,3 +701,70 @@ fn clearing_releases_what_was_waiting_rather_than_losing_it() {
     history.clear();
     assert_eq!(history.released(), vec![gone]);
 }
+
+#[test]
+fn a_walk_routes_a_step_per_structure_and_keeps_each_ones_order() {
+    // Two structures in one history, and one entry naming both twice over: the
+    // grouping is what every caller was writing for itself.
+    let mut history = History::new();
+    let curve = history.register("points");
+    let roll = history.register("events");
+    let entry = Entry::new(
+        "a gesture over both",
+        curve,
+        Step::Edit(Opaque(json!({"points": [1]}))),
+        Opaque(json!({"points": [0]})),
+    )
+    .and(
+        roll,
+        Step::Edit(Opaque(json!({"notes": [1]}))),
+        Opaque(json!({"notes": [0]})),
+    )
+    .and(
+        curve,
+        Step::Edit(Opaque(json!({"points": [2]}))),
+        Opaque(json!({"points": [1]})),
+    );
+    assert!(history.record(entry));
+
+    let walked = history
+        .peek_walk(Direction::Undo)
+        .expect("something to undo");
+    assert_eq!(walked.label, "a gesture over both");
+    assert_eq!(walked.legs.len(), 2, "two structures, not three legs");
+    // An undo unwinds the way it was laid down, so the curve's own two legs
+    // come back newest first — and they stay together.
+    let (first, curve_legs) = &walked.legs[0];
+    assert_eq!(*first, curve);
+    assert_eq!(
+        curve_legs.iter().map(|p| p.0.clone()).collect::<Vec<_>>(),
+        vec![json!({"points": [1]}), json!({"points": [0]})]
+    );
+    assert_eq!(walked.legs[1].0, roll);
+    assert!(walked.remaining.is_empty(), "an inverse is always an edit");
+
+    // Peeking twice is one answer: the cursor has not moved.
+    assert_eq!(history.peek_walk(Direction::Undo), Some(walked));
+    assert!(history.walk(Direction::Undo).is_some());
+    assert!(!history.can_undo());
+
+    let back = history.walk(Direction::Redo).expect("something to redo");
+    assert_eq!(back.legs.len(), 2);
+    assert_eq!(
+        back.legs[0]
+            .1
+            .iter()
+            .map(|p| p.0.clone())
+            .collect::<Vec<_>>(),
+        vec![json!({"points": [1]}), json!({"points": [2]})],
+        "forward, in the order they were laid down"
+    );
+}
+
+#[test]
+fn a_direction_is_read_in_one_place_because_it_crosses_as_text() {
+    assert_eq!(Direction::parse("undo"), Some(Direction::Undo));
+    assert_eq!(Direction::parse("redo"), Some(Direction::Redo));
+    assert_eq!(Direction::parse("Undo"), None);
+    assert_eq!(Direction::parse(""), None);
+}

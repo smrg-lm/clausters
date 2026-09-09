@@ -700,13 +700,16 @@ class Editor:
         return self.app.step(direction, self)
 
     def project_legs(self, legs: list) -> bool:
-        """Project the legs of a history step that name **this** editor's
+        """Project the leg of a history step that names **this** editor's
         structure, and say whether anything moved.
 
         The other half of `_step`: what the walk hands round, so an editor that
         holds one of the structures an entry touched writes it back through its
         own domain — the same door an edit goes through, which is what keeps the
         two from disagreeing about what a payload means.
+
+        The step arrives already gathered per structure, so what is left here is
+        finding this editor's entry and applying its payloads in order.
         """
         if self.domain is None:
             return False
@@ -715,9 +718,9 @@ class Editor:
         for leg in legs:
             if int(leg.get("structure", -1)) != mine:
                 continue
-            payload = leg.get("payload")
-            if isinstance(payload, dict):
-                applied |= bool(self.domain.project(self.structure, payload))
+            for payload in leg.get("payloads", ()):
+                if isinstance(payload, dict):
+                    applied |= bool(self.domain.project(self.structure, payload))
         return applied
 
     def reflect_step(self) -> None:

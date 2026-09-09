@@ -1,7 +1,7 @@
 //! O11's acceptance: a run of gestures applied across the ABI inverts back to
 //! the starting document exactly, through the crate's history rather than one
 //! the caller keeps. Since O16 the history holds structures rather than one
-//! document, so undoing hands the inverses back with the structure each belongs
+//! document, so a walk hands the payloads back with the structure each belongs
 //! to and the caller applies them -- which is what `walk` below does, and what
 //! a binding does.
 
@@ -93,24 +93,28 @@ fn apply(log: &Held, doc: &Doc, intent: &str, quant: f64) -> serde_json::Value {
     .unwrap()
 }
 
-fn undo(log: &Held) -> serde_json::Value {
+/// The direction, as the door takes it.
+const UNDO: &str = "undo";
+
+fn walk(log: &Held, direction: &str) -> serde_json::Value {
     serde_json::from_str(&sized(|out, cap| unsafe {
-        clausters_history_undo(log.handle, out, cap)
+        clausters_history_walk(log.handle, direction.as_ptr(), direction.len(), out, cap)
     }))
     .unwrap()
 }
 
+fn undo(log: &Held) -> serde_json::Value {
+    walk(log, "undo")
+}
+
 fn redo(log: &Held) -> serde_json::Value {
-    serde_json::from_str(&sized(|out, cap| unsafe {
-        clausters_history_redo(log.handle, out, cap)
-    }))
-    .unwrap()
+    walk(log, "redo")
 }
 
 /// Applies one leg to the document, the way a binding does: the payload is an
 /// intent because the leg named the arrangement's structure.
-fn project(doc: &Doc, leg: &serde_json::Value) {
-    let intent = serde_json::to_string(&leg["payload"]).unwrap();
+fn project(doc: &Doc, payload: &serde_json::Value) {
+    let intent = serde_json::to_string(payload).unwrap();
     let n = unsafe {
         crate::clausters_document_apply(
             doc.0,
@@ -142,9 +146,11 @@ fn project(doc: &Doc, leg: &serde_json::Value) {
 /// history reaches no state of its own.
 fn undo_into(log: &Held, doc: &Doc) -> serde_json::Value {
     let reply = undo(log);
-    for leg in reply["inverses"].as_array().into_iter().flatten() {
+    for leg in reply["legs"].as_array().into_iter().flatten() {
         assert_eq!(leg["structure"], log.tree);
-        project(doc, leg);
+        for payload in leg["payloads"].as_array().into_iter().flatten() {
+            project(doc, payload);
+        }
     }
     reply
 }
@@ -152,8 +158,10 @@ fn undo_into(log: &Held, doc: &Doc) -> serde_json::Value {
 /// Redo, and apply the ordinary edits it handed back.
 fn redo_into(log: &Held, doc: &Doc) -> serde_json::Value {
     let reply = redo(log);
-    for leg in reply["edits"].as_array().into_iter().flatten() {
-        project(doc, leg);
+    for leg in reply["legs"].as_array().into_iter().flatten() {
+        for payload in leg["payloads"].as_array().into_iter().flatten() {
+            project(doc, payload);
+        }
     }
     reply
 }
@@ -206,7 +214,7 @@ fn a_redo_puts_back_what_the_undo_took() {
     let after_edit = doc.tree();
 
     let undone = undo_into(&log, &doc);
-    assert_eq!(undone["inverses"].as_array().unwrap().len(), 1);
+    assert_eq!(undone["legs"][0]["payloads"].as_array().unwrap().len(), 1);
 
     let redone = redo_into(&log, &doc);
     assert_eq!(doc.tree()["root"], after_edit["root"]);
@@ -273,7 +281,7 @@ fn a_destructive_inverse_is_recorded_by_the_caller_and_undone_here() {
     let _ = document;
     let undone = undo(&log);
     assert_eq!(
-        undone["inverses"][0]["payload"]["values"],
+        undone["legs"][0]["payloads"][0]["values"],
         // Exactly representable in `f32`, so the assertion is about the span
         // travelling whole rather than about float printing.
         serde_json::json!([0.125, 0.25]),
@@ -301,12 +309,12 @@ fn a_deterministic_operation_comes_back_for_the_owner_to_re_run() {
     undo(&log);
     let redone = redo(&log);
     assert!(
-        redone["edits"].as_array().unwrap().is_empty(),
+        redone["legs"].as_array().unwrap().is_empty(),
         "the operation is the first step, so nothing precedes it"
     );
     let remaining = redone["remaining"].as_array().unwrap();
     assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0]["step"]["recompute"]["op"], "normalize");
+    assert_eq!(remaining[0]["steps"][0]["recompute"]["op"], "normalize");
 }
 
 #[test]
@@ -381,7 +389,8 @@ fn a_null_handle_is_answered_rather_than_a_crash() {
         0,
         "no history, no identity"
     );
-    let n = unsafe { clausters_history_undo(null, std::ptr::null_mut(), 0) };
+    let n =
+        unsafe { clausters_history_walk(null, UNDO.as_ptr(), UNDO.len(), std::ptr::null_mut(), 0) };
     assert_eq!(n, 2, "`{{}}`: there is nothing to undo on no history");
     // And the mirror: no document either, which since O12 is the other handle
     // a caller can get wrong.
@@ -457,7 +466,15 @@ fn a_sizing_pass_changes_nothing_however_many_times_it_runs() {
 
     // Sizing an undo does not undo it.
     for _ in 0..3 {
-        unsafe { clausters_history_undo(log.handle, std::ptr::null_mut(), 0) };
+        unsafe {
+            clausters_history_walk(
+                log.handle,
+                UNDO.as_ptr(),
+                UNDO.len(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
     }
     assert_eq!(
         unsafe { clausters_history_can_undo(log.handle) },
@@ -481,7 +498,15 @@ fn a_buffer_too_small_is_a_size_query_and_not_a_half_done_edit() {
     let doc = Doc::new(DOC);
     apply(&log, &doc, &place(2, 1.0), 0.0);
     let mut tiny = [0u8; 4];
-    let need = unsafe { clausters_history_undo(log.handle, tiny.as_mut_ptr(), tiny.len()) };
+    let need = unsafe {
+        clausters_history_walk(
+            log.handle,
+            UNDO.as_ptr(),
+            UNDO.len(),
+            tiny.as_mut_ptr(),
+            tiny.len(),
+        )
+    };
     assert!(need > tiny.len());
     assert_eq!(
         unsafe { clausters_history_can_undo(log.handle) },
@@ -519,11 +544,11 @@ fn a_second_domain_shares_the_pile_and_comes_back_addressed_to_itself() {
 
     // The order is the pile's: the curve's edit was last, so it undoes first.
     let undone = undo(&log);
-    assert_eq!(undone["inverses"][0]["structure"], curve);
-    assert_eq!(undone["inverses"][0]["payload"]["intent"], "setpoints");
+    assert_eq!(undone["legs"][0]["structure"], curve);
+    assert_eq!(undone["legs"][0]["payloads"][0]["intent"], "setpoints");
 
     let undone = undo_into(&log, &doc);
-    assert_eq!(undone["inverses"][0]["structure"], log.tree);
+    assert_eq!(undone["legs"][0]["structure"], log.tree);
     assert_eq!(
         doc.tree()["root"]["members"][0]["offset"],
         0.0,
@@ -574,7 +599,7 @@ fn a_transaction_crosses_as_one_entry_with_several_legs() {
     );
     project(
         &doc,
-        &serde_json::json!({ "payload": serde_json::json!({"intent":"place","node":2,"offset":6.0}) }),
+        &serde_json::json!({"intent":"place","node":2,"offset":6.0}),
     );
 
     let code = record(
@@ -596,11 +621,11 @@ fn a_transaction_crosses_as_one_entry_with_several_legs() {
 
     // And it comes back as one step, inverted in reverse: the curve first.
     let undone = undo(&log);
-    let legs = undone["inverses"].as_array().unwrap();
+    let legs = undone["legs"].as_array().unwrap();
     assert_eq!(legs.len(), 2);
     assert_eq!(legs[0]["structure"], curve);
     assert_eq!(legs[1]["structure"], log.tree);
-    assert_eq!(legs[1]["payload"]["offset"], 0.0);
+    assert_eq!(legs[1]["payloads"][0]["offset"], 0.0);
     assert_eq!(
         unsafe { clausters_history_can_undo(log.handle) },
         0,
@@ -666,7 +691,7 @@ fn the_non_invertible_the_deleted_and_the_saved_cross_too() {
     let undone = undo(&log);
     assert_eq!(undone["skipped"][0], "normalize");
     assert_eq!(undone["label"], "draw", "the walk went past it");
-    assert_eq!(undone["inverses"][0]["structure"], curve);
+    assert_eq!(undone["legs"][0]["structure"], curve);
     assert_eq!(
         unsafe { clausters_history_dirty(log.handle) },
         1,

@@ -139,16 +139,19 @@ class Editing:
         return [held() for held in self._views]
 
     def step(self, direction: str) -> "list | None":
-        """Take one step off the pile and give back its legs, in the order they
-        must be applied — ``None`` when there was nothing to take."""
+        """Take one step off the pile and give back what each structure must
+        apply — ``None`` when there was nothing to take.
+
+        The legs come **routed**: one entry per structure, its payloads in the
+        order it must apply them. Which side of an entry a direction reads and
+        which legs a structure owns are the crate's
+        (`clausters._native.History.walk`), because every client was writing
+        both for itself.
+        """
         if self.history is None:
             return None
-        step = (self.history.undo() if direction == "undo"
-                else self.history.redo())
-        if step is None:
-            return None
-        return (step.get("inverses") if direction == "undo"
-                else step.get("edits")) or []
+        walked = self.history.walk(direction)
+        return None if walked is None else walked["legs"]
 
     def distribute(self, legs: list, walker) -> bool:
         """Hand a step's legs round **everything registered here** and say
@@ -156,10 +159,10 @@ class Editing:
 
         One entry can name several structures — a stroke over a take and a bend
         of the curve above it are one order, and so is an edit to a page beside
-        a lane — so the step is offered to every participant and each projects
-        the legs it owns. Whoever is walking is included whether or not it is in
-        the list, since a structure with no window open still holds legs the
-        step may name.
+        a lane — so the step is offered to every participant and each takes the
+        legs naming the structure it holds. Whoever is walking is included
+        whether or not it is in the list, since a structure with no window open
+        still holds legs the step may name.
 
         It lives here rather than on the editor because a participant need not
         be one: what this asks of a thing is `project_legs`, and a

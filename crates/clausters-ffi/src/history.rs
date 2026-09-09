@@ -61,7 +61,7 @@
 
 use std::sync::Mutex;
 
-use clausters_document::history::{Entry, History, Step, StructureId};
+use clausters_document::history::{Direction, Entry, History, Step, StructureId};
 use clausters_document::{Against, Intent, Opaque, Rules, apply as apply_intent};
 
 use crate::document::{FfiDocument, fill, text, with_document};
@@ -75,11 +75,6 @@ fn with_history<T>(h: *mut FfiHistory, default: T, f: impl FnOnce(&mut History) 
         return default;
     };
     f(&mut history.0.lock().expect("history lock poisoned"))
-}
-
-/// A leg as it crosses: the structure it belongs to, and the payload.
-fn leg(structure: StructureId, key: &str, load: &serde_json::Value) -> serde_json::Value {
-    serde_json::json!({ "structure": structure.0, key: load })
 }
 
 /// A new, empty history. `budget` is how many entries it keeps before the
@@ -392,17 +387,34 @@ impl Request {
     }
 }
 
-/// Undo the last thing done: the inverses of the entry the walk lands on, each
-/// with the structure it belongs to, **in the order they must be applied**.
+/// **One step of the pile, routed** — the legs each structure has to apply, in
+/// order, and what only its owner can re-run.
 ///
-/// Writes
-/// `{"label": …, "inverses": [{"structure": <id>, "payload": <payload>}, …], "skipped": [<label>, …]}`.
-/// `skipped` names the entries the walk had to pass over because nothing can
-/// invert them — a hole in the history that announces itself, which is what
-/// lets a person understand why an undo did not go where they expected.
-/// Returns the byte count it needs, `0` when the handle is null, and `2`
-/// (`{}`) when there was nothing to undo, which a caller distinguishes from a
-/// failure.
+/// `direction` is `"undo"` or `"redo"`. Writes
+/// `{"label": …, "legs": [{"structure": <id>, "payloads": [<payload>, …]}, …],
+/// "remaining": [{"structure": <id>, "steps": [<step>, …]}, …],
+/// "skipped": [<label>, …]}`.
+///
+/// It is one door and not two because picking the side a direction reads, and
+/// keeping the legs one structure owns, are rules and not plumbing — and every
+/// caller was writing both for itself. `remaining` holds the steps from the
+/// first one the crate cannot describe as an edit onward, which the **owner**
+/// re-runs because the crate holds no algorithms; it stops at the first rather
+/// than skipping it, so a later edit is never applied over a state the
+/// operation before it was meant to produce. Going back it is always empty: an
+/// inverse is always an edit. `skipped` names the entries the walk had to pass
+/// over because nothing can invert them — a hole in the history that announces
+/// itself, which is what lets a person understand why an undo did not go where
+/// they expected.
+///
+/// **The order kept is the order within a structure.** A caller applies through
+/// one vocabulary at a time, so an entry naming two structures is walked one
+/// structure at a time; between two of them there is nothing to keep, because
+/// an entry's changes to different structures are independent by construction.
+///
+/// Returns the byte count it needs, `0` when the handle is null or the
+/// direction is neither word, and `2` (`{}`) when there was nothing to walk,
+/// which a caller distinguishes from a failure.
 ///
 /// It applies nothing: a history holds structures this surface cannot reach, so
 /// applying the legs it *could* would leave the rest to the caller out of
@@ -410,90 +422,47 @@ impl Request {
 /// bytes are written, so a sizing pass is free of consequence.
 ///
 /// # Safety
-/// `h` must be a live history handle and `out` null or writable for `out_cap`
-/// bytes.
+/// `h` must be a live history handle, `direction` null or readable for
+/// `direction_len` bytes, and `out` null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_history_undo(
+pub unsafe extern "C" fn clausters_history_walk(
     h: *mut FfiHistory,
+    direction: *const u8,
+    direction_len: usize,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let undone = with_history(h, None, |history| history.peek_undo());
-    let payload = match &undone {
-        // Nothing to undo. `{}` rather than an empty list, so a caller can tell
-        // "the history is at its start" from "the call failed" (0).
+    // SAFETY: forwarded from this function's own contract.
+    let Some(named) = (unsafe { text(direction, direction_len) }) else {
+        return 0;
+    };
+    let Some(direction) = Direction::parse(&named) else {
+        return 0;
+    };
+    let walked = with_history(h, None, |history| history.peek_walk(direction));
+    let payload = match &walked {
+        // Nothing to walk. `{}` rather than an empty list, so a caller can tell
+        // "the history is at its end" from "the call failed" (0).
         None => serde_json::json!({}),
-        Some(undone) => serde_json::json!({
-            "label": undone.label,
-            "inverses": undone
+        Some(walked) => serde_json::json!({
+            "label": walked.label,
+            "legs": walked
                 .legs
                 .iter()
-                .map(|(structure, load)| leg(*structure, "payload", &load.0))
+                .map(|(structure, payloads)| serde_json::json!({
+                    "structure": structure.0,
+                    "payloads": payloads.iter().map(|p| p.0.clone()).collect::<Vec<_>>(),
+                }))
                 .collect::<Vec<_>>(),
-            "skipped": undone.skipped,
-        }),
-    };
-    // SAFETY: forwarded from this function's own contract.
-    unsafe {
-        fill(
-            &serde_json::to_vec(&payload).unwrap_or_default(),
-            out,
-            out_cap,
-            || {
-                if undone.is_some() {
-                    with_history(h, false, |history| history.step_back());
-                }
-            },
-        )
-    }
-}
-
-/// Redo what was last undone: the steps of the entry the walk lands on, each
-/// with the structure it belongs to, in order.
-///
-/// Writes `{"label": …, "edits": [{"structure": <id>, "payload": <payload>}, …],
-/// "remaining": [{"structure": <id>, "step": <step>}, …], "skipped": [<label>, …]}`.
-/// `edits` is the leading run of ordinary edits, for the caller to apply in
-/// order; `remaining` holds the steps from the first one the crate cannot
-/// describe as an edit onward — a deterministic operation stored as its
-/// parameters, which the **owner** re-runs, because the crate holds no
-/// algorithms. It stops at the first rather than skipping it, so a later edit is
-/// never applied over a state the operation before it was meant to produce.
-/// `skipped` is [`clausters_history_undo`]'s.
-///
-/// Returns the byte count needed, `0` when the handle is null, and `2` (`{}`)
-/// when there was nothing to redo.
-///
-/// # Safety
-/// As [`clausters_history_undo`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_history_redo(
-    h: *mut FfiHistory,
-    out: *mut u8,
-    out_cap: usize,
-) -> usize {
-    let redone = with_history(h, None, |history| history.peek_redo());
-    let payload = match &redone {
-        None => serde_json::json!({}),
-        Some(redone) => serde_json::json!({
-            "label": redone.label,
-            "edits": redone
-                .edits
-                .iter()
-                .map(|(structure, load)| leg(*structure, "payload", &load.0))
-                .collect::<Vec<_>>(),
-            "remaining": redone
+            "remaining": walked
                 .remaining
                 .iter()
-                .map(|(structure, step)| {
-                    leg(
-                        *structure,
-                        "step",
-                        &serde_json::to_value(step).unwrap_or_default(),
-                    )
-                })
+                .map(|(structure, steps)| serde_json::json!({
+                    "structure": structure.0,
+                    "steps": steps,
+                }))
                 .collect::<Vec<_>>(),
-            "skipped": redone.skipped,
+            "skipped": walked.skipped,
         }),
     };
     // SAFETY: forwarded from this function's own contract.
@@ -503,8 +472,8 @@ pub unsafe extern "C" fn clausters_history_redo(
             out,
             out_cap,
             || {
-                if redone.is_some() {
-                    with_history(h, false, |history| history.step_forward());
+                if walked.is_some() {
+                    with_history(h, false, |history| history.step(direction));
                 }
             },
         )

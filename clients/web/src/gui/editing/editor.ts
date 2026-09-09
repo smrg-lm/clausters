@@ -83,10 +83,10 @@ export async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
 }
 
 /** What {@link Editor} is built with. */
-/** One leg of a history step: the structure it names, and what to write. */
+/** One leg of a history step: the structure it names, and what it must apply. */
 export interface Leg {
     structure?: number;
-    payload?: unknown;
+    payloads?: readonly unknown[];
 }
 
 export interface GenericEditorOptions<S> {
@@ -820,8 +820,8 @@ export class Editor<S = unknown> implements Adopting {
         let applied = false;
         for (const leg of legs) {
             if (Math.trunc(Number(leg.structure ?? -1)) !== mine) continue;
-            if (leg.payload !== undefined) {
-                applied = this.domain.project(this.structure, leg.payload) || applied;
+            for (const payload of leg.payloads ?? []) {
+                applied = this.domain.project(this.structure, payload) || applied;
             }
         }
         return applied;

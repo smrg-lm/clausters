@@ -246,16 +246,18 @@ export class Score {
     /**
      * Put back the legs of a history step that name **this** score.
      *
-     * What the context hands round. A page is not a view — nothing here redraws
-     * — so a caller re-engraves after a step exactly as it does after an edit.
+     * What the context hands round, already gathered per structure. A page is
+     * not a view — nothing here redraws — so a caller re-engraves after a step
+     * exactly as it does after an edit.
      */
     projectLegs(legs: readonly unknown[]): boolean {
         let moved = false;
-        for (const leg of legs as { structure?: number; payload?: { mei?: unknown } }[]) {
+        for (const leg of legs as { structure?: number; payloads?: { mei?: unknown }[] }[]) {
             if (Math.trunc(Number(leg.structure ?? -1)) !== this.structure) continue;
-            const mei = leg.payload?.mei;
-            if (typeof mei !== "string") continue;
-            moved = this.load(mei) || moved;
+            for (const payload of leg.payloads ?? []) {
+                const mei = payload?.mei;
+                if (typeof mei === "string") moved = this.load(mei) || moved;
+            }
         }
         return moved;
     }

@@ -144,18 +144,18 @@ class Score:
     def project_legs(self, legs: list) -> bool:
         """Put back the legs of a history step that name **this** score.
 
-        What the context hands round. A page is not a view — nothing here
-        redraws — so a caller re-engraves after a step exactly as it does after
-        an edit.
+        What the context hands round, already gathered per structure. A page is
+        not a view — nothing here redraws — so a caller re-engraves after a step
+        exactly as it does after an edit.
         """
         moved = False
         for leg in legs:
             if int(leg.get("structure", -1)) != self._structure:
                 continue
-            mei = (leg.get("payload") or {}).get("mei")
-            if not isinstance(mei, str):
-                continue
-            moved |= self.load(mei)
+            for payload in leg.get("payloads", ()):
+                mei = (payload or {}).get("mei")
+                if isinstance(mei, str):
+                    moved |= self.load(mei)
         return moved
 
     def adopt(self, intents: list, whole: bool) -> None:

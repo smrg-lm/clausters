@@ -20,6 +20,7 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import {
     Document,
+    History,
     Log,
     applyIntent,
     domainCoalesceKey,
@@ -260,6 +261,48 @@ test("a deterministic operation comes back for the owner to re-run", async () =>
     } finally {
         log.free();
         doc.free();
+    }
+});
+
+test("a walk is one door and comes back routed per structure", async () => {
+    // Which side of an entry a direction reads, and which legs a structure
+    // owns, were written once per client and once per document log. Now the
+    // walk answers both. `clients/python/tests/test_document.py` asserts the
+    // same facts in the same order.
+    const history = await History.open();
+    try {
+        const curve = history.register("points");
+        const roll = history.register("events");
+        history.record(
+            [
+                { structure: curve, forward: { edit: { points: [1] } }, backward: { points: [0] } },
+                { structure: roll, forward: { edit: { notes: [1] } }, backward: { notes: [0] } },
+                { structure: curve, forward: { edit: { points: [2] } }, backward: { points: [1] } },
+            ] as never,
+            { label: "a gesture over both" },
+        );
+
+        const walked = history.walk("undo");
+        assert.ok(walked);
+        assert.equal(walked.label, "a gesture over both");
+        assert.deepEqual(
+            walked.legs.map((leg) => leg.structure),
+            [curve, roll],
+            "one entry per structure, not one per leg",
+        );
+        assert.deepEqual(
+            walked.legs[0].payloads,
+            [{ points: [1] }, { points: [0] }],
+            "a transaction unwinds the way it was laid down",
+        );
+        assert.deepEqual(walked.remaining, [], "an inverse is always an edit");
+        assert.equal(history.walk("undo"), undefined);
+
+        const back = history.walk("redo");
+        assert.ok(back);
+        assert.deepEqual(back.legs[0].payloads, [{ points: [1] }, { points: [2] }]);
+    } finally {
+        history.free();
     }
 });
 
