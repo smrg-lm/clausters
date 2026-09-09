@@ -94,7 +94,13 @@ pub fn reading(
             continue;
         };
         for region in &lane.regions {
-            let Some((bufnum, channels, start)) = sounds(region, takes, per_second) else {
+            let Some(Samples {
+                bufnum,
+                channels,
+                start,
+                content,
+            }) = sounds(region, takes, per_second)
+            else {
                 continue;
             };
             // **A region's own mute is the region's**, and it is not the
@@ -111,7 +117,14 @@ pub fn reading(
                         bufnum,
                         offset: region.position.0 * per_beat,
                         start,
-                        span: region.length.0 * per_beat,
+                        // **A region may be longer than what fills it**, and
+                        // then it is silent for the rest: the gate closes at
+                        // whichever ends first. Without this the reader runs
+                        // past its window, `BufRd` clamps and the last sample
+                        // is held -- a tone where the piece has nothing, which
+                        // is exactly what a four-beat region over two seconds
+                        // of audio sounded like.
+                        span: (region.length.0 * per_beat).min(content),
                         amp,
                     },
                 ));
@@ -141,21 +154,33 @@ pub fn gain(track: &Track, soloing: bool) -> f64 {
         .max(0.0)
 }
 
-/// The buffer a region plays, how many channels it has and the frame its own
-/// zero reads — `None` for a region that is drawn but does not sound here.
-fn sounds(region: &Region, takes: &Takes, per_second: f64) -> Option<(i32, u32, f64)> {
+/// What a region reads: the buffer, its shape, where its own zero opens, and
+/// **how much there is** — the four things a reader needs and the document has.
+struct Samples {
+    bufnum: i32,
+    channels: u32,
+    /// The frame of the source the region's zero reads.
+    start: f64,
+    /// How long the window lasts, in frames of the timeline.
+    content: f64,
+}
+
+/// What a region plays — `None` for one that is drawn but does not sound here.
+fn sounds(region: &Region, takes: &Takes, per_second: f64) -> Option<Samples> {
     let Content::Window { window, .. } = &region.content else {
         return None;
     };
     let source = window.source.samples()?;
     let take = takes.get(source.source)?;
-    // The window's own start is in **seconds** — a recording's units — so it
-    // meets the timeline through the rate and never through the tempo.
-    Some((
-        take.bufnum,
-        take.channels.unwrap_or(1).max(1),
-        window.start * per_second,
-    ))
+    // The window's own start and duration are in **seconds** — a recording's
+    // units — so they meet the timeline through the rate and never through the
+    // tempo.
+    Some(Samples {
+        bufnum: take.bufnum,
+        channels: take.channels.unwrap_or(1).max(1),
+        start: window.start * per_second,
+        content: window.duration * per_second,
+    })
 }
 
 impl Host {
@@ -419,6 +444,23 @@ mod tests {
         assert_eq!(first.bufnum, 7);
         assert_eq!(first.offset, 200.0, "two beats at a hundred frames each");
         assert_eq!(first.span, 400.0, "four beats long");
+        // **A region longer than what fills it is silent for the rest.** The
+        // window here is two seconds and the region four beats; shorten the
+        // window and the gate closes with it rather than holding the last
+        // sample, which is a tone where the piece has nothing.
+        // A beat a second here, so the two lengths are comparable by eye.
+        let mut brief = piece();
+        if let Content::Window { window, .. } = &mut brief.tracks[0].lanes[0].regions[0].content {
+            window.duration = 1.0;
+        }
+        let (_, clipped) = reading(&brief, &takes(), 48_000.0, 48_000.0)
+            .into_iter()
+            .find(|(v, _)| v.region == NodeId(12) && v.channel == 0)
+            .expect("still a reader");
+        assert_eq!(
+            clipped.span, 48_000.0,
+            "one second of window under a four-beat placement: the window wins"
+        );
         assert_eq!(
             first.start,
             0.5 * 48_000.0,
