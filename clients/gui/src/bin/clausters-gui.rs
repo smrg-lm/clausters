@@ -758,8 +758,13 @@ fn run_session(
         }),
         origin,
     );
+    // **The piece sounds from the moment it opens**, and by the same call an
+    // edit makes: a reader per region, following the transport, silent until a
+    // hand presses play because the governed group is created stopped.
+    let readers = host.sound_piece();
     tracing::info!(
-        "session: opened {path} — {} clip(s) on {} lane(s), {} take editor(s)",
+        "session: opened {path} — {} clip(s) on {} lane(s), {} take editor(s), \
+         {readers} reader(s)",
         drawn.piece.clips.len(),
         drawn.piece.lanes.len(),
         drawn.bindings.len(),

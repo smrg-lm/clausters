@@ -32,6 +32,7 @@
 //! the reason the caller can adopt the outcome unconditionally.
 
 pub mod piece;
+pub mod sound;
 pub mod sources;
 pub mod tree;
 

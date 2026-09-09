@@ -693,6 +693,19 @@ pub struct Host {
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
+    /// The readers the **piece** is sounding through, by the region and channel
+    /// each plays, with what it was last set to.
+    ///
+    /// Held rather than re-derived because it is the server's state and not the
+    /// document's: what it answers is *which node is already playing this*, so
+    /// an edit is a set on a live node instead of a free and a new one.
+    sounding: HashMap<document::sound::Voice, (i32, document::sound::Reading)>,
+    /// The next node id a piece reader takes. See [`play::PIECE_NODE`].
+    next_piece_node: i32,
+    /// Whether the transport is rolling the piece. Held rather than asked of
+    /// the server for the same reason the monitor's `rolling` is: the key that
+    /// toggles it has to know which way it is about to go.
+    piece_rolling: bool,
     /// Whether this host **drives the server's transport** — whether it is the
     /// one that bound the governed group (`play::take_group_messages`).
     ///
@@ -806,6 +819,9 @@ impl Host {
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
             playing: None,
+            sounding: HashMap::new(),
+            next_piece_node: play::PIECE_NODE,
+            piece_rolling: false,
             owns_transport: false,
             voice_counter: 0,
             outbox: Default::default(),
@@ -2338,6 +2354,13 @@ impl Host {
             ],
             &mut fx,
         );
+        // **And what sounds follows what is drawn**, by the same call and for
+        // the same reason: the piece is a statement, so putting the readers
+        // where it says is one verb whether it is the first time or the
+        // hundredth. It reaches nodes that are already running, so a region
+        // moved while the piece plays is heard where it was dropped with
+        // nothing that is sounding cut.
+        self.sound_piece();
     }
 
     /// trailing string is a reason, informational and read by nothing in the

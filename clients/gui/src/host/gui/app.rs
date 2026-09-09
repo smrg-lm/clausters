@@ -854,11 +854,18 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("q") => {
                         self.clip_quantize(def_id);
                     }
-                    // The monitor: the space bar plays what the cursor is over
-                    // and stops what is playing. Last among the window's own
-                    // keys for the usual reason — a focused field types a
-                    // space, and a widget that wanted it answered already.
-                    Key::Named(NamedKey::Space) => {
+                    // The transport: the space bar rolls the piece, or plays
+                    // what the cursor is over and stops what is playing. Last
+                    // among the window's own keys for the usual reason — a
+                    // focused field types a space, and a widget that wanted it
+                    // answered already.
+                    //
+                    // **Both spellings, because a space is a typed character.**
+                    // `key_pressed` hands back what the key *produced* when no
+                    // chord is held, and a space produces `" "` — so an arm
+                    // matching only `NamedKey::Space` never fired at all, on
+                    // any keyboard, and the take monitor had no key.
+                    ref key if is_space(key) => {
                         self.play_key(def_id);
                     }
                     // The clipboard verbs over the view under the cursor. They
@@ -947,6 +954,19 @@ impl App {
 /// A press with no text (an arrow, Escape) or whose text is a control
 /// character (Enter's `\r`, Tab's `\t`, Backspace) falls back to
 /// `logical_key`, where those are the named keys the editing verbs match on.
+/// Whether this is the space bar, however the shell spelled it.
+///
+/// It arrives as `Named(Space)` under a chord and as the character it typed
+/// otherwise ([`key_pressed`]), and a match on one of the two is a key that
+/// works only with a modifier held — which is to say not at all.
+fn is_space(key: &Key) -> bool {
+    match key {
+        Key::Named(NamedKey::Space) => true,
+        Key::Character(c) => c == " ",
+        _ => false,
+    }
+}
+
 fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
     #[cfg(any(
         target_os = "windows",
@@ -991,5 +1011,29 @@ pub(super) fn to_key(key: &Key) -> Option<HostKey> {
             .filter(|c| !c.is_control())
             .map(HostKey::Char),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **The space bar arrives as the character it typed**, not as
+    /// `NamedKey::Space`, whenever no chord is held — which is every time
+    /// anybody presses it to play something.
+    ///
+    /// The window's arm matched only the named spelling, so the key did
+    /// nothing at all: no monitor, no transport, and nothing in the log to say
+    /// a key had been declined. Found 2026-09-08 by the user, pressing space at
+    /// a session that had just been given readers.
+    #[test]
+    fn the_space_bar_is_recognized_by_both_spellings() {
+        assert!(is_space(&Key::Named(NamedKey::Space)));
+        assert!(
+            is_space(&Key::Character(" ".into())),
+            "what a press produces"
+        );
+        assert!(!is_space(&Key::Character("s".into())));
+        assert!(!is_space(&Key::Named(NamedKey::Enter)));
     }
 }

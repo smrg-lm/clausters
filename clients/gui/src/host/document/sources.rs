@@ -60,6 +60,12 @@ pub struct Takes {
 }
 
 impl Takes {
+    /// Records what a source resolved to — what [`plan`] fills, and what a test
+    /// over anything downstream of it needs to be able to state.
+    pub fn insert(&mut self, source: SourceId, take: Take) {
+        self.map.insert(source, take);
+    }
+
     /// The take a source became, if it became one.
     pub fn get(&self, source: SourceId) -> Option<Take> {
         self.map.get(&source).copied()

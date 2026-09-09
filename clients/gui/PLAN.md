@@ -6027,3 +6027,27 @@ finished work, where a pending item reads as done.
   own vocabulary. The two descriptions are two structures in **one** history, so
   an undo walks them in the order the hand made them. `sources::plan` walks the
   piece too, which is why the takes now read in at all.
+
+- ✅ **The space bar never worked, on any keyboard**
+  *(found 2026-09-08 by the user, pressing it at a session that had just been
+  given readers)*. `key_pressed` hands back what a key *produced* when no chord
+  is held, and a space produces `" "` — so the window's arm, which matched only
+  `Key::Named(NamedKey::Space)`, could fire only with a modifier held, which is
+  to say never. The take monitor's own key had the same hole and nobody had
+  pressed it: the key was declined in silence, with nothing in the log to say a
+  key had arrived at all. **Fixed the same day** (`is_space` matches both
+  spellings, with a test); found only because a piece with six readers gave
+  space something audible to do.
+
+- ⬜ **`e` and `j` over a `multitrack` fall through to a verb written for the
+  old widgets** *(found 2026-09-08, same sitting)*. Split and join reach the
+  element first, which declines when nothing is selected — correct — and then
+  the window's own `clip_verb`, which resolves a `WidgetKind::Clip` under the
+  cursor and finds none, because a clip is not a widget any more. So the keys do
+  nothing and say nothing, and with a selection they take the element's path
+  instead. The window-level pair is dead code for a multitrack and goes when
+  `track`/`clip` leave the tree (`G34`).
+
+  The half that is not dead code: over a **piece**, a split produces two boxes
+  whose names no region has, so the reader drops them — the piece's own
+  `SplitRegion`/`JoinRegions` exist and nothing reaches them yet.

@@ -68,6 +68,23 @@ const TAKE_NODE: i32 = super::voices::ID_BASE + super::voices::ID_SPAN;
 /// name either without arithmetic.
 const TAKE_GROUP: i32 = TAKE_NODE - 1;
 
+/// The group the transport governs, for the piece's readers as well as the
+/// monitor's: one group, because there is one transport and freezing half of
+/// what it drives would be a pause that is not one.
+pub fn take_group() -> i32 {
+    TAKE_GROUP
+}
+
+/// The first node id a **piece's** readers take — past the monitor's fixed
+/// channels, so the two never collide. Counted up from here, because a piece
+/// has as many readers as it has regions and no fixed one would do.
+pub const PIECE_NODE: i32 = TAKE_NODE + MAX_CHANNELS as i32;
+
+/// The span a reader with no stated end lasts, in frames: past any piece
+/// anybody edits (about 260 days at 48 kHz), and a number rather than a branch
+/// so the gate is one comparison whoever is playing.
+const NO_END: f64 = 1.0e12;
+
 /// The most channels the monitor will play at once — a bound rather than a
 /// judgement about contents: it is what keeps a malformed channel count from
 /// filling the node tree, and it is well past any take a person mixes by hand.
@@ -90,13 +107,33 @@ pub fn take_def_message() -> OscMessage {
             {"name": "amp", "default": 1.0},
             {"name": "out", "default": 0.0},
             {"name": "offset", "default": 0.0},
+            // Where in the **source** this reader's own zero is: what a left
+            // trim moves, and 0 for a take played whole.
+            {"name": "start", "default": 0.0},
+            // How long it lasts, in frames. The default is **no end** rather
+            // than none: a control left unstated has to be inert, and a span of
+            // zero would be a silent node.
+            {"name": "span", "default": NO_END},
         ],
         "ugens": [
             {"kind": "TransportPos", "inputs": [{"control": 4}]},
+            // The frame of the source: the piece's position, shifted by the
+            // window this reader opens at.
+            {"kind": "Add", "inputs": [{"ugen": 0}, {"control": 5}]},
             {"kind": "BufRd", "inputs": [
-                {"control": 0}, {"control": 1}, {"ugen": 0}, {"const": 0.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 1}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 2}]},
+                {"control": 0}, {"control": 1}, {"ugen": 1}, {"const": 0.0}]},
+            // **The gate is the region's span**, and it is what tells a reader
+            // that has not started from one that is over. Without it `BufRd`
+            // clamps past the end and holds the last sample, which is a tone
+            // where a piece has silence.
+            {"kind": "BinaryOpUGen", "op": "ge", "inputs": [
+                {"ugen": 0}, {"const": 0.0}]},
+            {"kind": "BinaryOpUGen", "op": "lt", "inputs": [
+                {"ugen": 0}, {"control": 6}]},
+            {"kind": "Mul", "inputs": [{"ugen": 3}, {"ugen": 4}]},
+            {"kind": "Mul", "inputs": [{"ugen": 2}, {"ugen": 5}]},
+            {"kind": "Mul", "inputs": [{"ugen": 6}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 7}]},
         ],
     });
     OscMessage {
@@ -320,14 +357,46 @@ mod tests {
             .iter()
             .map(|u| u["kind"].as_str().expect("a kind"))
             .collect();
-        assert_eq!(kinds, vec!["TransportPos", "BufRd", "Mul", "Out"]);
         assert_eq!(
-            spec["ugens"][1]["inputs"][2]["ugen"], 0,
-            "the phase is the transport's position, so a seek is the transport's"
+            kinds,
+            vec![
+                "TransportPos",
+                "Add",
+                "BufRd",
+                "BinaryOpUGen",
+                "BinaryOpUGen",
+                "Mul",
+                "Mul",
+                "Mul",
+                "Out"
+            ]
         );
         assert_eq!(
-            spec["ugens"][1]["inputs"][3]["const"], 0.0,
+            spec["ugens"][1]["inputs"][0]["ugen"], 0,
+            "the frame read is the transport's position, shifted by the window"
+        );
+        assert_eq!(
+            spec["ugens"][2]["inputs"][2]["ugen"], 1,
+            "the phase is that frame, so a seek is the transport's"
+        );
+        assert_eq!(
+            spec["ugens"][2]["inputs"][3]["const"], 0.0,
             "the reader never wraps: the loop is the transport's too"
+        );
+        // **The gate is the region's span**, and it is what a piece of many
+        // regions needs: a reader before its own start and one past its end are
+        // both silent, so the boxes on a lane do not bleed into each other.
+        assert_eq!(spec["ugens"][3]["op"], "ge");
+        assert_eq!(spec["ugens"][4]["op"], "lt");
+        let span = spec["controls"]
+            .as_array()
+            .expect("controls")
+            .iter()
+            .find(|c| c["name"] == "span")
+            .expect("a span");
+        assert_eq!(
+            span["default"], NO_END,
+            "unstated is no end, because a control left alone has to be inert"
         );
     }
 
