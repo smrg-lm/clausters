@@ -859,13 +859,15 @@ client and from a standalone host because it is one piece of code.
   did not do, and a pending item filed only among the reasons for not doing it
   is a pending item that reads as closed. Both closed 2026-09-09, and the walk's
   entry carries the decision it was waiting for.
-- **The web client**, which has neither the `Application` this milestone is
-  about nor the `GuiHost.redefine` its granularity is sent through. Both are in
-  "Found by use" below and both are owned by **`W30`**
-  (`clients/web/PLAN.md`), which is written to run *after* this branch — so the
-  acceptance's "and that is true from the web client" is the one clause of it
-  this branch does not deliver, deliberately and with a milestone naming when it
-  will be.
+- **The web client**, which had neither the `Application` this milestone is
+  about nor the `GuiHost.redefine` its granularity is sent through. Both were in
+  "Found by use" below and both were owned by **`W30`**
+  (`clients/web/PLAN.md`), written to run *after* this branch — **and it closed
+  2026-09-09**, so the acceptance's "and that is true from the web client" is
+  delivered rather than deferred. The reading that milestone's second half asks
+  for found one defect, and in the *Python* client: the multitrack view fed flat
+  props to a builder whose arguments are tuples, so the tree it published had one
+  row per number. It is written up there.
 - **The catalogue views.** Building `waveform`, `bpf`, `pianoroll` and the
   multitrack's lanes through `tree.rs` is what gives the standalone host the same
   function from the same code, and it is entangled with AP6's convergence: the
@@ -1603,7 +1605,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - the routing table, the catalogue views and the undo/redo walk are all down, core ABI v46)*
+- [x] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. The routing table, the catalogue views and the undo/redo walk are down, core ABI v46; and `W30` closed 2026-09-09, so the web client has the `Application`, the named widget id and the `redefine` this milestone is about - which is the acceptance's "and that is true from the web client")*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

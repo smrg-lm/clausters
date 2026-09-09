@@ -83,6 +83,25 @@ def test_a_row_per_track_and_a_box_per_region():
     assert boxes[0][6] == 7, "the buffer its source was read into"
 
 
+def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
+    """The props are already the wire's, so the node is made from them rather
+    than through the `multitrack` builder — whose `lanes`/`clips` are the
+    *tuples* a script types, and which flattened an already-flat list a second
+    time: six rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`.
+
+    Found 2026-09-09 reading the two clients against each other, which is the
+    only place it was visible: every test here read `view.props` and none read
+    the tree that is actually published.
+    """
+    ed = editor(piece())
+    drawn = ed.draw()["children"][0]
+    assert drawn["type"] == "multitrack"
+    assert len(drawn["lanes"]) == 2 * 6, "two tracks, six numbers each"
+    assert drawn["lanes"][:3] == ["10", "one", 96.0]
+    assert len(drawn["clips"]) == 3 * 7, "three regions, seven numbers each"
+    assert drawn["clips"][:2] == ["12", "10"]
+
+
 def test_a_source_nobody_loaded_draws_an_empty_box():
     ed = MultitrackEditor(piece(), sample_rate=SR, sources={})
     assert all(b[6] == -1 for b in clips(ed)), \

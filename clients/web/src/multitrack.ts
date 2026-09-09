@@ -55,6 +55,7 @@
  * @module
  */
 
+import { multitrackPicture as corePicture, multitrackRead as coreRead } from "./core/clausters_core_web.js";
 import { FIRST_VERSION } from "./document.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
@@ -1295,4 +1296,81 @@ export class Session {
                              "document", "sources", "provenance");
         return session;
     }
+}
+
+/** One row of a multitrack view: a track, and the strip drawn beside it. */
+export interface Row {
+    /** The track it draws — its identity, and its name on the wire. */
+    track: number;
+    /** The lane of that track whose regions it shows. */
+    lane: number;
+    label: string;
+    mute: boolean;
+    solo: boolean;
+    gain: number;
+}
+
+/** One box of a multitrack view: a region, on the row that plays it. */
+export interface Box {
+    region: number;
+    row: number;
+    /** In **beats**. */
+    position: number;
+    /** In **beats**, and it is the difference of two positions. */
+    length: number;
+    /** Where in the source it starts, in **seconds**. */
+    start: number;
+    /** How much there is to show, in **seconds**. */
+    content: number;
+    source?: number;
+    label: string;
+    muted: boolean;
+}
+
+/** A box as a hand left it, for {@link multitrackRead} to make sense of. */
+export interface Placed {
+    /** The region's id, or a name no region has — which is how a **new** box is
+     * told from a moved one, since a split names its halves after the box they
+     * came from. */
+    name: string;
+    row: number;
+    position: number;
+    length: number;
+    start: number;
+    content: number;
+    source?: number;
+}
+
+/**
+ * **The rows and boxes a piece draws as** — the multitrack view's own mapping,
+ * and there is one of it (`clausters_document::multitrack::picture`), so a page,
+ * the Python client and the standalone host draw the same picture of the same
+ * piece rather than each deriving one.
+ *
+ * **In beats and seconds.** A timeline axis counts sample frames and the crate
+ * has no tempo function; a page crosses to its own axis with the tempo-map calls
+ * it already binds, and a *length* is the difference of two positions there.
+ * `source` is the document's source id and not a server buffer: which buffer a
+ * source was read into is the page's own table.
+ */
+export function multitrackPicture(piece: unknown): { rows: Row[]; boxes: Box[] } {
+    const answer = corePicture(JSON.stringify(piece));
+    return answer
+        ? (JSON.parse(answer) as { rows: Row[]; boxes: Box[] })
+        : { rows: [], boxes: [] };
+}
+
+/**
+ * **What a report of a multitrack's boxes means**, in the piece's own
+ * vocabulary.
+ *
+ * The reader every multitrack view needs and none should write: the report is
+ * the *piece* rather than the gesture, so a move, a block drag, a trim, a split,
+ * a delete and a paste all arrive as one list, and telling them apart is one
+ * rule written once.
+ */
+export function multitrackRead(piece: unknown, placed: readonly Placed[]): unknown[] {
+    const answer = coreRead(JSON.stringify(piece), JSON.stringify(placed));
+    if (!answer) return [];
+    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
 }

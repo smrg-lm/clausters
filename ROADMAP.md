@@ -249,13 +249,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
     client's half survives a redefine, the host's paint order has not been read.
   - ⬜ **A clip cannot be moved between lanes once a split has happened** — the
     host stops emitting `'lane'` rather than the client refusing it.
-  - ⬜ **The routing table's tag list is written twice** — eight strings verbatim
-    in both clients; they agree today and nothing keeps them agreeing.
-  - ⬜ **`Application` and `GuiHost.redefine` exist in Python and not in the web
-    client** — the two halves of one gap, and **both are `W30` now**
-    (`clients/web/PLAN.md`), which is where the port and the parity reading that
-    follows it are written. Named here because they were found on this branch
-    and are read against it; they are not this branch's work to do.
   - ✅ **The crate's client surface was public in one client and private in the
     other** *(fixed 2026-09-06 by `O21`(d))*. `document.ts` had been a module of
     its own since it was written; the Python client reached the same surface
@@ -334,19 +327,6 @@ are written down.
   must be called in that order, once. **The decision:** whether the inverse is a
   field of the vocabulary or stays the client's bookkeeping - which is `AP4`
   asked again about the one payload that did not fit it.
-
-- ⬜ **The undo/redo walk is still each client's, and lowering it is a design
-  step rather than a move** *(`APPLICATION-SCOPE.md`, Found by use)*. `AP5`
-  lowered the difference; the walk resisted, because it orchestrates **client
-  objects** - the editing context's legs, handed round the registered editors,
-  each projecting through its own domain. So it cannot be lowered the way the
-  difference was. **The decision:** whether the crate drives the clients through
-  a callback, or the walk is restated over something the crate already owns -
-  which is `O22`'s intents and `O23`'s reconcile, and it wants a milestone of its
-  own that it does not have. That is no longer a maybe on either side: `O22` and
-  `O23` both closed 2026-09-07, so the piece's edits *are* something the crate
-  owns and the reconcile *is* the host's, and the walk has both to be restated
-  over rather than a promise of them.
 
 - ⬜ **A pass re-cued from the playhead drops the clip the playhead is inside**
   *(`clients/python/PLAN.md`, Found by use)*. `Playhead.play(at=…)` starts the
@@ -476,14 +456,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The branch's own, and they are the near work
 
-- ⬜ **`AP5`'s remainder** *(`APPLICATION-SCOPE.md`, marked `[~]`)*. The half the
-  milestone was named for - the picture's single owner - **landed in `O23`** on
-  2026-09-07, both sides of it. What keeps the checkbox open is three items it
-  never reached: the **catalogue views** (orphaned when `AP6` was closed by
-  removal, and now `O24`'s), the **routing table** and the **undo/redo walk**
-  (both in the file's "Found by use", and both waiting on a decision rather than
-  on work), plus the web client's half, which is `W30`.
-
 - ⬜ **`AP7` - a second application, to prove the abstraction**
   *(`APPLICATION-SCOPE.md`)*. Written before the turn, and the turn gives it its
   subject: the second application is one of the three, not an invented one, so it
@@ -525,21 +497,6 @@ its plan; the plan is where its acceptance is read.
   rather than the gesture. **`O24`'s multitrack waits on it** - the application
   cannot be written against a widget tree with no owner - so this comes first of
   the two.
-
-- ⬜ **`W30` - the editing seam comes across, and the two clients are read
-  against each other** *(`clients/web/PLAN.md`)*. The branch's last structural
-  divergence, and the only one of these that is **not** the branch's to close:
-  it is written to run **after** `AP5`'s remainder, `AP7` and `AP8`, and after
-  `O24`, because porting a seam that is still moving is porting it twice. Named
-  here so the branch closes knowing what it hands over rather than discovering
-  it later.
-
-## 5. Tracks not started, or incomplete
-
-Whole tracks, and one design the user has asked for that is a track's worth.
-**They are named and referred to their plan, not enumerated here** — a track's
-milestones, their order and their acceptance are the plan's, and copying them
-into this file is exactly the migration the rules forbid.
 
 - ⬜ **The A track — what a signal measures, and the layers that show it**
   *(`clients/gui/PLAN.md`, "A track")*. `A1`/`A2` shipped (mean square in the

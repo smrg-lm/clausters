@@ -187,7 +187,7 @@ export class PointsView extends View<Automation> {
         const [min, max, duration] = this.axis(editor.structure, points);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "bpf", editor.structure, {
+            this.catalogue(editor, "bpf", "curve", editor.structure, {
                 points: [...points],
                 min,
                 max,

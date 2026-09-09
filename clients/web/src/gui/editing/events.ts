@@ -321,7 +321,7 @@ export class NotesView extends View<Timeline> {
         const editable = !(editor.domain instanceof NotesDomain) || editor.domain.editable;
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "pianoroll", editor.structure, {
+            this.catalogue(editor, "pianoroll", "roll", editor.structure, {
                 notes: flatNotes(drawn(editor)),
                 osc: flatOsc(markers(editor)),
                 ruler: "beats",

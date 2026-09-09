@@ -222,7 +222,7 @@ export class SamplesView extends View<Buffer> {
         const take = editor.structure;
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "waveform", take, {
+            this.catalogue(editor, "waveform", "waveform", take, {
                 buffer: Math.trunc(take.bufnum),
                 channels: Math.max(1, Math.trunc(take.channels || 1)),
                 measure: this.layers.join(" "),

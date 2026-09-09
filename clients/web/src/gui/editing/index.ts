@@ -37,6 +37,8 @@
  * @module
  */
 
+export { Application, BASE_ID } from "./application.ts";
+export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "./context.ts";
 export type { Adopting } from "./context.ts";
 export { Domain } from "./domain.ts";
@@ -44,6 +46,16 @@ export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
 export { NotesDomain, NotesEditor, NotesView, quintuples } from "./events.ts";
 export type { CrateEvent, NotesEditorOptions, Note } from "./events.ts";
+export {
+    MultitrackDomain,
+    MultitrackEditor,
+    MultitrackView,
+    Sources,
+} from "./multitrack.ts";
+// `Bridge` is a type here and not a value: `MultitrackDomain.bridge` is public,
+// so the reference has to resolve, but a page builds one no more than the Python
+// client's does — `MultitrackEditor` makes it.
+export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
 export { PointsDomain, PointsEditor, PointsView, quads } from "./points.ts";
 export type { CratePoint } from "./points.ts";
 export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";

@@ -66,16 +66,36 @@ export abstract class View<S = unknown> {
     catalogue(
         editor: Editor<S>,
         kind: string,
+        role: string,
         showing: unknown,
         facts: Record<string, unknown>,
+        key = "",
     ): GuiNode {
         const answered = JSON.parse(viewProps(kind, JSON.stringify(facts)) || "{}") as Record<
             string,
             PropValue
         >;
         const { type, ...props } = answered;
-        const id = this.register(editor.newId(), showing);
+        const id = this.widget(editor, role, showing, key);
         return node(typeof type === "string" ? type : kind, { id, ...props });
+    }
+
+    /**
+     * The id of one widget of this picture, **named** rather than leased.
+     *
+     * The door a `build` takes. `role` says what the widget is in this picture
+     * (`"curve"`, `"waveform"`, `"roll"`) and `key` which one it is when a role
+     * has several; together with the structure's identity they name the widget,
+     * and the name gives back the same id on every redraw. So an edit-back in
+     * flight, a correction on its way out and the widget's own screen state all
+     * keep pointing at the widget the hand touched, which a leased id could not
+     * promise across a redraw.
+     *
+     * The spellings are part of the name: two clients drawing one structure must
+     * ask for the same id.
+     */
+    widget(editor: Editor<S>, role: string, showing: unknown, key = ""): number {
+        return this.register(editor.namedId(role, key), showing);
     }
 
     /**

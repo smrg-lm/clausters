@@ -594,6 +594,75 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_def <id> <json>` on a widget **inside** an open window: build that
+     * subtree again and leave the rest of the window exactly as it is.
+     *
+     * {@link GuiHost.define} redefines a widget too — the host frees the old
+     * subtree either way — but it is written for a **window**: it replaces the
+     * handle's whole name map with the names of the tree it was handed, which
+     * for a subtree would leave the window resolving only that subtree's names.
+     * So this is the same message with the bookkeeping a part needs: the names
+     * under the old subtree go, the new ones join what the window already had,
+     * and the handle a page is holding stays the one it holds.
+     *
+     * Why it exists at all: a widget that appeared or went can only arrive by a
+     * definition, and doing that to the **window** rebuilds every widget in it —
+     * so a clip dropped on one lane took the zoom, the scroll and the selection
+     * of every other lane with it. `/gui_def` names any widget, so the answer is
+     * to name the smallest one that changed.
+     */
+    redefine(
+        id: number,
+        tree: GuiNode,
+        blobs: readonly Uint8Array[] = [],
+        window?: number,
+    ): void {
+        const held = window === undefined ? undefined : this.handles.get(window);
+        const gone = this.subtreeIds(id);
+        const inherited = new Map<string, (...args: EventArgs) => void>();
+        const inheritedHand = new Map<string, Map<string, () => void>>();
+        for (const name of held?.names() ?? []) {
+            const wid = held?.widget(name).id;
+            if (wid === undefined || !gone.has(wid)) continue;
+            const func = this.onEventHandlers.get(wid);
+            if (func !== undefined) inherited.set(name, func);
+            const hand = this.onInterfaceHandlers.get(wid);
+            if (hand !== undefined) inheritedHand.set(name, hand);
+        }
+        const rootHandler = this.onEventHandlers.get(id);
+        const rootHand = this.onInterfaceHandlers.get(id);
+        this.recycleSubtree(id, true);
+        const names = new Map<string, number>();
+        const controls = new Map<number, string>();
+        const extra: Uint8Array[] = [];
+        const document = this.stamp(tree, id, names, controls, extra, blobs.length);
+        if (rootHandler !== undefined) this.onEventHandlers.set(id, rootHandler);
+        if (rootHand !== undefined) this.onInterfaceHandlers.set(id, rootHand);
+        for (const [name, func] of inherited) {
+            const wid = names.get(name);
+            if (wid !== undefined) this.onEventHandlers.set(wid, func);
+        }
+        for (const [name, hand] of inheritedHand) {
+            const wid = names.get(name);
+            if (wid !== undefined) this.onInterfaceHandlers.set(wid, hand);
+        }
+        this.send("/gui_def", ["i", id], toJson(document), ...blobs, ...extra);
+        held?.mergeNames(gone, names, controls);
+    }
+
+    /**
+     * Every widget id under `id`, itself included — what a redefine is about to
+     * replace, read before it is replaced.
+     */
+    private subtreeIds(id: number): Set<number> {
+        const found = new Set<number>([id]);
+        for (const child of this.children.get(id) ?? []) {
+            for (const held of this.subtreeIds(child)) found.add(held);
+        }
+        return found;
+    }
+
+    /**
      * Instantiates a **persisted** GuiDef by name (`/gui_load`) — the host
      * replays it as its saved `/gui_def`. The tree is the host's, so this
      * client neither allocates its ids nor resolves its names.

@@ -34,14 +34,14 @@ import {
     viewNotAnEdit,
 } from "../../core/clausters_core_web.js";
 import { TempoMap } from "../../base/time.ts";
-import type { Intent, Selection } from "../../document.ts";
+import type { Intent, RecordedLeg, Selection } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import type { Domain } from "./domain.ts";
-import { Echo } from "./echo.ts";
+import { Application, BASE_ID } from "./application.ts";
 import type { View } from "./view.ts";
 
 let notAnEditHeld: readonly string[] = [];
@@ -105,7 +105,20 @@ export interface GenericEditorOptions<S> {
     extra?: readonly GuiNode[];
     width?: number;
     height?: number;
+    /**
+     * The first widget id a **host-less** draw counts from (tests and tree
+     * inspection). Once opened, the ids come from the host's own recycling pool
+     * instead, so the two never collide. Ignored when `app` is given, since the
+     * id space is then the application's.
+     */
     baseId?: number;
+    /**
+     * The {@link Application} to draw in — the host, the id space, the
+     * acknowledgement. Given none, the editor makes one of its own and is an
+     * application of one; handed one, several editors share a window set and an
+     * undo order.
+     */
+    app?: Application | null;
 }
 
 /** One structure on screen, editable back into it. */
@@ -159,15 +172,14 @@ export class Editor<S = unknown> implements Adopting {
     /** Whether the data changed since the last render. */
     dirty = false;
 
-    protected readonly baseId: number;
-    protected fallbackId: number;
     /**
-     * This view's end of the acknowledgement protocol — the stamp, the floor,
-     * the corrections and the reason. It reads the version out of the context
-     * rather than keeping one, because two windows over one structure report one
-     * counter.
+     * The **application** this editor draws in: the host, the widget-id space,
+     * the acknowledgement and the publish — everything true of a window set
+     * rather than of this structure. Handed one, several editors share a window
+     * set and an undo order; given none, this editor is an application of one,
+     * which is what every editor was before there was a name for it.
      */
-    protected readonly echo: Echo;
+    readonly app: Application;
     /**
      * The version this editor was at when it last answered a host event — what
      * turns "the version moved" into "it moved *by someone else*".
@@ -203,7 +215,8 @@ export class Editor<S = unknown> implements Adopting {
             extra = [],
             width = 1000,
             height = 520,
-            baseId = 10_000,
+            baseId = BASE_ID,
+            app = null,
         }: GenericEditorOptions<S>,
     ) {
         this.structure = structure;
@@ -214,10 +227,11 @@ export class Editor<S = unknown> implements Adopting {
         this.extra = [...extra];
         this.domain = domain;
         this.view = view;
-        this.baseId = Math.trunc(baseId);
-        this.fallbackId = this.baseId;
         this.givenContext = context;
-        this.echo = new Echo(() => this.version);
+        this.app =
+            app ??
+            new Application({ context, baseId, version: () => this.version });
+        this.app.register(this);
     }
 
     // ---- the unit bridge: the data ↔ timeline samples ----
@@ -288,62 +302,78 @@ export class Editor<S = unknown> implements Adopting {
      * which TypeScript's `protected` would refuse.
      */
     newId(): number {
-        return this.host === null ? this.fallbackId++ : this.host.allocId();
+        return this.app.newId(this);
     }
 
     /**
-     * Start a fresh draw's id numbering. Host-less, the fallback counter restarts
-     * at `baseId`; on a host nothing resets — the ids come from its pool.
+     * The id that draws `role`/`key` **of this structure** — the same number for
+     * as long as it keeps being drawn ({@link Application.idFor}).
+     *
+     * The name is the structure's identity in the history, so two views of one
+     * thing agree about which widget draws which part of it, and a redraw leaves
+     * every id where it was. An editor with no structure has no identity to name
+     * and takes a lease instead: nothing can be in flight against a picture with
+     * no data behind it.
+     *
+     * Public where the Python client's is `_named_id`, for the reason
+     * {@link Editor.newId} is: a {@link View} is a collaborator and names its
+     * widgets with these.
      */
+    namedId(role: string, key = ""): number {
+        if (this.structure === null || this.structure === undefined) return this.newId();
+        return this.app.idFor(this.registered(), role, key, this);
+    }
+
+    /** Start this draw ({@link Application.resetIds}). */
     protected resetIds(): void {
-        if (this.host === null) this.fallbackId = this.baseId;
+        this.app.resetIds(this);
     }
 
     // ---- the acknowledgement, delegated to the `Echo` ----
 
     /** The host this editor answers, or `null` before it is opened. */
     protected get host(): GuiHost | null {
-        return this.echo.host;
+        return this.app.host;
     }
 
     protected set host(host: GuiHost | null) {
-        this.echo.host = host;
+        this.app.host = host;
     }
 
     protected get corrections(): [number, Record<string, PropValue>][] {
-        return this.echo.corrections;
+        return this.app.corrections;
     }
 
     protected set corrections(value: [number, Record<string, PropValue>][]) {
-        this.echo.corrections = value;
+        this.app.corrections = value;
     }
 
     protected get reason(): string | undefined {
-        return this.echo.reason;
+        return this.app.reason;
     }
 
     protected set reason(value: string | undefined) {
-        this.echo.reason = value;
+        this.app.reason = value;
     }
 
     protected announce(): void {
-        this.echo.announce();
+        this.app.announce();
     }
 
     protected raiseFloor(): void {
-        this.echo.raiseFloor();
+        this.app.raiseFloor();
     }
 
     protected stale(against: number): boolean {
-        return this.echo.stale(against);
+        return this.app.stale(against);
     }
 
     protected correct(widgetId: number, props: Record<string, PropValue>): void {
-        this.echo.correct(widgetId, props);
+        this.app.correct(widgetId, props);
     }
 
     protected acknowledge(seq: number, reason?: string): void {
-        this.echo.acknowledge(seq, reason);
+        this.app.acknowledge(seq, reason);
     }
 
     // ---- the history: the data's, not this editor's ----
@@ -392,8 +422,15 @@ export class Editor<S = unknown> implements Adopting {
      */
     draw(): GuiNode {
         if (this.view === null) throw new Error("this editor has no view to draw with");
+        // The draw is **bracketed**: every named widget asked for inside it
+        // counts as still drawn, and what the view stopped drawing gives its id
+        // back on the way out. That bracket is what lets an id be an identity
+        // rather than a lease — a widget still in the picture keeps its number,
+        // and only one that is genuinely gone releases it.
         this.resetIds();
-        return this.view.draw(this);
+        const tree = this.view.draw(this);
+        this.app.retireIds(this);
+        return tree;
     }
 
     /**
@@ -414,8 +451,7 @@ export class Editor<S = unknown> implements Adopting {
         { id, stage }: { id?: number; stage?: unknown } = {},
     ): Promise<WindowHandle> {
         if (this.windowId !== null && this.windowHandle !== null) return this.windowHandle;
-        const resolved = await resolveEditorHost(host);
-        this.host = resolved;
+        const resolved = await this.app.resolve(host);
         const handle = resolved.open(this.draw(), { id, element: stage as never });
         this.windowId = handle.id;
         this.windowHandle = handle;
@@ -467,6 +503,7 @@ export class Editor<S = unknown> implements Adopting {
         this.detach();
         if (this.host !== null && window !== null) this.host.close(window);
         this.editing.detach(this);
+        this.app.forget(this);
         return this;
     }
 
@@ -496,8 +533,7 @@ export class Editor<S = unknown> implements Adopting {
      * it.
      */
     wait(timeout?: number): Promise<boolean> {
-        if (this.host === null) return Promise.resolve(this.closed);
-        return this.host.waitWhile(() => !this.closed, timeout);
+        return this.app.wait(() => !this.closed, timeout);
     }
 
     // ---- the edit-back ----
@@ -609,8 +645,8 @@ export class Editor<S = unknown> implements Adopting {
         const rest = args.slice(2);
         if (notAnEdit().includes(tag)) return this.observe(id, tag, rest);
         if (this.domain === null) return false;
-        const payload = this.domain.payload(this.structure, tag, rest);
-        if (payload === null || payload === undefined) {
+        const payloads = this.domain.payloads(this.structure, tag, rest);
+        if (payloads.length === 0) {
             // Nothing, or a refusal. A refusal says why and hands the widget
             // back what it should be drawing, so the picture stops agreeing with
             // the hand instead of with the structure.
@@ -621,7 +657,9 @@ export class Editor<S = unknown> implements Adopting {
             }
             return false;
         }
-        return this.edit(payload, this.domain.label(payload));
+        const label = this.domain.label(payloads[0]);
+        if (payloads.length === 1) return this.edit(payloads[0], label);
+        return this.editAll(payloads, label);
     }
 
     /**
@@ -704,6 +742,41 @@ export class Editor<S = unknown> implements Adopting {
         this.dirty = true;
         const moved = { structure: this.registered(), payload };
         this.editing.moved(moved as unknown as Intent);
+        return true;
+    }
+
+    /**
+     * Apply a run of payloads as **one** entry, so a block edit undoes the way
+     * it was made.
+     *
+     * The same rule as {@link Editor.edit}, and it is spelled out only because
+     * there is no one-call form for a transaction: each inverse is read
+     * immediately before *that* payload lands, never all of them up front — an
+     * inverse read against a state two edits ago puts back a state that never
+     * held.
+     */
+    protected editAll(payloads: readonly unknown[], label: string): boolean {
+        if (this.domain === null) return false;
+        const legs: RecordedLeg[] = [];
+        let moved = false;
+        for (const payload of payloads) {
+            const before = this.domain.current(this.structure, payload);
+            if (!this.domain.project(this.structure, payload)) continue;
+            moved = true;
+            if (before !== null && before !== undefined) {
+                legs.push({
+                    structure: this.registered(),
+                    forward: { edit: payload as Intent },
+                    backward: before,
+                    key: this.domain.coalesceKey(payload),
+                } as RecordedLeg);
+            }
+            this.editing.moved({ structure: this.registered(), payload } as unknown as Intent);
+        }
+        if (!moved) return false;
+        if (legs.length > 0) this.editing.history.record(legs, { label });
+        this.version += 1;
+        this.dirty = true;
         return true;
     }
 
@@ -793,16 +866,7 @@ export class Editor<S = unknown> implements Adopting {
      * pile over several structures is the point.
      */
     protected step(direction: "undo" | "redo"): boolean {
-        const legs = this.editing.step(direction);
-        if (legs === undefined || !this.editing.distribute(legs, this)) return false;
-        // **Once for the walk, not once per window.** The version is the
-        // context's, and every view reports the same one — and only this one
-        // draws from here: the others are told on the way out of the turn, the
-        // way they are told about any edit, so a step is one answer per window
-        // rather than two.
-        this.version += 1;
-        this.reflectStep();
-        return true;
+        return this.app.step(direction, this);
     }
 
     /**

@@ -1,0 +1,267 @@
+// Editing a **piece**: the picture, the report and the history.
+//
+// `MultitrackEditor` is the multitrack as one of the fundamental structures —
+// which is what gives it the undo every other editor has. What is checked here
+// is the seam rather than the mapping: the mapping is the crate's
+// (`multitrackPicture`/`multitrackRead`, the same one the standalone host draws
+// and reads with), so what could still be wrong is this client's half — the axis
+// a box crosses to, which buffer a source was read into, and whether a report
+// that means several edits lands as **one** entry.
+//
+// The mirror of `clients/python/tests/test_gui_multitrack_edit.py`, case for
+// case. Needs the core wasm staged (`./build.sh`); run with `npm test`.
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { loadCore } from "../src/base/core.ts";
+import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
+import { Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
+
+await loadCore();
+
+const SR = 48_000.0;
+
+function window(source: number, start = 0.0, duration = 2.0): Content {
+    return Content.onto({
+        source: { source, lifetime: "session", generation: 0 },
+        start,
+        duration,
+    });
+}
+
+/** Two tracks: the first holding two regions, the second one. */
+function piece(): Multitrack {
+    const held = new Multitrack();
+    held.tracks = [
+        new Track({
+            id: 10,
+            name: "one",
+            lanes: [
+                new Lane({
+                    id: 11,
+                    regions: [
+                        new Region({ id: 12, position: 0.0, length: 2.0, content: window(1) }),
+                        new Region({ id: 13, position: 4.0, length: 2.0, content: window(1) }),
+                    ],
+                }),
+            ],
+        }),
+        new Track({
+            id: 20,
+            name: "two",
+            lanes: [
+                new Lane({
+                    id: 21,
+                    regions: [
+                        new Region({ id: 22, position: 0.0, length: 2.0, content: window(1) }),
+                    ],
+                }),
+            ],
+        }),
+    ];
+    return held;
+}
+
+/** An editor with no window: what is checked here is the seam, and opening one
+ * would need a host. */
+function editor(held: Multitrack, sources: Record<number, number> = { 1: 7 }): MultitrackEditor {
+    return new MultitrackEditor(held, { sampleRate: SR, sources });
+}
+
+/** What the widget is told to draw, without opening a window. */
+function props(ed: MultitrackEditor): Record<string, unknown> {
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    return ed.view!.props(ed, wid) as Record<string, unknown>;
+}
+
+function clips(ed: MultitrackEditor): unknown[][] {
+    const flat = props(ed).clips as unknown[];
+    const out: unknown[][] = [];
+    for (let i = 0; i + 7 <= flat.length; i += 7) out.push(flat.slice(i, i + 7));
+    return out;
+}
+
+/** One `"clips"` report, as the widget would send it. */
+function report(ed: MultitrackEditor, boxes: [string, string, number, number][]): boolean {
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    const values: unknown[] = [];
+    for (const [name, row, at, dur] of boxes) values.push(name, row, at, dur, 0.0, "", 7);
+    return (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "clips", ...values]);
+}
+
+const near = (a: number, b: number, why?: string) =>
+    assert.ok(Math.abs(a - b) < 1e-6, why ?? `${a} != ${b}`);
+
+// ---- the picture ----
+
+test("a row per track and a box per region", () => {
+    const ed = editor(piece());
+    const lanes = props(ed).lanes as unknown[];
+    assert.deepEqual([lanes[0], lanes[6]], ["10", "20"], "named by their track ids");
+    assert.equal(lanes[1], "one");
+    const boxes = clips(ed);
+    assert.deepEqual(boxes.map((b) => b[0]), ["12", "13", "22"]);
+    assert.deepEqual(boxes.map((b) => b[1]), ["10", "10", "20"]);
+    // A beat is a second at the reader's default, so a region at beat 4 is at
+    // four seconds' worth of frames.
+    near(Number(boxes[1][2]), 4.0 * SR);
+    near(Number(boxes[1][3]), 2.0 * SR);
+    assert.equal(boxes[0][6], 7, "the buffer its source was read into");
+});
+
+test("the widget is told the flat rows and not one row per number", () => {
+    // The props are already the wire's, so the node is made from them rather
+    // than through the `multitrack` builder — whose `lanes`/`clips` are the
+    // *tuples* a page types, and which flattened an already-flat list a second
+    // time: six rows named `10`, `one`, `96`, `false`, `false`, `1`.
+    //
+    // Found 2026-09-09 reading the two clients against each other, which is the
+    // only place it was visible: every test read `view.props` and none read the
+    // tree that is actually published.
+    const ed = editor(piece());
+    const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] }).children[0];
+    assert.equal(drawn.type, "multitrack");
+    assert.equal((drawn.lanes as unknown[]).length, 2 * 6, "two tracks, six numbers each");
+    assert.deepEqual((drawn.lanes as unknown[]).slice(0, 3), ["10", "one", 96.0]);
+    assert.equal((drawn.clips as unknown[]).length, 3 * 7, "three regions, seven numbers each");
+    assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
+});
+
+test("a source nobody loaded draws an empty box", () => {
+    const ed = editor(piece(), {});
+    assert.ok(
+        clips(ed).every((b) => b[6] === -1),
+        "negative and not zero: buffer 0 is a buffer",
+    );
+});
+
+test("the piece is placed through its own tempo map", () => {
+    // Four beats are not one length: under a tempo that changes they last longer
+    // later than earlier, and the picture has to say so.
+    const held = piece();
+    held.setTempo(new Tempo({ at: 0.0, bpm: 60.0 }));
+    held.setTempo(new Tempo({ at: 4.0, bpm: 30.0 }));
+    const boxes = clips(editor(held));
+    const atFour = boxes.find((b) => b[0] === "13")!;
+    near(Number(atFour[2]), 4.0 * SR, "four beats at a beat a second");
+    near(Number(atFour[3]), 4.0 * SR, "two beats at half the tempo are four seconds");
+});
+
+// ---- the report, and the history ----
+
+test("a move reaches the piece and undoes", () => {
+    const held = piece();
+    const ed = editor(held);
+    assert.ok(report(ed, [
+        ["12", "10", 2.0 * SR, 2.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    near(held.track(10)!.lanes[0].regions[0].position, 2.0);
+    assert.ok(ed.undo());
+    near(held.track(10)!.lanes[0].regions[0].position, 0.0);
+    assert.ok(ed.redo());
+    near(held.track(10)!.lanes[0].regions[0].position, 2.0);
+});
+
+test("a block move is one entry", () => {
+    // A report is the piece, so one message can mean several edits — and they are
+    // one thing a hand did, so Ctrl+Z walks back over all of it.
+    const held = piece();
+    const ed = editor(held);
+    assert.ok(report(ed, [
+        ["12", "10", 2.0 * SR, 2.0 * SR],
+        ["13", "10", 6.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    // Read through the piece each time: an edit replaces what the piece holds,
+    // so a reference taken before one is a reference to what it held then.
+    const at = () => held.track(10)!.lanes[0].regions.map((r) => r.position);
+    assert.deepEqual(at(), [2.0, 6.0]);
+    assert.ok(ed.undo());
+    assert.deepEqual(at(), [0.0, 4.0], "both back, in one step");
+});
+
+test("a clip that crossed changes track and undoes", () => {
+    const held = piece();
+    const ed = editor(held);
+    assert.ok(report(ed, [
+        ["12", "20", 0.0, 2.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    assert.ok(held.track(20)!.lanes[0].regions.some((r) => r.id === 12));
+    assert.ok(ed.undo());
+    assert.ok(held.track(10)!.lanes[0].regions.some((r) => r.id === 12));
+});
+
+test("a box the piece does not know becomes a region", () => {
+    // A split names its halves after the box they came from, which is no region
+    // id — and that is how a new box is told from a moved one.
+    const held = piece();
+    const ed = editor(held);
+    assert.ok(report(ed, [
+        ["12", "10", 0.0, 1.0 * SR],
+        ["12 2", "10", 1.0 * SR, 1.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    const ids = held.track(10)!.lanes[0].regions.map((r) => r.id);
+    assert.equal(ids.length, 3, "the two that stayed and the new one");
+    assert.ok(ids.includes(12) && ids.includes(13), "it took an unused id");
+    assert.ok(ed.undo());
+    assert.equal(held.track(10)!.lanes[0].regions.length, 2);
+});
+
+test("a report of what holds is not an edit", () => {
+    const held = piece();
+    const ed = editor(held);
+    assert.equal(report(ed, [
+        ["12", "10", 0.0, 2.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]), false);
+    assert.equal(ed.undo(), false, "and nothing was recorded to undo");
+});
+
+test("the strip is the piece's and undoes", () => {
+    const held = piece();
+    const ed = editor(held);
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    assert.ok(
+        (ed as unknown as { route(args: unknown[]): boolean }).route([
+            wid, "lanes",
+            "10", "", 96.0, 0, 0, 1.0,
+            "20", "", 96.0, 1, 0, 0.5,
+        ]),
+    );
+    assert.equal(held.track(20)!.muted, true);
+    near(Number((held.track(20)!.config as { level: number }).level), 0.5);
+    assert.equal(held.track(10)!.muted, false, "the one nobody touched is untouched");
+    assert.ok(ed.undo());
+    assert.equal(held.track(20)!.muted, false);
+});
+
+test("edit opens a piece", async () => {
+    // `edit` dispatches on what the structure is, and a piece is one of the
+    // structures it opens now that its picture and its reading are the crate's.
+    const ed = await edit(piece(), { sampleRate: SR, open: false });
+    assert.ok(ed instanceof MultitrackEditor);
+});
+
+test("two windows over one piece walk one stack", () => {
+    const held = piece();
+    const one = editor(held);
+    const two = editor(held);
+    assert.ok(report(one, [
+        ["12", "10", 2.0 * SR, 2.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    assert.ok(two.undo(), "the history is the data's, not the window's");
+    near(held.track(10)!.lanes[0].regions[0].position, 0.0);
+});

@@ -1777,7 +1777,7 @@ What landed, beyond the list above:
   transport were found by reading the two directories side by side after the
   milestone's own list was done.
 
-### W30 - The editing seam comes across, and the two clients are read against each other
+### ✅ W30 - The editing seam comes across, and the two clients are read against each other *(done 2026-09-09)*
 
 The last structural divergence of the `application-scope` branch, and the one
 the standing rule is written about: **a class that exists in one client and not
@@ -1878,6 +1878,54 @@ and the two `GuiHost` surfaces differ only where `docs/bindings.md` says
 `idiom`; the example pairs have been read side by side and whatever that reading
 turned up is fixed or written down.
 
+**What landed, 2026-09-09.** `Application` holds what a window set owns — the
+host and its resolution, the widget-id space with both its doors, the `Echo`,
+the publish and the walk of the undo order — and an `Editor` reads the rest
+through it, making one of its own when it is handed none. The named id came with
+it: `View.widget(editor, role, showing, key)`, `Editor.namedId`, and the bracket
+`Editor.draw` puts around a draw, so a widget still in the picture keeps its
+number and only one that is genuinely gone releases it. The three built-in views
+name theirs `"curve"`, `"waveform"` and `"roll"`, which are the Python client's
+spellings because two clients drawing one structure must ask for the same id.
+`GuiHost.redefine` is the door for a part, with the bookkeeping the acceptance
+names.
+
+**Three things the branch had grown since this milestone was written came across
+with it**, because a port of a seam that has moved is a port of the old seam:
+`Domain.payloads` and `Editor.editAll` (a report that means several edits lands
+as **one** entry), the whole `MultitrackEditor`/`MultitrackDomain`/
+`MultitrackView`/`Sources` module with `multitrackPicture`/`multitrackRead`
+wrapped beside the model, and `edit()` opening a piece.
+
+**What the reading turned up, which is why it is the milestone's second half.**
+
+- **A defect, in the *Python* client, found from the TypeScript side.**
+  `MultitrackView.build` handed the flat `lanes`/`clips` props to the
+  `multitrack` **builder**, whose own arguments are the tuples a script types —
+  so the tree it published had one row per number: six lanes named `10`, `one`,
+  `96.0`, `False`, `False`, `1.0`. Every test read `view.props` and none read
+  the tree that is actually published, which is exactly the shape of gap this
+  reading exists to find. Both clients now build the node from the props, since
+  the flat form is what `props` has to answer in anyway (a correction rides as a
+  `/gui_set`), and both have the regression test.
+- **A gap with an entry**: the `clausters.log` **area system** is Python-only,
+  and `editing.watch` is one door of it. It is not an editing gap and it is
+  written up under "Parity gaps carried from the Python client" below.
+- **Idiom, recorded rather than closed**: `contexts` (the page's exposure of what
+  the Python client stashes on the structure under `ATTR`), `resolveEditorHost`,
+  `quads`/`quintuples` (the tuple helpers the Python client keeps private in
+  `guidef`), and — one family rather than twelve rows — `GuiHost`'s socket loop
+  (`poll`, `pump`, `read`, `fileno`, `loop`, `looping`, `start`, `listen`,
+  `deliver`, `dispatch`, `subscribe`, `unsubscribe`) against the page's
+  `onMessage`: a Python client owns a socket and must drain it, a page has an
+  event loop.
+- **The example pairs** were read verb by verb: the eight that exist in both
+  (`bpf`, `edit-curve`, `edit-notes`, `edit-samples`, `patch1`, `patch2`,
+  `pianoroll`, `pianoroll-midi`) make the same calls in the same order and none
+  touches what moved here. Two are unpaired and neither is this milestone's:
+  `multitrack_audio.py` has no page (`G34` owns writing one) and `session.py`
+  launches a standalone host, which a page has no counterpart for.
+
 
 ### W31 - The timeline plays what is under the cursor (port of `C54`)
 
@@ -1920,10 +1968,33 @@ from the frame the line is at, one dragged away goes quiet as the hand lifts it
 
 ## Parity gaps carried from the Python client
 
-- ⬜ **The editing seam: an application, and a widget id that names what it
-  draws.** Grew acceptance and an order of its own on 2026-09-07 and is now
-  **`W30`** above, which is where its content lives. Named here so a reader
-  going through the parity gaps is not left thinking it is unrecorded.
+- ✅ **The editing seam: an application, and a widget id that names what it
+  draws.** Grew acceptance and an order of its own on 2026-09-07 and became
+  **`W30`** above, which is where its content lives; closed there 2026-09-09.
+  Named here so a reader going through the parity gaps is not left thinking it
+  is unrecorded.
+
+- ⬜ **The logging area system is Python-only** *(found 2026-09-09, reading the
+  two `gui/editing/` surfaces against each other for `W30`)*. `clausters.log`
+  gives every area of the Python client a logger a script can arm by name —
+  `CLAUSTERS_LOG=gui.editing`, or `watch()` from a script — and the editing path
+  says what it did at five joints: an event routed, an entry recorded, a step of
+  the pile, a publish, an acknowledgement. The web client has none of it: no
+  area registry, no `watch`, and no equivalent of the five lines.
+
+  It surfaced as `editing.watch` missing from one surface, and that is the wrong
+  size to fix it at: a `watch` in `gui/editing` with nothing behind it would be a
+  second logging mechanism rather than a port. What it needs first is the
+  decision a page makes differently — the browser has a console with levels and
+  a filter of its own, so whether the areas become `console` categories, a
+  `debug`-style namespace, or a registry like the Python one's is a design
+  question and not a translation.
+
+  **Why it is worth an entry rather than a shrug:** the trace exists because an
+  editing session fails in ways nothing else can see — a gesture becomes a
+  payload, becomes an entry, comes back as a correction — and "it did the wrong
+  thing after a few edits" is not a bug report anybody can act on. A page has
+  exactly the same failure mode and no way to answer it.
 
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed
   2026-08-05, recorded so a name-by-name diff of the two clients does not

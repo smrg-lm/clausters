@@ -208,6 +208,28 @@ export class WindowHandle extends WidgetHandle {
     }
 
     /**
+     * Adopts a **part** of a redrawn window: the names under the subtree that
+     * went are dropped and the new ones join what the window already had.
+     *
+     * The counterpart of {@link WindowHandle.refreshNames} for a redefine of a
+     * widget inside the window: what the window knows about the rest of itself
+     * is not this subtree's to state.
+     *
+     * @internal
+     */
+    mergeNames(gone: ReadonlySet<number>, names: Map<string, number>,
+               controls: Map<number, string>): void {
+        for (const [name, id] of [...this.bound]) {
+            if (gone.has(id)) this.bound.delete(name);
+        }
+        for (const id of [...this.controlMap.keys()]) {
+            if (gone.has(id)) this.controlMap.delete(id);
+        }
+        for (const [name, id] of names) this.bound.set(name, id);
+        for (const [id, control] of controls) this.controlMap.set(id, control);
+    }
+
+    /**
      * Wire every widget built from a def control straight to `node`.
      *
      * The counterpart of {@link knob} taking a control: the widget already

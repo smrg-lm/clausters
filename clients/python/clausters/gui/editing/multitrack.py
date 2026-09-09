@@ -289,10 +289,16 @@ class MultitrackView(View):
         self.link = link
 
     def build(self, editor) -> dict:
-        from ..guidef import multitrack, window
+        from ..guidef import node, window
 
+        # **The props are already what the wire takes**, so the node is made
+        # from them directly rather than through `clausters.gui.guidef.multitrack`,
+        # whose `lanes`/`clips` are the *tuples* a script types and which would
+        # flatten an already-flat list a second time — one row per number. The
+        # flat form is the one `props` has to answer in anyway, since a
+        # correction rides as a `/gui_set`.
         wid = self.widget(editor, "multitrack", editor.structure)
-        return window(multitrack(id=wid, **self.props(editor, wid)),
+        return window(node("multitrack", id=wid, **self.props(editor, wid)),
                       *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
