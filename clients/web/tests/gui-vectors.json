@@ -461,11 +461,27 @@
           "overview": 1
         },
         {
-          "type": "field",
+          "type": "multitrack",
           "id": 3,
-          "label": "drums",
-          "height": 2.0,
+          "lanes": [
+            "d",
+            "drums",
+            96.0,
+            0,
+            0,
+            1.0
+          ],
+          "clips": [
+            "t",
+            "d",
+            0.0,
+            48000.0,
+            0.0,
+            "take",
+            7
+          ],
           "snap": 1200.0,
+          "label": "drums",
           "axes": {
             "x": {
               "unit": "time",
@@ -476,51 +492,7 @@
               "playhead_loop_start": 0.0,
               "playhead_loop_len": 96000.0
             }
-          },
-          "children": [
-            {
-              "type": "field",
-              "id": 4,
-              "dur": 48000.0,
-              "offset": 0.0,
-              "path": "take.f32",
-              "channels": 1,
-              "base_bucket": 256,
-              "label": "take"
-            },
-            {
-              "type": "field",
-              "id": 5,
-              "dur": 24000.0,
-              "offset": 48000.0,
-              "notes": [
-                0.0,
-                12000.0,
-                64.0,
-                100,
-                0
-              ],
-              "min": 48.0,
-              "max": 84.0
-            },
-            {
-              "type": "field",
-              "id": 6,
-              "dur": 24000.0,
-              "offset": 72000.0,
-              "points": [
-                0.0,
-                0.0,
-                1,
-                0.0,
-                24000.0,
-                1.0,
-                3,
-                0.0
-              ],
-              "exp": 0
-            }
-          ]
+          }
         }
       ]
     }
@@ -533,33 +505,18 @@
       "flow": "col",
       "children": [
         {
-          "type": "field",
-          "id": 1,
-          "label": "drums",
-          "children": [
-            {
-              "type": "field",
-              "id": 2,
-              "dur": 48000.0,
-              "offset": 0.0,
-              "data": "keep",
-              "label": "take"
-            },
-            {
-              "type": "field",
-              "id": 3,
-              "dur": 24000.0,
-              "offset": 48000.0,
-              "data": "keep"
-            }
-          ]
-        },
-        {
           "type": "signal",
           "id": 4,
           "view": "trace",
           "data": "keep",
           "channels": 2
+        },
+        {
+          "type": "signal",
+          "id": 5,
+          "view": "spectrogram",
+          "data": "keep",
+          "channels": 1
         }
       ]
     }
@@ -766,28 +723,6 @@
               "text": "placed in content units",
               "x": 0.0,
               "y": 0.0
-            }
-          ]
-        },
-        {
-          "type": "field",
-          "id": 7,
-          "label": "drums",
-          "height": 2.0,
-          "axes": {
-            "x": {
-              "unit": "time",
-              "sample_rate": 48000.0,
-              "link": 1
-            }
-          },
-          "children": [
-            {
-              "type": "field",
-              "id": 8,
-              "offset": 0.0,
-              "dur": 48000.0,
-              "label": "take"
             }
           ]
         },

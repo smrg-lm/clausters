@@ -42,22 +42,9 @@ mod read;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
-/// A lane header's part, re-exported so the gesture machine names one without
-/// reaching into the lane's geometry module: the header is the lane's chrome,
-/// and this is the door onto it.
-pub(crate) use crate::host::graphics::track::HeaderPart;
-
 /// The box geometry a clip shares with a note, re-exported so the gesture
 /// machine names one placement rather than two.
-pub(crate) use crate::host::placement::{Contents, Part, Placement};
-pub(crate) use coords::{
-    Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of, sample_at, time_of,
-};
-pub(crate) use edit::{
-    clear_clip_selection, clip_set, header_set, lane_resize, scroll_set_view, select_clips_in,
-    set_clip_selected,
-};
-pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};
-pub(crate) use read::{
-    clip_event_args, clip_lane_event_args, clips_event_args, lane_event_args, plane_can_pan,
-};
+pub(crate) use coords::{Coords, Frame, Hit, plane_of, sample_at, time_of};
+pub(crate) use edit::scroll_set_view;
+pub(crate) use hit::{hit, sole_time_axis};
+pub(crate) use read::plane_can_pan;

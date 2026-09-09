@@ -8,21 +8,6 @@ use serde_json::{Map, Value};
 
 use super::super::elements::signal::Presentation;
 use super::*;
-use element::BodyRole;
-
-/// Whether a `field` is the **free-standing ruler**: a strip of a given
-/// thickness with nothing placed on it and no lane chrome. Everything else a
-/// field can be draws something or names a lane, and an empty lane — which a
-/// multitrack opens all the time — must not read as a ruler.
-fn is_bare_ruler(props: &Map<String, Value>, has_children: bool) -> bool {
-    props.contains_key("h")
-        && !has_children
-        && ![
-            "label", "height", "header_w", "mute", "solo", "level", "snap",
-        ]
-        .iter()
-        .any(|k| props.contains_key(*k))
-}
 
 /// Whether a container carries the `hug` prop: its size follows its content
 /// rather than its container's. Off unless the wire says otherwise, so no
@@ -37,7 +22,7 @@ fn hug(props: &Map<String, Value>) -> bool {
 pub(super) fn build_kind(
     kind: &str,
     props: &Map<String, Value>,
-    has_children: bool,
+    _has_children: bool,
     blobs: &[Vec<u8>],
 ) -> Result<WidgetKind, String> {
     Ok(match kind {
@@ -91,38 +76,13 @@ pub(super) fn build_kind(
             flow: Flow::parse(props),
             view: ScrollView::parse(props),
         },
-        // Two independent axes, told apart by what is on it: a placement
-        // makes it a clip on its parent's x axis, a bare strip of a given
-        // thickness with nothing placed and no lane chrome is the
-        // free-standing ruler, and everything else is a lane — including an
-        // empty one, which a multitrack opens all the time.
-        "field" if props.contains_key("offset") || props.contains_key("dur") => WidgetKind::Clip {
-            offset: number_f64(props, "offset", 0.0).max(0.0),
-            dur: number_f64(props, "dur", 0.0).max(0.0),
-            label: label(props),
-        },
-        "field" if is_bare_ruler(props, has_children) => WidgetKind::TimeRuler {
+        // **One meaning left**: the free-standing ruler over a navigation
+        // group. `field` used to be three things told apart by what was on it
+        // — a lane, a clip placed on its parent's axis, or this — and the
+        // first two are `multitrack` props now (`G34`): a lane cannot sit in a
+        // void, so it is always inside the view that owns it.
+        "field" => WidgetKind::TimeRuler {
             editor: EditorProps::parse(props, RulerY::Off),
-        },
-        "field" => WidgetKind::Track {
-            label: label(props),
-            height: number(props, "height", 1.0).max(0.0),
-            snap: number_f64(props, "snap", 0.0).max(0.0),
-            // Presence-driven: a lane that names no `mute` offers no mute
-            // button, so a header stays the name strip it always was.
-            header: crate::host::graphics::track::Header {
-                w: props
-                    .get("header_w")
-                    .and_then(Value::as_f64)
-                    .map(|w| w as f32),
-                mute: props.get("mute").and_then(truthy),
-                solo: props.get("solo").and_then(truthy),
-                level: props
-                    .get("level")
-                    .and_then(Value::as_f64)
-                    .map(|v| (v as f32).clamp(0.0, 1.0)),
-            },
-            editor: EditorProps::parse_lane(props),
         },
         // No arm above answers to this name, so it is an **element**: a
         // built-in that has moved behind the trait, else whatever a program
@@ -140,164 +100,6 @@ pub(super) fn build_kind(
             }
         }
     })
-}
-
-/// The bodies a `clip` node describes, as the child widgets they are — back to
-/// front, so they **layer**: the take, the events over it, the envelope over
-/// both. A body the props do not describe is simply absent (a clip is not
-/// obliged to carry all three, and an empty one draws nothing but its frame).
-///
-/// This is the one place a clip's wire props become elements. The elements
-/// themselves are the ordinary ones — a signal element for the take, a
-/// roll for the events, a break-point curve for the automation — so
-/// nothing here re-describes what they are; it only says which props feed
-/// which, and with what default axis.
-pub(super) fn clip_bodies(
-    props: &Map<String, Value>,
-    blobs: &[Vec<u8>],
-) -> Result<Vec<Widget>, String> {
-    let mut out = Vec::new();
-    if let Some(take) = clip_take(props, blobs)? {
-        out.push(body_widget(take));
-    }
-    if let Some(roll) = super::super::elements::notes::body(props) {
-        out.push(body_widget(WidgetKind::Custom(Box::new(roll))));
-    }
-    if let Some(curve) = super::super::elements::curve::body(props) {
-        out.push(body_widget(WidgetKind::Custom(Box::new(curve))));
-    }
-    Ok(out)
-}
-
-/// A clip body as a tree node: a widget with **no id** (the clip is what a
-/// script addresses) and no place props (a body fills the clip's rectangle —
-/// they layer rather than divide it, which is the layout's rule for a time
-/// container's contents, not a prop of theirs).
-pub(super) fn body_widget(kind: WidgetKind) -> Widget {
-    Widget {
-        id: None,
-        kind,
-        place: Place::default(),
-        gestures: None,
-        theme_over: None,
-        color: None,
-        opacity: None,
-        radius: None,
-        theme: None,
-        alpha: 1.0,
-        visible: true,
-        span: None,
-        window: None,
-        layer: crate::host::layers::Layer::Placement,
-        selected: false,
-        children: Vec::new(),
-    }
-}
-
-/// An **empty** body filling `role`, for a clip growing one it was not built
-/// with (a `/gui_set` of `points` on a clip that had only a take). The same
-/// three elements, with nothing in them yet.
-pub(super) fn empty_clip_body(role: BodyRole) -> Option<WidgetKind> {
-    let candidates: [WidgetKind; 3] = [
-        WidgetKind::Custom(Box::new(take_element(
-            signal::Data {
-                samples: Arc::from([] as [f32; 0]),
-                channels: 1,
-                buffer: None,
-                path: None,
-                cache: None,
-                base_bucket: DEFAULT_BASE_BUCKET,
-                bulk: true,
-                body: None,
-            },
-            Presentation::Signal,
-        ))),
-        WidgetKind::Custom(Box::new(super::super::elements::notes::empty_body())),
-        WidgetKind::Custom(Box::new(super::super::elements::curve::empty_body())),
-    ];
-    candidates
-        .into_iter()
-        .find(|k: &WidgetKind| k.body_role() == Some(role))
-}
-
-/// The signal element a clip's take is, over `source`: a stored presentation
-/// with every capability off and no chrome — it is drawn against the clip's
-/// axis, and the clip is what navigates.
-///
-/// `view` is the presentation the clip asked for: the trace (the default), or
-/// the time-frequency texture — the same signal, seen the other way, placed in
-/// time like any take. A presentation with nothing to draw over a stored source
-/// falls back to the trace rather than leaving the clip blank.
-fn take_element(source: signal::Data, view: Presentation) -> signal::SignalElement {
-    let view = match view {
-        Presentation::Signal | Presentation::TimeFrequency => view,
-        _ => Presentation::Signal,
-    };
-    let mut el = signal::SignalElement::from_preset(&signal::point(view, false, true));
-    el.caps = signal::Caps::default();
-    el.editor.ruler = Ruler::Off;
-    el.editor.ruler_y = RulerY::Off;
-    el.source = signal::Source::Data(source);
-    el
-}
-
-/// A clip's **take**: a signal element over the clip's source props, with every
-/// capability off — it is drawn against the clip's axis, and the clip is what
-/// navigates. `bulk`, because a take is a take: it resolves as a peak pyramid,
-/// never as an array of samples, however long the samples turns out to be.
-fn clip_take(props: &Map<String, Value>, blobs: &[Vec<u8>]) -> Result<Option<WidgetKind>, String> {
-    let samples = inline_samples("clip", None, props, blobs)?;
-    let (buffer, path, cache) = (
-        props
-            .get("buffer")
-            .and_then(Value::as_i64)
-            .map(|n| n as i32),
-        props.get("path").and_then(Value::as_str).map(PathBuf::from),
-        props
-            .get("cache")
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-    );
-    // A clip with no source at all has no take, and that is how a roll-only or
-    // a curve-only clip is spelled. A clip that says `keep` **does** have one —
-    // the run the host is already holding — so the body is built here, empty,
-    // for the reconcile to fill: without it there would be nothing to fill.
-    if samples.is_empty()
-        && buffer.is_none()
-        && path.is_none()
-        && cache.is_none()
-        && !parse::keeps_bulk(props)
-    {
-        return Ok(None);
-    }
-    let mut el = take_element(
-        signal::Data {
-            samples,
-            channels: props
-                .get("channels")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(1),
-            buffer,
-            path,
-            cache,
-            base_bucket: props
-                .get("base_bucket")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(DEFAULT_BASE_BUCKET),
-            bulk: true,
-            body: None,
-        },
-        props
-            .get("view")
-            .and_then(Value::as_str)
-            .and_then(Presentation::parse)
-            .unwrap_or(Presentation::Signal),
-    );
-    el.spectral = spectral_props(props, el.spectral, "window_size");
-    el.value = signal::ValueRange::new(number(props, "min", -1.0), number(props, "max", 1.0));
-    Ok(Some(WidgetKind::Custom(Box::new(el))))
 }
 
 /// The spectral parameters a signal names, over `base` (its preset's): the

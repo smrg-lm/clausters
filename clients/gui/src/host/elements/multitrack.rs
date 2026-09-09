@@ -993,6 +993,14 @@ impl Element for Multitrack {
         true
     }
 
+    /// **The empty bars after the last clip are ordinary time.** A view of a
+    /// signal stops at its last sample; a piece is composed into the space
+    /// after what it already holds, so the axis is not bounded by the boxes on
+    /// it — which is also where its authoring headroom comes from.
+    fn unbounded_axis(&self) -> bool {
+        true
+    }
+
     /// **The takes its clips are windows onto**, by server buffer number.
     ///
     /// The plural of the one source a picture asks for: this element holds

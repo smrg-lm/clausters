@@ -3,7 +3,7 @@
 
 Panning, sweeping a selection and locating the transport belong to the
 **coordinate system** a container gives its contents, not to whatever is drawn
-inside it. That is why one Shift+drag pans a ``waveform``, a ``track`` lane, a
+inside it. That is why one Shift+drag pans a ``waveform``, a ``multitrack``, a
 ``pianoroll`` and a free-standing ``timeruler`` alike, why a plain drag on a
 ``scroll``'s background pans the plane, and why a press a container does not
 want falls *outward* to the container around it.
@@ -23,19 +23,19 @@ value is an ordered plan of steps:
 - ``none`` — nothing.
 
 This window shows the same views twice. The **left** column keeps the defaults
-(``"element marquee"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
-waveform); the **right** one is told to pan on a plain drag and select with
+(``"element marquee"`` / ``"pan"`` on a multitrack, ``"select"`` / ``"pan"`` on
+a waveform); the **right** one is told to pan on a plain drag and select with
 Shift — the reversal, with no element's code involved. A menu switches the
 right column live through ``set(gestures=...)``, which starts again from the
 kind's defaults each time, so a table names only the chords it changes.
 
 **Two kinds of axis, and they do not share a navigation group.** A ``waveform``
-is bounded by its own content — its axis *is* the take — while a ``track`` lane
+is bounded by its own content — its axis *is* the take — while a ``multitrack``
 and a ``pianoroll`` are open-ended surfaces you place things on and zoom past
-the end of. So the lanes, the rolls and the rulers share one group here, and
-each waveform navigates alone. Audio joins a multitrack the way it does in
-``editors/multitrack.py``: inside a ``clip``, which is what gives it a placement on
-the open axis. The lane below each ruler carries the very same take that way.
+the end of. So the multitracks, the rolls and the rulers share one group here,
+and each waveform navigates alone. Audio joins a multitrack the way it does in
+``editors/multitrack.py``: as a **box** naming the buffer it draws, which is
+what gives it a placement on the open axis.
 
 Two gestures are deliberately *not* in the table, because they are not
 ambiguous: a press on a view's vertical strip (the waveform's ``ruler_y``, the
@@ -52,8 +52,9 @@ import os
 import sys
 import tempfile
 
-from clausters import Session
-from clausters.gui import (clip, label, menu, panel, pianoroll, samples_to_file, timeruler, track, view, waveform)
+from clausters import Buffer, Session
+from clausters.gui import (label, menu, multitrack, panel, pianoroll,
+                           samples_to_file, timeruler, view, waveform)
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -82,7 +83,7 @@ NOTES = [(i * beat / 2, beat / 3, 60 + (i % 5) * 2, 100, 0) for i in range(16)]
 # The reversal: a plain drag pans, Shift sweeps the selection. The chords the
 # table does not name (`ctrl`, `alt`) keep the kind's defaults.
 REVERSED = {"drag": "pan", "shift": "select"}
-# ...and on a lane, `element` still comes first, so a clip is grabbed before
+# ...and on a multitrack, `element` still comes first, so a box is grabbed before
 # the container gets to pan: a plan is an *order*.
 LANE_PANS = {"drag": "element pan", "shift": "locate"}
 
@@ -104,9 +105,11 @@ def column(tag: str, gestures: dict | None):
     return panel(
         label(text=tag),
         timeruler(name=f"{tag}-ruler", link=1, h=18.0, sample_rate=SR, **extra),
-        track(clip(name=f"{tag}-clip", path=raw_path, channels=1,
-                   offset=0.0, dur=float(frames), label="take"),
-              name=f"{tag}-lane", label="audio", link=1, snap=beat, height=90.0, **extra),
+        multitrack(name=f"{tag}-lane", label="audio", link=1, snap=beat, h=90.0,
+                   lanes=[("audio", "audio")],
+                   clips=[("take", "audio", 0.0, float(frames), 0.0, "take",
+                           take_buf.bufnum)],
+                   sample_rate=SR, **extra),
         pianoroll(name=f"{tag}-roll", notes=NOTES, min=48, max=84, snap=beat / 2,
                   link=1, sample_rate=SR, **extra),
         # No `link`: a waveform's axis is its own content, so it navigates by
@@ -116,6 +119,14 @@ def column(tag: str, gestures: dict | None):
     )
 
 
+# The take on the server, because a multitrack's box draws a **buffer**: it
+# names what the piece plays rather than a file of its own, which is the whole
+# difference between placing audio and looking at it.
+session = Session.live()
+gui = session.gui()
+take_buf = Buffer.from_samples(list(take.samples), server=session.server)
+session.server.sync()
+
 scene = view(
     panel(column("default", None), column("reversed", REVERSED), layout="row"),
     panel(label(text="right column:"),
@@ -124,11 +135,9 @@ scene = view(
     title="Gestures: the container decides", w=1100, h=760, layout="col",
 )
 
-session = Session.live()
-gui = session.gui()
 win = scene.open()
 print(f"opened window {win}")
-print("left column:  drag a lane sweeps (a click locates), drag its clip moves it, "
+print("left column:  drag a lane sweeps (a click locates), drag its box moves it, "
       "drag the waveform selects, Shift+drag pans anywhere")
 print("right column: drag pans everywhere, Shift+drag selects")
 
@@ -153,7 +162,7 @@ def report(tag, *vals):
 
 win["preset"].on_event(on_preset)
 for side in ("default", "reversed"):
-    for tag in ("ruler", "lane", "roll", "wave", "clip"):
+    for tag in ("ruler", "lane", "roll", "wave"):
         win[f"{side}-{tag}"].on_event(report)
 
 # %% [markdown]

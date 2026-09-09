@@ -8,9 +8,7 @@
 
 use clausters_core::osc::OscType;
 
-use super::super::interact;
 use super::super::status;
-use super::super::widget::Widget;
 use super::super::{Host, HostEffect};
 use super::GestureEffect;
 use super::nav::group_view;
@@ -137,80 +135,6 @@ pub(super) fn deliver_args(
         return redraws(out, effects);
     }
     emit(host, out, def_id, widget_id, args);
-}
-
-/// Delivers the tagged payload `read` finds for `widget_id` in the window's
-/// tree — the whole of what every edit-back emitter below does, so each of them
-/// is the name of a payload and nothing else, and the next one is a line rather
-/// than another copy of this pair of statements.
-pub(super) fn emit_read(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-    read: impl FnOnce(&Widget, i32) -> Option<Vec<OscType>>,
-) {
-    let args = host.window_def(def_id).and_then(|t| read(t, widget_id));
-    deliver_args(host, out, def_id, widget_id, args);
-}
-
-/// Delivers a lane header control's new value (`"mute"`/`"solo"`/`"level"`).
-pub(super) fn emit_lane(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-    part: interact::HeaderPart,
-) {
-    emit_read(host, out, def_id, widget_id, |t, id| {
-        interact::lane_event_args(t, id, part)
-    });
-}
-
-/// Delivers a `clip`'s edited placement (`"clip" offset dur`).
-pub(super) fn emit_clip(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-) {
-    emit_read(host, out, def_id, widget_id, interact::clip_event_args);
-}
-
-/// Emits a clip's **lane change** — `/gui_event clip "lane" lane offset dur
-/// start` — the one report that names where a clip now *is* rather than only
-/// where it sits.
-pub(super) fn emit_clip_lane(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    clip_id: i32,
-    lane_id: i32,
-) {
-    emit_read(host, out, def_id, clip_id, |tree, id| {
-        interact::clip_lane_event_args(tree, id, lane_id)
-    });
-}
-
-/// Emits a block edit — `/gui_event lane "clips" id offset dur start …` — over
-/// every clip the hand is holding, wherever in the stack it sits.
-///
-/// **One message even when the block spans lanes**, and that is the whole
-/// reason it takes a list: one gesture is one edit, and each clip is named by
-/// its own widget id, so the owner applies the lot as a single transaction and
-/// undoes it in one step. A message per lane would be an undo entry per lane —
-/// the very thing the plural payload exists to avoid. It is addressed to the
-/// lane the hand was on, which is where the gesture happened.
-pub(super) fn emit_clips(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    at: i32,
-    lanes: &[i32],
-) {
-    emit_read(host, out, def_id, at, |tree, _| {
-        interact::clips_event_args(tree, lanes)
-    });
 }
 
 /// Repaints every window in `roots` (the windows a group mutation touched).

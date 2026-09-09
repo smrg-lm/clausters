@@ -44,8 +44,6 @@
 
 use std::collections::HashMap;
 
-use crate::viewport::View;
-
 use super::metrics::Metrics;
 use super::scroll;
 use super::timeline::{self, GroupKey, group_key};
@@ -134,11 +132,6 @@ struct Space {
     zooms: f32,
     /// The size table at [`Space::unit`].
     metrics: Metrics,
-    /// The **time window** the container placed this widget on, when it is a
-    /// time container's contents: a clip gets the slice of its own `[0, dur]`
-    /// its (clamped) rectangle shows. `None` everywhere else — most of a window
-    /// is not on a time axis at all.
-    time: Option<View>,
 }
 
 impl Space {
@@ -148,7 +141,6 @@ impl Space {
             unit: metrics.ui_scale,
             zooms: 1.0,
             metrics: *metrics,
-            time: None,
         }
     }
 
@@ -160,7 +152,6 @@ impl Space {
             unit: 1.0,
             zooms: self.zooms,
             metrics: self.metrics.at(1.0),
-            time: self.time,
         }
     }
 
@@ -173,17 +164,6 @@ impl Space {
             unit: zooms,
             zooms,
             metrics: self.metrics.at(zooms),
-            time: self.time,
-        }
-    }
-
-    /// The same space on a time axis: the window a time container placed this
-    /// widget on. What makes a clip's contents a coordinate system — they read
-    /// this and their rectangle, never the lane's gutter or the group's window.
-    fn on_time(self, view: View) -> Self {
-        Self {
-            time: Some(view),
-            ..self
         }
     }
 
@@ -193,11 +173,13 @@ impl Space {
     }
 }
 
-/// A widget and the rectangle it occupies. Emitted parent-before-child, so
-/// drawing in order paints containers under their contents. `clip` is the
-/// rectangle the widget must stay visually inside — `None` for the window
-/// itself, the enclosing `scroll`'s area for anything scrolled (the renderer
-/// clips its geometry to it, and hit-testing ignores the part outside it).
+/// One widget as the layout resolved it: where it is, what it is clipped to,
+/// and the scale and size table it is drawn and hit-tested with.
+///
+/// `clip` is the rectangle the widget must stay visually inside — `None` for
+/// the window itself, the enclosing `scroll`'s area for anything scrolled (the
+/// renderer clips its geometry to it, and hit-testing ignores the part outside
+/// it).
 #[derive(Debug, Clone, Copy)]
 pub struct Placed<'a> {
     pub rect: Rect,
@@ -219,54 +201,13 @@ pub struct Placed<'a> {
     /// member's rect — the shared gutter of the axis it is on, `0` for anything
     /// that is not on one. Resolved once per window here, because the renderer
     /// and the hit-test must agree on it and both read this vector.
-    ///
-    /// It is `0` inside a time container too, whatever group the child is on:
-    /// the gutter is the *container's*, and a lane's body already starts past
-    /// it — a member drawn in there (a clip's take, a heavy view used as a
-    /// lane's body) would otherwise indent by it a second time.
     pub indent: f32,
-    /// The visible window of the **time axis this placement's rectangle spans**,
-    /// when its container placed it on one: a clip carries the slice of its own
-    /// `[0, dur]` that its (clamped) rectangle shows, so everything drawn or hit
-    /// inside it maps through `(rect, time)` alone. `None` for anything not on a
-    /// time axis. Resolved here because the renderer and the hit-test must agree
-    /// on it and both read this vector.
-    pub time: Option<View>,
     /// The index of this widget's container in the returned vector, `None` for
     /// the root. The pass emits parent-before-child, so an ancestry is walked
     /// back from any placement without searching the tree for it: it is the
     /// containment the layout already knows, kept instead of thrown away.
     pub parent: Option<usize>,
     pub widget: &'a Widget,
-}
-
-/// Where a **time container** gets the window it places its contents through:
-/// a `track` places its clips on its navigation group's visible window, so the
-/// layout of a multitrack is a function of where the axis currently stands.
-///
-/// It is a seam rather than a lookup because the groups live on the `Host` and
-/// this pass is pure geometry; a caller with no groups (a test, a measurement)
-/// passes [`NoAxis`] and every time container falls back to its own content
-/// span, which is what an un-navigated lane shows anyway.
-pub trait AxisSource {
-    /// The visible window of the group member `id` belongs to.
-    fn nav(&self, id: i32, link: Option<i32>) -> Option<View>;
-}
-
-/// An axis source that knows nothing: every time container falls back to its
-/// own full content span.
-pub struct NoAxis;
-
-impl AxisSource for NoAxis {
-    fn nav(&self, _id: i32, _link: Option<i32>) -> Option<View> {
-        None
-    }
-}
-
-impl<F: Fn(i32, Option<i32>) -> Option<View>> AxisSource for F {
-    fn nav(&self, id: i32, link: Option<i32>) -> Option<View> {
-        self(id, link)
-    }
 }
 
 /// Lays out `root` into `area` (physical pixels), returning every widget with
@@ -276,27 +217,22 @@ impl<F: Fn(i32, Option<i32>) -> Option<View>> AxisSource for F {
 /// `ui_scale` — pass the window's resolved table
 /// ([`Host::metrics_for`](super::Host::metrics_for)), not the logical one.
 pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
-    layout_on(area, root, metrics, &NoAxis)
+    layout_on(area, root, metrics)
 }
 
 /// [`layout`] with the navigation windows its time containers place on — the
 /// form the renderer and the hit-test call, so a clip lands on the same pixels
 /// for drawing and for dragging.
-pub fn layout_on<'a>(
-    area: Rect,
-    root: &'a Widget,
-    metrics: &Metrics,
-    axis: &dyn AxisSource,
-) -> Vec<Placed<'a>> {
+pub fn layout_on<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
     let floor = timeline::group_indents(root, metrics);
-    let out = place_all(area, root, metrics, axis, floor.clone());
+    let out = place_all(area, root, metrics, floor.clone());
     // A value ruler's labels are a property of the data, so the width one needs
     // is only known once its member has a height. That is one pass too late, so
     // the members are measured and the pass is taken again — but only when the
     // measure asks for more than the roles reserved, which an ordinary window
     // never does.
     match timeline::measured_indents(&out, &floor) {
-        Some(indents) => place_all(area, root, metrics, axis, indents),
+        Some(indents) => place_all(area, root, metrics, indents),
         None => out,
     }
 }
@@ -306,15 +242,10 @@ fn place_all<'a>(
     area: Rect,
     root: &'a Widget,
     metrics: &Metrics,
-    axis: &dyn AxisSource,
     indents: HashMap<GroupKey, f32>,
 ) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
-    let ctx = Ctx {
-        metrics,
-        axis,
-        indents,
-    };
+    let ctx = Ctx { metrics, indents };
     place(
         area,
         root,
@@ -333,7 +264,6 @@ fn place_all<'a>(
 /// groups currently stand at.
 struct Ctx<'x> {
     metrics: &'x Metrics,
-    axis: &'x dyn AxisSource,
     indents: HashMap<GroupKey, f32>,
 }
 
@@ -374,7 +304,6 @@ fn place<'a>(
         scale: space.unit,
         metrics: space.metrics,
         indent: indent.unwrap_or_else(|| ctx.indent(widget)),
-        time: space.time,
         parent,
         widget,
     });
@@ -404,11 +333,6 @@ fn place<'a>(
             }
             return;
         }
-        // The time containers: a lane places its clips on the shared axis, a
-        // clip places its bodies on its own local one.
-        WidgetKind::Track { .. } | WidgetKind::Clip { .. } => {
-            return place_on_time(area, widget, clip, space, ctx, me, out);
-        }
         _ => return, // leaves have no children to place
     };
     let inner = area.inset(margin(flow, space));
@@ -420,136 +344,6 @@ fn place<'a>(
         space,
     )) {
         place(rect, child, clip, space, ctx, Some(me), out, None);
-    }
-}
-
-/// Places the contents of a **time container**: the one place a coordinate
-/// system made of a visible window and a placement becomes rectangles.
-///
-/// A `track` puts each `clip` child at its `[offset, offset + dur]` span on the
-/// group's window, inside the lane body (which starts at the axis' shared
-/// indent, and reserves the lane's own ruler strip at the bottom). A `clip`
-/// gives each of its own children the whole clip rect: its bodies **layer** —
-/// a curve over the notes over the take — rather than dividing the box, and
-/// each reads the clip's local axis `[0, dur]`, which is why a clip lifted into
-/// another parent draws the same without re-deriving anything.
-///
-/// A clip outside the visible window is placed empty (zero width) rather than
-/// skipped: the tree and the placement vector stay parallel, so `Placed::parent`
-/// keeps meaning what it says.
-fn place_on_time<'a>(
-    area: Rect,
-    widget: &'a Widget,
-    clip: Option<Rect>,
-    space: Space,
-    ctx: &Ctx,
-    me: usize,
-    out: &mut Vec<Placed<'a>>,
-) {
-    let body = match &widget.kind {
-        WidgetKind::Track { editor, .. } => {
-            let ruler_on = editor.ruler != super::widget::Ruler::Off;
-            crate::host::graphics::track::lane_body(
-                area,
-                ruler_on,
-                ctx.indent(widget),
-                &space.metrics,
-            )
-        }
-        // A clip's own box is the coordinate system its bodies fill.
-        _ => area,
-    };
-    let nav = match &widget.kind {
-        WidgetKind::Track { editor, .. } => widget
-            .id
-            .and_then(|id| ctx.axis.nav(id, editor.link))
-            .unwrap_or_else(|| crate::host::graphics::track::window_nav(widget)),
-        // The clip's own axis: the slice of its span its rectangle shows,
-        // handed down by the lane that placed it (its whole span when nothing
-        // did — a clip outside a lane, or a measurement pass with no groups).
-        WidgetKind::Clip { dur, .. } => space
-            .time
-            .unwrap_or_else(|| View::full(dur.ceil().max(1.0) as usize)),
-        _ => return,
-    };
-    for child in &widget.children {
-        // A **hidden layer** is not placed at all: a container's contents are
-        // a stack of pictures, and one that is turned off is neither drawn nor
-        // hit. Skipping it costs the siblings nothing, since a container's
-        // layered contents all fill the same box (see `Widget::visible`).
-        if !child.visible && child.kind.body_role().is_some() {
-            continue;
-        }
-        let (rect, inner) = match (&widget.kind, &child.kind) {
-            (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
-                // The floor a clip is drawn no thinner than is the **hairline**
-                // — the line every divider in the host is drawn with. It says
-                // "a clip is here" and nothing about how long it is, which is
-                // what lets the drawing keep tracking the zoom all the way
-                // down; a floor wide enough to grab would freeze the clip's
-                // apparent length instead.
-                let rect = match crate::host::graphics::track::clip_x_range(
-                    body,
-                    &nav,
-                    *offset,
-                    *dur,
-                    space.metrics.divider_w,
-                ) {
-                    Some((x0, x1)) => crate::host::graphics::track::clip_rect(body, x0, x1),
-                    None => Rect::new(body.x, body.y, 0.0, 0.0),
-                };
-                // The lane hands the clip its own axis here, and that is the
-                // last time the lane's window is mentioned: from the clip
-                // inwards everything reads `(rect, time)`.
-                let local =
-                    crate::host::graphics::track::clip_local_view(body, &nav, *offset, *dur, rect);
-                (rect, space.on_time(local))
-            }
-            // **A body that names a stretch is placed on it**, exactly as a
-            // clip is placed on its lane: same mapping, one level down, so a
-            // clip whose take is three segments of three files holds three
-            // bodies, each over its own part of the clip and each reading its
-            // own window. The clip is the lane, its own axis is the window.
-            (WidgetKind::Clip { .. }, _) if child.span.is_some() => {
-                let (at, len) = child.span.unwrap_or((0.0, 0.0));
-                let rect = match crate::host::graphics::track::clip_x_range(
-                    body,
-                    &nav,
-                    at,
-                    len,
-                    space.metrics.divider_w,
-                ) {
-                    Some((x0, x1)) => Rect::new(x0, body.y, x1 - x0, body.h),
-                    None => Rect::new(body.x, body.y, 0.0, 0.0),
-                };
-                let local =
-                    crate::host::graphics::track::clip_local_view(body, &nav, at, len, rect);
-                (rect, space.on_time(local))
-            }
-            // Anything else a time container holds fills its body: a clip's
-            // layered bodies, and a lane's own non-clip chrome.
-            _ => (body, space.on_time(nav)),
-        };
-        // **A clip masks what it holds.** Its bodies are drawn from the source
-        // per visible pixel, and a drawing that reads a *span* has to reach
-        // past the pixels it fills: the polyline through raw samples takes the
-        // sample before the left edge and the one after the right, or the line
-        // would start and end inside the box. Those two are drawn where they
-        // are, which is outside — and once a sample is also *marked* with a
-        // dot the overshoot is a visible pair of discs sitting on the lane
-        // beside the clip. Contained here rather than trimmed in each drawing:
-        // a clip is a coordinate system, and a coordinate system that does not
-        // bound its contents is a rectangle they happen to start in.
-        let clip = match widget.kind {
-            WidgetKind::Clip { .. } => Some(clip.map_or(rect, |c| c.intersect(rect))),
-            _ => clip,
-        };
-        // The gutter is the *container's*: it was taken out of the lane's rect
-        // to make this body, so a member drawn inside it must not take it
-        // again. A clip's bodies carry no id and never asked for one; a heavy
-        // view used as a lane's body does, and used to land a gutter's width
-        // to the right of the clips it shares an axis with.
-        place(rect, child, clip, inner, ctx, Some(me), out, Some(0.0));
     }
 }
 
@@ -862,42 +656,6 @@ mod tests {
         Rect::new(0.0, 0.0, 600.0, 400.0)
     }
 
-    /// **The layer stack is a placement, and that is the whole of it.** Two
-    /// signal elements inside one `field` — one measuring the envelope, one the
-    /// level — are handed the *same* rectangle and the same axis, which is what
-    /// lets a measure be a factor of the element instead of a container anyone
-    /// had to write. The rules a stack still lacks (its order, which layer owns
-    /// the y ruler, the alpha) are the milestone after this one; what is
-    /// already true is that nothing has to arrange them.
-    ///
-    /// **Which `field` layers is worth stating, because the two look alike on
-    /// the wire.** A field with a *placement* (`offset`/`dur`) is a clip, and a
-    /// clip's bodies are built from its own props — nodes nested under one are
-    /// ignored, as under a leaf. A field **without** one is a lane, it carries
-    /// its children into the tree, and every child that is not itself a clip
-    /// fills the lane's body. So the stack is a lane of layers, not a clip of
-    /// them.
-    #[test]
-    fn two_measures_of_one_signal_are_placed_on_one_rectangle() {
-        let w = tree(
-            r#"{"type":"window","children":[
-            {"id":5,"type":"field","children":[
-                {"id":6,"type":"signal","view":"trace","data":[0.0,1.0,0.0,-1.0]},
-                {"id":7,"type":"signal","view":"trace","measure":"rms",
-                 "data":[0.0,1.0,0.0,-1.0]}]}]}"#,
-        );
-        let placed = layout(area(), &w, &Metrics::default());
-        let rect = |id: i32| {
-            placed
-                .iter()
-                .find(|p| p.widget.id == Some(id))
-                .unwrap()
-                .rect
-        };
-        assert_eq!(rect(6), rect(7), "the two layers share one box");
-        assert!(rect(6).w > 0.0 && rect(6).h > 0.0, "and it is a real one");
-    }
-
     /// The application shell, without the number: a strip of controls under a
     /// work surface used to need an `h` nobody could derive, because a
     /// container did not measure what it held. With `hug` it takes exactly its
@@ -989,110 +747,6 @@ mod tests {
         );
         let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(placed.iter().filter_map(|p| p.widget.id).count(), 2);
-    }
-
-    #[test]
-    fn a_clip_is_placed_with_its_own_axis_and_keeps_it_when_it_is_half_off_screen() {
-        // One lane, one clip spanning [0, 400] of a 400-long timeline.
-        let w = tree(
-            r#"{"type":"window","children":[
-            {"id":5,"type":"field","children":[
-                {"id":10,"type":"field","offset":0,"dur":400}]}]}"#,
-        );
-        let m = Metrics::default();
-
-        // Fully visible: the clip's own window is its whole span.
-        let placed = layout(area(), &w, &m);
-        let clip = placed.iter().find(|p| p.widget.id == Some(10)).unwrap();
-        let local = clip.time.expect("a placed clip carries its axis");
-        assert!(local.start.abs() < 0.5 && (local.len - 400.0).abs() < 1.0);
-
-        // Scrolled to the clip's second half: the rectangle shrinks to what is
-        // on screen, and the axis says *which* half that is - the fact a body
-        // needs to draw the right samples, resolved here instead of by each
-        // renderer from the lane's window.
-        let half = View {
-            start: 200.0,
-            len: 200.0,
-        };
-        let placed = layout_on(area(), &w, &m, &|_, _| Some(half));
-        let clip = placed.iter().find(|p| p.widget.id == Some(10)).unwrap();
-        let local = clip.time.unwrap();
-        assert!((local.start - 200.0).abs() < 1.0 && (local.len - 200.0).abs() < 1.0);
-
-        // The lane above it stays on the *group's* window, not the clip's.
-        let lane = placed.iter().find(|p| p.widget.id == Some(5)).unwrap();
-        assert_eq!(lane.time, None);
-    }
-
-    #[test]
-    fn a_heavy_view_used_as_a_lanes_body_does_not_indent_by_the_gutter_twice() {
-        // A lane with a header and, as its body, a spectrogram on the same
-        // navigation group — a spectral lane in a multitrack. The lane reserves
-        // the group's gutter for its header; the view drawn inside that body
-        // must start at the body's own left edge, or its trace, its ruler and
-        // its playhead land a gutter's width right of the clips it shares an
-        // axis with.
-        let w = tree(
-            r#"{"type":"window","children":[
-            {"id":5,"type":"field","label":"takes","link":7,"children":[
-                {"id":6,"type":"field","offset":0,"dur":400}]},
-            {"id":8,"type":"field","label":"spectrum","link":7,"children":[
-                {"id":9,"type":"signal","view":"spectrogram","link":7,
-                 "data":[0.0,1.0]}]}]}"#,
-        );
-        let placed = layout(area(), &w, &Metrics::default());
-        let lane = placed.iter().find(|p| p.widget.id == Some(8)).unwrap();
-        let view = placed.iter().find(|p| p.widget.id == Some(9)).unwrap();
-        assert!(lane.indent > 0.0, "the lanes share a gutter for the header");
-        assert_eq!(view.indent, 0.0, "the lane already took the gutter out");
-        assert_eq!(
-            view.rect.x,
-            lane.rect.x + lane.indent,
-            "the body starts where the clips of the sibling lane do"
-        );
-    }
-
-    #[test]
-    fn a_clips_bodies_are_placed_children_layered_on_its_own_axis() {
-        // One clip carrying all three bodies at once: a take, a roll of events
-        // and an automation curve. They **layer** — each fills the clip's whole
-        // rectangle — rather than dividing it, which is what makes an envelope
-        // over a take one clip instead of two.
-        let w = tree(
-            r#"{"type":"window","children":[
-            {"id":5,"type":"field","children":[
-                {"id":10,"type":"field","offset":0,"dur":400,"data":[0.0,1.0],
-                 "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0]}]}]}"#,
-        );
-        let m = Metrics::default();
-        let placed = layout(area(), &w, &m);
-        let ci = placed.iter().position(|p| p.widget.id == Some(10)).unwrap();
-        let clip = placed[ci];
-
-        // The bodies are the clip's children, in layering order.
-        let bodies: Vec<_> = placed
-            .iter()
-            .filter(|p| p.parent == Some(ci))
-            .cloned()
-            .collect();
-        assert_eq!(bodies.len(), 3, "a take, a roll and a curve");
-        use crate::host::widget::element::BodyRole;
-        assert!(bodies[0].widget.signal().is_some());
-        assert_eq!(bodies[1].widget.kind.body_role(), Some(BodyRole::Notes));
-        assert_eq!(bodies[2].widget.kind.body_role(), Some(BodyRole::Curve));
-
-        for b in &bodies {
-            assert_eq!(
-                b.rect, clip.rect,
-                "a body fills the clip, it does not share it"
-            );
-            assert_eq!(b.time, clip.time, "...and reads the clip's own axis");
-            assert!(
-                b.widget.id.is_none(),
-                "a body is not addressed: the clip is"
-            );
-        }
     }
 
     #[test]

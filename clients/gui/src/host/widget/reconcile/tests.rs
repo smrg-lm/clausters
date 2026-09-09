@@ -3,7 +3,6 @@
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 
-use crate::host::widget::WidgetKind;
 use crate::host::{ClientId, GUI_DEF, Host};
 
 fn from() -> ClientId {
@@ -23,21 +22,23 @@ fn define(host: &mut Host, json: &str) {
     );
 }
 
-/// A window of two lanes, the second one with a clip on it.
-fn window(second_clip: &str) -> String {
+/// A window of two multitracks — the view whose axis a hand moves, and the one
+/// a reconcile has to keep. `boxes` is the second one's `clips` prop.
+fn window(boxes: &str) -> String {
     format!(
         r#"{{"type":"window","title":"w","children":[
-             {{"id":10,"type":"field","label":"one","children":[
-               {{"id":11,"type":"field","offset":0.0,"dur":4.0}}]}},
-             {{"id":20,"type":"field","label":"two","children":[{second_clip}]}}]}}"#
+             {{"id":10,"type":"multitrack","label":"one",
+               "lanes":["a","",96.0,0,0,1.0],"clips":["c","a",0.0,4.0,0.0,"",-1]}},
+             {{"id":20,"type":"multitrack","label":"two",
+               "lanes":["b","",96.0,0,0,1.0]{boxes}}}]}}"#
     )
 }
 
-/// Where a lane's window on the time axis is, as the host holds it.
+/// Where a view's window on the time axis is, as the host holds it.
 fn view(host: &Host, id: i32) -> (f64, f64) {
     let tree = host.window_def(1).expect("the window");
-    let lane = tree.find(id).expect("the lane");
-    let editor = lane.kind.editor().expect("a lane has editor chrome");
+    let w = tree.find(id).expect("the widget");
+    let editor = w.kind.editor().expect("a timeline view has editor chrome");
     (editor.x_start, editor.x_len)
 }
 
@@ -47,7 +48,7 @@ fn selection(host: &Host, id: i32) -> (f64, f64) {
     (editor.sel_start, editor.sel_len)
 }
 
-/// Moves the window and the selection of a lane the way a hand does — through
+/// Moves the window and the selection of a view the way a hand does — through
 /// the host's own state, reporting nothing, which is the whole reason a def
 /// cannot be trusted to carry them back.
 fn scroll_and_select(host: &mut Host, id: i32) {
@@ -60,17 +61,17 @@ fn scroll_and_select(host: &mut Host, id: i32) {
 }
 
 #[test]
-fn a_lane_that_survives_keeps_its_zoom_when_another_lane_changes() {
+fn a_view_that_survives_keeps_its_zoom_when_another_one_changes() {
     // O23's acceptance, and the complaint this branch opened with: a clip
-    // appearing in one lane used to take the zoom of every other lane with it.
+    // appearing in one view used to take the zoom of every other one with it.
     let mut host = Host::new();
     define(&mut host, &window(""));
     scroll_and_select(&mut host, 10);
 
-    // The second lane gains a clip. Everything else is redrawn as it was.
+    // The second view gains a box. Everything else is redrawn as it was.
     define(
         &mut host,
-        &window(r#"{"id":21,"type":"field","offset":8.0,"dur":4.0}"#),
+        &window(r#","clips":["d","b",8.0,4.0,0.0,"",-1]"#),
     );
 
     assert_eq!(
@@ -79,8 +80,6 @@ fn a_lane_that_survives_keeps_its_zoom_when_another_lane_changes() {
         "the reader's window stands"
     );
     assert_eq!(selection(&host, 10), (1500.0, 500.0));
-    let tree = host.window_def(1).unwrap();
-    assert!(tree.find(21).is_some(), "and the new clip is there");
 }
 
 #[test]
@@ -95,8 +94,8 @@ fn a_def_that_states_a_window_moves_it() {
     define(
         &mut host,
         r#"{"type":"window","title":"w","children":[
-             {"id":10,"type":"field","label":"one","view_start":0.0,"view_len":9000.0},
-             {"id":20,"type":"field","label":"two"}]}"#,
+             {"id":10,"type":"multitrack","view_start":0.0,"view_len":9000.0},
+             {"id":20,"type":"multitrack"}]}"#,
     );
     assert_eq!(
         view(&host, 10),
@@ -119,8 +118,8 @@ fn a_widget_that_is_new_takes_the_def_and_nothing_else() {
     define(
         &mut host,
         r#"{"type":"window","title":"w","children":[
-             {"id":10,"type":"field"},
-             {"id":30,"type":"field","view_start":7.0,"view_len":70.0}]}"#,
+             {"id":10,"type":"multitrack"},
+             {"id":30,"type":"multitrack","view_start":7.0,"view_len":70.0}]}"#,
     );
     assert_eq!(view(&host, 30), (7.0, 70.0));
     assert_eq!(view(&host, 10), (1000.0, 4000.0));
@@ -129,43 +128,34 @@ fn a_widget_that_is_new_takes_the_def_and_nothing_else() {
 #[test]
 fn an_id_that_now_names_a_different_kind_carries_nothing() {
     // "Keeps too much" is the failure this design was warned about: a knob that
-    // inherited a lane's zoom because it landed on the same id.
+    // inherited a view's zoom because it landed on the same id.
     let mut host = Host::new();
     define(&mut host, &window(""));
     scroll_and_select(&mut host, 10);
 
-    // The id now names a waveform, which has a window on a time axis of its
-    // own -- so this is the case where carrying would actually land somewhere.
     define(
         &mut host,
         r#"{"type":"window","title":"w","children":[
-             {"id":10,"type":"waveform","data":[0.0,0.5,1.0]}]}"#,
+             {"id":10,"type":"knob","min":0.0,"max":1.0}]}"#,
     );
     let tree = host.window_def(1).unwrap();
     let now = tree.find(10).expect("the widget");
     assert!(
-        !matches!(now.kind, WidgetKind::Track { .. }),
-        "the id names something else now"
+        now.kind.editor().is_none(),
+        "the id names something with no time axis now"
     );
-    if let Some(editor) = now.kind.editor() {
-        assert_eq!(
-            (editor.x_start, editor.x_len),
-            (0.0, 0.0),
-            "and it did not inherit a lane's window"
-        );
-    }
 }
 
 #[test]
-fn a_lane_that_moved_to_another_parent_keeps_its_own_state() {
+fn a_view_that_moved_to_another_parent_keeps_its_own_state() {
     // Identity by id, wherever it moved to — which is the reason a reconcile
-    // matches by id and not by path: re-parenting a clip is the multitrack's
-    // most common gesture, and a path goes stale exactly there.
+    // matches by id and not by path: a path goes stale the moment a window is
+    // rearranged, and a widget's screen state must not go with it.
     let mut host = Host::new();
     define(
         &mut host,
         r#"{"type":"window","title":"w","children":[
-             {"id":5,"type":"layout","children":[{"id":10,"type":"field"}]},
+             {"id":5,"type":"layout","children":[{"id":10,"type":"multitrack"}]},
              {"id":6,"type":"layout"}]}"#,
     );
     scroll_and_select(&mut host, 10);
@@ -174,31 +164,9 @@ fn a_lane_that_moved_to_another_parent_keeps_its_own_state() {
         &mut host,
         r#"{"type":"window","title":"w","children":[
              {"id":5,"type":"layout"},
-             {"id":6,"type":"layout","children":[{"id":10,"type":"field"}]}]}"#,
+             {"id":6,"type":"layout","children":[{"id":10,"type":"multitrack"}]}]}"#,
     );
     assert_eq!(view(&host, 10), (1000.0, 4000.0));
-}
-
-#[test]
-fn a_selection_a_marquee_left_survives_and_nothing_on_the_wire_sets_it() {
-    // The per-widget mark has no wire key at all, so there is no "the def said
-    // so" case for it: it is the host's, always.
-    let mut host = Host::new();
-    define(
-        &mut host,
-        &window(r#"{"id":21,"type":"field","offset":8.0,"dur":4.0}"#),
-    );
-    host.window_def_mut(1)
-        .unwrap()
-        .find_mut(21)
-        .unwrap()
-        .selected = true;
-
-    define(
-        &mut host,
-        &window(r#"{"id":21,"type":"field","offset":9.0,"dur":4.0}"#),
-    );
-    assert!(host.window_def(1).unwrap().find(21).unwrap().selected);
 }
 
 #[test]
@@ -206,10 +174,7 @@ fn a_subtree_spliced_in_place_reconciles_against_what_was_there() {
     // The other entrance: a def of a widget *inside* an open window. It splices
     // rather than rebuilding the window, and it has to keep the same things.
     let mut host = Host::new();
-    define(
-        &mut host,
-        &window(r#"{"id":21,"type":"field","offset":8.0,"dur":4.0}"#),
-    );
+    define(&mut host, &window(""));
     scroll_and_select(&mut host, 20);
 
     host.handle_packet(
@@ -218,9 +183,9 @@ fn a_subtree_spliced_in_place_reconciles_against_what_was_there() {
             args: vec![
                 OscType::Int(20),
                 OscType::String(
-                    r#"{"type":"field","label":"two","children":[
-                         {"id":21,"type":"field","offset":8.0,"dur":4.0},
-                         {"id":22,"type":"field","offset":16.0,"dur":4.0}]}"#
+                    r#"{"type":"multitrack","label":"two",
+                         "lanes":["b","",96.0,0,0,1.0],
+                         "clips":["d","b",8.0,4.0,0.0,"",-1]}"#
                         .into(),
                 ),
             ],
@@ -228,120 +193,9 @@ fn a_subtree_spliced_in_place_reconciles_against_what_was_there() {
         from(),
     );
     assert_eq!(view(&host, 20), (1000.0, 4000.0));
-    assert!(host.window_def(1).unwrap().find(22).is_some());
 }
 
 // ---- the bulk: `data: keep`, which is the largest payload on the wire ----
-
-/// A lane holding one clip with samples, and one that says [`KEEP`] instead.
-///
-/// The two clips are the whole test surface: one carries its run every time,
-/// the other names it once and then asks for the one the host is holding.
-fn lane_of_clips(second: &str) -> String {
-    format!(
-        r#"{{"type":"window","title":"w","children":[
-             {{"id":20,"type":"field","label":"one","children":[
-               {{"id":21,"type":"field","offset":0.0,"dur":4.0,"data":[0.25,-0.25]}},
-               {second}]}}]}}"#
-    )
-}
-
-/// The samples a clip's take is drawing, read through the element itself.
-fn take(host: &Host, id: i32) -> Vec<f32> {
-    let clip = host.window_def(1).expect("the window").find(id);
-    let Some(clip) = clip else { return Vec::new() };
-    clip.children
-        .iter()
-        .find_map(|body| match body.kind.signal().map(|el| &el.source) {
-            Some(crate::host::elements::signal::Source::Data(d)) => Some(d.samples.to_vec()),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-#[test]
-fn a_clip_that_says_keep_draws_the_samples_it_had() {
-    // The point of the word. A lane redrawn because a neighbour moved names
-    // every clip on it, and re-sending minutes of audio for that is the same
-    // failure as freeing a zoom for it, one order of magnitude up.
-    let mut host = Host::new();
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0,0.5]}"#),
-    );
-    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
-
-    // The redraw: the clip moved, and its samples did not.
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":12.0,"dur":4.0,"data":"keep"}"#),
-    );
-    assert_eq!(
-        take(&host, 22),
-        vec![1.0, -1.0, 0.5],
-        "the run the host was already holding"
-    );
-    let clip = host.window_def(1).unwrap().find(22).unwrap();
-    assert!(
-        matches!(clip.kind, WidgetKind::Clip { offset, .. } if offset == 12.0),
-        "and everything the def did say is the def's"
-    );
-}
-
-#[test]
-fn a_keep_does_not_reach_the_clip_beside_it() {
-    // Each clip's bulk is its own: a keep on one says nothing about the other,
-    // and the bodies are matched inside their own container.
-    let mut host = Host::new();
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0]}"#),
-    );
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
-    );
-    assert_eq!(
-        take(&host, 21),
-        vec![0.25, -0.25],
-        "restated, and unchanged"
-    );
-    assert_eq!(take(&host, 22), vec![1.0, -1.0], "kept");
-}
-
-#[test]
-fn a_def_that_states_samples_replaces_them() {
-    // Nothing said is nothing written, and a run *is* something said: a keep is
-    // the only spelling that defers, so an edit that really changed the audio
-    // still lands.
-    let mut host = Host::new();
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[1.0,-1.0]}"#),
-    );
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":[0.0,0.0,0.0]}"#),
-    );
-    assert_eq!(take(&host, 22), vec![0.0, 0.0, 0.0]);
-}
-
-#[test]
-fn a_keep_on_a_widget_the_host_does_not_hold_draws_nothing() {
-    // The one failure this word can produce, and the reason it is reported: an
-    // empty waveform looks exactly like a waveform of silence.
-    let mut host = Host::new();
-    define(&mut host, &lane_of_clips(""));
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
-    );
-    assert!(
-        host.window_def(1).unwrap().find(22).is_some(),
-        "the clip is built, placed and drawn"
-    );
-    assert!(take(&host, 22).is_empty(), "and only its picture is empty");
-}
 
 #[test]
 fn a_standalone_signal_keeps_its_own_bulk() {
@@ -366,35 +220,4 @@ fn a_standalone_signal_keeps_its_own_bulk() {
         }
         _ => panic!("a stored source"),
     }
-}
-
-#[test]
-fn a_keep_travels_over_the_blob_that_carried_it() {
-    // The wire's own case: the bulk arrived as a trailing blob, and the redraw
-    // sends no blob at all.
-    let blob: Vec<u8> = [1.0f32, -1.0, 0.5]
-        .iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect();
-    let mut host = Host::new();
-    host.handle_packet(
-        OscPacket::Message(OscMessage {
-            addr: GUI_DEF.into(),
-            args: vec![
-                OscType::Int(1),
-                OscType::String(lane_of_clips(
-                    r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"blob":0}"#,
-                )),
-                OscType::Blob(blob),
-            ],
-        }),
-        from(),
-    );
-    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
-
-    define(
-        &mut host,
-        &lane_of_clips(r#"{"id":22,"type":"field","offset":8.0,"dur":4.0,"data":"keep"}"#),
-    );
-    assert_eq!(take(&host, 22), vec![1.0, -1.0, 0.5]);
 }

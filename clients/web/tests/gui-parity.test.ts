@@ -28,11 +28,10 @@ import {
     KEEP,
     bpf,
     canvas,
-    clip,
-    field,
     envToPoints,
     label,
     knob,
+    multitrack,
     layout,
     menu,
     meter,
@@ -60,7 +59,6 @@ import {
     timeruler,
     toggle,
     toJson,
-    track,
     waveform,
     window,
     button,
@@ -209,37 +207,20 @@ const trees: Record<string, () => GuiNode> = {
                 velocity: 100, channel: 0, voice: "piano_voice",
                 voiceArgs: [["amp", 0.3]], overview: true, pan: true,
             }),
-            track(
-                {
-                    id: 3, label: "drums", height: 2.0, snap: 1200.0,
-                    ruler: "time", sampleRate: 48000.0, playheadAt: 0.0,
-                    playhead: 12000.0, playheadLoopStart: 0.0,
-                    playheadLoopLen: 96000.0, link: 7,
-                },
-                clip({
-                    id: 4, offset: 0.0, dur: 48000.0, path: "take.f32",
-                    channels: 1, baseBucket: 256, label: "take",
-                }),
-                clip({
-                    id: 5, offset: 48000.0, dur: 24000.0,
-                    notes: [[0.0, 12000.0, 64]], min: 48.0, max: 84.0,
-                }),
-                clip({
-                    id: 6, offset: 72000.0, dur: 24000.0,
-                    points: [[0.0, 0.0], [24000.0, 1.0, "sin"]], exp: false,
-                }),
-            ),
+            multitrack({
+                id: 3, label: "drums", lanes: [["d", "drums"]],
+                clips: [["t", "d", 0.0, 48000.0, 0.0, "take", 7]],
+                snap: 1200.0, ruler: "time", sampleRate: 48000.0,
+                playheadAt: 0.0, playhead: 12000.0, playheadLoopStart: 0.0,
+                playheadLoopLen: 96000.0, link: 7,
+            }),
         ),
 
     keep_the_bulk: () =>
         window(
             { title: "redraw", layout: "col" },
-            track(
-                { id: 1, label: "drums" },
-                clip({ id: 2, offset: 0.0, dur: 48000.0, data: KEEP, label: "take" }),
-                clip({ id: 3, offset: 48000.0, dur: 24000.0, data: KEEP }),
-            ),
             waveform({ id: 4, data: KEEP, channels: 2 }),
+            signal({ id: 5, view: "spectrogram", data: KEEP, channels: 1 }),
         ),
 
     ruler_score_legacy: () =>
@@ -309,14 +290,7 @@ const trees: Record<string, () => GuiNode> = {
                 { id: 5, axis: "both", zoom: true, viewZoom: 1.0 },
                 label("placed in content units", { id: 6, x: 0.0, y: 0.0 }),
             ),
-            field(
-                {
-                    id: 7, label: "drums", height: 2.0,
-                    axes: { x: { unit: "time", sample_rate: 48000.0, link: 1 } },
-                },
-                field({ id: 8, offset: 0.0, dur: 48000.0, label: "take" }),
-            ),
-            field({ id: 9, h: 24.0, axes: { x: { unit: "beats", link: 1 } } }),
+            timeruler({ id: 9, h: 24.0, axes: { x: { unit: "beats", link: 1 } } }),
         ),
 
     generic_node: () =>

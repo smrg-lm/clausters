@@ -30,85 +30,6 @@ pub(super) struct RulerItem {
     pub(super) editor: EditorProps,
 }
 
-pub(super) struct TrackItem {
-    pub(super) id: i32,
-    pub(super) rect: Rect,
-    /// Where this member's group starts its body inside `rect`
-    /// ([`layout::Placed::indent`]).
-    pub(super) indent: f32,
-    pub(super) clip: Option<Rect>,
-    /// The opacity and corner radius this widget draws with
-    /// ([`super::ink_of`]).
-    pub(super) ink: Ink,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) label: Option<String>,
-    /// The lane's gutter: its width and the controls it carries.
-    pub(super) header: track::Header,
-    /// The lane's chrome: its time ruler (off by default), its playhead anchor
-    /// and its `link` — the navigation group whose shared window it draws
-    /// through (the lanes of a window are linked by default, so they zoom and
-    /// pan as one).
-    pub(super) editor: EditorProps,
-}
-
-/// A placed `pianoroll` widget, copied out of the host tree: the note/OSC
-/// content and the pitch window, plus the editor chrome (ruler/selection/
-/// playhead/link — its navigation group). Drawn as flat geometry, the
-/// static-view posture, sharing the `pianoroll` primitives with the clip body.
-/// One placed `clip`: the box the layout put it in and its name. Its bodies
-/// are separate items ([`ClipBodyItem`]), collected after it — the placements
-/// are emitted parent-before-child, so drawing the vectors in order paints
-/// every clip and then every body over its own clip.
-pub(super) struct ClipItem {
-    pub(super) id: Option<i32>,
-    pub(super) rect: Rect,
-    /// Which of the clip's own ends are on screen, so a grip is only ever
-    /// drawn where the clip actually ends
-    /// (`track::clip_ends_on_screen`).
-    pub(super) ends: (bool, bool),
-    /// Whether the clip's **placement** is its active edit layer — the grips
-    /// are its affordance, so they are drawn while it is and not while a hand
-    /// is editing something inside the clip.
-    pub(super) placement_active: bool,
-    /// Whether the hand is holding this clip ([`Widget::selected`]).
-    pub(super) selected: bool,
-    pub(super) clip: Option<Rect>,
-    /// The opacity and corner radius this widget draws with
-    /// ([`super::ink_of`]).
-    pub(super) ink: Ink,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) label: Option<String>,
-}
-
-/// One placed **clip body**: a child element of a clip, with the rectangle and
-/// the clip-local window it is drawn against ([`layout::Placed::time`]) and the
-/// clip's span, which is what maps a source frame onto that window.
-///
-/// The element is copied out whole, like every other data-driven item, so the
-/// heavier mesh work happens after the host-tree borrow is released.
-pub(super) struct ClipBodyItem {
-    pub(super) rect: Rect,
-    pub(super) local: View,
-    pub(super) dur: f64,
-    pub(super) clip: Option<Rect>,
-    /// The opacity and corner radius this widget draws with
-    /// ([`super::ink_of`]).
-    pub(super) ink: Ink,
-    pub(super) theme: Option<Arc<Theme>>,
-    /// The placement's size table — an element body draws through it exactly
-    /// as it does anywhere else. Its **zoom** is not here because a body's
-    /// door takes no context: what a zoom resolves is already in the table.
-    pub(super) metrics: Metrics,
-    /// What of its samples the container is showing (the clip's own
-    /// [`SourceWindow`](crate::host::widget::SourceWindow)).
-    pub(super) window: crate::host::widget::SourceWindow,
-    /// Whether this body is its container's **active edit layer** — what it is
-    /// told so it draws affordances only when they are promises it can keep
-    /// (see [`crate::host::layers`]).
-    pub(super) active: bool,
-    pub(super) kind: WidgetKind,
-}
-
 pub(super) struct SpectralBodyItem {
     pub(super) id: i32,
     pub(super) rect: Rect,
@@ -188,9 +109,6 @@ pub(super) struct CanvasFrame {
 /// released, so the meshes and GPU uploads never touch the host tree.
 pub(super) struct Collected {
     pub(super) timeline_items: Vec<TimelineItem>,
-    pub(super) track_items: Vec<TrackItem>,
-    pub(super) clip_items: Vec<ClipItem>,
-    pub(super) clip_bodies: Vec<ClipBodyItem>,
     pub(super) spectral_bodies: Vec<SpectralBodyItem>,
     pub(super) ruler_items: Vec<RulerItem>,
     pub(super) canvas_frames: Vec<CanvasFrame>,
@@ -208,13 +126,7 @@ pub(super) fn collect_widgets(
     theme: &Theme,
 ) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
-    let mut track_items: Vec<TrackItem> = Vec::new();
-    // A clip and its bodies are placed widgets, so they are collected from
-    // their own placements: the clip's box first, its bodies after (the pass
-    // emits parent-before-child), which is the layering the drawing needs.
-    let mut clip_items: Vec<ClipItem> = Vec::new();
-    let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
-    let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
+    let spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     for p in placed {
@@ -225,68 +137,6 @@ pub(super) fn collect_widgets(
         // to contribute — an element draws what it always drew.
         let ink = super::ink_of(p);
         mesh.set_ink(ink);
-        // A **clip body** is drawn as a body, not as the element it also is:
-        // it has no chrome of its own (no ruler, no keyboard gutter, no
-        // navigation), because it is drawn against the axes of the clip
-        // holding it. That is what the containment is for, and it is decided
-        // here — once — rather than by each element asking where it is.
-        if let Some(parent) = p.parent
-            && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
-        {
-            // **The body's own span and window when it has them**, the clip's
-            // otherwise: a body that names a stretch of the clip is drawn
-            // against that stretch and reads its own segment of samples, and
-            // one that names neither is the whole-clip body every clip written
-            // as flat props holds.
-            let dur = p.widget.span.map_or(dur, |(_, len)| len);
-            let window = p
-                .widget
-                .window
-                .or(placed[parent].widget.window)
-                .unwrap_or_default();
-            // The one body whose picture is not geometry: a time-frequency take
-            // samples an uploaded texture, so it goes to the GPU pass with the
-            // clip's own axis and the clip's id (the slot's key).
-            if let Some(look) = p.widget.kind.texture_body()
-                && let Some(id) = placed[parent].widget.id
-            {
-                spectral_bodies.push(SpectralBodyItem {
-                    id,
-                    rect: p.rect,
-                    local: p.time.unwrap_or_else(|| View::full(1)),
-                    clip: p.clip,
-                    db_floor: look.db_floor,
-                    db_ceil: look.db_ceil,
-                    freq_scale: look.freq_scale,
-                    colormap: look.colormap,
-                });
-                continue;
-            }
-            // Which layer this body is, asked of the container that placed it:
-            // the child's own index among the clip's children, which is the
-            // address the whole model uses.
-            let active = placed[parent]
-                .widget
-                .children
-                .iter()
-                .position(|c| std::ptr::eq(c, p.widget))
-                .is_some_and(|index| {
-                    crate::host::layers::child_is_active(placed[parent].widget, index)
-                });
-            clip_bodies.push(ClipBodyItem {
-                window,
-                rect: p.rect,
-                local: p.time.unwrap_or_else(|| View::full(1)),
-                dur,
-                active,
-                clip: p.clip,
-                ink,
-                theme: p.widget.theme.clone(),
-                metrics: p.metrics,
-                kind: p.widget.kind.clone(),
-            });
-            continue;
-        }
         // This widget's own size table: the host's, resolved at the scale it is
         // seen through ([`layout::Placed::metrics`]). Identical to the window's
         // outside a workspace; inside a zoomed one it carries the zoom, so a
@@ -308,43 +158,6 @@ pub(super) fn collect_widgets(
                     ink,
                     theme: p.widget.theme.clone(),
                     editor: editor.clone(),
-                });
-            }
-            WidgetKind::Track {
-                label,
-                header,
-                editor,
-                ..
-            } => {
-                // The lane's clips are placed widgets of their own, collected
-                // from their own placements below — a lane draws what a lane
-                // is, and nothing that is on it.
-                track_items.push(TrackItem {
-                    id: p.widget.id.unwrap_or(-1),
-                    rect: p.rect,
-                    indent: p.indent,
-                    clip: p.clip,
-                    ink,
-                    theme: p.widget.theme.clone(),
-                    label: label.clone(),
-                    header: header.clone(),
-                    editor: editor.clone(),
-                });
-            }
-            WidgetKind::Clip { label, dur, .. } => {
-                clip_items.push(ClipItem {
-                    id: p.widget.id,
-                    rect: p.rect,
-                    ends: p.time.as_ref().map_or((true, true), |local| {
-                        crate::host::graphics::track::clip_ends_on_screen(local, *dur)
-                    }),
-                    placement_active: crate::host::layers::active(p.widget)
-                        == crate::host::layers::Layer::Placement,
-                    selected: p.widget.selected,
-                    clip: p.clip,
-                    ink,
-                    theme: p.widget.theme.clone(),
-                    label: label.clone(),
                 });
             }
             // A registered element draws straight into the window's one mesh
@@ -444,9 +257,6 @@ pub(super) fn collect_widgets(
 
     Collected {
         timeline_items,
-        track_items,
-        clip_items,
-        clip_bodies,
         spectral_bodies,
         ruler_items,
         canvas_frames,

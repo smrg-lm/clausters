@@ -4,9 +4,9 @@
 //! [`hit`] lays the window out once and hands back the deepest interactive
 //! widget plus the [`Frame`] chain of containers over it — the containment the
 //! layout already resolved ([`chain_of`]), each container's coordinate system
-//! resolved with it ([`time_axis`], [`view_of`]). Everything else here is the
-//! second question a gesture asks once it knows *which* element it hit: which
-//! part of a clip ([`clip_hit`]), which header control ([`header_hit`]), which
+//! resolved with it ([`time_axis`], [`view_of`]). The second question — *where
+//! on* the element the point landed — is the element's own, asked through the
+//! trait.
 //!
 //! The rule that keeps these honest is that they reconstruct **the geometry the
 //! renderer drew through**, never a parallel derivation of it: a note is grabbed
@@ -15,9 +15,7 @@
 use super::super::Host;
 use super::super::layout::{self, Rect};
 use super::super::widget::{GestureMap, WidgetKind};
-use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
-use super::{HeaderPart, Part};
-use crate::host::graphics::track;
+use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis};
 use crate::viewport::View;
 
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
@@ -78,7 +76,6 @@ pub(crate) fn hit(
 pub(crate) struct SoleAxis {
     pub id: i32,
     pub axis: TimeAxis,
-    pub lanes: Vec<i32>,
 }
 
 pub(crate) fn sole_time_axis(
@@ -91,7 +88,6 @@ pub(crate) fn sole_time_axis(
     let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut key = None;
     let mut found: Option<(i32, TimeAxis)> = None;
-    let mut lane_ids = Vec::new();
     for p in &placed {
         let (Some(id), true) = (p.widget.id, p.widget.is_timeline()) else {
             continue;
@@ -105,19 +101,12 @@ pub(crate) fn sole_time_axis(
             Some(_) => {}
             None => key = Some(this),
         }
-        if matches!(p.widget.kind, WidgetKind::Track { .. }) {
-            lane_ids.push(id);
-        }
         if found.is_none() {
             found = time_axis(host, def_id, p, p.indent, rows).map(|axis| (id, axis));
         }
     }
     let (id, axis) = found?;
-    Some(SoleAxis {
-        id,
-        axis,
-        lanes: lane_ids,
-    })
+    Some(SoleAxis { id, axis })
 }
 
 /// The containers from the window down to `i`, `i` itself included when it is
@@ -140,16 +129,6 @@ fn chain_of(
                 Some(Coords::Layout)
             }
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
-            // A clip carries the axis the layout gave it, which is the whole
-            // point of the layout placing clips: the rectangle and the window
-            // are one fact, resolved once, read by the renderer and by this.
-            WidgetKind::Clip { .. } => p.time.map(|nav| {
-                Coords::Local(TimeAxis {
-                    body: p.rect,
-                    nav,
-                    y: None,
-                })
-            }),
             // Where the body begins is the **group's** call, not this widget's:
             // every member of one axis starts it at the same x, and the layout
             // already resolved it (`Placed::indent`).
@@ -228,11 +207,10 @@ fn time_axis(
     rows: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
-    let ruler_on = p.widget.kind.editor()?.ruler != super::super::widget::Ruler::Off;
+    let _ruler_on = p.widget.kind.editor()?.ruler != super::super::widget::Ruler::Off;
     // The body samples map onto, and whether the axis has a vertical gesture
     // surface beside it.
     let (body, y_surface) = match &p.widget.kind {
-        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, indent, metrics), false),
         WidgetKind::TimeRuler { .. } => {
             (super::super::frame::ruler_strip_body(p.rect, indent), false)
         }
@@ -268,14 +246,11 @@ fn time_axis(
 /// or — while it is in none — the fallback its own contents imply, so a gesture
 /// on an ungrouped view still measures against something the renderer agrees
 /// with.
-fn view_of(host: &Host, def_id: i32, p: &layout::Placed, body: Rect) -> View {
+fn view_of(host: &Host, _def_id: i32, p: &layout::Placed, body: Rect) -> View {
     if let Some((nav, _total)) = p.widget.id.and_then(|id| host.timeline_nav(id)) {
         return nav;
     }
     match &p.widget.kind {
-        WidgetKind::Track { .. } => host
-            .window_def(def_id)
-            .map_or(View::full(1), track::window_nav),
         // A surface that is *authored* rather than loaded spans its own
         // content until it joins a group.
         kind if kind.content_span().is_some() => {
@@ -283,132 +258,4 @@ fn view_of(host: &Host, def_id: i32, p: &layout::Placed, body: Rect) -> View {
         }
         _ => View::full(body.w.max(1.0) as usize),
     }
-}
-
-/// A press on a lane's header: which control it landed on, and — for the fader
-/// — the rectangle the drag maps its value through.
-pub(crate) struct HeaderHit {
-    pub part: HeaderPart,
-    pub fader: Option<Rect>,
-}
-
-/// The header control under `(cx, cy)` on the placed lane `rect`, whose axis
-/// begins at `body_x` (so the band beside it is the header). `None` when the
-/// press is on the axis, or on the band's empty space — which names no sample
-/// and no control, and so means nothing.
-pub(crate) fn header_hit(
-    host: &Host,
-    def_id: i32,
-    lane_id: i32,
-    rect: Rect,
-    body_x: f32,
-    cx: f64,
-    cy: f64,
-) -> Option<HeaderHit> {
-    let WidgetKind::Track { header, .. } = host.widget_kind(def_id, lane_id)? else {
-        return None;
-    };
-    let band = super::super::timeline::gutter_band(rect, body_x - rect.x);
-    let m = host.metrics_for(def_id);
-    let part = track::header_hit(band, header, m, cx, cy)?;
-    Some(HeaderHit {
-        part,
-        fader: track::header_parts(band, header, m).fader,
-    })
-}
-
-/// A clip press: the clip id, its current placement (`offset`/`dur`), the lane
-/// body and the shared navigation window the drag maps through (so the front
-/// turns cursor pixels into timeline samples), and which part was hit.
-pub(crate) struct ClipHit {
-    pub id: i32,
-    /// The lane the clip sits on. A clip is not itself a navigation-group
-    /// member — the *lane* is — so anything that has to reach the shared axis
-    /// (the drag's cursor mapping, the edge scroll) asks through this id.
-    pub lane: i32,
-    pub dur: f64,
-    pub body: Rect,
-    /// The clip's own rectangle — the box its bodies fill, so a body's edits
-    /// map onto the pixels that were drawn.
-    pub rect: Rect,
-    pub nav: View,
-    /// The clip's **own** axis: the window of its `[0, dur]` span that `rect`
-    /// shows. Every edit inside the clip maps through `(rect, local)` — it is
-    /// the coordinate system the clip hands its body elements; `body`/`nav`
-    /// above are only what the clip's *placement* on the lane is dragged
-    /// through.
-    pub local: View,
-    pub part: Part,
-    /// The placement the press found, as one value — the snapshot a drag is
-    /// measured against.
-    pub placement: super::Placement,
-    /// What the contents behind the clip allows its edges to do (how many
-    /// frames it has, whether the window loops off them).
-    pub contents: super::Contents,
-}
-
-/// The [`ClipHit`] of the `clip` the pointer landed on: the clip the layout
-/// **placed** (its id and its rectangle, straight off the hit) read against the
-/// lane's time axis, which is what the placement was computed from.
-///
-/// Nothing is re-derived here any more. The clip used to be found by walking
-/// the lane's children and re-running `clip_x_range` on each, because a clip
-/// was not a placed widget and there was nothing else to ask; now it is one, so
-/// the topmost-wins rule is the layout's (later children are placed later, and
-/// the hit takes the last match) and the rectangle is the one that was drawn.
-/// What is *inside* the clip is not here: a body element is asked for the
-/// press directly, on `(rect, local)`, and answers for its own parts — the
-/// hit-test says which widget, never which part of what it holds.
-/// Native-only, like the other edit-back gestures.
-pub(crate) fn clip_hit(
-    host: &Host,
-    def_id: i32,
-    lane: (i32, TimeAxis),
-    clip: (i32, TimeAxis),
-    x: f64,
-) -> Option<ClipHit> {
-    let (lane_id, TimeAxis { body, nav, .. }) = lane;
-    let (id, local) = clip;
-    let rect = local.body;
-    let widget = host.window_def(def_id)?.find(id)?;
-    let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
-        return None;
-    };
-    let window = widget.window.unwrap_or_default();
-    // What the clip is a window **onto**: the take's own length, asked of the
-    // body that holds it. A clip with no contents — a roll, a bare automation —
-    // has no window to run off, and its edges are bounded by nothing but the
-    // clip's own floor.
-    let total = widget
-        .clip_body(crate::host::widget::element::BodyRole::Take)
-        .and_then(|k| k.as_element())
-        .and_then(|el| el.sample_shape())
-        .map(|(_, frames)| frames as f64)
-        .filter(|f| *f > 0.0);
-    Some(ClipHit {
-        id,
-        lane: lane_id,
-        dur,
-        body,
-        rect,
-        nav,
-        local: local.nav,
-        placement: super::Placement {
-            offset,
-            dur,
-            start: window.start,
-        },
-        contents: super::Contents {
-            total,
-            looping: window.looping,
-        },
-        // The grips the renderer drew: the same rectangle, the same ends, the
-        // same size table.
-        part: clip_part(
-            rect,
-            crate::host::graphics::track::clip_ends_on_screen(&local.nav, dur),
-            host.metrics_for(def_id),
-            x as f32,
-        ),
-    })
 }

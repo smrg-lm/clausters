@@ -6,12 +6,9 @@
 //! (its value window with the modifier), a scroll plane zooms or scrolls its
 //! own, and a plain container passes the wheel outward.
 
-use clausters_core::osc::OscType;
-
 use super::super::interact::{self, Hit};
 use super::super::widget::{Axis, WidgetKind};
 use super::super::{Host, scroll};
-use super::effects::*;
 use super::nav::*;
 use super::{GestureCtx, GestureEffect, Gestures, element};
 
@@ -205,37 +202,6 @@ impl Gestures {
             }
         }
 
-        // **Ctrl+wheel over a lane is the other axis of the view**: not time,
-        // which the bare wheel already zooms, but how thick the lane is. The
-        // stack it lives in cannot do it — a plane's zoom is uniform over both
-        // axes and would stretch the time axis out from under the ruler — and a
-        // lane's thickness is a number on the wire, so this is an edit of the
-        // document like a clip's placement: applied here and emitted as
-        // `"height" h` for whoever owns the tree to mirror (a driver usually
-        // gives every lane the same thickness, which is its call, not ours).
-        if ctx.ctrl
-            && let Some((tid, _)) = interact::time_of(&chain)
-            && let Some(frame) = chain.iter().rev().find(|f| f.id == Some(tid))
-        {
-            // The wire's lengths are logical, the rectangle is physical: a lane
-            // with no `h` of its own is measured off the pixels it was drawn at
-            // and given one, so the first turn of the wheel does not jump.
-            let ui = host.metrics_for(def_id).ui_scale.max(f32::EPSILON);
-            let drawn = frame.rect.h / ui;
-            if let Some(h) =
-                interact::lane_resize(host, def_id, tid, drawn, 1.1f32.powf(steps as f32))
-            {
-                emit(
-                    host,
-                    &mut out,
-                    def_id,
-                    tid,
-                    vec![OscType::String("height".into()), OscType::Float(h)],
-                );
-                out.push(GestureEffect::Redraw(def_id));
-                return out;
-            }
-        }
         // A timeline view's wheel is its **axis'**, and the axis is on the
         // chain: over the vertical strip it zooms the display window, anywhere
         // else the shared time axis, both anchored at the cursor.
@@ -312,26 +278,8 @@ impl Gestures {
                 ctx.rows(id, kind)
             })
         {
-            if ctx.ctrl {
-                let factor = 1.1f32.powf(steps as f32);
-                let ui = host.metrics_for(def_id).ui_scale.max(f32::EPSILON);
-                for lane in sole.lanes {
-                    let drawn = sole.axis.body.h / ui;
-                    if let Some(h) = interact::lane_resize(host, def_id, lane, drawn, factor) {
-                        emit(
-                            host,
-                            &mut out,
-                            def_id,
-                            lane,
-                            vec![OscType::String("height".into()), OscType::Float(h)],
-                        );
-                    }
-                }
-                out.push(GestureEffect::Redraw(def_id));
-            } else {
-                let factor = 0.85f64.powf(steps);
-                zoom_timeline(host, &mut out, def_id, sole.id, sole.axis.body, cx, factor);
-            }
+            let factor = 0.85f64.powf(steps);
+            zoom_timeline(host, &mut out, def_id, sole.id, sole.axis.body, cx, factor);
         }
         out
     }

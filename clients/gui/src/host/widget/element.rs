@@ -1630,6 +1630,22 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// Whether this element's time axis is **not bounded by what it holds** —
+    /// `false` by default, and `true` for the one view whose empty time is
+    /// ordinary time.
+    ///
+    /// A view of a signal stops at its last sample because there is nothing
+    /// after it to select, play or cut. A multitrack's extent is only where its
+    /// clips happen to end: the empty bars after them are addressable time — a
+    /// span to paste into, a region to loop over while writing — so a rectangle
+    /// drawn across them is a rectangle, and stopping it at the last clip would
+    /// be the axis answering a question about its contents. It is also what
+    /// gives such a view its authoring headroom, since a window that could not
+    /// scroll past the end could not compose past it either.
+    fn unbounded_axis(&self) -> bool {
+        false
+    }
+
     /// **The content extent this element drives**, in the plane's own units, or
     /// `None` for the element that drives none — which is every one but a
     /// patcher, whose graph the host lays out.

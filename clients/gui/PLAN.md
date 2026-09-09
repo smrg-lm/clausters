@@ -616,7 +616,7 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
 
 **Acceptance:** a composition of a dozen lanes is navigable in a window that shows four, with the ruler above the stack labelling bars, the lanes aligned on one named group, and a transport strip that stays a strip — checked by eye through `composer.py`, and ported so the Python and web composers compose the same window.
 
-- ⬜ **G34 — The multitrack is one widget, and it owns the arrangement**
+- ✅ **G34 — The multitrack is one widget, and it owns the arrangement**
   *(designed 2026-09-08 with the user, after two days of the same defect
   arriving as a playback bug)*.
 
@@ -720,6 +720,46 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
 
   It is `O24`'s multitrack seen from the host's side, and `O24` waits on it: the
   application cannot be written against a widget tree that has no owner.
+
+  **`track` and `clip` stopped being widgets, 2026-09-09** — the cost the
+  milestone declared, paid. `WidgetKind` lost both variants and `field` went
+  from three things told apart by what was on it to **one**: the free-standing
+  ruler. What went with them, and it is most of the milestone's diff: the lane
+  and clip arms of the build, the layout's whole `place_on_time` pass (nothing
+  is placed on a time axis by the layout any more, so `AxisSource`,
+  `Space::time` and `Placed::time` went too), the clip drag and the lane-level
+  drag, the header hit and its press, `LaneClips` and `clips_span` and
+  `window_nav`, the frame's `TrackItem`/`ClipItem`/`ClipBodyItem` passes, the
+  `clip_verb`/`clip_quantize` keys in both shells, and the `"clip"`, `"lane"`,
+  `"clips"`, `"mute"`, `"solo"`, `"level"`, `"split"` and `"join"` tags on the
+  wire — the multitrack emits its own `"clips"` and `"lanes"`, which is the
+  whole point.
+
+  Two things were **generalized rather than deleted**, because the question
+  they answered is still real: `Element::unbounded_axis` is the one a lane used
+  to answer by being a `Track` (a piece is composed into the space after its
+  last box, so its axis is not bounded by what it holds, and that is where its
+  authoring headroom comes from); and the `layers` module is kept whole,
+  unreached, because the container it was written for is exactly what an
+  **entered** box brings back.
+
+  **What it cost in tests, said plainly:** about 80 tests went with the widgets
+  they exercised, and `widget/reconcile`'s suite was **rewritten** rather than
+  dropped — the reconcile is `O23`'s and its subject is any tree, so its cases
+  came back on `multitrack` and `layout` widgets. The two clients lost their
+  `field`/`track`/`clip` builders, the parity vectors were regenerated, and
+  `docs/gui-protocol.md`, `docs/gui-props.md`, `docs/architecture.md` and the
+  Python book's GUI chapter say what a `field` is now.
+
+  **Found while doing it:** `clausters.gui.multitrack` was the *submodule*, not
+  the builder — importing `clausters.gui.multitrack` binds the module over the
+  name `guidef` had put there, so a script asking for the widget got something
+  it could not call. It only bit now because this is the milestone that makes
+  that builder the way to draw a piece. Re-bound after every submodule is in.
+
+  **Still open, and each has its home:** a box draws only a waveform body (no
+  roll, no spectrogram, no assembled samples); entering a box to edit it; and
+  `multitrack_audio.html`, the web twin of the Python example.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 

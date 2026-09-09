@@ -1104,61 +1104,6 @@ export function plane(
 }
 
 /**
- * A container with **two independent axes** — the time/value container.
- *
- * One container, told apart by what is on it: holding other fields it is a
- * **lane** (with the header options), carrying `offset`/`dur` it is a **clip**
- * placed on its parent's x axis, and a bare strip of a given `h` with nothing
- * on it is the free-standing **ruler** over its navigation group. `track`,
- * `clip` and `timeruler` are those three cases.
- *
- * `axes` is the pair the chrome belongs to — on `x`: `unit`
- * (`"time"`/`"samples"`/`"beats"`/`"off"`), `start`/`len`, `tempo`/`beatAt`
- * as `beat_at`/`quant`, `sample_rate`, `link`, `sel_start`/`sel_len` and the
- * playhead family; on `y`: `unit`, `start`/`len`, `min`/`max`, `bit_depth`.
- */
-export function field(
-    options: WidgetOptions & {
-        axes?: AxisPair;
-        offset?: number;
-        dur?: number;
-        label?: string;
-        height?: number;
-        snap?: number;
-        headerW?: number;
-        mute?: boolean;
-        solo?: boolean;
-        level?: number;
-        h?: number;
-        theme?: Record<string, string>;
-        children?: readonly GuiNode[];
-    } = {},
-    ...children: GuiNode[]
-): GuiNode {
-    const {
-        axes: pair, offset, dur, label: text, height, snap, headerW,
-        mute, solo, level, theme, ...rest
-    } = options;
-    return node("field", {
-        ...rest,
-        ...(pair === undefined ? {} : { axes: pair }),
-        ...drop([
-            ["offset", offset],
-            ["dur", dur],
-            ["label", text],
-            ["height", height],
-            ["snap", snap],
-            ["header_w", headerW],
-            ["mute", mute],
-            ["solo", solo],
-            ["level", level],
-            ["theme", theme],
-        ]),
-        children: [...(options.children ?? []), ...children],
-    });
-}
-
-/**
  * **Every view of a signal**, as the one element they are: a presentation of
  * a source, with the capabilities offered over it.
  *
@@ -2501,68 +2446,6 @@ export function timeruler(
     });
 }
 
-/**
- * A multitrack `track` lane holding `clip` children on a shared time axis —
- * the DAW-style editor's lane. `label` names it in a left header, `height` is
- * its lane weight, and `snap` is the drag grid a clip's move/resize rounds
- * to. The lanes of a window navigate as one (the same `link` group the heavy
- * views use), and the lane carries the same time chrome.
- *
- * The **header** is the band left of the axis, and it is sizeable: it holds
- * the `label` and, when asked for, the lane's controls — `mute` and `solo` each
- * add a toggle (pass the initial state), `level` adds a fader over `[0, 1]`.
- * Working one sends a `/gui_event` naming the prop it changed (`"mute" 0|1`,
- * `"solo" 0|1`, `"level" f`), so a driver mirrors the edit by echoing it back.
- * `headerW` overrides the width outright; without it the header sizes itself to
- * what it carries. That width is the **axis'**, not the lane's: every member of
- * a navigation group starts its body at the widest gutter any of them asks for.
- */
-export function track(
-    options: TimelineOptions & {
-        label?: string;
-        height?: number;
-        snap?: number;
-        /** The header's width in logical pixels; omitted sizes it naturally. */
-        headerW?: number;
-        /** Offer a mute toggle, with this initial state. */
-        mute?: boolean;
-        /** Offer a solo toggle, with this initial state. */
-        solo?: boolean;
-        /** Offer a level fader, over `[0, 1]`, at this initial value. */
-        level?: number;
-        theme?: Record<string, string>;
-        children?: readonly GuiNode[];
-    } = {},
-    ...clips: GuiNode[]
-): GuiNode {
-    const {
-        label: text,
-        height,
-        snap,
-        headerW,
-        mute,
-        solo,
-        level,
-        theme,
-        children,
-        ...timeline
-    } = options;
-    return node("field", {
-        ...timelineProps(timeline),
-        ...drop([
-            ["label", text],
-            ["height", height],
-            ["snap", snap],
-            ["header_w", headerW],
-            ["mute", mute],
-            ["solo", solo],
-            ["level", level],
-            ["theme", theme],
-        ]),
-        children: [...(children ?? []), ...clips],
-    });
-}
-
 /** One lane of a {@link multitrack}: its name, then everything with a default. */
 export type LaneSpec = readonly (readonly [
     name: string,
@@ -2616,8 +2499,8 @@ export function flatClips(clips: ClipSpec): (number | string)[] {
  *
  * It is the {@link pianoroll} of a piece. A roll is one widget holding its
  * notes; this is one widget holding its lanes and its clips — so you
- * **describe** the piece rather than composing a tree of {@link track} and
- * {@link clip} widgets, and there is exactly one thing that owns it. A lane
+ * **describe** the piece rather than composing a tree of `track` and `clip`
+ * widgets, and there is exactly one thing that owns it. A lane
  * cannot sit in a void: it is a row of this widget, never a box you place.
  *
  * `lanes` is `[name, label, height, mute, solo, gain]` and `clips`
@@ -2657,141 +2540,6 @@ export function multitrack(
             ["snap", snap],
             ["label", text],
             ["theme", theme],
-        ]),
-    });
-}
-
-/**
- * One `clip` on a `track`: a placed rectangle spanning `[offset, offset +
- * dur]` in timeline sample units (the graphic unit — length = duration).
- *
- * Its body is a **take** (reached exactly as the heavy `waveform`'s samples
- * are — `cache`/`path`/`buffer`/`data`/`blob`), a **piano-roll** of `notes`,
- * or an **automation curve** of `points` editable in place. Dragging the clip
- * (move) or its edge (a trim) flows back as a `"clip"` event carrying the new
- * `offset`/`dur`.
- *
- * The take is drawn in the presentation `view` names: `"trace"` (the default)
- * summarizes it through the peak pyramid to fit the rectangle,
- * `"spectrogram"` draws its STFT as the time-frequency texture — the same
- * signal seen the other way, and still a clip: placed at `offset`, ending at
- * `dur`, dragged and resized on the lane's axis. The spectral parameters are
- * the `spectrogram` view's own (`windowSize`, `hop`, `dbFloor`, `dbCeil`,
- * `freqScale`, `colormap`); the presentation and the analysis are read when
- * the clip is built, the display props are live via `set`.
- */
-export function clip(
-    options: SourceOptions & {
-        /** The clip's start on the shared timeline (samples). */
-        offset?: number;
-        /** Its duration (samples) — a clip with no duration draws nothing. */
-        dur: number;
-        baseBucket?: number;
-        /** The take's presentation: `"trace"` (default) or `"spectrogram"`. */
-        view?: string;
-        windowSize?: number;
-        hop?: number;
-        dbFloor?: number;
-        dbCeil?: number;
-        freqScale?: string;
-        colormap?: number;
-        notes?: NoteSpec | Source;
-        points?: PointSpec | Source;
-        exp?: boolean;
-        min?: number;
-        max?: number;
-        /**
-         * Whether a hand may edit this clip's **bodies** (default true), *all*
-         * of them: it is a statement about the clip. False where the body draws
-         * a *rendering* rather than the thing itself — the notes of a pattern, a
-         * curve this editor cannot write — so the roll or the curve refuses the
-         * press instead of offering a drag it will unwind. The refusal is
-         * visible and consumes the press; the clip's own move and resize are
-         * untouched.
-         */
-        editable?: boolean;
-        /**
-         * The same answer for **one** body, overriding {@link clip}'s
-         * `editable` where it is given. A clip whose bodies layer needs it: an
-         * envelope over a pattern's notes is the ordinary case, and there the
-         * roll is a rendering that cannot be written while the curve over it is
-         * the thing itself. It is the split `min`/`max` already has from
-         * `pointsMin`/`pointsMax`, for the same reason — two bodies, one props
-         * map.
-         */
-        notesEditable?: boolean;
-        /** The curve body's own editability; see `notesEditable`. */
-        pointsEditable?: boolean;
-        /**
-         * The source frame this clip's own time zero reads (default 0). A clip
-         * is a **window onto a segment of its buffer**: one timeline sample
-         * is one source frame, so trimming one hides frames rather than
-         * compressing them, and opening the window again brings them back.
-         */
-        start?: number;
-        /**
-         * Whether that window **wraps** around the buffer: past the last
-         * frame it begins again, and before the first comes the buffer's own
-         * tail. It is what lets an edge be pulled past the buffer at all.
-         */
-        loop?: boolean;
-        /**
-         * Draw the samples **fitted** to the clip's span instead of read frame
-         * for sample — the picture a time stretch would make, which nothing
-         * here makes yet. Off by default.
-         */
-        fit?: boolean;
-        /**
-         * The **edit layer** a hand is on: `"clip"` (the placement — where it
-         * sits, how long it is), `"take"`, `"notes"` or `"points"`. Only the
-         * active layer acts or shows an affordance, so a clip whose curve is
-         * being edited shows no grips. A press picks the layer under it and
-         * reports the change as a `"layer"` event.
-         */
-        layer?: string;
-        /**
-         * The layers that are **not drawn**, space-separated (`"notes
-         * points"`); empty draws them all. What is hidden is not edited either.
-         */
-        hidden?: string;
-        label?: string;
-    },
-): GuiNode {
-    const {
-        offset = 0.0, dur, cache, path, buffer, data, blob, channels,
-        baseBucket, view, windowSize, hop, dbFloor, dbCeil, freqScale, colormap,
-        notes, points, exp, min, max, editable, notesEditable, pointsEditable,
-        start, loop, fit, layer, hidden,
-        label: text, ...rest
-    } = options;
-    return node("field", {
-        ...rest,
-        dur,
-        offset,
-        ...sourceProps({ cache, path, buffer, data, blob, channels }),
-        ...drop([
-            ["base_bucket", baseBucket],
-            ["view", view],
-            ["window_size", windowSize],
-            ["hop", hop],
-            ["db_floor", dbFloor],
-            ["db_ceil", dbCeil],
-            ["freq_scale", freqScale],
-            ["colormap", colormap],
-            ["notes", held(notes, flatNotes)],
-            ["points", held(points, flatPoints)],
-            ["exp", flag(exp)],
-            ["min", min],
-            ["max", max],
-            ["editable", flag(editable)],
-            ["notes_editable", flag(notesEditable)],
-            ["points_editable", flag(pointsEditable)],
-            ["start", start],
-            ["loop", flag(loop)],
-            ["fit", flag(fit)],
-            ["layer", layer],
-            ["hidden", hidden],
-            ["label", text],
         ]),
     });
 }

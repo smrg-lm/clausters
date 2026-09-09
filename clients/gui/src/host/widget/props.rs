@@ -480,19 +480,6 @@ impl EditorProps {
         }
     }
 
-    /// The chrome of a `track` lane: the same props, but the time ruler is
-    /// **off** unless asked for (a lane reserves no ruler strip by default, so
-    /// an un-rulered multitrack keeps the layout it had) and it carries no
-    /// vertical ruler. The lane uses `ruler`/`playhead_at` (plus the `tempo`/
-    /// `beat_at`/`quant`/`sample_rate` the tick labels read); the rest is inert.
-    pub(super) fn parse_lane(props: &serde_json::Map<String, Value>) -> EditorProps {
-        let mut editor = EditorProps::parse(props, RulerY::Off);
-        if !props.contains_key("ruler") {
-            editor.ruler = Ruler::Off;
-        }
-        editor
-    }
-
     /// The vertical view window as a valid display-axis slice: a non-positive
     /// length resets to the full axis, anything else clamps into `[0, 1]`
     /// (with the shared zoom floor). The raw `y_start`/`y_len` props are kept
@@ -855,10 +842,13 @@ impl GestureMap {
     /// The table a container of this kind carries unless the wire replaces it.
     ///
     /// The timeline views differ only in what a plain drag is for: a waveform
-    /// has nothing placed on its axis, so it selects; a lane and a roll hand
-    /// the press to the clip or note first; a free-standing ruler is a scrub
-    /// strip. Shift pans on all of them — that is the convention the whole
-    /// track shares — and a workspace pans with whatever is left over.
+    /// has nothing placed on its axis, so it selects; a multitrack and a roll
+    /// hand the press to the box or note first; a free-standing ruler is a
+    /// scrub strip. Shift pans on all of them — that is the convention the
+    /// whole track shares — and a workspace pans with whatever is left over.
+    /// The heavy views answer for themselves through
+    /// `Element::gesture_map`;
+    /// the arms below are what is left, which is the containers.
     pub fn of_kind(kind: &WidgetKind) -> GestureMap {
         use GestureStep::*;
         // An element answers for itself; the arms below are the containers'.
@@ -866,34 +856,6 @@ impl GestureMap {
             return map;
         }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
-            // **A multitrack selects boxes**, which is what its plain drag
-            // sweeps: a rectangle over a stack of lanes covers clips exactly as
-            // one over a patcher's canvas covers boxes, and it is the same
-            // gesture -- needing a modifier for it on one of the two was the
-            // mechanism differing by view rather than by what the view holds.
-            // `Element` stays first, because a clip under the pointer answers
-            // before the lane does.
-            //
-            // **A time range over the same lanes is the other selection**, and
-            // it is `select`: a span the group keeps, drawn as a band, looped
-            // by the transport. Two selections, not one gesture with two
-            // pictures -- so a script that wants the range asks for it by name
-            // (`{"drag": "select"}`, or on a modifier), and the default here is
-            // the boxes.
-            //
-            // **Locating did not move to a modifier, it moved to the click**:
-            // a sweep that never left the slop is where the hand pointed and
-            // nothing else, so it puts the cursor there (see
-            // `Gestures::release`) -- and the ruler over the stack locates on
-            // a plain drag as it always did. Alt sweeps too, because Alt is
-            // the crate's selection modifier and adds one clip at a time; Ctrl
-            // keeps meaning here what it means everywhere else on a lane.
-            WidgetKind::Track { .. } => (
-                &[Element, Marquee],
-                &[Pan],
-                &[Element, Locate],
-                &[Element, Marquee],
-            ),
             // **A ruler is nothing but the axis, which is why the time range
             // is its gesture.** Two selections live at once over a stack of
             // lanes or a roll -- the **data** one (the clips, the boxes, the
@@ -920,15 +882,6 @@ impl GestureMap {
                 &[Element, Pan],
                 &[Element, Pan],
             ),
-            // A **clip** takes the plain drag (grab it, move it, resize it) and
-            // lets every other modifier fall straight through to the lane around
-            // it. It must not answer for `pan`: a clip is a container of its
-            // own local `[0, dur]` axis, so panning *it* would mean panning
-            // that, while Shift+drag on a timeline means the lane's shared
-            // window — which is why an empty plan here is the point and not an
-            // omission. Without it a lane could only be panned where no clip
-            // was drawn, which on a busy arrangement is nowhere.
-            WidgetKind::Clip { .. } => (&[Element], &[], &[Element], &[Element]),
             _ => (&[Element], &[Element], &[Element], &[Element]),
         };
         GestureMap::of_plans(plain, shift, ctrl, alt)
@@ -1312,16 +1265,6 @@ impl SourceWindow {
             start: number_f64(props, "start", 0.0),
             looping: props.get("loop").and_then(truthy).unwrap_or(false),
             fit: props.get("fit").and_then(truthy).unwrap_or(false),
-        }
-    }
-
-    /// Applies one `/gui_set` key, returning whether it was one of these.
-    pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
-        match key {
-            "start" => v.as_f64().map(|x| self.start = x).is_some(),
-            "loop" => truthy(v).map(|b| self.looping = b).is_some(),
-            "fit" => truthy(v).map(|b| self.fit = b).is_some(),
-            _ => false,
         }
     }
 

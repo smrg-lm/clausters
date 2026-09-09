@@ -628,11 +628,11 @@ pub(super) fn draw_timeline_meshes(
 /// playhead chrome into `over`.
 pub(super) fn draw_static_meshes(
     mesh: &mut Mesh,
-    over: &mut Mesh,
+    _over: &mut Mesh,
     collected: &Collected,
     inputs: &FrameInputs,
     theme: &Theme,
-    tree: &Widget,
+    _tree: &Widget,
 ) {
     let m = inputs.metrics;
     // Where the shared time axis begins, per navigation group: a lane, a roll
@@ -654,7 +654,9 @@ pub(super) fn draw_static_meshes(
         mesh.set_clip(item.clip);
         mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let nav = chrome_for(inputs, item.id, &item.editor, || track::window_nav(tree)).nav;
+        // A ruler in no group yet rules an empty axis: it labels whatever its
+        // group shows, and until it has one there is nothing to label against.
+        let nav = chrome_for(inputs, item.id, &item.editor, || View::full(1)).nav;
         let rate = if item.editor.sample_rate > 0.0 {
             item.editor.sample_rate
         } else {
@@ -672,173 +674,6 @@ pub(super) fn draw_static_meshes(
             rate,
             &item.editor,
         );
-    }
-    if !collected.track_items.is_empty() {
-        // The lanes navigate as a group (linked by default across a window), so
-        // the axis zooms and pans as one; the full span is the fallback for a
-        // lane not yet in a group.
-        let full = track::window_nav(tree);
-        for item in &collected.track_items {
-            mesh.set_clip(item.clip);
-            over.set_clip(item.clip);
-            mesh.set_ink(item.ink);
-            over.set_ink(item.ink);
-            let th = item.theme.as_deref().unwrap_or(theme);
-            let chrome = chrome_for(inputs, item.id, &item.editor, || full);
-            let nav = chrome.nav;
-            let ruler_on = item.editor.ruler != Ruler::Off;
-            let indent = item.indent;
-            track::draw(
-                &mut Draw::new(mesh, m, th),
-                item.rect,
-                item.label.as_deref(),
-                &item.header,
-                ruler_on,
-                indent,
-            );
-            let body = track::lane_body(item.rect, ruler_on, indent, m);
-            // The lane's own time ruler, in the strip the lane body reserved —
-            // the same tick math the timeline views use, over the shared axis.
-            if ruler_on {
-                let rate = if item.editor.sample_rate > 0.0 {
-                    item.editor.sample_rate
-                } else {
-                    inputs.world.sample_rate
-                };
-                draw_time_ruler(
-                    &mut Draw::new(mesh, m, th),
-                    item.rect,
-                    body,
-                    &nav,
-                    rate,
-                    &item.editor,
-                );
-            }
-            // **The sweep, which a lane drew nothing of.** The span was set,
-            // the clips inside it were taken into the hand, and the one thing
-            // missing was the picture of it — so a marquee over a lane looked
-            // like a gesture the window had ignored. Through the same routine
-            // the signal views draw theirs with, into the overlay for the
-            // reason the playhead is: a lane's clips are drawn after it.
-            //
-            // **What is drawn here is a time range**, and on a lane that is a
-            // selection of its own -- not the marquee, which selects clips and
-            // is the gesture's own picture (`Grab::Marquee`), gone when the
-            // hand lets go. A lane draws this when something set a span on its
-            // group: a `select` plan, a `/gui_set`, a linked view's sweep.
-            selection::draw_span(
-                &mut Draw::new(over, m, th),
-                body,
-                &nav,
-                chrome.selection(),
-                1,
-                None,
-                selection::Vertical::Whole,
-            );
-            // The playhead, over the clips: the engine clock as a timeline
-            // position (`playhead_at` anchors timeline sample 0 to a clock
-            // value), so it sweeps the lane as the composition plays.
-            if let Some(pos) = chrome.head_at(inputs.world.sample_clock)
-                && let Some(x) = track::playhead_x(body, &nav, pos)
-            {
-                over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
-            }
-        }
-    }
-    // The clips over their lanes, and their bodies over them: separate passes
-    // rather than one nested loop, because that *is* the z order — every clip's
-    // box is under every body, and the layout emitted them in that order.
-    for item in &collected.clip_items {
-        mesh.set_clip(item.clip);
-        mesh.set_ink(item.ink);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_clip(&mut Draw::new(mesh, m, th), item.rect, item.selected);
-    }
-    for item in &collected.clip_bodies {
-        mesh.set_clip(item.clip);
-        mesh.set_ink(item.ink);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        // A body is drawn **through its own door** ([`Element::draw_body`]),
-        // never through the standalone draw: the same element that stands on
-        // its own elsewhere, here with no chrome of its own and against the
-        // clip's axis instead of its own. Which one it is, is the container's
-        // answer and is given here — once — rather than each element inferring
-        // it from what it was handed, which is not a thing the context can say:
-        // an element placed on its own is handed its **navigation group's**
-        // axis through the same field, so "I have a time space" means one thing
-        // on this path and another on the ordinary one.
-        track::draw_body_widget(
-            &mut Draw::new(mesh, &item.metrics, th),
-            &item.kind,
-            item.rect,
-            &TimeSpace::of(item.local, item.dur)
-                .with_active(item.active)
-                .with_window(item.window),
-        );
-    }
-    // A clip's **name** and its **grips**, last and into the overlay: a body
-    // drawn over them would bury them (the take's trace does, and the
-    // time-frequency texture — a GPU pass after every mesh — hides them
-    // outright), and a clip nobody can read is a rectangle. Same reason the
-    // playhead and the selection live here.
-    // **One** clip carries the grip, and which one depends on whether anything
-    // is already held. Free, it is the topmost clip under the pointer: clips
-    // overlap and the overlay is painted after every clip's box, so a covered
-    // clip lighting its edge would draw over the clip covering it, announcing a
-    // grab the press — which takes the topmost — would not give. Held, it is
-    // the clip in hand, wherever the pointer has got to: a clip moves in snap
-    // steps and the pointer does not, so the two part company between steps,
-    // and a grip that follows the pointer there blinks out mid-drag and lights
-    // up whatever the pointer drifted over.
-    let pointer = inputs.world.cursor;
-    let topmost = pointer.and_then(|(x, y)| {
-        collected
-            .clip_items
-            .iter()
-            .rposition(|item| item.rect.contains(x, y))
-    });
-    for (i, item) in collected.clip_items.iter().enumerate() {
-        // **A grip is the placement layer's affordance**, so it is drawn while
-        // that layer is the one a hand is editing and not while the hand is
-        // inside the clip: an automation being edited must not be surrounded by
-        // marks offering to move the rectangle under it.
-        let grip = match inputs.grab {
-            _ if !item.placement_active => None,
-            // Something else has the pointer: no clip offers anything.
-            Grab::Other | Grab::Marquee(..) => None,
-            // The held clip keeps the edge it is being resized by, wherever the
-            // pointer has got to — it is named by the drag rather than found
-            // under the cursor. A clip being **moved** holds no edge and lights
-            // none: the drag in flight is not a resize, so an arrow on it would
-            // offer a gesture that is not the one happening.
-            Grab::Clip(id, side) if item.id == Some(id) => {
-                side.and_then(|side| track::clip_grip_on(item.rect, item.ends, m, side))
-            }
-            Grab::Clip(..) => None,
-            Grab::None => topmost.filter(|top| *top == i).and_then(|_| {
-                let (x, _) = pointer?;
-                track::clip_grip_at(item.rect, item.ends, m, x as f32)
-            }),
-        };
-        if grip.is_none() && item.label.is_none() && !item.selected {
-            continue;
-        }
-        over.set_clip(item.clip);
-        over.set_ink(item.ink);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        // The held edge goes over the bodies, because a body covers the box
-        // that drew it -- and the spectral one covers it in a pass no mesh
-        // reaches at all.
-        if item.selected {
-            track::draw_clip_selection(&mut Draw::new(over, m, th), item.rect);
-        }
-        if let Some((rect, side)) = grip {
-            track::draw_clip_grip(&mut Draw::new(over, m, th), rect, side);
-        }
-        let Some(label) = item.label.as_deref() else {
-            continue;
-        };
-        track::draw_clip_label(&mut Draw::new(over, m, th), item.rect, label);
     }
 }
 

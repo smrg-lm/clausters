@@ -1163,9 +1163,7 @@ impl Host {
         let tree = self.window_def(def_id)?;
         let metrics = self.metrics_for(def_id);
         let area = self.content_area(def_id, fb_w, fb_h);
-        Some(layout::layout_on(area, tree, metrics, &|id, link| {
-            self.timelines().nav(timeline::group_key(id, link))
-        }))
+        Some(layout::layout_on(area, tree, metrics))
     }
 
     /// The framebuffer of window `def_id` **minus its status bar** — the area
@@ -1765,7 +1763,6 @@ impl Host {
         // `link`) route through its navigation group instead, so a set on any
         // member applies group-wide (linked views).
         let mut is_timeline = false;
-        let mut is_clip = false;
         // The extent an authored surface reaches before the props are applied,
         // so a set that *wrote into* it can be told from one that did not.
         let mut span_before = None;
@@ -1776,7 +1773,6 @@ impl Host {
             let mut styled = false;
             if let Some(widget) = tree.find_mut(id) {
                 is_timeline = widget.is_timeline();
-                is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
                 span_before = widget.kind.content_span();
                 for (k, v) in &props {
                     if !(is_timeline && timeline::is_timeline_key(k)) {
@@ -1812,9 +1808,7 @@ impl Host {
         let span_after = self
             .widget_kind(self.registry.root_of(id).unwrap_or(id), id)
             .and_then(|k| k.content_span());
-        if is_clip {
-            self.sync_track_totals();
-        } else if span_after.is_some() && span_after != span_before {
+        if span_after.is_some() && span_after != span_before {
             // Keeping the window, not refitting it: a roll is *written into*, a
             // note at a time, so a take that grows must scroll under a still
             // axis rather than zoom it out from under the notes just drawn --
@@ -3682,51 +3676,6 @@ mod tests {
         assert_eq!(queried(&mut host, "value"), Some(OscType::Float(0.25)));
     }
 
-    /// The same for a **container's own** editable state and for a non-scalar
-    /// payload: a clip reports where it was dragged to, and a curve reports its
-    /// break-points as the JSON string a `/gui_set points` already takes — so
-    /// what a query gives back is what a set would take.
-    #[test]
-    fn a_query_reports_a_moved_clip_and_an_edited_curve() {
-        let mut host = Host::new();
-        host.handle_packet(
-            def_msg(
-                1,
-                r#"{"type":"window","margin":0,"children":[
-                    {"id":20,"type":"field","label":"lane","children":[
-                        {"id":21,"type":"field","offset":0.0,"dur":100.0,
-                         "points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0],
-                         "points_min":0.0,"points_max":1.0}]}]}"#,
-            ),
-            from(),
-        );
-        let live = |host: &Host, id: i32, key: &str| host.live_props(id).get(key).cloned();
-
-        // The clip's placement is the clip's own, edited by its container drag.
-        assert_eq!(live(&host, 21, "offset"), Some(Value::from(0.0)));
-        interact::clip_set(
-            &mut host,
-            1,
-            21,
-            interact::Placement {
-                offset: 40.0,
-                dur: 100.0,
-                start: 0.0,
-            },
-        );
-        assert_eq!(live(&host, 21, "offset"), Some(Value::from(40.0)));
-
-        // The curve is a body, so the clip is what a script addresses — and the
-        // points it reports parse straight back through the same prop.
-        let reported = match live(&host, 21, "points") {
-            Some(Value::String(s)) => s,
-            other => panic!("points are not the string carrier: {other:?}"),
-        };
-        let parsed = graphics::bpf::parse_points(&Value::String(reported), 0.0, 1.0).unwrap();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[1].value, 1.0);
-    }
-
     #[test]
     fn query_for_unknown_id_still_answers() {
         let mut host = Host::new();
@@ -4202,37 +4151,6 @@ mod tests {
         assert_eq!(widget.props["min"], serde_json::json!(-2.0));
     }
 
-    /// A `/gui_set` says the axis chrome the same way a `/gui_def` does — the
-    /// relocation moves the props, so it has to move them on both doors or a
-    /// script would have to spell one thing two ways.
-    #[test]
-    fn a_set_of_an_axis_pair_reaches_the_props_the_axis_owns() {
-        const LANE: &str = r#"{"type":"window","children":[
-            {"id":30,"type":"field","children":[
-                {"id":31,"type":"field","offset":0.0,"dur":8.0}]}]}"#;
-        let mut host = Host::new();
-        host.handle_packet(def_msg(1, LANE), from());
-        assert!(host.window_def(1).unwrap().find(30).unwrap().is_timeline());
-        host.set_timeline_total(30, 8);
-        host.handle_packet(
-            OscPacket::Message(OscMessage {
-                addr: GUI_SET.into(),
-                args: vec![
-                    OscType::Int(30),
-                    OscType::String("axes".into()),
-                    OscType::String(r#"{"x":{"len":4.0,"start":2.0,"ruler":"beats"}}"#.into()),
-                ],
-            }),
-            from(),
-        );
-        let nav = host
-            .timelines()
-            .nav(timeline::group_key(30, Some(1)))
-            .expect("the lane is on its window's group");
-        assert!((nav.start - 2.0).abs() < 0.001, "the axis window moved");
-        assert!((nav.len - 4.0).abs() < 0.001);
-    }
-
     /// An inline `bind` carries a widget target too, which is what lets a saved
     /// GuiDef boot with its pages already wired.
     #[test]
@@ -4432,9 +4350,6 @@ mod write_tests {
     /// clip in a lane, and as the navigable editor under it — both naming the
     /// one buffer.
     const TREE: &str = r#"{"type":"window","children":[
-        {"id":52,"type":"field","children":[
-            {"id":51,"type":"field","offset":0.0,"dur":16.0,"buffer":0,"channels":1}
-        ]},
         {"id":50,"type":"signal","view":"trace","buffer":0,"navigable":1}
     ]}"#;
 
@@ -4464,9 +4379,8 @@ mod write_tests {
             }),
             from(),
         );
-        // The two forms one buffer's samples arrive in, which is the whole reason a
-        // write goes through the element: the navigable view keeps a pyramid,
-        // the clip's take body keeps the samples.
+        // The form the samples arrive in, which is the whole reason a write
+        // goes through the element: the navigable view keeps a pyramid.
         let samples = vec![0.0f32; frames * channels];
         let data = std::sync::Arc::new(WaveformData::from_interleaved(&samples, channels, 64));
         host.window_def_mut(1)
@@ -4475,15 +4389,6 @@ mod write_tests {
             .take_bulk(|| Loaded::Peaks(data.clone()))
             .then_some(())
             .expect("the element took the pyramid");
-        host.window_def_mut(1)
-            .and_then(|t| t.find_mut(51))
-            .expect("the clip")
-            .take_bulk(|| Loaded::Raw {
-                samples: samples.clone(),
-                channels,
-            })
-            .then_some(())
-            .expect("the clip's take body took the samples");
 
         let mut owner = Owner::new(Document::new(Node::new(
             NodeId(2),
@@ -4561,11 +4466,6 @@ mod write_tests {
         assert_eq!(msg.args[3], blob(&[0.5, -0.5, 0.25]), "the run it drew");
 
         assert_eq!(sample(&host, 4), 0.5, "and the picture holds the same run");
-        assert_eq!(
-            sample_of(&host, 51, 4),
-            0.5,
-            "and so does the clip, which is the same samples seen elsewhere"
-        );
         assert_eq!(sample(&host, 6), 0.25);
         assert_eq!(sample(&host, 7), 0.0, "past the span, nothing moved");
 
@@ -4577,7 +4477,6 @@ mod write_tests {
         assert_eq!(msg.addr, "/buffer_setRangeChannel");
         assert_eq!(msg.args[3], blob(&[0.0, 0.0, 0.0]));
         assert_eq!(sample(&host, 4), 0.0, "the picture went back with it");
-        assert_eq!(sample_of(&host, 51, 4), 0.0, "and the clip with them both");
     }
 
     /// **The monitor plays the samples the window is drawing** — the same

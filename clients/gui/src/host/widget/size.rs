@@ -719,7 +719,6 @@ mod tests {
             r#"{"type":"signal","view":"trace","data":[]}"#,
             r#"{"type":"signal","navigable":0,"data":[]}"#,
             r#"{"type":"nodes"}"#,
-            r#"{"type":"field"}"#,
             r#"{"type":"plane"}"#,
         ] {
             assert_eq!(kind(json).natural_size(&m, 1.0), (None, None), "{json}");

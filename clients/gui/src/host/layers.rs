@@ -41,8 +41,8 @@
 
 use crate::host::graphics::track;
 use crate::host::layout::Rect;
+use crate::host::widget::Widget;
 use crate::host::widget::element::{BodyRole, Input, TimeSpace};
-use crate::host::widget::{Widget, WidgetKind};
 
 /// The **active edit layer** of a container: what a press on it means.
 ///
@@ -131,11 +131,9 @@ impl<'a> Selection<'a> {
     /// leaf, or a container whose children are laid out beside each other
     /// rather than over each other. The test is the stack itself, so a
     /// container qualifies by holding layered contents and not by being of any
-    /// particular type; a `clip` qualifies even while empty, because its
-    /// placement is a layer a script may name before its bodies arrive.
+    /// particular type.
     pub fn of(widget: &'a mut Widget) -> Option<Self> {
-        (matches!(widget.kind, WidgetKind::Clip { .. }) || !stack(widget).is_empty())
-            .then_some(Self { widget })
+        (!stack(widget).is_empty()).then_some(Self { widget })
     }
 
     /// The layer a **wire name** means on this container, or `None` when it
@@ -354,118 +352,4 @@ pub fn under_pointer(widget: &Widget, at: (f64, f64), input: &Input) -> Layer {
         .rev()
         .find_map(|(n, (_, child))| on(child).then_some(Layer::Content(n)))
         .unwrap_or(Layer::Placement)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::host::widget::Widget;
-
-    fn clip(bodies: &str) -> Widget {
-        let json = format!(r#"{{"type":"field","id":1,"offset":0.0,"dur":100.0,{bodies}}}"#);
-        Widget::from_node(
-            1,
-            &crate::host::guidef::GuiNode::parse(json.as_bytes()).unwrap(),
-            &[],
-        )
-        .unwrap()
-    }
-
-    /// The stack is the children that fill a role, in declaration order — and
-    /// the names are the roles', which is what a script already calls them.
-    #[test]
-    fn a_stack_is_read_off_the_children_and_named_by_their_roles() {
-        let w = clip(r#""data":[0.0,1.0],"notes":[0,10,60,100,0],"points":[0,0,0,0]"#);
-        assert_eq!(
-            stack(&w),
-            vec![BodyRole::Take, BodyRole::Notes, BodyRole::Curve]
-        );
-        assert_eq!(Layer::Content(0).name(&w), "take");
-        assert_eq!(Layer::Content(2).name(&w), "points");
-        assert_eq!(Layer::Placement.name(&w), PLACEMENT);
-        // A layer index the container does not have is the placement, not a
-        // panic and not a layer nobody can see.
-        assert_eq!(Layer::Content(9).name(&w), PLACEMENT);
-    }
-
-    /// A name resolves against the stack that is there; an unknown one is
-    /// refused rather than quietly meaning the placement.
-    #[test]
-    fn a_name_resolves_against_the_container_that_holds_the_layers() {
-        let mut w = clip(r#""notes":[0,10,60,100,0],"points":[0,0,0,0]"#);
-        let sel = Selection::of(&mut w).unwrap();
-        assert_eq!(sel.parse("clip"), Some(Layer::Placement));
-        assert_eq!(sel.parse("notes"), Some(Layer::Content(0)));
-        assert_eq!(sel.parse("points"), Some(Layer::Content(1)));
-        assert_eq!(sel.parse("take"), None, "no take on this clip");
-        assert_eq!(sel.parse("points:1"), None, "only one automation");
-        assert_eq!(sel.parse("nonsense"), None);
-    }
-
-    /// **The visualization half**: what is drawn is a separate statement from
-    /// what is edited, named the same way — and what is not drawn is not
-    /// edited either, because a window taking presses for a picture it is not
-    /// showing is the one combination that cannot be read off the screen.
-    #[test]
-    fn hiding_a_layer_takes_it_out_of_the_picture_and_out_of_the_hand() {
-        let mut w = clip(r#""notes":[0.0,10.0,60.0,100,0],"points":[0.0,0.0,1,0.0]"#);
-        let mut sel = Selection::of(&mut w).unwrap();
-        sel.set(Layer::Content(1));
-        assert_eq!(sel.layer(), Layer::Content(1));
-        assert!(sel.set_hidden("points"));
-        assert_eq!(sel.hidden(), "points");
-        assert_eq!(
-            sel.layer(),
-            Layer::Placement,
-            "a hidden layer is not the one in hand"
-        );
-        // The address is untouched by hiding: showing it again is all it takes.
-        assert!(sel.set_hidden(""));
-        assert_eq!(sel.hidden(), "");
-        assert_eq!(sel.layer(), Layer::Content(1), "and the hand is back on it");
-        // A name for a layer this clip has not got is kept for the day it does.
-        assert!(!sel.set_hidden("take"));
-    }
-
-    /// **Two automations over one clip**, which is what the stack being the
-    /// container's contents gives: they are two layers, named apart, and one of
-    /// them is edited at a time. Nothing here counts kinds — the second curve
-    /// is the second curve because it is declared second.
-    #[test]
-    fn a_container_may_hold_two_layers_of_one_role() {
-        let w = clip(concat!(
-            r#""data":[0.0,1.0],"children":["#,
-            r#"{"type":"curve","points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0],"#,
-            r##""min":0.0,"max":1.0,"color":"#ff6666"},"##,
-            r#"{"type":"curve","points":[0.0,1.0,1,0.0,100.0,0.0,1,0.0],"#,
-            r##""min":0.0,"max":1.0,"color":"#66aaff"}]"##,
-        ));
-        assert_eq!(
-            stack(&w),
-            vec![BodyRole::Take, BodyRole::Curve, BodyRole::Curve]
-        );
-        assert_eq!(Layer::Content(1).name(&w), "points");
-        assert_eq!(Layer::Content(2).name(&w), "points:1");
-        // ...and each carries its own colour, since a layer is a node.
-        assert!(w.children[1].color.is_some() && w.children[2].color.is_some());
-        assert_ne!(w.children[1].color, w.children[2].color);
-    }
-
-    /// Setting reports whether it changed, and a stale index reads back as the
-    /// placement.
-    #[test]
-    fn a_selection_says_whether_it_changed_and_never_points_at_nothing() {
-        let mut w = clip(r#""points":[0,0,0,0]"#);
-        let mut sel = Selection::of(&mut w).unwrap();
-        assert_eq!(sel.layer(), Layer::Placement);
-        assert!(sel.set(Layer::Content(0)));
-        assert!(
-            !sel.set(Layer::Content(0)),
-            "the same layer twice is silent"
-        );
-        assert_eq!(sel.layer(), Layer::Content(0));
-        // The body goes away: what is active is the placement again.
-        w.children.clear();
-        assert_eq!(Selection::of(&mut w).unwrap().layer(), Layer::Placement);
-    }
 }

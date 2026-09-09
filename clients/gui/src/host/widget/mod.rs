@@ -142,30 +142,6 @@ pub enum WidgetKind {
         flow: Flow,
         view: ScrollView,
     },
-    /// A multitrack lane: a horizontal strip of the shared timeline holding
-    /// `clip` children placed by their `offset`/`dur`. A container (its clips
-    /// are its children); `label` names the track in a left header, `height`
-    /// its lane weight when several tracks stack under one time axis. The
-    /// **graphic unit** — the clip rectangles and the track header — is drawn
-    /// by [`crate::host::graphics::track`]; the clips share one time axis (aligned tracks), the
-    /// span being the longest clip end over the window's tracks. `snap` is the
-    /// drag grid in timeline samples (0 = snap to whole samples) a clip's
-    /// move/resize rounds to. `editor` is the shared chrome, of which a lane
-    /// uses the time `ruler` (a strip under the lane, off by default) and the
-    /// `playhead_at` anchor (the engine sample-clock value at timeline sample 0,
-    /// so the playhead sweeps the clips as the composition plays) — the same
-    /// props, parsing and `/gui_set` keys the heavy timeline views use. A lane
-    /// joins no navigation group (its axis is the window's shared clip span), so
-    /// those keys apply to the widget itself.
-    Track {
-        label: Option<String>,
-        height: f32,
-        snap: f64,
-        /// The lane's gutter: how wide it is and what it carries there (see
-        /// [`crate::host::graphics::track::Header`]).
-        header: crate::host::graphics::track::Header,
-        editor: EditorProps,
-    },
     /// A **free-standing time ruler**: the shared axis of a navigation group,
     /// drawn as a strip the *document* places — the DAW's ruler above its
     /// tracks.
@@ -184,37 +160,6 @@ pub enum WidgetKind {
     /// transport, as a lane's own ruler strip does. Its thickness is the `h`
     /// place prop, like any other widget's — the builders default it.
     TimeRuler { editor: EditorProps },
-    /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
-    /// dur]` in timeline sample units (the graphic unit — length = duration),
-    /// with a `label`. Interaction (drag to move `offset`, drag an edge to
-    /// resize `dur`) writes back through the edit-back path.
-    ///
-    /// **A clip is a container, and its bodies are its children.** A take is a
-    /// **signal** element, a roll of events a `notes` element, an automation
-    /// curve a `curve` element — the same elements that stand on their own
-    /// composed here rather than reimplemented, and **layered** back to front
-    /// rather than selected by precedence: an envelope drawn over the samples
-    /// it shapes is one clip, not two. Each keeps its own value axis, because a
-    /// roll's `min`/`max` are pitches and a curve's are its parameter's.
-    ///
-    /// They are built from the clip's own props (`data`/`blob`/`path`/`cache`/
-    /// `buffer`, `notes`, `points`) because the wire still describes a clip as
-    /// a thing with bodies; moving the wire onto the containment is a separate
-    /// step. So they carry **no id**: a script addresses the clip, and a
-    /// `/gui_set` of a body prop routes into the child that owns it.
-    ///
-    /// **One of those layers is what a hand is editing**, and it is the only
-    /// one that acts or offers an affordance — the rule the whole
-    /// [`layers`](crate::host::layers) module states, and the reason four
-    /// claimants over one set of pixels resolve without any of them knowing
-    /// about the others. Which one is active is [`Widget::layer`], not a field
-    /// here: a clip is the first container that layers its contents and it is
-    /// not meant to be the last.
-    Clip {
-        offset: f64,
-        dur: f64,
-        label: Option<String>,
-    },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the
     /// constructor a program registered under the wire type it answers to
@@ -438,22 +383,17 @@ impl Widget {
         Ok(widget)
     }
 
-    /// Links every un-linked `track` — and every un-linked free-standing
-    /// `timeruler` — of a window into one navigation group keyed by the window
-    /// root. The multitrack's promise is **one shared time axis** (aligned
-    /// lanes), and a navigation group is exactly that — so the lanes of a
-    /// window navigate as one by default, zooming and panning together, and
-    /// only an explicit `link` splits them (or joins lanes across windows).
+    /// Links every un-linked free-standing `timeruler` of a window into one
+    /// navigation group keyed by the window root.
     ///
-    /// The ruler is in for the same reason and not by analogy: a free-standing
-    /// ruler exists to rule the lanes beside it, so one dropped into a window
-    /// of lanes with nothing said is asking for *their* axis. Every other
-    /// timeline view stays out — a `waveform` in a window of lanes is showing
-    /// its own buffer, and joining it to the composition's axis would be a
-    /// guess.
+    /// A free-standing ruler exists to rule what is beside it, so one dropped
+    /// into a window with nothing said is asking for that window's axis. Every
+    /// other timeline view stays out — a `waveform` beside a multitrack is
+    /// showing its own buffer, and joining it to the composition's axis would
+    /// be a guess; a `multitrack` owns its own stack, so its lanes share an
+    /// axis by construction rather than by being linked one to another.
     fn link_lanes(widget: &mut Widget, root_id: i32) {
-        if let WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor } =
-            &mut widget.kind
+        if let WidgetKind::TimeRuler { editor } = &mut widget.kind
             && editor.link.is_none()
         {
             editor.link = Some(root_id);
@@ -468,41 +408,16 @@ impl Widget {
         let props = &node.props;
         let kind = build::build_kind(node.kind.as_str(), props, !node.children.is_empty(), blobs)?;
         // Only containers carry children into the typed tree; a leaf's children
-        // (if any) are ignored. A `track` carries its clips.
+        // (if any) are ignored.
         let children = match kind {
             WidgetKind::Window { .. }
             | WidgetKind::Panel { .. }
             | WidgetKind::Scroll { .. }
-            | WidgetKind::Stack { .. }
-            | WidgetKind::Track { .. } => node
+            | WidgetKind::Stack { .. } => node
                 .children
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
                 .collect::<Result<Vec<_>, _>>()?,
-            // **A clip's contents are children, and its own props are the
-            // shorthand.** A node's children are built as bodies, in the order
-            // they are declared — which is the order they are drawn in and the
-            // order they are addressed as layers — after the ones its flat
-            // props describe (`buffer`, `notes`, `points`: one of each, the
-            // form every clip took before a clip could hold two of anything).
-            // The two compose rather than exclude, so a script that declares a
-            // take by prop and two automations as children gets three bodies in
-            // that order.
-            WidgetKind::Clip { .. } => {
-                let mut bodies = build::clip_bodies(props, blobs)?;
-                for child in &node.children {
-                    let body = Self::build(None, child, blobs)?;
-                    // Only a body is a body: a node the clip cannot layer (a
-                    // control, a container, a type this build does not know) is
-                    // dropped rather than drawn over the samples, which is the
-                    // same answer the wire gives everywhere else for something
-                    // in a place it does not belong.
-                    if body.kind.body_role().is_some() {
-                        bodies.push(body);
-                    }
-                }
-                bodies
-            }
             _ => Vec::new(),
         };
         let gestures = props.get("gestures").and_then(|v| {

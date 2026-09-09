@@ -195,7 +195,7 @@ def test_every_widget_builder_takes_a_name_without_an_id():
     # a TypeError only at call time, not at import).
     from clausters.gui import guidef as g
 
-    # (builder, extra required kwargs) -- clip needs a dur; the rest take a name
+    # (builder, extra required kwargs) -- every one takes a name alone
     # and nothing else.
     cases = [
         (g.label, {}), (g.knob, {}), (g.slider, {}), (g.number, {}),
@@ -203,8 +203,7 @@ def test_every_widget_builder_takes_a_name_without_an_id():
         (g.waveform, {}), (g.spectrogram, {}), (g.pianoroll, {}), (g.meter, {}),
         (g.scope, {}), (g.phasescope, {}), (g.spectrum, {}), (g.nodetree, {}),
         (g.bpf, {}), (g.plot, {}), (g.canvas, {}), (g.score, {}), (g.piano, {}),
-        (g.patch, {}), (g.panel, {}), (g.scroll, {}), (g.track, {}),
-        (g.clip, {"dur": 1.0}),
+        (g.patch, {}), (g.panel, {}), (g.scroll, {}),
     ]
     host = _host()
     children = [b(name=f"w{i}", **kw) for i, (b, kw) in enumerate(cases)]

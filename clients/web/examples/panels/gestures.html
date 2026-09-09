@@ -26,7 +26,7 @@ widget's.
 Panning, sweeping a selection and locating the transport belong to the
 <b>coordinate system</b> a container gives its contents, not to whatever is
 drawn inside it. That is why one Shift+drag pans a <code>waveform</code>, a
-<code>track</code> lane, a <code>pianoroll</code> and a free-standing
+<code>multitrack</code>, a <code>pianoroll</code> and a free-standing
 <code>timeruler</code> alike, and why a press a container does not want falls
 <i>outward</i> to the container around it.
 
@@ -65,7 +65,7 @@ right one is switched live by the menu under it.</div>
       /examples/panels/gestures.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, seq } from "../../dist/index.js";
+      import { Buffer, Session, gui, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {
@@ -99,6 +99,14 @@ right one is switched live by the menu under it.</div>
         // host maps. One object, fed to every view that draws this take.
         const samples = gui.source(take.samples);
 
+        // The take on the server, because a multitrack's box draws a **buffer**:
+        // it names what the piece plays rather than data of its own, which is
+        // the whole difference between placing audio and looking at it.
+        const session = await Session.embed();
+        await session.gui();
+        const takeBuf = await Buffer.fromSamples(take.samples, { server: session.server });
+        await session.server.sync();
+
         const beat = SR / TEMPO;
         const NOTES = Array.from({ length: 16 }, (_, i) =>
           [i * beat / 2, beat / 3, 60 + (i % 5) * 2, 100, 0]);
@@ -113,13 +121,12 @@ right one is switched live by the menu under it.</div>
             { layout: "col" },
             gui.label(tag),
             gui.timeruler({ name: `${tag}-ruler`, link: 1, h: 18.0, sampleRate: SR, ...extra }),
-            gui.track(
-              { name: `${tag}-lane`, label: "audio", link: 1, snap: beat, height: 90.0, ...extra },
-              gui.clip({
-                name: `${tag}-clip`, data: samples, channels: 1,
-                offset: 0.0, dur: frames, label: "take",
-              }),
-            ),
+            gui.multitrack({
+              name: `${tag}-lane`, label: "audio", link: 1, snap: beat, h: 90.0,
+              lanes: [["audio", "audio"]],
+              clips: [["take", "audio", 0.0, frames, 0.0, "take", takeBuf.bufnum]],
+              sampleRate: SR, ...extra,
+            }),
             gui.pianoroll({
               name: `${tag}-roll`, notes: NOTES, min: 48, max: 84, snap: beat / 2,
               link: 1, sampleRate: SR, ...extra,
@@ -140,11 +147,9 @@ right one is switched live by the menu under it.</div>
           ),
         );
 
-        const session = await Session.embed();
-        await session.gui();
         const win = await scene.open($("stage"));
         log(`opened window ${win.id}`);
-        log("left column:  drag a lane sweeps (a click locates), drag its clip moves it, "
+        log("left column:  drag a lane sweeps (a click locates), drag its box moves it, "
           + "drag the waveform selects, Shift+drag pans anywhere");
         log("right column: drag pans everywhere, Shift+drag selects");
 

@@ -146,7 +146,7 @@ def cases():
     ))
 
     # The timeline editors: a piano-roll with notes and OSC flags, a piano
-    # playing host-managed voices, and two lanes of clips.
+    # playing host-managed voices, and a multitrack of boxes.
     out.append((
         "timeline_editors",
         g.window(
@@ -159,35 +159,27 @@ def cases():
             g.piano(id=2, min=36, max=96, active_min=48, active_max=84,
                     velocity=100, channel=0, voice="piano_voice",
                     voice_args=[("amp", 0.3)], overview=True, pan=True),
-            g.track(
-                g.clip(id=4, offset=0.0, dur=48000.0, path="take.f32",
-                       channels=1, base_bucket=256, label="take"),
-                g.clip(id=5, offset=48000.0, dur=24000.0,
-                       notes=[(0.0, 12000.0, 64)], min=48.0, max=84.0),
-                g.clip(id=6, offset=72000.0, dur=24000.0,
-                       points=[(0.0, 0.0), (24000.0, 1.0, "sin")], exp=False),
-                id=3, label="drums", height=2.0, snap=1200.0, ruler="time",
-                sample_rate=48000.0, playhead_at=0.0, playhead=12000.0,
-                playhead_loop_start=0.0, playhead_loop_len=96000.0, link=7,
+            g.multitrack(
+                id=3, label="drums", lanes=[("d", "drums")],
+                clips=[("t", "d", 0.0, 48000.0, 0.0, "take", 7)],
+                snap=1200.0, ruler="time", sample_rate=48000.0,
+                playhead_at=0.0, playhead=12000.0, playhead_loop_start=0.0,
+                playhead_loop_len=96000.0, link=7,
             ),
             title="arrangement", layout="col",
         ),
     ))
 
-    # The redraw: a lane restated so a clip can move, naming the bulk it is not
-    # re-sending. `KEEP` is a word about the host's own copy, so it must be the
-    # same word from both clients -- and it is a *value* of an option the sweep
-    # already covers with an array, which is exactly the kind of thing a sweep
-    # by option name is blind to.
+    # The redraw: a view restated, naming the bulk it is not re-sending. `KEEP`
+    # is a word about the host's own copy, so it must be the same word from both
+    # clients -- and it is a *value* of an option the sweep already covers with
+    # an array, which is exactly the kind of thing a sweep by option name is
+    # blind to.
     out.append((
         "keep_the_bulk",
         g.window(
-            g.track(
-                g.clip(id=2, offset=0.0, dur=48000.0, data=g.KEEP, label="take"),
-                g.clip(id=3, offset=48000.0, dur=24000.0, data=g.KEEP),
-                id=1, label="drums",
-            ),
             g.waveform(id=4, data=g.KEEP, channels=2),
+            g.signal(id=5, view="spectrogram", data=g.KEEP, channels=1),
             title="redraw", layout="col",
         ),
     ))
@@ -256,12 +248,7 @@ def cases():
             ),
             g.plane(g.label("placed in content units", id=6, x=0.0, y=0.0),
                     id=5, axis="both", zoom=True, view_zoom=1.0),
-            g.field(
-                g.field(id=8, offset=0.0, dur=48000.0, label="take"),
-                id=7, label="drums", height=2.0,
-                axes={"x": {"unit": "time", "sample_rate": 48000.0, "link": 1}},
-            ),
-            g.field(id=9, h=24.0, axes={"x": {"unit": "beats", "link": 1}}),
+            g.timeruler(id=9, h=24.0, axes={"x": {"unit": "beats", "link": 1}}),
             title="the model", flow="col",
         ),
     ))
@@ -284,7 +271,7 @@ def cases():
 NOT_SWEPT = {"id", "name", "children", "clips", "control"}
 
 #: What a builder needs before it builds anything, whatever is being swept.
-REQUIRED = {"clip": {"dur": 4.0}}
+REQUIRED: dict = {}
 
 #: The payload options, whose value is a shape rather than a scalar. Every one
 #: is normalized by the builder (flattened, de-interleaved, packed), so the

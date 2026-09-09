@@ -330,13 +330,14 @@ def test_a_page_rewrite_drops_the_part_the_new_one_does_not_have():
 
 
 def test_two_sources_on_one_widget_do_not_clear_each_other():
-    """A clip draws samples and notes at once, and each source owns its own
-    slots: rewriting one leaves the other's props exactly where they were."""
-    from clausters.gui import clip, source
+    """One widget may draw samples and notes at once, and each source owns its
+    own slots: rewriting one leaves the other's props exactly where they
+    were."""
+    from clausters.gui import node, source
 
     take = source([0.1, 0.2])
     roll = source(notes=[(0.0, 1.0, 60)])
-    c = clip(dur=2.0, data=take, notes=roll)
+    c = node("field", data=take, notes=roll)
     roll.set([(0.0, 1.0, 64)])
     assert c["data"] == [0.1, 0.2]
     take.set([0.3])

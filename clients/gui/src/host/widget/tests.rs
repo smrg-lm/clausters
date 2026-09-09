@@ -254,104 +254,6 @@ fn waveform_parses_its_placement_offset() {
 }
 
 #[test]
-fn track_carries_clips_with_their_placement() {
-    let n = node(
-        r#"{"type":"window","children":[
-            {"id":1,"type":"field","label":"drums","children":[
-                {"id":10,"type":"field","offset":0.0,"dur":100.0,"data":[0.0,1.0],"label":"a"},
-                {"id":11,"type":"field","offset":-5.0,"dur":50.0}
-            ]}
-        ]}"#,
-    );
-    let w = Widget::from_node(9, &n, &[]).unwrap();
-    let track = &w.children[0];
-    match &track.kind {
-        WidgetKind::Track { label, .. } => assert_eq!(label.as_deref(), Some("drums")),
-        other => panic!("expected track, got {other:?}"),
-    }
-    assert_eq!(track.children.len(), 2, "a track carries its clips");
-    let clip = &track.children[0];
-    match &clip.kind {
-        WidgetKind::Clip {
-            offset, dur, label, ..
-        } => {
-            assert_eq!((*offset, *dur), (0.0, 100.0));
-            assert_eq!(label.as_deref(), Some("a"));
-        }
-        other => panic!("expected clip, got {other:?}"),
-    }
-    // The take is a **child** of the clip, and an ordinary signal element:
-    // the clip is a container, so what it holds is elements.
-    assert_eq!(clip.children.len(), 1, "one body: the take");
-    let take = clip.signal_target().expect("the clip holds a take");
-    assert_eq!(&take.source.data().unwrap().samples[..], &[0.0, 1.0]);
-    assert!(
-        !take.caps.navigable,
-        "a body navigates nothing: the clip does"
-    );
-    assert!(take.source.data().unwrap().bulk, "a take is bulk");
-    // A clip with no source at all holds no take: a body a clip does not
-    // describe is simply absent.
-    assert!(track.children[1].children.is_empty());
-    // A negative offset clamps to 0 (no clip starts before the timeline).
-    match &track.children[1].kind {
-        WidgetKind::Clip { offset, .. } => assert_eq!(*offset, 0.0),
-        other => panic!("expected clip, got {other:?}"),
-    }
-}
-
-#[test]
-fn a_lane_carries_the_ruler_and_playhead_chrome() {
-    let n = node(
-        r#"{"type":"window","children":[
-            {"id":1,"type":"field","ruler":"beats","tempo":2.0,"playhead_at":480.0},
-            {"id":2,"type":"field"}
-        ]}"#,
-    );
-    let mut w = Widget::from_node(9, &n, &[]).unwrap();
-    let lane = w.children[0].kind.editor().unwrap();
-    assert_eq!(lane.ruler, Ruler::Beats);
-    assert_eq!((lane.tempo, lane.playhead_at), (2.0, 480.0));
-    // A lane asks for no ruler by default (it reserves no strip), and shows
-    // no playhead until one is anchored.
-    let plain = w.children[1].kind.editor().unwrap();
-    assert_eq!(plain.ruler, Ruler::Off);
-    assert!(plain.playhead_at < 0.0);
-    // The chrome parses live too: `/gui_set` reaches these fields (what a
-    // lane *draws* is its navigation group's playhead, which these seed).
-    assert!(
-        w.children[1]
-            .kind
-            .apply("playhead_at", &serde_json::json!(96000.0))
-    );
-    assert_eq!(w.children[1].kind.editor().unwrap().playhead_at, 96000.0);
-}
-
-#[test]
-fn a_clip_parses_its_piano_roll_notes() {
-    let n = node(
-        r#"{"type":"window","children":[
-            {"id":1,"type":"field","children":[
-                {"id":10,"type":"field","offset":0.0,"dur":400.0,"min":48.0,"max":72.0,
-                 "notes":[0.0,100.0,60.0, 100.0,100.0,67.0, 999.0]}
-            ]}
-        ]}"#,
-    );
-    let w = Widget::from_node(9, &n, &[]).unwrap();
-    let clip = &w.children[0].children[0];
-    let body = clip.children.first().expect("the clip grew a roll body");
-    assert_eq!(
-        body.kind.body_role(),
-        Some(super::element::BodyRole::Notes),
-        "{:?}",
-        body.kind
-    );
-    // Two complete triples; the trailing lone number is dropped, so the roll
-    // reaches the end of the second note and no further.
-    assert_eq!(body.kind.content_span(), Some(200.0));
-}
-
-#[test]
 fn waveform_by_server_buffer_starts_empty_with_the_buffer_number() {
     let n = node(
         r#"{"type":"window","children":[{"id":3,"type":"signal","view":"trace","buffer":7}]}"#,
@@ -1162,25 +1064,6 @@ fn apply_updates_value_and_event_value_reports_it() {
     assert!(!knob.kind.apply("nonesuch", &Value::from(1.0)));
 }
 
-#[test]
-fn a_free_standing_ruler_changes_its_unit_live() {
-    let mut w = Widget::from_node(
-        1,
-        &node(r#"{"id":9,"type":"field","h":22,"ruler":"beats"}"#),
-        &[],
-    )
-    .unwrap();
-    let unit = |w: &Widget| match &w.kind {
-        WidgetKind::TimeRuler { editor } => editor.ruler,
-        other => panic!("not a ruler: {other:?}"),
-    };
-    assert_eq!(unit(&w), Ruler::Beats);
-    assert!(apply_widget(&mut w, "ruler", &serde_json::json!("samples")));
-    assert_eq!(unit(&w), Ruler::Samples);
-    assert!(apply_widget(&mut w, "ruler", &serde_json::json!("time")));
-    assert_eq!(unit(&w), Ruler::Time);
-}
-
 /// **The enum is the containers, and this is the test that says so.**
 ///
 /// The K track spent seven milestones taking the leaves out of `WidgetKind`,
@@ -1216,14 +1099,12 @@ fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
         declared,
         [
             // The coordinate systems: a window and the two arrangements over
-            // it, a plane, the two halves of a timeline, and a clip's own span.
+            // it, a plane, and the free-standing ruler of a navigation group.
             "Window",
             "Panel",
             "Stack",
             "Scroll",
-            "Track",
             "TimeRuler",
-            "Clip",
             // ...and the two that are not a kind of widget at all: whatever
             // this build renders through the trait, and whatever it does not
             // recognize (laid out, never painted).
@@ -1231,81 +1112,5 @@ fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
             "Unknown",
         ],
         "see this test's documentation before adding a variant"
-    );
-}
-
-/// The other half of the same rule, asked of the widgets rather than of the
-/// source: **a container declares nothing and reads nothing.** Every question
-/// a leaf answers has one door, and a container's answer through it is the
-/// neutral one — so a pass that forgets to ask gets a container's silence, not
-/// a wrong answer.
-#[test]
-fn a_container_declares_nothing_and_reads_nothing() {
-    let containers = r#"{"type":"window","children":[
-        {"id":1,"type":"layout","children":[]},
-        {"id":2,"type":"layout","flow":"stack","children":[]},
-        {"id":3,"type":"plane","children":[]},
-        {"id":4,"type":"field","label":"lane","children":[]},
-        {"id":5,"type":"field","h":18},
-        {"id":6,"type":"field","offset":0.0,"dur":10.0}]}"#;
-    let tree = Widget::from_node(1, &node(containers), &[]).unwrap();
-    for w in tree.descendants() {
-        let kind = &w.kind;
-        assert!(kind.as_element().is_none(), "{kind:?} is not an element");
-        assert_eq!(kind.needs(), Needs::default(), "{kind:?} reads nothing");
-        assert!(!kind.accepts_focus(), "{kind:?} takes no keyboard");
-        assert!(kind.body_role().is_none(), "{kind:?} fills no clip body");
-        assert!(
-            kind.overlay_rect().is_none(),
-            "{kind:?} draws inside itself"
-        );
-        assert!(kind.event_value().is_none(), "{kind:?} has no value");
-        assert!(!kind.navigates_freq(), "{kind:?} has no axis of its own");
-        assert_eq!(kind.tap_frames(48_000.0), 0, "{kind:?} taps nothing");
-        assert!(kind.content_span().is_none(), "{kind:?} authors nothing");
-    }
-    // ...and the seven of them really are the seven: the document above builds
-    // one of each, so a variant added without a case here is caught too.
-    assert_eq!(tree.descendants().count(), 7);
-}
-
-/// **The whole path a tempo map takes into the ruler**, which the unit tests on
-/// either side of it do not cover: a def's `axes.x.tempo_map` string, flattened
-/// at the door, parsed into the chrome, and read by the tick layout. Each half
-/// worked while the join did not, which is a defect no test of a half can see.
-#[test]
-fn a_defs_tempo_map_reaches_the_ruler_and_bends_it() {
-    use crate::host::frame::time_unit;
-    use crate::host::metrics::Metrics;
-    use crate::host::ruler::time_ticks;
-
-    let mut node = GuiNode::parse(
-        br#"{"id":1,"type":"field","h":24.0,"axes":{"x":{
-             "unit":"beats","tempo":1.0,"quant":4.0,"sample_rate":48000.0,
-             "tempo_map":"[{\"beats\":0.0,\"tempo\":1.0},{\"beats\":2.0,\"tempo\":2.0}]"}}}"#,
-    )
-    .unwrap();
-    axes::flatten_tree(&mut node);
-    let editor = EditorProps::parse(&node.props, RulerY::Norm);
-    assert!(editor.tempo_map.is_some(), "the map survived the door");
-
-    // Ten seconds at 48 kHz. With the tempo doubled at beat 2, beat 8 falls at
-    // 5 s -- half way -- and a frozen tempo would have drawn it four fifths in.
-    let ticks = time_ticks(
-        0.0,
-        480_000.0,
-        900.0,
-        48_000.0,
-        time_unit(&editor),
-        &Metrics::default(),
-    );
-    let bar3 = ticks
-        .iter()
-        .find(|t| t.label.as_deref() == Some("3:1"))
-        .expect("beat 8 is labelled");
-    assert!(
-        (bar3.frac - 0.5).abs() < 1e-9,
-        "beat 8 at 5 s, not at 8: {}",
-        bar3.frac
     );
 }

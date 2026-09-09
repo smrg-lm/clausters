@@ -99,52 +99,6 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The **body** flavor: the same element over its own value range, with no
-/// domain of its own (a clip's body spans the clip) and nothing to name it.
-/// `None` when the props carry no curve at all, which is a clip without one.
-pub(crate) fn body(props: &Map<String, Value>) -> Option<Curve> {
-    // A layered clip's bodies do not share an axis — an envelope's units are
-    // not the pitches under it — so the curve reads its own range first.
-    let min = number(props, "points_min", number(props, "min", -1.0));
-    let max = number(props, "points_max", number(props, "max", 1.0));
-    let points = props
-        .get("points")
-        .and_then(|v| bpf::parse_points(v, min, max))
-        .filter(|p| !p.is_empty())?;
-    Some(Curve {
-        points,
-        min,
-        max,
-        duration: 0.0,
-        exp: props.get("exp").and_then(truthy).unwrap_or(false),
-        label: None,
-        grab: None,
-        // The curve's own, before the clip-wide `editable` -- an envelope over
-        // a roll that cannot be written is the ordinary case (a generator's
-        // notes are a rendering; the curve shaping them is not), and one key
-        // for both bodies made the curve inherit a refusal meant for the roll.
-        editable: super::body_editable(props, "points_editable"),
-        editor: EditorProps::body(),
-        body: true,
-    })
-}
-
-/// An **empty** body, for a clip growing a curve it was not built with.
-pub(crate) fn empty_body() -> Curve {
-    Curve {
-        points: Vec::new(),
-        min: -1.0,
-        max: 1.0,
-        duration: 0.0,
-        exp: false,
-        label: None,
-        grab: None,
-        editable: true,
-        editor: EditorProps::body(),
-        body: true,
-    }
-}
-
 fn from_props(props: &Map<String, Value>) -> Curve {
     let min = number(props, "min", 0.0);
     let max = number(props, "max", 1.0);
@@ -598,10 +552,9 @@ impl Element for Curve {
 mod tests {
     use super::*;
     use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+
     use crate::host::widget::element::{Mods, TimeSpace};
-    use crate::host::world::World;
+
     use crate::viewport::View;
 
     fn props(json: &str) -> Map<String, Value> {
@@ -642,13 +595,6 @@ mod tests {
         // An inverted range is read as a range, not as a mistake.
         let c = from_props(&props(r#"{"min":1.0,"max":-1.0}"#));
         assert_eq!((c.min, c.max), (-1.0, 1.0));
-    }
-
-    /// The element declares the role, which is how the clip recognizes it.
-    #[test]
-    fn it_fills_the_curve_body_role() {
-        assert_eq!(ramp().body_role(), Some(BodyRole::Curve));
-        assert_eq!(empty_body().body_role(), Some(BodyRole::Curve));
     }
 
     /// The whole point of the port: **one** element, mapped through whichever
@@ -819,147 +765,5 @@ mod tests {
         // the hand" means at the one position where it can be checked exactly.
         c.drag(at(0.0), &input(&m, rect, None));
         assert_eq!(c.points[0].curve, 0.0);
-    }
-
-    /// A body draws no chrome of its own: the same points, in the same
-    /// rectangle, put less geometry in the mesh than the framed view does.
-    /// The **body door**, which is the one a clip's automation is drawn
-    /// through — and which drew nothing at all until `draw_body` existed here:
-    /// the element was built, placed and collected, and the pass called a
-    /// default that paints nothing. The test beside this one drove `draw`
-    /// instead, so it passed throughout.
-    /// **A clip-wide refusal is not the curve's.** A simultaneous aggregate
-    /// draws as one clip with its members' bodies layered, and the ordinary
-    /// case is a rendered generator's notes -- read-only -- under an envelope
-    /// that is not. Both bodies read one props map, so before `points_editable`
-    /// the curve inherited the roll's `editable: false` and the envelope drew
-    /// but could not be touched.
-    #[test]
-    fn a_read_only_roll_does_not_lock_the_curve_over_it() {
-        let layered = props(
-            r#"{"notes":[0.0,100.0,60.0,100,0],"notes_editable":false,
-                "points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],
-                "points_min":0.0,"points_max":1.0}"#,
-        );
-        let curve = body(&layered).expect("a curve body");
-        assert!(
-            curve.editable,
-            "the roll's refusal is the roll's, and says nothing about the curve"
-        );
-        // The clip-wide key still reaches both, which is what it is for.
-        let whole = props(r#"{"points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],"editable":false}"#);
-        assert!(!body(&whole).expect("a curve body").editable);
-
-        // And the curve's own key overrides it in the other direction.
-        let mixed = props(
-            r#"{"points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],
-                "editable":false,"points_editable":true}"#,
-        );
-        assert!(body(&mixed).expect("a curve body").editable);
-    }
-
-    #[test]
-    fn a_clip_body_draws_the_line() {
-        use crate::host::widget::element::TimeSpace;
-
-        let curve = body(
-            &serde_json::from_str(
-                r#"{"points":[0.0,200.0,1,0.0,48000.0,900.0,2,0.0,96000.0,300.0,1,0.0],
-                    "points_min":130.0,"points_max":970.0}"#,
-            )
-            .unwrap(),
-        )
-        .expect("the props carry a curve");
-        let metrics = Metrics::default();
-        let theme = Theme::default();
-        let rect = Rect::new(0.0, 0.0, 200.0, 60.0);
-
-        let mut mesh = Mesh::new();
-        curve.draw_body(
-            &mut Draw::new(&mut mesh, &metrics, &theme),
-            rect,
-            &TimeSpace::of(View::full(96_000), 96_000.0),
-        );
-        assert!(
-            !mesh.is_empty(),
-            "a clip's curve body draws its line, not nothing"
-        );
-    }
-
-    /// The chrome belongs to the **view**, not to "nobody handed me an axis":
-    /// a standalone curve stacked with a ruler is given the group's window and
-    /// still draws its label, its field and its strips, while a clip's body,
-    /// given the same kind of window, draws only the line. Reading the two
-    /// apart from the `TimeSpace` alone is what left the example's curve bare.
-    #[test]
-    fn a_body_draws_without_the_view_s_chrome() {
-        let m = Metrics::default();
-        let theme = Theme::default();
-        let rect = Rect::new(0.0, 0.0, 120.0, 80.0);
-        let c = from_props(&props(
-            r#"{"min":0.0,"max":1.0,"duration":100.0,"label":"env",
-                "points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0]}"#,
-        ));
-
-        let mut alone = Mesh::new();
-        c.draw(
-            &mut Draw::new(&mut alone, &m, &theme),
-            &Ctx {
-                world: &World::default(),
-                metrics: &m,
-                rect,
-                indent: 0.0,
-                scale: 1.0,
-                time: None,
-                clip: None,
-                focused: false,
-            },
-        );
-        let mut body = Mesh::new();
-        let b = super::body(&props(
-            r#"{"min":0.0,"max":1.0,"points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0]}"#,
-        ))
-        .unwrap();
-        b.draw(
-            &mut Draw::new(&mut body, &m, &theme),
-            &Ctx {
-                world: &World::default(),
-                metrics: &m,
-                rect,
-                indent: 0.0,
-                scale: 1.0,
-                time: Some(TimeSpace::of(View::full(100), 100.0)),
-                clip: None,
-                focused: false,
-            },
-        );
-        // And the view keeps its chrome when it *is* handed one.
-        let mut grouped = Mesh::new();
-        c.draw(
-            &mut Draw::new(&mut grouped, &m, &theme),
-            &Ctx {
-                world: &World::default(),
-                metrics: &m,
-                rect,
-                indent: 0.0,
-                scale: 1.0,
-                time: Some(TimeSpace::of(View::full(100), 100.0)),
-                clip: None,
-                focused: false,
-            },
-        );
-        assert!(!alone.is_empty() && !body.is_empty());
-        assert!(
-            body.vertex_count() < alone.vertex_count(),
-            "no label, no field, no border: {} vs {}",
-            body.vertex_count(),
-            alone.vertex_count()
-        );
-        assert!(
-            grouped.vertex_count() > body.vertex_count(),
-            "a view on a group is still a view: {} vs {}",
-            grouped.vertex_count(),
-            body.vertex_count()
-        );
     }
 }

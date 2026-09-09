@@ -23,9 +23,9 @@ import { setAmbientHost } from "../src/gui/ambient.ts";
 import {
     bpf,
     button,
-    clip,
     INLINE_MAX,
     knob,
+    node,
     label,
     layout,
     pianoroll,
@@ -380,7 +380,7 @@ test("a page rewrite drops the part the new one does not have", () => {
 test("two sources on one widget do not clear each other", () => {
     const take = source([0.1, 0.2]);
     const roll = source(undefined, { notes: [[0.0, 1.0, 60]] });
-    const c = clip({ dur: 2.0, data: take, notes: roll });
+    const c = node("field", { data: take, notes: roll });
     roll.set([[0.0, 1.0, 64]]);
     assert.deepEqual(c["data"], [0.1, 0.2]);
     take.set([0.3]);

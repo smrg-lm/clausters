@@ -9,7 +9,7 @@
 //! the whole reason a drag behaves identically on a desktop and in a tab.
 
 use super::*;
-use crate::host::gestures::{ClipEdit, Wheel, WheelDelta};
+use crate::host::gestures::{Wheel, WheelDelta};
 
 /// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
 /// (the browser front's twin of the native `to_key`), or `None` for a key
@@ -238,37 +238,6 @@ impl WebApp {
             }
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 slot.gestures.reset_timelines(&mut self.host, &ctx)
-            }
-            // A clip's own edit verbs, over the clip under the cursor: cut it at
-            // the time cursor, or read it and what touches it as one. They were
-            // the desktop front's alone, which made the same host answer a key
-            // in a window and not in a tab -- and a page had no way to split a
-            // clip at all, since neither is a menu or an affordance anywhere.
-            Key::Character(c) if c.eq_ignore_ascii_case("e") => {
-                match slot
-                    .gestures
-                    .clip_verb(&mut self.host, &ctx, ClipEdit::Split, cx, cy)
-                {
-                    Some(effects) => effects,
-                    None => return,
-                }
-            }
-            Key::Character(c) if c.eq_ignore_ascii_case("j") => {
-                match slot
-                    .gestures
-                    .clip_verb(&mut self.host, &ctx, ClipEdit::Join, cx, cy)
-                {
-                    Some(effects) => effects,
-                    None => return,
-                }
-            }
-            // ...and the block verb over the clips a marquee left in the hand:
-            // the same letter the roll quantizes its notes with, one level up.
-            Key::Character(c) if c.eq_ignore_ascii_case("q") => {
-                match slot.gestures.clip_quantize(&mut self.host, &ctx, cx, cy) {
-                    Some(effects) => effects,
-                    None => return,
-                }
             }
             // The clipboard verbs over the view under the cursor, last, so a
             // focused field and a roll's own block keys answer first.

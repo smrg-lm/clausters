@@ -4,7 +4,7 @@
 //! and winit redraw requests. All gesture *logic* lives in the machine; this file only snapshots the per-call context (frame
 //! buffer size, modifiers, the GPU slots' lane counts) and applies effects.
 
-use crate::host::gestures::{ClipEdit, ClipVerb, GestureCtx, GestureEffect};
+use crate::host::gestures::{ClipVerb, GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
 
 use super::app::App;
@@ -217,41 +217,6 @@ impl App {
         ) {
             Some(effects) => effects,
             None => return false,
-        };
-        self.apply_gesture_effects(effects);
-        true
-    }
-
-    /// Split or join the clip under the cursor — the placement layer's edit
-    /// verbs, reported to whoever owns the composition. Returns whether it was
-    /// consumed.
-    pub(super) fn clip_verb(&mut self, def_id: i32, verb: ClipEdit) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return false;
-        };
-        let Some(effects) = ws.gestures.clip_verb(&mut self.host, &ctx, verb, cx, cy) else {
-            return false;
-        };
-        self.apply_gesture_effects(effects);
-        true
-    }
-
-    /// Quantize the clips the hand is holding on the lane under the cursor.
-    /// Returns whether it was consumed.
-    pub(super) fn clip_quantize(&mut self, def_id: i32) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return false;
-        };
-        let Some(effects) = ws.gestures.clip_quantize(&mut self.host, &ctx, cx, cy) else {
-            return false;
         };
         self.apply_gesture_effects(effects);
         true

@@ -377,13 +377,10 @@ def generic_props() -> set:
 
 #: Widgets whose props are read **outside** their own schema arm, and where.
 #:
-#: A `clip`'s bodies are *children* — a signal element, a piano-roll, a curve —
-#: so the props that describe them are read by `build::clip_bodies` on the way
-#: in and by `apply::apply_clip_body` on the way back, not by the `"clip" =>`
-#: arm, which holds only the clip's own placement and name. The scanner is told
-#: rather than made to guess: the alternative is an arm pretending to read props
-#: it does not touch.
-OUTBOARD = {"field": ("clip_bodies", "apply_clip_body")}
+#: The scanner is told rather than made to guess: the alternative is an arm
+#: pretending to read props it does not touch. Empty since `G34` — a `clip`'s
+#: bodies were the one case, and a clip is no longer a widget.
+OUTBOARD: dict = {}
 
 
 

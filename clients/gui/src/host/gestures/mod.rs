@@ -2,7 +2,7 @@
 //! interpreter over the widget tree for **both fronts**.
 //!
 //! The machine owns the in-progress [`Drag`] and turns pointer/wheel/keyboard
-//! input into tree mutations (through the [`interact`] doors and the widget
+//! input into tree mutations (through the `interact` doors and the widget
 //! model modules) plus a list of [`GestureEffect`]s for whatever only the front
 //! can do: emitting `/gui_event` over its transport and requesting repaints.
 //! The front supplies the per-call [`GestureCtx`] (framebuffer size, modifier
@@ -41,7 +41,6 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 
-use super::interact::{self};
 use super::layout::Rect;
 use super::widget::WidgetKind;
 use super::widget::element::ValueAxis;
@@ -154,14 +153,12 @@ enum Drag {
     /// a stretch of the axis that outlives the gesture because the span is the
     /// thing selected; the two are not one gesture with two pictures.
     ///
-    /// One drag for both, because sweeping a rectangle is one gesture: `at` is
-    /// the element to ask what fell inside (a patcher, which claimed the press
-    /// because only it knows where its paper ends), `lanes` the stack to ask
-    /// the same question of (a multitrack, whose contents are widgets the
-    /// machine places). A view has one or the other.
+    /// One drag for all of them, because sweeping a rectangle is one gesture:
+    /// `at` is the element to ask what fell inside — a patcher, which claimed
+    /// the press because only it knows where its paper ends; a multitrack,
+    /// whose clips are its own; a roll, whose notes are.
     Marquee {
         at: Option<element::At>,
-        lanes: Option<nav::MarqueeLanes>,
         origin: (f64, f64),
         cursor: (f64, f64),
     },
@@ -263,53 +260,6 @@ enum Drag {
         x_start: f64,
         body_w: f64,
     },
-    /// Dragging a multitrack `clip`: the body moves its `offset`, an edge
-    /// resizes its `dur`. The cursor maps to a timeline sample through the
-    /// lane's `body_x`/`body_w` and the shared `nav_start`/`nav_len`; the
-    /// placement follows from a press-time snapshot (`press_sample`,
-    /// `orig_offset`, `orig_dur`) so a clamped edge never drifts, snapped to
-    /// `grid`.
-    Clip {
-        id: i32,
-        /// The lane the clip sits on **now** — the navigation-group member,
-        /// which the clip itself is not; the cursor mapping and the edge scroll
-        /// reach the shared axis through it. It changes under the hand: a body
-        /// drag across the stack moves the clip to the lane it is over.
-        lane: i32,
-        /// The lane it was on at the press, so the release can tell a move
-        /// *across* the stack from a move along one.
-        press_lane: i32,
-        part: interact::Part,
-        body_x: f64,
-        body_w: f64,
-        nav_start: f64,
-        nav_len: f64,
-        press_sample: f64,
-        /// The placement the press found — where the clip sat, how long it was
-        /// and which part of its contents it showed, so a clamped edge is
-        /// measured against the press rather than against the last step.
-        orig: interact::Placement,
-        /// What the contents behind the clip allows the edges to do.
-        contents: interact::Contents,
-        grid: f64,
-        /// **The block the hand is moving**, when the grabbed clip was one the
-        /// marquee had selected: `(index in the lane's clips, offset, row)` per
-        /// selected clip at the press, **the grabbed one first** — it is the
-        /// snap anchor, exactly as it is for a block of notes
-        /// (`placement::move_block`). Empty when one clip is being moved on its
-        /// own, and always empty for an edge drag: a trim is one clip's, since
-        /// two clips of different lengths have no one edge to pull.
-        block: nav::ClipBlock,
-        /// The lanes this clip can be dragged across, read at the press — a
-        /// clip changes lane by [`Bands::index_at`], the call a note changes
-        /// row with.
-        ///
-        /// [`Bands::index_at`]: super::bands::Bands::index_at
-        stack: nav::LaneStack,
-    },
-    /// Dragging a lane header's level fader: the cursor's x over the fader's
-    /// rectangle is the value, so the press itself already sets it.
-    LaneLevel { id: i32, rect: Rect },
     /// Panning a `scroll` workspace from a press on its empty area: the view
     /// follows the cursor absolutely from the press snapshot (`x0`/`y0`), so a
     /// clamped edge never drifts. `area` is the container's laid-out rect at
@@ -366,33 +316,17 @@ impl Gestures {
     }
 
     /// What this drag is holding, in the terms the frame draws affordances by
-    /// ([`crate::host::frame::Grab`]) — the clip and the edge of it, or that
-    /// something else has the pointer.
+    /// ([`crate::host::frame::Grab`]) — the rectangle a marquee is sweeping, or
+    /// that something else has the pointer.
     pub(crate) fn grab(&self) -> crate::host::frame::Grab {
         use crate::host::frame::Grab;
-        use crate::host::graphics::track::ClipSide;
         match &self.drag {
             None => Grab::None,
-            Some(Drag::Clip { id, part, .. }) => Grab::Clip(
-                *id,
-                match part {
-                    interact::Part::Start => Some(ClipSide::Start),
-                    interact::Part::End => Some(ClipSide::End),
-                    interact::Part::Body => None,
-                },
-            ),
             // The rectangle a hand is sweeping over a plane, so the frame can
             // draw it: the machine holds it, and the element it belongs to
             // draws no marquee of its own any more.
-            Some(Drag::Marquee {
-                at,
-                lanes,
-                origin,
-                cursor,
-            }) => Grab::Marquee(
-                at.map(|at| at.id)
-                    .or(lanes.as_ref().map(|l| l.id))
-                    .unwrap_or(-1),
+            Some(Drag::Marquee { at, origin, cursor }) => Grab::Marquee(
+                at.map(|at| at.id).unwrap_or(-1),
                 corner_rect(*origin, *cursor),
             ),
             Some(_) => Grab::Other,
@@ -417,7 +351,6 @@ impl Gestures {
     /// the arithmetic after that is one.
     fn edge_direction(&self, cx: f64) -> f64 {
         let (body_x, body_w) = match self.drag {
-            Some(Drag::Clip { body_x, body_w, .. }) => (body_x, body_w),
             Some(Drag::Element { at, edge: true, .. }) => (
                 (at.rect.x + at.indent) as f64,
                 (at.rect.w - at.indent).max(0.0) as f64,
@@ -444,7 +377,7 @@ mod focus;
 mod keys;
 mod nav;
 
-pub use keys::{ClipEdit, ClipVerb};
+pub use keys::ClipVerb;
 pub use wheel::{Lines, Wheel, WheelDelta};
 mod press;
 mod wheel;

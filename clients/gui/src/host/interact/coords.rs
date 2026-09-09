@@ -5,10 +5,8 @@
 //! system *is* ([`Coords`]), the time axis a timeline view draws through
 //! ([`TimeAxis`]/[`YAxis`]), the chain of containers over a point ([`Frame`],
 //! [`Hit`]) and the readers that pick one system out of a chain ([`plane_of`],
-//! [`time_of`], [`local_time_of`]). Beside them sits the small arithmetic that
-//! inverts the renderer's maps — a pixel back to a sample ([`sample_at`]) — and
-//! the drag one press on a clip's grip produces ([`clip_drag_placement`], which
-//! is [`placement::drag`] with the clip's own bounds).
+//! [`time_of`]). Beside them sits the small arithmetic that inverts the
+//! renderer's maps — a pixel back to a sample ([`sample_at`]).
 //!
 //! **Nothing here mentions the [`Host`]**, which is the line that keeps this
 //! module the vocabulary rather than a fourth door: it is geometry and types,
@@ -21,10 +19,7 @@
 //! [`edit`]: super::edit
 
 use super::super::layout::Rect;
-use super::super::placement::{self, Bounds, Contents, Part, Placement};
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
-use crate::host::graphics::track;
-use crate::host::metrics::Metrics;
 use crate::viewport::View;
 
 /// The coordinate system a container gives its contents.
@@ -48,16 +43,6 @@ pub(crate) enum Coords {
     /// container: the axis is the surface the pan, the selection and the locate
     /// all measure against.
     Time(TimeAxis),
-    /// A **clip's own span**: its rectangle and the slice of `[0, dur]` that
-    /// rectangle shows, resolved by the layout ([`Placed::time`]). A clip is a
-    /// coordinate system — everything inside one is placed, drawn and hit
-    /// through this alone — but it is *not* a navigable axis: it is not a
-    /// navigation-group member, and a pan or a locate started over a clip still
-    /// measures against the lane under it. So it is a variant of its own, and
-    /// [`time_of`] keeps meaning the axis the groups move.
-    ///
-    /// [`Placed::time`]: super::super::layout::Placed::time
-    Local(TimeAxis),
 }
 
 /// The time axis a timeline container gives its contents: where its samples
@@ -184,74 +169,9 @@ pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
     })
 }
 
-/// The innermost **clip** span in `chain`: the clip's id and its own axis. What
-/// a clip's contents are drawn and edited through — the lane's window is not
-/// mentioned past this point.
-pub(crate) fn local_time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
-    chain.iter().rev().find_map(|f| match f.coords {
-        Coords::Local(axis) => Some((f.id?, axis)),
-        _ => None,
-    })
-}
-
-/// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on —
-/// **the strips the grips are drawn on**, and only the ends that carry one.
-///
-/// The note's answer to the same question is [`placement::part_at`], a margin
-/// at each end of the bar: same three parts, different picture. This one reads
-/// the same [`track::clip_grips`] the renderer draws, so the pixels that light
-/// up are the pixels that resize; `ends` is which of the clip's own ends are on
-/// screen, since an end that is not cannot be grabbed (the rectangle's edge
-/// there is the window's, not the clip's). The width is the `grip_w` role: it
-/// was a literal in device pixels, which halved the grab zone on a HiDPI screen
-/// — a clip was hardest to resize exactly where its edge was thinnest.
-pub(crate) fn clip_part(rect: Rect, ends: (bool, bool), m: &Metrics, x: f32) -> Part {
-    let (start, end) = track::clip_grips(rect, ends, m);
-    if start.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
-        Part::Start
-    } else if end.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
-        Part::End
-    } else {
-        Part::Body
-    }
-}
-
 /// Maps a cursor x within a view's body strip to a timeline sample through the
 /// shared navigation window — the inverse of the renderer's sample→pixel map,
 /// used by every timeline gesture (select, locate, clip/note/marker drags).
 pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, x: f64) -> f64 {
     nav_start + nav_len * ((x - body_x) / body_w.max(1.0))
-}
-
-/// The clip placement one drag step produces, against the press-time snapshot
-/// (`press_sample`, `orig`): the cursor's delta is turned into the axis
-/// position the grabbed part is pulled to, and the shared
-/// [`placement::drag`] does the rest — the same arithmetic a note's drag runs.
-///
-/// A clip's domain has no far edge (the lane is as long as its clips), so the
-/// bounds carry only the grid and the floor; what stops an edge is the contents
-/// behind it.
-pub(crate) fn clip_drag_placement(
-    part: Part,
-    sample: f64,
-    press_sample: f64,
-    orig: Placement,
-    contents: Contents,
-    grid: f64,
-) -> Placement {
-    let delta = sample - press_sample;
-    let target = match part {
-        Part::End => orig.offset + orig.dur + delta,
-        Part::Body | Part::Start => orig.offset + delta,
-    };
-    placement::drag(
-        part,
-        target,
-        orig,
-        contents,
-        Bounds {
-            grid,
-            ..Bounds::default()
-        },
-    )
 }

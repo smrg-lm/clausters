@@ -61,60 +61,6 @@ impl Gestures {
             }
             return out;
         }
-        let Some(Drag::Clip {
-            id,
-            lane,
-            part,
-            body_x,
-            body_w,
-            nav_start,
-            nav_len,
-            press_sample,
-            orig,
-            contents,
-            grid,
-            block,
-            stack,
-            press_lane: _,
-        }) = self.drag.clone()
-        else {
-            return out;
-        };
-        let Some((start, len, _)) = group_view(host, lane) else {
-            return out;
-        };
-        // Pan first, then re-apply the drag against the window it left behind.
-        // `pan_timeline` clamps to the group's span (the multitrack headroom),
-        // and the span itself grows as the dragged clip extends the content —
-        // so the view keeps making room instead of stopping at today's end.
-        let step = dir * len * EDGE_SCROLL_PER_SEC * dt;
-        let roots = host.pan_timeline(lane, start + step);
-        for root in roots {
-            out.push(GestureEffect::Redraw(root));
-        }
-        apply_clip_drag(
-            host,
-            &mut out,
-            ctx.def_id,
-            ClipDrag {
-                id,
-                lane,
-                part,
-                body_x,
-                body_w,
-                nav_start,
-                nav_len,
-                press_sample,
-                orig,
-                contents,
-                grid,
-                block,
-                stack,
-            },
-            cx,
-            None,
-        );
-        emit_view(host, &mut out, ctx.def_id, lane);
         out
     }
 
@@ -137,16 +83,10 @@ impl Gestures {
             // **The marquee, wherever a hand sweeps one over a plane**: the
             // machine holds the anchor and the frame draws the rectangle; the
             // element only says what fell inside it.
-            Drag::Marquee {
-                at,
-                ref lanes,
-                origin,
-                ..
-            } => {
-                marquee_caught(host, ctx, at, lanes.as_ref(), origin, (cx, cy));
+            Drag::Marquee { at, origin, .. } => {
+                marquee_caught(host, ctx, at, origin, (cx, cy));
                 self.drag = Some(Drag::Marquee {
                     at,
-                    lanes: lanes.clone(),
                     origin,
                     cursor: (cx, cy),
                 });
@@ -361,59 +301,6 @@ impl Gestures {
                 });
                 out.push(GestureEffect::Redraw(def_id));
             }
-            Drag::Clip {
-                id,
-                lane,
-                part,
-                body_x,
-                body_w,
-                nav_start,
-                nav_len,
-                press_sample,
-                orig,
-                contents,
-                grid,
-                ref block,
-                ref stack,
-                press_lane: _,
-            } => {
-                let now = apply_clip_drag(
-                    host,
-                    &mut out,
-                    def_id,
-                    ClipDrag {
-                        id,
-                        lane,
-                        part,
-                        body_x,
-                        body_w,
-                        nav_start,
-                        nav_len,
-                        press_sample,
-                        orig,
-                        contents,
-                        grid,
-                        block: block.clone(),
-                        stack: stack.clone(),
-                    },
-                    cx,
-                    Some(cy),
-                );
-                // The clip may have changed lane under the hand: the drag holds
-                // the lane it is on now, so the next step measures against it
-                // and the release reports from it.
-                if now != lane
-                    && let Some(Drag::Clip { lane, .. }) = self.drag.as_mut()
-                {
-                    *lane = now;
-                }
-            }
-            Drag::LaneLevel { id, rect } => {
-                let part = interact::HeaderPart::Fader;
-                interact::header_set(host, def_id, id, part, Some((rect, cx)));
-                emit_lane(host, &mut out, def_id, id, part);
-                out.push(GestureEffect::Redraw(def_id));
-            }
         }
         out
     }
@@ -583,60 +470,6 @@ impl Gestures {
                 // *span*, which is the transport's loop and not its position.
                 transport_follows_selection(host, def_id, id, start, len, true);
             }
-        }
-        // A moved or trimmed clip leaves as **one intent at the end**, for the
-        // reason the two arms above give: the placement followed the hand all
-        // along, and this is the edit it amounts to.
-        if let Some(Drag::Clip {
-            id,
-            lane,
-            press_lane,
-            orig,
-            ref block,
-            ..
-        }) = self.drag.clone()
-        {
-            let lanes: Vec<i32> = block.iter().map(|(lane, _)| *lane).collect();
-            self.drag = None;
-            // **And a gesture that changed nothing is not an edit.** A press and
-            // a release with nothing in between is a click -- which places the
-            // cursor, one line below -- and a drag that came back to where it
-            // began is the same thing by another road: the placement is the one
-            // the press found. Reporting it anyway sends the owner an intent to
-            // apply and a document an entry to undo, so looking at four clips
-            // would cost four undos. The block moves rigidly with the grabbed
-            // clip, so the grabbed one standing still is the whole block
-            // standing still.
-            let moved = host
-                .window_def(def_id)
-                .and_then(|t| t.find(id))
-                .is_none_or(|w| crate::host::graphics::track::clip_placement(w) != orig);
-            if lane == press_lane && !moved {
-                out.push(GestureEffect::Redraw(def_id));
-                return out;
-            }
-            // **The clip crossed the stack**, so what it reports is which lane
-            // it is on now and where it sits there. The owner reparents it and
-            // places it in one transaction, because one gesture is one edit --
-            // and a lane change is two `setmembers`, the lane it left and the
-            // lane it joined.
-            if lane != press_lane {
-                emit_clip_lane(host, &mut out, def_id, id, lane);
-                out.push(GestureEffect::Redraw(def_id));
-                return out;
-            }
-            // **One gesture is one edit**, whether it moved one clip or
-            // twelve, and whether they sat on one lane or on four: the block
-            // leaves as a single `"clips"`, which the owner applies as one
-            // transaction and undoes in one step. A run of `"clip"` messages --
-            // or one `"clips"` per lane -- would be an entry each.
-            if lanes.is_empty() {
-                emit_clip(host, &mut out, def_id, id);
-            } else {
-                emit_clips(host, &mut out, def_id, lane, &lanes);
-            }
-            out.push(GestureEffect::Redraw(def_id));
-            return out;
         }
         if let Some(Drag::Element { at, .. }) = self.drag.take() {
             // **Was the pointer still on it?** The machine's own hit test, the

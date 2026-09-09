@@ -689,21 +689,21 @@ them.
 ### A redraw does not re-send what it draws
 
 A `/gui_def` describes **every widget in the subtree it names** — that is what
-lets a lane grow a clip without the window being rebuilt around it — and a
-clip's samples are the largest payload in the system. So a lane restated because
-one clip moved would carry every other clip's audio with it, which is the same
+lets a window grow a widget without being rebuilt around it — and a take's
+samples are the largest payload in the system. So a panel restated because one
+number moved would carry every waveform's audio with it, which is the same
 failure as a redefinition taking a reader's zoom, one order of magnitude up.
 
 `KEEP` is the word for it, in place of a value:
 
 ```python
-from clausters.gui import KEEP, clip, track
+from clausters.gui import KEEP, panel, waveform
 
-# The lane is stated again so one clip can move; the clips that did not change
-# name their takes instead of sending them.
-track(clip(name="a", offset=0.0, dur=4 * BEAT, data=KEEP),
-      clip(name="b", offset=8 * BEAT, dur=4 * BEAT, data=KEEP, label="take"),
-      name="drums")
+# The panel is stated again so a label can change; the views that did not
+# change name their takes instead of sending them.
+panel(waveform(name="a", data=KEEP, channels=1),
+      waveform(name="b", data=KEEP, channels=2, label="take"),
+      layout="col")
 ```
 
 The widget is described in full and its bulk is not: the host carries the run it
@@ -804,68 +804,65 @@ view(
 
 Scroll one; the other follows.
 
-## Fields: lanes, clips and a ruler
+## The multitrack, and the ruler over it
 
-A `field` is the container with **two independent axes** — time against
-whatever the elements on it measure. One container, told apart by what is on
-it:
+A **piece is one widget**. `multitrack` holds the stack of lanes and the boxes
+on them as *props* — flat lists, the way a roll holds its notes — so a script
+**describes** the piece and never composes a tree of lanes: a lane cannot sit in
+a void, and there is exactly one thing that owns the piece.
 
-- holding other fields it is a **lane** (`track`),
-- carrying `offset`/`dur` it is a **clip** placed on its parent's x axis,
-- a bare strip of a given `h` with nothing on it is the free-standing **ruler**
-  (`timeruler`).
+A `field` is what is left of the old three-in-one container: the free-standing
+**ruler** of a navigation group (`timeruler`), a strip with nothing placed on
+it.
 
 ```python
-from clausters.gui import clip, timeruler, track, view
+from clausters.gui import multitrack, timeruler, view
 
 BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
 
 v = view(
-    track(clip(name="a", offset=0.0, dur=4 * BEAT, data=take, label="take"),
-          clip(name="b", offset=4 * BEAT, dur=2 * BEAT,
-               notes=[(0.0, BEAT, 60), (BEAT, BEAT, 67)]),
-          label="drums", link=1),
-    track(clip(offset=0.0, dur=6 * BEAT,
-               points=[(0.0, 0.0), (3 * BEAT, 1.0, "exp"), (6 * BEAT, 0.0)]),
-          label="filter", link=1),
     timeruler(link=1, ruler="beats", tempo=2.0, h=22.0),
+    multitrack(
+        name="piece", link=1, ruler="beats", tempo=2.0, snap=BEAT,
+        lanes=[("drums", "drums"), ("filter", "filter")],
+        # name, lane, offset, dur, start, label, source (a server buffer)
+        clips=[("a", "drums", 0.0, 4 * BEAT, 0.0, "take", take.bufnum),
+               ("b", "drums", 4 * BEAT, 2 * BEAT, 0.0, "", take.bufnum)],
+        weight=1.0,
+    ),
     title="a multitrack", w=900, h=420, layout="col")
 
 win = v.open()
 ```
 
-A clip's **bodies layer**: a take, note events over it, an automation curve
-over both — and each keeps its own value axis, so a clip carrying notes does
-not draw its take against a pitch range. Give a clip a body prop it does not
-have yet and the body grows, which is how a curve is drawn over a take without
-rebuilding the def:
+**A name is the identity.** A lane and a box are named by your own word, never
+by a widget id, so what you draw and what comes back are addressed by what your
+script already calls them — and a box naming a lane that is not there is kept
+and drawn nowhere, so renaming a lane loses nothing.
 
-```python
-win["a"].set(points=[0.0, 0.0, 1, 0.0, 4 * BEAT, 1.0, 1, 0.0])
-```
+**The samples never cross this wire.** `source` is a **server buffer** number
+and the host reads it out of the shared segment or fetches it over its own leg,
+so six boxes over one take are one download. A negative number is a box with no
+contents — negative and not zero, because buffer 0 is a buffer.
 
-A list or a dict passed to `set` is serialized for you: OSC has no structural
-argument, so an `axes` pair, a `theme` table and a list of `points` or `notes`
-all ride as their JSON string. What a **live** set takes is the flat wire form
-— `t v shape curve` per break-point, `start dur pitch velocity channel` per
-note — because converting the friendlier tuples is the *builder's* job, and a
-`set` names a prop without knowing what it means.
-
-The ruler is its **own** strip under the stack rather than one lane's `ruler`,
-because a lane's ruler is reserved out of that lane's height — ruling a stack
-that way costs the bottom lane a strip of itself. A ruler with no `link` joins
-the window's lanes on its own.
+The ruler is its **own** strip above the stack rather than part of the
+multitrack, so ruling a piece costs no lane a pixel. A ruler with no `link`
+joins the window's own group.
 
 ### Edits come back as intents
 
-Drag a clip, or its edge. The host draws the move as it happens and, on
-release, emits what you did — not pixels:
+Drag a box, or its edge. The host draws the move as it happens and, on release,
+emits **the piece as it now stands** — not pixels, and not the gesture:
 
 ```python
-win["a"].on_event(lambda tag, *payload: print(tag, payload))
-# "clip" (offset, dur)  when a clip is moved or resized
-# "locate" (position)   when the axis is clicked -- the ruler, empty lane
-#                       space, a roll's grid, or a clip or note drawn on any
+win["piece"].on_event(lambda tag, *payload: print(tag, payload))
+# "clips" (name, lane, offset, dur, start, label, source, ...)
+#                       the whole piece, after any gesture at all -- a move, a
+#                       trim, a block drag, a lane crossing, a split, a delete
+# "lanes" (name, label, height, mute, solo, gain, ...)
+#                       the lanes as they now stand, after a header control
+# "locate" (position)   when the axis is clicked -- the ruler, empty stack
+#                       space, a roll's grid, or a box or note drawn on any
 #                       of them: one cursor, placed regardless of content
 # "view" (start, len)   when the axis is zoomed or panned
 # "selection" (start, len[, min, max])   the span, and the value band a
@@ -874,7 +871,6 @@ win["a"].on_event(lambda tag, *payload: print(tag, payload))
 # "paste" (position, kind, json, blob…)  Ctrl+V, with the clipboard beside it
 # "refused" (verb, reason)               the host could not do its own half
 # "notes" / "points"    when a roll or a curve is edited
-# "mute" / "solo" / "level"  from a lane header's controls
 ```
 
 The host holds geometry, never your document: it tells you what was asked for,

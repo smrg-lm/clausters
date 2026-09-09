@@ -51,6 +51,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
+from . import guidef
 from .editing import MEASURES, Editor, edit, measures
 from .guidef import (
     KEEP,
@@ -59,11 +60,9 @@ from .guidef import (
     bpf,
     button,
     canvas,
-    clip,
     correlation,
     curve,
     env_to_points,
-    field,
     keys,
     knob,
     label,
@@ -104,7 +103,6 @@ from .guidef import (
     view,
     multitrack,
     timeruler,
-    track,
     waveform,
     window,
 )
@@ -112,6 +110,15 @@ from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost, WidgetInfo
 from .multitrack import Clip, Lane, Multitrack
 from .transport import Transport
+
+#: **The builder, not the submodule.** Importing `clausters.gui.multitrack`
+#: binds the module as an attribute of this package, which overwrites the
+#: `multitrack` the `guidef` import above put here — so a script asking for
+#: `clausters.gui.multitrack` got a module it could not call. Re-bound here,
+#: after every submodule is in, because the widget is what the name means on
+#: this surface: the module is reached as `clausters.gui.multitrack` only by
+#: `import`, and everything else about a piece is `Multitrack`.
+multitrack = guidef.multitrack
 
 #: The host registered by `set_ambient_host`, if any.
 _ambient = None
@@ -186,7 +193,6 @@ __all__ = [
     "window",
     "layout",
     "plane",
-    "field",
     "signal",
     "notes",
     "curve",
@@ -222,8 +228,6 @@ __all__ = [
     "Lane",
     "Clip",
     "timeruler",
-    "track",
-    "clip",
     "patch",
     "canvas",
     "samples_to_blob",

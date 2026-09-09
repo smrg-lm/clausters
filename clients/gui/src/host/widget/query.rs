@@ -7,15 +7,13 @@
 //! chrome it carries, whether it sits on the window's time axis — and none of
 //! those questions belongs in the file that declares the model.
 //!
-//! The second half is the **clip routing**, which is the same question asked
-//! through a container: a clip's bodies carry no id, so anything that resolves
-//! a widget by id and then wants its data ([`signal_target`], [`bulk_target`],
-//! [`clip_body`]) lands on the clip and reaches the body that owns it. That is
-//! the containment stated once, rather than at each caller.
+//! The second half is the **data routing**: anything that resolves a widget by
+//! id and then wants its samples ([`signal_target`], [`bulk_target`]) asks
+//! through a door rather than unpacking a variant, which is the containment
+//! stated once rather than at each caller.
 //!
 //! [`signal_target`]: Widget::signal_target
 //! [`bulk_target`]: Widget::bulk_target
-//! [`clip_body`]: Widget::clip_body
 
 use clausters_core::osc::OscType;
 use serde_json::Value;
@@ -23,14 +21,7 @@ use serde_json::Value;
 use super::super::elements::signal::SignalElement;
 use super::element::BodyRole;
 use super::element::Element;
-use super::{EditorProps, GestureMap, Widget, WidgetKind, build};
-
-/// The names of a container's hidden layers, space-separated — the value its
-/// own `/gui_set hidden` would take back.
-fn hidden_names(widget: &Widget) -> String {
-    let mut w = widget.clone();
-    crate::host::layers::Selection::of(&mut w).map_or_else(String::new, |s| s.hidden())
-}
+use super::{EditorProps, GestureMap, Widget, WidgetKind};
 
 impl Widget {
     /// This widget's gesture table: the `gestures` prop when it carries one,
@@ -63,11 +54,7 @@ impl Widget {
     /// that says it does ([`Element::navigates_time`]),
     /// or one of the containers placed on that axis.
     pub fn is_timeline(&self) -> bool {
-        self.kind.navigates_time()
-            || matches!(
-                self.kind,
-                WidgetKind::Track { .. } | WidgetKind::TimeRuler { .. }
-            )
+        self.kind.navigates_time() || matches!(self.kind, WidgetKind::TimeRuler { .. })
     }
 
     /// Whether this tree contains a widget whose overlay follows the pointer —
@@ -104,9 +91,8 @@ impl WidgetKind {
                 | WidgetKind::Panel { .. }
                 | WidgetKind::Stack { .. }
                 | WidgetKind::Scroll { .. }
-                // A lane and the strip that rules it: their empty space *is*
-                // the axis, which is the case the fall-through was written for.
-                | WidgetKind::Track { .. }
+                // The strip that rules a stack: its empty space *is* the
+                // axis, which is the case the fall-through was written for.
                 | WidgetKind::TimeRuler { .. }
                 | WidgetKind::Unknown(_)
         ) || matches!(self, WidgetKind::Custom(el) if el.is_bare_surface())
@@ -256,17 +242,6 @@ impl WidgetKind {
             .into_iter();
         let own = match self {
             WidgetKind::Custom(el) => el.info(),
-            WidgetKind::Clip { offset, dur, .. } => vec![
-                ("offset".into(), Value::from(*offset)),
-                ("dur".into(), Value::from(*dur)),
-            ],
-            WidgetKind::Track { header, .. } => header
-                .mute
-                .map(|b| ("mute".into(), Value::from(b)))
-                .into_iter()
-                .chain(header.solo.map(|b| ("solo".into(), Value::from(b))))
-                .chain(header.level.map(|v| ("level".into(), Value::from(v))))
-                .collect(),
             WidgetKind::Scroll { view, .. } => view.info(),
             _ => Vec::new(),
         };
@@ -309,7 +284,6 @@ impl WidgetKind {
     /// ([`Element::gutter`]).
     pub fn gutter(&self, m: &super::super::metrics::Metrics) -> f32 {
         match self {
-            WidgetKind::Track { header, .. } => header.width(m),
             WidgetKind::Custom(el) => el.gutter(m),
             _ => 0.0,
         }
@@ -335,6 +309,12 @@ impl WidgetKind {
     /// ([`Element::navigates_time`]).
     pub fn navigates_time(&self) -> bool {
         self.as_element().is_some_and(Element::navigates_time)
+    }
+
+    /// Whether this widget's time axis is not bounded by what it holds
+    /// ([`Element::unbounded_axis`]).
+    pub fn unbounded_axis(&self) -> bool {
+        self.as_element().is_some_and(Element::unbounded_axis)
     }
 
     /// [`gutter`](Self::gutter) asked again of a widget that has been
@@ -390,7 +370,7 @@ impl WidgetKind {
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.editor(),
-            WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -400,7 +380,7 @@ impl WidgetKind {
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.editor_mut(),
-            WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -502,12 +482,10 @@ impl WidgetKind {
 }
 
 impl Widget {
-    /// The signal element this widget draws with: its own, or — for a `clip` —
-    /// the **take** among its bodies.
+    /// The signal element this widget draws with.
     ///
-    /// The reader's half of the containment, and a test accessor like
-    /// [`Widget::signal`]: what a *pass* wants of a clip's body it asks through
-    /// a door ([`Widget::bulk_target`], [`Widget::clip_body`]).
+    /// A test accessor like [`Widget::signal`]: what a *pass* wants of a
+    /// widget's samples it asks through a door ([`Widget::bulk_target`]).
     pub fn signal_target(&self) -> Option<&SignalElement> {
         self.kind
             .signal()
@@ -576,38 +554,10 @@ impl Widget {
             .any(|b| b.kind.take_bulk_of(bufnum, &data))
     }
 
-    /// **What a gesture has changed on this widget** — its own kind's
-    /// ([`WidgetKind::info`]) plus, for a `clip`, its **bodies'**.
-    ///
-    /// The reader's half of the routing `apply_widget` does for writes, and for
-    /// the same reason: a body carries no id, so a script addresses the clip
-    /// and the prop that answers is whichever body owns it. A curve edited on a
-    /// lane reports its points through the clip that holds it.
+    /// **What a gesture has changed on this widget**, from its own kind
+    /// ([`WidgetKind::info`]).
     pub fn info(&self) -> Vec<(String, Value)> {
-        let mut out = self.kind.info();
-        if matches!(self.kind, WidgetKind::Clip { .. }) {
-            // Which layer a hand is editing is state a gesture moves, so it is
-            // reported like every other edit: the name resolves against the
-            // stack this clip actually holds.
-            out.push((
-                "layer".into(),
-                Value::from(crate::host::layers::active(self).name(self)),
-            ));
-            // What is *drawn*, beside what is edited: reported only when
-            // something is hidden, so an ordinary clip answers what it always
-            // did.
-            let any_hidden = self
-                .children
-                .iter()
-                .any(|c| c.kind.body_role().is_some() && !c.visible);
-            if any_hidden {
-                out.push(("hidden".into(), Value::from(hidden_names(self))));
-            }
-            for body in &self.children {
-                out.extend(body.kind.info());
-            }
-        }
-        out
+        self.kind.info()
     }
 
     /// The body a **layer address** names among this container's layered
@@ -630,42 +580,5 @@ impl Widget {
             .filter(|c| c.kind.body_role().is_some())
             .nth(n)
             .map(|c| &mut c.kind)
-    }
-
-    /// The body filling `role` among a clip's children, mutably — the door a
-    /// `/gui_set` of a body prop and an edit-back both write through.
-    pub(crate) fn clip_body_mut(&mut self, role: BodyRole) -> Option<&mut WidgetKind> {
-        self.children
-            .iter_mut()
-            .map(|c| &mut c.kind)
-            .find(|k| k.body_role() == Some(role))
-    }
-
-    /// Adds the body `role` names to this clip when it has none yet, empty, so
-    /// a `/gui_set` that introduces a body has somewhere to land. Layering
-    /// order is the role's own ([`BodyRole`]), and a body added later keeps it:
-    /// an envelope set on a clip that already has a take is drawn *over* it,
-    /// which is the whole point of the bodies being a composition.
-    pub(crate) fn ensure_body(&mut self, role: BodyRole) {
-        if !matches!(self.kind, WidgetKind::Clip { .. }) || self.clip_body(role).is_some() {
-            return;
-        }
-        let Some(kind) = build::empty_clip_body(role) else {
-            return;
-        };
-        let at = self
-            .children
-            .iter()
-            .position(|c| c.kind.body_role() > Some(role))
-            .unwrap_or(self.children.len());
-        self.children.insert(at, build::body_widget(kind));
-    }
-
-    /// The body filling `role` among a clip's children.
-    pub(crate) fn clip_body(&self, role: BodyRole) -> Option<&WidgetKind> {
-        self.children
-            .iter()
-            .map(|c| &c.kind)
-            .find(|k| k.body_role() == Some(role))
     }
 }

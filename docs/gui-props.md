@@ -79,12 +79,16 @@ measured, so a row that becomes half-true fails rather than rotting.
 | `window` | `layout` | python web | **idiom** — the arrangement is `flow` on the wire: the model spends the word `layout` on the container type itself. Both builders still take `layout=` as its old name and emit `flow`, so a script written before the rename keeps building — a client-side courtesy the host knows nothing about |
 | `layout` | `layout` | python web | **idiom** — as above |
 | `plane` | `layout` | python web | **idiom** — as above |
-| `field` | `sel_start` | host web | **idiom** — a `field` is one container in three uses, and two of them act on less than the whole chrome: a lane has no selection and no vertical window (`EditorProps::parse_lane` says so, and the frame pass draws neither), and a bare ruler draws an axis and nothing else. Both parse the lot only because they share the host's `EditorProps` bundle. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python `track` and `timeruler` name props case by case and name only the ones each acts on |
+| `field` | `sel_start` | host web | **idiom** — a `field` is the free-standing ruler and nothing else now that a multitrack holds its lanes and boxes as props, and a ruler draws an axis: it has no selection and no vertical window of its own. It parses the lot only because it shares the host's `EditorProps` bundle. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python `timeruler` names props case by case and names only the ones it acts on |
 | `field` | `sel_len` | host web | **idiom** — as above |
 | `field` | `sel_min` | host web | **idiom** — as above |
 | `field` | `sel_max` | host web | **idiom** — as above |
 | `field` | `y_start` | host web | **idiom** — as above |
 | `field` | `y_len` | host web | **idiom** — as above |
+| `field` | `playhead` | host web | **idiom** — as above: a ruler labels the axis its group shows and draws no head of its own, so the four `playhead` keys are inert members of the same bundle |
+| `field` | `playhead_at` | host web | **idiom** — as above |
+| `field` | `playhead_loop_start` | host web | **idiom** — as above |
+| `field` | `playhead_loop_len` | host web | **idiom** — as above |
 
 ## The divergences between the two builders
 
@@ -109,12 +113,6 @@ now said about the two builders it is actually about.
 |---|---|---|---|
 | `layout` | `layout` | web | **idiom** — `flow`'s old name, kept so a def written before the rename keeps building. The web client declares it once in the `ContainerOptions` every container extends, so every container has it; Python names it per builder and named it on the two whose own parameter is not already called that (`panel`, `scroll`). Neither client can reach the third state — Python's `layout()` taking a `layout=` would shadow the builder's own name in its own signature |
 | `plane` | `layout` | web | **idiom** — `flow`'s old name, kept so a def written before the rename keeps building. The web client declares it once in the `ContainerOptions` every container extends, so every container has it; Python names it per builder and named it on the two whose own parameter is not already called that (`panel`, `scroll`). Neither client can reach the third state — Python's `layout()` taking a `layout=` would shadow the builder's own name in its own signature |
-| `track` | `sel_start` | web | **idiom** — the lane draws neither a selection nor a vertical window (`EditorProps::parse_lane`), and the free-standing ruler draws its ticks and nothing else (`draw_time_ruler`, which returns before anything but `time_ticks`). Both parse the whole bundle only because they share the host's `EditorProps`; the web client declares that bundle once as `TimelineOptions` and so offers its inert members too, and Python names props case by case and names only the ones each builder acts on |
-| `track` | `sel_len` | web | **idiom** — as above |
-| `track` | `sel_min` | web | **idiom** — as above |
-| `track` | `sel_max` | web | **idiom** — as above |
-| `track` | `y_start` | web | **idiom** — as above |
-| `track` | `y_len` | web | **idiom** — as above |
 | `timeruler` | `sel_start` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
 | `timeruler` | `sel_len` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
 | `timeruler` | `sel_min` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |

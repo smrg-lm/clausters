@@ -160,53 +160,6 @@ fn from_props(props: &Map<String, Value>) -> Notes {
     }
 }
 
-/// A clip's **roll** body: the note events over a pitch window, with no chrome
-/// of its own. `None` when the clip's props carry no notes.
-///
-/// The pitch window defaults to the roll's own compass rather than to an
-/// amplitude range — a pitch axis of `[-1, 1]` would clamp every note to the
-/// clip's top edge, silently, since nothing about the drawing would say why.
-pub(crate) fn body(props: &Map<String, Value>) -> Option<Notes> {
-    let notes = parse_notes(props);
-    if notes.is_empty() {
-        return None;
-    }
-    Some(Notes {
-        notes,
-        min: number(props, "min", PITCH_MIN),
-        max: number(props, "max", PITCH_MAX),
-        // A clip's prop, because a clip is what a script addresses: a body
-        // carries no id of its own. **Its own first**: `editable` is the
-        // statement about the whole clip and reaches every body, so a roll that
-        // is read-only while the curve over it is not says so with
-        // `notes_editable` -- the same split `points_min` already has from
-        // `min`.
-        editable: super::body_editable(props, "notes_editable"),
-        ..empty_body()
-    })
-}
-
-/// An **empty** body, for a clip growing a roll it was not built with.
-pub(crate) fn empty_body() -> Notes {
-    Notes {
-        notes: Vec::new(),
-        osc: Vec::new(),
-        selected: Vec::new(),
-        min: PITCH_MIN,
-        max: PITCH_MAX,
-        snap: 0.0,
-        velocity_lane: false,
-        osc_lane: false,
-        midi_in: false,
-        label: None,
-        editor: EditorProps::body(),
-        drag: None,
-        held: Vec::new(),
-        step: 0.0,
-        editable: true,
-    }
-}
-
 impl Notes {
     /// The regions this placement is split into — the same call the drawing and
     /// the hit-test both make, so a note is grabbed by the pixels it is
@@ -1278,63 +1231,6 @@ mod tests {
         );
     }
 
-    /// The cursor read-out stays inside the grid it reads: a roll drawn as a
-    /// clip's body is as wide as the clip, and a read-out right-aligned at its
-    /// own width alone starts left of the box — over whatever is drawn there.
-    #[test]
-    fn the_cursor_readout_is_kept_inside_a_narrow_roll() {
-        use crate::host::world::World;
-
-        let m = Metrics::default();
-        let theme = crate::host::theme::Theme::default();
-        // A clip's roll body: no keyboard gutter, so the box *is* the grid —
-        // and it is narrower than "C4  0.000 s" asks for.
-        let el = body(&props(r#"{"notes":[0.0,50.0,60.0,100.0,0.0]}"#)).unwrap();
-        let narrow = Rect::new(0.0, 0.0, 40.0, 80.0);
-        let paint = |cursor: Option<(f64, f64)>| {
-            let world = World {
-                cursor,
-                ..World::default()
-            };
-            let mut mesh = crate::host::paint::Mesh::new();
-            el.draw(
-                &mut Draw::new(&mut mesh, &m, &theme),
-                &Ctx {
-                    world: &world,
-                    metrics: &m,
-                    rect: narrow,
-                    indent: 0.0,
-                    scale: 1.0,
-                    time: Some(TimeSpace::of(View::full(100), 100.0)),
-                    clip: None,
-                    focused: false,
-                },
-            );
-            mesh
-        };
-        // The read-out is what the pointer adds to the same drawing, so it is
-        // the vertices past the ones the roll puts down without one.
-        let bare = paint(None);
-        let with = paint(Some((20.0, 40.0)));
-        assert!(
-            with.vertex_count() > bare.vertex_count(),
-            "the pointer draws a read-out at all"
-        );
-        let text: Vec<f32> = with
-            .positions()
-            .skip(bare.vertex_count() as usize)
-            .map(|(x, _)| x)
-            .collect();
-        let left = text.iter().copied().fold(f32::MAX, f32::min);
-        let right = text.iter().copied().fold(f32::MIN, f32::max);
-        assert!(
-            left >= narrow.x && right <= narrow.x + narrow.w,
-            "the read-out leaves the box it reads: {left}..{right} in {}..{}",
-            narrow.x,
-            narrow.x + narrow.w
-        );
-    }
-
     /// A roll placed on a navigation group: the indent is its keyboard gutter,
     /// the axis is the group's window over its content.
     fn input<'a>(m: &'a Metrics, rect: Rect, time: Option<TimeSpace>) -> Input<'a> {
@@ -1574,79 +1470,6 @@ mod tests {
         assert!(r.notes.is_empty());
     }
 
-    /// A press inside a **clip** claims a note and declines everywhere else:
-    /// the rest of the rectangle is the clip's own drag.
-    #[test]
-    fn a_body_claims_its_notes_and_declines_the_rest() {
-        let m = Metrics::default();
-        let mut b = body(&props(r#"{"notes":[0.0,100.0,60.0,100,0]}"#)).expect("notes");
-        let mut i = input(&m, rect(), axis(1000.0));
-        // A body is placed on its clip's rectangle, with no gutter of its own.
-        i.indent = 0.0;
-        let grid = b.regions(rect(), 0.0, &m).grid;
-        let (lo, hi) = b.pitch_window();
-        let on = (
-            grid.x as f64 + 50.0 / 1000.0 * grid.w as f64,
-            pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64,
-        );
-        assert!(matches!(b.press(on, &i), Claim::Take(_)));
-        b.drag = None;
-        let off = (grid.x as f64 + 0.9 * grid.w as f64, on.1);
-        assert_eq!(b.press(off, &i), Claim::Decline, "the clip's own drag");
-        assert_eq!(b.body_role(), Some(BodyRole::Notes));
-        assert_eq!(empty_body().body_role(), Some(BodyRole::Notes));
-    }
-
-    /// **The far edge is the placement's, and the two placements differ.**
-    ///
-    /// Inside a clip a note stops at the clip's `dur`, tail included: the body
-    /// is clipped to the clip's rectangle, so a note past the end would be in
-    /// the list, sounding, and drawn nowhere — findable only by resizing the
-    /// clip by hand. The clip is not stretched to take it either; its length is
-    /// what its own edge says.
-    ///
-    /// The roll's own view has no such edge, and that is the same rule rather
-    /// than an exception to it: the view spans its own content, so the note
-    /// lands where it was dropped and the axis reaches it. Both placements are
-    /// asserted here together, because the bug was one of them behaving like
-    /// the other.
-    #[test]
-    fn a_note_stops_at_a_clips_edge_and_runs_free_on_the_rolls_own_view() {
-        let m = Metrics::default();
-        let json = r#"{"notes":[0.0,100.0,60.0,100,0],"min":48,"max":72}"#;
-
-        // -- inside a clip 1000 long: the tail parks on the far edge.
-        let mut b = body(&props(json)).expect("notes");
-        let mut i = input(&m, rect(), axis(1000.0));
-        i.indent = 0.0; // a body has no gutter — this is what makes it a body
-        let grid = b.regions(rect(), 0.0, &m).grid;
-        let (lo, hi) = b.pitch_window();
-        let x = |t: f64| grid.x as f64 + t / 1000.0 * grid.w as f64;
-        let y = pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64;
-        assert!(matches!(b.press((x(50.0), y), &i), Claim::Take(_)));
-        // Dragged well past the right edge, and then some.
-        b.drag((x(1400.0), y), &i);
-        assert_eq!(
-            (b.notes[0].start, b.notes[0].dur),
-            (900.0, 100.0),
-            "the whole note is inside the clip, duration untouched"
-        );
-
-        // -- the same roll standing on its own: nothing stops it.
-        let mut r = roll(json);
-        let at = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 60.0));
-        r.press(at, &input(&m, rect(), axis(1000.0)));
-        let to = (x_of(&r, &m, 900.0, 1000.0), y_of(&r, &m, 60.0));
-        r.drag(to, &input(&m, rect(), axis(1000.0)));
-        assert!(
-            (r.notes[0].start - 850.0).abs() < 1.0,
-            "the note went where it was dropped, tail past the window: {:?}",
-            r.notes[0]
-        );
-        // And the span grew to reach it, which is what the axis then scrolls.
-        assert!(r.span() > 900.0, "span {}", r.span());
-    }
-
     /// The block keys: `q` quantizes the selection, Delete removes it, and
     /// cut/paste travel through the host-wide clipboard in the same JSON a
     /// `/gui_set notes` takes.
@@ -1804,28 +1627,6 @@ mod tests {
         );
     }
 
-    /// The roll's half of the split `points_editable` opened: `notes_editable`
-    /// locks the roll alone, and the clip-wide `editable` still locks it too.
-    /// The curve's half is asserted beside the curve, where its field is
-    /// visible.
-    #[test]
-    fn the_roll_reads_its_own_editable_before_the_clip_s() {
-        let notes = r#""notes":[0.0,100.0,60.0,100,0]"#;
-        let read = |json: &str| body(&props(json)).expect("notes").editable;
-        assert!(
-            read(&format!("{{{notes}}}")),
-            "a clip that says nothing offers the drag"
-        );
-        assert!(!read(&format!(r#"{{{notes},"notes_editable":false}}"#)));
-        assert!(!read(&format!(r#"{{{notes},"editable":false}}"#)));
-        assert!(
-            read(&format!(
-                r#"{{{notes},"editable":false,"notes_editable":true}}"#
-            )),
-            "its own key answers before the clip's"
-        );
-    }
-
     /// **The markers lane shows and does not write.**
     ///
     /// A roll is the editor of things that have a pitch; the other items a
@@ -1868,43 +1669,5 @@ mod tests {
         i.mods.ctrl = false;
         assert_eq!(r.press(on, &i), Claim::Decline);
         assert!(r.drag.is_none(), "and no marker is being slid");
-    }
-
-    /// **The picture must not follow a hand that cannot edit.** A body over a
-    /// rendering refuses at the press, so nothing is drawn moving and then
-    /// unwound -- which is what read as a broken editor.
-    #[test]
-    fn a_read_only_body_refuses_the_press_instead_of_offering_the_drag() {
-        let m = Metrics::default();
-        let mut b = body(&props(
-            r#"{"notes":[0.0,100.0,60.0,100,0],"editable":false}"#,
-        ))
-        .expect("notes");
-        let mut i = input(&m, rect(), axis(1000.0));
-        i.indent = 0.0; // a body is placed on its clip's rectangle, with no gutter
-        let grid = b.regions(rect(), 0.0, &m).grid;
-        let (lo, hi) = b.pitch_window();
-        let on = (
-            grid.x as f64 + 50.0 / 1000.0 * grid.w as f64,
-            pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64,
-        );
-
-        let Claim::Take(take) = b.press(on, &i) else {
-            panic!("a refusal consumes the press, or a sweep behind it takes over");
-        };
-        let msgs = take.events.into_messages();
-        assert_eq!(msgs.len(), 1, "one refusal, said out loud");
-        assert_eq!(msgs[0][0], OscType::String("refused".into()));
-        assert_eq!(msgs[0][1], OscType::String("notes".into()));
-        assert!(b.drag.is_none(), "and no drag was started");
-
-        // The same body unlocked grabs the note, which is what says the refusal
-        // is the prop and not the geometry -- and it is live over `/gui_set`.
-        assert!(b.set("editable", &Value::Bool(true)));
-        assert!(matches!(b.press(on, &i), Claim::Take(_)));
-        assert!(
-            b.drag.is_some(),
-            "unlocked, it takes the note like any other"
-        );
     }
 }

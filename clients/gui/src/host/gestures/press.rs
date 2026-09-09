@@ -16,14 +16,11 @@
 use super::super::Host;
 use super::super::graphics::signal::trace;
 use super::super::interact::{self, Hit};
-use super::super::layers;
-use super::super::placement::Placements;
-use super::super::widget::element::{PendingEdit, TimeSpace};
+use super::super::widget::element::PendingEdit;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
-use clausters_core::osc::OscType;
 
 /// The reasons the two sample-editing arms give, written once because both give
 /// them and a reason spelled twice is a reason that will be spelled two ways.
@@ -366,39 +363,24 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
                 true
             }
-            // **The marquee**: the objects the rectangle covers, and no span.
-            // On a stack of lanes that is the clips it crosses -- the patcher's
-            // gesture one level up, and the same `Drag::Marquee` -- while a
-            // *time range* over the same lanes is the other selection and is
-            // `Select` above.
+            // **The marquee**: the objects the rectangle covers, and no span —
+            // the patcher's gesture and the multitrack's, one `Drag::Marquee`,
+            // while a *time range* over the same view is the other selection
+            // and is `Select` above.
             (GestureStep::Marquee, interact::Coords::Time(axis)) => {
                 if !axis.spans(cx) {
                     return false;
                 }
-                let lanes = super::nav::MarqueeLanes {
-                    id,
-                    body: axis.body,
-                    nav_start: axis.nav.start,
-                    nav_len: axis.nav.len,
-                    // The stack this sweep can cross: read at the press, like a
-                    // clip drag's, and a lane of its own where there is none.
-                    stack: lane_stack(host, ctx, id),
-                };
-                // **And the element under it answers too.** A rectangle asks
-                // whichever holds the contents -- the lanes of the stack it
-                // sweeps down, *and* the element it was begun on, which is a
-                // roll's notes or a patcher's boxes. Asking only the lanes made
-                // this the one sweep that could not catch a note, which is why
-                // a bare roll had to plan `select` (a span it did not want) to
-                // select anything at all.
+                // The element under it is what answers: a rectangle asks
+                // whoever holds the contents — a roll's notes, a patcher's
+                // boxes, a multitrack's clips.
                 let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
                 // A press is the rectangle at no size, so it covers nothing and
                 // the hand lets go of whatever it held -- the one rule every
                 // view answers a click with.
-                marquee_caught(host, ctx, Some(element), Some(&lanes), (cx, cy), (cx, cy));
+                marquee_caught(host, ctx, Some(element), (cx, cy), (cx, cy));
                 self.drag = Some(Drag::Marquee {
                     at: Some(element),
-                    lanes: Some(lanes),
                     origin: (cx, cy),
                     cursor: (cx, cy),
                 });
@@ -630,10 +612,9 @@ impl Gestures {
         // drag of its own: the press is where its bare canvas is, and
         // everything after it is the one sweep every view shares.
         self.drag = Some(if take.marquee {
-            marquee_caught(host, ctx, Some(at), None, (cx, cy), (cx, cy));
+            marquee_caught(host, ctx, Some(at), (cx, cy), (cx, cy));
             Drag::Marquee {
                 at: Some(at),
-                lanes: None,
                 origin: (cx, cy),
                 cursor: (cx, cy),
             }
@@ -646,93 +627,6 @@ impl Gestures {
         element::report(host, out, ctx, at.id, take.events);
         out.push(GestureEffect::Redraw(ctx.def_id));
         true
-    }
-
-    /// **Which layer a press on a container belongs to, and the press given to
-    /// it** — the whole of the interaction rule, in one place.
-    ///
-    /// The layer is resolved from what is drawn under the pointer
-    /// ([`layers::under_pointer`]), made active, and then — and only then —
-    /// offered the press. A container that layers editable things has as many
-    /// claimants as it has layers plus its own placement, and this is the one
-    /// decision between them: everything else in the machine acts on the layer
-    /// that came back, so no pass has to know what kinds of thing the container
-    /// holds.
-    ///
-    /// Returns `true` when a **content** layer took the press. The placement
-    /// layer's own gesture (the move, the edges) is the caller's, because it is
-    /// the container's and not an element's.
-    fn clip_layer_press(
-        &mut self,
-        host: &mut Host,
-        ctx: &GestureCtx,
-        h: &interact::ClipHit,
-        cx: f64,
-        cy: f64,
-        out: &mut Vec<GestureEffect>,
-    ) -> bool {
-        // The clip's own axis, which is the coordinate system every layer of it
-        // is drawn and grabbed against.
-        let time = TimeSpace::of(h.local, h.dur);
-        let at = element::At {
-            id: h.id,
-            layer: None,
-            rect: h.rect,
-            indent: 0.0,
-            scale: 1.0,
-            time: Some(time),
-        };
-        // **The placement layer keeps the pixels it draws its own affordance
-        // on**, which is the same rule the content layers get from
-        // `layers::under_pointer` (the active layer is asked first): a grip is
-        // drawn only while the placement is active, and what is lit is what the
-        // press takes — a note under the end of a roll clip does not steal the
-        // edge from the cursor sitting on the arrow that promised otherwise.
-        let placement_active = host
-            .window_def(ctx.def_id)
-            .and_then(|t| t.find(h.id))
-            .is_some_and(|w| layers::active(w) == layers::Layer::Placement);
-        if placement_active && h.part != interact::Part::Body {
-            return false;
-        }
-        let Some(layer) = element::layer_under_pointer(host, ctx, at, cx, cy) else {
-            return false;
-        };
-        // Selecting is its own operation and says so when it changed: a script
-        // that follows the selection (to show a layer's own inspector, to move
-        // a menu) hears the same word it would have sent.
-        let announced = host
-            .window_def_mut(ctx.def_id)
-            .and_then(|t| t.find_mut(h.id))
-            .and_then(|w| {
-                let mut sel = layers::Selection::of(w)?;
-                sel.set(layer).then(|| layer.name(w))
-            });
-        if let Some(name) = announced {
-            deliver_args(
-                host,
-                out,
-                ctx.def_id,
-                h.id,
-                Some(vec![OscType::String("layer".into()), OscType::String(name)]),
-            );
-            out.push(GestureEffect::Redraw(ctx.def_id));
-        }
-        if !matches!(layer, layers::Layer::Content(_)) {
-            return false;
-        }
-        // Delivered on the layer's **own** frame: the container's rectangle
-        // and axis when the layer fills it, its own stretch when it names one.
-        let at = element::layer_frame(
-            host,
-            ctx,
-            element::At {
-                layer: Some(layer),
-                time: Some(time),
-                ..at
-            },
-        );
-        self.element_at(host, ctx, at, cx, cy, out)
     }
 
     /// The press the containers handed down: what the widget under the cursor
@@ -755,194 +649,23 @@ impl Gestures {
             indent,
             ..
         } = *hit;
-        let (chain, kind) = (&hit.chain, hit.kind.clone());
-        let def_id = ctx.def_id;
         let effects_before = out.len();
-        match kind {
-            // A lane's **header** is the element: the band beside the axis
-            // carries the controls, so a press there is a mute, a solo or a
-            // fader rather than a position. A press on the band's empty space
-            // still means nothing (it names no sample), which is what it has
-            // meant since the axis stopped locating from the header.
-            WidgetKind::Track { .. } => {
-                let Some((_, axis)) = interact::time_of(chain) else {
-                    return false;
-                };
-                let Some(h) = interact::header_hit(host, def_id, id, rect, axis.body.x, cx, cy)
-                else {
-                    return false;
-                };
-                interact::header_set(host, def_id, id, h.part, h.fader.map(|r| (r, cx)));
-                if let Some(r) = h.fader.filter(|_| h.part == interact::HeaderPart::Fader) {
-                    self.drag = Some(Drag::LaneLevel { id, rect: r });
-                }
-                emit_lane(host, out, def_id, id, h.part);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            // A **clip** is the element now: the layout places it on its lane's
-            // axis, so the hit lands on it directly and the press reads the
-            // rectangle that was drawn. Empty lane space and the ruler strip
-            // are not a clip at all — the press falls back to the chain, where
-            // the lane's plan locates the transport.
-            WidgetKind::Clip { .. } => {
-                let Some(lane) = interact::time_of(chain) else {
-                    return false;
-                };
-                // The lane's own grid, from the container the axis came from.
-                let snap = match host.widget_kind(def_id, lane.0) {
-                    Some(WidgetKind::Track { snap, .. }) => *snap,
-                    _ => 0.0,
-                };
-                // The clip's own axis, resolved by the layout and carried down
-                // the hit chain — not re-derived from the lane's window here.
-                let Some(local) = interact::local_time_of(chain) else {
-                    return false;
-                };
-                if let Some(h) = interact::clip_hit(host, def_id, lane, local, cx) {
-                    // **Which layer the press belongs to is decided first**,
-                    // and everything below this line is the placement layer's
-                    // — the move and the edges. A press on a content layer's
-                    // own contents (an envelope's break-points, a note) selects
-                    // that layer and is that layer's; a press on the clip's
-                    // background is on no layer's contents, which is what
-                    // leaves it, and the grips with it, to the clip itself.
-                    //
-                    // The grips need no exception here any more, and that is
-                    // the point of the rule: they are drawn only while the
-                    // placement is the active layer, so the pixels that light
-                    // up and the pixels that resize are the same pixels by
-                    // construction rather than by a precedence written down
-                    // twice.
-                    if self.clip_layer_press(host, ctx, &h, cx, cy, out) {
-                        return true;
-                    }
-                    // **Alt adds or removes one clip**, and consumes the
-                    // press: a selection built one box at a time is not a drag,
-                    // which is the rule the roll's notes already follow — with
-                    // the same key, since Alt is what adds a *note* to a roll's
-                    // selection. Which of the two a press means is the layer
-                    // question, already answered above: an Alt press that landed
-                    // on a body's own contents never reaches here.
-                    if ctx.alt && h.part == interact::Part::Body {
-                        let held = host
-                            .window_def(def_id)
-                            .and_then(|t| t.find(h.id))
-                            .is_some_and(|w| w.selected);
-                        interact::set_clip_selected(host, def_id, h.id, !held);
-                        out.push(GestureEffect::Redraw(def_id));
-                        return true;
-                    }
-                    // **Grabbing a selected clip moves the whole selection**;
-                    // grabbing an unselected one lets go of it and moves
-                    // singly. A trim is always one clip's: two clips of
-                    // different lengths have no one edge to pull.
-                    let stack = lane_stack(host, ctx, h.lane);
-                    let block = clip_block(host, def_id, &stack, h.lane, h.id, h.part);
-                    if block.is_empty() && interact::clear_clip_selection(host, def_id) {
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                    let press_sample = interact::sample_at(
-                        h.nav.start,
-                        h.nav.len,
-                        h.body.x as f64,
-                        h.body.w as f64,
-                        cx,
-                    );
-                    self.drag = Some(Drag::Clip {
-                        id: h.id,
-                        lane: h.lane,
-                        press_lane: h.lane,
-                        part: h.part,
-                        body_x: h.body.x as f64,
-                        body_w: h.body.w as f64,
-                        nav_start: h.nav.start,
-                        nav_len: h.nav.len,
-                        press_sample,
-                        orig: h.placement,
-                        contents: h.contents,
-                        grid: snap,
-                        block,
-                        stack,
-                    });
-                }
-            }
-            // A registered element gets the press on the live widget (the `kind`
-            // matched above is the hit's copy), and answers the same way a
-            // built-in arm does by hand: it consumed it, or it declines and the
-            // press goes back up the chain. The claim is taken before anything
-            // is delivered, so the element's borrow of the tree is over by the
-            // time the event leaves.
-            WidgetKind::Custom(_) => {
-                return self.element_at(
-                    host,
-                    ctx,
-                    element::At::widget(id, rect, scale, indent),
-                    cx,
-                    cy,
-                    out,
-                );
-            }
-            _ => {}
+        // A registered element gets the press on the live widget (the `kind` the
+        // hit carries is a copy), and answers the way it answers anywhere: it
+        // consumed it, or it declines and the press goes back up the chain. The
+        // claim is taken before anything is delivered, so the element's borrow
+        // of the tree is over by the time the event leaves.
+        if matches!(hit.kind, WidgetKind::Custom(_)) {
+            return self.element_at(
+                host,
+                ctx,
+                element::At::widget(id, rect, scale, indent),
+                cx,
+                cy,
+                out,
+            );
         }
         // Nothing the element wanted: the press goes back to the chain.
         self.drag.is_some() || out.len() > effects_before
     }
-}
-
-/// **The block a clip press takes hold of**: per lane of the stack, the
-/// press-time `(index, offset, row)` of every selected clip on it — the
-/// snapshot shape `placement::move_block` moves, and the same one a roll builds
-/// for a block of notes. The grabbed clip's lane leads, and the grabbed clip
-/// leads inside it, because it is the snap anchor the rest keep their distance
-/// from.
-///
-/// **A selection is not one lane's**, so neither is the block: a marquee down
-/// the stack takes clips of several lanes and grabbing any one of them moves
-/// all of them, which is the rule the patcher already states for a set of boxes
-/// on a plane. A lane of the stack holding nothing selected contributes
-/// nothing.
-///
-/// Empty when the grabbed clip is not selected (the press moves it alone) or
-/// when an **edge** was grabbed: a trim is one clip's, since two clips of
-/// different lengths have no one edge to pull.
-fn clip_block(
-    host: &mut Host,
-    def_id: i32,
-    stack: &LaneStack,
-    lane_id: i32,
-    clip_id: i32,
-    part: interact::Part,
-) -> super::nav::ClipBlock {
-    if part != interact::Part::Body {
-        return Vec::new();
-    }
-    // The grabbed lane first, then the rest of the stack in order; a stack that
-    // was never read is the grabbed lane alone.
-    let lanes = std::iter::once(lane_id)
-        .chain(stack.ids.iter().copied().filter(|id| *id != lane_id))
-        .collect::<Vec<i32>>();
-    let mut out: super::nav::ClipBlock = Vec::new();
-    for lane in lanes {
-        let Some(w) = host.window_def_mut(def_id).and_then(|t| t.find_mut(lane)) else {
-            continue;
-        };
-        let clips = crate::host::graphics::track::LaneClips::of(w, 0.0);
-        // The grabbed clip leads its own lane; the others are in drawing order.
-        let grabbed = (lane == lane_id)
-            .then(|| clips.index_of(clip_id).filter(|&i| clips.is_selected(i)))
-            .flatten();
-        if lane == lane_id && grabbed.is_none() {
-            // The press moves an unselected clip alone, whatever else is held.
-            return Vec::new();
-        }
-        let held: super::nav::HeldClips = grabbed
-            .into_iter()
-            .chain((0..clips.len()).filter(|&i| Some(i) != grabbed && clips.is_selected(i)))
-            .map(|i| (i, clips.placement(i).offset, Placements::row(&clips, i)))
-            .collect();
-        if !held.is_empty() {
-            out.push((lane, held));
-        }
-    }
-    out
 }
