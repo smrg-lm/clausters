@@ -1165,6 +1165,12 @@ class _HostSource:
     def fileno(self):
         return self.host._osc.fileno()
 
+    def gone(self) -> bool:
+        """Whether the host process closed the connection — what makes this
+        source leave the loop instead of being woken on for ever."""
+        gone = getattr(self.host._osc, "gone", None)
+        return bool(gone()) if gone is not None else False
+
     def read(self, timeout: float = 0.0):
         data = self.host._osc.recv(timeout)
         return None if data is None else _osclib.decode(data)

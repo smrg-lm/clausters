@@ -121,6 +121,68 @@ def test_a_removed_source_stops_being_drained(loop):
     assert got == []
 
 
+def test_a_source_whose_peer_is_gone_leaves_the_loop(loop):
+    """A stream socket at end-of-file stays readable for ever, so a source
+    nobody drops is one the loop wakes on every turn and reads nothing from — a
+    whole core, for as long as the process lives. It cost exactly that when a
+    GUI host was killed under a client that was still running.
+
+    The loop **asks**: a source with no notion of a peer says nothing and is
+    kept, which is what a queue or a callback honestly answers.
+    """
+    from clausters.base.loop import Source
+
+    class Stream(Source):
+        def __init__(self):
+            self.closed = False
+            self.reads = 0
+
+        def read(self, timeout=0.0):
+            self.reads += 1
+            return None
+
+        def deliver(self, item):
+            pass
+
+        def gone(self):
+            return self.closed
+
+    source = Stream()
+    loop.add_source(source)
+    loop.iterate(0.0)
+    assert source.reads == 1, "read once, with nothing to hand over"
+
+    source.closed = True
+    loop.iterate(0.0)
+    before = source.reads
+    loop.iterate(0.0)
+    assert source.reads == before, "and it is not read again"
+
+
+def test_a_stream_tells_an_empty_read_from_a_closed_peer():
+    """Both read as no packet, and they are not the same answer: one is
+    "nothing yet" and the other is "there will never be anything"."""
+    import socket
+
+    from clausters.base._oscinterface import OscTcpInterface
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    client = OscTcpInterface("127.0.0.1", port)
+    client.start()
+    server, _ = listener.accept()
+    try:
+        assert client.recv(0.0) is None and not client.gone(), "nothing yet"
+        server.close()
+        assert client.recv(0.05) is None
+        assert client.gone(), "the peer closed"
+    finally:
+        client.stop()
+        listener.close()
+
+
 def test_the_wait_is_bounded_by_the_nearest_timer(loop):
     """Not by the timeout it was asked for: a loop with something due in 20 ms
     does not sleep for a second first."""

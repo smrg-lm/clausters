@@ -264,10 +264,18 @@ class OscTcpInterface(OscInterface):
         #: event loop reads with ``timeout=0``, so it never holds this while
         #: waiting -- the waiting is the loop's, over `fileno`.
         self._io = threading.RLock()
+        #: Whether the **peer** closed this connection. A stream socket at
+        #: end-of-file is readable for ever, so a loop selecting on it and
+        #: reading nothing spins a whole core -- which is what a host that
+        #: crashed or was killed used to cost its client. It is remembered
+        #: rather than answered by trying, because the only way to *ask* is to
+        #: read, and by then the answer is gone.
+        self._gone = False
 
     def start(self):
         self._sock = socket.create_connection((self.host, self.port))
         self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._gone = False
         return self
 
     def stop(self):
@@ -277,6 +285,15 @@ class OscTcpInterface(OscInterface):
         self._buf = b""
 
     close = stop
+
+    def gone(self) -> bool:
+        """Whether the peer closed this connection.
+
+        What an event loop asks before waiting on the descriptor again: a
+        stream at end-of-file stays readable, so a source nobody drops is a
+        source the loop wakes on for ever.
+        """
+        return self._gone
 
     def _ensure(self):
         if self._sock is None:
@@ -322,6 +339,11 @@ class OscTcpInterface(OscInterface):
             finally:
                 self._sock.settimeout(None)
         if not chunk:
+            # **End of file: the peer is gone**, which is not the same answer
+            # as "nothing yet" even though both read as no packet. Said out
+            # loud (`gone`) so the loop drops this source instead of waking on
+            # a descriptor that will be readable for ever.
+            self._gone = True
             return False
         self._buf += chunk
         return True

@@ -46,6 +46,7 @@ of the caller's own -- so a reader that needs more than one fact at a time takes
 the same lock.
 """
 
+import logging
 import os
 import selectors
 import threading
@@ -53,6 +54,8 @@ import time
 from collections import deque
 
 from .. import _native
+
+log = logging.getLogger(__name__)
 
 #: The longest a wait lasts when no timer is closer. A loop with nothing
 #: scheduled still wakes this often, which is what bounds how long `stop` and a
@@ -88,6 +91,17 @@ class Source:
     def deliver(self, item):
         """Act on one item. Runs on the loop's thread, holding the loop's lock."""
         raise NotImplementedError
+
+    def gone(self) -> bool:
+        """Whether the other end of this source is gone, so the loop should
+        drop it.
+
+        ``False`` here, which is what a source with no notion of a peer — a
+        queue, a callback — honestly says. It matters for a **stream**: a
+        socket at end-of-file stays readable for ever, so a source nobody drops
+        is one the loop wakes on every turn and reads nothing from.
+        """
+        return False
 
 
 class _Callback(Source):
@@ -363,6 +377,7 @@ class EventLoop:
                         pass
                     continue
                 did |= self._deliver_all(key.data)
+                self._drop_if_gone(key.data)
         if blind:
             share = (timeout / len(blind)) if timeout > 0 else 0.0
             for source in blind:
@@ -373,7 +388,25 @@ class EventLoop:
                     source.deliver(item)
                 did = True
                 did |= self._deliver_all(source)
+            for source in blind:
+                self._drop_if_gone(source)
         return did
+
+    def _drop_if_gone(self, source) -> None:
+        """**A source whose peer is gone leaves the loop.**
+
+        A stream socket at end-of-file stays readable for ever, so a source
+        nobody drops is one the loop wakes on every turn and reads nothing
+        from — a whole core, for as long as the process lives. It cost exactly
+        that when a GUI host was killed under a client that was still running.
+
+        Optional, so a source with no notion of a peer (a queue, a callback)
+        says nothing and is kept: the loop asks, it does not require.
+        """
+        gone = getattr(source, "gone", None)
+        if gone is not None and gone():
+            log.warning("%r: the other end closed; it leaves the loop", source)
+            self.remove_source(source)
 
     def _deliver_all(self, source) -> bool:
         """Drain a ready source until it has nothing more, so one wake empties
