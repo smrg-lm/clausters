@@ -109,6 +109,11 @@ export interface MultitrackWidget {
     set(props: Record<string, unknown>): unknown;
 }
 
+/** What `attach` needs of a window: a way to find a widget by name. */
+export interface MultitrackWindow {
+    widget(name: string): MultitrackWidget;
+}
+
 export interface MultitrackOptions {
     lanes?: readonly LaneLike[];
     clips?: readonly ClipLike[];
@@ -137,6 +142,7 @@ export class Multitrack {
     onChange: ((what: string) => void) | null;
 
     private widget: MultitrackWidget | null = null;
+    private builtAs: string | null = null;
 
     constructor({ lanes = [], clips = [], snap = 0.0, onChange }: MultitrackOptions = {}) {
         this.lanes = lanes.map((l) => (l instanceof Lane ? l : new Lane(...l)));
@@ -251,6 +257,9 @@ export class Multitrack {
      * `playheadAt`…) passes through.
      */
     view(props: Record<string, unknown> = {}): GuiNode {
+        // The name is remembered so `attach` needs only the window: this object
+        // built the node, so it is the one that knows what it called it.
+        if (typeof props.name === "string") this.builtAs = props.name;
         return multitrackView({
             snap: this.snap,
             ...props,
@@ -260,13 +269,33 @@ export class Multitrack {
     }
 
     /**
-     * Subscribe to the widget drawing this piece.
+     * Subscribe to the widget drawing this piece: pass the **window**
+     * `view().open()` gave back, or the widget handle itself.
+     *
+     * It is a second step because a view is a *definition* and an id names a
+     * *live* widget — one view opens as many times as you like, each window
+     * with ids of its own — so which opened window this piece is watching has
+     * to be said. What does not have to be said again is the name: `view`
+     * remembered it.
      *
      * **One subscription, for the whole piece.** The widget reports what it now
      * holds, so this replaces the lists and calls `onChange`; there is nothing
      * per clip to register and no id for a script to carry.
      */
-    attach(widget: MultitrackWidget): this {
+    attach(where: MultitrackWidget | MultitrackWindow): this {
+        let widget: MultitrackWidget;
+        if ("onEvent" in where) {
+            widget = where;
+        } else {
+            if (this.builtAs === null) {
+                throw new Error(
+                    "this piece's view was built with no name, so a window " +
+                    "cannot be searched for it: pass the widget handle, or " +
+                    "build the view with a name",
+                );
+            }
+            widget = where.widget(this.builtAs);
+        }
         this.widget = widget;
         widget.onEvent((tag, ...vals) => this.edited(tag, vals));
         return this;

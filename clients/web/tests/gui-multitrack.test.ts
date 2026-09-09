@@ -142,3 +142,22 @@ test("an unattached piece is still a piece", () => {
     assert.ok(mt.clip("c") !== null);
     assert.equal(mt.lane("noise")?.gain, 0.5);
 });
+
+test("attach takes the window and remembers its own name", () => {
+    // `view` is a definition and an id names a live widget, so which opened
+    // window is being watched has to be said. The **name** does not: the object
+    // built the node, so it knows what it called it.
+    const w = new FakeWidget();
+    const win = { widget: (name: string) => { assert.equal(name, "piece"); return w; } };
+
+    const mt = piece();
+    mt.view({ name: "piece" });
+    mt.attach(win);
+    w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "");
+    assert.equal(mt.clip("a")?.lane, "tone");
+
+    // A view with no name cannot be searched for, and says so.
+    const nameless = piece();
+    nameless.view({ weight: 1.0 });
+    assert.throws(() => nameless.attach(win), /no name/);
+});

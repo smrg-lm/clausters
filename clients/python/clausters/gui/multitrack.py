@@ -83,6 +83,7 @@ class Multitrack:
     snap: float = 0.0
     on_change: object = None
     _widget: object = field(default=None, repr=False)
+    _name: object = field(default=None, repr=False)
 
     def __post_init__(self):
         self.lanes = [l if isinstance(l, Lane) else Lane(*l) for l in self.lanes]
@@ -168,17 +169,34 @@ class Multitrack:
         what this object holds. Any widget prop (``name``, ``weight``, ``link``,
         ``ruler``, ``sample_rate``, ``playhead_at``…) passes through."""
         props.setdefault("snap", self.snap)
+        # The name is remembered so `attach` needs only the window: this object
+        # built the node, so it is the one that knows what it called it.
+        self._name = props.get("name", self._name)
         return multitrack_view(lanes=self._lane_tuples(),
                                clips=self._clip_tuples(), **props)
 
-    def attach(self, widget) -> "Multitrack":
-        """Subscribe to the widget drawing this piece — a `WidgetHandle`, or a
-        window and the name to look it up by.
+    def attach(self, where) -> "Multitrack":
+        """Subscribe to the widget drawing this piece: pass the **window**
+        `view.open` gave back, or the widget handle itself.
+
+        It is a second step because a `view` is a *definition* and an id names a
+        *live* widget — one view opens as many times as you like, each window
+        with ids of its own — so which opened window this piece is watching has
+        to be said. What does not have to be said again is the name: `view`
+        remembered it.
 
         **One subscription, for the whole piece.** The widget reports what it now
         holds, so this replaces the lists and calls `on_change`; there is nothing
         per clip to register and no id for a script to carry.
         """
+        widget = where
+        if hasattr(where, "__getitem__") and not hasattr(where, "on_event"):
+            if self._name is None:
+                raise ValueError(
+                    "this piece's view was built with no name, so a window "
+                    "cannot be searched for it: pass the widget handle, or "
+                    "build the view with name=")
+            widget = where[self._name]
         self._widget = widget
         widget.on_event(self._edited)
         return self
