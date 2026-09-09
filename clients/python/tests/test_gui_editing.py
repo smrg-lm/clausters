@@ -222,6 +222,19 @@ def test_a_tag_that_is_not_an_edit_never_reaches_the_domain():
     assert ed.selection["start"] == pytest.approx(0.0)
 
 
+def test_the_routing_table_is_the_crates_and_not_this_modules():
+    # It was eight strings here and eight in the web client's editor, and
+    # nothing kept the two agreeing. Now both read the one list the document
+    # crate holds beside the presentation rule it states.
+    from clausters import _native
+    from clausters.gui.editing import not_an_edit
+
+    assert not_an_edit() == _native.view_not_an_edit()
+    assert "selection" in not_an_edit()
+    assert "notes" not in not_an_edit(), "an edit is not screen state"
+    assert not_an_edit() is not_an_edit(), "read once and kept"
+
+
 def test_a_tag_this_domain_does_not_know_is_nothing_rather_than_an_error():
     ed = an_editor()
     host = FakeHost()

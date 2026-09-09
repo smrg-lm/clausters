@@ -28,7 +28,11 @@
  * @module
  */
 
-import { samples_to_secs, secs_to_samples } from "../../core/clausters_core_web.js";
+import {
+    samples_to_secs,
+    secs_to_samples,
+    viewNotAnEdit,
+} from "../../core/clausters_core_web.js";
 import { TempoMap } from "../../base/time.ts";
 import type { Intent, Selection } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -40,21 +44,29 @@ import type { Domain } from "./domain.ts";
 import { Echo } from "./echo.ts";
 import type { View } from "./view.ts";
 
+let notAnEditHeld: readonly string[] = [];
+
 /**
- * The tags that are **not** edits: what a view is looking at, and where the hand
- * is. They are answered generically and never reach a domain, because the crate
- * is explicit that screen state is never part of what is edited.
+ * The tags that are **not** edits: what a view is looking at, and where the
+ * hand is.
+ *
+ * They are answered generically and never reach a domain, because the crate is
+ * explicit that screen state is never part of what is edited — and the list is
+ * **the crate's** (`clausters_document::view::NOT_AN_EDIT`) rather than this
+ * module's, because it was written once here and once in the Python client's
+ * editor, and a table that small drifts unread: a tag one client treats as
+ * screen state and the other hands to a domain is a gesture that reaches a
+ * vocabulary which does not know it, answers nothing, and looks like a widget
+ * that does nothing.
+ *
+ * Read once and kept: it answers a constant, so no event pays for it.
  */
-export const NOT_AN_EDIT = [
-    "selection",
-    "view",
-    "view_x",
-    "view_y",
-    "layer",
-    "focus",
-    "locate",
-    "height",
-];
+export function notAnEdit(): readonly string[] {
+    if (notAnEditHeld.length === 0) {
+        notAnEditHeld = JSON.parse(viewNotAnEdit() || "[]") as string[];
+    }
+    return notAnEditHeld;
+}
 
 /**
  * The host an `open` acts on: the one named, else the ambient one — the same
@@ -595,7 +607,7 @@ export class Editor<S = unknown> implements Adopting {
         const id = Math.trunc(Number(args[0]));
         const tag = String(args[1]);
         const rest = args.slice(2);
-        if (NOT_AN_EDIT.includes(tag)) return this.observe(id, tag, rest);
+        if (notAnEdit().includes(tag)) return this.observe(id, tag, rest);
         if (this.domain === null) return false;
         const payload = this.domain.payload(this.structure, tag, rest);
         if (payload === null || payload === undefined) {

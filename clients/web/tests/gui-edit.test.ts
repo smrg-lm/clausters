@@ -445,3 +445,14 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     assert.equal(curveEditor.undo(), true);
     assert.equal(curve.toPoints()[1], 200.0);
 });
+
+test("the routing table is the crate's and not this module's", async () => {
+    // It was eight strings here and eight in the Python client's editor, and
+    // nothing kept the two agreeing. Now both read the one list the document
+    // crate holds beside the presentation rule it states.
+    await loadCore();
+    const { notAnEdit } = await import("../src/gui/editing/index.ts");
+    assert.ok(notAnEdit().includes("selection"));
+    assert.ok(!notAnEdit().includes("notes"), "an edit is not screen state");
+    assert.equal(notAnEdit(), notAnEdit(), "read once and kept");
+});

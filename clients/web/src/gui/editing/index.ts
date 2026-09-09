@@ -50,6 +50,6 @@ export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from ".
 export type { Measure, SamplesEditorOptions } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Correction } from "./echo.ts";
-export { Editor, NOT_AN_EDIT, resolveEditorHost } from "./editor.ts";
+export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";
 export type { GenericEditorOptions, Leg } from "./editor.ts";
 export { View } from "./view.ts";

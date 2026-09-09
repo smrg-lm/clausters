@@ -619,7 +619,13 @@ reasoning:
   where undo lives) / *presentation* (derived; invalidated, never synchronized)
   / *screen state* (zoom, scroll, a selection in flight; never persisted, never
   logged). A destructive edit is not an exception to "an edit never writes a
-  source": it writes a **temporary** source of its own.
+  source": it writes a **temporary** source of its own. Which `/gui_event` tags
+  are screen state is the crate's own list
+  (`clausters_document::view::NOT_AN_EDIT`, bound as
+  `clausters_view_not_an_edit` / `viewNotAnEdit`), because an editor routes by
+  it: those tags are answered generically and never reach a domain, and a
+  client holding its own copy would edit with a gesture the other one merely
+  looks at.
 - **A leaf is opaque.** The document holds a leaf as an id, a kind and a
   configuration blob it never interprets — never the samples and never the
   algorithm. A generator *is code*, in the language of whoever wrote it, so no

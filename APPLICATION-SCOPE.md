@@ -1332,8 +1332,8 @@ owner moved is how a working editor becomes a new set of defects.
   caller that existed, and the seam had just been widened to admit one that did
   not.
 
-- ⬜ **The routing table's tag list is written twice** *(found 2026-09-06,
-  auditing what AP5 had left)*. `NOT_AN_EDIT` — which event tags are screen
+- ✅ **The routing table's tag list is written twice** *(found 2026-09-06,
+  auditing what AP5 had left; lowered 2026-09-09)*. `NOT_AN_EDIT` — which event tags are screen
   state rather than edits — is eight strings duplicated verbatim in
   `clients/python/clausters/gui/editing/editor.py` and
   `clients/web/src/gui/editing/editor.ts`. **The two agree today**, read side by
@@ -1347,6 +1347,18 @@ owner moved is how a working editor becomes a new set of defects.
   such a module (a second GUI vocabulary constant that has to be shared) or a
   cheaper place to put it, and it should be settled *there* rather than by
   whichever milestone next reads the list.
+
+  **The second reason arrived, and no new module was needed.** The list is
+  `clausters_document::view::NOT_AN_EDIT`, beside the presentation type and the
+  rule the module already states in prose — a selection and a zoom are each
+  window's and never the composition's — so what was owed was one symbol per
+  seam (`clausters_view_not_an_edit`, `viewNotAnEdit`, core ABI v44) and not a
+  module to hold it. Both clients read it once and keep it, so no event pays
+  for the crossing, and the constant became a call in both (`not_an_edit()`,
+  `notAnEdit()`) because the web client's core loads asynchronously and a
+  top-level constant could not wait for it. What a client does with the tags is
+  still the client's: screen state is each window's and the crate holds none of
+  it.
 
 - ⬜ **`Application` exists in Python and not in the web client, so half the
   publish machinery has one implementation** *(found 2026-09-06, writing the
@@ -1549,7 +1561,7 @@ Written down so it can be checked rather than felt:
 - [x] AP2 - a redraw is a diff *(mechanism landed; acceptance met under AP6)*
 - [x] AP3 - screen state is keyed by the thing, not by its address
 - [x] AP4 - by value or by reference *(already true; nothing built, and why)*
-- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the routing table, the undo/redo walk and the catalogue views, in "Found by use" or owed to `O24`)*
+- [~] AP5 - the application core moves to Rust *(the picture has one owner and it is the host: the reconcile landed both sides, `_published` is gone and the difference is retired. What is left is the web client, which has neither `Application` nor `redefine` - that is `W30`, and it is written to run after this branch - plus the undo/redo walk and the catalogue views, in "Found by use" or owed to `O24`; the routing table is down, core ABI v44)*
 - [x] AP6 - `FormEditor` converges *(closed by removal: the subject is deleted and the target was wrong; its measurement survives)*
       *(the Rust half was not deleted - see "What is already in Rust, and must be read again against the new design")*
 - [ ] AP7 - a second application

@@ -254,5 +254,37 @@ impl View {
     }
 }
 
+/// The `/gui_event` tags that are **not** edits of the structure: what a view
+/// is looking at, and where the hand is.
+///
+/// This module says the rule in prose — a selection and a zoom are each
+/// window's and never the composition's — and the routing table is that rule as
+/// a value, so a client can obey it without restating it. It is here rather
+/// than in a client because it was written twice, once per language, and two
+/// copies of a list of words drift the way every duplicated table drifts: a tag
+/// added to one of them makes that client answer a gesture the other one edits
+/// with.
+///
+/// What a client does with the tags is still the client's: it writes them into
+/// its own screen state, which is not this crate's to hold. What is settled
+/// here is only *which ones* those are.
+pub const NOT_AN_EDIT: [&str; 8] = [
+    "selection",
+    "view",
+    "view_x",
+    "view_y",
+    "layer",
+    "focus",
+    "locate",
+    "height",
+];
+
+/// Whether `tag` names screen state rather than an edit — [`NOT_AN_EDIT`] asked
+/// of one tag.
+#[must_use]
+pub fn is_screen_state(tag: &str) -> bool {
+    NOT_AN_EDIT.contains(&tag)
+}
+
 #[cfg(test)]
 mod tests;

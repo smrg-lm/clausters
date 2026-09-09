@@ -49,7 +49,7 @@ from .context import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
 from .edit import edit
-from .editor import NOT_AN_EDIT, Editor
+from .editor import Editor, not_an_edit
 from .events import NotesDomain, NotesEditor, NotesView
 from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
                          Sources)
@@ -69,7 +69,6 @@ __all__ = [
     "Editor",
     "FIRST_VERSION",
     "MEASURES",
-    "NOT_AN_EDIT",
     "NotesDomain",
     "NotesEditor",
     "NotesView",
@@ -85,6 +84,7 @@ __all__ = [
     "SamplesView",
     "View",
     "edit",
+    "not_an_edit",
     "watch",
     "measures",
 ]

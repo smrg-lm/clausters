@@ -36,11 +36,28 @@ from .application import BASE_ID, Application, _resolve_host
 from .context import FIRST_VERSION, Editing
 from .trace import log
 
-#: The tags that are **not** edits: what a view is looking at, and where the
-#: hand is. They are answered generically and never reach a domain, because the
-#: crate is explicit that screen state is never part of what is edited.
-NOT_AN_EDIT = ("selection", "view", "view_x", "view_y", "layer", "focus",
-               "locate", "height")
+_not_an_edit: tuple = ()
+
+
+def not_an_edit() -> tuple:
+    """The tags that are **not** edits: what a view is looking at, and where
+    the hand is.
+
+    They are answered generically and never reach a domain, because the crate
+    is explicit that screen state is never part of what is edited — and the
+    list is **the crate's** (`clausters_document::view::NOT_AN_EDIT`) rather
+    than this module's, because it was written once here and once in the web
+    client's editor, and a table that small drifts unread: a tag one client
+    treats as screen state and the other hands to a domain is a gesture that
+    reaches a vocabulary which does not know it, answers nothing, and looks
+    like a widget that does nothing.
+
+    Read once and kept: it answers a constant, so no event pays for it.
+    """
+    global _not_an_edit
+    if not _not_an_edit:
+        _not_an_edit = _native.view_not_an_edit()
+    return _not_an_edit
 
 
 class Editor:
@@ -488,7 +505,7 @@ class Editor:
         and not all of it is an edit of this structure.
         """
         wid, tag, values = int(args[0]), str(args[1]), args[2:]
-        if tag in NOT_AN_EDIT:
+        if tag in not_an_edit():
             log.debug("event  %s %r -> screen state", wid, tag)
             return self._observe(wid, tag, values)
         if self.domain is None:

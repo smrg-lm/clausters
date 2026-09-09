@@ -296,7 +296,12 @@ pub use time::*;
 /// counter moves at all is that a client which cannot find them has no way to
 /// draw a multitrack without writing the mapping again -- which is the thing
 /// they exist to prevent.
-pub const CORE_ABI_VERSION: u32 = 43;
+/// **v44 the routing table is the crate's.** `clausters_view_not_an_edit`
+/// answers the `/gui_event` tags that are screen state rather than edits, which
+/// each client held as its own literal list. **Additive**, and the counter
+/// moves for the same reason v43 did: a client that cannot find it writes the
+/// list again, which is the divergence the symbol exists to end.
+pub const CORE_ABI_VERSION: u32 = 44;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

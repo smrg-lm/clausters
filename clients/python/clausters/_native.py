@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 43
+CORE_ABI_VERSION = 44
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -514,6 +514,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_multitrack_read.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
+    lib.clausters_view_not_an_edit.restype = ctypes.c_size_t
+    lib.clausters_view_not_an_edit.argtypes = [u8p, ctypes.c_size_t]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_history_free.restype = None
@@ -1280,6 +1282,32 @@ def multitrack_read(piece, placed) -> list:
     """
     answer = _read_json(lib().clausters_multitrack_read, piece, placed)
     return answer.get("intents", []) if isinstance(answer, dict) else []
+
+
+
+def view_not_an_edit() -> tuple:
+    """**The `/gui_event` tags that are not edits** of the structure: what a
+    view is looking at, and where the hand is.
+
+    An editor routes an event by its tag — screen state is answered generically
+    and never reaches a domain, and everything else is the domain's to read.
+    Which tags those are is the crate's list (`clausters_document::view`), not
+    each client's: it was a literal tuple here and a literal array in the web
+    client, and a table that small drifts unread — a tag missing from one makes
+    that client *edit* with a gesture the other one merely looks at.
+
+    What a client does with them is still the client's: screen state is each
+    window's by the four-layer rule, and the crate holds none of it.
+
+    Returns:
+        The tags, in the crate's order.
+    """
+    need = lib().clausters_view_not_an_edit(None, 0)
+    if need == 0:
+        return ()
+    out = (ctypes.c_ubyte * need)()
+    n = lib().clausters_view_not_an_edit(out, need)
+    return tuple(json.loads(ctypes.string_at(out, n).decode("utf-8")))
 
 
 def _read_json(fn, *values):

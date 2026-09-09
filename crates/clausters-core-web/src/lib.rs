@@ -2370,6 +2370,22 @@ pub fn multitrack_read(piece: &str, placed: &str) -> String {
     serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
 }
 
+/// **The tags a view reports that are not edits**, as a JSON array of strings.
+///
+/// A page routes an incoming `/gui_event` by its tag: screen state is answered
+/// generically and never reaches a domain, and everything else is the domain's
+/// to read. Which tags those are is one list, and it was written once per
+/// client until this call existed — a table small enough that two copies look
+/// harmless and drift silently, since a tag missing from one makes that client
+/// *edit* with a gesture the other one merely looks at.
+///
+/// Read once and kept, not called per event: it answers a constant.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = viewNotAnEdit)]
+pub fn view_not_an_edit() -> String {
+    serde_json::to_string(&clausters_document::view::NOT_AN_EDIT).unwrap_or_default()
+}
+
 /// What makes two of a **domain's** edits *the same thing done the same way* —
 /// the key a caller recording its own entry passes to {@link History.record},
 /// or an empty string when the payload is not written in that vocabulary (or

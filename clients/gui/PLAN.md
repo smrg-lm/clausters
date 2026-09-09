@@ -4198,8 +4198,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   answers itself rather than routes -- beside `NOT_AN_EDIT`, not inside a
   domain -- and what an editor does with one is the same open question as
   before. **Related:** "The routing table's tag list is written twice"
-  (`APPLICATION-SCOPE.md`, Found by use) is the list it would join, and it is
-  duplicated in both clients today.
+  (`APPLICATION-SCOPE.md`, Found by use) is the list it would join, and since
+  2026-09-09 that list is the crate's (`clausters_document::view::NOT_AN_EDIT`),
+  so joining it is one line in one place rather than one per client.
 
   **Fixed 2026-09-07: the status bar** (`host/status.rs`). The decision the
   entry was waiting on -- *where a reason shows* -- is answered, and by the
@@ -4235,7 +4236,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   prints `event N 'refused' -> no payload` in a trace and does nothing -- noise
   now rather than a lost message, since the host displayed it before the client
   ever saw it. Putting it beside `NOT_AN_EDIT` is still the tidy answer and is
-  no longer urgent.
+  no longer urgent -- and it is now cheaper than it was, since that list lives
+  in the document crate and a tag added there reaches both clients at once.
 
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;

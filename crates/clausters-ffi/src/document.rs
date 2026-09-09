@@ -491,6 +491,33 @@ pub unsafe extern "C" fn clausters_document_resolve(
     })
 }
 
+/// **The tags a view reports that are not edits**, as a JSON array of strings —
+/// `clausters_document::view::NOT_AN_EDIT`.
+///
+/// A client routes an incoming `/gui_event` by its tag: screen state is
+/// answered generically and never reaches a domain, and everything else is the
+/// domain's to read. Which tags those are is one list, and it was written once
+/// per client until this row existed — a table small enough that two copies
+/// look harmless and drift silently, since a tag missing from one makes that
+/// client *edit* with a gesture the other one merely looks at.
+///
+/// Read once and kept, not called per event: it answers a constant.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface.
+///
+/// # Safety
+/// `out` must be null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize) -> usize {
+    let Ok(answer) = serde_json::to_string(&clausters_document::view::NOT_AN_EDIT) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -800,5 +827,17 @@ mod tests {
             )
         };
         assert_eq!(n, 2, "`[]`, which a failure (0) is distinguishable from");
+    }
+
+    #[test]
+    fn the_routing_table_crosses_as_a_json_array_of_tags() {
+        let n = unsafe { clausters_view_not_an_edit(std::ptr::null_mut(), 0) };
+        let mut buf = vec![0u8; n];
+        let m = unsafe { clausters_view_not_an_edit(buf.as_mut_ptr(), buf.len()) };
+        assert_eq!(m, n, "sizing and filling agree");
+        let tags: Vec<String> = serde_json::from_slice(&buf).unwrap();
+        assert!(tags.iter().any(|t| t == "selection"));
+        assert!(tags.iter().all(|t| !t.is_empty()));
+        assert_eq!(tags.len(), clausters_document::view::NOT_AN_EDIT.len());
     }
 }
