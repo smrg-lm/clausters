@@ -49,6 +49,7 @@ use crate::timebase::Beat;
 use crate::{Node, NodeId, Opaque, SegmentRef};
 
 pub mod edit;
+pub mod picture;
 
 /// Anything a newer writer wrote that this build has no field for, carried so a
 /// round trip through an older reader does not lose it.

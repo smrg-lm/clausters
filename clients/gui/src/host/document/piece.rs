@@ -36,24 +36,18 @@
 //! through the rate and never through the tempo: a recording's length is a
 //! wall-clock fact.
 
-use std::collections::HashMap;
-
 use clausters_core::tempomap::{TempoChange, TempoMap};
+use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MultitrackIntent;
-use clausters_document::multitrack::{Content, Lane, Multitrack, Region, Track};
-use clausters_document::{Beat, Lifetime, NodeId, SegmentRef, SegmentSource, SourceRef};
+use clausters_document::multitrack::picture;
+use clausters_document::{Beat, NodeId, SourceId};
 use serde_json::{Value, json};
 
 use super::sources::Takes;
-use super::tree::{ClipRow, LaneRow, Piece, node_named};
+use super::tree::{ClipRow, LaneRow, Piece};
 
 /// The lane height a row is drawn at, in logical pixels.
 const LANE_H: f64 = 96.0;
-
-/// The three keys a strip reads out of a track's `config` and writes back into
-/// it. `mute` and `solo` are fields of [`Track`] itself; only the fader is
-/// carried in the client's own table, because the document holds no mixer.
-const LEVEL: &str = "level";
 
 /// The tempo a piece that never said one is read at, in beats per second —
 /// one, so a beat is a second and a piece with no tempo behaves exactly as it
@@ -133,52 +127,49 @@ pub fn tempo_map(piece: &Multitrack) -> TempoMap {
 
 /// The piece as the `multitrack` widget takes it, and as an edit-back is
 /// resolved against.
+///
+/// **The shape is the crate's and the time is this host's**
+/// ([`clausters_document::multitrack::picture`]): what a row and a box *are* is
+/// the format's business and is written once for every client; turning beats
+/// into frames on the shared axis is the tempo map's, which is what this adds.
 pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
-    let mut lanes = Vec::with_capacity(piece.tracks.len());
-    let mut clips = Vec::new();
-    let mut lanes_prop = Vec::with_capacity(piece.tracks.len() * 6);
-    let mut clips_prop = Vec::new();
-    for track in &piece.tracks {
-        let Some(lane) = active_lane(track) else {
-            continue;
-        };
+    let rows = picture::rows(piece);
+    let boxes = picture::boxes(piece);
+    let mut lanes = Vec::with_capacity(rows.len());
+    let mut lanes_prop = Vec::with_capacity(rows.len() * 6);
+    for row in &rows {
         lanes.push(LaneRow {
-            node: track.id,
-            // A row's clips are the lane's, so what a region is added to and
-            // removed from is that lane rather than the track.
-            holder: lane.id,
+            node: row.track,
+            holder: row.lane,
             // A track has no offset: the piece's timeline is one, and a region
             // states where it is on it.
             base: 0.0,
         });
         lanes_prop.extend([
-            json!(track.id.0.to_string()),
-            json!(
-                track
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("track {}", track.id.0))
-            ),
+            json!(row.track.0.to_string()),
+            json!(row.label.clone()),
             json!(LANE_H),
-            json!(track.muted),
-            json!(track.soloed),
-            json!(level_of(track)),
+            json!(row.mute),
+            json!(row.solo),
+            json!(row.gain),
         ]);
-        for region in &lane.regions {
-            clips.push(ClipRow {
-                node: region.id,
-                lane: track.id,
-            });
-            clips_prop.extend([
-                json!(region.id.0.to_string()),
-                json!(track.id.0.to_string()),
-                json!(look.frame_at(region.position.0)),
-                json!(look.frames_over(region.position.0, region.length.0)),
-                json!(start_of(region) * look.rate),
-                json!(label_of(region)),
-                json!(buffer_of(region, look)),
-            ]);
-        }
+    }
+    let mut clips = Vec::with_capacity(boxes.len());
+    let mut clips_prop = Vec::with_capacity(boxes.len() * 7);
+    for box_ in &boxes {
+        clips.push(ClipRow {
+            node: box_.region,
+            lane: box_.row,
+        });
+        clips_prop.extend([
+            json!(box_.region.0.to_string()),
+            json!(box_.row.0.to_string()),
+            json!(look.frame_at(box_.position.0)),
+            json!(look.frames_over(box_.position.0, box_.length.0)),
+            json!(box_.start * look.rate),
+            json!(box_.label.clone()),
+            json!(bufnum_of(box_.source, look)),
+        ]);
     }
     Piece {
         lanes,
@@ -188,274 +179,73 @@ pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
     }
 }
 
-/// The lane a track plays, which is the one a row draws.
-fn active_lane(track: &Track) -> Option<&Lane> {
-    track.active_lane().or_else(|| track.lanes.first())
-}
-
-/// The fader, out of the track's own table. A track with none is at unity: the
-/// widget's prop is a number and not an absence.
-fn level_of(track: &Track) -> f64 {
-    track
-        .config
-        .0
-        .get(LEVEL)
-        .and_then(Value::as_f64)
-        .unwrap_or(1.0)
-}
-
-/// What a box is called on screen.
-fn label_of(region: &Region) -> String {
-    region
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("region {}", region.id.0))
-}
-
-/// The source frame the box's own zero reads, in **seconds** — a window states
-/// it, and anything else starts at the beginning of what it holds.
-fn start_of(region: &Region) -> f64 {
-    match &region.content {
-        Content::Window { window, .. } => window.start,
-        _ => 0.0,
-    }
-}
-
-/// The **server buffer** a box draws, or `-1` for a box over nothing: a window
-/// onto notes, a composite, or samples nobody has read in yet.
-fn buffer_of(region: &Region, look: &Look<'_>) -> i32 {
-    let Content::Window { window, .. } = &region.content else {
-        return -1;
-    };
-    window
-        .source
-        .samples()
-        .and_then(|source| look.takes?.get(source.source))
+/// The **server buffer** a source was read into, or `-1` for a box over
+/// nothing: a window onto notes, a composite, or samples nobody read in yet.
+fn bufnum_of(source: Option<SourceId>, look: &Look<'_>) -> i32 {
+    source
+        .and_then(|source| look.takes?.get(source))
         .map_or(-1, |take| take.bufnum)
 }
 
 /// **The piece's clips, as they now stand** — the one payload every placement
-/// gesture leaves, read against the piece.
+/// gesture leaves.
 ///
-/// A region that stayed where it was is nothing; one that moved, changed row or
-/// was trimmed is one verb each, and the vocabulary already tells the two
-/// apart: [`MultitrackIntent::PlaceRegion`] never changes what a region reads,
-/// so a move cannot silently retime the material, and
-/// [`MultitrackIntent::TrimRegion`] is the one that does.
-///
-/// A region the payload **does not name** was deleted, and that is a
-/// [`MultitrackIntent::SetLane`] over what its lane now holds — the lane's own
-/// whole-list verb, which is also what a paste inverts to.
+/// The flat wire form crossed into the crate's own
+/// [`Placed`](picture::Placed), which is where beats meet frames and a buffer
+/// number meets a source. What the list *means* is
+/// [`picture::read`]'s and is written once.
 pub fn read_clips(
     piece: &Multitrack,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    let shown = shown(piece, look);
-    let mut out = Vec::new();
-    let mut seen: Vec<NodeId> = Vec::new();
-    // Boxes the piece has no region for, by the lane they landed on.
-    let mut fresh: HashMap<NodeId, Vec<(Beat, Beat, Content)>> = HashMap::new();
+    let rows = picture::rows(piece);
+    let mut placed = Vec::new();
     for clip in args.as_chunks::<7>().0 {
         let (Some(name), Some(lane)) = (string_at(clip, 0), string_at(clip, 1)) else {
             continue;
         };
-        // The lane's name **is** an id, always: the drawing writes it and a
-        // hand never renames a row. A box's name is not -- a split names its
-        // halves after the box they came from -- which is exactly how a new one
-        // is told from a moved one.
-        let Some(track_id) = node_named(lane) else {
+        // The row's name **is** an id, always: the drawing writes it and a hand
+        // never renames a row.
+        let Some(row) = lane.parse::<u64>().ok().map(NodeId) else {
             continue;
         };
-        // A box naming a row the piece has none of is **kept where it is**: the
-        // widget hands back what it could not place so it can be re-homed, and
-        // acting on it would be moving a region into a track that is not there.
-        let Some(row) = shown.lane(track_id) else {
+        if !rows.iter().any(|r| r.track == row) {
             continue;
-        };
-        // Back the way they were drawn: through the map, and a length as the
-        // difference of two positions.
-        let position = Beat(look.beat_at(float_at(clip, 2)));
-        let length = Beat(look.beat_at(float_at(clip, 2) + float_at(clip, 3)) - position.0);
-        let found = node_named(name).and_then(|id| find_region(piece, id).map(|f| (id, f)));
-        let Some((region_id, (track, region))) = found else {
-            // **A box the piece has no region for is a new one.** A split's
-            // tail, a paste, anything a hand made: the payload says which lane
-            // it landed on, which buffer it is a window onto and where in that
-            // buffer it opens, which is everything a region needs -- so it is
-            // built rather than inferred, and one rule serves whatever gesture
-            // produced it.
-            let start = float_at(clip, 4) / look.rate.max(f64::MIN_POSITIVE);
-            if let Some(content) = window_onto(int_at(clip, 6), start, position, length, look) {
-                fresh
-                    .entry(row.holder)
-                    .or_default()
-                    .push((position, length, content));
-            }
-            continue;
-        };
-        seen.push(region_id);
-        let crossed = track != track_id;
-        let moved = (position - region.position).0.abs() > f64::EPSILON;
-        let resized = (length - region.length).0.abs() > f64::EPSILON;
-        // **A trim is the verb that changes what shows**, and it states the
-        // position too, so a left-hand trim is one edit rather than a move and
-        // a resize racing each other.
-        if resized {
-            out.push((
-                MultitrackIntent::TrimRegion {
-                    region: region_id,
-                    position,
-                    length,
-                    // What it reads is unchanged here: the widget reports a
-                    // `start` and the crate takes a whole `Content`, so a left
-                    // trim moves the box and not yet its window
-                    // (`clients/gui/PLAN.md`, "Found by use").
-                    content: None,
-                },
-                "trim a clip",
-            ));
         }
-        if crossed || (moved && !resized) {
-            out.push((
-                MultitrackIntent::PlaceRegion {
-                    region: region_id,
-                    track: track_id,
-                    lane: row.holder,
-                    position,
-                    layer: region.layer,
-                },
-                if crossed {
-                    "move a clip to another track"
-                } else {
-                    "move a clip"
-                },
-            ));
-        }
+        let at = float_at(clip, 2);
+        let position = Beat(look.beat_at(at));
+        let length = Beat(look.beat_at(at + float_at(clip, 3)) - position.0);
+        placed.push(picture::Placed {
+            name: name.to_string(),
+            row,
+            position,
+            length,
+            start: float_at(clip, 4) / look.rate.max(f64::MIN_POSITIVE),
+            // How much a **new** box shows: the stretch it occupies, crossed to
+            // the wall clock the only way a length may be.
+            content: look.tempo.span_secs(position.0, position.0 + length.0),
+            source: source_of(int_at(clip, 6), look),
+        });
     }
-    out.extend(lane_lists(piece, &shown, &seen, &fresh));
-    out
+    picture::read(piece, &placed, picture::fresh_id(piece))
+        .into_iter()
+        .map(|intent| {
+            let label = match &intent {
+                MultitrackIntent::TrimRegion { .. } => "trim a clip",
+                MultitrackIntent::PlaceRegion { .. } => "move a clip",
+                _ => "edit the clips",
+            };
+            (intent, label)
+        })
+        .collect()
 }
 
 /// The **source** a buffer number came from, which is the reverse of the lookup
-/// that drew it.
-///
-/// A box names a server buffer because that is what a picture is drawn from;
-/// the document names a source. The table that resolved one to the other is the
-/// only thing that can read it back, which is why a new box can only be built
-/// where the session actually loaded its samples.
-fn window_onto(
-    bufnum: i64,
-    start: f64,
-    position: Beat,
-    length: Beat,
-    look: &Look<'_>,
-) -> Option<Content> {
-    let takes = look.takes?;
-    let source = takes.source_of(i32::try_from(bufnum).ok()?)?;
-    Some(Content::Window {
-        window: SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
-                source,
-                lifetime: Lifetime::Session,
-                generation: 0,
-                range: None,
-            }),
-            start,
-            // How much of the source it shows, in **seconds** — and taken
-            // over the stretch it actually occupies, since the same length in
-            // beats lasts differently depending on where it sits.
-            duration: look
-                .tempo
-                .span_secs(position.0, position.0 + length.0)
-                .max(0.0),
-        },
-        playrate: 1.0,
-        args: clausters_document::Opaque::none(),
-    })
-}
-
-/// **What each lane now holds**, for the two changes a placement cannot state:
-/// a region the payload no longer names (removed) and a box the piece has no
-/// region for (added).
-///
-/// One verb for both, because the piece has one: a lane's whole list. That is
-/// also what a split, a join and a paste invert to, so none of them needs a
-/// reader that guesses which of the three a payload was.
-fn lane_lists(
-    piece: &Multitrack,
-    shown: &Piece,
-    seen: &[NodeId],
-    fresh: &HashMap<NodeId, Vec<(Beat, Beat, Content)>>,
-) -> Vec<(MultitrackIntent, &'static str)> {
-    // Ids for the new regions, past **everything** the piece already names --
-    // its tracks, its lanes and its regions, which share one id space. An id is
-    // the piece's and a hand that made a box has none to offer.
-    let mut next = piece
-        .tracks
-        .iter()
-        .flat_map(|track| {
-            std::iter::once(track.id.0).chain(track.lanes.iter().flat_map(|lane| {
-                std::iter::once(lane.id.0).chain(lane.regions.iter().map(|r| r.id.0))
-            }))
-        })
-        .max()
-        .unwrap_or(0)
-        + 1;
-    let mut out = Vec::new();
-    for row in &shown.lanes {
-        let Some(lane) = piece
-            .tracks
-            .iter()
-            .find(|t| t.id == row.node)
-            .and_then(active_lane)
-        else {
-            continue;
-        };
-        let added = fresh.get(&lane.id).map(Vec::as_slice).unwrap_or_default();
-        let gone = lane.regions.iter().any(|r| !seen.contains(&r.id));
-        if added.is_empty() && !gone {
-            continue;
-        }
-        let mut regions: Vec<Region> = lane
-            .regions
-            .iter()
-            .filter(|r| seen.contains(&r.id))
-            .cloned()
-            .collect();
-        for (position, length, content) in added {
-            regions.push(Region::new(
-                NodeId(next),
-                *position,
-                *length,
-                content.clone(),
-            ));
-            next += 1;
-        }
-        out.push((
-            MultitrackIntent::SetLane {
-                lane: lane.id,
-                regions,
-            },
-            if added.is_empty() {
-                "remove a clip"
-            } else {
-                "add a clip"
-            },
-        ));
-    }
-    out
-}
-
-/// An OSC integer, however it was written.
-fn int_at(args: &[clausters_core::osc::OscType], n: usize) -> i64 {
-    match args.get(n) {
-        Some(clausters_core::osc::OscType::Int(v)) => i64::from(*v),
-        Some(clausters_core::osc::OscType::Long(v)) => *v,
-        Some(clausters_core::osc::OscType::Float(v)) => *v as i64,
-        Some(clausters_core::osc::OscType::Double(v)) => *v as i64,
-        _ => -1,
-    }
+/// that drew it: a picture names a server buffer and the document names a
+/// source, and the table that resolved one is the only thing that reads it back.
+fn source_of(bufnum: i64, look: &Look<'_>) -> Option<SourceId> {
+    look.takes?.source_of(i32::try_from(bufnum).ok()?)
 }
 
 /// **The piece's strips, as they now stand** — the mixer's payload.
@@ -478,13 +268,21 @@ pub fn read_lanes(
         let Some(name) = string_at(lane, 0) else {
             continue;
         };
-        let Some(id) = node_named(name) else { continue };
+        let Some(id) = name.parse::<u64>().ok().map(NodeId) else {
+            continue;
+        };
         let Some(track) = tracks.iter_mut().find(|t| t.id == id) else {
             continue;
         };
         let (muted, soloed) = (truthy_at(lane, 3), truthy_at(lane, 4));
         let level = f64::from(float_at(lane, 5) as f32);
-        if track.muted == muted && track.soloed == soloed && level_of(track) == level {
+        let held = track
+            .config
+            .0
+            .get(picture::LEVEL)
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0);
+        if track.muted == muted && track.soloed == soloed && held == level {
             continue;
         }
         track.muted = muted;
@@ -493,7 +291,7 @@ pub fn read_lanes(
         // over what is there rather than replacing it: a track's config is its
         // instrument and its routing too.
         let mut config = track.config.0.as_object().cloned().unwrap_or_default();
-        config.insert(LEVEL.into(), json!(level));
+        config.insert(picture::LEVEL.into(), json!(level));
         track.config = clausters_document::Opaque(Value::Object(config));
         changed = true;
     }
@@ -501,17 +299,6 @@ pub fn read_lanes(
         return Vec::new();
     }
     vec![(MultitrackIntent::SetTracks { tracks }, "mix a track")]
-}
-
-/// The track a region is on, and the region itself.
-fn find_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
-    piece.tracks.iter().find_map(|track| {
-        track
-            .lanes
-            .iter()
-            .find_map(|lane| lane.regions.iter().find(|r| r.id == region))
-            .map(|found| (track.id, found))
-    })
 }
 
 fn string_at(args: &[clausters_core::osc::OscType], n: usize) -> Option<&str> {
@@ -531,6 +318,17 @@ fn float_at(args: &[clausters_core::osc::OscType], n: usize) -> f64 {
     }
 }
 
+/// An OSC integer, however it was written.
+fn int_at(args: &[clausters_core::osc::OscType], n: usize) -> i64 {
+    match args.get(n) {
+        Some(clausters_core::osc::OscType::Int(v)) => i64::from(*v),
+        Some(clausters_core::osc::OscType::Long(v)) => *v,
+        Some(clausters_core::osc::OscType::Float(v)) => *v as i64,
+        Some(clausters_core::osc::OscType::Double(v)) => *v as i64,
+        _ => -1,
+    }
+}
+
 fn truthy_at(args: &[clausters_core::osc::OscType], n: usize) -> bool {
     super::truthy_at(args, n)
 }
@@ -540,7 +338,7 @@ mod tests {
     use super::*;
     use crate::host::document::sources::Takes;
     use clausters_core::osc::OscType;
-    use clausters_document::multitrack::{Content, Track};
+    use clausters_document::multitrack::{Content, Region, Track};
     use clausters_document::{Against, Opaque, Rules, SegmentRef, SegmentSource, SourceId};
     use clausters_document::{Lifetime, SourceRef};
 
@@ -942,7 +740,11 @@ mod tests {
         };
         assert!(!tracks[0].muted, "the one nobody touched is untouched");
         assert!(tracks[1].muted);
-        assert_eq!(level_of(&tracks[1]), 0.5, "and the fader is in its table");
+        assert_eq!(
+            tracks[1].config.0["level"].as_f64(),
+            Some(0.5),
+            "and the fader is in its table"
+        );
     }
 
     /// End to end through the crate's own door: the edits this reads apply, and
