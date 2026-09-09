@@ -178,6 +178,15 @@ def sound_the_piece(_what=None):
         place(clip.name)
 
 
+#: **The piece is sounded once here and by nothing else afterwards.** The same
+#: call an edit makes: the arrangement is a statement, so putting the readers
+#: where it says is one verb whether it is the first time or the hundredth.
+sound_the_piece()
+server.sync()
+print(f"{len(nodes)} readers in group {multitrack_group.id}, "
+      f"{piece.extent / SR:.1f} s of piece")
+
+
 # %% [markdown]
 # ## The window
 # A ruler, the piece, two buttons and a read-out. The multitrack is **one
