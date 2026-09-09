@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 42
+CORE_ABI_VERSION = 43
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -501,6 +501,18 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_domain_edit.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_tempomap_from_changes.restype = ctypes.c_void_p
+    lib.clausters_tempomap_from_changes.argtypes = [
+        ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double,
+    ]
+    lib.clausters_multitrack_picture.restype = ctypes.c_size_t
+    lib.clausters_multitrack_picture.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_multitrack_read.restype = ctypes.c_size_t
+    lib.clausters_multitrack_read.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
@@ -1215,6 +1227,84 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
         return None
     out = (ctypes.c_ubyte * need)()
     n = _lib.clausters_domain_edit(*args, out, need)
+    return json.loads(ctypes.string_at(out, n).decode("utf-8"))
+
+
+def multitrack_picture(piece) -> dict:
+    """The **rows and boxes a piece draws as** — ``{"rows": [...],
+    "boxes": [...]}``.
+
+    The multitrack view's own mapping, and there is one of it: what a row and a
+    box *are* is the format's business, so the standalone host and every client
+    draw the same picture of the same piece rather than each deriving one.
+
+    **In beats and seconds.** A timeline axis counts sample frames and the crate
+    has no tempo function; a caller crosses to its own axis with
+    `clausters.base.TempoMap`, and a *length* is the difference of two positions
+    there. ``source`` is the document's source id and not a server buffer:
+    which buffer a source was read into is the caller's own table.
+
+    Args:
+        piece: the piece, as plain JSON-able data (`clausters.multitrack`'s
+            ``write``).
+
+    Returns:
+        The two lists, or ``{}`` for a piece the crate will not read.
+    """
+    answer = _read_json(lib().clausters_multitrack_picture, piece)
+    return answer if isinstance(answer, dict) else {}
+
+
+def multitrack_read(piece, placed) -> list:
+    """**What a report of a multitrack's boxes means**, in the piece's own
+    vocabulary.
+
+    The reader every multitrack view needs and none should write: the report is
+    the *piece* rather than the gesture, so a move, a block drag, a trim, a
+    split, a delete and a paste all arrive as one list, and telling them apart
+    is one rule written once.
+
+    A box whose name is not a region's id is a **new** region — a split names
+    its halves after the box they came from — and one over samples the caller
+    could not resolve is not invented at all, since the document would name a
+    source nobody can open.
+
+    Args:
+        piece: the piece as plain JSON-able data.
+        placed: the boxes as they now stand, each ``{"name", "row", "position",
+            "length", "start", "content", "source"?}`` — positions and lengths
+            in beats, ``start`` and ``content`` in seconds.
+
+    Returns:
+        The intents, in order; ``[]`` for input the crate will not read.
+    """
+    answer = _read_json(lib().clausters_multitrack_read, piece, placed)
+    return answer.get("intents", []) if isinstance(answer, dict) else []
+
+
+def _read_json(fn, *values):
+    """The size-then-fill call a read-only JSON door makes: every argument
+    goes in as bytes and a length, and the answer comes back parsed.
+
+    Named apart from `_json_call`, which is the *checked* form — it takes one
+    payload and raises with the reason a validating door refused it. This one
+    answers `None` and lets the caller say what that means, which is what a
+    door with nothing to refuse wants.
+    """
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    args = []
+    held = []
+    for value in values:
+        raw = value.encode("utf-8") if isinstance(value, str) else \
+            json.dumps(value).encode("utf-8")
+        buf = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+        held.append(buf)
+        args += [ctypes.cast(buf, u8p), len(raw)]
+    need = fn(*args, None, 0)
+    if need == 0:
+        return None
+    out = (ctypes.c_ubyte * need)()
+    n = fn(*args, out, need)
     return json.loads(ctypes.string_at(out, n).decode("utf-8"))
 
 
@@ -2199,6 +2289,28 @@ class TempoMap:
         buf = ctypes.create_string_buffer(need)
         self._lib.clausters_tempomap_dump(self._handle, buf, need)
         return buf.raw[:need].decode("utf-8")
+
+    @classmethod
+    def from_changes(cls, changes, default_tempo: float = 1.0) -> "TempoMap":
+        """A map from a piece's **authored** tempo entries, plus the tempo a
+        piece that never said one leaves to its reader.
+
+        The bridge a reader of a document would otherwise take three decisions
+        to write: a ramp reaches the *next* entry, the default is prepended when
+        the first entry is past beat 0, and no entries at all is the default
+        alone. Each entry is ``{"beats", "tempo", "ramp"}`` with the tempo in
+        beats **per second** — a document writing beats per minute divides once,
+        where it reads its own field.
+
+        Raises `ValueError` for entries the crate will not take (out of order,
+        or a tempo that is not finite and positive).
+        """
+        data = json.dumps(list(changes)).encode("utf-8")
+        handle = lib().clausters_tempomap_from_changes(data, len(data),
+                                                       float(default_tempo))
+        if not handle:
+            raise ValueError("not a tempo map this client could have written")
+        return cls(_handle=handle)
 
     @classmethod
     def load(cls, json: str) -> "TempoMap":

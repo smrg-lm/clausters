@@ -78,6 +78,58 @@ pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) ->
     }
 }
 
+/// **A map from a piece's authored tempo entries** — the JSON array a
+/// document's `tempo` list is, plus the tempo a piece that never said one
+/// leaves to its reader. Null when the bytes are not such a list.
+///
+/// The bridge a reader of a document would otherwise take three decisions to
+/// write: a ramp reaches the *next* entry, the default is prepended when the
+/// first entry is past beat 0, and no entries at all is the default alone.
+/// Each entry is `{"beats": …, "tempo": …, "ramp": bool}` with the tempo in
+/// beats **per second**, as every tempo in this module is — a document writing
+/// beats per minute divides once, where it reads its own field.
+///
+/// # Safety
+/// `json` must be null or readable for `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_from_changes(
+    json: *const u8,
+    len: usize,
+    default_tempo: f64,
+) -> *mut TempoMap {
+    if json.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: caller guarantees `json` is readable for `len` bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(json, len) };
+    let Ok(changes) = serde_json::from_slice::<Vec<Change>>(bytes) else {
+        return std::ptr::null_mut();
+    };
+    let changes: Vec<clausters_core::tempomap::TempoChange> = changes
+        .into_iter()
+        .map(|c| clausters_core::tempomap::TempoChange {
+            beats: c.beats,
+            tempo: c.tempo,
+            ramp: c.ramp,
+        })
+        .collect();
+    match TempoMap::from_changes(&changes, default_tempo) {
+        Ok(map) => Box::into_raw(Box::new(map)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// One authored entry on the way in. A local mirror of
+/// [`clausters_core::tempomap::TempoChange`] only because it needs serde, which
+/// the core type does not carry.
+#[derive(serde::Deserialize)]
+struct Change {
+    beats: f64,
+    tempo: f64,
+    #[serde(default)]
+    ramp: bool,
+}
+
 /// A new map of one constant-tempo segment with `base_beats` falling on
 /// `base_seconds` — the affine triple a running clock already holds, so
 /// adopting a map changes no result. Null on invalid arguments.

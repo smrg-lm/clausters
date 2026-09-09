@@ -707,6 +707,17 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   one `"lanes"`; `Ctrl`+`Z` walks them; and `clausters-gui --session` applies a
   block move and a lane change to its document, which it cannot do today.
 
+  **`Ctrl`+`Z` in the clients landed 2026-09-09**, and it took the mapping being
+  lowered first: `clausters.gui.editing.MultitrackEditor` is the piece as one of
+  the fundamental structures, so it has the history every other editor has and
+  two windows over one piece walk one stack. What made a piece not a structure
+  before was that its picture and the reading of its report were written per
+  client; both are the crate's now
+  (`multitrack::picture`, bound as `multitrack_picture`/`multitrack_read`), so
+  what a client adds is the axis its window counts in and which server buffer a
+  source was read into. `clausters.gui.Multitrack` stays what it is — the
+  view-only object for a script that just wants boxes and no history.
+
   It is `O24`'s multitrack seen from the host's side, and `O24` waits on it: the
   application cannot be written against a widget tree that has no owner.
 

@@ -624,6 +624,39 @@ impl JsTempoMap {
             .map(JsTempoMap)
     }
 
+    /// **A map from a piece's authored tempo entries** — the JSON array a
+    /// document's `tempo` list is, plus the tempo a piece that never said one
+    /// leaves to its reader. `undefined` when the text is not such a list.
+    ///
+    /// The bridge a reader of a document would otherwise take three decisions
+    /// to write: a ramp reaches the *next* entry, the default is prepended when
+    /// the first entry is past beat 0, and no entries at all is the default
+    /// alone. Each entry is `{beats, tempo, ramp}` with the tempo in beats
+    /// **per second**, as every tempo here is — a document writing beats per
+    /// minute divides once, where it reads its own field.
+    #[wasm_bindgen(js_name = fromChanges)]
+    pub fn from_changes(changes: &str, default_tempo: f64) -> Option<JsTempoMap> {
+        #[derive(serde::Deserialize)]
+        struct Change {
+            beats: f64,
+            tempo: f64,
+            #[serde(default)]
+            ramp: bool,
+        }
+        let parsed: Vec<Change> = serde_json::from_str(changes).ok()?;
+        let changes: Vec<clausters_core::tempomap::TempoChange> = parsed
+            .into_iter()
+            .map(|c| clausters_core::tempomap::TempoChange {
+                beats: c.beats,
+                tempo: c.tempo,
+                ramp: c.ramp,
+            })
+            .collect();
+        TempoMap::from_changes(&changes, default_tempo)
+            .ok()
+            .map(JsTempoMap)
+    }
+
     /// An independent copy — a fork, for when two tempi should stop being one.
     /// Handing a map to a clock does **not** copy: a clock adopts what it is
     /// given, which is what lets two clocks read one piece.
@@ -2281,6 +2314,60 @@ pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
         return String::new();
     };
     serde_json::to_string(&edited).unwrap_or_default()
+}
+
+/// **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
+/// or an empty string for a piece that will not parse.
+///
+/// The multitrack view's own mapping, and there is one of it: what a row and a
+/// box *are* is the format's business, so the standalone host and every client
+/// draw the same picture of the same piece rather than each deriving one.
+///
+/// **In beats and seconds.** A timeline axis counts sample frames and this
+/// crate has no tempo function; a page crosses with the tempo-map calls it
+/// already binds, and a *length* is the difference of two positions there.
+/// `source` is the document's source id, not a server buffer: which buffer a
+/// source was read into is the page's own table.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackPicture)]
+pub fn multitrack_picture(piece: &str) -> String {
+    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
+    else {
+        return String::new();
+    };
+    serde_json::to_string(&serde_json::json!({
+        "rows": clausters_document::multitrack::picture::rows(&piece),
+        "boxes": clausters_document::multitrack::picture::boxes(&piece),
+    }))
+    .unwrap_or_default()
+}
+
+/// **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
+/// the piece's own vocabulary, or an empty string for input that will not
+/// parse.
+///
+/// The reader every multitrack view needs and none should write: the report is
+/// the *piece* rather than the gesture, so a move, a block drag, a trim, a
+/// split, a delete and a paste all arrive as one list, and telling them apart
+/// is one rule written once. `placed` is a JSON array of the boxes as they now
+/// stand.
+///
+/// A box whose name is not a region's id is a **new** region — a split names
+/// its halves after the box they came from — and one over samples the caller
+/// could not resolve is not invented at all, since the document would name a
+/// source nobody can open.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackRead)]
+pub fn multitrack_read(piece: &str, placed: &str) -> String {
+    let (Ok(piece), Ok(placed)) = (
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
+        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Placed>>(placed),
+    ) else {
+        return String::new();
+    };
+    let next = clausters_document::multitrack::picture::fresh_id(&piece);
+    let intents = clausters_document::multitrack::picture::read(&piece, &placed, next);
+    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
 }
 
 /// What makes two of a **domain's** edits *the same thing done the same way* —

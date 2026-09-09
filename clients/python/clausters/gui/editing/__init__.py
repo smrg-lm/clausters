@@ -28,11 +28,14 @@ whole design:
   recorded, a step of the pile, a publish, an acknowledgement. Silent unless
   asked (`CLAUSTERS_EDIT_LOG=1`, or `watch()`), because what a window in front
   of a person does wrong is otherwise visible to nobody.
-`edit(x)` is how a person calls it: one verb over the three fundamental
-structures, dispatching on what the structure is — `SamplesEditor` over a
+`edit(x)` is how a person calls it: one verb over the fundamental structures,
+dispatching on what the structure is — `SamplesEditor` over a
 `clausters.defs.Buffer`, `PointsEditor` over a `clausters.seq.Automation`,
-`NotesEditor` over a `clausters.seq.Timeline`. Each is `Editor` with its own
-domain and view in it and nothing else, which is what the split was for.
+`NotesEditor` over a `clausters.seq.Timeline`, `MultitrackEditor` over a
+`clausters.multitrack.Multitrack`. Each is `Editor` with its own domain and view
+in it and nothing else, which is what the split was for — and the multitrack's
+two halves are the *crate's*, so the picture it draws and the report it reads
+are the same ones the standalone host draws and reads.
 
 `View` here is **not** `clausters.gui.guidef.View`, and only this one is reached
 as `clausters.gui.editing.View`: the guidef one is a tree you can open, this one
@@ -48,6 +51,8 @@ from .echo import Echo
 from .edit import edit
 from .editor import NOT_AN_EDIT, Editor
 from .events import NotesDomain, NotesEditor, NotesView
+from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
+                         Sources)
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
                       measures)
@@ -68,6 +73,10 @@ __all__ = [
     "NotesDomain",
     "NotesEditor",
     "NotesView",
+    "MultitrackDomain",
+    "MultitrackEditor",
+    "MultitrackView",
+    "Sources",
     "PointsDomain",
     "PointsEditor",
     "PointsView",

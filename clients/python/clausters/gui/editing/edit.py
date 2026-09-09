@@ -11,16 +11,20 @@ takes over the draining, so a script that edits writes no loop at all --
 and undone through. Reading is done on the structure itself: nothing is handed
 back at the end because the object passed in *is* the edited one.
 
-One call over the three fundamental structures — a buffer's samples, a
-break-point curve, a timeline of events — each of which is a
+One call over the fundamental structures — a buffer's samples, a break-point
+curve, a timeline of events, and a **piece** — each of which is a
 `clausters.gui.editing.Editor` with its own domain and its own view and nothing
 else. It dispatches on **what the structure is** rather than on a keyword,
 because that is the question a caller has already answered by holding one.
 
-What it deliberately does not open is a whole arrangement. A multitrack is an
-application over a document rather than an editor over a structure, and it is
-built in `crates/clausters-document` (the `O21`-`O24` track); `edit` over a piece
-would be a second door to a place this verb does not reach.
+**A piece is one of them.** It used to be excluded on the grounds that a
+multitrack is an application rather than an editor over a structure — but what
+made that true was that the picture and the reading of a gesture were written
+per client, so a piece opened here would have been a second implementation of
+both. They are the crate's now
+(`clausters._native.multitrack_picture`/`multitrack_read`), so a piece is a
+structure with a vocabulary, a picture and an inverse like any other, and
+opening it here is what gives it the history every other editor has.
 
 Two calls over one structure give **two windows and one stack**: the editing
 context is the data's (`clausters.gui.editing.Editing`), so an undo in either
@@ -29,6 +33,7 @@ its history means, and `edit` inherits it for free.
 """
 
 from .events import NotesEditor, is_events
+from .multitrack import MultitrackEditor, is_piece
 from .points import PointsEditor, is_curve
 from .samples import SamplesEditor, is_samples
 
@@ -39,8 +44,8 @@ def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
 
     Args:
         structure: what to edit — a `clausters.defs.Buffer` (its samples), a
-            `clausters.seq.Automation` (its curve) or a
-            `clausters.seq.Timeline` (its notes).
+            `clausters.seq.Automation` (its curve), a `clausters.seq.Timeline`
+            (its notes) or a `clausters.multitrack.Multitrack` (the piece).
         sample_rate: the engine's rate, which fixes the data↔view bridge. A
             take knows its own and needs none.
         tempo: the clock's tempo in beats per second, for the structures placed
@@ -80,11 +85,16 @@ def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
     elif is_events(structure):
         editor = NotesEditor(structure, sample_rate=sample_rate or 48_000.0,
                              tempo=tempo, **options)
+    elif is_piece(structure):
+        # No `tempo`: a piece states its own, and a caller's ratio beside it
+        # would be a second answer to a question the document already answers.
+        editor = MultitrackEditor(structure, sample_rate=sample_rate or 48_000.0,
+                                  **options)
     else:
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
-            f"(its samples), an Automation (its curve) or a Timeline (its notes). "
-            f"An arrangement is a multitrack application's, not this verb's."
+            f"(its samples), an Automation (its curve), a Timeline (its notes) "
+            f"or a Multitrack (the piece)."
         )
     if open:
         editor.open(host)

@@ -493,10 +493,11 @@ class Editor:
             return self._observe(wid, tag, values)
         if self.domain is None:
             return False
-        payload = self.domain.payload(self.structure, tag, values)
+        payloads = self.domain.payloads(self.structure, tag, values)
         log.debug("event  %s %r -> %s", wid, tag,
-                  "no payload" if payload is None else payload.get("intent"))
-        if payload is None:
+                  "no payload" if not payloads
+                  else ", ".join(str(p.get("intent")) for p in payloads))
+        if not payloads:
             # Nothing, or a refusal. A refusal says why and hands the widget
             # back what it should be drawing, so the picture stops agreeing
             # with the hand instead of with the structure.
@@ -505,7 +506,9 @@ class Editor:
                 self._reason = reason
                 self._resync(wid)
             return False
-        return self._edit(payload, self.domain.label(payload))
+        if len(payloads) == 1:
+            return self._edit(payloads[0], self.domain.label(payloads[0]))
+        return self._edit_all(payloads, self.domain.label(payloads[0]))
 
     def _observe(self, wid: int, tag: str, values) -> bool:
         """A tag that says what the view is looking at rather than what changed.
@@ -575,6 +578,40 @@ class Editor:
         self._version += 1
         self.dirty = True
         self._editing.moved({"structure": self._registered(), "payload": payload})
+        return True
+
+    def _edit_all(self, payloads: list, label: str) -> bool:
+        """Apply a run of payloads as **one** entry, so a block edit undoes the
+        way it was made.
+
+        The same rule as `_edit` and it is spelled out only because there is no
+        one-call form for a transaction: each inverse is read immediately before
+        *that* payload lands, never all of them up front — an inverse read
+        against a state two edits ago puts back a state that never held.
+        """
+        if self.domain is None:
+            return False
+        legs = []
+        moved = False
+        for payload in payloads:
+            before = self.domain.current(self.structure, payload)
+            if not self.domain.project(self.structure, payload):
+                continue
+            moved = True
+            if before is not None:
+                legs.append({"structure": self._registered(),
+                             "forward": {"edit": payload},
+                             "backward": before,
+                             "key": self.domain.coalesce_key(payload)})
+            self._editing.moved({"structure": self._registered(),
+                                 "payload": payload})
+        if not moved:
+            return False
+        log.debug("record [%s] %d leg(s)", label, len(legs))
+        if legs:
+            self._editing.history.record(legs, label=label)
+        self._version += 1
+        self.dirty = True
         return True
 
     def _resync(self, widget_id: int):

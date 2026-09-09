@@ -45,6 +45,19 @@ class Domain:
         """
         raise NotImplementedError
 
+    def payloads(self, structure, tag: str, values) -> list:
+        """The gesture as **however many payloads it takes**, in order.
+
+        The plural door, and the default is the singular one wrapped: most
+        gestures are one edit, and a domain that never needs more never mentions
+        this. What needs it is a report that states the *whole structure* — a
+        multitrack's boxes after a block drag, where one message says a move, a
+        trim and a lane's new contents at once — and those are one entry in the
+        history, because they are one thing a hand did.
+        """
+        payload = self.payload(structure, tag, values)
+        return [] if payload is None else [payload]
+
     def refusal(self, structure, tag: str, values) -> "str | None":
         """Why a gesture this domain *does* understand cannot be written —
         ``None`` when there is no such case.

@@ -794,5 +794,100 @@ pub unsafe extern "C" fn clausters_domain_edit(
     unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`.
+///
+/// The multitrack view's own mapping, and there is one of it: what a row and a
+/// box *are* is the format's business
+/// ([`clausters_document::multitrack::picture`]), so the standalone host and
+/// every client draw the same picture of the same piece rather than each
+/// deriving one.
+///
+/// **In beats and seconds.** A timeline axis counts sample frames and this
+/// crate has no tempo function; a caller crosses with the `tempomap` calls it
+/// already binds, and a *length* is the difference of two positions there.
+/// `source` is the document's source id, not a server buffer: which buffer a
+/// source was read into is the caller's own table.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface.
+///
+/// # Safety
+/// `piece` must be null or readable for `piece_len` bytes, and `out` null or
+/// writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_multitrack_picture(
+    piece: *const u8,
+    piece_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(raw) = (unsafe { text(piece, piece_len) }) else {
+        return 0;
+    };
+    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(&raw) else {
+        return 0;
+    };
+    let answer = serde_json::json!({
+        "rows": clausters_document::multitrack::picture::rows(&piece),
+        "boxes": clausters_document::multitrack::picture::boxes(&piece),
+    });
+    let Ok(answer) = serde_json::to_string(&answer) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
+/// the piece's own vocabulary.
+///
+/// The reader every multitrack view needs and none should write: the report is
+/// the *piece* rather than the gesture, so a move, a block drag, a trim, a
+/// split, a delete and a paste all arrive as one list, and telling them apart
+/// is one rule written once. `placed` is a JSON array of the boxes as they now
+/// stand ([`clausters_document::multitrack::picture::Placed`]).
+///
+/// A box whose name is not a region's id is a **new** region — a split names
+/// its halves after the box they came from — and one over samples the caller
+/// could not resolve is not invented at all, since the document would name a
+/// source nobody can open.
+///
+/// # Safety
+/// `piece` must be null or readable for `piece_len` bytes, `placed` null or
+/// readable for `placed_len` bytes, and `out` null or writable for `out_cap`
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_multitrack_read(
+    piece: *const u8,
+    piece_len: usize,
+    placed: *const u8,
+    placed_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(raw_piece), Some(raw_placed)) = (unsafe { text(piece, piece_len) }, unsafe {
+        text(placed, placed_len)
+    }) else {
+        return 0;
+    };
+    let (Ok(piece), Ok(placed)) = (
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(&raw_piece),
+        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Placed>>(&raw_placed),
+    ) else {
+        return 0;
+    };
+    let next = clausters_document::multitrack::picture::fresh_id(&piece);
+    let intents = clausters_document::multitrack::picture::read(&piece, &placed, next);
+    let Ok(answer) = serde_json::to_string(&serde_json::json!({ "intents": intents })) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests;

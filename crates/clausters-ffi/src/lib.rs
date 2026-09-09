@@ -287,7 +287,16 @@ pub use time::*;
 /// tree**, not of two documents. **Removing a symbol**, so the counter moves and
 /// a caller of it fails to link rather than diffing against a picture nobody is
 /// drawing.
-pub const CORE_ABI_VERSION: u32 = 42;
+/// **v43 a multitrack's picture is the crate's.** `clausters_multitrack_picture`
+/// answers the rows and boxes a piece draws as, and
+/// `clausters_multitrack_read` answers what a report of those boxes *means* in
+/// the piece's own vocabulary. Both are in beats and seconds, because the shape
+/// is the format's and the time is `tempomap`'s; a caller crosses to its own
+/// axis with the calls it already binds. **Additive**, and the reason the
+/// counter moves at all is that a client which cannot find them has no way to
+/// draw a multitrack without writing the mapping again -- which is the thing
+/// they exist to prevent.
+pub const CORE_ABI_VERSION: u32 = 43;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

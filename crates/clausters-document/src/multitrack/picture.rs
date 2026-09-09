@@ -34,12 +34,14 @@
 //! because a split names its halves after the box they came from — and that is
 //! exactly how a new box is told from a moved one.
 
+use serde::{Deserialize, Serialize};
+
 use crate::multitrack::edit::MultitrackIntent;
 use crate::multitrack::{Content, Lane, Multitrack, Region, Track};
 use crate::{Beat, NodeId, SourceId};
 
 /// One row of the view: a track, and the strip that is drawn beside it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
     /// The track it draws — its identity, and its name on the wire.
     pub track: NodeId,
@@ -58,7 +60,7 @@ pub struct Row {
 }
 
 /// One box: a region, where it sits and what it is a window onto.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Box {
     /// The region it draws — its identity, and its name on the wire.
     pub region: NodeId,
@@ -143,7 +145,7 @@ pub fn boxes(piece: &Multitrack) -> Vec<Box> {
 
 /// A box as a hand left it — what [`read`] is given, and the same shape
 /// [`boxes`] hands out with the two fields a picture cannot answer for dropped.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Placed {
     /// The name it came back under. **An id where the box is one the view was
     /// given, and anything at all where a hand made it**: a split names its
@@ -163,6 +165,7 @@ pub struct Placed {
     /// the wall clock by whoever holds the tempo map, which is not this crate.
     pub content: f64,
     /// What it is a window onto, where the caller could resolve one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceId>,
 }
 
