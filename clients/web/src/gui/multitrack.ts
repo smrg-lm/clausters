@@ -126,6 +126,13 @@ export interface MultitrackOptions {
      * anything.
      */
     onChange?: (what: string) => void;
+    /**
+     * `onLocate(at)` when a click placed the window's cursor on this widget's
+     * axis, in axis units. It is **not** an edit — the piece did not change —
+     * but it arrives here because the widget owns the axis, so this hands it on
+     * rather than swallowing it.
+     */
+    onLocate?: (at: number) => void;
 }
 
 /**
@@ -140,15 +147,20 @@ export class Multitrack {
     snap: number;
     /** Called after a hand edited the piece. */
     onChange: ((what: string) => void) | null;
+    /** Called when a click placed the window's cursor. */
+    onLocate: ((at: number) => void) | null;
 
     private widget: MultitrackWidget | null = null;
     private builtAs: string | null = null;
 
-    constructor({ lanes = [], clips = [], snap = 0.0, onChange }: MultitrackOptions = {}) {
+    constructor(
+        { lanes = [], clips = [], snap = 0.0, onChange, onLocate }: MultitrackOptions = {},
+    ) {
         this.lanes = lanes.map((l) => (l instanceof Lane ? l : new Lane(...l)));
         this.clips = clips.map((c) => (c instanceof Clip ? c : new Clip(...c)));
         this.snap = snap;
         this.onChange = onChange ?? null;
+        this.onLocate = onLocate ?? null;
     }
 
     // ---- reading it ----
@@ -311,6 +323,11 @@ export class Multitrack {
             this.lanes = six(vals).map(([n, label, h, m, s, g]) =>
                 new Lane(String(n), String(label), Number(h), Boolean(Number(m)),
                     Boolean(Number(s)), Number(g)));
+        } else if (tag === "locate") {
+            // Not an edit: one cursor, and it is the transport's. It lands on
+            // this widget because this widget owns the axis.
+            if (vals.length) this.onLocate?.(Number(vals[0]));
+            return;
         } else {
             return;
         }

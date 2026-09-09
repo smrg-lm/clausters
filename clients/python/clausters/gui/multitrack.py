@@ -76,12 +76,17 @@ class Multitrack:
             ``what`` being ``"clips"`` or ``"lanes"``. It is called *after* this
             object's lists are already the new ones, so a handler reads them
             rather than parsing anything.
+        on_locate: ``on_locate(at)`` when a click placed the window's cursor on
+            this widget's axis, in axis units. It is **not** an edit — the piece
+            did not change — but it arrives here because the widget owns the
+            axis, so this hands it on rather than swallowing it.
     """
 
     lanes: list = field(default_factory=list)
     clips: list = field(default_factory=list)
     snap: float = 0.0
     on_change: object = None
+    on_locate: object = None
     _widget: object = field(default=None, repr=False)
     _name: object = field(default=None, repr=False)
 
@@ -211,6 +216,12 @@ class Multitrack:
             self.lanes = [Lane(str(n), str(label), float(h), bool(int(m)),
                                bool(int(s)), float(g))
                           for n, label, h, m, s, g in _six(vals)]
+        elif tag == "locate":
+            # Not an edit: one cursor, and it is the transport's. It lands on
+            # this widget because this widget owns the axis.
+            if vals and callable(self.on_locate):
+                self.on_locate(float(vals[0]))
+            return
         else:
             return
         if callable(self.on_change):

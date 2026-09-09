@@ -22,6 +22,7 @@
 
 use serde_json::Value;
 
+use crate::host::bands::Bands;
 use crate::host::layout::Rect;
 use crate::host::placement::Placement;
 use crate::viewport::View;
@@ -123,14 +124,32 @@ pub fn extent(clips: &[Clip]) -> f64 {
     clips.iter().map(Clip::end).fold(0.0, f64::max)
 }
 
+/// **The stack as bands**, one per lane, each carrying its own `gap` with it.
+///
+/// The gap is *inside* the band rather than between two of them, and that is
+/// the whole of how a stack has no holes: a **gap belongs to the lane above
+/// it**, so a pointer between two lanes is on one rather than on nothing
+/// (`gestures/nav.rs` states the same rule for the widget-tree stack). A hit
+/// test that answers "nowhere" there is what makes a dragged clip snap back for
+/// those frames and jump again on the far side.
+///
+/// [`Bands`] is the shared vertical axis a roll's semitone rows use, which is
+/// why the clamping past either end comes with it rather than being written
+/// again here.
+pub fn bands(lanes: &[Lane], gap: f32) -> Bands {
+    Bands::table(lanes.iter().map(|l| l.height + gap))
+}
+
 /// How tall the stack is with `gap` between lanes — a scroll's content height,
 /// and what says whether it scrolls at all.
+///
+/// The trailing gap of the last band is not counted: it is the room a drop
+/// below the stack lands in, not room the stack occupies.
 pub fn content_height(lanes: &[Lane], gap: f32) -> f32 {
     if lanes.is_empty() {
         return 0.0;
     }
-    let thick: f32 = lanes.iter().map(|l| l.height).sum();
-    thick + gap * (lanes.len() - 1) as f32
+    bands(lanes, gap).total() - gap
 }
 
 /// Where each lane lands inside `rect`, scrolled down by `scroll` pixels.
@@ -140,13 +159,38 @@ pub fn content_height(lanes: &[Lane], gap: f32) -> f32 {
 /// caller that hit-tests needs the same rects the drawing used or the two
 /// disagree in exactly the cases nobody tests.
 pub fn stack(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32) -> Vec<Rect> {
-    let mut out = Vec::with_capacity(lanes.len());
-    let mut y = rect.y - scroll;
-    for lane in lanes {
-        out.push(Rect::new(rect.x, y, rect.w, lane.height));
-        y += lane.height + gap;
+    let bands = bands(lanes, gap);
+    (0..lanes.len())
+        .map(|i| {
+            let (y, _) = bands.band(i);
+            // The band carries the gap; the lane is drawn in the top of it.
+            Rect::new(rect.x, rect.y - scroll + y, rect.w, lanes[i].height)
+        })
+        .collect()
+}
+
+/// The lane a pointer is **on**, or `None` where it is off the stack entirely.
+///
+/// The gap is the lane above's, so this answers for it — the rule the module's
+/// [`bands`] states. It is the *press*' question; a drag asks
+/// [`lane_toward`] instead, which never answers nothing.
+pub fn lane_at(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32, y: f64) -> Option<usize> {
+    bands(lanes, gap).index_at(y as f32 - rect.y + scroll)
+}
+
+/// The lane a hand **is heading for**, always: the nearest band, clamped to the
+/// stack at both ends.
+///
+/// A drag has to answer for every pixel the pointer crosses, including the gaps
+/// between lanes and the space past either end — answering "nowhere" there is
+/// what made a dragged clip jump, and answering "wrap" is what made one held
+/// past the last lane oscillate back to the first.
+pub fn lane_toward(lanes: &[Lane], rect: Rect, scroll: f32, gap: f32, y: f64) -> usize {
+    if lanes.is_empty() {
+        return 0;
     }
-    out
+    let at = bands(lanes, gap).index_of(y as f32 - rect.y + scroll);
+    (at.floor() as usize).min(lanes.len() - 1)
 }
 
 /// The clips on `lane`, in the order they are held — which is the order they

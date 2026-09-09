@@ -37,7 +37,7 @@ use crate::host::widget::element::{
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
-use crate::host::widget::{EditorProps, RulerY};
+use crate::host::widget::{EditorProps, GestureMap, RulerY};
 use crate::viewport::View;
 
 /// One JSON scalar as the OSC primitive it is — **flat primitives at the
@@ -79,6 +79,14 @@ struct Grab {
     /// The pointer's time at the press, so a body drag moves by the travel
     /// rather than by where inside the box the hand grabbed it.
     grabbed_at: f64,
+    /// **The axis the press found**, for a widget on no navigation group.
+    ///
+    /// Such a widget's axis is its own extent, and a drag *changes* the extent
+    /// — so re-deriving it per frame stretches the pixel-to-time map under the
+    /// hand, the next step reads further, and the box runs away from the
+    /// pointer. On a group the axis is read live instead, because there it is
+    /// the group's and pans under the drag on purpose ([`Take::edge_scroll`]).
+    axis: View,
 }
 
 /// A **fader** the hand is on, kept for the same reason a clip's grab is: the
@@ -238,13 +246,18 @@ impl Multitrack {
         self.lanes.iter().position(|l| l.name == clip.lane)
     }
 
-    /// The lane whose row `y` fell in, by index — the same rects the drawing
-    /// used, because a hit test that measured its own would catch a lane the
-    /// eye does not see there.
+    /// The lane a pointer is **on**, or `None` off the stack — the *press*'
+    /// question, over the same bands the drawing used.
     fn lane_at(&self, rect: Rect, y: f64) -> Option<usize> {
-        model::stack(&self.lanes, rect, self.scroll, self.gap)
-            .iter()
-            .position(|r| y as f32 >= r.y && (y as f32) < r.y + r.h)
+        model::lane_at(&self.lanes, rect, self.scroll, self.gap, y)
+    }
+
+    /// The lane a hand **is heading for**, always — the *drag*'s question, and
+    /// the sweep's. It answers for the gaps between lanes and clamps past
+    /// either end, which is the whole of why a dragged clip neither jumps nor
+    /// oscillates.
+    fn lane_toward(&self, rect: Rect, y: f64) -> usize {
+        model::lane_toward(&self.lanes, rect, self.scroll, self.gap, y)
     }
 
     /// The clip under `(x, y)`, and which part of it — **the topmost first**,
@@ -253,6 +266,11 @@ impl Multitrack {
     fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
         let i = self.lane_at(input.rect, at.1)?;
         let rect = model::stack(&self.lanes, input.rect, self.scroll, self.gap)[i];
+        // A band carries its gap, and nothing of a lane is drawn there: a press
+        // in it is a press on bare stack, which the container sweeps.
+        if (at.1 as f32) >= rect.y + rect.h {
+            return None;
+        }
         let body = track::lane_body(rect, false, input.indent, input.metrics);
         let nav = self.view(input.time);
         self.clips
@@ -262,14 +280,37 @@ impl Multitrack {
             .filter(|(_, c)| c.lane == self.lanes[i].name)
             .find_map(|(n, c)| {
                 let (x0, x1) = model::clip_x(c, body, &nav, MIN_CLIP_W)?;
+                let cr = track::clip_rect(body, x0, x1);
+                // **A grip is hit on the pixels it was drawn on.** The same
+                // call the drawing made, so the handle and its hit area cannot
+                // disagree — the case nobody tests.
+                let local = track::clip_local_view(body, &nav, c.place.offset, c.place.dur, cr);
+                let ends = track::clip_ends_on_screen(&local, c.place.dur);
+                if let Some((_, side)) = track::clip_grip_at(cr, ends, input.metrics, at.0 as f32) {
+                    return Some((
+                        n,
+                        match side {
+                            track::ClipSide::Start => Part::Start,
+                            track::ClipSide::End => Part::End,
+                        },
+                    ));
+                }
                 let inside = at.0 as f32 >= x0 && at.0 as f32 <= x1;
-                inside.then(|| (n, placement::part_at(x0, x1, at.0 as f32)))
+                inside.then_some((n, Part::Body))
             })
     }
 
     /// The time a pointer x names on the shared axis.
+    ///
+    /// **Never on an axis this drag is moving.** A widget on no navigation
+    /// group rules itself by its own extent, which a drag changes, so during
+    /// one the axis is the press'; on a group it is read live, which is what an
+    /// edge-scrolled pan needs.
     fn time_at(&self, input: &Input, x: f64) -> f64 {
-        let nav = self.view(input.time);
+        let nav = match (input.time, self.grab) {
+            (None, Some(grab)) => grab.axis,
+            (time, _) => self.view(time),
+        };
         let body = track::lane_body(input.rect, false, input.indent, input.metrics);
         if body.w <= 0.0 {
             return nav.start;
@@ -590,6 +631,18 @@ impl Element for Multitrack {
             let cr = track::clip_rect(body, x0, x1);
             track::draw_clip(d, cr, self.selected.contains(&n));
             track::draw_clip_label(d, cr, clip.shown());
+            // **The grips are drawn where they are grabbed.** An end that is
+            // off screen has no grip, because a handle for an edge nobody can
+            // see is a handle for nothing — the same rule a lane's clip keeps.
+            let local = track::clip_local_view(body, &nav, clip.place.offset, clip.place.dur, cr);
+            let ends = track::clip_ends_on_screen(&local, clip.place.dur);
+            let (left, right) = track::clip_grips(cr, ends, ctx.metrics);
+            if let Some(grip) = left {
+                track::draw_clip_grip(d, grip, track::ClipSide::Start);
+            }
+            if let Some(grip) = right {
+                track::draw_clip_grip(d, grip, track::ClipSide::End);
+            }
         }
         if let Some(text) = &self.label {
             let (mesh, m, theme) = d.parts();
@@ -649,6 +702,7 @@ impl Element for Multitrack {
             orig: self.clips[clip].place,
             lane,
             grabbed_at: self.time_at(input, at.0),
+            axis: self.view(input.time),
         });
         Claim::Take(Take {
             // Held past the edge of the axis, the machine keeps ticking and
@@ -665,27 +719,10 @@ impl Element for Multitrack {
     fn select_in(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
         let before = self.selected.len();
         let (t0, t1) = (self.time_at(input, from.0), self.time_at(input, to.0));
-        let rows = |y: f64| {
-            let at = model::stack(&self.lanes, input.rect, self.scroll, self.gap);
-            at.iter()
-                .position(|r| y as f32 >= r.y && (y as f32) < r.y + r.h)
-                .map(|i| i as f32)
-        };
-        // A corner in the gap between two lanes still means the sweep passed
-        // through: it takes the nearer row rather than catching nothing.
-        let nearest = |y: f64| {
-            let at = model::stack(&self.lanes, input.rect, self.scroll, self.gap);
-            at.iter()
-                .enumerate()
-                .min_by(|a, b| {
-                    let d = |r: &Rect| (y as f32 - (r.y + r.h / 2.0)).abs();
-                    d(a.1).total_cmp(&d(b.1))
-                })
-                .map(|(i, _)| i as f32)
-                .unwrap_or(0.0)
-        };
-        let r0 = rows(from.1).unwrap_or_else(|| nearest(from.1));
-        let r1 = rows(to.1).unwrap_or_else(|| nearest(to.1));
+        // The same continuous answer a drag takes: a corner in a gap or past
+        // an end still means the sweep passed through those lanes.
+        let r0 = self.lane_toward(input.rect, from.1) as f32;
+        let r1 = self.lane_toward(input.rect, to.1) as f32;
         self.selected = placement::in_rect(self, t0, t1, r0, r1);
         Swept {
             changed: before != self.selected.len() || !self.selected.is_empty(),
@@ -718,9 +755,7 @@ impl Element for Multitrack {
             // fold against it, and no clip is resized.
             Part::Body => {
                 let dt = placement::snap(now - grab.grabbed_at, self.snap);
-                let dr = self
-                    .lane_at(input.rect, at.1)
-                    .map_or(0.0, |i| i as f32 - grab.lane as f32);
+                let dr = self.lane_toward(input.rect, at.1) as f32 - grab.lane as f32;
                 let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
                 let block = std::mem::take(&mut self.block);
                 placement::move_block(self, &block, dt, dr, rows, None);
@@ -890,6 +925,23 @@ impl Element for Multitrack {
 
     fn navigates_time(&self) -> bool {
         true
+    }
+
+    /// **The plan a hand on the stack runs.** The element first — that is a
+    /// clip and a header control — then a marquee over what it declined, which
+    /// is the bare stack. Shift pans the shared axis, as it does everywhere.
+    ///
+    /// A **click** (a sweep that never left the slop) is a rectangle of no
+    /// size: it lets go of everything, and the machine puts the transport's
+    /// cursor where it pointed, which is what makes one cursor the window's.
+    fn gesture_map(&self) -> Option<GestureMap> {
+        use crate::host::widget::GestureStep::{Element as El, Marquee, Pan};
+        Some(GestureMap::of_plans(
+            &[El, Marquee],
+            &[Pan],
+            &[El, Marquee],
+            &[El, Marquee],
+        ))
     }
 
     /// How far the piece reaches on the axis — what an autofit and a scroll
@@ -1423,5 +1475,151 @@ mod tests {
             "each on the lane it was cut from"
         );
         assert_eq!(mt.clips[1].lane, "tone");
+    }
+    /// **A drag over the gap between two lanes must not jump.** The pointer
+    /// crosses pixels no lane is drawn on, and a hit test that answers
+    /// "nowhere" there makes the block snap back to the row the press found —
+    /// for those frames only, so it flickers, and it jumps two rows at once
+    /// when the gap is not the one it started beside. That is the glitch the
+    /// window's own edges had, twice.
+    ///
+    /// The rule is `graphics::multitrack::bands`', and it is `gestures/nav.rs`'
+    /// for the widget-tree stack: **a gap belongs to the lane above it**, so a
+    /// pointer between two lanes is on one rather than on nothing.
+    #[test]
+    fn a_drag_through_the_gap_between_lanes_does_not_jump() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 420.0);
+        let len = 1000.0;
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, "two", "", 100, 0, 0, 1,
+                          "three", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 500, 0, ""]}"#,
+        ));
+        mt.gap = 8.0;
+
+        let at = model::stack(&mt.lanes, rect, mt.scroll, mt.gap);
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        mt.press(from, &input(&m, rect, len));
+
+        // The gap between the **second** and the third lane: two rows from
+        // where the press was, so answering "nowhere" reads as the origin and
+        // jumps two rows rather than none.
+        let in_gap = f64::from(at[1].y + at[1].h + mt.gap / 2.0);
+        mt.drag((from.0, in_gap), &input(&m, rect, len));
+        assert_eq!(mt.clips[0].lane, "two", "the gap is the lane above's");
+
+        // On into the third, and back through the gap: one step each way, and
+        // never a return to where the press was.
+        mt.drag(xy(&mt, &m, rect, 250.0, len, 2), &input(&m, rect, len));
+        assert_eq!(mt.clips[0].lane, "three");
+        mt.drag((from.0, in_gap), &input(&m, rect, len));
+        assert_eq!(mt.clips[0].lane, "two", "and not back to \"one\"");
+    }
+
+    /// **Held past the end of the stack, a block stops rather than folding.**
+    /// The continuous index is clamped, so a hand dragged off the bottom leaves
+    /// the clip on the last lane instead of oscillating back to the first.
+    #[test]
+    fn a_drag_past_the_last_lane_stops_at_it() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 320.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+
+        mt.press(from, &input(&m, rect, len));
+        mt.drag((from.0, 10_000.0), &input(&m, rect, len));
+        assert_eq!(mt.clips[0].lane, "tone", "the last one, not the first");
+        mt.drag((from.0, -10_000.0), &input(&m, rect, len));
+        assert_eq!(
+            mt.clips[0].lane, "noise",
+            "and the first going the other way"
+        );
+    }
+
+    /// **A drag must never read an axis it is moving.** A widget on no
+    /// navigation group rules itself by its own extent, and a drag *changes*
+    /// the extent — so re-deriving the axis per frame stretches the
+    /// pixel-to-time map under the hand, the next step reads further out, and
+    /// the box accelerates away from the pointer.
+    ///
+    /// Measured before the fix: 40, 80, 400, 1600, **8675** for equal steps.
+    /// It is the same miscalculation the window's own edges had.
+    #[test]
+    fn a_drag_off_a_group_reads_the_axis_the_press_found() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let mut bare = input(&m, rect, len);
+        bare.time = None;
+
+        let from = xy(&mt, &m, rect, 250.0, len, 0);
+        mt.press(from, &bare);
+        let mut seen = Vec::new();
+        for step in [1.0, 2.0, 10.0, 40.0, 100.0] {
+            mt.drag((from.0 + step * 20.0, from.1), &bare);
+            seen.push((step, mt.clips[0].place.offset));
+        }
+        // Equal ratios of travel give equal ratios of offset: the map held
+        // still even as the piece grew under it.
+        let (first_step, first) = seen[0];
+        for (step, offset) in &seen {
+            let want = first * step / first_step;
+            assert!(
+                (offset - want).abs() < 1.0,
+                "step {step}: {offset} against {want} — the axis moved"
+            );
+        }
+        assert!(model::extent(&mt.clips) > len, "and the piece did grow");
+    }
+    /// **A grip is hit on the pixels it is drawn on.** The press asks the same
+    /// call the drawing made, so the handle and its hit area cannot disagree —
+    /// which is exactly the case nobody tests.
+    #[test]
+    fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mt = piece();
+
+        let body = track::lane_body(
+            model::stack(&mt.lanes, rect, mt.scroll, mt.gap)[0],
+            false,
+            100.0,
+            &m,
+        );
+        let nav = View { start: 0.0, len };
+        let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
+        let cr = track::clip_rect(body, x0, x1);
+        let local = track::clip_local_view(
+            body,
+            &nav,
+            mt.clips[0].place.offset,
+            mt.clips[0].place.dur,
+            cr,
+        );
+        let ends = track::clip_ends_on_screen(&local, mt.clips[0].place.dur);
+        let (left, right) = track::clip_grips(cr, ends, &m);
+        let left = left.expect("its start is on screen");
+        let right = right.expect("and so is its end");
+
+        let mid_y = f64::from(cr.y + cr.h / 2.0);
+        let on = |r: Rect| (f64::from(r.x + r.w / 2.0), mid_y);
+        assert_eq!(
+            mt.clip_at(&input(&m, rect, len), on(left)),
+            Some((0, Part::Start))
+        );
+        assert_eq!(
+            mt.clip_at(&input(&m, rect, len), on(right)),
+            Some((0, Part::End))
+        );
+        // And the middle is the body, which is what moves it.
+        let middle = (f64::from(cr.x + cr.w / 2.0), mid_y);
+        assert_eq!(
+            mt.clip_at(&input(&m, rect, len), middle),
+            Some((0, Part::Body))
+        );
     }
 }

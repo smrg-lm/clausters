@@ -5,6 +5,14 @@ The smallest window that is still a multitrack editor: a ruler in seconds, three
 lanes of audio clips, play/pause, stop and a counter. It is here to check the
 audio half by ear and by eye, so everything that is not audio is out of the way.
 
+**The lanes and the clips are one widget.** `clausters.gui.Multitrack` holds the
+piece and `multitrack` draws it, so this script describes what the piece *is* and
+never composes a tree of lanes. One subscription covers the whole of it: whatever
+a hand does — move a clip, cross a lane, trim one, sweep a block, `q`, Delete, a
+fader — the widget reports **the piece as it now stands**, and the only handler
+here puts the readers where it says. There is no widget id in this file and no
+handler per clip.
+
 **The time of this arrangement is the server's.** `clausters.gui.Transport` is
 built with ``head_clock="piece"``, which settles everything under it: play, pause
 and stop are ``/transport_play``, ``/transport_stop`` and
@@ -28,8 +36,8 @@ Needs a display and a GPU adapter.
 
 # %%
 from clausters import Buffer, Group, Session, Synth
-from clausters.gui import (Transport, button, clip, label, layout, scroll,
-                           timeruler, track, view)
+from clausters.gui import (Multitrack, Transport, button, label, layout,
+                           timeruler, view)
 from clausters.defs import SynthDef, out
 from clausters.defs.ugens import (buf_rd, control, line, pink_noise, saw, sine,
                                   transport_pos, white_noise)
@@ -102,108 +110,91 @@ server.transport_group(multitrack_group)
 
 # %% [markdown]
 # ## The arrangement
+# One `clausters.gui.Multitrack`: the lanes, the clips, and the widget that
+# draws them. A clip is named by **your own word**, and that is the word that
+# comes back when a hand moves it — there is no widget id here, and no handler
+# per clip.
 
 # %%
-#: clip -> its lane, where it starts and how long it lasts (seconds), its take.
-CLIPS = {"a": {"lane": "noise", "at": 0.0, "secs": 2.0, "take": "white"},
-         "b": {"lane": "noise", "at": 6.0, "secs": 2.0, "take": "pink"},
-         "c": {"lane": "tone", "at": 2.0, "secs": 2.0, "take": "glide"},
-         "d": {"lane": "bass", "at": 4.0, "secs": 2.0, "take": "saw"}}
+#: clip name -> the node playing it.
+nodes = {}
 
-LANES = ("noise", "tone", "bass")
+piece = Multitrack(
+    lanes=[("noise",), ("tone",), ("bass",)],
+    clips=[("white", "noise", 0.0, TAKE_DUR * SR, 0.0, "white"),
+           ("glide", "tone", 2.0 * SR, TAKE_DUR * SR, 0.0, "glide"),
+           ("saw", "bass", 4.0 * SR, TAKE_DUR * SR, 0.0, "saw"),
+           ("pink", "noise", 6.0 * SR, TAKE_DUR * SR, 0.0, "pink")],
+)
 
-#: lane -> its mixer strip, written by the lane header's own gestures.
-LANE_STATE = {name: {"mute": False, "solo": False, "level": 0.8} for name in LANES}
+#: clip name -> the take it reads. The widget **places**; what a clip holds is
+#: this script's, and it is what a reader node is pointed at.
+TAKE_OF = {"white": "white", "glide": "glide", "saw": "saw", "pink": "pink"}
 
 
 def lane_gain(lane: str) -> float:
-    """Nothing when the lane is muted, nothing when another is soloed, its
-    fader otherwise."""
-    st = LANE_STATE[lane]
-    soloing = any(s["solo"] for s in LANE_STATE.values())
-    if st["mute"] or (soloing and not st["solo"]):
+    """What a lane contributes: nothing when it is muted, nothing when another
+    is soloed, its fader otherwise — the mixer's three rules, and they are the
+    script's, because the host carries the flags and never reads them."""
+    found = piece.lane(lane)
+    if found is None:
         return 0.0
-    return st["level"]
-
-
-#: clip -> the node playing it.
-nodes = {}
+    soloing = any(l.solo for l in piece.lanes)
+    if found.mute or (soloing and not found.solo):
+        return 0.0
+    return found.gain
 
 
 def place(name: str):
-    """Put a clip where the arrangement says it is. The first call starts the
+    """Put a clip's reader where the piece says it is. The first call starts the
     node, every later one is a ``/node_set`` on the node already running."""
-    spec = CLIPS[name]
-    args = {"at": spec["at"] * SR, "span": spec["secs"] * SR,
-            "amp": 0.5 * lane_gain(spec["lane"])}
+    clip = piece.clip(name)
+    if clip is None:
+        return
+    args = {"at": clip.at, "span": clip.dur, "amp": 0.5 * lane_gain(clip.lane)}
     node = nodes.get(name)
     if node is None:
-        nodes[name] = Synth("reader", {"buf": BUFS[spec["take"]].bufnum, **args},
+        nodes[name] = Synth("reader", {"buf": BUFS[TAKE_OF[name]].bufnum, **args},
                             target=multitrack_group, server=server)
     else:
         node.set(args)
 
 
-def place_all():
-    for name in CLIPS:
-        place(name)
+def sound_the_piece(_what=None):
+    """Make what is drawn be what sounds.
 
-
-place_all()
-server.sync()
-
-
-def extent() -> float:
-    """Where the last clip ends, in seconds — a clip dragged past the end
-    lengthens the arrangement."""
-    return max(c["at"] + c["secs"] for c in CLIPS.values())
+    The whole of the driver. A hand moved a clip, crossed a lane, trimmed one,
+    moved a fader or soloed a track — it does not matter which, because what the
+    widget reports is the **piece**, and this puts the readers where the piece
+    now says they are. A clip that went away takes its node with it.
+    """
+    for name in list(nodes):
+        if piece.clip(name) is None:
+            nodes.pop(name).free()
+    for clip in piece.clips:
+        place(clip.name)
 
 
 # %% [markdown]
 # ## The window
-# A ruler, the lanes, two buttons and a read-out. The ruler and the lanes share
-# one navigation group, so a zoom or a pan on any of them moves all of them.
+# A ruler, the piece, two buttons and a read-out. The multitrack is **one
+# widget**: it draws its own lane headers, its own stack and its own boxes, so
+# there is no `track` to build and no `scroll` to wrap them in. It shares the
+# ruler's navigation group, so a zoom or a pan on either moves both.
 
 # %%
 NAV_GROUP = 7
-LANE_HEIGHT = 120.0
 
 gui = session.gui()
 
 #: No `tempo` and no `quant`: an audio arrangement has no beats to count, so the
 #: ruler measures seconds.
 shared_axis = dict(link=NAV_GROUP, sample_rate=SR)
-lane_chrome = dict(snap=0.0, mute=False, solo=False, level=0.8, **shared_axis)
-
-
-def lane_view(lane: str):
-    """One lane and the clips the arrangement puts on it.
-
-    A clip names its take by ``buffer`` — the very buffer the `reader` node
-    reads. The host maps the server's segment to draw it, so the samples cross
-    no wire and there is one array, in one place, for the picture and the sound.
-    """
-    return track(
-        *[
-            clip(
-                name=name, offset=spec["at"] * SR,
-                dur=len(TAKES[spec["take"]]),
-                buffer=BUFS[spec["take"]].bufnum,
-                label=spec["take"]
-            ) for name, spec in CLIPS.items() if spec["lane"] == lane
-        ],
-        name=lane, label=lane, h=LANE_HEIGHT, **lane_chrome
-    )
-
 
 editor = view(
     timeruler(name="ruler", ruler="time", h=22.0, **shared_axis),
 
-    scroll(
-        *[lane_view(lane) for lane in LANES],
-        name="lanes", axis="y", zoom=False, flow="col", gap=4.0,
-        content_h=len(LANES) * LANE_HEIGHT + 8.0, weight=1.0
-    ),
+    piece.view(name="piece", weight=1.0, **shared_axis),
 
     # No rewind: stop already rewinds, which is what tells it from pause.
     layout(
@@ -220,6 +211,12 @@ editor = view(
 #: `open` gives back the handle its widgets are reached through.
 win = editor.open()
 
+#: **One subscription, for the whole piece.** Whatever a hand does — move a
+#: clip, cross a lane, trim one, sweep a block, `q`, Delete, a fader — the
+#: widget reports the piece and `piece` is already it by the time this runs.
+piece.attach(win)
+piece.on_change = sound_the_piece
+
 # %% [markdown]
 # ## The transport
 # ``head_clock="piece"`` says it once: the buttons become `/transport_play`,
@@ -227,93 +224,27 @@ win = editor.open()
 # from the engine's own position instead of an anchor kept in step here.
 
 # %%
-transport = Transport(gui, lambda: [win[lane].id for lane in LANES],
-                      head_clock="piece", tempo=1.0, sample_rate=SR,
-                      extent=extent, governed=True)
+transport = Transport(gui, lambda: [win["piece"].id], head_clock="piece",
+                      tempo=1.0, sample_rate=SR,
+                      extent=lambda: piece.extent / SR, governed=True)
 transport.server = server
 transport.locate(0.0)
 
 # %% [markdown]
 # ## The edits
-# A clip's move or resize, a lane's mixer strip, and a click that locates. Each
-# one is a message to a node that is already running.
+# There are none to write. **The piece reports the piece**, so the one handler
+# above is the whole driver: a move, a lane crossing, a trim, a block, `q`,
+# Delete, a fader — all of them arrive as what the piece now is, and
+# `sound_the_piece` puts the readers where it says.
+#
+# The only thing left is the click that is *not* an edit: one cursor, and it is
+# the transport's.
 
 # %%
-#: The host names widgets by id, so a report has to be looked up. A clip keeps
-#: its id when it crosses lanes -- the host moves the widget, it does not build a
-#: new one -- so these are made once.
-CLIP_BY_ID = {win[name].id: name for name in CLIPS}
-LANE_BY_ID = {win[lane].id: lane for lane in LANES}
-
-
-def move(name: str, offset: float, dur: float):
-    """Write a placement the host reported, in samples, and hear it."""
-    CLIPS[name]["at"] = offset / SR
-    CLIPS[name]["secs"] = max(dur / SR, 0.0)
-    place(name)
-
-
-def on_clip(name: str):
-    """A clip's own two reports.
-
-    ``"clip" offset dur start`` is a move or a resize **inside its lane**.
-    ``"lane" lane offset dur start`` is the clip having **crossed the stack**,
-    and it is the only report that says where a clip now *is* rather than only
-    where it sits -- so it is also what keeps `lane_gain` reading the right
-    strip. Handling the first and not the second leaves the node playing at the
-    old place while the picture shows the new one.
-    """
-    def handler(tag, *vals):
-        if tag == "clip" and len(vals) >= 2:
-            move(name, float(vals[0]), float(vals[1]))
-        elif tag == "lane" and len(vals) >= 3:
-            CLIPS[name]["lane"] = LANE_BY_ID[int(vals[0])]
-            move(name, float(vals[1]), float(vals[2]))
-    return handler
-
-
-def on_lane(name: str):
-    """A lane's reports: a block edit, a click that locates, and its strip.
-
-    ``"clips" id offset dur start …`` is **one gesture over a selection**,
-    addressed to the lane the hand was on and naming every clip it held by
-    widget id, wherever in the stack they sat -- one message so the owner undoes
-    it in one step. From the first selection onwards this is what a drag sends
-    *instead of* ``"clip"``, which is why a script that reads only the singular
-    goes quietly out of step the moment a hand starts working in blocks.
-    """
-    def handler(tag, *vals):
-        if not vals:
-            return
-        if tag == "clips":
-            for wid, offset, dur, _start in zip(vals[0::4], vals[1::4],
-                                                vals[2::4], vals[3::4]):
-                move(CLIP_BY_ID[int(wid)], float(offset), float(dur))
-        elif tag == "locate":
-            # One cursor, and it is the transport's: a click names a time
-            # wherever it lands, on a clip as much as beside it.
-            transport.locate(float(vals[0]) / SR)
-        elif tag in ("mute", "solo"):
-            LANE_STATE[name][tag] = bool(int(vals[0]))
-            win[name].set(**{tag: 1 if LANE_STATE[name][tag] else 0})
-            place_all()          # a solo changes what every lane contributes
-        elif tag == "level":
-            LANE_STATE[name]["level"] = float(vals[0])
-            win[name].set(level=LANE_STATE[name]["level"])
-            place_all()
-    return handler
-
-
-def on_ruler(tag, *payload):
-    if tag == "locate" and payload:
-        transport.locate(float(payload[0]) / SR)
-
-
-for _name in CLIPS:
-    win[_name].on_event(on_clip(_name))
-for _lane in LANES:
-    win[_lane].on_event(on_lane(_lane))
-win["ruler"].on_event(on_ruler)
+piece.on_locate = lambda at: transport.locate(at / SR)
+win["ruler"].on_event(
+    lambda tag, *payload: transport.locate(float(payload[0]) / SR)
+    if tag == "locate" and payload else None)
 
 # %% [markdown]
 # ## The buttons and the read-out
@@ -339,14 +270,14 @@ def tick_counter():
     costs nothing — the host draws it from the segment every frame."""
     global _shown
     transport.refresh()
-    text = f"{transport.position:8.3f} s   of {extent():.3f} s"
+    text = f"{transport.position:8.3f} s   of {piece.extent / SR:.3f} s"
     if text != _shown:
         win["counter"].set(text=text)
         _shown = text
     return 0.05
 
 
-win["counter"].set(text=f"{0.0:8.3f} s   of {extent():.3f} s")
+win["counter"].set(text=f"{0.0:8.3f} s   of {piece.extent / SR:.3f} s")
 gui.clock.sched(0.05, tick_counter)
 
 # %%
