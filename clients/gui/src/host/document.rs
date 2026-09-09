@@ -31,6 +31,7 @@
 //! edit is the previous value handed back, which is the crate's decision and
 //! the reason the caller can adopt the outcome unconditionally.
 
+pub mod piece;
 pub mod sources;
 pub mod tree;
 
@@ -38,6 +39,8 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
+use clausters_document::multitrack::Multitrack;
+use clausters_document::multitrack::edit::{MULTITRACK, MultitrackIntent};
 use clausters_document::{
     Against, Document, Intent, NodeId, Opaque, Outcome, Rules, Session, TimeUnit, apply_logged,
     log::Log,
@@ -89,7 +92,20 @@ fn long_at(args: &[OscType], n: usize) -> Option<u64> {
 /// What the host holds when it is the one answering its own gestures.
 pub struct Owner {
     /// The composition, as the crate keeps it.
+    ///
+    /// **The leg being walked off**, and the crate says so: a session written
+    /// today carries [`Owner::piece`] and leaves this empty. It stays because
+    /// what it holds — the general tree, its samples, its destructive edits —
+    /// has nowhere else to be yet.
     pub document: Document,
+    /// **The piece**: the tracks and the timeline they sit on, which is what a
+    /// session written today actually carries.
+    ///
+    /// Two descriptions, one owner, and the picture comes from whichever is
+    /// filled ([`Owner::draws_piece`]). They are separate structures in one
+    /// history, so a piece's edit and a tree's edit undo in the order they were
+    /// made rather than in two orders.
+    pub piece: Multitrack,
     /// The undo stack — the crate's, so an inverse is read out of the document
     /// rather than remembered by the gesture that made it.
     pub log: Log,
@@ -133,6 +149,8 @@ pub struct Owner {
     /// And which node each **lane header** configures. See
     /// [`Owner::bind_header`] for why it is not the same map.
     headers: HashMap<i32, NodeId>,
+    /// The piece's identity in [`Owner::log`]'s pile — the second structure.
+    piece_structure: clausters_document::history::StructureId,
     /// The widget drawing the whole piece, when the tree has one.
     ///
     /// Not a map, because there is nothing to map: the multitrack names its
@@ -145,10 +163,16 @@ pub struct Owner {
 /// What applying an edit left behind, for the caller to draw and answer with.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
-    /// The edit describing the document as it now stands — the intent as given
+    /// The edit describing the **tree** as it now stands — the intent as given
     /// when it applied verbatim, the transformed one when it was snapped, and
     /// the **previous** value when it was refused.
-    pub effective: Intent,
+    ///
+    /// `None` for an edit written in the **piece's** vocabulary, which is not
+    /// an [`Intent`] and has nobody here to answer for it: the picture is
+    /// redrawn from the owner rather than patched from what an edit said, so
+    /// the only caller left that reads this is the one restoring samples
+    /// ([`super::Host::replay_writes`]), and samples are the tree's.
+    pub effective: Option<Intent>,
     /// The document's version afterwards, which is what an acknowledgement
     /// carries so a later edit can say what it was made against.
     pub version: u64,
@@ -161,9 +185,18 @@ impl Owner {
     /// An owner of `document`, with no session behind it (a composition built
     /// in memory) and no grid.
     pub fn new(document: Document) -> Self {
+        let mut log = Log::new();
+        // The second structure in the same pile, registered whether or not this
+        // owner turns out to hold a piece: one history is what makes an undo
+        // walk the two descriptions in the order the hand made them, and
+        // registering lazily would mean an id that depends on what was edited
+        // first.
+        let piece_structure = log.history_mut().register(MULTITRACK);
         Self {
             document,
-            log: Log::new(),
+            piece: Multitrack::default(),
+            piece_structure,
+            log,
             session: None,
             rules: Rules::none(),
             units_per_beat: 48_000.0,
@@ -176,10 +209,22 @@ impl Owner {
         }
     }
 
+    /// Whether the picture comes from the **piece** rather than from the tree.
+    ///
+    /// Read off what the session actually carries rather than from a flag a
+    /// caller sets: a session written today has tracks and an empty document,
+    /// one written before the turn has the other, and a host that asked which
+    /// mode it was in would be asking the caller to know something the file
+    /// already says.
+    pub fn draws_piece(&self) -> bool {
+        !self.piece.tracks.is_empty()
+    }
+
     /// An owner of a session's document, keeping the session so a save has the
     /// sources to write with it.
     pub fn from_session(session: Session) -> Self {
         let mut owner = Self::new(session.document.clone());
+        owner.piece = session.multitrack.clone();
         owner.session = Some(session);
         owner
     }
@@ -288,6 +333,7 @@ impl Owner {
             .clone()
             .unwrap_or_else(|| Session::new(self.document.clone()));
         session.document = self.document.clone();
+        session.multitrack = self.piece.clone();
         let text = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
         std::fs::write(path.as_ref(), text).map_err(|e| format!("{}: {e}", path.as_ref().display()))
     }
@@ -345,15 +391,32 @@ impl Owner {
         self.multitrack
     }
 
-    /// The piece as it now stands, in the widget's own vocabulary — the lanes
-    /// and clips a `/gui_set` would carry, and the nodes behind them.
+    /// **What is on screen**, in the widget's own vocabulary — the lanes and
+    /// clips a `/gui_set` would carry, and the ids behind them.
     ///
-    /// Re-derived rather than remembered: the document is the state, and a
-    /// second copy of the piece kept beside it is a second copy to keep in
-    /// step. It is the same walk the tree was drawn with, so what an edit-back
-    /// is resolved against cannot disagree with what is on screen.
-    pub fn piece(&self) -> tree::Piece {
-        tree::piece(&self.document, &self.look())
+    /// Re-derived rather than remembered: the owner is the state, and a second
+    /// copy of the picture kept beside it is a second copy to keep in step. It
+    /// is the same walk the window was drawn with, so what an edit-back is
+    /// resolved against cannot disagree with what a hand moved.
+    ///
+    /// It comes from the **piece** when there is one and from the tree
+    /// otherwise ([`Self::draws_piece`]) — one widget, two descriptions, and
+    /// the file says which.
+    pub fn shown(&self) -> tree::Piece {
+        if self.draws_piece() {
+            piece::shown(&self.piece, &self.piece_look())
+        } else {
+            tree::piece(&self.document, &self.look())
+        }
+    }
+
+    /// The scales the piece is drawn with.
+    pub(crate) fn piece_look(&self) -> piece::Look<'_> {
+        piece::Look {
+            units_per_beat: self.units_per_beat,
+            units_per_second: self.units_per_second,
+            takes: Some(&self.takes),
+        }
     }
 
     /// Reads a widget's `/gui_event` payload as **the edits it stands for**.
@@ -369,10 +432,78 @@ impl Owner {
     /// the run rather than the caller applying them one at a time.
     pub fn read_events(&self, widget_id: i32, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         match args.first() {
-            Some(OscType::String(tag)) if tag == "clips" => self.read_clips(&args[1..]),
-            Some(OscType::String(tag)) if tag == "lanes" => self.read_lanes(&args[1..]),
+            Some(OscType::String(tag)) if tag == "clips" && !self.draws_piece() => {
+                self.read_clips(&args[1..])
+            }
+            Some(OscType::String(tag)) if tag == "lanes" && !self.draws_piece() => {
+                self.read_lanes(&args[1..])
+            }
             _ => self.read_event(widget_id, args).into_iter().collect(),
         }
+    }
+
+    /// The same door for a host drawing the **piece**: one payload naming every
+    /// box or every strip, read in the piece's own vocabulary.
+    ///
+    /// Two readers rather than one over a common shape, because the two
+    /// vocabularies genuinely differ where it matters: the tree has one verb
+    /// for a placement and the piece has three (a move, a trim, a lane's whole
+    /// list), and a reader that flattened them would be choosing for the
+    /// vocabulary rather than reading it.
+    pub fn read_piece_events(&self, args: &[OscType]) -> Vec<(MultitrackIntent, &'static str)> {
+        match args.first() {
+            Some(OscType::String(tag)) if tag == "clips" => {
+                piece::read_clips(&self.piece, &args[1..], &self.piece_look())
+            }
+            Some(OscType::String(tag)) if tag == "lanes" => {
+                piece::read_lanes(&self.piece, &args[1..])
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Applies a run of the **piece's** edits as one entry in the same log the
+    /// tree records into, so an undo walks both in the order they were made.
+    pub fn apply_piece(
+        &mut self,
+        intents: &[(MultitrackIntent, &'static str)],
+        against: &Against,
+    ) -> Vec<Applied> {
+        use clausters_document::history::{Entry as PileEntry, Step as PileStep};
+        use clausters_document::multitrack::edit::{current, payload};
+
+        let mut entry: Option<PileEntry> = None;
+        let mut out = Vec::with_capacity(intents.len());
+        for (intent, what) in intents {
+            let backward = current(&self.piece, intent).map(|i| payload(&i));
+            let outcome = clausters_document::multitrack::edit::apply(
+                &mut self.piece,
+                intent,
+                against,
+                &self.rules,
+            );
+            if outcome.applied
+                && let Some(backward) = backward
+            {
+                let forward = PileStep::Edit(payload(&outcome.effective));
+                entry = Some(match entry.take() {
+                    Some(e) => e.and(self.piece_structure, forward, backward),
+                    None => PileEntry::new(*what, self.piece_structure, forward, backward),
+                });
+            }
+            out.push(Applied {
+                // Not an `Intent`: the piece has a vocabulary of its own, and
+                // the picture is redrawn from the owner rather than patched
+                // from what an edit said.
+                effective: None,
+                version: self.piece.version,
+                applied: outcome.applied,
+            });
+        }
+        if let Some(entry) = entry {
+            self.log.history_mut().record(entry);
+        }
+        out
     }
 
     /// **The piece's clips, as they now stand** — the one payload every
@@ -392,7 +523,7 @@ impl Owner {
     /// the same piece.
     fn read_clips(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         let units = self.units_per_beat.max(f64::MIN_POSITIVE);
-        let now = self.piece();
+        let now = tree::piece(&self.document, &self.look());
         // What each aggregate ends up holding, for the clips that crossed.
         let mut leaving: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         let mut joining: HashMap<NodeId, Vec<clausters_document::Member>> = HashMap::new();
@@ -788,21 +919,21 @@ impl Owner {
     /// the log and not a new entry in it, which is what makes redo the other
     /// direction of one stack rather than a second one.
     pub fn undo(&mut self) -> Vec<Applied> {
-        let Some(undone) = self.log.undo() else {
+        let Some(undone) = self.log.history_mut().undo() else {
             return Vec::new();
         };
-        self.replay(&undone.intents)
+        self.replay(&undone.legs)
     }
 
     /// Redoes the last undone edit, in the direction it was made.
     pub fn redo(&mut self) -> Vec<Applied> {
-        let Some(redone) = self.log.redo() else {
+        let Some(redone) = self.log.history_mut().redo() else {
             return Vec::new();
         };
         // `remaining` is what only its owner can re-run, and the host holds no
         // algorithms -- so a redo here applies the ordinary edits and stops
         // where the crate stopped.
-        self.replay(&redone.intents)
+        self.replay(&redone.edits)
     }
 
     pub fn can_undo(&self) -> bool {
@@ -813,26 +944,54 @@ impl Owner {
         self.log.can_redo()
     }
 
-    /// Applies a run of intents with the checks off — the shape an undo or a
-    /// redo needs, since what the log holds is by definition against the
-    /// document as it was left, and snapping something twice would move it.
-    fn replay(&mut self, intents: &[Intent]) -> Vec<Applied> {
-        let mut out = Vec::with_capacity(intents.len());
-        for intent in intents {
-            let outcome = clausters_document::apply(
-                &mut self.document,
-                intent,
-                &Against::default(),
-                &Rules::none(),
-            );
-            out.push(self.report(outcome));
+    /// Applies a run of the pile's own legs with the checks off — the shape an
+    /// undo or a redo needs, since what the log holds is by definition against
+    /// the state as it was left, and snapping something twice would move it.
+    ///
+    /// **Each leg says which structure it is over**, which is the whole reason
+    /// the two descriptions share one history: a piece's move and a tree's
+    /// stroke walk back in the order the hand made them, not in two orders.
+    fn replay(
+        &mut self,
+        legs: &[(clausters_document::history::StructureId, Opaque)],
+    ) -> Vec<Applied> {
+        let tree = self.log.structure();
+        let mut out = Vec::with_capacity(legs.len());
+        for (structure, load) in legs {
+            if *structure == self.piece_structure {
+                let Some(intent) = clausters_document::multitrack::edit::intent_of(load) else {
+                    continue;
+                };
+                let outcome = clausters_document::multitrack::edit::apply(
+                    &mut self.piece,
+                    &intent,
+                    &Against::default(),
+                    &Rules::none(),
+                );
+                out.push(Applied {
+                    effective: None,
+                    version: self.piece.version,
+                    applied: outcome.applied,
+                });
+            } else if *structure == tree {
+                let Some(intent) = clausters_document::log::intent_of(load) else {
+                    continue;
+                };
+                let outcome = clausters_document::apply(
+                    &mut self.document,
+                    &intent,
+                    &Against::default(),
+                    &Rules::none(),
+                );
+                out.push(self.report(outcome));
+            }
         }
         out
     }
 
     fn report(&self, outcome: Outcome) -> Applied {
         Applied {
-            effective: outcome.effective,
+            effective: Some(outcome.effective),
             version: self.document.version,
             applied: outcome.applied,
         }
@@ -897,7 +1056,7 @@ mod tests {
         // The inverse came out of the document, not out of the gesture: the
         // host never remembered where the clip was.
         assert!(
-            matches!(undone[0].effective, Intent::Place { offset, .. } if offset == 0.0),
+            matches!(undone[0].effective, Some(Intent::Place { offset, .. }) if offset == 0.0),
             "{:?}",
             undone[0].effective
         );
@@ -929,7 +1088,7 @@ mod tests {
         let redone = owner.redo();
         assert_eq!(redone.len(), 1);
         assert!(
-            matches!(redone[0].effective, Intent::Place { offset, .. } if offset == 4.0),
+            matches!(redone[0].effective, Some(Intent::Place { offset, .. }) if offset == 4.0),
             "{:?}",
             redone[0].effective
         );
@@ -975,7 +1134,7 @@ mod tests {
         let undone = owner.undo();
         assert_eq!(undone.len(), 1);
         match &undone[0].effective {
-            Intent::Configure { config, .. } => assert!(
+            Some(Intent::Configure { config, .. }) => assert!(
                 config.0.get("mute").is_none_or(|v| v == false),
                 "unmuted again: {config:?}"
             ),
@@ -1557,7 +1716,7 @@ mod window_verb_tests {
         let where_is = |host: &Host, node: u64| {
             host.owner
                 .as_ref()
-                .and_then(|o| o.piece().lane_of(NodeId(node)).map(|l| l.holder))
+                .and_then(|o| o.shown().lane_of(NodeId(node)).map(|l| l.holder))
         };
         assert_eq!(where_is(&host, 3), Some(NodeId(2)));
 
@@ -1626,6 +1785,126 @@ mod window_verb_tests {
             "and the block, in one more step"
         );
         assert_eq!(placed(&host, 4), Some(1.0));
+    }
+
+    /// **A session written today is a piece, and the host edits it.** The whole
+    /// leg, end to end: the window is drawn from `Multitrack`, a hand's report
+    /// arrives on the one widget, the crate's own vocabulary applies it, and
+    /// `Ctrl`+`Z` walks it back.
+    ///
+    /// This is the case that opened as an **empty window**: the general tree is
+    /// the leg being walked off, a session carries none, and a host that read
+    /// only the tree drew nothing and said so in one log line.
+    #[test]
+    fn a_piece_is_drawn_edited_and_undone_by_a_host_that_owns_it() {
+        use clausters_document::multitrack::{Content, Multitrack, Region, Track};
+        use clausters_document::{Beat, Opaque as Op, SegmentRef, SegmentSource, SourceId};
+        use clausters_document::{Lifetime, SourceRef};
+
+        let region = |id: u64, at: f64| {
+            Region::new(
+                NodeId(id),
+                Beat(at),
+                Beat(2.0),
+                Content::Window {
+                    window: SegmentRef {
+                        source: SegmentSource::Samples(SourceRef {
+                            source: SourceId(1),
+                            lifetime: Lifetime::Session,
+                            generation: 0,
+                            range: None,
+                        }),
+                        start: 0.0,
+                        duration: 2.0,
+                    },
+                    playrate: 1.0,
+                    args: Op::none(),
+                },
+            )
+        };
+        let mut piece = Multitrack::default();
+        let mut first = Track::new(NodeId(10), NodeId(11));
+        first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
+        let second = Track::new(NodeId(20), NodeId(21));
+        piece.tracks = vec![first, second];
+
+        let mut session = clausters_document::Session::new(Document::empty());
+        session.multitrack = piece;
+        let owner = Owner::from_session(session)
+            .with_units_per_beat(100.0)
+            .with_units_per_second(48_000.0);
+        assert!(owner.draws_piece(), "the file carries a piece and no tree");
+
+        let def_id = 1;
+        let drawn = super::tree::draw_shown(
+            &owner.document,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat: 100.0,
+                ..super::tree::Look::default()
+            },
+            "t",
+            Some(owner.shown()),
+        );
+        let view = drawn.multitrack;
+        let mut owner = owner;
+        owner.bind_multitrack(view);
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+
+        let drawn_clips = |host: &Host| drawn_clips(host, def_id, view);
+        assert_eq!(drawn_clips(&host).len(), 2, "two boxes on the first row");
+        assert_eq!(drawn_clips(&host)[0][1], "10", "and both on it");
+
+        // The hand drags one onto the other row: the piece as it now stands.
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &clips(&[("12", "20", 100.0, 200.0), ("13", "10", 400.0, 200.0)])
+        ));
+        let on = |host: &Host, region: u64| {
+            host.owner.as_ref().and_then(|o| {
+                o.piece.tracks.iter().find_map(|t| {
+                    t.lanes
+                        .iter()
+                        .any(|l| l.regions.iter().any(|r| r.id == NodeId(region)))
+                        .then_some(t.id)
+                })
+            })
+        };
+        assert_eq!(on(&host, 12), Some(NodeId(20)), "it changed track");
+        assert_eq!(
+            drawn_clips(&host)
+                .iter()
+                .find(|c| c[0] == "12")
+                .map(|c| c[1].clone()),
+            Some(Value::from("20")),
+            "and the picture says so, redrawn from the piece"
+        );
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(on(&host, 12), Some(NodeId(10)), "back where it was");
+        assert_eq!(
+            drawn_clips(&host)
+                .iter()
+                .find(|c| c[0] == "12")
+                .map(|c| c[2].as_f64()),
+            Some(Some(0.0)),
+            "and the picture went back with it"
+        );
     }
 
     /// A save writes where the caller said and nowhere else: overwriting what

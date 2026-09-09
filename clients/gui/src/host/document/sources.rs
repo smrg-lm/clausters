@@ -175,6 +175,26 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
 /// files nothing draws.
 fn referenced(session: &Session) -> Vec<SourceId> {
     let mut found: Vec<SourceId> = Vec::new();
+    // **The piece names sources too**, and a session written today names them
+    // *only* there: a region is a window onto a source, so a reader that walked
+    // the general tree alone read nothing in and drew every box empty.
+    for track in &session.multitrack.tracks {
+        for lane in &track.lanes {
+            for region in &lane.regions {
+                let clausters_document::multitrack::Content::Window { window, .. } =
+                    &region.content
+                else {
+                    continue;
+                };
+                let Some(source) = window.source.samples() else {
+                    continue;
+                };
+                if !found.contains(&source.source) {
+                    found.push(source.source);
+                }
+            }
+        }
+    }
     session.document.walk(&mut |node| {
         // Assembled samples names one source per window; a reader that took
         // only the first would open a joined clip with the rest of it silent.

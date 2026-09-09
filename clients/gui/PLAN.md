@@ -6009,3 +6009,21 @@ finished work, where a pending item reads as done.
   the honest fix is the owner speaking that vocabulary rather than a fourth
   field on `Place` — so it waits on the document's own multitrack (`O21`-`O24`)
   rather than growing a stopgap here.
+
+- ✅ **`--session` opens a session written today as an empty window**
+  *(found 2026-09-08, by eye, right after the tree became one `multitrack`)*.
+  Nothing to do with the widget: a `Session` written by the current Python
+  client carries only `multitrack` (the crate's own tracks/lanes/regions) and
+  its general `document` is `Document::empty`, which the format allows on
+  purpose — "absent means empty, not invalid", and the general tree is the leg
+  being walked off. The standalone host still reads only that leg, so it draws
+  a piece with no lanes and no clips and says so in one log line
+  (`0 clip(s) on 0 lane(s)`) that nobody is reading while looking at a window.
+
+  **Fixed 2026-09-08**, and it is `O24`'s first leg rather than a patch:
+  `host/document/piece.rs` draws a `Multitrack` into the same widget the tree
+  draws into — a row is a **track** showing the lane it plays, a box is a
+  **region**, both named by their ids — and reads the edit-back in the piece's
+  own vocabulary. The two descriptions are two structures in **one** history, so
+  an undo walks them in the order the hand made them. `sources::plan` walks the
+  piece too, which is why the takes now read in at all.

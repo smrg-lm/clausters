@@ -2029,11 +2029,16 @@ impl Host {
             // to make the document say that -- and they are one entry, because
             // a block move is one thing a hand did.
             Some(OscType::String(tag)) if tag == "clips" || tag == "lanes" => {
-                let intents = owner.read_events(widget_id, args);
-                let applied = if intents.is_empty() {
-                    Vec::new()
+                let against = clausters_document::Against::default();
+                // Two vocabularies, one payload shape: the owner reads the
+                // piece's when it is drawing a piece and the tree's otherwise,
+                // and either way the run is one entry in one history.
+                let applied = if owner.draws_piece() {
+                    let intents = owner.read_piece_events(args);
+                    owner.apply_piece(&intents, &against)
                 } else {
-                    owner.apply_all(&intents, &clausters_document::Against::default())
+                    let intents = owner.read_events(widget_id, args);
+                    owner.apply_all(&intents, &against)
                 };
                 self.adopt(def_id, &applied);
                 self.settle(ack::Acked {
@@ -2269,7 +2274,7 @@ impl Host {
         let writes: Vec<(i32, usize, u64, Vec<f32>)> = applied
             .iter()
             .filter(|a| a.applied)
-            .filter_map(|a| match &a.effective {
+            .filter_map(|a| match a.effective.as_ref()? {
                 clausters_document::Intent::WriteSamples {
                     node,
                     channel,
@@ -2299,109 +2304,40 @@ impl Host {
     /// without this the picture keeps the position the hand left and the edit
     /// looks like it did nothing at all. That is exactly the shape of "the keys
     /// do nothing".
-    fn adopt(&mut self, def_id: i32, applied: &[document::Applied]) {
-        let Some(owner) = self.owner.as_ref() else {
-            return;
-        };
-        let units = owner.units_per_beat;
-        let look = owner.look();
-        let moves: Vec<(i32, f64, f64)> = applied
-            .iter()
-            .filter(|a| a.applied)
-            .filter_map(|a| match &a.effective {
-                clausters_document::Intent::Place { node, offset, .. } => {
-                    // **The length is read back out of the document, not off
-                    // the intent.** A `Place` states the whole placement, so an
-                    // intent with no `dur` says this member takes the element's
-                    // own length again — the inverse of the first resize of a
-                    // clip says exactly that — and "no dur, leave the width
-                    // alone" left the clip at the size the hand had given it
-                    // while the document went back: an undo that moves the
-                    // model and not the picture. Asking the document through
-                    // the drawing's own rule cannot disagree with the drawing.
-                    let dur = owner
-                        .member_of(*node)
-                        .map(|m| document::tree::clip_units(m, Some(&owner.takes), &look))?;
-                    owner.widget_of(*node).map(|w| (w, *offset, dur))
-                }
-                _ => None,
-            })
-            .collect();
-        // The same rule for a lane header: what a `Configure` leaves is what
-        // the header draws. Without it an undo of a mute moved the document and
-        // left the button down -- the picture keeping the hand's answer after
-        // the piece had gone back, which is exactly what the clip's own comment
-        // above is about.
-        let mixed: Vec<(i32, clausters_document::Opaque)> = applied
-            .iter()
-            .filter(|a| a.applied)
-            .filter_map(|a| match &a.effective {
-                clausters_document::Intent::Configure { node, config } => {
-                    owner.header_of(*node).map(|w| (w, config.clone()))
-                }
-                _ => None,
-            })
-            .collect();
-        // **The piece is redrawn from the document, never patched.** The
-        // multitrack is one widget holding two lists, so what an applied edit
-        // leaves is simply what the document now says -- derived by the walk
-        // that drew it, so the picture and the piece cannot disagree. It is
-        // also the only thing that can adopt a *structural* edit: an undo of a
-        // lane change puts a clip back in another aggregate, which no
-        // per-widget patch could express.
+    fn adopt(&mut self, _def_id: i32, applied: &[document::Applied]) {
         if !applied.iter().any(|a| a.applied) {
             return;
         }
-        let piece = owner.multitrack().map(|widget| (widget, owner.piece()));
-        if let Some((widget, piece)) = piece {
-            // The effects are `Redraw`, and the front already repaints after an
-            // answered gesture -- there is nothing here for a caller to carry.
-            let mut fx = Vec::new();
-            self.set_props(
-                widget,
-                vec![
-                    ("lanes".into(), piece.lanes_prop),
-                    ("clips".into(), piece.clips_prop),
-                ],
-                &mut fx,
-            );
-        }
-        for (widget, offset, dur) in moves {
-            if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
-                && let WidgetKind::Clip {
-                    offset: o, dur: d, ..
-                } = &mut w.kind
-            {
-                *o = offset * units;
-                // Already in units: the length rule converts from the clip's
-                // own unit, which the offset's single ratio cannot.
-                *d = dur;
-            }
-        }
-        for (widget, config) in mixed {
-            if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
-                && let WidgetKind::Track { header, .. } = &mut w.kind
-            {
-                let table = config.0.as_object();
-                // **Only what the header already offers.** A lane whose def
-                // named no mute has no mute button, and a document key cannot
-                // grow one after the fact -- the tree is what decides which
-                // controls a lane has.
-                if let Some(mute) = header.mute.as_mut() {
-                    *mute =
-                        table.and_then(|t| t.get("mute")).and_then(Value::as_bool) == Some(true);
-                }
-                if let Some(solo) = header.solo.as_mut() {
-                    *solo =
-                        table.and_then(|t| t.get("solo")).and_then(Value::as_bool) == Some(true);
-                }
-                if let Some(level) = header.level.as_mut()
-                    && let Some(v) = table.and_then(|t| t.get("level")).and_then(Value::as_f64)
-                {
-                    *level = (v as f32).clamp(0.0, 1.0);
-                }
-            }
-        }
+        // **The piece is redrawn from the owner, never patched.** The
+        // multitrack is one widget holding two lists, so what an applied edit
+        // leaves is simply what the owner now says -- derived by the walk that
+        // drew it, so the picture and the piece cannot disagree. It is also the
+        // only thing that can adopt a *structural* edit: an undo of a lane
+        // change puts a clip somewhere else entirely, and no per-widget patch
+        // says that.
+        //
+        // There used to be a branch per intent here -- a `Place` writing an
+        // offset into a `Clip` widget, a `Configure` writing a `Track`'s header
+        // -- and it went with the widgets it addressed. One widget draws the
+        // piece; one call redraws it.
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let Some(widget) = owner.multitrack() else {
+            return;
+        };
+        let shown = owner.shown();
+        // The effects are `Redraw`, and the front already repaints after an
+        // answered gesture -- there is nothing here for a caller to carry.
+        let mut fx = Vec::new();
+        self.set_props(
+            widget,
+            vec![
+                ("lanes".into(), shown.lanes_prop),
+                ("clips".into(), shown.clips_prop),
+            ],
+            &mut fx,
+        );
     }
 
     /// trailing string is a reason, informational and read by nothing in the

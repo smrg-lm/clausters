@@ -1185,6 +1185,25 @@ DAW session, because that is what a DAW session is good at.
   places, and a clip is entered to edit** — which is the same line these three
   applications are drawn on.
 
+  **First leg landed 2026-09-08: the standalone host binds the piece.**
+  `clients/gui/src/host/document/piece.rs` draws a `Multitrack` into `G34`'s
+  `multitrack` widget and reads a hand's answer back as this crate's own
+  vocabulary — `PlaceRegion` for a move *and* for a track crossing (one verb,
+  which is why a cross is not a second mechanism), `TrimRegion` for a width,
+  `SetLane` for a box the payload no longer names, `SetTracks` for a strip. The
+  tree and the piece are **two structures in one history**, so `Ctrl`+`Z` walks
+  both in the order the hand made them. What it fixes is not subtle: a session
+  written by the current client carries no general tree, so `--session` had been
+  opening every real session as an **empty window**.
+
+  What that leg deliberately does not carry, each written where it is owed: a
+  **row is a track**, showing its active lane, and expanding a track to its
+  takes is view state `O23`'s `View` has a field for and nothing reads yet; a
+  **left trim** reports a `start` the reader drops, because `TrimRegion`'s
+  `content` is a whole `Content` and the widget states a frame; and a region
+  whose content is notes or a composite draws as a named box, since the widget's
+  box is a window onto one buffer (`clients/gui/PLAN.md`, "Found by use").
+
   **None of the three needs a new mechanism, the chain least of all** *(the user,
   2026-09-08: "el ruteo y las cadenas se hacen con buses y synthdef/faustdef del
   servidor en grupos del servidor, debe ser lo mas simple de todo, ya corre de

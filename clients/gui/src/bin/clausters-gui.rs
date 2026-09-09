@@ -660,7 +660,7 @@ fn run_session(
 ) -> Result<(), String> {
     use clausters_gui::host::document::{Owner, sources, tree};
 
-    let mut owner = Owner::open(path)?;
+    let owner = Owner::open(path)?;
 
     // **The samples, before the picture.** A document says what plays when and
     // never where its samples are; the session's table says that, and a host
@@ -710,7 +710,13 @@ fn run_session(
         None => format!("{} (read-only: no --save-to)", name(path)),
     };
     let def_id = 1;
-    let drawn = tree::draw(
+    // **The picture comes from whichever description the file carries.** A
+    // session written today is a piece with an empty tree; one written before
+    // the turn is the other. Both draw the same window, because the widget
+    // takes lanes and clips and does not care which walk produced them.
+    let mut owner = owner.with_takes(load.takes.clone());
+    let shown = owner.draws_piece().then(|| owner.shown());
+    let drawn = tree::draw_shown(
         &owner.document,
         &tree::Look {
             // Past the window's own id: a GuiDef's id *is* its root widget's,
@@ -722,6 +728,7 @@ fn run_session(
             ..tree::Look::default()
         },
         &title,
+        shown,
     );
     // The take editors are bound one by one -- each is a widget drawing a node
     // -- and the piece is bound once: the multitrack names its lanes and clips
@@ -741,8 +748,7 @@ fn run_session(
     host.owner = Some(
         owner
             .with_units_per_beat(tree::Look::default().units_per_beat)
-            .with_units_per_second(tree::Look::default().units_per_second)
-            .with_takes(load.takes.clone()),
+            .with_units_per_second(tree::Look::default().units_per_second),
     );
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
@@ -752,11 +758,11 @@ fn run_session(
         }),
         origin,
     );
-    let editors = load.takes.len();
     tracing::info!(
-        "session: opened {path} — {} clip(s) on {} lane(s), {editors} take editor(s)",
+        "session: opened {path} — {} clip(s) on {} lane(s), {} take editor(s)",
         drawn.piece.clips.len(),
         drawn.piece.lanes.len(),
+        drawn.bindings.len(),
     );
     match save_to {
         Some(out) => tracing::info!("session: Ctrl+S writes {out}"),

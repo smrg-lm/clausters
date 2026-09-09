@@ -283,6 +283,18 @@ pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
 /// them the hand touched. It is the same shape a `pianoroll` has always had,
 /// and the reason this driver had a bug the roll never could.
 pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
+    draw_shown(document, look, title, None)
+}
+
+/// The same window over a picture somebody else derived — what a host drawing
+/// the **piece** hands in, so the widget, the ruler, the editors and the
+/// numbering are one function and not two that have to be kept alike.
+pub fn draw_shown(
+    document: &Document,
+    look: &Look<'_>,
+    title: &str,
+    shown: Option<Piece>,
+) -> Drawn {
     let mut ids = Ids {
         next: look.first_id,
     };
@@ -291,7 +303,10 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
         content: Some(&document.content),
         ..*look
     };
-    let piece = piece(document, look);
+    let piece = match shown {
+        Some(shown) => shown,
+        None => piece(document, look),
+    };
     let multitrack = ids.take();
     let mut props = Map::new();
     props.insert("id".into(), json!(multitrack));
