@@ -131,9 +131,10 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `notes` node carries, read once — shared by the constructor and
-/// by the tests beside it.
-fn from_props(props: &Map<String, Value>) -> Notes {
+/// The props a `notes` node carries, read once — shared by the constructor, by
+/// the tests beside it, and by a container that draws a roll as a **body** and
+/// builds one through the same door rather than by naming fields.
+pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
     let osc = parse_osc(props);
     Notes {
         notes: parse_notes(props),
@@ -834,6 +835,13 @@ impl Element for Notes {
 }
 
 impl Notes {
+    #[cfg(test)]
+    /// The pitch window this roll is drawn in — its own `min`/`max`, for a
+    /// container that fitted them and wants to check it did.
+    pub(crate) fn range(&self) -> (f32, f32) {
+        (self.min, self.max)
+    }
+
     #[cfg(test)]
     /// The multi-note selection, for the crate's own gesture suite — which
     /// drives a real host and has no other way to see it (it is view state, so

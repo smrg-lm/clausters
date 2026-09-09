@@ -93,6 +93,18 @@ impl Presentation {
         })
     }
 
+    /// The `view` word this presentation is named by — [`parse`](Self::parse)
+    /// the other way, so a caller that builds an element from props writes the
+    /// same word the wire does.
+    pub fn name(self) -> &'static str {
+        match self {
+            Presentation::Signal => "trace",
+            Presentation::Spectrum => "spectrum",
+            Presentation::TimeFrequency => "spectrogram",
+            Presentation::Phase => "phase",
+        }
+    }
+
     /// Whether this presentation has a GPU renderer at all — the two that
     /// resolve a whole buffer against a navigable time axis. Whether a given
     /// element *takes* it is [`SignalElement::is_gpu_view`].

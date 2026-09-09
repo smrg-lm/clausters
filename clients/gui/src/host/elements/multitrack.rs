@@ -24,13 +24,13 @@
 
 use clausters_core::osc::OscType;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde_json::{Map, Value};
 
+use crate::host::elements::notes::Notes;
+use crate::host::elements::signal::{Presentation, SignalElement};
 use crate::host::font;
 use crate::host::graphics::multitrack::{self as model, Clip, Lane};
-use crate::host::graphics::signal::trace::{Measures, Trace};
 use crate::host::graphics::track;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
@@ -43,7 +43,6 @@ use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{EditorProps, GestureMap, RulerY, SourceWindow};
 use crate::viewport::View;
-use crate::waveform::WaveformData;
 
 /// One JSON scalar as the OSC primitive it is — **flat primitives at the
 /// boundary**, which is what every edit-back payload here rides as.
@@ -130,13 +129,36 @@ pub struct Multitrack {
     pub(crate) editor: EditorProps,
     /// A caption drawn in the corner.
     pub(crate) label: Option<String>,
-    /// **The takes, by server buffer number** — what a clip's body is drawn
-    /// from, one entry however many clips read it.
+    /// **How a box of samples is drawn** — the presentation its body element
+    /// takes: `"trace"` (the default) or `"spectrogram"`, the same signal seen
+    /// the other way.
+    ///
+    /// The widget's and not the box's: every box drawn the same way is the
+    /// normal case, and a box that wanted its own would be a prop nobody has
+    /// asked for. It reaches the bodies through the element they are.
+    pub(crate) view: Presentation,
+    /// **The take bodies, by server buffer number** — what a box's picture is
+    /// drawn from, one entry however many boxes read it.
     ///
     /// It is the element's because the samples are: a buffer arrives once
-    /// ([`Element::bulk_of`]) and every clip over it draws the same pyramid,
+    /// ([`Element::bulk_of`]) and every box over it draws the same pyramid,
     /// which is what makes six views of one recording cost one download.
-    takes: HashMap<i32, Arc<WaveformData>>,
+    ///
+    /// Each is a **signal element in its body form** — the very element that
+    /// stands on its own elsewhere, drawn through
+    /// [`Element::draw_body`](crate::host::widget::Element::draw_body) against
+    /// the box's own axis and with no chrome of its own. A box is a window onto
+    /// a picture, not a second implementation of one: what changes between the
+    /// standalone view and this is the axis it is handed, and nothing else.
+    takes: HashMap<i32, SignalElement>,
+    /// **The roll bodies, by box name** — a box whose contents are notes rather
+    /// than samples.
+    ///
+    /// Per box and not per source, because notes are the box's: two boxes over
+    /// one phrase are two windows onto it, and the wire states each whole. The
+    /// element is the roll that stands on its own elsewhere, drawn through its
+    /// body door with no keyboard, no strips and no chrome.
+    rolls: HashMap<String, Notes>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
@@ -157,12 +179,35 @@ impl Default for Multitrack {
             snap: 0.0,
             editor: EditorProps::body(),
             label: None,
+            view: Presentation::Signal,
             takes: HashMap::new(),
+            rolls: HashMap::new(),
             grab: None,
             block: Vec::new(),
             fading: None,
         }
     }
+}
+
+/// The **body element** a box of samples is drawn through: the signal element
+/// this build already has, named onto one server buffer and given the
+/// presentation the widget asked for.
+///
+/// It is built through the ordinary constructor rather than by naming fields,
+/// so a box's picture and a standalone `signal` are the same product of the
+/// same props — which is what keeps them from drifting when either grows a
+/// prop. A body carries no chrome: the ruler, the gutter and the navigation
+/// belong to the view that placed it.
+fn take_body(bufnum: i32, view: Presentation) -> SignalElement {
+    let mut props = Map::new();
+    props.insert("buffer".into(), Value::from(bufnum));
+    props.insert("view".into(), Value::from(view.name()));
+    crate::host::widget::signal_element(&props, &[]).unwrap_or_else(|_| {
+        // The props above are this function's own and cannot be refused; the
+        // fallback exists so a constructor that grows a rule does not take the
+        // whole picture down with it.
+        crate::host::widget::signal_element(&Map::new(), &[]).expect("a bare signal element")
+    })
 }
 
 pub(super) fn build(
@@ -184,7 +229,16 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         snap: number_f64(props, "snap", 0.0).max(0.0),
         editor: EditorProps::parse(props, RulerY::Off),
         label: label(props),
+        view: props
+            .get("view")
+            .and_then(Value::as_str)
+            .and_then(Presentation::parse)
+            .unwrap_or(Presentation::Signal),
         takes: HashMap::new(),
+        rolls: parse_notes(props)
+            .into_iter()
+            .map(|(name, notes)| (name, roll_body(&notes)))
+            .collect(),
         grab: None,
         block: Vec::new(),
         fading: None,
@@ -240,6 +294,55 @@ fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
             })
         })
         .collect()
+}
+
+/// The notes each box carries, by box name — the flat
+/// `box start dur pitch velocity channel` sextuples the wire takes, gathered
+/// into the `start dur pitch velocity channel` quintuples a roll reads.
+///
+/// One list for the widget rather than one per box, because that is the shape
+/// every payload here has: a flat list whose first fields are the identity. A
+/// note naming a box that is not there is dropped — unlike a clip, which is
+/// kept and drawn nowhere, because a clip is what a report is *about* and a
+/// note is what one holds.
+fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64>> {
+    let Some(Value::Array(items)) = props.get("notes") else {
+        return HashMap::new();
+    };
+    let mut out: HashMap<String, Vec<f64>> = HashMap::new();
+    for n in items.as_chunks::<6>().0 {
+        let Some(box_name) = n[0].as_str() else {
+            continue;
+        };
+        out.entry(box_name.to_string())
+            .or_default()
+            .extend(n[1..].iter().map(|v| v.as_f64().unwrap_or(0.0)));
+    }
+    out
+}
+
+/// The **body element** a box of notes is drawn through: the roll this build
+/// already has, over the notes of that one box and with every lane it draws on
+/// its own turned off.
+///
+/// The pitch window is the crate's rule
+/// ([`pitch_window`](clausters_document::view::catalogue::pitch_window)), the
+/// same one a standalone roll's picture is fitted with — so a box and a window
+/// over the same notes agree about how tall they are.
+fn roll_body(notes: &[f64]) -> Notes {
+    let (min, max) = clausters_document::view::catalogue::pitch_window(notes);
+    let mut props = Map::new();
+    props.insert("notes".into(), Value::from(notes.to_vec()));
+    props.insert("min".into(), Value::from(min));
+    props.insert("max".into(), Value::from(max));
+    // A body has no chrome: no velocity lane, no marker lane, no ruler.
+    props.insert("velocity".into(), Value::from(false));
+    props.insert("osc_lane".into(), Value::from(false));
+    props.insert("ruler".into(), Value::from("off"));
+    // Read-only here, which is the line the whole widget is drawn on: the
+    // multitrack places, and a box is **entered** to edit what is in it.
+    props.insert("editable".into(), Value::from(false));
+    crate::host::elements::notes::from_props(&props)
 }
 
 impl Multitrack {
@@ -652,25 +755,20 @@ impl Element for Multitrack {
             // the picture scroll and trim *with* the box instead of squashing
             // into whatever rectangle it currently has. One pyramid however
             // many clips read it.
+            // **The base view is what its contents are.** Samples draw as the
+            // signal element's body, notes as the roll's — the very elements
+            // that stand on their own elsewhere, handed the box's own axis and
+            // drawing no chrome of their own. A box with neither draws its
+            // frame and nothing in it, which is the honest picture of a window
+            // onto something nobody loaded.
+            let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
+                start: clip.place.start,
+                ..SourceWindow::default()
+            });
             if let Some(take) = self.takes.get(&clip.source) {
-                let window = SourceWindow {
-                    start: clip.place.start,
-                    ..SourceWindow::default()
-                };
-                track::draw_take(
-                    d,
-                    cr,
-                    &local,
-                    &window,
-                    clip.place.dur,
-                    &Trace::Data(take),
-                    -1.0,
-                    1.0,
-                    Measures::default(),
-                    false,
-                    ctx.world.sample_rate,
-                    None,
-                );
+                take.draw_body(d, cr, &space);
+            } else if let Some(roll) = self.rolls.get(&clip.name) {
+                roll.draw_body(d, cr, &space);
             }
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
@@ -1042,19 +1140,17 @@ impl Element for Multitrack {
         }
     }
 
-    /// One of them arrived. Every clip over it draws the same pyramid.
+    /// One of them arrived. Every box over it draws the same pyramid.
+    ///
+    /// The samples are handed to the **body element** for that buffer, built
+    /// here on first sight: it is a signal element like any other, so what
+    /// resolving a pyramid means is its answer and not a second copy of one.
     fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
-        let peaks = match data {
-            Loaded::Peaks(peaks) | Loaded::Shared(peaks) => peaks,
-            Loaded::Raw { samples, channels } => Arc::new(WaveformData::from_interleaved(
-                &samples,
-                channels.max(1),
-                crate::host::elements::signal::DEFAULT_BASE_BUCKET,
-            )),
-            _ => return false,
-        };
-        self.takes.insert(bufnum, peaks);
-        true
+        let view = self.view;
+        self.takes
+            .entry(bufnum)
+            .or_insert_with(|| take_body(bufnum, view))
+            .bulk_of(bufnum, data)
     }
 
     /// **The plan a hand on the stack runs.** The element first — that is a
@@ -1138,6 +1234,44 @@ mod tests {
         "clips": ["a", "noise", 0, 48000, 0, "", 0,
                   "b", "tone", 96000, 48000, 0, "take 2", 0]
     }"#;
+
+    /// **A box's base view is what its contents are**, and it is drawn by the
+    /// element that draws it anywhere else: samples through the signal
+    /// element's body door, notes through the roll's. What the widget adds is
+    /// the axis — a box is a window onto a picture, never a second
+    /// implementation of one.
+    #[test]
+    fn a_box_of_notes_is_a_roll_and_a_box_of_samples_is_a_take() {
+        let mt = from_props(&props(
+            r#"{
+            "lanes": ["one", "", 100, 0, 0, 1.0],
+            "clips": ["a", "one", 0, 48000, 0, "", 0,
+                      "b", "one", 96000, 48000, 0, "", -1],
+            "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0,
+                      "b", 4800.0, 4800.0, 72.0, 100.0, 0.0]
+        }"#,
+        ));
+        assert!(mt.rolls.contains_key("b"), "the box the notes named");
+        assert!(!mt.rolls.contains_key("a"), "and no other");
+        assert!(
+            mt.takes.is_empty(),
+            "a take body is built when its samples arrive, not before"
+        );
+    }
+
+    /// The pitch window a roll body is fitted to is the crate's rule, so a box
+    /// and a window over the same notes are the same height.
+    #[test]
+    fn a_roll_body_is_fitted_by_the_crates_own_rule() {
+        let notes = [0.0, 4800.0, 60.0, 100.0, 0.0];
+        let (min, max) = clausters_document::view::catalogue::pitch_window(&notes);
+        let mt = from_props(&props(
+            r#"{"clips": ["b", "one", 0, 48000, 0, "", -1],
+                "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0]}"#,
+        ));
+        let roll = mt.rolls.get("b").expect("the roll");
+        assert_eq!((roll.range().0, roll.range().1), (min as f32, max as f32));
+    }
 
     /// **A client describes the piece; it does not compose a tree of it.** The
     /// two structures arrive as flat arrays, like a roll's notes, and the widget

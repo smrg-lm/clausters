@@ -1908,6 +1908,33 @@ def _flat_lanes(lanes) -> list:
     return out
 
 
+def _flat_box_notes(notes) -> list:
+    """Normalizes ``notes`` to the flat ``box start dur pitch velocity
+    channel`` sextuples the host reads — a note per entry, each naming the box
+    it is in.
+
+    One list for the whole widget rather than one per box, which is the shape
+    every payload here has: a flat list whose first fields are the identity, the
+    way a clip names its lane. A note naming a box that is not there is dropped
+    by the host.
+    """
+    out: list = []
+    for note in notes:
+        if isinstance(note, dict):
+            got = (note.get("box"), note.get("start"), note.get("dur"),
+                   note.get("pitch"), note.get("velocity"), note.get("channel"))
+        else:
+            got = tuple(note) + (None,) * (6 - len(note))
+        box, start, dur, pitch, velocity, channel = got[:6]
+        out += [str(box),
+                0.0 if start is None else float(start),
+                0.0 if dur is None else float(dur),
+                0.0 if pitch is None else float(pitch),
+                100.0 if velocity is None else float(velocity),
+                0.0 if channel is None else float(channel)]
+    return out
+
+
 def _flat_clips(clips) -> list:
     """Normalizes ``clips`` to the flat ``name lane offset dur start label
     source`` septuples the host reads. Same shapes as `_flat_lanes`."""
@@ -2130,7 +2157,8 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
         extra.update(_score_props(display_list))
     return node("score", id=id, **extra, **props)
 
-def multitrack(*, lanes=(), clips=(), gap: float | None = None,
+def multitrack(*, lanes=(), clips=(), notes=(), view: str | None = None,
+               gap: float | None = None,
                snap: float | None = None, label: str | None = None,
                autofit: bool | None = None, ruler: str | None = None,
                sample_rate: float | None = None, tempo: float | None = None,
@@ -2171,6 +2199,16 @@ def multitrack(*, lanes=(), clips=(), gap: float | None = None,
     ``playhead*``, ``markers``) is the same every timeline view carries, and
     ``link`` joins this widget's axis to a `timeruler` or another view.
 
+    **A clip's base view is what its contents are.** A clip whose ``source``
+    names a buffer draws those samples; one named in ``notes`` draws them as a
+    roll, fitted to its own pitch range and with no keyboard and no lanes. Both
+    are drawn by the very elements that stand on their own elsewhere, handed the
+    clip's own axis and drawing no chrome of their own — a clip is a window onto
+    a picture, never a second implementation of one. ``notes`` is a sequence of
+    ``(box, start, dur, pitch, velocity, channel)``, each note naming the clip
+    it is in, and ``view`` chooses how a clip of samples is drawn (``"trace"``,
+    the default, or ``"spectrogram"``) for every clip at once.
+
     It **places**; a clip is entered to edit. The contents of a clip draw
     read-only here — this widget owns *where* things are, not what is inside
     them::
@@ -2182,7 +2220,9 @@ def multitrack(*, lanes=(), clips=(), gap: float | None = None,
                    name="piece", weight=1.0)
     """
     extra = _drop_none(lanes=_held(lanes or None, _flat_lanes),
-                       clips=_held(clips or None, _flat_clips), gap=gap,
+                       clips=_held(clips or None, _flat_clips),
+                       notes=_held(notes or None, _flat_box_notes),
+                       view=view, gap=gap,
                        snap=snap, label=label, theme=theme)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler,
                        sample_rate=sample_rate, tempo=tempo,

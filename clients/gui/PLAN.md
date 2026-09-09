@@ -757,9 +757,29 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   it could not call. It only bit now because this is the milestone that makes
   that builder the way to draw a piece. Re-bound after every submodule is in.
 
-  **Still open, and each has its home:** a box draws only a waveform body (no
-  roll, no spectrogram, no assembled samples); entering a box to edit it; and
-  `multitrack_audio.html`, the web twin of the Python example.
+  **A box's base view is what its contents are, 2026-09-09.** The picture is no
+  longer this element's own: a box of samples draws through the signal element's
+  body door and a box of notes through the roll's — the very elements that stand
+  on their own elsewhere, handed the box's axis and drawing no chrome. A box is
+  a window onto a picture, never a second implementation of one, and that is
+  what keeps a take in a piece and a take in a window from drifting.
+
+  Two props carry it. `notes` is the flat `box start dur pitch velocity channel`
+  sextuples — one list for the widget, each note naming its box, the shape every
+  payload here has — and `view` names the presentation a box of samples takes,
+  for every box at once because every box drawn the same way is the normal case.
+  A roll body is fitted by the crate's own `pitch_window`, so a box and a window
+  over the same notes are the same height.
+
+  **Still open, and each has its home:** the **spectrogram** body, which
+  `view: "spectrogram"` names and which draws a trace today — a time-frequency
+  picture samples a texture, so it goes through the GPU pass rather than the
+  mesh, and the door the old clip used (`WidgetKind::texture_body`, read by the
+  frame off a *child widget*) cannot see inside an element. It needs a way for
+  an element to declare the texture bodies it wants drawn, with their rects and
+  axes. Then: assembled samples (a box over several segments of several files);
+  the editable light layer (`points`) over a base view; entering a box to edit
+  it; and `multitrack_audio.html`, the web twin of the Python example.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 

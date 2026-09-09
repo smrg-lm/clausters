@@ -2493,6 +2493,33 @@ export function flatClips(clips: ClipSpec): (number | string)[] {
     return out;
 }
 
+/** One note of a {@link multitrack}'s box: the box it is in, then the note. */
+export type BoxNoteSpec = readonly (readonly [
+    box: string,
+    start: number,
+    dur: number,
+    pitch: number,
+    velocity?: number,
+    channel?: number,
+])[];
+
+/**
+ * The flat `box start dur pitch velocity channel` sextuples the host reads — a
+ * note per entry, each naming the box it is in.
+ *
+ * One list for the whole widget rather than one per box, which is the shape
+ * every payload here has: a flat list whose first fields are the identity, the
+ * way a clip names its lane.
+ */
+export function flatBoxNotes(notes: BoxNoteSpec): (number | string)[] {
+    const out: (number | string)[] = [];
+    for (const [box, start, dur, pitch, velocity, channel] of notes) {
+        out.push(String(box), Number(start ?? 0), Number(dur ?? 0), Number(pitch ?? 0),
+            Number(velocity ?? 100), Number(channel ?? 0));
+    }
+    return out;
+}
+
 /**
  * A **multitrack**: one widget holding a stack of lanes and the clips on them,
  * drawn on one shared time axis.
@@ -2515,6 +2542,15 @@ export function flatClips(clips: ClipSpec): (number | string)[] {
  * naming a lane that is not there is kept and drawn nowhere, so renaming a lane
  * loses nothing.
  *
+ * **A clip's base view is what its contents are.** A clip whose `source` names
+ * a buffer draws those samples; one named in `notes` draws them as a roll,
+ * fitted to its own pitch range and with no keyboard and no lanes. Both are
+ * drawn by the very elements that stand on their own elsewhere, handed the
+ * clip's own axis and drawing no chrome of their own — a clip is a window onto a
+ * picture, never a second implementation of one. `view` chooses how a clip of
+ * samples is drawn (`"trace"`, the default, or `"spectrogram"`) for every clip
+ * at once.
+ *
  * It **places**; a clip is entered to edit. The contents of a clip draw
  * read-only here — this widget owns *where* things are, not what is inside them.
  */
@@ -2522,6 +2558,10 @@ export function multitrack(
     options: TimelineOptions & {
         lanes?: LaneSpec;
         clips?: ClipSpec;
+        /** The notes of the boxes that hold them, each naming its box. */
+        notes?: BoxNoteSpec;
+        /** How a box of samples is drawn: `"trace"` or `"spectrogram"`. */
+        view?: string;
         /** The space between lanes, in logical pixels. */
         gap?: number;
         /** The drag grid in timeline samples; `0` is no grid. */
@@ -2530,12 +2570,14 @@ export function multitrack(
         theme?: Record<string, string>;
     } = {},
 ): GuiNode {
-    const { lanes, clips, gap, snap, label: text, theme, ...timeline } = options;
+    const { lanes, clips, notes, view, gap, snap, label: text, theme, ...timeline } = options;
     return node("multitrack", {
         ...timelineProps(timeline),
         ...drop([
             ["lanes", lanes === undefined ? undefined : flatLanes(lanes)],
             ["clips", clips === undefined ? undefined : flatClips(clips)],
+            ["notes", notes === undefined ? undefined : flatBoxNotes(notes)],
+            ["view", view],
             ["gap", gap],
             ["snap", snap],
             ["label", text],

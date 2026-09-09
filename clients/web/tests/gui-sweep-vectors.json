@@ -802,6 +802,52 @@
  },
  {
   "builder": "multitrack",
+  "option": "notes",
+  "value": [
+   [
+    "a",
+    0.0,
+    1.0,
+    60
+   ],
+   [
+    "a",
+    1.0,
+    0.5,
+    64,
+    90,
+    1
+   ]
+  ],
+  "tree": {
+   "type": "multitrack",
+   "notes": [
+    "a",
+    0.0,
+    1.0,
+    60.0,
+    100.0,
+    0.0,
+    "a",
+    1.0,
+    0.5,
+    64.0,
+    90.0,
+    1.0
+   ]
+  }
+ },
+ {
+  "builder": "multitrack",
+  "option": "view",
+  "value": "spectrogram",
+  "tree": {
+   "type": "multitrack",
+   "view": "spectrogram"
+  }
+ },
+ {
+  "builder": "multitrack",
   "option": "gap",
   "value": 3.5,
   "tree": {

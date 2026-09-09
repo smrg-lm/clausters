@@ -273,6 +273,16 @@ NOT_SWEPT = {"id", "name", "children", "clips", "control"}
 #: What a builder needs before it builds anything, whatever is being swept.
 REQUIRED: dict = {}
 
+#: What one builder means by an option every other builder spells otherwise.
+#:
+#: A `multitrack`'s `notes` are a **box's**, so each names the box it is in
+#: where a roll's name nothing. Sweeping the generic shape here would compare
+#: two clients stringifying a float, which is a difference about `str(0.0)` and
+#: not about the builder.
+PER_BUILDER = {
+    ("multitrack", "notes"): [["a", 0.0, 1.0, 60], ["a", 1.0, 0.5, 64, 90, 1]],
+}
+
 #: The payload options, whose value is a shape rather than a scalar. Every one
 #: is normalized by the builder (flattened, de-interleaved, packed), so the
 #: sweep is checking that both clients normalize it the same way, not just that
@@ -333,7 +343,9 @@ def sweep():
                 continue
             if param.kind in (param.VAR_KEYWORD, param.VAR_POSITIONAL):
                 continue
-            if option in SHAPES:
+            if (name, option) in PER_BUILDER:
+                value = PER_BUILDER[(name, option)]
+            elif option in SHAPES:
                 value = SHAPES[option]
             elif option in ENUMS:
                 value = ENUMS[option]
