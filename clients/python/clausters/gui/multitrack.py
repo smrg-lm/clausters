@@ -37,7 +37,7 @@ class Lane:
     #: *other* lanes is the mixer's rule, and the mixer is yours.
     mute: bool = False
     solo: bool = False
-    #: The fader, over ``[0, 1]``.
+    #: The level, over ``[0, 1]`` — drawn as the header's knob.
     gain: float = 1.0
 
 

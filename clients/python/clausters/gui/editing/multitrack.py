@@ -285,7 +285,7 @@ class MultitrackDomain(Domain):
 
         The whole list travels because the piece has no verb for one track — a
         report is the piece here as it is for the boxes — so the difference is
-        what comes out, and it is one ``settracks`` whatever changed: a fader
+        what comes out, and it is one ``settracks`` whatever changed: a level
         moved, a track added, a track gone with its boxes.
 
         **The rule is the crate's**, like the boxes' and the curves': a client

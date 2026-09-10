@@ -53,7 +53,7 @@ pub struct Header {
     pub mute: Option<bool>,
     /// The solo state, when the lane offers the toggle.
     pub solo: Option<bool>,
-    /// The fader's value over `[0, 1]`, when the lane offers one.
+    /// The level knob's value over `[0, 1]`, when the lane offers one.
     pub level: Option<f32>,
 }
 
@@ -77,19 +77,11 @@ impl Header {
             .iter()
             .filter(|t| t.is_some())
             .count();
-        let row = toggles as f32 * (m.box_side + m.pad)
-            + if self.level.is_some() {
-                MIN_FADER_W + m.pad
-            } else {
-                0.0
-            };
-        m.header_w.max(row + 2.0 * m.pad)
+        let controls = toggles + usize::from(self.level.is_some());
+        m.header_w
+            .max(controls as f32 * (m.box_side + m.pad) + 2.0 * m.pad)
     }
 }
-
-/// The narrowest a level fader is drawn at all: below this it is dropped rather
-/// than shown as a stub nobody can aim at.
-const MIN_FADER_W: f32 = 28.0;
 
 /// A header's parts, laid out inside its band. A part is `None` when the lane
 /// does not offer it **or** when the band is too small to draw it — a short
@@ -100,7 +92,7 @@ pub struct HeaderParts {
     pub label: Rect,
     pub mute: Option<Rect>,
     pub solo: Option<Rect>,
-    pub fader: Option<Rect>,
+    pub level: Option<Rect>,
 }
 
 /// One of a header's interactive parts.
@@ -108,7 +100,7 @@ pub struct HeaderParts {
 pub enum HeaderPart {
     Mute,
     Solo,
-    Fader,
+    Level,
     /// **The band itself**, where no control is — what makes the track
     /// pointable at. A header is a surface and not just a shelf for three
     /// buttons: the space beside them is how a track is selected, and how one
@@ -132,7 +124,7 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         label,
         mute: None,
         solo: None,
-        fader: None,
+        level: None,
     };
     // The control row needs a row of its own under the name; a lane too short
     // for both keeps the name.
@@ -157,11 +149,14 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         parts.solo = square(&mut x);
     }
     if header.level.is_some() {
-        let w = right - x;
-        if w >= MIN_FADER_W {
-            parts.fader = Some(Rect::new(x, row_y, w, row_h));
-        }
+        // **A knob, not a groove.** A header is a narrow band beside a lane and
+        // a horizontal groove long enough to be read takes the width the name
+        // needs -- so the level control is a dial, which reads and turns in the
+        // space a header actually has, and it takes a square cell like the two
+        // toggles beside it.
+        parts.level = square(&mut x);
     }
+    let _ = right;
     parts
 }
 
@@ -174,8 +169,8 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
         Some(HeaderPart::Mute)
     } else if over(parts.solo) {
         Some(HeaderPart::Solo)
-    } else if over(parts.fader) {
-        Some(HeaderPart::Fader)
+    } else if over(parts.level) {
+        Some(HeaderPart::Level)
     } else if band.contains(x, y) {
         Some(HeaderPart::Body)
     } else {
@@ -183,9 +178,19 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
     }
 }
 
-/// The level an x pixel of the fader `rect` names, clamped to `[0, 1]`.
-pub fn level_at(rect: Rect, x: f64) -> f32 {
-    (((x - rect.x as f64) / rect.w.max(1.0) as f64) as f32).clamp(0.0, 1.0)
+/// **The level a vertical drag of `dy` device pixels leaves**, from the level
+/// `from` the press found, clamped to `[0, 1]`.
+///
+/// A knob turns by a **relative** drag, and that is not a detail of the
+/// drawing: a dial has no left and right end to put the pointer between, so an
+/// absolute reading would jump the value to wherever the press landed. The
+/// arithmetic is the one every knob in this host uses
+/// ([`controls::drag_fraction_delta`]), so a header's dial and a `knob`
+/// widget's turn by the same distance for the same drag.
+///
+/// [`controls::drag_fraction_delta`]: super::controls::drag_fraction_delta
+pub fn level_after(from: f32, dy: f64, cell: Rect) -> f32 {
+    (from + super::controls::drag_fraction_delta(dy, cell.h)).clamp(0.0, 1.0)
 }
 
 /// Draws a header's controls into `band` (the name is drawn by [`draw`], which
@@ -213,13 +218,17 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
         };
     toggle(parts.mute, header.mute == Some(true), "M", theme.warn);
     toggle(parts.solo, header.solo == Some(true), "S", theme.hilite);
-    if let (Some(r), Some(level)) = (parts.fader, header.level) {
-        mesh.rect(r, theme.track);
-        let w = r.w * level.clamp(0.0, 1.0);
-        if w > 0.0 {
-            mesh.rect(Rect::new(r.x, r.y, w, r.h), theme.accent);
-        }
-        mesh.border(r, m.divider_w, theme.frame);
+    if let (Some(r), Some(level)) = (parts.level, header.level) {
+        // The same dial a `knob` widget draws, and deliberately: a control that
+        // read one way here and another way there would be two controls.
+        let radius = (r.w.min(r.h) * 0.5 - 1.0).max(2.0);
+        super::controls::knob_dial(
+            &mut Draw::new(mesh, m, theme),
+            r.x + r.w * 0.5,
+            r.y + r.h * 0.5,
+            radius,
+            level,
+        );
     }
 }
 
@@ -772,12 +781,12 @@ mod tests {
         assert!(full.width(&m) >= m.header_w);
         let band = Rect::new(0.0, 0.0, full.width(&m), 60.0);
         let parts = header_parts(band, &full, &m);
-        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.fader.is_some());
+        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.level.is_some());
         // ...and a compact table sizes it down, not the other way round: the
         // roles move together, so the parts still fit.
         let compact = Metrics::generated(0.8);
         let band = Rect::new(0.0, 0.0, full.width(&compact), 60.0);
-        assert!(header_parts(band, &full, &compact).fader.is_some());
+        assert!(header_parts(band, &full, &compact).level.is_some());
         // An explicit width wins over both, even a narrow one.
         let declared = Header {
             w: Some(40.0),
@@ -797,15 +806,15 @@ mod tests {
         };
         let band = Rect::new(0.0, 0.0, header.width(&m), 60.0);
         let parts = header_parts(band, &header, &m);
-        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.fader.is_some());
+        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.level.is_some());
         // A lane too short for a second row keeps the name and nothing else.
         let short = header_parts(Rect::new(0.0, 0.0, band.w, 16.0), &header, &m);
-        assert_eq!((short.mute, short.solo, short.fader), (None, None, None));
+        assert_eq!((short.mute, short.solo, short.level), (None, None, None));
         assert!(short.label.h > 0.0);
         // ...and so does one too narrow for the fader, which is dropped rather
         // than drawn as a stub.
         let narrow = header_parts(Rect::new(0.0, 0.0, 60.0, 60.0), &header, &m);
-        assert!(narrow.mute.is_some() && narrow.fader.is_none());
+        assert!(narrow.mute.is_some() && narrow.level.is_none());
     }
 
     #[test]

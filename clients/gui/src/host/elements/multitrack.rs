@@ -112,7 +112,12 @@ struct Grab {
 #[derive(Debug, Clone, Copy)]
 struct Fading {
     lane: usize,
-    groove: Rect,
+    /// The knob's own cell — how far a full turn is, in pixels.
+    cell: Rect,
+    /// The level the press found: a turn is measured from it.
+    from: f32,
+    /// The y the press landed at, which the drag is measured against.
+    at: f64,
 }
 
 /// The block a hand took, as `(index, offset, row)` per clip — the snapshot
@@ -763,15 +768,22 @@ impl Multitrack {
                     ..Take::default()
                 })
             }
-            track::HeaderPart::Fader => {
-                let Some(groove) = parts.fader else {
+            track::HeaderPart::Level => {
+                let Some(cell) = parts.level else {
                     return Claim::Decline;
                 };
-                // **Absolute**: a position inside the groove *is* the value,
-                // snapshotted at the press because the groove may scroll under
-                // the hand.
-                self.lanes[lane].gain = track::level_at(groove, at.0);
-                self.fading = Some(Fading { lane, groove });
+                // **Relative**: a knob turns by the distance a drag travels,
+                // and that is not a detail of the drawing -- a dial has no left
+                // and right end to put the pointer between, so an absolute
+                // reading would jump the value to wherever the press landed.
+                // The press itself changes nothing; what it takes is the level
+                // it found and the pixel it found it at.
+                self.fading = Some(Fading {
+                    lane,
+                    cell,
+                    from: self.lanes[lane].gain,
+                    at: at.1,
+                });
                 Claim::take()
             }
             // **The space beside the controls is the track itself.** A click
@@ -1744,7 +1756,7 @@ impl Element for Multitrack {
             return Events::none();
         }
         if let Some(f) = self.fading {
-            self.lanes[f.lane].gain = track::level_at(f.groove, at.0);
+            self.lanes[f.lane].gain = track::level_after(f.from, at.1 - f.at, f.cell);
             return self.lanes_event();
         }
         let Some(grab) = self.grab else {
@@ -2626,6 +2638,46 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **The header's level is a knob, and a knob turns by a drag.** A header
+    /// is a narrow band and a groove long enough to be read takes the width the
+    /// name needs; a dial reads and turns in the space there actually is. The
+    /// press changes nothing -- a dial has no left and right end to put the
+    /// pointer between -- and the turn is measured from where it landed.
+    #[test]
+    fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        mt.lanes[0].gain = 0.5;
+        let inp = input(&m, rect, len);
+        let at = mt.lane_rects(rect);
+        let band = crate::host::timeline::gutter_band(at[0], 100.0);
+        let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
+        let cell = parts.level.expect("the lane offers a level");
+        assert!(
+            (cell.w - cell.h).abs() < 1.0,
+            "a square cell, like the toggles beside it"
+        );
+
+        let on = (
+            f64::from(cell.x + cell.w * 0.5),
+            f64::from(cell.y + cell.h * 0.5),
+        );
+        assert!(matches!(mt.press(on, &inp), Claim::Take(_)));
+        assert_eq!(mt.lanes[0].gain, 0.5, "the press turns nothing");
+
+        // Up raises, and by the distance travelled rather than to where the
+        // pointer is.
+        mt.drag((on.0, on.1 - f64::from(cell.h)), &inp);
+        assert!(mt.lanes[0].gain > 0.5, "a turn upward raises it");
+        let raised = mt.lanes[0].gain;
+        mt.drag((on.0, on.1 + f64::from(cell.h)), &inp);
+        assert!(mt.lanes[0].gain < raised, "and back down lowers it");
+        // It reports as it goes, like every other control.
+        assert!(!mt.lanes_event().into_messages().is_empty());
     }
 
     /// **A drag snaps to the edges of the boxes already on the lane**, which is

@@ -1136,6 +1136,15 @@ would be written against a picture the first half had already changed.
   which reads and turns in the space a header actually has. This half stands
   alone and can land in any spare pass.
 
+  *The knob done 2026-09-09.* A square cell like the two toggles beside it, and
+  the **same dial** a `knob` widget draws (`controls::knob_dial`, factored out
+  of it) rather than a second drawing of the same idea — a control that read one
+  way here and another way there would be two controls. It turns by a
+  **relative** vertical drag, which is not a detail of the drawing: a dial has
+  no left and right end to put the pointer between, so an absolute reading would
+  jump the value to wherever the press landed. The header also stopped asking
+  for the width a groove needed, so a stack of tracks is narrower than it was.
+
   And a **thin vertical meter down the right edge of the track**, over the
   amplitude that track is producing **after everything has been applied**: its
   clips' own gains, its curves, its effects and its fader. That is the number a

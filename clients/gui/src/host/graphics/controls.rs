@@ -227,16 +227,27 @@ pub fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     let body = body_rect_at(rect, r.label.is_some(), size, d.m);
     let (cx, cy, radius) = knob_disc(body, size, d.m);
-    let (mesh, m, theme) = d.parts();
-    let text_h = readout_h(size, m);
-    mesh.disc(cx, cy, radius, theme.track);
-    mesh.disc(cx, cy, radius - 3.0, theme.field);
-    // Pointer: 270-degree sweep, min at lower-left, max at lower-right.
-    let angle = (135.0 + 270.0 * r.fraction()).to_radians();
-    let tip = [cx + radius * angle.cos(), cy + radius * angle.sin()];
-    mesh.line([cx, cy], tip, 3.0, theme.accent);
+    let text_h = readout_h(size, d.m);
+    knob_dial(d, cx, cy, radius, r.fraction());
     let readout = Rect::new(body.x, body.y + body.h - text_h, body.w, text_h);
     value_text(d, &fmt(r.value), readout, size);
+}
+
+/// **The dial itself** — the ring, the face and the pointer at `fraction` of a
+/// 270-degree sweep, min at lower-left and max at lower-right.
+///
+/// Apart from the widget so that a *header's* level knob is the same dial as a
+/// `knob` widget's rather than a second drawing of the same idea: a control
+/// that reads one way in one place and another way in another is two controls
+/// to a reader. What the widget adds around it is its own — a label strip, a
+/// read-out — and a header cell has room for neither.
+pub fn knob_dial(d: &mut Draw, cx: f32, cy: f32, radius: f32, fraction: f32) {
+    let (mesh, _, theme) = d.parts();
+    mesh.disc(cx, cy, radius, theme.track);
+    mesh.disc(cx, cy, radius - 3.0, theme.field);
+    let angle = (135.0 + 270.0 * fraction.clamp(0.0, 1.0)).to_radians();
+    let tip = [cx + radius * angle.cos(), cy + radius * angle.sin()];
+    mesh.line([cx, cy], tip, 3.0, theme.accent);
 }
 
 pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
