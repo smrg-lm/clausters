@@ -462,12 +462,27 @@ class Group(Node):
                      *_flatten_controls(ports))
         return cls.from_id(node_id, srv)
 
+    def add_slot(self, slot: str, ports=None) -> "Group":
+        """Builds one more of a named **slot** (``/graph_addSlot``) inside this
+        running GraphDef instance (a group from `graph`), wired to its shared
+        private buses.
+
+        A slot is a member there is a changing number of — a clip on a track, an
+        effect in a chain, a voice of an instrument — so this is how many of them
+        there are right now. ``ports`` overrides that slot's port defaults. The
+        returned group is the one that was built: drive it through its surface
+        with `set` and free it with `free`."""
+        srv = self._server()
+        node_id = srv._node_id()
+        srv.send_msg("/graph_addSlot", self.id, str(slot),
+                     node_id, *_flatten_controls(ports))
+        return Group.from_id(node_id, srv)
+
     def voice(self, ports=None) -> "Group":
         """Spawns a per-voice sub-graph (``/graph_newVoice``) inside this running
-        GraphDef instance (a group from `graph`), wired to its shared private
-        buses. ``ports`` overrides the voice-port defaults. The returned group
-        is the voice: drive it through its surface with `set` and free it with
-        `free`."""
+        GraphDef instance, wired to its shared private buses — the slot named
+        ``"voice"``, spelled the way it was before slots had names, and what a
+        MIDI note spawns. ``ports`` overrides the voice-port defaults."""
         srv = self._server()
         node_id = srv._node_id()
         srv.send_msg("/graph_newVoice", self.id, node_id, *_flatten_controls(ports))

@@ -608,3 +608,265 @@ fn def_info_lists_every_family_together() {
     assert_eq!(by_name.get("gsink").map(String::as_str), Some("synth"));
     assert_eq!(by_name.get("chain").map(String::as_str), Some("graph"));
 }
+
+// --- Nesting and slots: a member may be another graph, and a member there is
+// a changing number of has a name.
+
+/// A graph over one source, with its output bus **provided by whoever
+/// instantiates it** and its `level` re-exported as `gain`. This is the shape
+/// every nested piece of a piece has: it does not decide where it goes.
+const VOICE_CHAIN: &str = r#"{
+    "name": "sub",
+    "buses": [{"name": "out", "rate": "audio", "external": true}],
+    "members": [{"def": "gsrc", "controls": {"out": "out"}}],
+    "surface": {"gain": [{"member": 0, "control": "level"}]},
+    "defaults": {"gain": 0.25}
+}"#;
+
+/// A graph whose members are: a shared sink reading a private bus, and a
+/// **slot** named `parts` whose members are nested `sub` graphs writing into
+/// that same bus. A track holding clips is exactly this shape.
+const HOST: &str = r#"{
+    "name": "host",
+    "buses": [{"name": "mix", "rate": "audio"}],
+    "members": [
+        {"def": "gsink", "controls": {"in": "mix", "out": "OUT"}},
+        {"def": "sub", "kind": "graph", "slot": "parts", "controls": {"out": "mix"}}
+    ],
+    "surface": {"part/gain": [{"member": 1, "port": "gain", "mul": 2.0}]},
+    "defaults": {"part/gain": 0.5}
+}"#;
+
+/// A graph with a nested graph among its **shared** members, so nesting is
+/// exercised without a slot in the way.
+const FIXED: &str = r#"{
+    "name": "fixed",
+    "buses": [{"name": "mix", "rate": "audio"}],
+    "members": [
+        {"def": "gsink", "controls": {"in": "mix", "out": "OUT"}},
+        {"def": "sub", "kind": "graph", "controls": {"out": "mix"}}
+    ],
+    "surface": {"inner/gain": [{"member": 1, "port": "gain"}]}
+}"#;
+
+fn load_nested(t: &mut CmdTranslator) {
+    t.d_recv(&[OscType::String(GSRC.into())]).unwrap();
+    t.d_recv(&[OscType::String(GSINK.into())]).unwrap();
+    t.d_graph(&[OscType::String(VOICE_CHAIN.into())]).unwrap();
+    t.d_graph(&[OscType::String(HOST.into())]).unwrap();
+    t.d_graph(&[OscType::String(FIXED.into())]).unwrap();
+}
+
+/// **A member may be another graph, and its output is the parent's bus.** The
+/// child does not invent where it goes: the parent names one of its own buses
+/// and hands it over, which is what makes one `sub` usable everywhere.
+#[test]
+fn a_nested_graph_writes_to_the_bus_its_parent_named() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("fixed".into()),
+            OscType::Int(600),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let inst = t.graph_instances.get(&600).unwrap();
+    let sink = inst.shared_nodes[&0];
+    let child = inst.children[&1];
+    let mix = control(&t, sink, 0); // gsink.in
+
+    let inner = t.graph_instances.get(&child).unwrap().shared_nodes[&0];
+    assert_eq!(
+        control(&t, inner, 0),
+        mix,
+        "the child writes into the parent's bus"
+    );
+    // The child is a subgroup of the instance, and the sort put the writer
+    // before the reader that reads it.
+    assert_eq!(t.mirror.children(600).unwrap(), &[child, sink]);
+}
+
+/// **A re-exported port is one `/node_set`, and the two scalings compose.** The
+/// nesting is of authoring: what a port resolves to is the control of a node,
+/// however many levels down it was written.
+#[test]
+fn a_port_re_exported_from_a_child_reaches_its_control() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("fixed".into()),
+            OscType::Int(600),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let child = t.graph_instances.get(&600).unwrap().children[&1];
+    let inner = t.graph_instances.get(&child).unwrap().shared_nodes[&0];
+    // The child's own default reached it when the child was built.
+    assert_eq!(control(&t, inner, 1), 0.25);
+
+    run(
+        &mut t,
+        "/node_set",
+        vec![
+            OscType::Int(600),
+            OscType::String("inner/gain".into()),
+            OscType::Float(0.75),
+        ],
+    );
+    assert_eq!(control(&t, inner, 1), 0.75, "through the parent's port");
+}
+
+/// **A slot is a member there is a changing number of**, and each one is built
+/// against the instance's own buses. Two clips on a track are two of these.
+#[test]
+fn a_slot_can_be_added_more_than_once_and_each_is_wired() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("host".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let sink = t.graph_instances.get(&700).unwrap().shared_nodes[&0];
+    let mix = control(&t, sink, 0);
+
+    for id in [710, 711] {
+        run(
+            &mut t,
+            "/graph_addSlot",
+            vec![
+                OscType::Int(700),
+                OscType::String("parts".into()),
+                OscType::Int(id),
+            ],
+        );
+    }
+    assert_eq!(t.graph_instances.get(&700).unwrap().voices.len(), 2);
+    for id in [710, 711] {
+        let slot = t.graph_voices.get(&id).unwrap();
+        assert_eq!(slot.slot, "parts");
+        let child = slot.children[&1];
+        let inner = t.graph_instances.get(&child).unwrap().shared_nodes[&0];
+        assert_eq!(
+            control(&t, inner, 0),
+            mix,
+            "wired to the instance's own bus"
+        );
+        // The slot default 0.5 through `mul: 2.0`.
+        assert_eq!(control(&t, inner, 1), 1.0);
+    }
+}
+
+/// **Freeing a slot frees what was nested inside it**, bookkeeping included:
+/// the private buses a nested graph took are the thing nobody would notice
+/// leaking.
+#[test]
+fn freeing_a_slot_reclaims_what_was_nested_in_it() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("host".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    run(
+        &mut t,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(700),
+            OscType::String("parts".into()),
+            OscType::Int(710),
+        ],
+    );
+    let child = t.graph_voices.get(&710).unwrap().children[&1];
+    assert!(t.graph_instances.contains_key(&child));
+
+    run(&mut t, "/node_free", vec![OscType::Int(710)]);
+    assert!(!t.graph_voices.contains_key(&710));
+    assert!(
+        !t.graph_instances.contains_key(&child),
+        "the graph nested in the slot went with it"
+    );
+    assert!(t.graph_instances.get(&700).unwrap().voices.is_empty());
+
+    // And freeing the whole instance takes its remaining bookkeeping.
+    run(&mut t, "/node_free", vec![OscType::Int(700)]);
+    assert!(!t.graph_instances.contains_key(&700));
+}
+
+/// **A graph that contains itself is refused rather than recursed.** Depth is
+/// what says so, because a cycle is not otherwise expressible: a member names a
+/// def, and a def may name itself.
+#[test]
+fn a_graph_nested_in_itself_is_refused() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    t.d_graph(&[OscType::String(
+        r#"{
+            "name": "loop",
+            "buses": [{"name": "mix", "rate": "audio"}],
+            "members": [{"def": "loop", "kind": "graph", "controls": {"mix": "mix"}}]
+        }"#
+        .into(),
+    )])
+    .unwrap();
+    let mut cmds = Vec::new();
+    let err = t
+        .translate(
+            &msg(
+                "/graph_new",
+                vec![
+                    OscType::String("loop".into()),
+                    OscType::Int(800),
+                    OscType::Int(0),
+                    OscType::Int(0),
+                ],
+            ),
+            &mut cmds,
+        )
+        .unwrap_err();
+    assert!(err.contains("deep"), "it says why: {err}");
+    assert!(
+        t.graph_instances.is_empty(),
+        "and nothing was left half-built"
+    );
+}
+
+/// **A surface target says the wrong thing at load, not at instantiation.** A
+/// control on a graph member, or a port on a def member, would resolve to
+/// nothing and say nothing about why.
+#[test]
+fn a_target_that_names_the_wrong_kind_is_refused_at_load() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    let err = t
+        .d_graph(&[OscType::String(
+            r#"{
+                "name": "wrong",
+                "buses": [{"name": "mix", "rate": "audio"}],
+                "members": [{"def": "sub", "kind": "graph", "controls": {"out": "mix"}}],
+                "surface": {"gain": [{"member": 0, "control": "level"}]}
+            }"#
+            .into(),
+        )])
+        .unwrap_err();
+    assert!(err.contains("port"), "it says what to name instead: {err}");
+}

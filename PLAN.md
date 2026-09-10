@@ -2113,6 +2113,46 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A GraphDef was one level of wiring, and a piece is not one level**
+  *(named 2026-09-10 specifying the multitrack's node system; landed the same
+  day)*. A track holds clips, a clip holds an effect chain, and each of those is
+  itself a wiring with a surface of its own -- so a GraphDef whose members can
+  only be single nodes describes the leaves and nothing above them. Two things
+  were missing and they are the same thing twice: a member could not be another
+  GraphDef, and the one kind of repetition that existed (`voice`) had no name,
+  so "there are three clips right now" was not sayable at all.
+
+  Both are in. A member takes `kind: "graph"` and is instantiated as a subgroup
+  with private buses of its own, freed with its parent; a bus takes `external`
+  and is provided by whoever instantiates rather than allocated, so a child does
+  not decide where it goes and one def works standalone and nested; a surface
+  target takes `port` instead of `control` and re-exports a child's interface,
+  the two scalings composing outer-first. And `voice: bool` generalizes to
+  `slot: Option<String>` with `/graph_addSlot instanceID slot id [port value]`,
+  of which `/graph_newVoice` is now the `"voice"` spelling -- unchanged on the
+  wire, unchanged for MIDI.
+
+  **What this forced, and it is the better shape anyway.** Instancing is a tree,
+  and a tree cannot be built the way one level was: a child that fails halfway
+  leaves its siblings standing. So `/graph_new` now **plans and then realizes** --
+  the whole walk happens first, resolving every def, building every synth and
+  taking every bus and node id, holding enough to hand all of it back if any
+  part fails; realizing the plan emits commands and cannot fail. The
+  all-or-nothing rule the one-level version had is the same rule over a tree.
+  Freeing is recursive for the same reason: a nested graph is a registered
+  instance with buses of its own, and only external buses are never reclaimed,
+  because they were never the child's.
+
+  The nesting is of authoring and not of execution: a port resolves once, at
+  instantiation, to the controls of actual nodes however many levels down they
+  were written, so `/node_set` costs what it always did and the audio thread
+  learns nothing. Depth is capped at 8, which is also what refuses a graph that
+  contains itself -- a cycle is not otherwise detectable, since a member names a
+  def and a def may name its own name. Both clients gained the same surface
+  (`kind`, `slot`, `external`, a port target, `add_slot`/`addSlot`), and a
+  member handle answers a control or a port according to what the member is,
+  which is one spelling for both.
+
 - ✅ **A cut assembled from several takes could not be played by one reader**
   *(named 2026-09-10 specifying the multitrack's node system; the stitched
   buffer landed the same day)*. A clip was a window onto **one** buffer, so a

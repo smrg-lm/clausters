@@ -567,6 +567,65 @@ Neither is the fallback of the other. The units a `SynthDef` wires are the faste
 
 The common pattern is to combine them: a FaustDef for the voice, a SynthDef to route it, play back buffers or analyse the result. Both run as ordinary nodes in the same tree, on the same buses, and are controlled by the same `/node_set`.
 
+## GraphDef: several defs as one instantiable thing
+
+A `SynthDef` or a `FaustDef` persists **one node**. A `GraphDef` persists a
+whole **configuration**: member nodes, the private buses that wire them, and a
+named **port surface** the running instance is driven through — never the
+private member ids. Instantiating one is a group; setting a port is a
+`/node_set` against that group.
+
+```python
+g = GraphDef("chain")
+mix = g.bus("mix")                          # a private audio bus
+src = g.add("gsrc", out=mix, level=1.0)     # a member; its `out` -> the bus
+g.add("gsink", {"in": mix, "out": "OUT"})   # "OUT" is hardware bus 0
+g.port("gain", src["level"], default=0.5)   # a port -> the source's level
+
+g.send(server)
+inst = Group.graph("chain", {"gain": 0.3}, server=server)
+```
+
+**A member can be another `GraphDef`**, and that is what keeps the layers from
+each needing their own machinery. `kind="graph"` builds the member as a subgroup
+with private buses of its own, freed with its parent — so an effect chain, a
+compound effect and a nested graph are one thing rather than three. Two rules
+make such a child reusable rather than wired in place:
+
+- **It does not decide where it goes.** A bus declared `external=True` is one
+  the parent provides, and the member's controls name which of the *parent's*
+  buses each of them is. A graph instantiated on its own is handed nothing and
+  allocates everything, so the same def works standalone and nested.
+- **Its interface is re-exported.** A target on a graph member names one of the
+  child's **ports** instead of a control — and it is written exactly the same
+  way, because what `child["gain"]` means follows from what the member is.
+
+**A member can be one there is a changing number of.** `slot="clips"` marks a
+member built on demand rather than at instantiation, and
+`instance.add_slot("clips")` builds one more, wired to the instance's own
+buses. A voice of a polyphonic instrument, a clip on a track, an effect in a
+chain: one question — how many of these are there right now — whose answer
+changes while the graph is sounding, which is why it cannot be a member list.
+`voice=True` is the slot named `"voice"`, spelled the way it was before slots
+had names, and it is what a MIDI note spawns (`instance.voice()`).
+
+```python
+track = GraphDef("track")
+mix = track.bus("mix")
+track.bus("out", external=True)                     # the parent hands this over
+track.add("fader", {"in": mix, "out": "OUT"})
+clip = track.add("clip", {"out": mix}, kind="graph", slot="clips")
+track.port("clip/gain", clip["gain"])               # the child's port, re-exported
+
+live = Group.graph("track", server=server)
+first = live.add_slot("clips", {"clip/gain": 0.8})  # and another, and another
+```
+
+The nesting is **of authoring, not of execution**. Every port resolves once, at
+instantiation, to the controls of actual nodes however many levels down they
+were written, so a `/node_set` costs what it always did and the server's node
+tree is groups and synths as it always was.
+
 ## What the server must support
 
 Both def families are **on by default** on the server (`synth` and `faust` are Cargo features, and both are in the default set), and everything the wheel ships is built that way: the standalone `clausters` binary, the in-process embedded server and the offline renderer all take a `SynthDef` *and* a `FaustDef`. The package even bundles libfaust, with its LLVM JIT linked in, so Faust works on a machine without it installed — nothing to enable, nothing to build.

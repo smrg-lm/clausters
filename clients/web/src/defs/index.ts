@@ -85,7 +85,7 @@ export { asDef, exprChannels, isExpr } from "./asdef.ts";
 export type { Expr } from "./asdef.ts";
 
 export { GraphBusRef, GraphDef, MemberRef, PortTarget } from "./graphdef.ts";
-export type { GraphDefSpec, MemberControlValue, MemberSpec } from "./graphdef.ts";
+export type { GraphDefSpec, MemberControlValue, MemberKind, MemberSpec } from "./graphdef.ts";
 
 export * from "./ugens/index.ts";
 export * as signals from "./signals.ts";

@@ -178,3 +178,44 @@ def test_polyphonic_graphdef_voices_render():
 
     assert frames > 0
     assert max(abs(s) for s in samples) > 0.05, "the polyphonic GraphDef rendered silent"
+
+
+def test_a_member_can_be_another_graph_and_a_slot_has_a_name():
+    """A track holding clips is a graph holding a slot of graphs, and that is
+    one mechanism rather than two: the child's output is a bus the parent hands
+    it, and the child's interface is re-exported as ports of the parent."""
+    g = GraphDef("host")
+    mix = g.bus("mix")
+    g.bus("out", external=True)
+    g.add("gsink", {"in": mix, "out": "OUT"})
+    part = g.add("sub", {"out": mix}, kind="graph", slot="parts")
+    g.port("part/gain", part["gain"].scaled(2.0), default=0.5)
+
+    spec = g.spec()
+    assert spec["buses"][1]["external"] is True
+    assert spec["members"][1]["kind"] == "graph"
+    assert spec["members"][1]["slot"] == "parts"
+    # A target on a graph member names a **port**, never a control -- which is
+    # what re-exporting a child's interface is.
+    target = spec["surface"]["part/gain"][0]
+    assert target["port"] == "gain"
+    assert "control" not in target
+    assert target["mul"] == 2.0
+
+
+def test_a_target_on_a_plain_member_still_names_a_control():
+    """The same spelling, and it means the other thing, because what the name
+    is follows from what the member is."""
+    g = GraphDef("plain")
+    bus = g.bus("mix")
+    src = g.add("gsrc", {"out": bus})
+    g.port("gain", src["level"])
+    target = g.spec()["surface"]["gain"][0]
+    assert target["control"] == "level"
+    assert "port" not in target
+
+
+def test_an_unknown_member_kind_is_refused():
+    g = GraphDef("bad")
+    with pytest.raises(ValueError):
+        g.add("gsrc", kind="widget")

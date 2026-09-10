@@ -632,9 +632,20 @@ En este orden, porque cada una se puede probar sola:
    un `Option` — un cosido no tiene celdas, y eso obligó a los cinco lugares que
    necesitan un tramo contiguo a decirlo en vez de leer un slice vacío en
    silencio — y todo comando que escribe adentro rechaza un cosido por nombre.
-2. **GraphDef anidado y slots** (servidor). `kind: "graph"`, `external`,
-   `SurfaceTarget::Port`, `/graph_addSlot`, la validación de ciclos y
-   profundidad. Con un test que instancie un grafo de tres niveles.
+2. ✅ **GraphDef anidado y slots** (servidor) — *hecho 2026-09-10*.
+   `kind: "graph"`, `external`, un `SurfaceTarget` con `port`, `/graph_addSlot`
+   (del cual `/graph_newVoice` pasa a ser la escritura del slot `"voice"`), y el
+   tope de profundidad que además es lo que rechaza un grafo que se contiene a
+   sí mismo. Seis tests nuevos en `tests/graphdef.rs`, `docs/schemas.md`, y la
+   misma superficie en los dos clientes (`add_slot`/`addSlot`, y un handle de
+   miembro que contesta un control o un puerto según lo que el miembro sea).
+
+   **Lo que obligó, y es la forma mejor igual**: instanciar es un árbol, y un
+   árbol no se construye como se construía un nivel — un hijo que falla a mitad
+   deja a sus hermanos parados. Así que `/graph_new` ahora **planifica y después
+   realiza**: toda la caminata fallable ocurre primero y guarda con qué devolver
+   todo si algo falla; realizar emite comandos y no puede fallar. La regla de
+   todo-o-nada que tenía un nivel es la misma regla sobre un árbol.
 3. **Los defs `mt.clip` / `mt.track` / `mt.master`** y el plan de instancias en
    Rust (§4.3). Sin efectos: `mt.fx` queda como el hueco declarado.
 4. **`playback` reescrito sobre eso**, en los dos clientes: deja de armar nodos

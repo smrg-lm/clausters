@@ -1,4 +1,4 @@
-//! Instancing a GraphDef: `/graph_new` and `/graph_newVoice`.
+//! Instancing a GraphDef: `/graph_new`, `/graph_addSlot` and `/graph_newVoice`.
 //!
 //! A GraphDef is a wiring, not a sound: the spec names member defs, the
 //! private buses between them and the surface ports a client sets. Building
@@ -6,9 +6,25 @@
 //! each member with its wiring baked into the reserved `out`/`in` controls,
 //! and resolving the surface into the (node, control) pairs a port drives.
 //!
-//! Every allocation here is all or nothing: a shortfall anywhere hands back
-//! every id and every bus run it took, so a rejected instantiation leaves the
-//! pools exactly as it found them.
+//! # Two passes, because a member may be another graph
+//!
+//! A member is one node or a whole nested graph, and a graph's members may be
+//! graphs in turn — which is what lets a track hold clips and a clip hold an
+//! effect chain without either of those being a second mechanism. That makes
+//! instantiation a **tree**, and a tree cannot be built the way one level was:
+//! a child that fails halfway would leave its siblings standing.
+//!
+//! So it is planned and then realized. [`Planned`] is the whole tree with every
+//! fallible thing already done — every def resolved, every synth built, every
+//! bus and node id taken — and holds enough to hand all of it back if any part
+//! of the walk fails ([`Planned::release`]). Realizing it emits commands and
+//! cannot fail. The all-or-nothing rule the one-level version had is therefore
+//! the same rule, over a tree: **a rejected instantiation leaves the pools
+//! exactly as it found them.**
+//!
+//! The nesting is of authoring and not of execution. A child is a subgroup, its
+//! surface is spliced flat into its parent's at resolve time, and the audio
+//! thread sees groups and synths as it always did.
 
 use super::*;
 
@@ -56,11 +72,26 @@ impl CmdTranslator {
     /// On a shortfall it hands back everything it took, so the caller's later
     /// steps stay side-effect-free until this succeeds. Returns the name→index
     /// map plus the `(first, width)` audio and control allocations.
-    fn alloc_graph_buses(&mut self, def: &GraphDefSpec) -> Result<GraphBusAlloc, String> {
+    fn alloc_graph_buses(
+        &mut self,
+        def: &GraphDefSpec,
+        external: &HashMap<String, usize>,
+    ) -> Result<GraphBusAlloc, String> {
         let mut bus_index = HashMap::new();
         let mut audio: Vec<(usize, usize)> = Vec::new();
         let mut control: Vec<(usize, usize)> = Vec::new();
         for b in &def.buses {
+            // **A bus the caller already has is not allocated here**, and is
+            // not reclaimed here either. That is one rule serving two things
+            // that turn out to be the same: a nested graph handed its parent's
+            // output, and a slot built against the instance's own buses (which
+            // is what "wired to the same private buses" has always meant). A
+            // graph instantiated on its own is handed nothing and allocates
+            // everything, so one def works standalone and nested.
+            if let Some(&given) = external.get(b.name.as_str()) {
+                bus_index.insert(b.name.clone(), given);
+                continue;
+            }
             let width = b.channels.max(1);
             let first = match b.rate {
                 BusRate::Audio => self.graph_audio_buses.alloc(width),
@@ -169,26 +200,54 @@ impl CmdTranslator {
         node_of
     }
 
-    /// Resolves the surface ports whose targets are *all* present in
-    /// `node_of` → `(node id, control index, mul, add)`. So passing the shared
-    /// member map yields the shared ports and passing a voice's member map
-    /// yields the voice ports (a port never mixes the two — see `validate`).
-    fn resolve_ports(&self, def: &GraphDefSpec, node_of: &HashMap<usize, i32>) -> ResolvedSurface {
+    /// Resolves the surface ports whose targets are *all* present in `node_of`
+    /// or `child_of` → `(node id, control index, mul, add)`. So passing the
+    /// shared maps yields the shared ports and passing a slot's maps yields
+    /// that slot's ports (a port never mixes the two — see `validate`).
+    ///
+    /// A target on a **nested graph** resolves through that child's own
+    /// resolved surface, and the two scalings compose: the outer runs first, so
+    /// the pair that lands is `(mul_in·mul_out, mul_in·add_out + add_in)`. What
+    /// comes out is flat — the port of a track that drives a control of a node
+    /// three levels down is one `/node_set` like every other.
+    fn resolve_ports(
+        &self,
+        def: &GraphDefSpec,
+        node_of: &HashMap<usize, i32>,
+        child_of: &HashMap<usize, i32>,
+    ) -> ResolvedSurface {
         let mut surface = ResolvedSurface::new();
         for (port, targets) in &def.surface {
-            if !targets.iter().all(|t| node_of.contains_key(&t.member)) {
+            if !targets
+                .iter()
+                .all(|t| node_of.contains_key(&t.member) || child_of.contains_key(&t.member))
+            {
                 continue;
             }
-            let resolved = targets
-                .iter()
-                .filter_map(|t| {
-                    let node = node_of[&t.member];
-                    self.node_defs
-                        .get(&node)
-                        .and_then(|d| d.control_index(&t.control))
-                        .map(|index| (node, index, t.mul, t.add))
-                })
-                .collect();
+            let mut resolved = Vec::new();
+            for t in targets {
+                if let Some(&child) = child_of.get(&t.member) {
+                    let inner = t.port.as_deref().and_then(|p| {
+                        self.graph_instances
+                            .get(&child)
+                            .and_then(|i| i.surface.get(p))
+                    });
+                    if let Some(inner) = inner {
+                        for &(node, index, mul, add) in inner {
+                            resolved.push((node, index, mul * t.mul, mul * t.add + add));
+                        }
+                    }
+                    continue;
+                }
+                let node = node_of[&t.member];
+                if let Some(index) = self
+                    .node_defs
+                    .get(&node)
+                    .and_then(|d| d.control_index(&t.control))
+                {
+                    resolved.push((node, index, t.mul, t.add));
+                }
+            }
             surface.insert(port.clone(), resolved);
         }
         surface
@@ -206,14 +265,260 @@ impl CmdTranslator {
             )
             .collect()
     }
+}
 
+/// One instantiation, with every fallible step already done.
+///
+/// This is what makes a **tree** of graphs all-or-nothing: the whole walk
+/// happens here, taking synths, buses and node ids as it goes, and if any part
+/// of it fails what has been taken is handed back ([`CmdTranslator::release_plan`])
+/// before anything observable has happened. Realizing a plan emits commands and
+/// cannot fail.
+struct Planned {
+    def: Arc<GraphDefSpec>,
+    /// The group this instantiation will be.
+    group_id: i32,
+    /// Whether `group_id` came from the auto pool (and so goes back to it on a
+    /// failure) rather than from the client.
+    owned_group: bool,
+    /// The member indices built as nodes here, and their pre-built synths and
+    /// ids, parallel to each other.
+    def_members: Vec<usize>,
+    built: Vec<(Box<dyn SynthNode>, NodeDef)>,
+    member_ids: Vec<i32>,
+    bus_index: HashMap<String, usize>,
+    /// Only the buses this instantiation **allocated**: an external one is the
+    /// parent's and is neither taken nor released here.
+    audio_buses: Vec<(usize, usize)>,
+    control_buses: Vec<(usize, usize)>,
+    /// Member index → the plan of the nested graph it is.
+    children: Vec<(usize, Planned)>,
+}
+
+impl CmdTranslator {
+    /// Hands back everything a plan took: its children first, then its ids and
+    /// its buses. Called on the failure of any step of the walk.
+    fn release_plan(&mut self, plan: Planned) {
+        for (_, child) in plan.children {
+            self.release_plan(child);
+        }
+        self.release_auto_ids(&plan.member_ids);
+        if plan.owned_group {
+            self.release_auto_ids(&[plan.group_id]);
+        }
+        self.free_graph_buses(&plan.audio_buses, &plan.control_buses);
+    }
+
+    /// Walks a GraphDef and everything nested in it, taking what building it
+    /// will need. `members` picks which members belong to this instantiation —
+    /// the shared ones for `/graph_new`, one slot's for `/graph_addSlot` —
+    /// and `external` names the buses the caller provides.
+    fn plan_instance(
+        &mut self,
+        name: &str,
+        id_arg: i32,
+        slot: Option<&str>,
+        external: &HashMap<String, usize>,
+        depth: usize,
+    ) -> Result<Planned, String> {
+        if depth > MAX_GRAPH_DEPTH {
+            return Err(format!(
+                "GraphDef '{name}': nested more than {MAX_GRAPH_DEPTH} deep (a cycle?)"
+            ));
+        }
+        let def = self
+            .graph_defs
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("GraphDef not found: {name}"))?;
+        let mine: Vec<usize> = def
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.slot() == slot)
+            .map(|(i, _)| i)
+            .collect();
+        let def_members: Vec<usize> = mine
+            .iter()
+            .copied()
+            .filter(|&i| def.members[i].kind == MemberKind::Def)
+            .collect();
+        let graph_members: Vec<usize> = mine
+            .iter()
+            .copied()
+            .filter(|&i| def.members[i].kind == MemberKind::Graph)
+            .collect();
+
+        // --- fallible, in the order that leaves least to hand back.
+        let mut built = Vec::with_capacity(def_members.len());
+        for &mi in &def_members {
+            built.push(self.make_synth(&def.members[mi].def)?);
+        }
+        let (bus_index, audio_buses, control_buses) = self.alloc_graph_buses(&def, external)?;
+        let ids = match self.alloc_graph_ids(id_arg, def_members.len()) {
+            Ok(ids) => ids,
+            Err(e) => {
+                self.free_graph_buses(&audio_buses, &control_buses);
+                return Err(e);
+            }
+        };
+        let (group_id, member_ids) = ids;
+        let mut plan = Planned {
+            def: Arc::clone(&def),
+            group_id,
+            owned_group: id_arg == -1,
+            def_members,
+            built,
+            member_ids,
+            bus_index,
+            audio_buses,
+            control_buses,
+            children: Vec::new(),
+        };
+
+        // The nested graphs, each handed the buses this one names for it. A
+        // failure past here hands back the whole plan, children included.
+        for mi in graph_members {
+            let member = &def.members[mi];
+            let mut given = HashMap::new();
+            for (child_bus, value) in &member.controls {
+                let index = match value {
+                    ControlValue::Bus(b) if b == "OUT" => 0,
+                    ControlValue::Bus(b) => match plan.bus_index.get(b.as_str()) {
+                        Some(&i) => i,
+                        None => {
+                            let name = member.def.clone();
+                            self.release_plan(plan);
+                            return Err(format!(
+                                "member {mi} ('{name}'): unknown internal bus '{b}'"
+                            ));
+                        }
+                    },
+                    ControlValue::Num(v) => *v as usize,
+                };
+                given.insert(child_bus.clone(), index);
+            }
+            match self.plan_instance(&member.def.clone(), -1, None, &given, depth + 1) {
+                Ok(child) => plan.children.push((mi, child)),
+                Err(e) => {
+                    self.release_plan(plan);
+                    return Err(e);
+                }
+            }
+        }
+        Ok(plan)
+    }
+
+    /// Builds a planned instantiation: the group, its members, its nested
+    /// graphs, and the resolved surface. Infallible by construction — every
+    /// fallible step happened in [`CmdTranslator::plan_instance`] — so an
+    /// instance is never left half-built.
+    ///
+    /// Registers the instance (or, with `slot`, the slot sub-graph) and answers
+    /// its group id.
+    fn realize(
+        &mut self,
+        plan: Planned,
+        parent: i32,
+        action: AddAction,
+        slot: Option<(i32, &str)>,
+        cmds: &mut Vec<Cmd>,
+    ) -> i32 {
+        let Planned {
+            def,
+            group_id,
+            def_members,
+            built,
+            member_ids,
+            bus_index,
+            audio_buses,
+            control_buses,
+            children,
+            ..
+        } = plan;
+        cmds.push(Cmd::AddGroup {
+            id: group_id,
+            target: parent,
+            action,
+            group: self.new_group(),
+        });
+        let _ = self
+            .mirror
+            .insert(group_id, MirrorBody::group(true), parent, action);
+        let node_of = self.build_members(
+            &def,
+            &def_members,
+            built,
+            member_ids,
+            group_id,
+            &bus_index,
+            cmds,
+        );
+        // The nested graphs, inside this group. Each registers itself, which is
+        // what makes its surface reachable when this one's ports resolve.
+        let mut child_of = HashMap::new();
+        for (mi, child) in children {
+            let id = self.realize(child, group_id, AddAction::Tail, None, cmds);
+            child_of.insert(mi, id);
+        }
+        self.resort_from(Some(group_id), cmds);
+        let surface = self.resolve_ports(&def, &node_of, &child_of);
+        let defaults: Vec<(String, f32)> = def
+            .defaults
+            .iter()
+            .filter(|(p, _)| def.port_slot(p) == slot.map(|(_, name)| name))
+            .map(|(p, v)| (p.clone(), *v))
+            .collect();
+        match slot {
+            Some((instance, name)) => {
+                self.graph_voices.insert(
+                    group_id,
+                    GraphVoice {
+                        instance,
+                        slot: name.to_string(),
+                        surface,
+                        children: child_of,
+                    },
+                );
+                if let Some(inst) = self.graph_instances.get_mut(&instance) {
+                    inst.voices.insert(group_id);
+                }
+            }
+            None => {
+                self.graph_instances.insert(
+                    group_id,
+                    GraphInstance {
+                        def,
+                        shared_nodes: node_of,
+                        bus_index,
+                        audio_buses,
+                        control_buses,
+                        surface,
+                        children: child_of,
+                        voices: HashSet::new(),
+                    },
+                );
+            }
+        }
+        // **A def's own defaults are applied here**, so a nested graph arrives
+        // configured the way its author wrote it. Whoever instantiated it
+        // applies its overrides afterwards and wins, which is the order a
+        // caller expects and the reason this is not the caller's job.
+        for (port, value) in defaults {
+            self.apply_surface(group_id, &port, value, cmds);
+        }
+        group_id
+    }
+}
+
+impl CmdTranslator {
     /// `/graph_new name id action target [port value ...]`: instantiate a
     /// GraphDef as a group holding its **shared** members, with private buses
-    /// and a resolved named surface. (Per-voice members wait for
-    /// `/graph_newVoice`.) It expands entirely into existing primitives (a group,
-    /// member `/synth_new`s, `/node_map` wiring), so the engine sees nothing new and
-    /// RT-safety is untouched. Atomic: every fallible step (member def
-    /// resolution, bus allocation) happens before any command or mirror change.
+    /// and a resolved named surface. (Slot members wait for `/graph_addSlot`.)
+    /// It expands entirely into existing primitives (a group, member
+    /// `/synth_new`s, `/node_map` wiring), so the engine sees nothing new and
+    /// RT-safety is untouched. Atomic over the whole nested tree: everything
+    /// fallible happens in the plan, before any command or mirror change.
     pub(in crate::osc::translate) fn graph_new(
         &mut self,
         msg: &rosc::OscMessage,
@@ -229,89 +534,73 @@ impl CmdTranslator {
         else {
             return Err("expected: name, id, addAction, targetID [, port, value ...]".into());
         };
-        let def = self
-            .graph_defs
-            .get(name)
-            .cloned()
-            .ok_or_else(|| format!("GraphDef not found: {name}"))?;
         let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
         if *id != -1 && *id <= 0 {
             return Err("group ID must be positive or -1".into());
         }
-
-        // --- fallible phase: nothing observable happens until it all passes.
-        let shared: Vec<usize> = def
-            .members
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| !m.voice)
-            .map(|(i, _)| i)
-            .collect();
-        let mut built = Vec::with_capacity(shared.len());
-        for &mi in &shared {
-            built.push(self.make_synth(&def.members[mi].def)?);
+        let plan = self.plan_instance(name, *id, None, &HashMap::new(), 0)?;
+        let def = Arc::clone(&plan.def);
+        let group_id = self.realize(plan, *target, action, None, cmds);
+        // The def's own defaults were applied as it was built; these are the
+        // caller's overrides on top of them.
+        for (port, value) in Self::port_overrides(rest) {
+            self.apply_surface(group_id, &port, value, cmds);
         }
-        let (bus_index, audio_buses, control_buses) = self.alloc_graph_buses(&def)?;
-        // Ids last, so an id shortfall only has buses to hand back (and a bus
-        // shortfall never touched the id registry).
-        let ids = match self.alloc_graph_ids(*id, shared.len()) {
-            Ok(ids) => ids,
-            Err(e) => {
-                self.free_graph_buses(&audio_buses, &control_buses);
-                return Err(e);
-            }
-        };
-        let (group_id, member_ids) = ids;
+        let _ = def;
+        Ok(())
+    }
 
-        // --- infallible phase: build the instance. The instance group is
-        // auto-sorted so member (and voice sub-group) order follows the bus
-        // connections; manual ordering is the graph's, not the client's.
-        cmds.push(Cmd::AddGroup {
-            id: group_id,
-            target: *target,
-            action,
-            group: self.new_group(),
-        });
-        let _ = self
-            .mirror
-            .insert(group_id, MirrorBody::group(true), *target, action);
-        let shared_nodes =
-            self.build_members(&def, &shared, built, member_ids, group_id, &bus_index, cmds);
-        self.resort_from(Some(group_id), cmds);
-        let surface = self.resolve_ports(&def, &shared_nodes);
-        self.graph_instances.insert(
-            group_id,
-            GraphInstance {
-                def: Arc::clone(&def),
-                shared_nodes,
-                bus_index,
-                audio_buses,
-                control_buses,
-                surface,
-                voices: HashSet::new(),
-            },
+    /// `/graph_addSlot instanceID slot id [port value ...]`: build one more of
+    /// a named slot inside a running GraphDef instance, wired to its shared
+    /// private buses — a voice of a synth, a clip on a track, an effect in a
+    /// chain.
+    ///
+    /// The slot is a sub-group at the head of the instance group (the auto-sort
+    /// then orders it relative to the shared mixer by its bus usage); freeing it
+    /// (`/node_free`) frees its members and anything nested in them. Same atomic
+    /// shape as `/graph_new`.
+    pub(in crate::osc::translate) fn graph_add_slot(
+        &mut self,
+        instance: i32,
+        slot: &str,
+        id: i32,
+        rest: &[OscType],
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let Some(inst) = self.graph_instances.get(&instance) else {
+            return Err(format!("GraphDef instance {instance} not found"));
+        };
+        let def = Arc::clone(&inst.def);
+        let external = inst.bus_index.clone();
+        if !def.has_slot(slot) {
+            return Err(format!("GraphDef has no '{slot}' slot"));
+        }
+        if id != -1 && id <= 0 {
+            return Err("slot ID must be positive or -1".into());
+        }
+        // The slot's members are built against the instance's buses, which is
+        // what "wired to the same private buses" means: every one of them is
+        // external as far as this sub-graph is concerned.
+        let plan = self.plan_instance(&def.name, id, Some(slot), &external, 0)?;
+        let slot_id = self.realize(
+            plan,
+            instance,
+            AddAction::Head,
+            Some((instance, slot)),
+            cmds,
         );
 
-        // Shared-port defaults, then the per-instantiation overrides.
-        let mut ports: Vec<(String, f32)> = def
-            .defaults
-            .iter()
-            .filter(|(p, _)| !def.is_voice_port(p))
-            .map(|(p, v)| (p.clone(), *v))
-            .collect();
-        ports.extend(Self::port_overrides(rest));
-        for (port, value) in ports {
-            self.apply_surface(group_id, &port, value, cmds);
+        // The slot's own defaults were applied as it was built; these are the
+        // caller's overrides on top of them.
+        for (port, value) in Self::port_overrides(rest) {
+            self.apply_surface(slot_id, &port, value, cmds);
         }
         Ok(())
     }
 
-    /// `/graph_newVoice instanceID id [port value ...]`: spawn a per-voice
-    /// sub-graph inside a running GraphDef instance, wired to its shared
-    /// private buses. The voice is a sub-group at the head of the instance
-    /// group (the auto-sort then orders it relative to the shared mixer by its
-    /// bus usage); freeing it (`/node_free`) frees its members. Same atomic
-    /// shape as `/graph_new`.
+    /// `/graph_newVoice instanceID id [port value ...]`: the voice slot's own
+    /// spelling of [`CmdTranslator::graph_add_slot`], kept because a voice is
+    /// what slots were before they had names, and because MIDI notes spawn one.
     pub(in crate::osc::translate) fn graph_voice(
         &mut self,
         msg: &rosc::OscMessage,
@@ -320,79 +609,25 @@ impl CmdTranslator {
         let [OscType::Int(instance), OscType::Int(id), rest @ ..] = msg.args.as_slice() else {
             return Err("expected: instanceID, voiceID [, port, value ...]".into());
         };
-        let Some(inst) = self.graph_instances.get(instance) else {
-            return Err(format!("GraphDef instance {instance} not found"));
-        };
-        let def = Arc::clone(&inst.def);
-        let bus_index = inst.bus_index.clone();
-        if !def.has_voice_members() {
-            return Err("GraphDef has no per-voice members".into());
-        }
-        let voice_indices: Vec<usize> = def
-            .members
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.voice)
-            .map(|(i, _)| i)
-            .collect();
-        if *id != -1 && *id <= 0 {
-            return Err("voice ID must be positive or -1".into());
-        }
-        // fallible: build the voice's synths before touching anything.
-        let mut built = Vec::with_capacity(voice_indices.len());
-        for &mi in &voice_indices {
-            built.push(self.make_synth(&def.members[mi].def)?);
-        }
-        let (voice_id, member_ids) = self.alloc_graph_ids(*id, voice_indices.len())?;
-        // infallible: the voice sub-group, into the instance group.
-        cmds.push(Cmd::AddGroup {
-            id: voice_id,
-            target: *instance,
-            action: AddAction::Head,
-            group: self.new_group(),
-        });
-        let _ = self.mirror.insert(
-            voice_id,
-            MirrorBody::group(true),
-            *instance,
-            AddAction::Head,
-        );
-        let voice_nodes = self.build_members(
-            &def,
-            &voice_indices,
-            built,
-            member_ids,
-            voice_id,
-            &bus_index,
-            cmds,
-        );
-        // Resort the voice's own members and, up the chain, the instance group
-        // (so the voice runs before the shared mixer that reads its bus).
-        self.resort_from(Some(voice_id), cmds);
-        let surface = self.resolve_ports(&def, &voice_nodes);
-        self.graph_voices.insert(
-            voice_id,
-            GraphVoice {
-                instance: *instance,
-                surface,
-            },
-        );
-        if let Some(inst) = self.graph_instances.get_mut(instance) {
-            inst.voices.insert(voice_id);
-        }
+        self.graph_add_slot(*instance, VOICE_SLOT, *id, rest, cmds)
+    }
 
-        // Voice-port defaults, then the per-spawn overrides.
-        let mut ports: Vec<(String, f32)> = def
-            .defaults
-            .iter()
-            .filter(|(p, _)| def.is_voice_port(p))
-            .map(|(p, v)| (p.clone(), *v))
-            .collect();
-        ports.extend(Self::port_overrides(rest));
-        for (port, value) in ports {
-            self.apply_surface(voice_id, &port, value, cmds);
-        }
-        Ok(())
+    /// `/graph_addSlot instanceID slot id [port value ...]` off the wire.
+    pub(in crate::osc::translate) fn graph_slot(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let [
+            OscType::Int(instance),
+            OscType::String(slot),
+            OscType::Int(id),
+            rest @ ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: instanceID, slot, id [, port, value ...]".into());
+        };
+        self.graph_add_slot(*instance, slot, *id, rest, cmds)
     }
 
     /// Writes a surface-port value to its resolved member controls, scaled per
@@ -452,20 +687,32 @@ impl CmdTranslator {
         true
     }
 
-    /// Drops the translator-side state of a freed GraphDef node: a voice
+    /// Drops the translator-side state of a freed GraphDef node: a slot
     /// sub-group (forget it, detach from its instance) or an instance group
-    /// (reclaim its private buses and forget its voices). A no-op for ordinary
+    /// (reclaim its private buses and forget its slots). A no-op for ordinary
     /// nodes. The actual node teardown is the `/node_free` `FreeNode` itself.
+    ///
+    /// **Recursive, because instancing is.** A nested graph is a registered
+    /// instance of its own with buses of its own, and freeing the group it sits
+    /// in frees the nodes but not the bookkeeping — so the children are walked
+    /// here. External buses are never released: they were the parent's, and the
+    /// child only ever borrowed the index.
     pub(in crate::osc::translate) fn free_graph_node(&mut self, id: i32) {
         if let Some(voice) = self.graph_voices.remove(&id) {
             if let Some(inst) = self.graph_instances.get_mut(&voice.instance) {
                 inst.voices.remove(&id);
             }
+            for (_, child) in voice.children {
+                self.free_graph_node(child);
+            }
             return;
         }
         if let Some(inst) = self.graph_instances.remove(&id) {
             for v in inst.voices {
-                self.graph_voices.remove(&v);
+                self.free_graph_node(v);
+            }
+            for (_, child) in inst.children {
+                self.free_graph_node(child);
             }
             // A refused release here would mean the instance lost track of a
             // bus — surface it, never absorb it.

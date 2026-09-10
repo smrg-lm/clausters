@@ -3147,6 +3147,54 @@
           "gain": 0.5
         }
       }
+    },
+    {
+      "name": "graph_host",
+      "spec": {
+        "name": "host",
+        "members": [
+          {
+            "def": "gsink",
+            "controls": {
+              "in": "mix",
+              "out": "OUT"
+            }
+          },
+          {
+            "def": "sub",
+            "kind": "graph",
+            "controls": {
+              "out": "mix"
+            },
+            "slot": "parts"
+          }
+        ],
+        "buses": [
+          {
+            "name": "mix",
+            "rate": "audio",
+            "channels": 1
+          },
+          {
+            "name": "out",
+            "rate": "audio",
+            "channels": 1,
+            "external": true
+          }
+        ],
+        "surface": {
+          "part/gain": [
+            {
+              "member": 1,
+              "port": "gain",
+              "mul": 2.0
+            }
+          ]
+        },
+        "defaults": {
+          "part/gain": 0.5
+        }
+      }
     }
   ],
   "scalars": [

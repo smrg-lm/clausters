@@ -42,7 +42,7 @@ use crate::osc::graph::ugen_usage;
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror};
 use crate::osc::graphdef::{
     BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
-    GraphInstance, GraphVoice, ResolvedSurface,
+    GraphInstance, GraphVoice, MAX_GRAPH_DEPTH, MemberKind, ResolvedSurface, VOICE_SLOT,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
@@ -1059,6 +1059,7 @@ impl CmdTranslator {
             "/group_head" | "/group_tail" => self.move_to_group(msg, cmds),
             // instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
+            "/graph_addSlot" => self.graph_slot(msg, cmds),
             // spawn a per-voice sub-graph inside an instance.
             "/graph_newVoice" => self.graph_voice(msg, cmds),
             // MIDI binding config (no engine command; pure translator state).

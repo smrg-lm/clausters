@@ -50,8 +50,10 @@ class _Target:
     """One inner target of a surface port: a member's control with optional
     linear scaling (``mul``·v + ``add``)."""
 
-    def __init__(self, member: int, control: str, mul: float = 1.0, add: float = 0.0):
+    def __init__(self, member: int, control: str, mul: float = 1.0, add: float = 0.0,
+                 port: str | None = None):
         self.member = member
+        self.port = port
         self.control = control
         self.mul = mul
         self.add = add
@@ -60,10 +62,14 @@ class _Target:
         """A copy of this target with linear scaling applied to incoming
         values, e.g. ``filt["cutoff"].scaled(7800, 200)`` maps a 0..1 port to
         200..8000 Hz."""
-        return _Target(self.member, self.control, float(mul), float(add))
+        return _Target(self.member, self.control, float(mul), float(add), self.port)
 
     def _as_dict(self) -> dict:
-        d = {"member": self.member, "control": self.control}
+        d: dict = {"member": self.member}
+        if self.port is not None:
+            d["port"] = self.port
+        else:
+            d["control"] = self.control
         if self.mul != 1.0:
             d["mul"] = self.mul
         if self.add != 0.0:
@@ -72,20 +78,27 @@ class _Target:
 
 
 class MemberRef:
-    """A handle to a member added with `GraphDef.add`. Index a control
-    name (``member["cutoff"]`` or ``member.cutoff``) to get a surface
-    `_Target`."""
+    """A handle to a member added with `GraphDef.add`. Index a name
+    (``member["cutoff"]`` or ``member.cutoff``) to get a surface `_Target`.
 
-    def __init__(self, index: int):
+    **What that name is follows from what the member is**, which is the point:
+    on an ordinary member it is one of its def's controls, and on a nested graph
+    (``kind="graph"``) it is one of *its* surface ports — re-exporting a child's
+    interface, which is written the same way whichever it turns out to be."""
+
+    def __init__(self, index: int, kind: str = "def"):
         self.index = index
+        self.kind = kind
 
-    def __getitem__(self, control: str) -> _Target:
-        return _Target(self.index, str(control))
+    def __getitem__(self, name: str) -> _Target:
+        if self.kind == "graph":
+            return _Target(self.index, "", port=str(name))
+        return _Target(self.index, str(name))
 
-    def __getattr__(self, control: str) -> _Target:
-        if control.startswith("_"):
-            raise AttributeError(control)
-        return _Target(self.index, control)
+    def __getattr__(self, name: str) -> _Target:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return self[name]
 
 
 def _control_value(v):
@@ -109,28 +122,56 @@ class GraphDef:
         self._surface: dict[str, list[dict]] = {}
         self._defaults: dict[str, float] = {}
 
-    def bus(self, name: str, *, rate: str = "audio", channels: int = 1) -> GraphBusRef:
+    def bus(self, name: str, *, rate: str = "audio", channels: int = 1,
+            external: bool = False) -> GraphBusRef:
         """Declares a private internal bus (``rate`` ``"audio"`` or
         ``"control"``). Each instance allocates its own, so two instances never
-        collide."""
+        collide.
+
+        ``external=True`` declares a bus **whoever instantiates the graph
+        provides** — how a nested graph says it does not decide where it goes.
+        The parent names which of its own buses that is when it adds the member
+        (`add`, ``kind="graph"``). A graph instantiated on its own is handed
+        nothing and allocates everything, so one def works standalone and
+        nested."""
         if rate not in ("audio", "control"):
             raise ValueError("bus rate must be 'audio' or 'control'")
-        self._buses.append({"name": str(name), "rate": rate, "channels": int(channels)})
+        spec: dict = {"name": str(name), "rate": rate, "channels": int(channels)}
+        if external:
+            spec["external"] = True
+        self._buses.append(spec)
         return GraphBusRef(name)
 
     def add(self, defname: str, controls: dict | None = None, *,
-            maps: dict | None = None, voice: bool = False, **control_kw) -> MemberRef:
+            maps: dict | None = None, voice: bool = False,
+            slot: str | None = None, kind: str = "def", **control_kw) -> MemberRef:
         """Adds a member: an instance of the SynthDef/FaustDef ``defname``.
         Control values may be numbers, a `GraphBusRef` (to wire the
         control to an internal bus), or ``"OUT"`` (hardware bus 0). ``maps``
         binds controls to internal *control* buses via ``/node_map``. Pass
         controls as a dict (needed for reserved names like ``in``) and/or as
-        keywords. ``voice=True`` marks a **per-voice** member: instantiated once
-        per `clausters.defs.Group.voice` (or MIDI note) instead of at
-        instantiation — the per-note part of a polyphonic instrument."""
+        keywords.
+
+        ``kind="graph"`` makes the member **another GraphDef** rather than one
+        node: it is instantiated as a subgroup with private buses of its own and
+        freed with its parent, and its ``controls`` name which of *this* graph's
+        buses each of its external buses is. That is what lets a track hold
+        clips and a clip hold an effect chain without either being a second
+        mechanism — and an effect can itself be a GraphDef.
+
+        ``slot="name"`` makes it a member there is a **changing number of**:
+        instantiated on demand by `clausters.defs.Group.add_slot`, once per
+        thing there is one of — a clip on a track, an effect in a chain, a voice
+        of an instrument. ``voice=True`` is the slot named ``"voice"``, spelled
+        the way it was before slots had names, and it is what a MIDI note
+        spawns."""
+        if kind not in ("def", "graph"):
+            raise ValueError("member kind must be 'def' or 'graph'")
         merged = dict(controls or {})
         merged.update(control_kw)
         member: dict = {"def": str(defname)}
+        if kind != "def":
+            member["kind"] = kind
         if merged:
             member["controls"] = {k: _control_value(v) for k, v in merged.items()}
         if maps:
@@ -140,9 +181,11 @@ class GraphDef:
             }
         if voice:
             member["voice"] = True
+        if slot is not None:
+            member["slot"] = str(slot)
         index = len(self._members)
         self._members.append(member)
-        return MemberRef(index)
+        return MemberRef(index, kind)
 
     def members(self) -> list[dict]:
         """The member specs in add order (read-only copies): each a def name and
@@ -176,7 +219,7 @@ class GraphDef:
         for name, targets in self._surface.items():
             out.append(ControlInfo(
                 name=name, default=self._defaults.get(name, 0.0),
-                targets=tuple((t.get("member"), t.get("control"),
+                targets=tuple((t.get("member"), t.get("port") or t.get("control", ""),
                                t.get("mul", 1.0), t.get("add", 0.0))
                               for t in targets)))
         return out

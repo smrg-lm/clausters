@@ -53,11 +53,15 @@ export class PortTarget {
     readonly mul: number;
     readonly add: number;
 
-    constructor(member: number, control: string, mul = 1.0, add = 0.0) {
+    /** One of the member's own surface ports, when the member is a graph. */
+    readonly port?: string;
+
+    constructor(member: number, control: string, mul = 1.0, add = 0.0, port?: string) {
         this.member = member;
         this.control = control;
         this.mul = mul;
         this.add = add;
+        this.port = port;
     }
 
     /**
@@ -66,12 +70,14 @@ export class PortTarget {
      * 200..8000 Hz.
      */
     scaled(mul = 1.0, add = 0.0): PortTarget {
-        return new PortTarget(this.member, this.control, Number(mul), Number(add));
+        return new PortTarget(this.member, this.control, Number(mul), Number(add), this.port);
     }
 
     /** @internal — the serialized form inside a surface entry. */
     asSpec(): Record<string, unknown> {
-        const d: Record<string, unknown> = { member: this.member, control: this.control };
+        const d: Record<string, unknown> = { member: this.member };
+        if (this.port !== undefined) d.port = this.port;
+        else d.control = this.control;
         if (this.mul !== 1.0) d.mul = this.mul;
         if (this.add !== 0.0) d.add = this.add;
         return d;
@@ -79,21 +85,36 @@ export class PortTarget {
 }
 
 /**
- * A handle to a member added with `GraphDef.add`. Name a control on it to
- * get a surface `PortTarget`.
+ * A handle to a member added with `GraphDef.add`. Name something on it to get
+ * a surface `PortTarget`.
+ *
+ * **What that name is follows from what the member is**, which is the point: on
+ * an ordinary member it is one of its def's controls, and on a nested graph
+ * (`kind: "graph"`) it is one of *its* surface ports — re-exporting a child's
+ * interface, written the same way whichever it turns out to be.
  */
 export class MemberRef {
     readonly index: number;
+    readonly kind: MemberKind;
 
-    constructor(index: number) {
+    constructor(index: number, kind: MemberKind = "def") {
         this.index = index;
+        this.kind = kind;
     }
 
-    /** The member's `name` control, as a port target. */
+    /** The member's `name` control — or, for a graph member, its `name` port. */
     control(name: string): PortTarget {
-        return new PortTarget(this.index, String(name));
+        return this.kind === "graph"
+            ? new PortTarget(this.index, "", 1.0, 0.0, String(name))
+            : new PortTarget(this.index, String(name));
     }
 }
+
+/**
+ * What a member is an instance **of**: one node (`"def"`) or a whole nested
+ * GraphDef (`"graph"`).
+ */
+export type MemberKind = "def" | "graph";
 
 /**
  * What a member control may be set to: a number, an internal bus, or a
@@ -109,16 +130,18 @@ function controlValue(v: MemberControlValue): number | string {
 
 export interface MemberSpec {
     def: string;
+    kind?: MemberKind;
     controls?: Record<string, number | string>;
     maps?: Record<string, string>;
     voice?: boolean;
+    slot?: string;
 }
 
 /** The `GraphDefSpec` the server's `/def_send graph` validates. */
 export interface GraphDefSpec {
     name: string;
     members: MemberSpec[];
-    buses?: { name: string; rate: string; channels: number }[];
+    buses?: { name: string; rate: string; channels: number; external?: boolean }[];
     surface?: Record<string, Record<string, unknown>[]>;
     defaults?: Record<string, number>;
 }
@@ -129,7 +152,12 @@ export interface GraphDefSpec {
  */
 export class GraphDef {
     readonly name: string;
-    private readonly buses_: { name: string; rate: string; channels: number }[] = [];
+    private readonly buses_: {
+        name: string;
+        rate: string;
+        channels: number;
+        external?: boolean;
+    }[] = [];
     private readonly members_: MemberSpec[] = [];
     private readonly surface_: Record<string, Record<string, unknown>[]> = {};
     private readonly defaults_: Record<string, number> = {};
@@ -141,15 +169,31 @@ export class GraphDef {
     /**
      * Declares a private internal bus. Each instance allocates its own, so
      * two instances never collide.
+     *
+     * `external: true` declares a bus **whoever instantiates the graph
+     * provides** — how a nested graph says it does not decide where it goes.
+     * The parent names which of its own buses that is when it adds the member
+     * (`add`, `kind: "graph"`). A graph instantiated on its own is handed
+     * nothing and allocates everything, so one def works standalone and nested.
      */
     bus(
         name: string,
-        { rate = "audio", channels = 1 }: { rate?: "audio" | "control"; channels?: number } = {},
+        {
+            rate = "audio",
+            channels = 1,
+            external = false,
+        }: { rate?: "audio" | "control"; channels?: number; external?: boolean } = {},
     ): GraphBusRef {
         if (rate !== "audio" && rate !== "control") {
             throw new TypeError("bus rate must be 'audio' or 'control'");
         }
-        this.buses_.push({ name: String(name), rate, channels: Math.trunc(channels) });
+        const spec: { name: string; rate: string; channels: number; external?: boolean } = {
+            name: String(name),
+            rate,
+            channels: Math.trunc(channels),
+        };
+        if (external) spec.external = true;
+        this.buses_.push(spec);
         return new GraphBusRef(name);
     }
 
@@ -157,10 +201,20 @@ export class GraphDef {
      * Adds a member: an instance of the SynthDef/FaustDef `defname`. Control
      * values may be numbers, a `GraphBusRef` (to wire the control to an
      * internal bus), or `"OUT"` (hardware bus 0). `maps` binds controls to
-     * internal *control* buses via `/node_map`. `voice: true` marks a
-     * **per-voice** member: instantiated once per `Server.graphVoice` (or
-     * MIDI note) instead of at instantiation — the per-note part of a
-     * polyphonic instrument.
+     * internal *control* buses via `/node_map`.
+     *
+     * `kind: "graph"` makes the member **another GraphDef** rather than one
+     * node: it is instantiated as a subgroup with private buses of its own and
+     * freed with its parent, and its `controls` name which of *this* graph's
+     * buses each of its external buses is. That is what lets a track hold clips
+     * and a clip hold an effect chain without either being a second mechanism —
+     * and an effect can itself be a GraphDef.
+     *
+     * `slot: "name"` makes it a member there is a **changing number of**:
+     * instantiated on demand by `Group.addSlot`, once per thing there is one of
+     * — a clip on a track, an effect in a chain, a voice of an instrument.
+     * `voice: true` is the slot named `"voice"`, spelled the way it was before
+     * slots had names, and it is what a MIDI note spawns.
      */
     add(
         defname: string,
@@ -168,9 +222,20 @@ export class GraphDef {
         {
             maps,
             voice = false,
-        }: { maps?: Record<string, GraphBusRef | string>; voice?: boolean } = {},
+            slot,
+            kind = "def",
+        }: {
+            maps?: Record<string, GraphBusRef | string>;
+            voice?: boolean;
+            slot?: string;
+            kind?: MemberKind;
+        } = {},
     ): MemberRef {
+        if (kind !== "def" && kind !== "graph") {
+            throw new TypeError("member kind must be 'def' or 'graph'");
+        }
         const member: MemberSpec = { def: String(defname) };
+        if (kind !== "def") member.kind = kind;
         const entries = Object.entries(controls);
         if (entries.length > 0) {
             member.controls = Object.fromEntries(
@@ -186,9 +251,10 @@ export class GraphDef {
             );
         }
         if (voice) member.voice = true;
+        if (slot !== undefined) member.slot = String(slot);
         const index = this.members_.length;
         this.members_.push(member);
-        return new MemberRef(index);
+        return new MemberRef(index, kind);
     }
 
     /**

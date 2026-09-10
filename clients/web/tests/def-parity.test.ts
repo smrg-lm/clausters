@@ -430,6 +430,17 @@ test("GraphDef parity: a wired chain with a scaled port", () => {
     assert.deepEqual(g.spec(), expected);
 });
 
+test("GraphDef parity: a nested graph in a slot, with its port re-exported", () => {
+    const expected = find(vectors.graphdefs, "graph_host").spec;
+    const h = new GraphDef("host");
+    const mix = h.bus("mix");
+    h.bus("out", { external: true });
+    h.add("gsink", { in: mix, out: "OUT" });
+    const part = h.add("sub", { out: mix }, { kind: "graph", slot: "parts" });
+    h.port("part/gain", [part.control("gain").scaled(2.0)], 0.5);
+    assert.deepEqual(h.spec(), expected);
+});
+
 // The catalogue's one plain-number helper: it sizes a buffer rather than
 // building a graph, so it is frozen as values.
 test("scalar parity: partconvFrames", () => {

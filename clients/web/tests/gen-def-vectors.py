@@ -324,7 +324,16 @@ def graph_case():
     g.add("gsink", {"in": bus, "out": "OUT"})
     g.add("gvoice", {"out": bus}, voice=True)
     g.port("gain", src["level"].scaled(2.0, 0.1), default=0.5)
-    return [("graph_chain", g.spec())]
+
+    # A member that is another graph, and a slot: the shape a track holding
+    # clips has, and the one that says a re-exported port is a port.
+    h = GraphDef("host")
+    mix = h.bus("mix")
+    h.bus("out", external=True)
+    h.add("gsink", {"in": mix, "out": "OUT"})
+    part = h.add("sub", {"out": mix}, kind="graph", slot="parts")
+    h.port("part/gain", part["gain"].scaled(2.0), default=0.5)
+    return [("graph_chain", g.spec()), ("graph_host", h.spec())]
 
 
 def scalar_cases():

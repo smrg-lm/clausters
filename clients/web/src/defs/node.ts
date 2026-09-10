@@ -321,8 +321,33 @@ export class Group extends Node {
     }
 
     /**
-     * Spawns a per-voice sub-graph (`/graph_newVoice`) inside this running
+     * Builds one more of a named **slot** (`/graph_addSlot`) inside this running
      * GraphDef instance, wired to its shared private buses.
+     *
+     * A slot is a member there is a changing number of — a clip on a track, an
+     * effect in a chain, a voice of an instrument — so this is how many of them
+     * there are right now. `ports` overrides that slot's port defaults. The
+     * returned group is the one that was built: drive it through its surface
+     * with `set` and free it with `free`.
+     */
+    addSlot(slot: string, ports?: Controls): Group {
+        const server = this.srv();
+        const id = server.nodes.alloc();
+        server.sendMsg(
+            "/graph_addSlot",
+            ["i", this.id],
+            ["s", String(slot)],
+            ["i", id],
+            ...flattenControls(ports),
+        );
+        return Group.fromId(id, server);
+    }
+
+    /**
+     * Spawns a per-voice sub-graph (`/graph_newVoice`) inside this running
+     * GraphDef instance, wired to its shared private buses — the slot named
+     * `"voice"`, spelled the way it was before slots had names, and what a MIDI
+     * note spawns.
      */
     voice(ports?: Controls): Group {
         const server = this.srv();

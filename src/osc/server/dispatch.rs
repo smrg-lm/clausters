@@ -434,6 +434,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_def_query(Args::new(m), f)
     }),
     ("/def_send", |s, _, m, f| s.handle_def_send(Args::new(m), f)),
+    ("/graph_addSlot", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
     ("/graph_new", |s, _, m, f| {
         s.handle_via_translate(m, f);
         Ok(())

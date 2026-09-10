@@ -50,6 +50,17 @@ pub struct GraphBus {
     pub rate: BusRate,
     #[serde(default = "one")]
     pub channels: usize,
+    /// **Declares that this bus is meant to be provided**: a graph nested
+    /// inside another does not invent its own output, it is handed one, and the
+    /// parent names which of *its* buses that is (see [`MemberKind::Graph`]).
+    ///
+    /// It is a declaration and not a switch — what actually decides is whether
+    /// the instantiation was handed this name, and a graph instantiated on its
+    /// own by `/graph_new` is handed nothing and allocates everything. So the
+    /// same def works standalone and nested, and this is here to say which
+    /// buses a parent is expected to bind.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub external: bool,
 }
 
 fn one() -> usize {
@@ -68,14 +79,49 @@ pub enum ControlValue {
     Bus(String),
 }
 
+/// What a member is an instance **of**.
+///
+/// A graph made only of defs is one level of wiring, and one level is not what
+/// a piece is: a track holds clips, a clip holds an effect chain, and each of
+/// those is itself a wiring with a surface of its own. So a member may be
+/// another GraphDef, and "an effect chain" and "a nested graph" stop being two
+/// mechanisms.
+///
+/// The nesting is **of authoring, not of execution**: instantiating a graph
+/// member is a subgroup inside the instance group, and its surface is
+/// re-exported flat, so setting a port still costs the `/node_set`s it resolves
+/// to and the audio thread learns nothing new.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberKind {
+    /// A SynthDef or FaustDef: one node.
+    #[default]
+    Def,
+    /// Another GraphDef: a subgroup with its own private buses and its own
+    /// surface.
+    Graph,
+}
+
+impl MemberKind {
+    /// Whether this is the ordinary one-node kind (so serde can omit it).
+    pub fn is_def(&self) -> bool {
+        matches!(self, MemberKind::Def)
+    }
+}
+
+/// The slot `voice: true` names. `/graph_newVoice` is `/graph_addSlot` on it.
+pub const VOICE_SLOT: &str = "voice";
+
 /// A member node: an instance of an existing SynthDef/FaustDef wired into the
 /// graph. Members are listed in any order; the instance group is auto-sorted
 /// so the execution order follows the bus connections.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GraphMember {
-    /// SynthDef or FaustDef name (resolved at instantiation; both kinds are
-    /// instantiated identically).
+    /// SynthDef, FaustDef or GraphDef name (resolved at instantiation).
     pub def: String,
+    /// Whether `def` names one node or a whole nested graph.
+    #[serde(default, skip_serializing_if = "MemberKind::is_def")]
+    pub kind: MemberKind,
     /// Initial control values by name (literals or internal-bus references).
     #[serde(default)]
     pub controls: HashMap<String, ControlValue>,
@@ -83,21 +129,55 @@ pub struct GraphMember {
     /// control-bus name), for controls fed continuously by a bus.
     #[serde(default)]
     pub maps: HashMap<String, String>,
-    /// `true` = a **per-voice** member, instantiated once per `/graph_newVoice`
-    /// (or per MIDI note) inside the instance, wired to the same private
-    /// buses. `false` (default) = a **shared** member, instantiated once at
-    /// `/graph_new` (the always-on part: buses, mixer, effects).
-    #[serde(default)]
+    /// `true` = a **per-voice** member. The original spelling of a slot, and
+    /// still read: it means exactly `slot: "voice"`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub voice: bool,
+    /// **A slot: a member there is a changing number of.**
+    ///
+    /// A shared member (no slot) is instantiated once at `/graph_new` — the
+    /// always-on part: buses, mixer, effects. A slot member is instantiated on
+    /// demand by `/graph_addSlot`, once per thing there is one of, wired to the
+    /// same private buses: a voice of a synth, a clip on a track, an effect in a
+    /// chain. They are one mechanism because they are one question — how many of
+    /// these are there right now — and the answer changes while the graph is
+    /// sounding, which is why it cannot be a member list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
 }
 
-/// One inner target of a surface port: a member's control, with optional
-/// linear scaling applied to the incoming value (`mul`·x + `add`).
+impl GraphMember {
+    /// The slot this member belongs to, or `None` when it is shared. `voice:
+    /// true` is the slot named `"voice"`, spelled the way it was before slots
+    /// had names.
+    pub fn slot(&self) -> Option<&str> {
+        match (&self.slot, self.voice) {
+            (Some(name), _) => Some(name.as_str()),
+            (None, true) => Some(VOICE_SLOT),
+            (None, false) => None,
+        }
+    }
+}
+
+/// One inner target of a surface port: a member's control — or, for a member
+/// that is itself a graph, one of **its** ports — with optional linear scaling
+/// applied to the incoming value (`mul`·x + `add`).
+///
+/// Two scalings compose the way two functions do: the outer one runs first, so
+/// a port re-exported from a child ends up at `mul_inner·mul_outer·x +
+/// (mul_inner·add_outer + add_inner)`, resolved once at instantiation. Nothing
+/// of the nesting survives into the running graph.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SurfaceTarget {
     /// Index into [`GraphDefSpec::members`].
     pub member: usize,
+    /// The member's control, for a [`MemberKind::Def`] member.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub control: String,
+    /// The member's own surface **port**, for a [`MemberKind::Graph`] member —
+    /// which is what re-exporting a nested graph's interface is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<String>,
     #[serde(default = "one_f32")]
     pub mul: f32,
     #[serde(default)]
@@ -158,15 +238,43 @@ impl GraphDefSpec {
                         t.member
                     ));
                 }
+                // A target names a control of a node or a port of a nested
+                // graph, and which of the two it is follows from what the
+                // member is. Saying the wrong one is a def that would resolve
+                // to nothing at instantiation and say nothing about why.
+                match self.members[t.member].kind {
+                    MemberKind::Def if t.port.is_some() => {
+                        return Err(format!(
+                            "surface port '{port}': member {} is a def, so name a control, not a port",
+                            t.member
+                        ));
+                    }
+                    MemberKind::Def if t.control.is_empty() => {
+                        return Err(format!(
+                            "surface port '{port}': member {} needs a control",
+                            t.member
+                        ));
+                    }
+                    MemberKind::Graph if t.port.is_none() => {
+                        return Err(format!(
+                            "surface port '{port}': member {} is a graph, so name one of its ports",
+                            t.member
+                        ));
+                    }
+                    _ => {}
+                }
             }
-            // A port maps either to shared members or to voice members, never
-            // a mix: a shared port resolves at /graph_new, a voice port at
-            // /graph_newVoice, so they cannot share one name.
-            let any_voice = targets.iter().any(|t| self.members[t.member].voice);
-            let any_shared = targets.iter().any(|t| !self.members[t.member].voice);
-            if any_voice && any_shared {
+            // A port drives either shared members or the members of **one**
+            // slot, never a mix: a shared port resolves at /graph_new and a
+            // slot port at /graph_addSlot, so they cannot share one name.
+            let mut slots = targets.iter().map(|t| self.members[t.member].slot());
+            let first = slots.next().flatten();
+            if !targets
+                .iter()
+                .all(|t| self.members[t.member].slot() == first)
+            {
                 return Err(format!(
-                    "surface port '{port}': mixes shared and per-voice members"
+                    "surface port '{port}': its targets are in different slots"
                 ));
             }
         }
@@ -178,19 +286,26 @@ impl GraphDefSpec {
         Ok(())
     }
 
-    /// `true` if the port's targets are per-voice members (so its default is
-    /// applied at `/graph_newVoice`, not `/graph_new`). A port with no targets or
-    /// only shared targets is shared.
-    pub fn is_voice_port(&self, port: &str) -> bool {
+    /// The slot a port drives, or `None` when it is a shared port — which is
+    /// what says whether its default is applied at `/graph_new` or at
+    /// `/graph_addSlot`. A port with no targets is shared.
+    pub fn port_slot(&self, port: &str) -> Option<&str> {
         self.surface
             .get(port)
             .and_then(|ts| ts.first())
-            .is_some_and(|t| self.members[t.member].voice)
+            .and_then(|t| self.members[t.member].slot())
     }
 
-    /// `true` if any member is per-voice (so `/graph_newVoice` / MIDI notes apply).
+    /// `true` if any member belongs to `slot` (so `/graph_addSlot` on that name
+    /// has something to build).
+    pub fn has_slot(&self, slot: &str) -> bool {
+        self.members.iter().any(|m| m.slot() == Some(slot))
+    }
+
+    /// `true` if any member is per-voice (so `/graph_newVoice` / MIDI notes
+    /// apply). The voice slot's own spelling of [`GraphDefSpec::has_slot`].
     pub fn has_voice_members(&self) -> bool {
-        self.members.iter().any(|m| m.voice)
+        self.has_slot(VOICE_SLOT)
     }
 }
 
@@ -200,9 +315,14 @@ use std::sync::Arc;
 /// A resolved surface: port name → `(member node id, control index, mul, add)`.
 pub type ResolvedSurface = HashMap<String, Vec<(i32, u32, f32, f32)>>;
 
+/// How deeply GraphDefs may be nested inside each other. A cycle — a graph that
+/// contains itself, however indirectly — is a def that cannot be instantiated
+/// at all, and this is what says so instead of recursing until the stack ends.
+pub const MAX_GRAPH_DEPTH: usize = 8;
+
 /// A live GraphDef instance: the group holding its shared members, the private
-/// buses to reclaim on free, the resolved shared surface, and the per-voice
-/// sub-groups spawned inside it.
+/// buses to reclaim on free, the resolved shared surface, the nested graph
+/// members it built, and the slot sub-groups spawned inside it.
 pub struct GraphInstance {
     /// The def, kept so `/graph_newVoice` can instantiate its per-voice members.
     pub def: Arc<GraphDefSpec>,
@@ -216,15 +336,25 @@ pub struct GraphInstance {
     pub control_buses: Vec<(usize, usize)>,
     /// Resolved shared surface (`/node_set` against the instance group id).
     pub surface: ResolvedSurface,
-    /// The voice sub-group ids spawned inside this instance.
+    /// Member index → the sub-instance group id, for members that are
+    /// themselves graphs. Freed with this one, and what a re-exported port
+    /// resolves through.
+    pub children: HashMap<usize, i32>,
+    /// The slot sub-group ids spawned inside this instance (voices included —
+    /// a voice is the slot named `"voice"`).
     pub voices: HashSet<i32>,
 }
 
-/// A live per-voice sub-graph spawned by `/graph_newVoice` (or a MIDI note): its
-/// own resolved surface, and the instance it belongs to.
+/// A live slot sub-graph spawned by `/graph_addSlot` (`/graph_newVoice`, or a
+/// MIDI note, for the voice slot): its own resolved surface, which slot it is,
+/// the nested graph members it built, and the instance it belongs to.
 pub struct GraphVoice {
     pub instance: i32,
+    /// Which slot this fills. A voice is `"voice"`.
+    pub slot: String,
     pub surface: ResolvedSurface,
+    /// Member index → sub-instance group id, as in [`GraphInstance::children`].
+    pub children: HashMap<usize, i32>,
 }
 
 /// One entry of the boot preset (`boot.json`): a standalone GraphDef to
