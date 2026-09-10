@@ -1470,6 +1470,36 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **The multitrack example is a driver with an editor in it, and it should be
+  `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py
+  no sirve más como está. Había que rehacerlo con edit y sin todos los callbacks
+  manuales que tiene ... debería llamarse `edit_multitrack.py` y ser casi tan
+  simple como `edit_samples.py`")*.
+
+  `examples/editors/multitrack_audio.py` opens the piece with `edit` already —
+  what is wrong is everything around it. `sound_the_piece` is a hand-written
+  driver: a node per region, a table from region id to node, one `/node_set` per
+  edit, plus `track_gain`/`region_gain` sampling the curves in Python, a
+  `on_locate` that cues the transport and a poll that redraws a counter. Beside
+  `edit_samples.py` — a take, one `edit`, a `hear()` — it reads as a different
+  kind of program, and it is: **the library has no verb for sounding a piece**,
+  so the example writes one.
+
+  So the rename is not the work; the verb is. What the simple version needs is
+  something a client can say — `piece.play()`, a `Transport` that takes the
+  editor, whatever it turns out to be — and that is the same subject as `G35.3 +
+  G35.4` in the GUI plan (a clip's gain and a track's gain are two controls in
+  one chain) and the **node system, specified** entry beside it (what a track's
+  groups are, and that a curve's `gain` is the knob's `gain`). Until one of them
+  exists, rewriting the example to be simple would mean deleting the only place
+  a piece can be *heard*, which is the one thing that makes it a test surface.
+
+  The target shape, so it is not re-derived later: takes on the server, a
+  `Multitrack` written out plainly, `session.gui()`, **one** `edit(piece, …,
+  sources=…)`, and a `hear()`/transport the library provides. Rename to
+  `edit_multitrack.py` when that lands, so the four editor examples read as one
+  family (`edit_samples`, `edit_curve`, `edit_notes`, `edit_multitrack`).
+
 - ⬜ **`form.Element` is a word two layers spend on different things, and one
   of them is frozen** *(found 2026-09-08 by the user, reading the multitrack
   widget: "Element es un termino que se usa en form")*. `clausters.form.Element`
