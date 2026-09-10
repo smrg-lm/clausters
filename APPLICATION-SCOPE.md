@@ -1098,8 +1098,9 @@ owner moved is how a working editor becomes a new set of defects.
 
 ## Found by use
 
-- ⬜ **`GuiHost.redefine` exists in Python and not in the web client** *(found
-  2026-09-07, writing the wire's word for keeping a widget's bulk)*. The narrow
+- ✅ **`GuiHost.redefine` exists in Python and not in the web client** *(found
+  2026-09-07, writing the wire's word for keeping a widget's bulk; closed
+  2026-09-09 by `W30`)*. The narrow
   redefinition — a `/gui_def` of a widget **inside** an open window — is the
   channel this whole branch is about, and only one client has a door for it.
   `clausters.gui.host.GuiHost.redefine(id, tree, window=…)` sends the message
@@ -1124,6 +1125,12 @@ owner moved is how a working editor becomes a new set of defects.
   it is read against; what it is not is this branch's work, and `W30` says why:
   it runs after `AP5`'s remainder, `AP7`, `AP8` and `O24`, because porting a
   seam that is still moving is porting it twice.
+
+  **`W30` closed on 2026-09-09 and the door is there**: `GuiHost.redefine`
+  is `clients/web/src/gui/host.ts`, with the same bookkeeping the Python one
+  does — the names under the old subtree go, the new ones join what the window
+  already had, and the handle a script holds stays the one it holds. The verb
+  now exists in both clients, which is what the entry asked for.
 
 - ⬜ **The reconcile has no example to see it in** *(found 2026-09-07, going to
   check it by eye)*. `widget::reconcile` has seven unit tests and **no manual
@@ -1267,8 +1274,9 @@ owner moved is how a working editor becomes a new set of defects.
   **premise both of them were written under**. Two green tests exonerating a
   mechanism that was failing in front of the user is what this list is for.
 
-- ⬜ **A clip dragged past the first or last lane oscillates back to the start
-  of the track** *(found 2026-09-06 by the user, by eye, twice)*. Holding a
+- ✅ **A clip dragged past the first or last lane oscillates back to the start
+  of the track** *(found 2026-09-06 by the user, by eye, twice; answered
+  2026-09-10, re-read against the document's multitrack)*. Holding a
   vertical drag against the top or bottom of the stack makes the clip jump to
   the beginning and back, repeatedly, while the hand is still down. **No event
   reaches the client for those frames** — the log carries none — so it is the
@@ -1279,15 +1287,29 @@ owner moved is how a working editor becomes a new set of defects.
   has not been checked is what `LaneStack::at` answers past the ends of the
   stack, and whether the pan fires from a vertical overshoot at all.
 
-- ⬜ **The playhead draws behind the clips** *(found 2026-09-06 by the user, by
-  eye, after a lane was redefined in place)*. Not missing — behind. The line is
+  **The subject is gone and the rule it needed is written**: the drag is the
+  host's now (`elements::multitrack`), the continuous row index is clamped
+  against the stack, and `a_drag_past_the_last_lane_stops_at_it` holds it — a
+  hand dragged off the bottom leaves the clip on the last lane instead of
+  folding back to the first. `LaneStack` and `apply_clip_drag` no longer exist.
+
+- ✅ **The playhead draws behind the clips** *(found 2026-09-06 by the user, by
+  eye, after a lane was redefined in place; answered 2026-09-10, re-read against
+  the document's multitrack)*. Not missing — behind. The line is
   a lane prop the transport sets (`playhead_at`), read from `_playline` on each
   use so a redraw's new widgets get it, so the client's half survives a
   redefine; what has not been read is the host's paint order for a lane whose
   subtree was spliced. It appeared with the narrow redefine, which is the first
   thing that ever rebuilt a widget *inside* an open window.
 
-- ⬜ **A clip cannot be moved between lanes once a split has happened**
+  **It stopped being a prop, so it stopped having a paint order to lose.** The
+  line is not a lane's `playhead_at` any more: it is the navigation group's, and
+  the host draws it — with the position cursor beside it — into the overlay pass
+  (`frame::draw`, `draw_editor_overlay`), which goes over every row after the
+  bodies are down. A redefine cannot put it behind anything, because no widget
+  carries it.
+
+- ✅ **A clip cannot be moved between lanes once a split has happened**
   *(found 2026-09-06 by the user, by eye: the split now draws — the previous
   defect — and after it, dragging a clip to another lane does nothing)*. The
   session's log carries exactly **one** `'lane'` event in the whole run, so the
@@ -1298,7 +1320,15 @@ owner moved is how a working editor becomes a new set of defects.
   set-to-a-freed-id defect above is the same bug wearing another face has not
   been checked, and should be first.
 
-- ⬜ **Dropping a clip where another one already sits makes the lane draw as
+  **Answered 2026-09-10 by re-reading it against the document's multitrack, and
+  it is closed with a test rather than by the subject's disappearance** — the
+  suspicion was gesture state naming a widget the redraw had replaced, which is
+  worth checking even though `LaneStack` and `reparent_clip` are gone. A cut
+  half is a clip on the stack the drag reads, so it drags like any other:
+  `a_half_left_by_a_split_still_changes_lanes` splits at the cursor, drags the
+  second half onto the lane below, and reads its lane and its offset.
+
+- ✅ **Dropping a clip where another one already sits makes the lane draw as
   one layered clip, so both appear to vanish into one** *(found 2026-09-06 by
   the user, by eye — "the curve's clip moved by itself back to where it was" —
   and reduced to two lanes and one drag)*. The mapping rule says a **concrete**
@@ -1321,6 +1351,13 @@ owner moved is how a working editor becomes a new set of defects.
   *produced*. It is filed rather than fixed because the choice — refuse the
   drop, offset it, expand the destination, or keep the collapse and say so — is
   the multitrack's design and belongs with AP6.
+
+  **The rule went with `FormEditor`** *(re-read 2026-09-10)*. There is no
+  `_lanes_for` and no threshold: a lane's contents are regions the document
+  holds, each with its own identity, and two of them at the same offset draw as
+  two overlapping boxes because that is what they are. The design choice the
+  entry deferred — refuse the drop, offset it, or let them overlap — was made by
+  the model rather than by a view, and it is the last one.
 
 - ✅ **Screen state was keyed by an address, so a new thing inherited a freed
   one's** *(found 2026-09-06 auditing AP3's premise; fixed the same day)*. Four
@@ -1377,9 +1414,9 @@ owner moved is how a working editor becomes a new set of defects.
   still the client's: screen state is each window's and the crate holds none of
   it.
 
-- ⬜ **`Application` exists in Python and not in the web client, so half the
+- ✅ **`Application` exists in Python and not in the web client, so half the
   publish machinery has one implementation** *(found 2026-09-06, writing the
-  publish test)*. `clausters.gui.editing.Application` holds the picture per
+  publish test; closed 2026-09-09 by `W30`)*. `clausters.gui.editing.Application` holds the picture per
   window, publishes the difference, forgets a window that closed, hands a
   host-less draw its ids and walks the pile round the registered editors. The
   web client has **no `Application` at all** - `clients/web/src/gui/editing/`
@@ -1410,6 +1447,12 @@ owner moved is how a working editor becomes a new set of defects.
   nothing failed, no test went red, and it surfaced a day later only because
   somebody writing a wire word needed the door to send it through. A gap that
   costs nothing to have is a gap nothing will find.
+
+  **Closed with `W30` on 2026-09-09**: `clients/web/src/gui/editing/application.ts`
+  is the class — the window set, the id table, the echo, the undo walk — and the
+  two `editing/` modules now hold the same names. The reading the entry argued
+  for is the one that has been happening since, verb by verb, and it is what has
+  been finding the divergences that get fixed in both clients on the same day.
 
 - ✅ **The undo/redo walk is still each client's, and lowering it is a design
   step rather than a move** *(found 2026-09-06, scoping AP5; settled 2026-09-09)*.

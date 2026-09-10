@@ -3381,6 +3381,45 @@ mod tests {
         assert_eq!(mt.clips[0].place.offset, 0.0);
     }
 
+    /// **A cut half is a clip like any other, and it changes lanes.** The old
+    /// projection stopped emitting lane changes once a split had happened,
+    /// because the half was a box the view had minted and the gesture state
+    /// still named the lane the press had captured. Here the halves are clips
+    /// on the stack the drag reads, so the second one drags across like the
+    /// first.
+    #[test]
+    fn a_half_left_by_a_split_still_changes_lanes() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        mt.selected = vec![0];
+        mt.key(
+            &Key::Char('e'),
+            &mut KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clipboard,
+                cursor: Some(200.0),
+            },
+        )
+        .expect("it cut");
+
+        let from = xy(&mt, &m, rect, 350.0, len, 0);
+        let to = xy(&mt, &m, rect, 350.0, len, 1);
+        mt.press(from, &input(&m, rect, len));
+        mt.drag(to, &input(&m, rect, len));
+        mt.release(to, true, &input(&m, rect, len));
+
+        let half = mt
+            .clips
+            .iter()
+            .find(|c| c.name == "a 2")
+            .expect("the second half");
+        assert_eq!(half.lane, "tone", "the half went to the lane under it");
+        assert_eq!(half.place.offset, 200.0, "and it did not move in time");
+    }
+
     /// A join is **a lane's**: a pitch is what makes two notes one voice, and a
     /// lane is what makes two clips joinable.
     #[test]
