@@ -796,6 +796,41 @@ impl Multitrack {
         Some(self.lanes_event())
     }
 
+    /// **Which of clip `n`'s grips is lit**, and where — the affordance for the
+    /// resize gesture, or `None` for a box nobody is reaching for.
+    ///
+    /// Two answers in one, and the order is the whole of the fix. **A held edge
+    /// draws its grip wherever the pointer has got to**: pulling an edge takes
+    /// the pointer off the box within a pixel or two — that is what pulling an
+    /// edge *is* — so asking where the pointer is made the mark blink out under
+    /// the hand that was using it. What the hand is holding is known here, so it
+    /// is asked first. With nothing held it is the pointer's own side, which is
+    /// where an affordance belongs: lit always, every box carries two marks
+    /// nobody is reaching for.
+    fn lit_grip(
+        &self,
+        n: usize,
+        cr: Rect,
+        ends: (bool, bool),
+        m: &Metrics,
+        cursor: Option<(f64, f64)>,
+    ) -> Option<(Rect, track::ClipSide)> {
+        let held = self
+            .grab
+            .filter(|g| g.clip == n)
+            .and_then(|g| match g.part {
+                Part::Start => Some(track::ClipSide::Start),
+                Part::End => Some(track::ClipSide::End),
+                Part::Body => None,
+            })
+            .and_then(|side| track::clip_grip_on(cr, ends, m, side));
+        held.or_else(|| {
+            cursor
+                .filter(|(_, cy)| *cy as f32 >= cr.y && (*cy as f32) < cr.y + cr.h)
+                .and_then(|(cx, _)| track::clip_grip_at(cr, ends, m, cx as f32))
+        })
+    }
+
     /// A name no lane here has yet — a word, since the client's own names are
     /// ids and a word can never be mistaken for one.
     fn fresh_lane_name(&self) -> String {
@@ -1398,12 +1433,15 @@ impl Element for Multitrack {
             // Drawn always, every clip carries two marks nobody is reaching
             // for; drawn on the side the pointer is over, it says *this edge
             // moves* at the moment that is worth saying.
+            //
+            // **And a held edge draws its grip wherever the pointer has got
+            // to.** Pulling an edge takes the pointer off the box within a
+            // pixel or two -- that is what pulling an edge *is* -- so asking
+            // where the pointer is made the mark disappear under the hand that
+            // was using it. What the hand is holding is known here, so it is
+            // asked first: the affordance stops lying about being reachable.
             let ends = track::clip_ends_on_screen(&local, clip.place.dur);
-            if let Some((cx, cy)) = ctx.world.cursor
-                && cy as f32 >= cr.y
-                && (cy as f32) < cr.y + cr.h
-                && let Some((grip, side)) = track::clip_grip_at(cr, ends, ctx.metrics, cx as f32)
-            {
+            if let Some((grip, side)) = self.lit_grip(n, cr, ends, ctx.metrics, ctx.world.cursor) {
                 track::draw_clip_grip(d, grip, side);
             }
         }
@@ -2454,6 +2492,48 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **The trim grip stops blinking.** An edge drag takes the pointer off the
+    /// box it is resizing -- that is what pulling an edge is -- so a mark drawn
+    /// only where the pointer is disappeared under the hand that was using it.
+    #[test]
+    fn a_held_edge_draws_its_grip_wherever_the_pointer_went() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let inp = input(&m, rect, len);
+        let (cr, ends) = {
+            let (n, cr, local) = mt
+                .boxes_on_screen(rect, 100.0, &m, inp.time)
+                .into_iter()
+                .find(|(n, ..)| *n == 0)
+                .expect("the first box is on screen");
+            assert_eq!(n, 0);
+            (
+                cr,
+                track::clip_ends_on_screen(&local, mt.clips[0].place.dur),
+            )
+        };
+        let ends_x = f64::from(cr.x + cr.w) - 1.0;
+        let midy = f64::from(cr.y + cr.h * 0.5);
+
+        // Nothing held: the pointer's own side, and nothing off the box.
+        assert!(mt.lit_grip(0, cr, ends, &m, Some((ends_x, midy))).is_some());
+        assert!(mt.lit_grip(0, cr, ends, &m, None).is_none());
+        let outside = (ends_x + 40.0, midy + 80.0);
+        assert!(mt.lit_grip(0, cr, ends, &m, Some(outside)).is_none());
+
+        // Held: the edge in hand keeps its mark wherever the pointer got to.
+        assert!(matches!(mt.press((ends_x, midy), &inp), Claim::Take(_)));
+        assert_eq!(mt.grab.expect("an edge").part, Part::End);
+        let (_, side) = mt
+            .lit_grip(0, cr, ends, &m, Some(outside))
+            .expect("the held edge is still lit");
+        assert_eq!(side, track::ClipSide::End);
+        // And the box that is *not* held draws nothing from someone else's grab.
+        assert!(mt.lit_grip(1, cr, ends, &m, Some(outside)).is_none());
     }
 
     /// **The header is a surface, and the track is what it addresses.** A click

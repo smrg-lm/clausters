@@ -996,7 +996,7 @@ would be written against a picture the first half had already changed.
   an id up by number without asking what kind of thing it expected — so the first
   track added to the example was minted onto its track automation's id.
 
-- ⬜ **G35.9 — The trim grip stops blinking.**
+- ✅ **G35.9 — The trim grip stops blinking.**
   The grip is drawn only while the pointer is inside the box's rectangle, and
   dragging an edge takes the pointer outside it — so the affordance disappears
   under the hand that is using it. A held edge draws its grip whatever the
@@ -1005,6 +1005,11 @@ would be written against a picture the first half had already changed.
 
   A line of work, and it stops an affordance from lying, so it goes before the
   window work that is done by dragging those edges.
+
+  *Done 2026-09-09.* Two answers in one place (`Multitrack::lit_grip`), and the
+  order is the fix: what the hand is **holding** is asked first, and only then
+  where the pointer is. `clip_grip_on` was written for exactly this and had no
+  caller.
 
 - ⬜ **G35.8 + G35.10 — The window over the source: what a box reads, and from
   where.**
