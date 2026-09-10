@@ -226,10 +226,13 @@ mod ugen {
         if index < 0 {
             return None;
         }
+        // A prepared kernel is a contiguous span of partitioned spectra, which
+        // a join is not: `None` here reads as "no kernel", the same answer an
+        // unallocated index gives.
         ctx.buffers
             .get(index as usize)
             .and_then(|b| b.as_deref())
-            .map(|b| b.cells())
+            .and_then(|b| b.cells())
     }
 
     impl UGen for Conv {

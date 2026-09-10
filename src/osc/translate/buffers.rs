@@ -330,6 +330,38 @@ pub fn parse_buffer_msg(
                 },
             )
         }
+        "/buffer_stitch" => {
+            let (index, channels, rate) = match args {
+                [
+                    OscType::Int(index),
+                    OscType::Int(channels),
+                    OscType::Float(rate),
+                    ..,
+                ] => (*index, *channels, *rate as f64),
+                _ => {
+                    return Err(
+                        "expected: bufnum, channels, sampleRate, then one part per source".into(),
+                    );
+                }
+            };
+            if channels <= 0 {
+                return Err("channels must be positive".into());
+            }
+            let channels = channels as usize;
+            let sample_rate = if rate > 0.0 {
+                rate
+            } else {
+                default_sample_rate
+            };
+            (
+                index,
+                NrtJob::Stitch {
+                    channels,
+                    sample_rate,
+                    parts: stitch_parts(&args[3..], channels, mirror)?,
+                },
+            )
+        }
         "/buffer_free" => {
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
@@ -338,6 +370,24 @@ pub fn parse_buffer_msg(
         }
         other => return Err(format!("{other} is not a buffer command")),
     };
+    // **A join is read, never written.** Every command that lays samples into a
+    // copy of the current contents is refused here rather than at each parse
+    // arm, by asking the job what it builds on: a stitched buffer owns no
+    // samples, and writing *through* to whichever source a frame lands on would
+    // turn one edit into an edit of several takes. Re-stitching is how a join
+    // changes -- it costs the list of parts and not the samples.
+    let base = match &job {
+        NrtJob::Read { current, .. } => Some(current),
+        NrtJob::Set { base, .. } | NrtJob::Edit { base, .. } | NrtJob::Fill { base, .. } => {
+            Some(base)
+        }
+        _ => None,
+    };
+    if base.is_some_and(|b| b.is_stitched()) {
+        return Err(format!(
+            "buffer {index} is a join: it is read, never written -- stitch it again instead"
+        ));
+    }
     // The mirror pool is sized to the boot-time `--max-buffers`, so its length
     // is the authoritative index bound.
     if index < 0 || index as usize >= mirror.len() {
@@ -507,6 +557,75 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
 /// Empty means every channel, which is also what the plain `/buffer_read` and
 /// `/buffer_allocRead` mean — so the pair is one arm with one extra argument
 /// rather than two implementations of reading a file.
+/// The parts of a `/buffer_stitch`, one fixed-width group per source: `srcBufnum
+/// srcStart frames fadeIn fadeOut` and then one channel-map entry per channel of
+/// the stitched buffer.
+///
+/// The group is fixed width **because** the map is variadic: with a tail of
+/// unknown length there is no telling a map entry from the next part's buffer
+/// index, so the width is read off the header's `channels` and every part
+/// spells its whole map. A map entry is a source channel, or negative for
+/// silence; it is routing and not level (see [`crate::dsp::stitch::Part::map`]).
+fn stitch_parts(
+    args: &[OscType],
+    channels: usize,
+    mirror: &BufferPool,
+) -> Result<Vec<crate::dsp::stitch::PartSpec>, String> {
+    let width = 5 + channels;
+    if args.is_empty() || !args.len().is_multiple_of(width) {
+        return Err(format!(
+            "each part is {width} ints: srcBufnum, srcStart, frames, fadeIn, fadeOut              and {channels} channel-map entries"
+        ));
+    }
+    let mut parts = Vec::with_capacity(args.len() / width);
+    for (n, group) in args.chunks_exact(width).enumerate() {
+        let mut ints = Vec::with_capacity(width);
+        for (i, arg) in group.iter().enumerate() {
+            match arg {
+                OscType::Int(v) => ints.push(*v),
+                _ => return Err(format!("part {n}: argument {i} is not an int")),
+            }
+        }
+        let (src, src_start, frames, fade_in, fade_out) =
+            (ints[0], ints[1], ints[2], ints[3], ints[4]);
+        if src < 0 || src as usize >= mirror.len() {
+            return Err(format!("part {n}: buffer index out of range: {src}"));
+        }
+        let Some(source) = mirror[src as usize].clone() else {
+            return Err(format!("part {n}: buffer {src} is not allocated"));
+        };
+        if src_start < 0 || frames <= 0 || fade_in < 0 || fade_out < 0 {
+            return Err(format!(
+                "part {n}: srcStart, fadeIn and fadeOut must be non-negative and frames positive"
+            ));
+        }
+        let end = src_start as usize + frames as usize;
+        if end > source.frames() {
+            return Err(format!(
+                "part {n}: buffer {src} has {} frames and the part asks for {end}",
+                source.frames()
+            ));
+        }
+        for (c, &to) in ints[5..].iter().enumerate() {
+            if to >= source.channels() as i32 {
+                return Err(format!(
+                    "part {n}: channel {c} maps to source channel {to} and buffer {src} has {}",
+                    source.channels()
+                ));
+            }
+        }
+        parts.push(crate::dsp::stitch::PartSpec {
+            src: source,
+            src_start: src_start as usize,
+            frames: frames as usize,
+            fade_in: fade_in as usize,
+            fade_out: fade_out as usize,
+            map: ints[5..].to_vec(),
+        });
+    }
+    Ok(parts)
+}
+
 fn channel_list(args: &[OscType], from: usize, usage: &str) -> Result<Vec<usize>, String> {
     let mut out = Vec::new();
     for (i, a) in args.iter().enumerate().skip(from) {

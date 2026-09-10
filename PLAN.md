@@ -2113,6 +2113,91 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A cut assembled from several takes could not be played by one reader**
+  *(named 2026-09-10 specifying the multitrack's node system; the stitched
+  buffer landed the same day)*. A clip was a window onto **one** buffer, so a
+  reader was a `bufnum`, a `start` and a `span`. The moment a clip is a join --
+  fragments of different takes, or one take in another order, which
+  `clausters_document`'s `Body::Segments` has always been able to *write* -- the
+  reader would have to change which buffer it reads with sample accuracy, and
+  `bufnum` is an initial-rate control: changing it is a new node. A new node per
+  seam is a control message in the middle of playback, which is exactly what a
+  piece that plays itself from the transport must not need.
+
+  So the join moved out of the reader and into the buffer. `dsp::stitch`: a
+  `Stitch` is a list of parts -- a span of a source, its own channel map, its
+  own crossfades -- and `Storage::Stitched` makes it a buffer like any other,
+  answering `Buffer::sample` and nothing else. `/buffer_stitch` builds one, the
+  sources are `Arc`s cloned on the network thread (so freeing a take something
+  is stitched over does not silence it), and resolving which part a frame
+  belongs to allocates nothing: a shared cursor is checked first, the part after
+  it second, and only a real jump pays a binary search. `tests/buffer_stitch.rs`
+  and `tests/rt_safety.rs` cover the seam, the ordering, the channel map, the
+  refusal and the no-allocation rule.
+
+  **Two things it changed on the way, both deliberate.** `Buffer::cells` now
+  answers an `Option`, because a join owns no cells: that made the five callers
+  who need a contiguous span (the wavetable oscillators, the waveshaper's
+  transfer table, the convolution kernel, the IPC region copy) say so, rather
+  than reading a silently empty slice. And a join is **read, never written** --
+  `/buffer_set*`, `/buffer_fill`, `/buffer_gain`, `/buffer_reverse` and
+  `/buffer_read` refuse it by name, because writing through would turn one edit
+  into an edit of several takes. It takes nothing away: a join is *replaced*,
+  which is what `/buffer_alloc` and `/buffer_gen` already do, and re-cutting one
+  costs the list of parts rather than the samples.
+
+- ⬜ **What a join costs is 0.010% of a block per reader, and the number that
+  reads as alarming is the wrong one** *(measured 2026-09-10, closing the
+  entry above)*. `cargo test --release --test buffer_stitch -- --ignored
+  --nocapture` reads 64-frame blocks interpolated: a plain buffer 212 ns, a
+  join 345 ns -- **+63%**, against an acceptance of 10% written before it was
+  measured. That criterion was the wrong measure: a microbenchmark of nothing
+  but the load makes three added operations look enormous. Against the block
+  budget the same numbers are 0.016% and 0.026%, so a join costs **a hundredth
+  of a percent of a block more than a plain buffer, per reader** -- the same
+  framing `dsp::buffer`'s own docs use for the atomics, and for the same
+  reason.
+
+  Restructuring `Buffer::sample` to match the storage once (instead of going
+  through `cells()` and an `Option`) took the *plain* read from 379 ns to 212
+  and the join from 565 to 345, so both got faster and the ratio got worse.
+
+  **And the engine-level measurement, which is the one that decides anything**
+  (`cargo test --release --test stitch_load -- --ignored --nocapture`: N
+  `PlayBuf` readers in one engine, timed by `process_block`). At 128
+  simultaneous readers -- 128 clips sounding at the same instant, which is more
+  than a piece usually has -- a block costs **5.0% of its budget over plain
+  buffers and 7.5% over joins**. The ratio holds at +50-65% across every reader
+  count; the absolute stays small because reading a buffer was never what an
+  engine spends its time on. How many parts a join has barely matters (the
+  cursor does its job: 8 parts and 256 parts measure the same), and the
+  crossfade is about a fifth of the difference -- the rest is the per-sample
+  lookup itself, which is two more pointer chases than an indexed load.
+
+  **The two answers, in order.** First, and free: **only stitch what is
+  actually a join**. A box that is one window over one take is a plain buffer
+  and costs exactly what it costs today; the join is built when the hand cuts
+  one, and then it pays for a capability it is using. That is a rule for the
+  client's compilation step (the plan's phase 4), not a change here. Second, if
+  it ever measures as a problem: **resolve the part once per run instead of per
+  sample**. A reader advances monotonically and a 64-frame block almost always
+  lies inside one part, so a `Buffer` that could answer "the contiguous run
+  containing this frame" would let `read_lin` hoist the whole lookup out of its
+  loop and bring a join back to within noise of a plain read. That is a change
+  to the `buf` UGens rather than to the storage, and it is written down here so
+  it is not re-derived.
+
+- ⬜ **A client cannot ask whether a buffer is a join** *(found 2026-09-10,
+  writing `/buffer_stitch`)*. `/buffer_query.reply` is a **4-wide repeating
+  group** per buffer, so appending a fifth field is not the harmless append
+  `/server_query.reply` takes -- every parser that chunks it by four would
+  read the flag as the next buffer's index. A client therefore learns a buffer
+  is a join only by being refused when it writes, which is honest but late: a
+  view that would draw an editable waveform wants to know before it draws one.
+  The fix is a reply of its own (`/buffer_parts bufnum` -> the parts, which a
+  join editor wants anyway) rather than a field bolted onto a shape that
+  cannot carry it.
+
 - ✅ **A page's engine died on any ephemeral Faust def** *(found 2026-09-05 by
   driving the web examples in a browser; fixed the same day)*. `play(expr)`
   builds a def named `tmp_…`, and `/def_send faust` sends an ephemeral def's

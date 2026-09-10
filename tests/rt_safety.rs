@@ -280,6 +280,100 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 3);
 }
 
+/// A **stitched** buffer resolves which part a frame belongs to on the audio
+/// thread, once per sample. That resolution is a comparison, a relaxed atomic
+/// load and at worst a binary search over a boxed slice — the sources are
+/// `Arc`s cloned when the join was built, on the network thread — so reading a
+/// join allocates exactly as much as reading any other buffer: nothing.
+#[test]
+fn a_stitched_buffer_does_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::stitch::{PartSpec, Stitch};
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "player",
+            "ugens": [
+                {"kind": "PlayBuf", "inputs": [
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.5}, {"const": 1.0},
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
+                ]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+
+    // Two takes joined into many short parts, so a block crosses several seams
+    // and the reader keeps missing its cursor by one.
+    let takes: Vec<Arc<Buffer>> = (0..2)
+        .map(|k| {
+            Arc::new(Buffer::new(
+                vec![0.1 * (k + 1) as f32; 4800],
+                1,
+                4800,
+                48_000.0,
+            ))
+        })
+        .collect();
+    let parts: Vec<PartSpec> = (0..64)
+        .map(|i| PartSpec {
+            src: Arc::clone(&takes[i % 2]),
+            src_start: i * 8,
+            frames: 16,
+            fade_in: 4,
+            fade_out: 4,
+            map: vec![0],
+        })
+        .collect();
+    let join = Stitch::new(parts, 1, 48_000.0).unwrap();
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::stitched(join, 1, 48_000.0))),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: None,
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+    // The join and the synth leave through the garbage FIFO; the takes it held
+    // drop with it, on the network side.
+    assert_eq!(handle.collect_garbage(), 2);
+}
+
 /// The S5 table oscillators and waveshaper (`Osc`/`VOsc`/`Shaper`) read the
 /// wavetable pool on the audio thread the same way `PlayBuf` does — pointer
 /// lookups and interpolation, never an allocation. The buffers themselves are

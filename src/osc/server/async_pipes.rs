@@ -307,12 +307,24 @@ impl OscServer {
             }
         };
         // The one copy: what was just built, into the memory it will live in.
+        // A join is read sample by sample instead — it owns no cells to copy
+        // from, and a peer that maps this region gets the samples the join
+        // reads, which is what it is looking at.
         let cells = region.cells();
-        for (cell, value) in cells.iter().zip(buffer.cells()) {
-            cell.store(
-                value.load(std::sync::atomic::Ordering::Relaxed),
-                std::sync::atomic::Ordering::Relaxed,
-            );
+        match buffer.cells() {
+            Some(source) => {
+                for (cell, value) in cells.iter().zip(source) {
+                    cell.store(
+                        value.load(std::sync::atomic::Ordering::Relaxed),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+            }
+            None => {
+                for (i, cell) in cells.iter().enumerate() {
+                    cell.store(buffer.at(i).to_bits(), std::sync::atomic::Ordering::Relaxed);
+                }
+            }
         }
         // **The overview beside it**, built from the samples that were just
         // copied in: the one full pass, paid where the copy already is, so a

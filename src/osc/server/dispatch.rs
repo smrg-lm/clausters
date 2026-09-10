@@ -378,6 +378,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_stitch", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
     ("/buffer_stream", |s, _, m, f| {
         s.handle_buffer_stream(m, f);
         Ok(())

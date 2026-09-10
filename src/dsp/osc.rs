@@ -66,7 +66,12 @@ impl UGen for Osc {
             output.fill(0.0);
             return;
         };
-        let table = buf.cells();
+        // A wavetable is read as a contiguous span, so a join has nothing to
+        // offer here: it is a window onto takes and not a table.
+        let Some(table) = buf.cells() else {
+            output.fill(0.0);
+            return;
+        };
         let sr = ctx.sample_rate as f64;
         for (i, s) in output.iter_mut().enumerate() {
             let phase_off = at(inputs[2], i) as f64 / std::f64::consts::TAU;
@@ -142,7 +147,7 @@ impl VOsc {
     #[inline]
     fn read(buffers: &[Option<std::sync::Arc<Buffer>>], index: usize, pos: f64) -> f32 {
         match buffers.get(index).and_then(|b| b.as_deref()) {
-            Some(buf) => read_wavetable(buf.cells(), pos),
+            Some(buf) => buf.cells().map_or(0.0, |t| read_wavetable(t, pos)),
             None => 0.0,
         }
     }
@@ -178,7 +183,11 @@ impl UGen for Shaper {
             output.fill(0.0);
             return;
         };
-        let table = buf.cells();
+        // Same as `Osc`: a transfer table is a contiguous span.
+        let Some(table) = buf.cells() else {
+            output.fill(0.0);
+            return;
+        };
         let points = table.len() / 2;
         if points == 0 {
             output.fill(0.0);

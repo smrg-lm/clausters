@@ -35,7 +35,11 @@ fn read(table: &[f32], point: f64) -> f32 {
     // buffer's contents are written while they are read.
     let len = table.len();
     let held = Buffer::new(table.to_vec(), 1, len, 48_000.0);
-    wt_interp(held.cells(), k, (point - k as f64) as f32)
+    wt_interp(
+        held.cells().expect("a wavetable owns its cells"),
+        k,
+        (point - k as f64) as f32,
+    )
 }
 
 #[test]

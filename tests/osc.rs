@@ -1284,7 +1284,8 @@ fn b_gen_fills_a_wavetable_then_reads_it_back() {
     for k in 0..points {
         let expect = (std::f32::consts::TAU * k as f32 / points as f32).sin();
         assert!(
-            (wt_interp(table.cells(), k, 0.0) - expect).abs() < 1e-3,
+            (wt_interp(table.cells().expect("a wavetable owns its cells"), k, 0.0) - expect).abs()
+                < 1e-3,
             "point {k}"
         );
     }

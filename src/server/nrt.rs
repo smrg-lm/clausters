@@ -108,6 +108,20 @@ pub enum NrtJob {
         base: Arc<Buffer>,
         fills: Vec<(usize, usize, f32)>,
     },
+    /// `/buffer_stitch`: a **join** — a buffer whose samples are spans of other
+    /// buffers, installed whole like every other replacement here.
+    ///
+    /// The sources are resolved at parse time and held by `Arc`, which is what
+    /// keeps a take alive for as long as something is stitched over it. They
+    /// are the buffers the *mirror* named, so a source replaced (rather than
+    /// written into) between the parse and the install stays the one that was
+    /// asked for — the same staleness every other job's `base` has, and for the
+    /// same reason.
+    Stitch {
+        channels: usize,
+        sample_rate: f64,
+        parts: Vec<crate::dsp::stitch::PartSpec>,
+    },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
 }
@@ -857,6 +871,18 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 last = last.max(at + count);
             }
             Ok(wrote_frames(first, last, channels))
+        }
+        NrtJob::Stitch {
+            channels,
+            sample_rate,
+            parts,
+        } => {
+            let stitch = crate::dsp::stitch::Stitch::new(parts, channels, sample_rate)?;
+            Ok(NrtAction::Install(Arc::new(Buffer::stitched(
+                stitch,
+                channels,
+                sample_rate,
+            ))))
         }
         NrtJob::Free => Ok(NrtAction::Clear),
     }

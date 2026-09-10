@@ -479,6 +479,7 @@ impl Renderer {
             | "/buffer_fill"
             | "/buffer_readChannel"
             | "/buffer_allocReadChannel"
+            | "/buffer_stitch"
             | "/buffer_free" => {
                 let (index, job) = if msg.addr == "/buffer_gen" {
                     parse_buffer_gen(&msg.args, &self.translator.buffers)?

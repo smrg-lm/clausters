@@ -113,16 +113,26 @@ pub enum Storage {
     /// (`dsp::region`).
     #[cfg(unix)]
     Shared(std::sync::Arc<crate::dsp::region::Region>),
+    /// **Other buffers' samples**: a join, read through the parts it is made of
+    /// rather than out of cells of its own (`dsp::stitch`). This is the one
+    /// form with no cells at all, which is why [`Storage::cells`] answers an
+    /// `Option` — see [`Stitch`](crate::dsp::stitch::Stitch) for what that
+    /// costs and what it takes away (nothing: a stitch is replaced, not
+    /// written).
+    Stitched(crate::dsp::stitch::Stitch),
 }
 
 impl Storage {
-    /// The cells, whichever side they live on.
+    /// The cells, whichever side they live on, or `None` for a join, which owns
+    /// no samples and is read one at a time through
+    /// [`Buffer::sample`](Buffer::sample).
     #[inline]
-    pub fn cells(&self) -> &[AtomicU32] {
+    pub fn cells(&self) -> Option<&[AtomicU32]> {
         match self {
-            Storage::Owned(v) => v,
+            Storage::Owned(v) => Some(v),
             #[cfg(unix)]
-            Storage::Shared(r) => r.cells(),
+            Storage::Shared(r) => Some(r.cells()),
+            Storage::Stitched(_) => None,
         }
     }
 }
@@ -241,9 +251,32 @@ impl Buffer {
     /// running its own tight loop over a span (a convolution kernel, a
     /// wavetable). Read one with [`load`](Self::load); nothing else about the
     /// representation is anybody's business.
+    ///
+    /// `None` for a **stitched** buffer, which owns no samples: a caller that
+    /// needs a contiguous span must say so, and refusing it here is what makes
+    /// that a compile error at every one of the five places rather than a
+    /// silently empty slice. Everything that reads sample by sample —
+    /// [`sample`](Self::sample), [`at`](Self::at), a summary — works on a join
+    /// with no change at all.
     #[inline]
-    pub fn cells(&self) -> &[AtomicU32] {
+    pub fn cells(&self) -> Option<&[AtomicU32]> {
         self.data.cells()
+    }
+
+    /// The join this buffer is, when it is one.
+    #[inline]
+    pub fn stitch(&self) -> Option<&crate::dsp::stitch::Stitch> {
+        match &self.data {
+            Storage::Stitched(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Whether this buffer is a join — what a write path checks before
+    /// refusing, and what `/buffer_query` reports so a client never tries.
+    #[inline]
+    pub fn is_stitched(&self) -> bool {
+        matches!(self.data, Storage::Stitched(_))
     }
 
     /// One cell's value. The single door every read goes through, so the
@@ -258,7 +291,13 @@ impl Buffer {
     /// out of range reads as 0.
     #[inline]
     pub fn at(&self, index: usize) -> f32 {
-        self.cells().get(index).map_or(0.0, Self::load)
+        match self.cells() {
+            Some(cells) => cells.get(index).map_or(0.0, Self::load),
+            // A join has no flat index of its own; the coordinate a caller
+            // means is the frame and the channel it decomposes into.
+            None if self.channels == 0 => 0.0,
+            None => self.sample(index / self.channels, index % self.channels),
+        }
     }
 
     /// One sample; out-of-range frames or channels read as 0.
@@ -267,16 +306,27 @@ impl Buffer {
         if frame >= self.frames || channel >= self.channels {
             return 0.0;
         }
-        Self::load(&self.cells()[frame * self.channels + channel])
+        // Matched here rather than behind `cells()`, so the ordinary read is
+        // one branch and an indexed load with no `Option` in the way.
+        match &self.data {
+            Storage::Owned(v) => Self::load(&v[frame * self.channels + channel]),
+            #[cfg(unix)]
+            Storage::Shared(r) => Self::load(&r.cells()[frame * self.channels + channel]),
+            Storage::Stitched(stitch) => stitch.sample(frame, channel),
+        }
     }
 
     /// Writes one sample by flat interleaved index; out of range writes
     /// nothing. Takes `&self`: a buffer in the pool is reached through an
     /// `Arc`, so there is no `&mut` to be had and the cells carry the
     /// mutability instead.
+    /// A join is not written: it has no cells, and writing *through* to
+    /// whichever source a frame lands on would turn one edit into an edit of
+    /// several takes. The commands refuse it by name; here it is simply a
+    /// write that goes nowhere, like any other out-of-range one.
     #[inline]
     pub fn set_at(&self, index: usize, value: f32) {
-        if let Some(cell) = self.cells().get(index) {
+        if let Some(cell) = self.cells().and_then(|cells| cells.get(index)) {
             cell.store(value.to_bits(), Ordering::Relaxed);
         }
     }
@@ -309,19 +359,39 @@ impl Buffer {
     /// for the network and NRT sides that serve, resample or write out a
     /// buffer while the engine may be recording into it.
     pub fn to_vec(&self) -> Vec<f32> {
-        self.cells().iter().map(Self::load).collect()
+        match self.cells() {
+            Some(cells) => cells.iter().map(Self::load).collect(),
+            None => (0..self.frames)
+                .flat_map(|f| (0..self.channels).map(move |c| (f, c)))
+                .map(|(f, c)| self.sample(f, c))
+                .collect(),
+        }
     }
 
     /// The number of samples this holds, `frames * channels`.
     #[inline]
     pub fn len(&self) -> usize {
-        self.cells().len()
+        self.cells()
+            .map_or(self.frames * self.channels, |cells| cells.len())
     }
 
     /// Whether it holds no samples at all.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.cells().is_empty()
+        self.len() == 0
+    }
+
+    /// A join over other buffers: this one's samples are theirs, read through
+    /// the parts. See [`crate::dsp::stitch`] for the whole argument.
+    pub fn stitched(stitch: crate::dsp::stitch::Stitch, channels: usize, sample_rate: f64) -> Self {
+        Self {
+            frames: stitch.frames(),
+            data: Storage::Stitched(stitch),
+            channels,
+            sample_rate,
+            written: AtomicU64::new(0),
+            frontier: None,
+        }
     }
 }
 
