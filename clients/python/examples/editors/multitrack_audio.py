@@ -331,9 +331,9 @@ transport.locate(0.0)
 def cued(beat: float):
     """The **position cursor** moved, so cue the transport there.
 
-    Two cursors, and only one of them is placed: a click on the time ruler puts
-    the position cursor down -- where a playback starts -- and the playhead is
-    never placed. So a **stopped** transport is cued to the mark, which is what
+    Two cursors, and only one of them is placed: a click that landed on nothing
+    -- the ruler, the slack between boxes -- puts the position cursor down,
+    which is where a playback starts, and the playhead is never placed. So a **stopped** transport is cued to the mark, which is what
     makes the next play start from it, and a **rolling** one is left alone:
     moving the mark mid-pass must not move the music.
     """

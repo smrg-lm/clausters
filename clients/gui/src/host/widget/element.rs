@@ -678,8 +678,9 @@ pub struct TimeSpace {
     /// Where the axis' **position cursor** stands, in its units, or `None`
     /// where nothing has placed one.
     ///
-    /// The other line, and the one that is *placed*: a click on the time ruler
-    /// puts it there and nothing else moves it — not the content, not playing.
+    /// The other line, and the one that is *placed*: a click that landed on
+    /// nothing puts it there — the ruler, the slack — and nothing else moves it,
+    /// not the content it is drawn over, not playing.
     /// [`head`](Self::head) is where the music is; this is where the reader is,
     /// which is where a playback starts and where a paste lands.
     pub cursor: Option<f64>,

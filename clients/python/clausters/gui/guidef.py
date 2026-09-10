@@ -1481,9 +1481,10 @@ def waveform(*, autofit: bool | None = None,
 
     ``cursor`` is the **other line**: the **position cursor**, in samples
     (negative = none), where a playback starts and where a paste lands. It is
-    the one a hand *places* — by a click on the time ruler and by nothing else
-    — while the two playhead props are one line in two states and both say
-    where the *music* is. So the content never moves it, playing never moves
+    the one a hand *places* — by a click that landed on **nothing**: the time
+    ruler, the slack between boxes, a grid nothing is drawn on. A click *on*
+    something is that thing's and moves no line. The two playhead props, by
+    contrast, are one line in two states and both say where the *music* is. So the content never moves it, playing never moves
     it, and it stays where it was put; a click that lands mid-playback moves
     the mark and leaves the sound alone. Group-wide like the rest of the axis'
     state, and reported as ``/gui_event id "locate" position`` when a click

@@ -171,7 +171,7 @@ export class Editor<S = unknown> implements Adopting {
     selection: Selection | Record<string, never> = {};
     /**
      * **Where the reader is**, in this editor's own units (beats for a piece) —
-     * the position cursor a click on the time ruler placed, and `null` until one
+     * the position cursor a click placed, and `null` until one
      * has been. It is where a playback starts and where a paste lands, which is
      * why it is worth keeping: the playhead is where the *music* is and moves on
      * its own, and an anchor that moved on its own would not be an anchor.
@@ -181,7 +181,8 @@ export class Editor<S = unknown> implements Adopting {
     cursor: number | null = null;
     /**
      * Called with the beat the **position cursor** was placed at, whenever a
-     * click on the time ruler moves it. `null` to be told nothing.
+     * click moves it — on the time ruler, or on the slack a click lands on when
+     * it lands on nothing. `null` to be told nothing.
      *
      * Not an edit, and deliberately not a seek: the cursor says where the
      * *reader* is, and what that means for the sound is the application's —

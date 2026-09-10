@@ -189,24 +189,30 @@ impl Gestures {
             return out;
         }
         // **The click is the machine's, not a step's**, and what it places is
-        // the **position cursor** — so it is read here, once, whatever the plans
-        // below do with it (see [`Gestures::release`]).
+        // the **position cursor** — so where the press landed on the axis is
+        // read here, once, whatever the plans below do with it (see
+        // [`Gestures::release`]).
         //
-        // **Only on the ruler.** The cursor says where the reader is, which is
-        // where a playback starts and where a paste lands, so it is placed
-        // deliberately and never as a side effect of pointing at something: a
-        // press on a box, on empty lane space or on a roll's grid moves no line
-        // at all. Beside the axis — a lane's header — there is no position
-        // either.
+        // **A click places the mark where it landed on nothing.** The cursor
+        // says where the reader is — where a playback starts and where a paste
+        // lands — so it is never a side effect of pointing *at* something: a
+        // press that an element takes (a box, a note, a curve, a header
+        // control) is that thing's, and the mark stays where it was. What is
+        // left is the ruler and the slack — the space between boxes, a lane's
+        // empty tail, a grid nothing is drawn on — and clicking there is the
+        // ordinary way to say "here", without reaching for the strip at the top
+        // of the window every time. The press below clears this again if an
+        // element claims it. Beside the axis — a lane's header — there is no
+        // position at all.
         self.click = hit.chain.iter().rev().find_map(|f| match (f.id, f.coords) {
-            (Some(id), interact::Coords::Time(axis)) if f.ruler && axis.spans(cx) => {
-                Some(super::Click {
-                    id,
-                    body: axis.body,
-                    ruler: crate::host::frame::ruler_strip(f.rect, axis.body),
-                    origin_x: cx,
-                })
-            }
+            (Some(id), interact::Coords::Time(axis)) if axis.spans(cx) => Some(super::Click {
+                id,
+                body: axis.body,
+                ruler: f
+                    .ruler
+                    .then(|| crate::host::frame::ruler_strip(f.rect, axis.body)),
+                origin_x: cx,
+            }),
             _ => None,
         });
         let mut element_ran = false;
@@ -229,12 +235,18 @@ impl Gestures {
                     // locate has put the cursor there itself, and the three
                     // editing steps wrote something *at* the press: neither is a
                     // click looking for a place, so the release adds none.
+                    //
+                    // And an **element** that took the press had something under
+                    // the pointer — a box, a note, a curve, a control — so the
+                    // click is that thing's and not a place. What is left for
+                    // the mark is the ruler and the slack.
                     if matches!(
                         step,
                         GestureStep::Locate
                             | GestureStep::Marker
                             | GestureStep::Sample
                             | GestureStep::Draw
+                            | GestureStep::Element
                     ) {
                         self.click = None;
                     }

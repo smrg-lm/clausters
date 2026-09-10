@@ -3323,11 +3323,11 @@ fn a_view_with_no_samples_refuses_instead_of_sweeping() {
     );
 }
 
-/// **The position cursor is placed on the ruler and by nothing else.** It says
+/// **The position cursor is placed where a click lands on nothing.** It says
 /// where the *reader* is — where a playback starts and where a paste lands — so
-/// it is put somewhere on purpose rather than as a side effect of pointing at
-/// something: a click on the roll's grid, or on a note drawn over it, moves no
-/// line at all.
+/// it is never a side effect of pointing *at* something: a click on a note is
+/// that note's and moves no line, while the grid nothing is drawn on, and the
+/// ruler, are the ordinary ways to say "here".
 #[test]
 fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
     let mut host = host_from(
@@ -3349,31 +3349,8 @@ fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
     g.press(&mut host, &ctx, x, y);
     let effects = g.release(&mut host, &ctx, x, y);
     assert!(
-        !has_emit_tag(&effects, 90, "locate"),
-        "the grid is content, and content does not place the cursor: {effects:?}"
-    );
-    assert!(
-        host.timelines().state(key).unwrap().cursor < 0.0,
-        "nothing placed"
-    );
-    // Nor does a note drawn over it.
-    let note_x = grid.x as f64 + 2.0;
-    let note_y = pitch_y(&host, &ctx, 90, 60.0);
-    g.press(&mut host, &ctx, note_x, note_y);
-    let effects = g.release(&mut host, &ctx, note_x, note_y);
-    assert!(
-        !has_emit_tag(&effects, 90, "locate"),
-        "a click on a note is not a place either"
-    );
-    // The roll's **own ruler strip** — the bottom `ruler_h` of its rect, drawn
-    // by the view rather than by a widget — is where it *is* placed.
-    let rect = placed_rect(&host, &ctx, 90);
-    let on_ruler = (rect.y + rect.h) as f64 - 2.0;
-    g.press(&mut host, &ctx, x, on_ruler);
-    let effects = g.release(&mut host, &ctx, x, on_ruler);
-    assert!(
         has_emit_tag(&effects, 90, "locate"),
-        "a click on the ruler is a place"
+        "the empty grid is a place: {effects:?}"
     );
     let cursor = host.timelines().state(key).unwrap().cursor;
     assert!(
@@ -3385,28 +3362,21 @@ fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
         host.timelines().state(key).unwrap().playhead < 0.0,
         "the playhead is not the cursor"
     );
-}
-
-/// The window's y for a pitch on roll `id`, through the same geometry the
-/// renderer draws the rows with.
-fn pitch_y(host: &Host, ctx: &GestureCtx, id: i32, pitch: f32) -> f64 {
-    let rect = placed_rect(host, ctx, id);
-    let h = interact::hit(
-        host,
-        ctx.def_id,
-        ctx.fb_w,
-        ctx.fb_h,
-        400.0,
-        100.0,
-        &|_, _| 1,
-    )
-    .unwrap();
-    let grid = interact::time_of(&h.chain).unwrap().1.body;
-    let _ = rect;
-    // The window is 48..72 semitones, drawn bottom-up over the grid.
-    let (lo, hi) = (48.0_f32, 72.0_f32);
-    let frac = (pitch + 0.5 - lo) / (hi - lo);
-    (grid.y + grid.h * (1.0 - frac)) as f64
+    // The roll's **own ruler strip** — the bottom `ruler_h` of its rect, drawn
+    // by the view rather than by a widget — places it too.
+    let rect = placed_rect(&host, &ctx, 90);
+    let on_ruler = (rect.y + rect.h) as f64 - 2.0;
+    let far = grid.x as f64 + grid.w as f64 * 0.5;
+    g.press(&mut host, &ctx, far, on_ruler);
+    let effects = g.release(&mut host, &ctx, far, on_ruler);
+    assert!(
+        has_emit_tag(&effects, 90, "locate"),
+        "a click on the ruler is a place"
+    );
+    assert!(
+        (host.timelines().state(key).unwrap().cursor - 5000.0).abs() < 40.0,
+        "and it moved there"
+    );
 }
 
 /// **Ctrl+V pastes at the cursor**, which is the one the click placed -- not at
@@ -3501,14 +3471,18 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
     );
     let effects = g.release(&mut host, &ctx, empty, midy);
     assert!(
-        !has_emit_tag(&effects, 70, "locate"),
-        "bare stack is not the ruler: nothing is placed there: {effects:?}"
+        has_emit_tag(&effects, 70, "locate"),
+        "the slack between boxes is a place, so the mark is reachable without \
+         going up to the strip: {effects:?}"
     );
 
-    // Nor is a box: the clips are content, and content does not place the mark.
+    // A box is not: the clips are content, and a click on one is that clip's.
+    // Its row is the first `height` of the stack; `midy` above is the slack
+    // under the last lane, which is why that one was a place.
+    let on_lane = rect.y as f64 + 60.0;
     let on_clip = body.x as f64 + body.w as f64 * 0.02;
-    g.press(&mut host, &ctx, on_clip, midy);
-    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    g.press(&mut host, &ctx, on_clip, on_lane);
+    let effects = g.release(&mut host, &ctx, on_clip, on_lane);
     assert!(
         !has_emit_tag(&effects, 70, "locate"),
         "a click on a clip is not a place: {effects:?}"

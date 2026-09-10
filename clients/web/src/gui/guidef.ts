@@ -799,8 +799,10 @@ export interface TimelineOptions extends WidgetOptions {
      * **The position cursor** (negative = none): where a playback starts and
      * where a paste lands, in the axis' own units.
      *
-     * The other line, and the one a hand *places* — by a click on the time
-     * ruler and by nothing else. Neither playhead prop is it: those two are one
+     * The other line, and the one a hand *places* — by a click that landed on
+     * **nothing**: the time ruler, the slack between boxes, a grid nothing is
+     * drawn on. A click *on* something is that thing's and moves no line.
+     * Neither playhead prop is it: those two are one
      * line in two states (swept from the clock, or parked where the transport
      * stopped) and both say where the **music** is. This says where the
      * **reader** is, so the content never moves it, playing never moves it, and
@@ -2436,8 +2438,8 @@ export function piano(
  * sweeps the first, the ruler the second. So a **drag scrolls** the axis,
  * **Alt+drag sweeps the range**, the wheel zooms, and a **click places the
  * position cursor** — a drag that never left the slop is where the hand
- * pointed. **The ruler is the only place it is placed**, which is what makes it
- * the reader's mark rather than a side effect of pointing at something. On a signal the
+ * pointed. The slack of a stack places it too; what never does is a click *on*
+ * something, which is that thing's. On a signal the
  * range is not a second thing: the frames and the span are one selection there,
  * so the ruler is another hand onto the one the view already has. And a lane's
  * own `ruler`, a roll's and a signal's are **strips** rather than widgets — the

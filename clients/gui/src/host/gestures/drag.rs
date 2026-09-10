@@ -342,15 +342,15 @@ impl Gestures {
         if let Some(c) = click {
             // **A click on a marker is that marker's moment**, not the pixel's:
             // the arrow is a handle onto an exact time, which is most of what a
-            // marker is for. Anywhere on the strip it is the ordinary placing,
-            // at the time the pointer names.
-            let marker = (|| {
+            // marker is for. Anywhere else it is the ordinary placing, at the
+            // time the pointer names.
+            let marker = c.ruler.and_then(|strip| {
                 let markers = host
                     .widget_kind(ctx.def_id, c.id)
                     .and_then(|k| k.editor().map(|e| e.markers.clone()))?;
-                super::nav::marker_under(host, ctx.def_id, c.id, c.ruler, &markers, cx)
+                super::nav::marker_under(host, ctx.def_id, c.id, strip, &markers, cx)
                     .and_then(|i| markers.get(i).map(|m| m.time))
-            })();
+            });
             match marker {
                 Some(time) => super::nav::locate_at(host, &mut out, ctx, c.id, time),
                 None => locate_timeline(host, &mut out, ctx, c.id, c.body, cx),

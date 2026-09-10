@@ -889,8 +889,10 @@ would be written against a picture the first half had already changed.
   the transport seek. They are two and always were:
 
   - the **position cursor** — where a playback starts and where a paste lands.
-    Placed by a click **on the time ruler** and by nothing else; the content
-    never moves it, playing never moves it, and it stays where it was put.
+    Placed by a click that landed on **nothing** — the time ruler, the slack
+    between boxes, a grid nothing is drawn on — and never by a click *on*
+    something, which is that thing's; the content never moves it, playing never
+    moves it, and it stays where it was put.
   - the **playhead** — the line that sweeps. Never placed: it *starts* from the
     position cursor, and while the transport runs it is the engine's own
     position.
@@ -920,6 +922,25 @@ would be written against a picture the first half had already changed.
   leaves a rolling one alone; a client hears it as `Editor.on_locate` /
   `onLocate` with `Editor.cursor` kept beside the selection, and
   `multitrack_audio.py` cues its transport from there.
+
+  *Amended the same day, from the first session using it.* Three things that
+  session found, and they were one gesture between them — point at a box, put
+  the mark down, split it. The mark **never reached the editor**: since the
+  ruler became a widget of its own the one gesture that places the cursor
+  happens on a strip the editor had not named, so `"locate"` went to nobody and
+  play started wherever the last pass had left it; the strip is a named widget
+  of the picture now, and a piece opens with the cursor stated at its top.
+  Pressing the ruler also **took the keyboard away** from the stack, because a
+  ruler takes no focus and a press on a widget that takes none drops it — it
+  takes none away either, now, when it rules the very axis the focused widget
+  is on. And **a click on a clip selects that one**, which is what Alt+click
+  alone used to do: selecting is the common act, adding to a selection the rare
+  one. Decided on release, because a press is not yet a gesture. Then, asked for
+  once the three were in: a click on the **slack** places the mark too — the
+  space between boxes, a lane's empty tail — so a mark can be put down without
+  reaching for the strip at the top of the window every time. The rule that
+  survives is *a click places the mark where it landed on **nothing***: a press
+  an element takes is that thing's.
 
 - ⬜ **G35.2 + G35.13 — The header is a surface, and the track is what it
   addresses.**
@@ -3693,6 +3714,14 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   cambie el comportamiento de los ejemplos pero tiene que estar bien hecho del
   lado del host". **The host's half done 2026-09-08**; what sounds under the
   cursor is the client's and stays open -- see the end of this entry)*.
+
+  **Superseded in part by `G35.1`, 2026-09-09**: the half that is still true is
+  *the content never moves it*. The "one" turned out to be two — a **position
+  cursor** a hand places and a **playhead** that is never placed — so where this
+  entry says a click puts the cursor and playback carries on from there, read:
+  the click places the position cursor, and the music is left alone. The rest of
+  the rule below (a time on the clock, monotonic, what sounds under it) stands
+  as written.
 
   **The rule.** A window has one cursor. Its position is a **time on the
   clock**, independent of what is drawn: the content does not move it, does not
