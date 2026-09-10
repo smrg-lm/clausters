@@ -1414,7 +1414,8 @@ impl Element for Multitrack {
             ]));
         }
         // **Alt adds or removes that one**, the same key that adds a note to a
-        // roll's selection.
+        // roll's selection. A plain click selects it alone, and that is decided
+        // on release (see [`Element::release`]): a press is not yet a gesture.
         if input.mods.alt {
             placement::toggle_selected(&mut self.selected, clip);
             return Claim::take();
@@ -1554,6 +1555,19 @@ impl Element for Multitrack {
             .any(|&(i, offset, row)| self.clips[i].place.offset != offset || self.row(i) != row)
             || self.clips[grab.clip].place != grab.orig;
         if !moved {
+            // **A press that moved nothing is a click, and a click selects the
+            // box it landed on** — alone, whatever was held before, which is
+            // what makes a hand able to point at one clip and then act on it
+            // (place the cursor, split it, delete it). Alt is still the
+            // additive one, and it answered at the press.
+            //
+            // It is decided here rather than at the press because a press is
+            // not yet a gesture: the same movement is a click or a drag
+            // depending on what happens next, and collapsing the selection at
+            // the press would let go of a block the hand was about to move.
+            //
+            // Nothing leaves: a selection is the hand's, not the composition's.
+            self.selected = vec![grab.clip];
             return Events::none();
         }
         self.clips_event()
@@ -2428,6 +2442,39 @@ mod tests {
         let b = xy(&mt, &m, rect, 400.0, len, 0);
         mt.select_in(a, b, &input(&m, rect, len));
         assert_eq!(mt.selected, vec![0]);
+    }
+
+    /// **A click selects the box it landed on, alone.** A press is not yet a
+    /// gesture — the same movement is a click or a drag depending on what
+    /// happens next — so it is decided on release: a press that moved nothing
+    /// meant *this one*, and a hand that can point at a box is a hand that can
+    /// then place the cursor and split it.
+    #[test]
+    fn a_click_on_a_box_selects_that_one_and_nothing_leaves() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+
+        // Press and release on the same pixel: the block is let go of and the
+        // box under the hand is what is held.
+        let on_a = xy(&mt, &m, rect, 250.0, len, 0);
+        mt.press(on_a, &input(&m, rect, len));
+        let events = mt.release(on_a, true, &input(&m, rect, len));
+        assert_eq!(mt.selected, vec![0], "the one it landed on, alone");
+        assert!(
+            events.into_messages().is_empty(),
+            "a selection is the hand's, not the composition's"
+        );
+        assert_eq!(mt.clips[0].place.offset, 0.0, "and nothing moved");
+
+        // A press that *did* move is a drag, and a drag reports the piece.
+        let over = xy(&mt, &m, rect, 350.0, len, 0);
+        mt.press(on_a, &input(&m, rect, len));
+        mt.drag(over, &input(&m, rect, len));
+        let events = mt.release(over, true, &input(&m, rect, len));
+        assert!(!events.into_messages().is_empty(), "a move is an edit");
     }
 
     /// **A block travels rigidly, and grabbing an unselected clip lets go of

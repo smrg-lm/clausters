@@ -2108,6 +2108,57 @@ fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<Ge
     g.key(host, ctx, k, &mut crate::host::clipboard::Clip::default())
 }
 
+/// **A press on the axis' own ruler leaves the focus alone.** The position
+/// cursor is placed on the ruler and nowhere else, so dropping the focus there
+/// would take the piece's keys away with every mark a reader puts down — point
+/// at a box, place the cursor, split. A ruler takes no focus of its own (it is
+/// chrome, not a sink) and it takes none away from what it rules.
+#[test]
+fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","children":[
+            {"id":60,"type":"field","link":9,"h":20},
+            {"id":70,"type":"multitrack","link":9,"snap":0,"h":200,
+             "sample_rate":48000,
+             "lanes":["one","",120,0,0,1.0],
+             "clips":["a","one",0,1000,0,"",-1]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    // The stack takes the focus, as any element does.
+    let rect = placed_rect(&host, &ctx, 70);
+    let body = {
+        let h = interact::hit(
+            &host,
+            1,
+            800,
+            400,
+            (rect.x + rect.w * 0.5) as f64,
+            (rect.y + rect.h * 0.5) as f64,
+            &|_, _| 1,
+        )
+        .unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let on_clip = body.x as f64 + 4.0;
+    let midy = (rect.y + rect.h * 0.5) as f64;
+    g.press(&mut host, &ctx, on_clip, midy);
+    g.release(&mut host, &ctx, on_clip, midy);
+    assert_eq!(host.focused(), Some((1, 70)), "the stack has the keys");
+
+    // A press on the ruler above it places the cursor and keeps them.
+    let strip = placed_rect(&host, &ctx, 60);
+    let on_ruler = (
+        f64::from(strip.x + strip.w * 0.5),
+        f64::from(strip.y + strip.h * 0.5),
+    );
+    g.press(&mut host, &ctx, on_ruler.0, on_ruler.1);
+    let effects = g.release(&mut host, &ctx, on_ruler.0, on_ruler.1);
+    assert!(has_emit_tag(&effects, 60, "locate"), "the mark was placed");
+    assert_eq!(host.focused(), Some((1, 70)), "and the keys stayed");
+}
+
 #[test]
 fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     let mut host = text_host();

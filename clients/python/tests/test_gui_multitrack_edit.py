@@ -128,12 +128,25 @@ def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
     """
     ed = editor(piece())
     ed.draw()
-    wid = next(iter(ed.view.widgets))
+    # **It arrives on the ruler**, which is where it is placed and nowhere else
+    # — so the strip is a named widget of this picture like any other, or the
+    # one gesture that places the cursor would land outside the only object
+    # that could hear it.
+    rid = ed.view.ruler
+    assert ed._owns(rid), "the ruler is this view's"
     told = []
     ed.on_locate = told.append
-    assert ed._route([wid, "locate", 4.0 * SR]) is False, "placing is not an edit"
+    assert ed._route([rid, "locate", 4.0 * SR]) is False, "placing is not an edit"
     assert ed.cursor == pytest.approx(4.0), "in the editor's units, which are beats"
     assert told == [pytest.approx(4.0)]
+    # And a piece opens with the reader at the top: the cursor is stated, so
+    # there is somewhere to play from before anything is clicked.
+    fresh = editor(piece())
+    fresh.draw()
+    assert fresh.view.props(fresh, fresh.view.ruler)["cursor"] == 0.0
+    # Once placed it is reported from the editor's own copy, so a resync does
+    # not drag the mark back to the start.
+    assert ed.view.props(ed, ed.view.ruler)["cursor"] == pytest.approx(4.0 * SR)
 
 
 def test_a_source_nobody_loaded_draws_an_empty_box():

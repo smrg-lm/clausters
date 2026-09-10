@@ -439,6 +439,14 @@ export class MultitrackDomain extends Domain<Multitrack> {
 }
 
 /** The crate's rows as the widget's flat sextuples. */
+/**
+ * The position cursor in timeline samples: where the editor last saw it placed,
+ * and the top of the piece until a hand places one.
+ */
+function cursorOf(editor: Editor<Multitrack>): number {
+    return editor.beatsToUnits(editor.cursor ?? 0.0);
+}
+
 function laneProps(rows: readonly Row[]): unknown[] {
     const out: unknown[] = [];
     for (const row of rows) {
@@ -568,6 +576,12 @@ export class MultitrackView extends View<Multitrack> {
     readonly bridge: Bridge;
     /** The navigation group the view joins, so a ruler beside it rules it. */
     link: number | undefined;
+    /**
+     * The id of the strip that rules the piece, once one has been built. Kept
+     * so a correction addressed to it answers with the *ruler's* props and not
+     * with the piece's.
+     */
+    ruler: number | null = null;
 
     constructor(bridge: Bridge, link?: number) {
         super();
@@ -583,11 +597,19 @@ export class MultitrackView extends View<Multitrack> {
         // is the one `props` has to answer in anyway, since a correction rides
         // as a `/gui_set`.
         const wid = this.widget(editor, "multitrack", editor.structure);
+        // **The ruler is named like any other widget of this picture**, so what
+        // a hand does on it comes back to this editor: the position cursor is
+        // placed on the ruler and nowhere else, and an unnamed strip would put
+        // that one gesture outside the only object that could hear it.
+        const rid = this.widget(editor, "ruler", editor.structure, "ruler");
+        this.ruler = rid;
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
             timeruler({
+                id: rid,
                 link: this.group(wid),
                 ruler: "beats",
+                cursor: cursorOf(editor),
                 sampleRate: this.bridge.rate,
                 tempoMap: this.bridge.tempo.dump(),
             }),
@@ -609,6 +631,11 @@ export class MultitrackView extends View<Multitrack> {
     }
 
     override props(editor: Editor<Multitrack>, widgetId: number): Record<string, PropValue> {
+        if (widgetId === this.ruler) {
+            // The strip's own state, which is the axis' and nothing else: the
+            // piece's payloads are the piece widget's.
+            return { cursor: cursorOf(editor) };
+        }
         const picture = multitrackPicture(editor.structure.write());
         const props: Record<string, PropValue> = {
             lanes: laneProps(picture.rows) as PropValue,
@@ -640,6 +667,12 @@ export class MultitrackView extends View<Multitrack> {
             // The piece's own map rules the beats, so the labels and the boxes
             // cannot disagree.
             tempo_map: this.bridge.tempo.dump(),
+            // **A piece opens with the reader at the top.** The position cursor
+            // is where a playback starts, so a piece that stated none would open
+            // with nowhere to play from; and it is reported from the editor's
+            // own copy rather than fixed at zero, or every resync would drag the
+            // mark back to the start.
+            cursor: cursorOf(editor),
         };
         props.link = this.group(widgetId);
         return props;

@@ -98,10 +98,35 @@ pub(super) fn on_press(
     match to {
         // A press on a widget that takes the focus moves it there.
         Some(id) => set(host, out, ctx, Some(id)),
+        // **A press on the axis' own ruler is not a press somewhere else.**
+        // The position cursor is placed on the ruler and nowhere else, so
+        // dropping the focus there would take the piece's keys away with every
+        // mark a reader puts down: point at the box, place the cursor, split.
+        // A ruler takes no focus of its own -- it is chrome, not a sink -- and
+        // it takes none away from what it rules.
+        None if rules_the_focused(host, ctx, hit) => {}
         // A press anywhere else drops it — but only if it was *this* window's:
         // clicking in one window must not take the focus out of another.
         None if host.focused().is_some_and(|(d, _)| d == ctx.def_id) => set(host, out, ctx, None),
         None => {}
+    }
+}
+
+/// Whether the press landed on a **free-standing ruler of the very axis** the
+/// focused widget is on — the one press that leaves the focus alone.
+///
+/// Asked of the navigation group and not of the tree: what makes the strip this
+/// view's chrome is that it rules it, which is exactly membership of one group.
+fn rules_the_focused(host: &Host, ctx: &GestureCtx, hit: Option<(i32, &WidgetKind)>) -> bool {
+    let Some((id, WidgetKind::TimeRuler { .. })) = hit else {
+        return false;
+    };
+    let Some((_, focused)) = host.focused().filter(|(d, _)| *d == ctx.def_id) else {
+        return false;
+    };
+    match (host.timeline_key(id), host.timeline_key(focused)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
     }
 }
 

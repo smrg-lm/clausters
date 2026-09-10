@@ -356,8 +356,19 @@ def play_pause():
         transport.play(server)
 
 
+def stop():
+    """Halt and go back to **the mark**, not to the top.
+
+    The playhead is never placed: stopped, it stands where the position cursor
+    is, so the next play starts from the mark the reader put down rather than
+    from wherever the last pass happened to end.
+    """
+    transport.pause()
+    transport.locate(editor.cursor or 0.0)
+
+
 win["b_play"].on_click(play_pause)
-win["b_stop"].on_click(transport.stop)
+win["b_stop"].on_click(stop)
 
 _shown = None
 

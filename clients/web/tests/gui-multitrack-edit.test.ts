@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
+import { MultitrackEditor, MultitrackView, edit } from "../src/gui/editing/index.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
@@ -159,17 +159,32 @@ test("the position cursor is kept and told and is not an edit", () => {
     // reaches no history.
     const ed = editor(piece());
     ed.draw();
-    const wid = [...ed.view!.widgets][0];
+    // **It arrives on the ruler**, which is where it is placed and nowhere else
+    // — so the strip is a named widget of this picture like any other, or the
+    // one gesture that places the cursor would land outside the only object
+    // that could hear it.
+    const view = ed.view as MultitrackView;
+    const rid = view.ruler!;
+    assert.ok((ed as unknown as { owns(id: number): boolean }).owns(rid), "the ruler is this view's");
     const told: number[] = [];
     ed.onLocate = (beat) => told.push(beat);
     assert.equal(
-        (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "locate", 4.0 * SR]),
+        (ed as unknown as { route(args: unknown[]): boolean }).route([rid, "locate", 4.0 * SR]),
         false,
         "placing is not an edit",
     );
     near(ed.cursor!, 4.0);
     assert.equal(told.length, 1);
     near(told[0], 4.0);
+    // And a piece opens with the reader at the top: the cursor is stated, so
+    // there is somewhere to play from before anything is clicked.
+    const fresh = editor(piece());
+    fresh.draw();
+    const start = (fresh.view as MultitrackView).props(fresh, (fresh.view as MultitrackView).ruler!);
+    assert.equal(start.cursor, 0.0);
+    // Once placed it is reported from the editor's own copy, so a resync does
+    // not drag the mark back to the start.
+    near(Number(view.props(ed, rid).cursor), 4.0 * SR);
 });
 
 test("a source nobody loaded draws an empty box", () => {

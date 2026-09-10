@@ -379,6 +379,10 @@ class MultitrackView(View):
         self.bridge = bridge
         #: The navigation group the view joins, so a ruler beside it rules it.
         self.link = link
+        #: The id of the strip that rules the piece, once one has been built.
+        #: Kept so a correction addressed to it answers with the *ruler's* props
+        #: and not with the piece's.
+        self.ruler: int | None = None
 
     def build(self, editor) -> dict:
         from ..guidef import node, timeruler, window
@@ -390,7 +394,14 @@ class MultitrackView(View):
         # flat form is the one `props` has to answer in anyway, since a
         # correction rides as a `/gui_set`.
         wid = self.widget(editor, "multitrack", editor.structure)
-        return window(timeruler(link=self.group(wid), ruler="beats",
+        # **The ruler is named like any other widget of this picture**, so what
+        # a hand does on it comes back to this editor: the position cursor is
+        # placed on the ruler and nowhere else, and an unnamed strip would put
+        # that one gesture outside the only object that could hear it.
+        rid = self.widget(editor, "ruler", editor.structure, "ruler")
+        self.ruler = rid
+        return window(timeruler(id=rid, link=self.group(wid), ruler="beats",
+                                cursor=_cursor(editor),
                                 sample_rate=self.bridge.rate,
                                 tempo_map=self.bridge.tempo.dump()),
                       node("multitrack", id=wid, **self.props(editor, wid)),
@@ -409,6 +420,10 @@ class MultitrackView(View):
         return widget_id if self.link is None else self.link
 
     def props(self, editor, widget_id: int) -> dict:
+        if widget_id == self.ruler:
+            # The strip's own state, which is the axis' and nothing else: the
+            # piece's payloads are the piece widget's.
+            return {"cursor": _cursor(editor)}
         picture = _native.multitrack_picture(editor.structure.write())
         curves = picture.get("curves", [])
         layers = picture.get("layers", [])
@@ -437,9 +452,21 @@ class MultitrackView(View):
             # The piece's own map rules the beats, so the labels and the boxes
             # cannot disagree.
             "tempo_map": self.bridge.tempo.dump(),
+            # **A piece opens with the reader at the top.** The position cursor
+            # is where a playback starts, so a piece that stated none would open
+            # with nowhere to play from; and it is reported from the editor's
+            # own copy rather than fixed at zero, or every resync would drag the
+            # mark back to the start.
+            "cursor": _cursor(editor),
         }
         props["link"] = self.group(widget_id)
         return props
+
+
+def _cursor(editor) -> float:
+    """The position cursor in timeline samples: where the editor last saw it
+    placed, and the top of the piece until a hand places one."""
+    return editor.beats_to_units(editor.cursor if editor.cursor is not None else 0.0)
 
 
 def _lanes(rows) -> list:
