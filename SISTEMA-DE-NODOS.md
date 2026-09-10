@@ -545,13 +545,24 @@ código real:
    plano y cuesta exactamente lo que cuesta hoy; el cosido se arma cuando la
    mano corta uno, y ahí paga por una capacidad que está usando. Es una regla
    del paso de compilación del cliente (fase 4), no un cambio en el servidor.
-   Segundo, si alguna vez mide mal: **resolver el tramo una vez por corrida en
-   vez de por muestra**. Un lector avanza monótonamente y un bloque de 64 frames
-   casi siempre cae dentro de un tramo, así que un `Buffer` que supiera contestar
-   "la corrida contigua que contiene este frame" dejaría que `read_lin` sacara
-   toda la búsqueda de su loop y devolvería el cosido a la distancia del ruido
-   respecto de un buffer plano. Es un cambio en los UGens de `buf`, no en el
-   almacenamiento.
+   Segundo, **pospuesto a propósito y documentado donde va**: resolver el tramo
+   una vez por corrida en vez de por muestra. Un lector avanza monótonamente y
+   un bloque de 64 frames casi siempre cae dentro de un tramo, así que un
+   `Buffer::run_at(frame)` que conteste la corrida contigua dejaría que el
+   lector la sostenga y lea adentro sin ninguna búsqueda.
+
+   **No es un cambio grande** — la razón de posponerlo no es el tamaño sino que
+   todavía no hay con qué medir si sirve: haría falta una pieza con cien cajas
+   sonando. Dónde va, para no volver a derivarlo: `src/dsp/buf.rs` (`read_lin` y
+   sus dos llamadores, `PlayBuf` y `BufRd`), con el camino por muestra como
+   respaldo para el bloque que cruza una costura y para una velocidad modulada o
+   invertida; `src/dsp/stitch.rs` gana la consulta al lado de `Stitch::sample`
+   (y la corrida de un buffer plano es su largo entero, así que el camino rápido
+   es uniforme y no una rama sólo para cosidos); y `tests/stitch_load.rs` es el
+   antes y después, con la aceptación de que un cosido quede a distancia de
+   ruido de un buffer plano con 128 lectores. Los punteros están en el código de
+   los dos lados, porque una nota que vive sólo en un plan es una nota que quien
+   edita la función nunca ve.
 3. **La interpolación en la costura.** `BufRd` interpolado lee los frames
    vecinos: en el borde de un tramo, el vecino está **en el tramo de al lado**,
    no fuera del buffer. Si se lee cero, cada costura hace un click. Hay que

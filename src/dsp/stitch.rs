@@ -28,6 +28,11 @@
 //! every reader of the buffer and is a *hint*: two readers at two places make
 //! each other miss, and a miss is a binary search and not a wrong answer.
 //!
+//! The lookup is per sample, and the place it could stop being per sample is
+//! `dsp::buf`'s `read_lin` rather than here — a reader knows it is advancing
+//! and this does not. That is written down where it would be made, and in
+//! `PLAN.md`; the measurements that would justify it are `tests/stitch_load.rs`.
+//!
 //! # A stitch is read, never written
 //!
 //! There are no cells to write: a stitched buffer owns no samples. Writing one

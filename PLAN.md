@@ -2220,12 +2220,30 @@ finished work, where a pending item reads as done.
   one, and then it pays for a capability it is using. That is a rule for the
   client's compilation step (the plan's phase 4), not a change here. Second, if
   it ever measures as a problem: **resolve the part once per run instead of per
-  sample**. A reader advances monotonically and a 64-frame block almost always
-  lies inside one part, so a `Buffer` that could answer "the contiguous run
-  containing this frame" would let `read_lin` hoist the whole lookup out of its
-  loop and bring a join back to within noise of a plain read. That is a change
-  to the `buf` UGens rather than to the storage, and it is written down here so
-  it is not re-derived.
+  sample**.
+
+  That one is **postponed on purpose, and it is not a big change** -- a
+  `Buffer::run_at(frame)` answering the contiguous run a frame falls in, plus
+  callers that hold a run while their index stays inside it. It is postponed
+  because it is not measurable yet: what would justify it is a piece with a
+  hundred sounding boxes, and there is none. Where it goes, so it is not
+  re-derived:
+
+  - **`src/dsp/buf.rs`, `read_lin` and its two callers** (`PlayBuf`, `BufRd`).
+    A reader advances monotonically and a 64-frame block almost always lies
+    inside one part; the per-sample path stays as the fallback, for the block
+    that crosses a seam and for a modulated or reversed rate.
+  - **`src/dsp/stitch.rs`** gains the run query beside `Stitch::sample`. The
+    storage does not otherwise change, and a plain buffer's run is its whole
+    length, so the fast path is uniform rather than a stitched-only branch.
+  - **`tests/stitch_load.rs`** is the before/after: the acceptance is that a
+    join lands within noise of a plain buffer at 128 readers, and both
+    measurements are already ignored tests, so the comparison is one command.
+
+  The pointers are in the code at both ends -- `read_lin`'s doc comment says
+  what would go there and why it has not, and `dsp::stitch`'s module docs point
+  at it -- because a note that lives only in a plan is a note the person editing
+  the function never sees.
 
 - ⬜ **A client cannot ask whether a buffer is a join** *(found 2026-09-10,
   writing `/buffer_stitch`)*. `/buffer_query.reply` is a **4-wide repeating

@@ -29,6 +29,25 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// Reads `buf` at fractional frame `pos` (must be within `0..frames`) with
 /// linear interpolation; the upper frame wraps when looping, clamps
 /// otherwise.
+///
+/// **This is where a per-run read would go, and it is deliberately not here
+/// yet.** Over a [stitched buffer](crate::dsp::stitch) each of the two
+/// [`Buffer::sample`](Buffer::sample) calls below resolves which part the frame
+/// belongs to on its own — one cursor check, and a binary search on a jump —
+/// which measures at +50-65% against a plain buffer per read, and at 3.6% → 6.2%
+/// of a block's budget with 128 readers running (`tests/stitch_load.rs`). The
+/// absolute is small because reading a buffer was never what an engine spends
+/// its time on, so this is not a problem today.
+///
+/// What would remove it: a reader advances monotonically and a 64-frame block
+/// almost always lies inside **one** part, so a `Buffer` that could answer *the
+/// contiguous run containing this frame* would let a caller hold that run and
+/// read inside it with no lookup at all, falling back to this per-sample path
+/// only where a run ends. That is a change to the callers here — `PlayBuf`,
+/// `BufRd` and this function — rather than to the storage, and the reason it is
+/// postponed is that nothing yet measures whether it is worth its complication:
+/// take it when a piece with a hundred sounding boxes exists to measure, and
+/// keep `tests/stitch_load.rs` as the before/after. Also recorded in `PLAN.md`.
 #[inline]
 fn read_lin(buf: &Buffer, pos: f64, channel: usize, looping: bool) -> f32 {
     let f0 = pos as usize; // pos >= 0 by contract
