@@ -1166,6 +1166,25 @@ would be written against a picture the first half had already changed.
 
   Independent of every other entry, so it lands whenever the diagnosis is cheap.
 
+  *Diagnosed 2026-09-09, and it is not in the client.* Both candidates are ruled
+  out, each by a test that now stands as a regression: an entered box's editor
+  is closed, dropped from the table and **built again over the same structure**,
+  and an undo in the new one steps the stroke and not the piece's last edit —
+  on the samples path and on a nested piece alike, in both clients. So the
+  identity a reopened editor registers under is the context's and survives
+  (candidate one), and the samples domain does record an inverse through this
+  path (candidate two).
+
+  What is left is the round trip the tests do not make: the host addresses undo
+  to **the window the key arrived on** (`keys::history` emits on `ctx.def_id`),
+  and the client answers it only for the editor whose `_window` that is — so the
+  next probe is a live one, watching which window id the keystroke carries after
+  a box has been closed and reopened, and which editor answers it. The TS
+  stand-in also had to be corrected on the way (`setSamples` takes an options
+  object, and the writes are a promise chain): a stand-in with a shape no client
+  has is a test that passes against nothing, which is why the first probe found
+  "the edit never applied".
+
 **Two of the fourteen are not work**, and are here so a later pass does not
 reopen them:
 

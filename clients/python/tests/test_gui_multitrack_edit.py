@@ -384,6 +384,77 @@ def test_entering_a_box_opens_its_contents_on_the_piece_s_history():
     assert ed.entered["12"] is opened
 
 
+class Take(FakeTake):
+    """A take the samples editor can write a stroke into — `FakeTake` plus the
+    read-back the domain uses to splice one."""
+
+    def __init__(self, bufnum: int = 7, n: int = 16):
+        super().__init__(bufnum)
+        self.frames = [0.0] * n
+
+    def get_samples(self, start: int = 0, n: "int | None" = None) -> list:
+        end = len(self.frames) if n is None else start + n
+        return self.frames[start:end]
+
+    def set_samples(self, values, start: int = 0):  # type: ignore[override]
+        for i, v in enumerate(values):
+            if start + i < len(self.frames):
+                self.frames[start + i] = float(v)
+
+
+def test_a_reopened_box_undoes_its_own_edit_and_not_the_pieces():
+    """**One order, and a leg belonging to the take is still the take's.**
+
+    Closing a box's window and opening it again builds a *fresh* editor over
+    the same structure; what must not change is which entry an undo in that
+    window steps. The identity is the **context's**, minted per structure, so
+    the new editor projects the legs the old one recorded.
+
+    Written 2026-09-09 while diagnosing `G35.6` — an undo in a reopened box's
+    window stepping the multitrack's last edit. It does not reproduce here, on
+    either the samples path or a nested piece, which is what rules the client's
+    registration and the samples domain's inverse out of it.
+    """
+    take = Take()
+    written = piece()
+    ed = MultitrackEditor(written, sample_rate=SR, sources={1: take})
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    # One edit on the piece, so the pile has something else on it.
+    assert ed.apply("/gui_event", [wid, 0, 0, "clips",
+                                   "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7])
+    moved = _region_at(written, 12).position
+
+    # A stroke inside the box.
+    ed._route([wid, "enter", "12"])
+    box = ed.entered["12"]
+    box.draw()
+    bwid = next(iter(box.view.widgets))
+    assert box.apply("/gui_event", [bwid, 0, 0, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]])
+    assert take.frames[2:4] == [1.0, 1.0]
+
+    # Closed and entered again: a different editor over the same take.
+    box.close()
+    ed.entered.pop("12", None)
+    ed._route([wid, "enter", "12"])
+    again = ed.entered["12"]
+    assert again is not box
+    again.draw()
+
+    assert again.undo(), "the stroke is what the pile has on top"
+    assert take.frames[2:4] == [0.0, 0.0], "and it is the stroke that is undone"
+    assert _region_at(written, 12).position == moved, "the piece did not move"
+
+
+def _region_at(held, region_id: int):
+    for track in held.tracks:
+        for lane in track.lanes:
+            for region in lane.regions:
+                if region.id == region_id:
+                    return region
+    raise AssertionError(f"no region {region_id}")
+
+
 def test_a_box_with_nothing_to_open_opens_nothing():
     """A source named by number alone is a box the caller gave no structure
     for, and a name no region has is no box at all."""

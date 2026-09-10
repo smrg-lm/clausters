@@ -440,6 +440,71 @@ test("entering a box opens its contents on the piece's history", async () => {
     assert.equal(await ed.enter("12"), opened);
 });
 
+/**
+ * `FakeTake` plus the read-back and the option-object write the samples domain
+ * actually uses — a `Buffer`'s own shape, since a stand-in with a different one
+ * is a test that passes against a client nobody has.
+ */
+class Take extends FakeTake {
+    constructor(n = 16) {
+        super();
+        this.frames = new Array(n).fill(0.0);
+    }
+
+    getSamples(options: { start?: number; count?: number } = {}): number[] {
+        const start = options.start ?? 0;
+        const end = options.count === undefined ? this.frames.length : start + options.count;
+        return this.frames.slice(start, end);
+    }
+
+    override setSamples(samples: readonly number[], options: { start?: number } = {}): void {
+        const start = options.start ?? 0;
+        for (let i = 0; i < samples.length; i += 1) {
+            if (start + i < this.frames.length) this.frames[start + i] = Number(samples[i]);
+        }
+    }
+}
+
+/** Lets the samples domain's write queue drain — its writes are a promise chain. */
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("a reopened box undoes its own edit and not the piece's", async () => {
+    // **One order, and a leg belonging to the take is still the take's.**
+    //
+    // Closing a box's window and opening it again builds a *fresh* editor over
+    // the same structure; what must not change is which entry an undo in that
+    // window steps. The identity is the context's, minted per structure, so the
+    // new editor projects the legs the old one recorded.
+    //
+    // Written 2026-09-09 while diagnosing the same fault in the Python client —
+    // an undo in a reopened box's window stepping the multitrack's last edit.
+    // It does not reproduce here either.
+    const take = new Take();
+    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    ed.draw();
+    const wid = [...ed.view!.widgets][0];
+    const route = (e: unknown, args: unknown[]) =>
+        (e as unknown as { route(args: unknown[]): boolean }).route(args);
+    assert.ok(route(ed, [wid, "clips", "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7]));
+
+    const box = (await ed.enter("12"))!;
+    box.draw();
+    const bwid = [...box.view!.widgets][0];
+    assert.ok(route(box, [bwid, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]]));
+    await settled();
+    assert.deepEqual(take.frames.slice(2, 4), [1.0, 1.0]);
+
+    box.close();
+    ed.entered.delete("12");
+    const again = (await ed.enter("12"))!;
+    assert.notEqual(again, box);
+    again.draw();
+
+    assert.ok(again.undo(), "the stroke is what the pile has on top");
+    await settled();
+    assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "the stroke is undone");
+});
+
 test("a box with nothing to open opens nothing", async () => {
     // A source named by number alone is a box the caller gave no structure for,
     // and a name no region has is no box at all.
