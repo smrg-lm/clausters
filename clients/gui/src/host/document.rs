@@ -1834,6 +1834,7 @@ mod window_verb_tests {
                     },
                     playrate: 1.0,
                     args: Op::none(),
+                    looping: false,
                 },
             )
         };

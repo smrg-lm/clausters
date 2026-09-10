@@ -91,14 +91,22 @@ print(f"rendered {len(white)}, {len(pink)}, {len(glide)}, {len(saw110)} frames")
 # %%
 def reader(name: str = "reader") -> SynthDef:
     """A box, sounding. No position of its own: seeking, looping and pausing
-    are the transport's, and moving it is one ``/node_set`` of ``at``."""
+    are the transport's, and moving it is one ``/node_set`` of ``at``.
+
+    **A box is a window onto a take, and it reads from where the window opens.**
+    ``start`` is that frame, so trimming the left edge or splitting a box makes
+    the piece play what the picture shows: without it every box read from frame
+    zero, and both halves of a split played the beginning.
+    """
     buf = control("buf", 0.0, "ir")
     at = control("at", 0.0)          # where it starts, in frames on the transport's axis
     span = control("span", 0.0)      # how long it lasts, in frames
+    start = control("start", 0.0)    # the frame of the take its own zero reads
+    wrap = control("loop", 0.0, "ir")  # whether it wraps past the take's end
     amp = control("amp", 0.2, lag=0.02)
     pos = transport_pos(at)
     live = (pos >= 0.0) * (pos < span)
-    sig = buf_rd(buf, 0.0, pos) * live * amp
+    sig = buf_rd(buf, 0.0, pos + start, wrap) * live * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -250,18 +258,29 @@ def sound_the_piece():
         lane = track.active_lane
         for region in (lane.regions if lane is not None else ()):
             seen.add(region.id)
-            source = ((region.content.window or {}).get("source") or {}).get("source")
+            window = region.content.window or {}
+            source = (window.get("source") or {}).get("source")
             take = SOURCES.get(int(source)) if source is not None else None
             if take is None:
                 continue
             args = {"at": editor.bridge.frame_at(region.position),
                     "span": editor.bridge.frames_over(region.position, region.length),
+                    # **Where the window opens**, in the take's own frames: a
+                    # trim of the left edge and a split both move it, and a
+                    # reader that ignored it would play the beginning twice.
+                    "start": float(window.get("start", 0.0)) * SR,
                     "amp": 0.5 * track_gain(track, region.position)
                     * region_gain(region)}
             node = nodes.get(region.id)
             if node is None:
                 nodes[region.id] = Synth(
-                    "reader", {"buf": BUFS[take].bufnum, **args},
+                    "reader",
+                    {"buf": BUFS[take].bufnum,
+                     # A box that wraps is the piece's own statement about what
+                     # it reads past its take's end, and it is fixed at the
+                     # rate the reader is built with.
+                     "loop": 1.0 if region.content.looping else 0.0,
+                     **args},
                     target=multitrack_group, server=server)
             else:
                 node.set(args)

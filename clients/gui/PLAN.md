@@ -1011,7 +1011,7 @@ would be written against a picture the first half had already changed.
   where the pointer is. `clip_grip_on` was written for exactly this and had no
   caller.
 
-- ⬜ **G35.8 + G35.10 — The window over the source: what a box reads, and from
+- ✅ **G35.8 + G35.10 — The window over the source: what a box reads, and from
   where.**
   One entry because it is one arithmetic seen at both ends — a policy at the
   edges of the window, and that window reaching whatever sounds.
@@ -1027,6 +1027,32 @@ would be written against a picture the first half had already changed.
     over its source (`start`), and whatever sounds has to read from that offset
     — the example's reader ignores it and starts every box at frame zero, so
     both halves play the beginning.
+
+  *Done 2026-09-09, and the three answers turned out to be two.* **Leave the
+  silence** is what a box over samples nobody loaded does, and it needs no
+  policy: there is no length to stop at. **Stop at the content** is not a
+  property of a box at all — it is what an edge drag does when there is
+  something to stop at — so it is the default and says nothing. **Loop** is the
+  only one of the three that changes what *sounds*, so it is the only one the
+  document holds: `Content::Window` gained a `loop` flag, the picture carries it
+  (`Box::looping`), and the widget takes it as `loops`, a **name set** like
+  `hidden`. Not a field of the `clips` septuple, because nothing in the widget
+  changes it and a report carrying it would be reporting a fact it cannot edit —
+  a gesture that toggles looping is its own piece of work, and it will report it
+  its own way.
+
+  With that, `placement::drag` finally gets the `Contents` it was written to
+  take (it was handed `Contents::default()` — unbounded — at the one call site
+  in the piece), and the same statement decides the picture: a looping box draws
+  its samples wrapped, through the `SourceWindow` the body door already carries.
+
+  And the other end: **a report whose `start` moved now says so**
+  (`picture::read`, `content: Some(...)`). A trim of the left edge slides the
+  window over the source — that is what makes an edge drag a trim and not a
+  squeeze — and dropping it left the document believing every box read from
+  where it always had, which is what made both halves of a split play the
+  beginning. The example's reader takes that `start`, and a `loop` flag beside
+  it.
 
 - ⬜ **G35.11 — Join, defined — and the snap that makes it reachable.**
   `j` does nothing: it asks whether two placements are within **one sample** of

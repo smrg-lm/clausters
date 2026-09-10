@@ -143,6 +143,15 @@ pub struct Multitrack {
     /// an affordance. Here a layer has a name, so it is named: the `points:1`
     /// ordinal is what a container whose layers are anonymous falls back to.
     layer: Option<String>,
+    /// **Which boxes wrap**, by name — the `loops` prop, a name set exactly as
+    /// `hidden` is.
+    ///
+    /// Not a field of the `clips` septuple, because nothing here changes it: a
+    /// box loops because the *piece* says so, and a report that carried the
+    /// flag would be reporting a fact this widget cannot edit. What it decides
+    /// here is what an edge drag may do and how the samples are drawn under a
+    /// box longer than they are.
+    loops: Vec<String>,
     /// Which layers are **not drawn**, by curve name. What is hidden is not
     /// edited either, so hiding the layer in hand hands it back to the
     /// placement.
@@ -237,6 +246,7 @@ impl Default for Multitrack {
             layer: None,
             hidden: Vec::new(),
             holding: None,
+            loops: Vec::new(),
             selected: Vec::new(),
             track: None,
             scroll: 0.0,
@@ -297,6 +307,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         layers,
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
+        loops: parse_names(props, "loops"),
         holding: None,
         selected: Vec::new(),
         scroll: 0.0,
@@ -446,9 +457,24 @@ fn parse_points(props: &Map<String, Value>) -> HashMap<String, Vec<f64>> {
 
 /// The `hidden` prop: the layers that are not drawn, space-separated.
 fn parse_hidden(props: &Map<String, Value>) -> Vec<String> {
+    parse_names(props, "hidden")
+}
+
+/// A **name set** prop: the space-separated names under `key`, which is how
+/// this widget spells a flag that belongs to some of what it holds — the layers
+/// that are not drawn, the boxes that wrap.
+fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> {
     props
-        .get("hidden")
+        .get(key)
         .and_then(Value::as_str)
+        .map(|s| s.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// A name set as a `/gui_set` value: the same space-separated list the prop
+/// takes.
+fn names_of(v: &Value) -> Vec<String> {
+    v.as_str()
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default()
 }
@@ -831,6 +857,35 @@ impl Multitrack {
         })
     }
 
+    /// **What the samples behind box `n` allow an edge to do**: how many frames
+    /// there are, and whether the window may run off them.
+    ///
+    /// A box is a **window** onto a source, so pulling an edge past what the
+    /// source holds has to answer for what is there. Three cases and one rule:
+    /// a box that **loops** may be pulled anywhere (past the end is the
+    /// beginning again); one that does not **stops at the last frame**, because
+    /// past it there is nothing to show and nothing to play; and a box over
+    /// samples nobody loaded stops at nothing, since there is no length to stop
+    /// at — which is the silence the edge used to leave in every case.
+    fn contents_of(&self, n: usize) -> Contents {
+        let Some(clip) = self.clips.get(n) else {
+            return Contents::default();
+        };
+        Contents {
+            total: self
+                .takes
+                .get(&clip.source)
+                .and_then(SignalElement::sample_shape)
+                .map(|(_, frames)| frames as f64),
+            looping: self.wraps(&clip.name),
+        }
+    }
+
+    /// **Whether box `name`'s window wraps** — what the `loops` prop names.
+    fn wraps(&self, name: &str) -> bool {
+        self.loops.iter().any(|n| n == name)
+    }
+
     /// A name no lane here has yet — a word, since the client's own names are
     /// ids and a word can never be mistaken for one.
     fn fresh_lane_name(&self) -> String {
@@ -1031,6 +1086,7 @@ impl Multitrack {
                 let mut space = self.space(local, clip.place.dur, &curve.name);
                 space.window = SourceWindow {
                     start: clip.place.start,
+                    looping: self.wraps(&clip.name),
                     ..SourceWindow::default()
                 };
                 out.push((curve.name.as_str(), cr, space));
@@ -1327,10 +1383,11 @@ impl Element for Multitrack {
                 true
             }
             "hidden" => {
-                self.hidden = v
-                    .as_str()
-                    .map(|s| s.split_whitespace().map(str::to_string).collect())
-                    .unwrap_or_default();
+                self.hidden = names_of(v);
+                true
+            }
+            "loops" => {
+                self.loops = names_of(v);
                 true
             }
             "gap" => {
@@ -1418,6 +1475,10 @@ impl Element for Multitrack {
             // onto something nobody loaded.
             let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
                 start: clip.place.start,
+                // A box longer than its samples **wraps** where the piece says
+                // it loops, and shows nothing past their end where it does not:
+                // the picture is what the box reads, and it reads this.
+                looping: self.wraps(&clip.name),
                 ..SourceWindow::default()
             });
             if let Some(take) = self.takes.get(&clip.source) {
@@ -1647,9 +1708,9 @@ impl Element for Multitrack {
             // **An edge is one clip's**, and it trims: the placement and the
             // window over the contents move together.
             part => {
-                let place =
-                    placement::drag(part, now, grab.orig, Contents::default(), self.bounds());
-                self.clips[grab.clip].place = place;
+                let contents = self.contents_of(grab.clip);
+                self.clips[grab.clip].place =
+                    placement::drag(part, now, grab.orig, contents, self.bounds());
             }
         }
         Events::none()
@@ -2492,6 +2553,27 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **A box is a window onto a source, and an edge stops where the source
+    /// does** -- unless the piece says the box wraps, where past the end is the
+    /// beginning again. The `loops` prop is that statement, a name set like
+    /// `hidden`, and what it decides is what a drag may do and what is drawn
+    /// under a box longer than its samples.
+    #[test]
+    fn a_box_that_loops_may_be_pulled_past_its_source_and_one_that_does_not_may_not() {
+        let mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 500, 0, "", 0, "b", "one", 500, 500, 0, "", 0],
+                "loops": "a"}"#,
+        ));
+        assert!(mt.wraps("a"), "the piece said this one wraps");
+        assert!(!mt.wraps("b"));
+        assert!(mt.contents_of(0).looping);
+        assert!(!mt.contents_of(1).looping);
+        // Nobody loaded the samples here, so there is no length to stop at --
+        // which is the silence an edge used to leave in every case.
+        assert!(mt.contents_of(1).total.is_none());
     }
 
     /// **The trim grip stops blinking.** An edge drag takes the pointer off the

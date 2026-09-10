@@ -386,6 +386,7 @@ mod tests {
             },
             playrate: 1.0,
             args: Opaque::none(),
+            looping: false,
         }
     }
 

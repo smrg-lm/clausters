@@ -83,6 +83,11 @@ pub struct Box {
     pub label: String,
     /// Silenced by hand, and the region's own rather than its track's.
     pub muted: bool,
+    /// Whether the window **wraps**: past the end of the source it begins
+    /// again. What a box longer than what it reads means, and the only one of
+    /// the three answers to that question which changes what *sounds* — so it
+    /// is the piece's and travels with the box.
+    pub looping: bool,
 }
 
 /// The key a client's fader is kept under in a track's opaque table.
@@ -123,7 +128,7 @@ pub fn boxes(piece: &Multitrack) -> Vec<Box> {
             continue;
         };
         for region in &lane.regions {
-            let (source, start, content) = window_of(region);
+            let (source, start, content, looping) = window_of(region);
             out.push(Box {
                 region: region.id,
                 row: track.id,
@@ -137,6 +142,7 @@ pub fn boxes(piece: &Multitrack) -> Vec<Box> {
                     .clone()
                     .unwrap_or_else(|| format!("region {}", region.id.0)),
                 muted: region.muted,
+                looping,
             });
         }
     }
@@ -418,18 +424,26 @@ pub fn read(piece: &Multitrack, placed: &[Placed], next_id: u64) -> Vec<Multitra
         let crossed = track != box_.row;
         let moved = (box_.position - region.position).0.abs() > f64::EPSILON;
         let resized = (box_.length - region.length).0.abs() > f64::EPSILON;
-        if resized {
+        // **What the box reads, and from where.** A trim of the *left* edge
+        // slides the window over the source -- that is what makes an edge drag
+        // a trim and not a squeeze -- so a report whose `start` moved is saying
+        // the box reads from somewhere else now, and dropping that left the
+        // picture and the document disagreeing about which samples a box is
+        // over.
+        let (_, start, ..) = window_of(region);
+        let rewound = (box_.start - start).abs() > f64::EPSILON;
+        if resized || rewound {
             out.push(MultitrackIntent::TrimRegion {
                 region: region_id,
                 position: box_.position,
                 length: box_.length,
-                // What it reads is unchanged here: a trim of the left edge
-                // moves the window too, and a flat report says where the box is
-                // rather than what it now reads.
-                content: None,
+                // Only what actually moved: the window's own **duration** is
+                // left as the piece states it, since a flat report says how
+                // long the box is and not how much of the source is behind it.
+                content: rewound.then(|| rewound_content(region, box_)),
             });
         }
-        if crossed || (moved && !resized) {
+        if crossed || (moved && !resized && !rewound) {
             out.push(MultitrackIntent::PlaceRegion {
                 region: region_id,
                 track: box_.row,
@@ -526,6 +540,10 @@ fn lane_lists(
                     },
                     playrate: 1.0,
                     args: crate::Opaque::none(),
+                    // A box a hand made does not loop: looping is what a box
+                    // longer than its source means, and a new one is exactly
+                    // as long as what it was given.
+                    looping: false,
                 },
             ));
             next += 1;
@@ -553,15 +571,35 @@ fn level_of(track: &Track) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// The samples a region is a window onto, where it opens and how much there is.
-fn window_of(region: &Region) -> (Option<SourceId>, f64, f64) {
-    let Content::Window { window, .. } = &region.content else {
-        return (None, 0.0, 0.0);
+/// **The same content, over the part of the source the report names** — the
+/// window slid to the reported `start`, looping as the report says, and every
+/// other field of it untouched.
+///
+/// A region whose content is not a window (a composite) is handed back
+/// unchanged: there is no window to slide, and inventing one would replace what
+/// the box actually holds.
+fn rewound_content(region: &Region, box_: &Placed) -> Content {
+    let mut content = region.content.clone();
+    if let Content::Window { window, .. } = &mut content {
+        window.start = box_.start;
+    }
+    content
+}
+
+/// The samples a region is a window onto, where it opens, how much there is,
+/// and whether the window wraps.
+fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool) {
+    let Content::Window {
+        window, looping, ..
+    } = &region.content
+    else {
+        return (None, 0.0, 0.0, false);
     };
     (
         window.source.samples().map(|s| s.source),
         window.start,
         window.duration,
+        *looping,
     )
 }
 
@@ -663,6 +701,51 @@ mod tests {
 
     /// A name that is no automation's id is dropped rather than minted: a
     /// curve is declared by whoever holds the piece.
+    /// **A trim of the left edge slides the window over the source.** That is
+    /// what makes an edge drag a trim and not a squeeze, so a report whose
+    /// `start` moved is saying the box reads from somewhere else now — and
+    /// dropping it left the picture and the document disagreeing about which
+    /// samples a box is over, which is heard as both halves of a split playing
+    /// the beginning.
+    #[test]
+    fn a_report_that_moved_the_window_says_what_the_box_now_reads() {
+        let mut piece = piece();
+        piece.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
+            source: crate::SegmentSource::Samples(crate::SourceRef {
+                source: crate::SourceId(1),
+                lifetime: crate::Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: 8.0,
+        });
+        let held = boxes(&piece)[0].clone();
+        let placed = |start: f64| Placed {
+            name: held.region.0.to_string(),
+            row: held.row,
+            position: held.position,
+            length: held.length,
+            start,
+            content: held.content,
+            source: held.source,
+        };
+        // What is already true is no edit at all.
+        let out = read(&piece, &[placed(0.0)], fresh_id(&piece));
+        assert!(out.is_empty(), "nothing moved: {out:?}");
+
+        // The window slid: the box reads from two seconds in.
+        let out = read(&piece, &[placed(2.0)], fresh_id(&piece));
+        let [MultitrackIntent::TrimRegion { content, .. }] = &out[..] else {
+            panic!("one trim, carrying what it now reads: {out:?}");
+        };
+        let Some(Content::Window { window, .. }) = content else {
+            panic!("the window, slid");
+        };
+        assert_eq!(window.start, 2.0);
+        assert_eq!(window.duration, 8.0, "and nothing else");
+    }
+
     /// **A curve holds an id like anything else does.** `fresh_id` answers
     /// with an id past everything the piece names, and a piece looks one up by
     /// number without asking what kind of thing it expected — so a count that

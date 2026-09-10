@@ -130,6 +130,15 @@ export class Content {
     args?: unknown;
     node?: Extra;
     other?: Extra;
+    /**
+     * Whether the window **wraps**: past the end of the source it begins again,
+     * and before the beginning it shows the source's own tail. What a box longer
+     * than what it reads means — the alternative being that it simply stops,
+     * which is what a box that does not loop does. A property of *this*
+     * placement, like `playrate`: two regions over one recording may loop and
+     * not loop.
+     */
+    looping: boolean;
 
     constructor(fill: string, fields: Partial<Content> = {}) {
         this.fill = fill;
@@ -138,14 +147,19 @@ export class Content {
         this.args = fields.args;
         this.node = fields.node;
         this.other = fields.other;
+        this.looping = fields.looping ?? false;
     }
 
     /** A window onto a source. */
-    static onto(window: Extra, options: { playrate?: number; args?: unknown } = {}): Content {
+    static onto(
+        window: Extra,
+        options: { playrate?: number; args?: unknown; looping?: boolean } = {},
+    ): Content {
         return new Content("window", {
             window,
             playrate: options.playrate ?? 1,
             args: options.args,
+            looping: options.looping ?? false,
         });
     }
 
@@ -159,6 +173,7 @@ export class Content {
             const out: Extra = { fill: "window", window: this.window };
             if (this.playrate !== 1) out.playrate = this.playrate;
             if (this.args !== undefined) out.args = this.args;
+            if (this.looping) out.loop = true;
             return out;
         }
         if (this.fill === "composite") return { fill: "composite", node: this.node };
@@ -172,6 +187,7 @@ export class Content {
                 window: written.window as Extra,
                 playrate: num(written.playrate, 1),
                 args: written.args,
+                looping: written.loop === true,
             });
         }
         if (written.fill === "composite") {
@@ -1345,6 +1361,12 @@ export interface Box {
     source?: number;
     label: string;
     muted: boolean;
+    /**
+     * Whether the window **wraps**: past the end of the source it begins again.
+     * What a box longer than what it reads means, and the piece's own answer to
+     * it rather than a view's.
+     */
+    looping: boolean;
 }
 
 /**

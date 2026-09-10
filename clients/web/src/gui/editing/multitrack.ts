@@ -664,6 +664,16 @@ export class MultitrackView extends View<Multitrack> {
                 .filter((c) => !c.visible)
                 .map((c) => String(c.automation))
                 .join(" "),
+            // **Which boxes wrap**, by name — a name set like `hidden`, and read
+            // out of the piece for the same reason: whether a box loops is what
+            // it *reads* past the end of its source, so it is the piece's and
+            // not this window's. It says what an edge drag may do (a box that
+            // loops has always more; one that does not stops at the last frame)
+            // and how the samples draw under a box longer than they are.
+            loops: picture.boxes
+                .filter((b) => b.looping)
+                .map((b) => String(b.region))
+                .join(" "),
             weight: 1.0,
             ruler: "beats",
             sample_rate: this.bridge.rate,

@@ -120,6 +120,17 @@ pub enum Content {
         /// them. Empty for a window onto a recording, which evaluates nothing.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         args: Opaque,
+        /// Whether the window **wraps**: past the end of the source it begins
+        /// again, and before the beginning it shows the source's own tail.
+        ///
+        /// A property of this placement rather than of the source, for the
+        /// reason `playrate` is: two regions over one recording may loop and
+        /// not loop. It is what a box longer than what it reads *means* — the
+        /// alternative being that the box simply stops, which is what a box
+        /// that does not loop does — so it is here rather than in a view: it
+        /// changes what sounds, and what sounds is the piece's.
+        #[serde(rename = "loop", default, skip_serializing_if = "std::ops::Not::not")]
+        looping: bool,
     },
     /// A **composite**: the general tree, placed as one region.
     ///
@@ -151,6 +162,7 @@ impl Content {
             window,
             playrate: 1.0,
             args: Opaque::none(),
+            looping: false,
         }
     }
 

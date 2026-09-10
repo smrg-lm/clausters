@@ -140,13 +140,21 @@ class Content:
     args: "dict | None" = None
     node: "dict | None" = None
     other: "dict | None" = None
+    #: Whether the window **wraps**: past the end of the source it begins
+    #: again, and before the beginning it shows the source's own tail. What a
+    #: box longer than what it reads means — the alternative being that it
+    #: simply stops, which is what a box that does not loop does. A property of
+    #: *this* placement, like `playrate`: two regions over one recording may
+    #: loop and not loop.
+    looping: bool = False
 
     @classmethod
     def onto(cls, window: dict, *, playrate: float = 1.0,
-             args: "dict | None" = None) -> "Content":
+             args: "dict | None" = None, looping: bool = False) -> "Content":
         """A window onto a source — a `clausters.form` segment reference, or any
         `{"source": …, "start": …, "duration": …}` the crate accepts."""
-        return cls(fill="window", window=window, playrate=playrate, args=args)
+        return cls(fill="window", window=window, playrate=playrate, args=args,
+                   looping=looping)
 
     @classmethod
     def composite(cls, node: dict) -> "Content":
@@ -161,6 +169,8 @@ class Content:
                 out["playrate"] = self.playrate
             if self.args is not None:
                 out["args"] = self.args
+            if self.looping:
+                out["loop"] = True
             return out
         if self.fill == "composite":
             return {"fill": "composite", "node": self.node}
@@ -173,7 +183,8 @@ class Content:
         if fill == "window":
             return cls(fill="window", window=written.get("window"),
                        playrate=float(written.get("playrate", 1.0)),
-                       args=written.get("args"))
+                       args=written.get("args"),
+                       looping=bool(written.get("loop", False)))
         if fill == "composite":
             return cls(fill="composite", node=written.get("node"))
         return cls(fill=str(fill), other=dict(written))
