@@ -1076,6 +1076,25 @@ would be written against a picture the first half had already changed.
   two land together. It follows the entry above because it needs that window
   vocabulary, and it needs the drag to be settled first.
 
+  *The snap done 2026-09-09, and with it `j` on a run that touches.* A drag
+  pulls onto the edges of the boxes already on its lane, within `SNAP_PX` device
+  pixels crossed to time — a **screen** distance, the same kind of number as the
+  hit slop, because a tolerance in samples is unreachable zoomed out and
+  enormous zoomed in. The box under the hand is what snaps and the rest of a
+  block travels with it; an **edge** drag snaps too, which is how a gap is
+  closed by trimming rather than by moving. With two boxes meetable, the `j`
+  that was already written does what it says: the run merges, and for the two
+  halves of a split — one source, contiguous windows — the result is the box
+  that was there before the cut.
+
+  **Still open: a gap and an overlap.** Both are edits of *contents* rather than
+  of placements — a joined box would be a window onto more than one source, with
+  silence between them or a mix where they meet — and the document has no
+  vocabulary for that yet. It is the same shape **assembled samples** asks for
+  (`G34`), and the two should land together rather than one inventing a form the
+  other has to live with. Until then `j` joins what touches and leaves what does
+  not, which is honest: nothing is silently mixed or padded.
+
 - ⬜ **G35.3 + G35.4 — The chain: a clip's gain and a track's gain are two
   controls, and both curves play.**
   One entry because it is one **node structure** at two levels, and building

@@ -61,6 +61,15 @@ const GAP: f32 = 4.0;
 /// A lane's thickness when nothing says otherwise.
 const LANE_H: f32 = 96.0;
 
+/// **How far a drag reaches for a neighbour's edge**, in device pixels.
+///
+/// The same order as the grab margin a box's own edges have
+/// ([`placement::EDGE_PX`]) and for the same reason: it is what a hand's aim is
+/// worth on screen. Wider and a box could not be placed near another without
+/// being pulled onto it; narrower and two boxes could not be made to meet
+/// without zooming to the sample.
+const SNAP_PX: f32 = 8.0;
+
 /// An automation row's thickness when nothing says otherwise — shorter than a
 /// lane, because what it draws is one line and not a stack of boxes.
 const CURVE_H: f32 = 40.0;
@@ -855,6 +864,55 @@ impl Multitrack {
                 .filter(|(_, cy)| *cy as f32 >= cr.y && (*cy as f32) < cr.y + cr.h)
                 .and_then(|(cx, _)| track::clip_grip_at(cr, ends, m, cx as f32))
         })
+    }
+
+    /// **How far a snap reaches**, in the axis' own units: a few device pixels
+    /// crossed to time, so it feels the same at every zoom.
+    ///
+    /// A **screen** distance and not a musical one, because what it does is
+    /// screen work: it is the allowance a hand gets for meaning *this edge*,
+    /// the same kind of number as the hit slop, and a tolerance in samples
+    /// would be unreachable zoomed out and enormous zoomed in.
+    fn snap_reach(&self, input: &Input) -> f64 {
+        (self.time_at(input, f64::from(SNAP_PX)) - self.time_at(input, 0.0)).abs()
+    }
+
+    /// **The correction that lands a moving edge on a neighbour's**, or zero
+    /// when nothing is near enough.
+    ///
+    /// A snap to **content**, which is what makes two boxes meetable at the
+    /// sample: with no quantization a hand never lands one box exactly where
+    /// another ends, so `j` never had two boxes to join. It stands beside
+    /// `snap` rather than replacing it — a grid says where a beat is, this says
+    /// where the music already is — and a hand that keeps pulling past the
+    /// tolerance goes on through and overlaps them, which is a crossfade and
+    /// legal.
+    ///
+    /// `moving` are the edges the hand is carrying, `held` what it is carrying
+    /// them on (a box does not snap to itself), and `row` the lane whose boxes
+    /// are the neighbours: an edge on another lane is another lane's business.
+    fn pull_to_edge(&self, input: &Input, row: f32, held: &[usize], moving: &[f64]) -> f64 {
+        let reach = self.snap_reach(input);
+        if reach <= 0.0 {
+            return 0.0;
+        }
+        let mut best = 0.0;
+        let mut nearest = f64::INFINITY;
+        for (i, clip) in self.clips.iter().enumerate() {
+            if held.contains(&i) || (self.row(i) - row).abs() > f32::EPSILON {
+                continue;
+            }
+            for edge in [clip.place.offset, clip.place.offset + clip.place.dur] {
+                for m in moving {
+                    let d = edge - m;
+                    if d.abs() <= reach && d.abs() < nearest {
+                        nearest = d.abs();
+                        best = d;
+                    }
+                }
+            }
+        }
+        best
     }
 
     /// **What the samples behind box `n` allow an edge to do**: how many frames
@@ -1700,6 +1758,18 @@ impl Element for Multitrack {
             Part::Body => {
                 let dt = placement::snap(now - grab.grabbed_at, self.snap);
                 let dr = self.lane_toward(input.rect, at.1) as f32 - grab.lane as f32;
+                // **The grabbed box's own two edges look for a neighbour.** The
+                // box under the hand is what the hand is aiming with, so it is
+                // the one that snaps; the rest of a block travels with it, as
+                // it does for everything else a block drag does.
+                let orig = grab.orig;
+                let dt = dt
+                    + self.pull_to_edge(
+                        input,
+                        self.row(grab.clip) + dr,
+                        &self.block.iter().map(|&(i, ..)| i).collect::<Vec<_>>(),
+                        &[orig.offset + dt, orig.offset + orig.dur + dt],
+                    );
                 let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
                 let block = std::mem::take(&mut self.block);
                 placement::move_block(self, &block, dt, dr, rows, None);
@@ -1708,6 +1778,9 @@ impl Element for Multitrack {
             // **An edge is one clip's**, and it trims: the placement and the
             // window over the contents move together.
             part => {
+                // An edge looks for a neighbour too: that is how a gap is
+                // closed by trimming rather than by moving.
+                let now = now + self.pull_to_edge(input, self.row(grab.clip), &[grab.clip], &[now]);
                 let contents = self.contents_of(grab.clip);
                 self.clips[grab.clip].place =
                     placement::drag(part, now, grab.orig, contents, self.bounds());
@@ -2553,6 +2626,66 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **A drag snaps to the edges of the boxes already on the lane**, which is
+    /// what makes two of them meetable at the sample: with no quantization a
+    /// hand never lands one box exactly where another ends, so `j` never had
+    /// two boxes to join. A hand that keeps pulling past the tolerance goes on
+    /// through and overlaps them, which is a crossfade and legal.
+    #[test]
+    fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 500, 200, 0, "", 0]}"#,
+        ));
+        let inp = input(&m, rect, len);
+
+        // Drag `b` back to *near* where `a` ends: near enough to mean it, and
+        // not near enough for a hand to land it by aim.
+        let from = xy(&mt, &m, rect, 550.0, len, 0);
+        let to = xy(&mt, &m, rect, 253.0, len, 0);
+        assert!(matches!(mt.press(from, &inp), Claim::Take(_)));
+        mt.drag(to, &inp);
+        assert_eq!(
+            mt.clips[1].place.offset, 200.0,
+            "it met the box beside it exactly"
+        );
+
+        // Pull well past the tolerance and it goes on through: an overlap is a
+        // crossfade, not a refusal.
+        let over = xy(&mt, &m, rect, 400.0, len, 0);
+        mt.drag(over, &inp);
+        assert_eq!(
+            mt.clips[1].place.offset, 350.0,
+            "the hand went on through: an overlap is a crossfade, not a refusal"
+        );
+        mt.release(over, true, &inp);
+
+        // Meeting is what `j` needs: with the two touching, one box comes out.
+        mt.clips[1].place.offset = 200.0;
+        mt.selected = vec![0, 1];
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let joined = mt
+            .key(
+                &Key::Char('j'),
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: None,
+                },
+            )
+            .expect("two boxes that touch join");
+        assert_eq!(
+            joined.into_messages()[0][0],
+            OscType::String("clips".into())
+        );
+        assert_eq!(mt.clips.len(), 1);
+        assert_eq!(mt.clips[0].place.offset, 0.0);
+        assert_eq!(mt.clips[0].place.dur, 400.0, "the two spans, whole");
     }
 
     /// **A box is a window onto a source, and an edge stops where the source
