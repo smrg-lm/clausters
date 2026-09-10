@@ -151,7 +151,13 @@ export class Sources {
         const held = this.buffers.get(Math.trunc(source));
         if (held === undefined) return -1;
         if (typeof held === "number") return held;
-        return Math.trunc(Number((held as { bufnum?: unknown }).bufnum ?? -1)) || -1;
+        // **Buffer 0 is a buffer**, and `|| -1` says it is not: the first buffer
+        // an allocator hands out came back as "nobody loaded this", so the first
+        // take a page loads was the one take its boxes could not draw. Asked for
+        // explicitly instead — the same sentence the doc comment above has
+        // always made.
+        const bufnum = (held as { bufnum?: unknown }).bufnum;
+        return bufnum === undefined || bufnum === null ? -1 : Math.trunc(Number(bufnum));
     }
 
     /**

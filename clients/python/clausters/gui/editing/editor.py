@@ -473,7 +473,15 @@ class Editor:
             # acknowledgement still goes out: the host asked, and the answer is
             # the state that holds.
             stepped = (self.redo if args[1] == "redo" else self.undo)()
-            self._acknowledge(seq)
+            # **A refusal says why.** A step nobody could apply is the one case
+            # where nothing happening is not "the pile is at its end": the entry
+            # belongs to a structure whose window is closed, and it is still
+            # there waiting for it. Saying so is the difference between a dead
+            # button and one that is telling you where to press it.
+            if not stepped and self.app.unreachable is not None:
+                self._reason = (f"{self.app.unreachable}: that edit belongs to a "
+                                "window that is not open")
+            self._acknowledge(seq, reason=self._reason)
             return stepped
         # Only what this editor draws is this editor's to answer. A poll loop
         # may be shared with a second editor, and answering for its window would

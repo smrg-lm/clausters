@@ -115,7 +115,13 @@ class Sources:
             return -1
         if isinstance(found, (int, float)):
             return int(found)
-        return int(getattr(found, "bufnum", -1) or -1)
+        # **Buffer 0 is a buffer**, and `x or -1` says it is not: the first
+        # buffer an allocator hands out came back as "nobody loaded this", so
+        # the first take a script loads was the one take its boxes could not
+        # draw. Asked for explicitly instead -- the same sentence the docstring
+        # above has always made.
+        held = getattr(found, "bufnum", None)
+        return -1 if held is None else int(held)
 
     def structure(self, source):
         """**What a box over this source opens as** — the object a caller gave,

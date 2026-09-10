@@ -330,6 +330,12 @@ class Application:
 
     # ---- the history walk ----
 
+    #: What the **last** step could not reach, when a walk was refused because
+    #: no participant held the structure the entry names — the label of the edit
+    #: that is waiting, for whoever wants to say why nothing happened. ``None``
+    #: after a step that landed, and after one there was nothing to take.
+    unreachable: "str | None" = None
+
     def step(self, direction: str, walker) -> bool:
         """One step of the pile, **handed round the context**.
 
@@ -349,11 +355,24 @@ class Application:
         context = self.context
         if context is None:
             return False
+        self.unreachable = None
         history = context.history
         before = None if history is None else (history.undo_label, history.redo_label)
         legs = context.step(direction)
-        if legs is None or not context.distribute(legs, walker):
+        if legs is None:
             log.debug("%s   nothing stepped (at %s)", direction, before)
+            return False
+        if not context.distribute(legs, walker):
+            # **A step nobody could apply is not a step.** The walk moves the
+            # pile's cursor before anything is projected, so an entry naming a
+            # structure no participant holds -- a box whose window was closed --
+            # was stepped *over*: the edit stayed and the order lost it, which is
+            # the one thing a history may not do. So the cursor goes back and
+            # the answer is "nothing happened", which is true and recoverable:
+            # open that window and the entry is still on top, waiting.
+            context.step("redo" if direction == "undo" else "undo")
+            self.unreachable = (before[0] if direction == "undo" else before[1]) if before else None
+            log.debug("%s   nothing could apply it (at %s)", direction, before)
             return False
         log.debug("%s   %s -> %s", direction, before,
                   None if history is None else (history.undo_label, history.redo_label))

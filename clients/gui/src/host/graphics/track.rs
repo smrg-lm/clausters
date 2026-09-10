@@ -101,6 +101,10 @@ pub enum HeaderPart {
     Mute,
     Solo,
     Level,
+    /// **The bottom edge of the band**, where a drag resizes the row — the
+    /// vertical zoom of one track, which is what a hand reaches for when one
+    /// take needs to be read closely and the rest do not.
+    Edge,
     /// **The band itself**, where no control is — what makes the track
     /// pointable at. A header is a surface and not just a shelf for three
     /// buttons: the space beside them is how a track is selected, and how one
@@ -165,7 +169,11 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
 pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> Option<HeaderPart> {
     let parts = header_parts(band, header, m);
     let over = |r: Option<Rect>| r.is_some_and(|r| r.contains(x, y));
-    if over(parts.mute) {
+    // The edge first: it is a strip along the bottom of the band, and a control
+    // that reached into it would take the press that resizes the row.
+    if band.contains(x, y) && y >= f64::from(band.y + band.h) - f64::from(EDGE_PX) {
+        Some(HeaderPart::Edge)
+    } else if over(parts.mute) {
         Some(HeaderPart::Mute)
     } else if over(parts.solo) {
         Some(HeaderPart::Solo)
@@ -177,6 +185,11 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
         None
     }
 }
+
+/// **How deep the resize strip along a header's bottom edge is**, in logical
+/// pixels — the same allowance a box's own edges have, since it is the same
+/// question: how close to an edge a hand has to be to mean it.
+pub const EDGE_PX: f32 = 5.0;
 
 /// **The level a vertical drag of `dy` device pixels leaves**, from the level
 /// `from` the press found, clamped to `[0, 1]`.

@@ -453,7 +453,7 @@ pub fn read(piece: &Multitrack, placed: &[Placed], next_id: u64) -> Vec<Multitra
             });
         }
     }
-    out.extend(lane_lists(piece, &rows, &seen, &fresh, next_id));
+    out.extend(lane_lists(piece, &rows, &seen, &fresh, next_id, placed));
     out
 }
 
@@ -490,6 +490,7 @@ fn lane_lists(
     seen: &[NodeId],
     fresh: &[(NodeId, Placed)],
     mut next: u64,
+    placed: &[Placed],
 ) -> Vec<MultitrackIntent> {
     let mut out = Vec::new();
     for row in rows {
@@ -515,11 +516,29 @@ fn lane_lists(
         if added.is_empty() && !gone {
             continue;
         }
+        // **A kept region is kept as the report left it**, not as the piece
+        // still holds it. A lane stated whole is stated *last*, so a clone of
+        // what the piece says would undo the trim and the move the same report
+        // asked for a moment earlier — which is what made a split leave its
+        // first half at full length, playing over the second.
         let mut regions: Vec<Region> = lane
             .regions
             .iter()
             .filter(|r| seen.contains(&r.id))
-            .cloned()
+            .map(|region| {
+                let mut region = region.clone();
+                if let Some(box_) = placed
+                    .iter()
+                    .find(|b| b.name.parse::<u64>().ok() == Some(region.id.0))
+                {
+                    region.position = box_.position;
+                    region.length = box_.length;
+                    if let Content::Window { window, .. } = &mut region.content {
+                        window.start = box_.start;
+                    }
+                }
+                region
+            })
             .collect();
         for box_ in added {
             let Some(source) = box_.source else { continue };
@@ -744,6 +763,79 @@ mod tests {
         };
         assert_eq!(window.start, 2.0);
         assert_eq!(window.duration, 8.0, "and nothing else");
+    }
+
+    /// **A lane stated whole is stated as the report left it**, not as the
+    /// piece still holds it.
+    ///
+    /// A lane's whole list is the *last* intent a report produces, so a clone
+    /// of what the piece says undoes the trim and the move the same report
+    /// asked for a moment earlier. That is what made a split leave its first
+    /// half at full length, playing over the second — the picture was right and
+    /// the document was not.
+    ///
+    /// Found by use 2026-09-10.
+    #[test]
+    fn a_split_leaves_the_first_half_short() {
+        let mut piece = piece();
+        piece.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
+            source: crate::SegmentSource::Samples(crate::SourceRef {
+                source: crate::SourceId(1),
+                lifetime: crate::Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: 8.0,
+        });
+        let held = boxes(&piece)[0].clone();
+        let same = |name: &str, at: f64, len: f64, start: f64| Placed {
+            name: name.into(),
+            row: held.row,
+            position: Beat(at),
+            length: Beat(len),
+            start,
+            content: len,
+            source: held.source,
+        };
+        // The report a split sends: the original shortened, and a tail beside
+        // it under a name that is no region's id.
+        let out = read(
+            &piece,
+            &[same("3", 0.0, 2.0, 0.0), same("3 2", 2.0, 2.0, 2.0)],
+            fresh_id(&piece),
+        );
+        for intent in &out {
+            crate::multitrack::edit::apply(
+                &mut piece,
+                intent,
+                &Default::default(),
+                &Default::default(),
+            );
+        }
+        let lane = &piece.tracks[0].lanes[0];
+        assert_eq!(
+            lane.regions.len(),
+            2,
+            "the half that stayed and the new one"
+        );
+        let first = lane
+            .regions
+            .iter()
+            .find(|r| r.id == NodeId(3))
+            .expect("the original");
+        assert_eq!(
+            first.length,
+            Beat(2.0),
+            "shortened, and it stayed shortened"
+        );
+        let tail = lane
+            .regions
+            .iter()
+            .find(|r| r.id != NodeId(3))
+            .expect("the tail");
+        assert_eq!(tail.position, Beat(2.0));
+        assert_eq!(tail.content.as_window().map(|w| w.start), Some(2.0));
     }
 
     /// **A curve holds an id like anything else does.** `fresh_id` answers

@@ -3543,6 +3543,29 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
 ## Future directions (to fold into milestones as they firm up)
 
+- ⬜ **The node system, specified: which groups a track is, and what a curve
+  drives** *(the user, 2026-09-10)*. A specification of the synthesis nodes and
+  groups that carry a piece -- **source, pre, post, fx** and the rest -- and of
+  the **names** the multitrack's own elements answer to, so that the two ends
+  meet: an automation whose target says `gain` must drive the *same* `gain` the
+  track's knob shows, and today they are two words that happen to be spelled
+  alike. It is the same subject `G35.3 + G35.4` opens (a clip's gain and a
+  track's gain are two controls in one chain) seen from the other side: that
+  entry builds the chain, this one says what everything in it is called and who
+  may address it. Design first, then either absorbs the other.
+
+- ⬜ **Join over fragments: one box, several sources, sample by sample** *(the
+  user, 2026-09-10)*. `G35.11` left join at what touches over one source. What a
+  join **is**, though, is a box made of fragments of many files, each played
+  over the range its own box was showing -- and that is not something a reader
+  over one buffer can do: a `DiskIn`/`PlayBuf` cannot seek between different
+  buffers from one sample to the next. So it needs a server-side answer (a
+  reader that walks a list of windows, or a render that assembles them into one
+  take) before the document can be asked for a vocabulary. Two more cases go
+  with it and are not answerable without it either: a **gap** between two boxes
+  (silence in the joined one) and an **overlap** (a mix of the two signals).
+  Possibly a milestone of its own; it needs thinking through before it is one.
+
 - ⬜ **A shortcut is the application's, not the widget's** *(raised 2026-09-08
   by the user, closing `G34`'s host logic: "los shortcut documentalos cuando
   hagas la documentacion del elemento, luego se deberian poder cambiar pero eso
@@ -4010,6 +4033,25 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   geometric tie-break.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **The example's first box makes no sound, and the reason is that a curve is
+  not a control yet** *(found by use 2026-09-10; the picture half was a client
+  bug and is fixed -- see below)*. `multitrack_audio.py` reads a clip envelope
+  **once**, at the box's first break-point, and writes it into the reader's
+  `amp`: the `white` box's envelope starts at zero, so the box is silent for as
+  long as it is on screen. Nothing is wrong with the document, the picture or
+  the report -- what is missing is `G35.3`, where a curve becomes a control that
+  *plays*. Left as it is on purpose: fixing it in the example would mean the
+  example sampling the curve per block, which is the thing the milestone exists
+  to stop.
+
+- ✅ **Buffer 0 is a buffer, and `x or -1` said it was not** *(found by use
+  2026-09-10, on the box the example loads first)*. `Sources.bufnum` answered
+  `-1` -- "nobody loaded this" -- for a take whose buffer number is **zero**,
+  which is the first one an allocator hands out. So the first take a script
+  loaded was the one take its boxes could not draw, in both clients, under a
+  docstring that says in as many words that negative and not zero is the
+  sentinel. Asked for explicitly now, and pinned by a test in each client.
 
 - ✅ **A time axis is labelled by one tempo, and a piece can have several**
   *(found 2026-09-05, reading `editors/tempo_map` after its clip was put right)*.

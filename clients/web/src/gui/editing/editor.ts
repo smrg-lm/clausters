@@ -617,7 +617,16 @@ export class Editor<S = unknown> implements Adopting {
             // case, and reporting a change there told every other view to bring
             // itself in step with an edit that never happened.
             const stepped = args[1] === "redo" ? this.redo() : this.undo();
-            this.acknowledge(seq);
+            // **A refusal says why.** A step nobody could apply is the one case
+            // where nothing happening is not "the pile is at its end": the entry
+            // belongs to a structure whose window is closed, and it is still
+            // there waiting for it. Saying so is the difference between a dead
+            // button and one that is telling you where to press it.
+            if (!stepped && this.app.unreachable !== null) {
+                this.reason =
+                    `${this.app.unreachable}: that edit belongs to a window that is not open`;
+            }
+            this.acknowledge(seq, this.reason ?? undefined);
             return stepped;
         }
         // Only what this editor draws is this editor's to answer.

@@ -149,6 +149,22 @@ def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
     assert ed.view.props(ed, ed.view.ruler)["cursor"] == pytest.approx(4.0 * SR)
 
 
+def test_buffer_zero_is_a_buffer():
+    """The first buffer an allocator hands out is a buffer, and a box over it
+    draws — `x or -1` said it did not, so the first take a script loaded was
+    the one take its boxes could not draw.
+
+    Found by use 2026-09-10, on the box the example loads first.
+    """
+    class Held:
+        bufnum = 0
+
+    ed = MultitrackEditor(piece(), sample_rate=SR, sources={1: Held()})
+    assert ed.bridge.sources.bufnum(1) == 0
+    assert all(b[6] == 0 for b in clips(ed)), "the boxes over it name it"
+    assert ed.bridge.sources.bufnum(9) == -1, "and a source nobody loaded is none"
+
+
 def test_a_source_nobody_loaded_draws_an_empty_box():
     ed = MultitrackEditor(piece(), sample_rate=SR, sources={})
     assert all(b[6] == -1 for b in clips(ed)), \
@@ -444,6 +460,47 @@ def test_a_reopened_box_undoes_its_own_edit_and_not_the_pieces():
     assert again.undo(), "the stroke is what the pile has on top"
     assert take.frames[2:4] == [0.0, 0.0], "and it is the stroke that is undone"
     assert _region_at(written, 12).position == moved, "the piece did not move"
+
+
+def test_an_undo_nobody_can_apply_is_not_a_step():
+    """**A step nobody could apply is not a step.**
+
+    The walk moves the pile's cursor before anything is projected, so an entry
+    naming a structure no participant holds — a box whose window was closed —
+    was stepped *over*: the edit stayed and the order lost it. Closing the box,
+    undoing in the piece's window and opening it again left the samples edited
+    and unreachable, which is the one thing a history may not do.
+
+    Found by use 2026-09-10.
+    """
+    take = Take()
+    written = piece()
+    ed = MultitrackEditor(written, sample_rate=SR, sources={1: take})
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    assert ed.apply("/gui_event", [wid, 0, 0, "clips",
+                                   "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7])
+    ed._route([wid, "enter", "12"])
+    box = ed.entered["12"]
+    box.draw()
+    bwid = next(iter(box.view.widgets))
+    assert box.apply("/gui_event", [bwid, 0, 0, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]])
+
+    # The box's window goes, and its editor with it.
+    box.close()
+    ed.entered.pop("12", None)
+
+    # An undo in the piece's window now names the stroke, which nothing here
+    # can write: the pile does not move, and it says why.
+    assert ed.undo() is False, "nothing could apply it"
+    assert take.frames[2:4] == [1.0, 1.0], "and the edit is still there"
+    assert ed.app.unreachable == "draw the samples"
+
+    # Which is what makes it recoverable: the entry is still on top, waiting
+    # for the window that can perform it.
+    ed._route([wid, "enter", "12"])
+    assert ed.entered["12"].undo(), "the stroke is still the top of the pile"
+    assert take.frames[2:4] == [0.0, 0.0]
 
 
 def _region_at(held, region_id: int):

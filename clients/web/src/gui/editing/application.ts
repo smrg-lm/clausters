@@ -372,11 +372,34 @@ export class Application {
      * other window is told on the way out of the turn, the way it is told about
      * any edit, so a step is one answer per window rather than two.
      */
+    /**
+     * What the **last** step could not reach, when a walk was refused because no
+     * participant held the structure the entry names — the label of the edit
+     * that is waiting, for whoever wants to say why nothing happened. `null`
+     * after a step that landed, and after one there was nothing to take.
+     */
+    unreachable: string | null = null;
+
     step(direction: "undo" | "redo", walker: Drawing): boolean {
         const context = this.context;
         if (context === null) return false;
+        this.unreachable = null;
+        const history = context.history;
+        const waiting = direction === "undo" ? history?.undoLabel : history?.redoLabel;
         const legs = context.step(direction);
-        if (legs === undefined || !context.distribute(legs, walker)) return false;
+        if (legs === undefined) return false;
+        if (!context.distribute(legs, walker)) {
+            // **A step nobody could apply is not a step.** The walk moves the
+            // pile's cursor before anything is projected, so an entry naming a
+            // structure no participant holds — a box whose window was closed —
+            // was stepped *over*: the edit stayed and the order lost it, which
+            // is the one thing a history may not do. So the cursor goes back and
+            // the answer is "nothing happened", which is true and recoverable:
+            // open that window and the entry is still on top, waiting.
+            context.step(direction === "undo" ? "redo" : "undo");
+            this.unreachable = waiting ?? null;
+            return false;
+        }
         // **Once for the walk, not once per window.** The version is the
         // context's, and every view reports the same one.
         context.version += 1;

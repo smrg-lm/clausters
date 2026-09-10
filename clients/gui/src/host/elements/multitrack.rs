@@ -70,6 +70,12 @@ const LANE_H: f32 = 96.0;
 /// without zooming to the sample.
 const SNAP_PX: f32 = 8.0;
 
+/// **How short and how tall a row may be pulled**, in logical pixels. The floor
+/// is a band that still holds a header's two rows; the ceiling is there so a
+/// slip of the hand cannot leave a stack nobody can scroll back out of.
+const MIN_LANE_H: f32 = 40.0;
+const MAX_LANE_H: f32 = 8.0 * LANE_H;
+
 /// An automation row's thickness when nothing says otherwise — shorter than a
 /// lane, because what it draws is one line and not a stack of boxes.
 const CURVE_H: f32 = 40.0;
@@ -107,8 +113,16 @@ struct Grab {
     axis: View,
 }
 
-/// A **fader** the hand is on, kept for the same reason a clip's grab is: the
-/// value is read from the pointer against the groove the press found.
+/// The row a hand is resizing, and what it was when the press landed.
+#[derive(Debug, Clone, Copy)]
+struct Sizing {
+    lane: usize,
+    from: f32,
+    at: f64,
+}
+
+/// A **level knob** the hand is on, kept for the same reason a clip's grab is:
+/// the value is read from the pointer against what the press found.
 #[derive(Debug, Clone, Copy)]
 struct Fading {
     lane: usize,
@@ -157,6 +171,15 @@ pub struct Multitrack {
     /// an affordance. Here a layer has a name, so it is named: the `points:1`
     /// ordinal is what a container whose layers are anonymous falls back to.
     layer: Option<String>,
+    /// **How tall each track is drawn**, by lane name — the vertical zoom a
+    /// hand set by pulling a header's bottom edge.
+    ///
+    /// Screen state, like the scroll and the box selection: nothing on the wire
+    /// sets or reports it, so it is kept here and laid over whatever a `lanes`
+    /// payload says. A client that redraws its piece says `height` on every row
+    /// because the wire has always carried one, and a reader who zoomed a track
+    /// in must not lose it to the next fader move.
+    zoom: HashMap<String, f32>,
     /// **Which boxes wrap**, by name — the `loops` prop, a name set exactly as
     /// `hidden` is.
     ///
@@ -247,6 +270,8 @@ pub struct Multitrack {
     block: Block,
     /// The fader a drag is on, when it is on one.
     fading: Option<Fading>,
+    /// The row a drag is resizing, when it is on one.
+    sizing: Option<Sizing>,
 }
 
 impl Default for Multitrack {
@@ -261,6 +286,7 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             loops: Vec::new(),
+            zoom: HashMap::new(),
             selected: Vec::new(),
             track: None,
             scroll: 0.0,
@@ -275,6 +301,7 @@ impl Default for Multitrack {
             grab: None,
             block: Vec::new(),
             fading: None,
+            sizing: None,
         }
     }
 }
@@ -322,12 +349,14 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
+        zoom: HashMap::new(),
         holding: None,
         selected: Vec::new(),
         scroll: 0.0,
         gap: number(props, "gap", GAP).max(0.0),
         snap: number_f64(props, "snap", 0.0).max(0.0),
         editor: EditorProps::parse(props, RulerY::Off),
+        sizing: None,
         label: label(props),
         view: props
             .get("view")
@@ -786,6 +815,18 @@ impl Multitrack {
                 });
                 Claim::take()
             }
+            // **The bottom edge is the row's own height** — the vertical zoom
+            // of one track, which is what a hand reaches for when one take
+            // needs to be read closely and the rest do not. Screen state, like
+            // the scroll: nothing on the wire sets or reports it.
+            track::HeaderPart::Edge => {
+                self.sizing = Some(Sizing {
+                    lane,
+                    from: self.lanes[lane].height,
+                    at: at.1,
+                });
+                Claim::take()
+            }
             // **The space beside the controls is the track itself.** A click
             // selects it -- the second coordinate a paste needs -- and a double
             // click makes one, the gesture a desktop already spends on "open
@@ -876,6 +917,32 @@ impl Multitrack {
                 .filter(|(_, cy)| *cy as f32 >= cr.y && (*cy as f32) < cr.y + cr.h)
                 .and_then(|(cx, _)| track::clip_grip_at(cr, ends, m, cx as f32))
         })
+    }
+
+    /// **Lays the hand's own row heights back over what a payload says.**
+    ///
+    /// How tall a track is drawn is this window's and the wire carries none of
+    /// it — but a `lanes` payload states a height on every row, because the
+    /// prop has always had one — so a fader moved or a track added would
+    /// otherwise take a reader's vertical zoom away with it. The same rule the
+    /// scroll and the box selection follow, applied where the payload lands.
+    fn zoom_rows(&mut self) {
+        for lane in &mut self.lanes {
+            if let Some(h) = self.zoom.get(&lane.name) {
+                lane.height = *h;
+            }
+        }
+        // A lane that is gone takes its height with it, the way every other
+        // table here is pruned by what the piece now holds.
+        self.zoom
+            .retain(|name, _| self.lanes.iter().any(|l| &l.name == name));
+    }
+
+    /// **What kind of row a y is on** — a lane, an automation row, or nothing
+    /// at all past either end of the stack.
+    fn row_kind(&self, input: &Input, y: f64) -> Option<model::Row> {
+        let stack = self.stack();
+        stack.row(stack.row_at(input.rect, self.scroll, y)?)
     }
 
     /// **How far a snap reaches**, in the axis' own units: a few device pixels
@@ -1417,6 +1484,7 @@ impl Element for Multitrack {
             // every structure on this wire uses.
             "lanes" => {
                 self.lanes = parse_lanes(&parse::as_array_props("lanes", v));
+                self.zoom_rows();
                 true
             }
             "clips" => {
@@ -1636,6 +1704,7 @@ impl Element for Multitrack {
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.grab = None;
         self.fading = None;
+        self.sizing = None;
         self.holding = None;
         self.block.clear();
         // The header band first: it is drawn over the gutter, and nothing of
@@ -1643,12 +1712,21 @@ impl Element for Multitrack {
         if let Some((lane, part)) = self.header_at(input, at) {
             return self.press_header(lane, part, at, input);
         }
-        // **The band under the last header**, where there is no track to point
-        // at -- so nothing else could be meant by a double click there than
-        // *make one*, and it goes at the end. A single click lets go of the
-        // track the hand had, the way a click on bare stack lets go of the
-        // boxes.
         if at.0 < f64::from(input.rect.x + input.indent) {
+            // **An automation row's header is the track's picture, not the
+            // track.** A curve is drawn in a row of its own under the lane it
+            // belongs to, and the band beside it is that row's label -- so a
+            // press there addresses no track: it selects none, lets go of none
+            // and asks for none. The press is consumed rather than declined,
+            // because the header band is this widget's whatever is drawn in it.
+            if matches!(self.row_kind(input, at.1), Some(model::Row::Curve(_))) {
+                return Claim::take();
+            }
+            // **The band under the last header**, where there is no track to
+            // point at -- so nothing else could be meant by a double click
+            // there than *make one*, and it goes at the end. A single click
+            // lets go of the track the hand had, the way a click on bare stack
+            // lets go of the boxes.
             if input.clicks >= 2 {
                 return self.add_lane(self.lanes.len());
             }
@@ -1755,6 +1833,12 @@ impl Element for Multitrack {
             }
             return Events::none();
         }
+        if let Some(s) = self.sizing {
+            let height = (s.from + (at.1 - s.at) as f32).clamp(MIN_LANE_H, MAX_LANE_H);
+            self.lanes[s.lane].height = height;
+            self.zoom.insert(self.lanes[s.lane].name.clone(), height);
+            return Events::none();
+        }
         if let Some(f) = self.fading {
             self.lanes[f.lane].gain = track::level_after(f.from, at.1 - f.at, f.cell);
             return self.lanes_event();
@@ -1819,6 +1903,11 @@ impl Element for Multitrack {
             } else {
                 self.points_event()
             };
+        }
+        if self.sizing.take().is_some() {
+            // Nothing leaves: how tall a row is drawn is this window's, and the
+            // piece is not asked about it.
+            return Events::none();
         }
         if self.fading.take().is_some() {
             // Already reported on the way, like any other control.
@@ -1957,9 +2046,29 @@ impl Element for Multitrack {
                     .iter()
                     .map(|c| c.place.offset)
                     .fold(f64::INFINITY, f64::min);
+                // **A paste needs two coordinates**, and the second is the
+                // selected track: the position cursor says *when* and the
+                // header says *where*. The earliest box lands on the selected
+                // track and the rest keep their distances from it, in rows as
+                // in time -- a block pasted onto a track is the same block, so
+                // what is kept is its shape and not the row numbers it was cut
+                // from. With no track selected the rows are the ones it came
+                // from, which is what a paste back into the same piece means.
+                let rows: Vec<usize> = block.iter().map(|c| self.lane_of(c).unwrap_or(0)).collect();
+                let earliest = block
+                    .iter()
+                    .position(|c| c.place.offset <= first + f64::EPSILON)
+                    .unwrap_or(0);
+                let base = rows.get(earliest).copied().unwrap_or(0);
+                let onto = self.track.unwrap_or(base);
+                let last = self.lanes.len().saturating_sub(1);
                 self.selected.clear();
-                for mut clip in block {
+                for (i, mut clip) in block.into_iter().enumerate() {
                     clip.place.offset = (clip.place.offset - first + at).max(0.0);
+                    let row = (rows[i] + onto).saturating_sub(base).min(last);
+                    if let Some(lane) = self.lanes.get(row) {
+                        clip.lane = lane.name.clone();
+                    }
                     clip.name = self.fresh_name(&clip.name);
                     self.clips.push(clip);
                     self.selected.push(self.clips.len() - 1);
@@ -2638,6 +2747,131 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **A track is zoomed vertically by pulling its header's bottom edge**, and
+    /// the height a hand set survives what the piece says next: a `lanes`
+    /// payload states a height on every row, so a fader moved or a track added
+    /// would otherwise take the zoom away with it.
+    #[test]
+    fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let inp = input(&m, rect, len);
+        let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], 100.0);
+        let edge = (f64::from(band.x) + 4.0, f64::from(band.y + band.h) - 1.0);
+        let was = mt.lanes[0].height;
+
+        assert!(matches!(mt.press(edge, &inp), Claim::Take(_)));
+        assert_eq!(mt.lanes[0].height, was, "the press resizes nothing");
+        mt.drag((edge.0, edge.1 + 60.0), &inp);
+        assert_eq!(mt.lanes[0].height, was + 60.0, "the row follows the hand");
+        assert_eq!(mt.lanes[1].height, was, "and only that row");
+        assert!(
+            mt.release((edge.0, edge.1 + 60.0), true, &inp)
+                .into_messages()
+                .is_empty(),
+            "how tall a row is drawn is this window's: the piece is not asked"
+        );
+
+        // The client redraws its rows -- a fader moved, a track added -- and
+        // the height a hand set is still the height.
+        assert!(mt.set(
+            "lanes",
+            &serde_json::json!(["noise", "", 100, 0, 0, 0.5, "tone", "", 100, 0, 0, 1]),
+        ));
+        assert_eq!(
+            mt.lanes[0].height,
+            was + 60.0,
+            "the zoom outlived the payload"
+        );
+        assert_eq!(mt.lanes[0].gain, 0.5, "and the payload landed");
+
+        // A row that is gone takes its height with it.
+        assert!(mt.set("lanes", &serde_json::json!(["tone", "", 100, 0, 0, 1])));
+        assert!(mt.zoom.is_empty());
+    }
+
+    /// **A paste needs two coordinates, and the second is the selected track.**
+    /// The position cursor says *when* and the header says *where*, so a block
+    /// lands on the track a hand pointed at and keeps its own shape from there
+    /// — in rows as in time.
+    #[test]
+    fn a_paste_lands_on_the_selected_track_and_keeps_its_shape() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
+            mt.key(
+                &key,
+                &mut KeyInput {
+                    mods: ctrl,
+                    clipboard: &mut clipboard,
+                    cursor,
+                },
+            )
+        };
+        keys(&mut mt, Key::Char('c'), None).expect("copied");
+
+        // With a track in hand the block lands on it: the earliest box on the
+        // selected track, the rest keeping their distance from it.
+        mt.track = Some(1);
+        keys(&mut mt, Key::Char('v'), Some(100.0)).expect("pasted");
+        assert_eq!(mt.clips.len(), 4);
+        assert_eq!(mt.clips[2].lane, "tone", "the earliest onto the selection");
+        assert_eq!(
+            mt.clips[3].lane, "tone",
+            "and the second kept its distance -- there is no third lane to fall on"
+        );
+        assert_eq!(mt.clips[2].place.offset, 100.0, "on the cursor");
+
+        // With none, the rows are the ones it came from: a paste back into the
+        // same piece is the block where it was.
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+        keys(&mut mt, Key::Char('c'), None).expect("copied");
+        mt.track = None;
+        keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
+        assert_eq!(mt.clips[2].lane, "noise");
+        assert_eq!(mt.clips[3].lane, "tone");
+    }
+
+    /// **An automation row's header is the track's picture, not the track.** A
+    /// curve is drawn in a row of its own under the lane it belongs to, so a
+    /// press on the band beside it addresses no track: it selects none, lets go
+    /// of none, and asks for none.
+    #[test]
+    fn an_automation_rows_header_addresses_no_track() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = curved();
+        let inp = input(&m, rect, len);
+        // The curve row is the second entry of the stack: `noise`, its `gain`
+        // row, then `tone`.
+        let rows = mt.stack().rects(rect, 0.0);
+        let curve_row = rows[1];
+        let on = (f64::from(rect.x) + 4.0, f64::from(curve_row.y) + 2.0);
+
+        mt.track = Some(0);
+        assert!(matches!(mt.press(on, &inp), Claim::Take(_)));
+        assert_eq!(mt.track, Some(0), "the track a hand had is still in hand");
+        assert_eq!(mt.lanes.len(), 2, "and nothing was added");
+
+        // Nor does a double click there ask for a track: the band under the
+        // *last* header is where there is nothing to point at.
+        let twice = Input {
+            clicks: 2,
+            ..input(&m, rect, len)
+        };
+        mt.press(on, &twice);
+        assert_eq!(mt.lanes.len(), 2, "a curve row is not empty header space");
     }
 
     /// **The header's level is a knob, and a knob turns by a drag.** A header

@@ -187,6 +187,18 @@ test("the position cursor is kept and told and is not an edit", () => {
     near(Number(view.props(ed, rid).cursor), 4.0 * SR);
 });
 
+test("buffer zero is a buffer", () => {
+    // The first buffer an allocator hands out is a buffer, and a box over it
+    // draws — `|| -1` said it did not, so the first take a page loaded was the
+    // one take its boxes could not draw.
+    //
+    // Found by use 2026-09-10, on the box the example loads first.
+    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: { bufnum: 0 } } });
+    assert.equal(ed.bridge.sources.bufnum(1), 0);
+    assert.ok(clips(ed).every((b) => b[6] === 0), "the boxes over it name it");
+    assert.equal(ed.bridge.sources.bufnum(9), -1, "and a source nobody loaded is none");
+});
+
 test("a source nobody loaded draws an empty box", () => {
     const ed = editor(piece(), {});
     assert.ok(
@@ -503,6 +515,45 @@ test("a reopened box undoes its own edit and not the piece's", async () => {
     assert.ok(again.undo(), "the stroke is what the pile has on top");
     await settled();
     assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "the stroke is undone");
+});
+
+test("an undo nobody can apply is not a step", async () => {
+    // **A step nobody could apply is not a step.**
+    //
+    // The walk moves the pile's cursor before anything is projected, so an entry
+    // naming a structure no participant holds — a box whose window was closed —
+    // was stepped *over*: the edit stayed and the order lost it. Closing the box,
+    // undoing in the piece's window and opening it again left the samples edited
+    // and unreachable, which is the one thing a history may not do.
+    //
+    // Found by use 2026-09-10.
+    const take = new Take();
+    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    ed.draw();
+    const wid = [...ed.view!.widgets][0];
+    const route = (e: unknown, args: unknown[]) =>
+        (e as unknown as { route(args: unknown[]): boolean }).route(args);
+    assert.ok(route(ed, [wid, "clips", "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7]));
+    const box = (await ed.enter("12"))!;
+    box.draw();
+    const bwid = [...box.view!.widgets][0];
+    assert.ok(route(box, [bwid, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]]));
+    await settled();
+
+    box.close();
+    ed.entered.delete("12");
+
+    assert.equal(ed.undo(), false, "nothing could apply it");
+    await settled();
+    assert.deepEqual(take.frames.slice(2, 4), [1.0, 1.0], "the edit is still there");
+    assert.equal(ed.app.unreachable, "draw the samples");
+
+    // Which is what makes it recoverable: the entry is still on top, waiting
+    // for the window that can perform it.
+    const again = (await ed.enter("12"))!;
+    assert.ok(again.undo(), "the stroke is still the top of the pile");
+    await settled();
+    assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0]);
 });
 
 test("a box with nothing to open opens nothing", async () => {
