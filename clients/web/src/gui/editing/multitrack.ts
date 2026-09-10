@@ -31,9 +31,10 @@
 import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit } from "../../document.ts";
 import type { Curve, Curved } from "../../multitrack.ts";
-import { Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints }
-    from "../../multitrack.ts";
-import type { Box, Placed, Region, Row } from "../../multitrack.ts";
+import {
+    Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints, multitrackReadRows,
+} from "../../multitrack.ts";
+import type { Box, Placed, Region, Row, Strip } from "../../multitrack.ts";
 import { node, timeruler, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
@@ -371,33 +372,22 @@ export class MultitrackDomain extends Domain<Multitrack> {
      * keeps one fader drag from rewriting every track — and the whole list
      * travels because the piece has no verb for one track.
      */
+    /**
+     * The rows' payload as the crate reads it: what a report of every row
+     * *means*, in the piece's one verb over its tracks.
+     *
+     * The whole list travels because the piece has no verb for one track — a
+     * report is the piece here as it is for the boxes — so the difference is
+     * what comes out, and it is one `settracks` whatever changed: a fader
+     * moved, a track added, a track gone with its boxes.
+     *
+     * **The rule is the crate's**, like the boxes' and the curves': a client
+     * that read this payload itself would be writing the mapping a second time
+     * in its own language, which is how one client comes to add a track the
+     * other cannot.
+     */
     private strips(piece: Multitrack, values: readonly unknown[]): unknown[] {
-        // **The piece is not touched here.** A payload states what the piece
-        // *would* be; the inverse is read against what it is, and mutating first
-        // would leave nothing to read — a fader that moved and an undo that put
-        // it back where it already was.
-        const tracks = piece.tracks.map((t) => t.write());
-        const byId = new Map(tracks.map((t) => [Number(t.id), t] as const));
-        let changed = false;
-        for (const group of groups(values, SEXTUPLE)) {
-            const [name, , , mute, solo, gain] = group;
-            const found = byId.get(Number(String(name)));
-            if (found === undefined) continue;
-            const muted = Number(mute) !== 0;
-            const soloed = Number(solo) !== 0;
-            const level = Number(gain);
-            const config = (found.config ?? {}) as Record<string, unknown>;
-            const held = Number(config.level ?? 1.0);
-            if (found.muted === muted && found.soloed === soloed && held === level) continue;
-            found.muted = muted;
-            found.soloed = soloed;
-            // The fader is this client's key in an opaque table, so it is written
-            // over what is there: a track's config is its instrument and its
-            // routing too.
-            found.config = { ...config, level };
-            changed = true;
-        }
-        return changed ? [{ intent: "settracks", tracks }] : [];
+        return multitrackReadRows(piece.write(), rowProps(values));
     }
 
     // ---- the state, and writing one back ----
@@ -439,6 +429,26 @@ export class MultitrackDomain extends Domain<Multitrack> {
 }
 
 /** The crate's rows as the widget's flat sextuples. */
+/**
+ * The flat `lanes` payload as the crate's strips.
+ *
+ * The label and the height are dropped rather than sent: a row's label is the
+ * track's name where it has one and a made-up one where it has not, and its
+ * height is this window's. Neither is a fact about the piece, so neither is
+ * reported into it.
+ */
+function rowProps(values: readonly unknown[]): Strip[] {
+    return [...groups(values, SEXTUPLE)].map((group) => {
+        const [name, , , mute, solo, gain] = group;
+        return {
+            name: String(name),
+            mute: Number(mute) !== 0,
+            solo: Number(solo) !== 0,
+            gain: Number(gain),
+        };
+    });
+}
+
 /**
  * The position cursor in timeline samples: where the editor last saw it placed,
  * and the top of the piece until a hand places one.

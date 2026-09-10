@@ -59,6 +59,7 @@ import {
     multitrackPicture as corePicture,
     multitrackRead as coreRead,
     multitrackReadPoints as coreReadPoints,
+    multitrackReadRows as coreReadRows,
 } from "./core/clausters_core_web.js";
 import { FIRST_VERSION } from "./document.ts";
 
@@ -1377,6 +1378,17 @@ export interface Curved {
     points: { at: number; value: number; data?: unknown }[];
 }
 
+/** A row as a hand left it, for {@link multitrackReadRows}. */
+export interface Strip {
+    /** The track's id, or a name no track has — which is how a **track a hand
+     * made** is told from one that was already there. */
+    name: string;
+    mute: boolean;
+    solo: boolean;
+    /** The fader, in the client's own key of the track's table. */
+    gain: number;
+}
+
 /** A box as a hand left it, for {@link multitrackRead} to make sense of. */
 export interface Placed {
     /** The region's id, or a name no region has — which is how a **new** box is
@@ -1448,6 +1460,35 @@ export function multitrackRead(piece: unknown, placed: readonly Placed[]): unkno
  */
 export function multitrackReadPoints(piece: unknown, reported: readonly Curved[]): unknown[] {
     const answer = coreReadPoints(JSON.stringify(piece), JSON.stringify(reported));
+    if (!answer) return [];
+    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
+}
+
+/**
+ * **What a report of a multitrack's rows means**, in the piece's own
+ * vocabulary.
+ *
+ * The third reader, beside {@link multitrackRead} for the boxes and
+ * {@link multitrackReadPoints} for the curves, and the one that makes the stack
+ * of tracks editable rather than only readable. The report is every row, in the
+ * order they are shown, so what comes out is the difference — and it is **one**
+ * `settracks` whatever changed, because the tracks are one list and a hand did
+ * one thing to it:
+ *
+ * - a name that is a track's id is **that track**, with the strip's mute, solo
+ *   and level written onto it;
+ * - a name that is no track's id is a **track a hand made**, minted with one
+ *   empty lane since a track that could hold nothing is not one;
+ * - a track the report does not name is **gone**, and its boxes with it;
+ * - the order is the report's, so the rows are the tracks.
+ *
+ * The label is drawn and never written back: a row's label is the track's name
+ * where it has one and a made-up `track N` where it has not, so believing the
+ * report would put that string into the document the first time anything else
+ * on the row moved.
+ */
+export function multitrackReadRows(piece: unknown, reported: readonly Strip[]): unknown[] {
+    const answer = coreReadRows(JSON.stringify(piece), JSON.stringify(reported));
     if (!answer) return [];
     return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
 }

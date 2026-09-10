@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 47
+CORE_ABI_VERSION = 48
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -516,6 +516,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_multitrack_read_points.restype = ctypes.c_size_t
     lib.clausters_multitrack_read_points.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_multitrack_read_rows.restype = ctypes.c_size_t
+    lib.clausters_multitrack_read_rows.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_view_not_an_edit.restype = ctypes.c_size_t
@@ -1323,6 +1327,41 @@ def multitrack_read_points(piece, reported) -> list:
         The intents, in order; ``[]`` for input the crate will not read.
     """
     answer = _read_json(lib().clausters_multitrack_read_points, piece, reported)
+    return answer.get("intents", []) if isinstance(answer, dict) else []
+
+
+def multitrack_read_rows(piece, reported) -> list:
+    """**What a report of a multitrack's rows means**, in the piece's own
+    vocabulary.
+
+    The third reader, beside `multitrack_read` for the boxes and
+    `multitrack_read_points` for the curves, and the one that makes the stack of
+    tracks editable rather than only readable. The report is every row, in the
+    order they are shown, so what comes out is the difference — and it is
+    **one** ``settracks`` whatever changed, because the tracks are one list and
+    a hand did one thing to it:
+
+    - a name that is a track's id is **that track**, with the strip's mute,
+      solo and level written onto it;
+    - a name that is no track's id is a **track a hand made**, minted with one
+      empty lane since a track that could hold nothing is not one;
+    - a track the report does not name is **gone**, and its boxes with it;
+    - the order is the report's, so the rows are the tracks.
+
+    The label is drawn and never written back: a row's label is the track's
+    name where it has one and a made-up ``track N`` where it has not, so
+    believing the report would put that string into the document the first time
+    anything else on the row moved.
+
+    Args:
+        piece: the piece as plain JSON-able data.
+        reported: the rows as they now stand, each
+            ``{"name", "mute", "solo", "gain"}``.
+
+    Returns:
+        The intents, in order; ``[]`` for input the crate will not read.
+    """
+    answer = _read_json(lib().clausters_multitrack_read_rows, piece, reported)
     return answer.get("intents", []) if isinstance(answer, dict) else []
 
 

@@ -109,6 +109,11 @@ pub enum HeaderPart {
     Mute,
     Solo,
     Fader,
+    /// **The band itself**, where no control is — what makes the track
+    /// pointable at. A header is a surface and not just a shelf for three
+    /// buttons: the space beside them is how a track is selected, and how one
+    /// is asked for.
+    Body,
 }
 
 /// Lays a header's parts out inside its `band`: the name on the top row, the
@@ -171,6 +176,8 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
         Some(HeaderPart::Solo)
     } else if over(parts.fader) {
         Some(HeaderPart::Fader)
+    } else if band.contains(x, y) {
+        Some(HeaderPart::Body)
     } else {
         None
     }
@@ -352,6 +359,7 @@ pub fn draw(
     header: &Header,
     ruler: bool,
     indent: f32,
+    selected: bool,
 ) {
     let (mesh, m, theme) = d.parts();
     // The header band on the left — the group's indent, so every member of the
@@ -359,6 +367,14 @@ pub fn draw(
     // its own (a name, and the controls it offers).
     let band = timeline::gutter_band(rect, indent);
     mesh.rect(band, theme.header);
+    // **A selected track says so on its header**, in the two roles every
+    // selection in this host is drawn in: the wash a held clip has, and its
+    // edge. It is a wash over the band rather than a replacement of it, so the
+    // name and the three controls go on reading as themselves.
+    if selected {
+        mesh.rect(band, theme.selected_fill);
+        mesh.border(band, m.divider_w, theme.selected_edge);
+    }
     let parts = header_parts(band, header, m);
     if let Some(t) = label {
         font::text_ellipsis(
@@ -941,6 +957,7 @@ mod tests {
             &Header::default(),
             false,
             metrics.header_w,
+            false,
         );
         assert!(!m.is_empty(), "the header and the lane field draw");
 

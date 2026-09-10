@@ -321,7 +321,15 @@ pub use time::*;
 /// curve whose break-points moved. **Additive**, and the counter moves for the
 /// reason v43's pair did: a client that cannot find them writes the mapping
 /// again in its own language.
-pub const CORE_ABI_VERSION: u32 = 47;
+/// **v48 a report of a piece's rows is read here too.**
+/// `clausters_multitrack_read_rows` answers what a report of every row *means*
+/// -- one `SetTracks` whatever changed, so adding a track, removing one with
+/// its boxes, reordering the stack and moving a fader are one verb and one
+/// entry. **Additive**, and the counter moves for the reason the other two
+/// readers did: the client that could not find it was writing the mixer's half
+/// of this mapping in its own language already, and the half it did not have
+/// (a track added, a track gone) is exactly where two clients drift.
+pub const CORE_ABI_VERSION: u32 = 48;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -154,6 +154,15 @@ pub struct Multitrack {
     /// piece's**: nothing on the wire sets or reports it, exactly as nothing
     /// reports which notes a roll has selected.
     pub(crate) selected: Vec<usize>,
+    /// Which **track** the hand is on, by row index — the second coordinate a
+    /// paste needs (the position cursor says *when*, this says *where*), and
+    /// what Delete acts on when there is one.
+    ///
+    /// The hand's, like the box selection and for the same reason: nothing on
+    /// the wire sets or reports it, because it is not a fact about the piece.
+    /// One at a time — a paste has one anchor, and a mixer strip wanting
+    /// several is a different question than this one.
+    pub(crate) track: Option<usize>,
     /// How far the stack is scrolled, in logical pixels. Screen state, so it
     /// survives a redefine rather than being restated by every def.
     pub(crate) scroll: f32,
@@ -229,6 +238,7 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             selected: Vec::new(),
+            track: None,
             scroll: 0.0,
             gap: GAP,
             snap: 0.0,
@@ -281,6 +291,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
     Multitrack {
         lanes: parse_lanes(props),
         clips: parse_clips(props),
+        track: None,
         bodies: curve_bodies(&curves, &layers, &parse_points(props)),
         curves,
         layers,
@@ -728,6 +739,73 @@ impl Multitrack {
                 self.fading = Some(Fading { lane, groove });
                 Claim::take()
             }
+            // **The space beside the controls is the track itself.** A click
+            // selects it -- the second coordinate a paste needs -- and a double
+            // click makes one, the gesture a desktop already spends on "open
+            // this" spent here on "make one", which is what a stack has no
+            // other way to ask for. The new track goes **after** the one that
+            // was pointed at, which is where a hand asking for one from this
+            // row means it.
+            track::HeaderPart::Body => {
+                if input.clicks >= 2 {
+                    return self.add_lane(lane + 1);
+                }
+                self.track = Some(lane);
+                Claim::take()
+            }
+        }
+    }
+
+    /// **Adds a track at `at`**, reported as the rows now stand.
+    ///
+    /// The name is minted here, the way a split's is: it is a name the client
+    /// never said, and what makes it a *new* track to whoever reads the report
+    /// is precisely that it names no track they know -- the same rule a new box
+    /// travels under. The client mints the id; the host mints the word.
+    fn add_lane(&mut self, at: usize) -> Claim {
+        let at = at.min(self.lanes.len());
+        let height = self.lanes.first().map_or(LANE_H, |l| l.height);
+        self.lanes
+            .insert(at, Lane::new(self.fresh_lane_name(), height));
+        // The hand keeps hold of what it asked for, and the boxes it was
+        // holding are on rows that may have moved under them.
+        self.track = Some(at);
+        self.selected.clear();
+        Claim::Take(Take {
+            events: self.lanes_event(),
+            ..Take::default()
+        })
+    }
+
+    /// **Removes the selected track**, and everything on it, reported as the
+    /// rows now stand.
+    ///
+    /// The boxes go with it and nothing says so: the rows report is the piece's
+    /// tracks, and a track that is not in it is gone with its contents. So this
+    /// sends one payload where a removal per box would send two and undo in
+    /// two steps.
+    fn remove_lane(&mut self) -> Option<Events> {
+        let at = self.track?;
+        if at >= self.lanes.len() {
+            return None;
+        }
+        let name = self.lanes.remove(at).name;
+        self.clips.retain(|c| c.lane != name);
+        self.selected.clear();
+        self.track = (!self.lanes.is_empty()).then(|| at.min(self.lanes.len() - 1));
+        Some(self.lanes_event())
+    }
+
+    /// A name no lane here has yet — a word, since the client's own names are
+    /// ids and a word can never be mistaken for one.
+    fn fresh_lane_name(&self) -> String {
+        let mut n = 1;
+        loop {
+            let name = format!("track {n}");
+            if !self.lanes.iter().any(|l| l.name == name) {
+                return name;
+            }
+            n += 1;
         }
     }
 
@@ -1252,6 +1330,7 @@ impl Element for Multitrack {
                     &self.header(lane, ctx.indent),
                     false,
                     ctx.indent,
+                    self.track == Some(i),
                 );
             }
         }
@@ -1279,6 +1358,9 @@ impl Element for Multitrack {
                     },
                     false,
                     ctx.indent,
+                    // A curve's row is the track's picture, not the track: what
+                    // is selected is the track, and its own header says so.
+                    false,
                 );
             }
         }
@@ -1391,6 +1473,18 @@ impl Element for Multitrack {
         // the axis is there.
         if let Some((lane, part)) = self.header_at(input, at) {
             return self.press_header(lane, part, at, input);
+        }
+        // **The band under the last header**, where there is no track to point
+        // at -- so nothing else could be meant by a double click there than
+        // *make one*, and it goes at the end. A single click lets go of the
+        // track the hand had, the way a click on bare stack lets go of the
+        // boxes.
+        if at.0 < f64::from(input.rect.x + input.indent) {
+            if input.clicks >= 2 {
+                return self.add_lane(self.lanes.len());
+            }
+            self.track = None;
+            return Claim::take();
         }
         // **A press selects the layer it lands on**, and what lands on a curve
         // is its own points and the line between them — never the rectangle it
@@ -1581,7 +1675,8 @@ impl Element for Multitrack {
     ///
     /// `q` quantizes onto the lane's own `snap` grid — the grid a drag already
     /// lands on — `e` splits at the window's cursor and `j` joins a touching
-    /// run, Delete removes, and `Ctrl`+`C`/`X`/`V` move a block through the
+    /// run, Delete removes (the **selected track**, with everything on it, when
+    /// no box is held), and `Ctrl`+`C`/`X`/`V` move a block through the
     /// host-wide clipboard. All of them act on **the held set**, across the
     /// stack, and all of them report the clips as they now stand: there is one
     /// payload here and a verb does not get to invent a second.
@@ -1590,6 +1685,17 @@ impl Element for Multitrack {
     /// keys they are is not settled — see `clients/gui/PLAN.md`, "A shortcut is
     /// the application's, not the widget's".
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        // **Delete acts on what is in hand, and a track can be in hand.** The
+        // header is what puts one there, so with a track selected Delete is the
+        // track's -- it and everything on it -- and with none it is the held
+        // boxes', which is what it has always been. The ordinary rule, and the
+        // reason the selected track is not merely decoration.
+        if matches!(key, Key::Delete | Key::Backspace)
+            && self.selected.is_empty()
+            && self.track.is_some()
+        {
+            return self.remove_lane();
+        }
         if self.selected.is_empty() && !matches!(key, Key::Char('v') | Key::Char('V')) {
             return None;
         }
@@ -2348,6 +2454,71 @@ mod tests {
         assert_eq!(args[0], OscType::String("enter".into()));
         assert_eq!(args[1], OscType::String("a".into()));
         assert!(mt.grab.is_none(), "and nothing is being dragged");
+    }
+
+    /// **The header is a surface, and the track is what it addresses.** A click
+    /// on the space beside its three controls selects that track -- the second
+    /// coordinate a paste needs, since the position cursor only says *when* --
+    /// a double click there makes one, and Delete takes the selected one away
+    /// with everything on it.
+    #[test]
+    fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        let inp = input(&m, rect, len);
+        // The band beside the controls, on the second lane's row: the top of it,
+        // which is where the name is drawn and no control is.
+        let at = mt.lane_rects(rect);
+        let beside = |i: usize| (f64::from(rect.x) + 4.0, f64::from(at[i].y) + 2.0);
+
+        assert!(matches!(mt.press(beside(1), &inp), Claim::Take(_)));
+        assert_eq!(
+            mt.track,
+            Some(1),
+            "a click on the header points at the track"
+        );
+
+        // A double click on a header asks for a track, and it lands after the
+        // one the hand was pointing at.
+        let twice = Input {
+            clicks: 2,
+            ..input(&m, rect, len)
+        };
+        let Claim::Take(take) = mt.press(beside(0), &twice) else {
+            panic!("the header takes it");
+        };
+        let msgs = take.events.into_messages();
+        let args = msgs.first().expect("the rows as they now stand");
+        assert_eq!(args[0], OscType::String("lanes".into()));
+        assert_eq!(args.len(), 1 + 3 * 6, "three rows, six numbers each");
+        assert_eq!(mt.lanes.len(), 3);
+        assert_eq!(mt.lanes[1].name, "track 1", "a word, never an id");
+        assert_eq!(mt.track, Some(1), "and the hand holds what it asked for");
+
+        // Delete with a track in hand is the track's, and the boxes on it go
+        // with it -- one payload, because the rows report is the piece's tracks
+        // and a track that is not in it is gone with its contents.
+        mt.track = Some(0);
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let events = mt
+            .key(
+                &Key::Delete,
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: None,
+                },
+            )
+            .expect("a track in hand is what Delete acts on");
+        let msgs = events.into_messages();
+        assert_eq!(msgs[0][0], OscType::String("lanes".into()));
+        assert_eq!(mt.lanes.len(), 2);
+        assert!(
+            !mt.clips.iter().any(|c| c.lane == "noise"),
+            "and the boxes on it went with it"
+        );
     }
 
     /// A double click on bare stack enters nothing: there is no box there, and

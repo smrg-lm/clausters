@@ -251,6 +251,101 @@ pub fn read_points(piece: &Multitrack, reported: &[Curved]) -> Vec<MultitrackInt
         .collect()
 }
 
+/// A row as a hand left it — what [`read_rows`] is given, and the same shape
+/// [`rows`] hands out with the two fields a picture answers for itself dropped.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Strip {
+    /// The name it came back under. **An id where the row is one the view was
+    /// given, and anything at all where a hand made one**: a track added by a
+    /// gesture is named by whoever added it, which is how a new row is told
+    /// from a moved one — the same rule a box's name follows.
+    pub name: String,
+    /// Silenced.
+    #[serde(default)]
+    pub mute: bool,
+    /// Soloed.
+    #[serde(default)]
+    pub solo: bool,
+    /// The fader, in the client's own key of the track's table.
+    #[serde(default = "unity")]
+    pub gain: f64,
+}
+
+fn unity() -> f64 {
+    1.0
+}
+
+/// **What a `"rows"` report means**, as edits in the piece's own vocabulary.
+///
+/// The report is the *piece* — every row, in the order they are shown — for the
+/// same reason a box report is every box: applying what came back is the
+/// identity, and there is no gesture to ask about. What comes out is the
+/// difference, and it is **one** [`MultitrackIntent::SetTracks`] whatever
+/// changed, because the tracks are one list and a hand that adds, removes,
+/// reorders or mutes did one thing to it:
+///
+/// - a name that is a track's id is **that track**, with the strip's mute, solo
+///   and level written onto it;
+/// - a name that is no track's id is a **new track**, minted here with one
+///   empty lane, since a track that could hold nothing is not one;
+/// - a track the report does not name is **gone**, and its lanes and regions
+///   with it — which is what makes deleting a track one edit rather than a
+///   removal per box on it;
+/// - the order is the report's, so the rows are the tracks and moving one moves
+///   the other.
+///
+/// The minting walks up from [`fresh_id`], two at a time: a track and its lane.
+/// Unlike [`read`] this asks the piece for that itself — a row report carries
+/// no ids a caller had to reserve, so there is nothing for one to say.
+///
+/// **The label is not read.** A row's label is the track's name where it has
+/// one and a made-up `track N` where it has not ([`rows`]), so believing a
+/// report would write that made-up string into the document the first time
+/// anything else on the row moved. Renaming a track is its own verb, and the
+/// wire has no gesture for it yet.
+pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent> {
+    let mut next = fresh_id(piece);
+    let mut tracks: Vec<Track> = Vec::with_capacity(reported.len());
+    for strip in reported {
+        let held = strip
+            .name
+            .parse::<u64>()
+            .ok()
+            .map(NodeId)
+            .and_then(|id| piece.tracks.iter().find(|t| t.id == id));
+        let mut track = match held {
+            Some(track) => track.clone(),
+            None => {
+                let made = Track::new(NodeId(next), NodeId(next + 1));
+                next += 2;
+                made
+            }
+        };
+        track.muted = strip.mute;
+        track.soloed = strip.solo;
+        // The fader is the client's key in an opaque table, written over what
+        // is there: a track's config is its instrument and its routing too.
+        // **Only when it moved.** The level defaults to unity for a track that
+        // never named one ([`level_of`]), so writing it unconditionally would
+        // put a key into every config the first time any row was reported and
+        // make a piece that changed nothing look edited.
+        let gain = strip.gain.max(0.0);
+        if (gain - level_of(&track)).abs() > f64::EPSILON {
+            if !track.config.0.is_object() {
+                track.config.0 = serde_json::Value::Object(serde_json::Map::new());
+            }
+            if let Some(table) = track.config.0.as_object_mut() {
+                table.insert(LEVEL.to_string(), serde_json::Value::from(gain));
+            }
+        }
+        tracks.push(track);
+    }
+    if tracks == piece.tracks {
+        return Vec::new();
+    }
+    vec![MultitrackIntent::SetTracks { tracks }]
+}
+
 /// A box as a hand left it — what [`read`] is given, and the same shape
 /// [`boxes`] hands out with the two fields a picture cannot answer for dropped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -348,16 +443,25 @@ pub fn read(piece: &Multitrack, placed: &[Placed], next_id: u64) -> Vec<Multitra
     out
 }
 
-/// An id past everything the piece already names — its tracks, its lanes and
-/// its regions, which share one id space.
+/// An id past everything the piece already names — its tracks, its lanes, its
+/// regions **and its automations**, which share one id space.
+///
+/// The curves are in the count because they are in the space: a piece looks an
+/// id up by number ([`Multitrack::automation`]) and does not ask what kind of
+/// thing it expected, so handing out an id a curve already holds is how two
+/// things come to answer to one name.
 pub fn fresh_id(piece: &Multitrack) -> u64 {
     piece
         .tracks
         .iter()
         .flat_map(|track| {
-            std::iter::once(track.id.0).chain(track.lanes.iter().flat_map(|lane| {
-                std::iter::once(lane.id.0).chain(lane.regions.iter().map(|r| r.id.0))
-            }))
+            std::iter::once(track.id.0)
+                .chain(track.automation.iter().map(|a| a.id.0))
+                .chain(track.lanes.iter().flat_map(|lane| {
+                    std::iter::once(lane.id.0).chain(lane.regions.iter().flat_map(|r| {
+                        std::iter::once(r.id.0).chain(r.automation.iter().map(|a| a.id.0))
+                    }))
+                }))
         })
         .max()
         .unwrap_or(0)
@@ -559,6 +663,98 @@ mod tests {
 
     /// A name that is no automation's id is dropped rather than minted: a
     /// curve is declared by whoever holds the piece.
+    /// **A curve holds an id like anything else does.** `fresh_id` answers
+    /// with an id past everything the piece names, and a piece looks one up by
+    /// number without asking what kind of thing it expected — so a count that
+    /// skipped the automations would hand out an id a curve already had.
+    ///
+    /// Found 2026-09-09 while adding a track from the header: the new track was
+    /// minted onto the track curve's id.
+    #[test]
+    fn a_fresh_id_is_past_the_curves_too() {
+        let piece = piece();
+        // Track 1, lane 2, region 3, the track curve 4, the box envelope 5.
+        assert_eq!(fresh_id(&piece), 6);
+    }
+
+    /// **A rows report is the tracks, whole.** A name that is an id is that
+    /// track; one that is not is a track a hand made; a track the report does
+    /// not name is gone, and its boxes with it. All of it is one `SetTracks`,
+    /// because the tracks are one list and a hand did one thing to it.
+    #[test]
+    fn the_rows_report_states_the_tracks_and_a_new_name_makes_one() {
+        let piece = piece();
+        let held = Strip {
+            name: "1".into(),
+            mute: false,
+            solo: false,
+            gain: 1.0,
+        };
+        // What is already true is no edit at all.
+        assert!(read_rows(&piece, std::slice::from_ref(&held)).is_empty());
+
+        // The mixer: one verb over a track, and the level lands in the config
+        // table the client reads it out of.
+        let muted = Strip {
+            mute: true,
+            gain: 0.5,
+            ..held.clone()
+        };
+        let out = read_rows(&piece, &[muted]);
+        let [MultitrackIntent::SetTracks { tracks }] = &out[..] else {
+            panic!("one whole statement, whatever changed: {out:?}");
+        };
+        assert!(tracks[0].muted);
+        assert_eq!(level_of(&tracks[0]), 0.5);
+
+        // A name that is no track's id is a track a hand added — with a lane,
+        // since a track that could hold nothing is not one — and the ids come
+        // from the piece's own counter.
+        let out = read_rows(
+            &piece,
+            &[
+                held.clone(),
+                Strip {
+                    name: "new".into(),
+                    ..held.clone()
+                },
+            ],
+        );
+        let [MultitrackIntent::SetTracks { tracks }] = &out[..] else {
+            panic!("one statement: {out:?}");
+        };
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[1].id, NodeId(6), "past everything the piece names");
+        assert_eq!(tracks[1].lanes.len(), 1, "and it can hold a box");
+
+        // A track the report leaves out is gone, and it takes its boxes.
+        let out = read_rows(&piece, &[]);
+        let [MultitrackIntent::SetTracks { tracks }] = &out[..] else {
+            panic!("one statement: {out:?}");
+        };
+        assert!(tracks.is_empty());
+    }
+
+    /// **The label is not read.** A row's label is a made-up `track N` where
+    /// the track has no name of its own, so believing the report would write
+    /// that string into the document the first time anything else moved.
+    #[test]
+    fn a_rows_label_is_drawn_and_never_written_back() {
+        let piece = piece();
+        let out = read_rows(
+            &piece,
+            &[Strip {
+                name: "1".into(),
+                mute: false,
+                solo: false,
+                gain: 1.0,
+            }],
+        );
+        assert!(out.is_empty(), "the picture's own label is not a change");
+        assert_eq!(rows(&piece)[0].label, "track 1", "which is what it draws");
+        assert!(piece.tracks[0].name.is_none(), "and not what it holds");
+    }
+
     #[test]
     fn a_curve_the_piece_never_declared_is_not_made_by_dragging_it() {
         let piece = piece();

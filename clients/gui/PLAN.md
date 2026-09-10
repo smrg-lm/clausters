@@ -942,7 +942,7 @@ would be written against a picture the first half had already changed.
   survives is *a click places the mark where it landed on **nothing***: a press
   an element takes is that thing's.
 
-- ⬜ **G35.2 + G35.13 — The header is a surface, and the track is what it
+- ✅ **G35.2 + G35.13 — The header is a surface, and the track is what it
   addresses.**
   One entry because they are one hit-test and one visual state: the header
   answers a press for its three controls today and for nothing else, which is
@@ -969,6 +969,32 @@ would be written against a picture the first half had already changed.
   header** (where there is no track to point at, so nothing else could be meant)
   or anywhere on a header no control was hit: the first is unambiguous, the
   second is what a hand reaches for.
+
+  *Done 2026-09-09, and the two open questions settled as they were built.*
+  **One** track, and the selection is the **hand's** — nothing on the wire sets
+  or reports it, exactly as nothing reports which boxes are held: a paste needs
+  one anchor, and a mixer strip wanting several is a different question than
+  this one. **Both** double clicks add a track: anywhere on a header no control
+  was hit (which is what a hand reaches for) *and* the band under the last one
+  (where there is nothing to point at) — one rule, since the new track goes
+  after the row that was pointed at and at the end when there was none.
+  `HeaderPart::Body` is the hit-test's new answer and the whole of what the
+  three verbs needed.
+
+  The report is `"lanes"` for all three, and that is what made this bigger than
+  a hit-test: a row report could only say *mute, solo, fader* because each
+  client read it **itself** — the one payload of the three that had no reader in
+  the crate. So `picture::read_rows` is that reader
+  (`clausters_multitrack_read_rows` / `multitrackReadRows`, `CORE_ABI_VERSION`
+  48), and with it a row report says everything a piece's tracks can be: an id
+  is that track, a name that is no id is a track a hand made (minted with one
+  empty lane), a track the report leaves out is **gone with its boxes**, and the
+  order is the report's. One `SetTracks` whatever changed, so adding a track and
+  deleting one with twenty boxes on it are each one entry in the history.
+
+  Found on the way: **`fresh_id` did not count the curves**, though a piece looks
+  an id up by number without asking what kind of thing it expected — so the first
+  track added to the example was minted onto its track automation's id.
 
 - ⬜ **G35.9 — The trim grip stops blinking.**
   The grip is drawn only while the pointer is inside the box's rectangle, and

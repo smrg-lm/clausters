@@ -1049,6 +1049,22 @@ export function multitrackRead(piece: string, placed: string): string;
 export function multitrackReadPoints(piece: string, reported: string): string;
 
 /**
+ * **What a report of a multitrack's rows means** — `{"intents": [...]}`, in
+ * the piece's own vocabulary, or an empty string for input that will not
+ * parse.
+ *
+ * The third of the readers, beside {@link multitrackRead} for the boxes and
+ * {@link multitrackReadPoints} for the curves. The report is every row, in the
+ * order they are shown, so what comes out is the difference and it is **one**
+ * `SetTracks` whatever changed: a name that is a track's id is that track
+ * (with the strip's mute, solo and level on it), a name that is no track's id
+ * is a track a hand made, a track the report leaves out is gone with its
+ * boxes, and the order is the report's. The ids a new track needs are minted
+ * from the piece itself, so there is nothing for a caller to reserve.
+ */
+export function multitrackReadRows(piece: string, reported: string): string;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -1330,6 +1346,7 @@ export interface InitOutput {
     readonly multitrackPicture: (a: number, b: number) => [number, number];
     readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackReadPoints: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly multitrackReadRows: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];

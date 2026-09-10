@@ -2363,6 +2363,31 @@ pub fn multitrack_read_points(piece: &str, reported: &str) -> String {
     serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
 }
 
+/// **What a report of a multitrack's rows means** — `{"intents": [...]}`, in
+/// the piece's own vocabulary, or an empty string for input that will not
+/// parse.
+///
+/// The third of the readers, beside {@link multitrackRead} for the boxes and
+/// {@link multitrackReadPoints} for the curves. The report is every row, in the
+/// order they are shown, so what comes out is the difference and it is **one**
+/// `SetTracks` whatever changed: a name that is a track's id is that track
+/// (with the strip's mute, solo and level on it), a name that is no track's id
+/// is a track a hand made, a track the report leaves out is gone with its
+/// boxes, and the order is the report's. The ids a new track needs are minted
+/// from the piece itself, so there is nothing for a caller to reserve.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackReadRows)]
+pub fn multitrack_read_rows(piece: &str, reported: &str) -> String {
+    let (Ok(piece), Ok(reported)) = (
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
+        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Strip>>(reported),
+    ) else {
+        return String::new();
+    };
+    let intents = clausters_document::multitrack::picture::read_rows(&piece, &reported);
+    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
+}
+
 /// **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
 /// the piece's own vocabulary, or an empty string for input that will not
 /// parse.
