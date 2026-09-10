@@ -836,6 +836,184 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   widget draws one, and `MultitrackView` states no `notes` yet); and
   `multitrack_audio.html`, the web twin of the Python example.
 
+## G35 — The multitrack editor, refined by using it
+
+Written 2026-09-09 from the first session spent **using** the editor rather than
+building it: `multitrack_audio.py` opened, played, cut and joined by hand. Every
+point below is something that session found, in the user's own words, and the
+milestone is one because they are one subject — a piece being edited — and
+because half of them share the two structures the other half needs (a second
+cursor, and a node chain that says where a gain is applied).
+
+**What already works, recorded so it is not reopened**: selecting boxes by
+sweep and one at a time, moving them singly and as a block, entering a box with
+a double click (the editor opens and the multitrack's picture follows what it
+edits), and trimming as a *picture*.
+
+- ⬜ **G35a — The ruler is always there, and it points at what it rules.**
+  A multitrack window opened by `edit` has no time ruler at all: the widget's
+  own `ruler` is a strip inside its rectangle and the editor never places a
+  `timeruler` above the stack, so a piece opens with no numbers on it. The ruler
+  is not optional in an editor — it is how a position is read — so the editor
+  places one.
+
+  And a ruler's marks belong on the side its content is: **a ruler above the
+  stack draws its ticks and numbers along its bottom edge, one below draws them
+  along its top**, so the tick and the pixel it names are adjacent instead of
+  separated by the label. It is a prop of the strip (`dir`, `"down"`/`"up"`),
+  because only the document knows which side of the ruler the content is on.
+  It applies to every ruled view, not just this one.
+
+- ⬜ **G35b — Two cursors, and only one of them is placed.**
+  Today a window has **one** cursor: a click anywhere on the axis locates, which
+  *is* the transport seek, so clicking during playback leaves the sound running
+  from where it was while the mark sits where the hand pointed — two things
+  disagreeing about what "the cursor" means. They are two cursors and always
+  were:
+
+  - the **position cursor** — where a playback starts and where a paste lands.
+    It is placed by a click **on the time ruler** and by nothing else; the
+    content never moves it, and neither does playing.
+  - the **playhead** — the line that sweeps. It is never placed: it *starts*
+    from the position cursor, and while the transport runs it is the engine's
+    own position.
+
+  So `"locate"` stops meaning "seek here" and starts meaning "the position
+  cursor is here"; play seeks the transport to the position cursor rather than
+  to wherever the last click was; and a click on a box or a lane no longer moves
+  anything. The wire already has two props for two lines (`playhead_at` and
+  `playhead`) — what it has not got is a *position* that is neither, and that is
+  what this adds, group-wide like the rest of the axis' state.
+
+- ⬜ **G35c — The header is a surface, and the track is what it addresses.**
+  The header answers a press for its three controls and for nothing else, so
+  the track itself — the thing the controls belong to — cannot be pointed at.
+  Three verbs land there, and they are one point because they are one surface:
+
+  - **A click on a track's empty header space selects that track**, with a
+    visual indicator saying so. It is not decoration: a paste needs two
+    coordinates and the piece only had one — the position cursor says *when*,
+    the selected track says *where*, and without it a paste can only guess the
+    lane it came from.
+  - **A double click on the empty header space adds a track.** The gesture a
+    desktop already spends on "open this" is spent here on "make one", which is
+    what the stack has no other way to ask for.
+  - **Delete removes the selected track and everything on it.** Today Delete is
+    the held boxes'; with a track selected it is the track's, which is the
+    ordinary rule — a delete acts on what is in hand, and the header is what
+    puts a track there.
+
+  Open, and to settle when it is built: whether the double click that adds a
+  track is the one **below the last header** (where there is no track to point
+  at, so nothing else could be meant) or anywhere no control was hit — the
+  first is unambiguous, the second is what a hand reaches for. Whether the
+  selection is one track or several, and whether it is the hand's (like the box
+  selection, which nothing on the wire states) or the view's: the paste anchor
+  needs one, a mixer strip may want more.
+
+- ⬜ **G35d — A trim knows what the content can do, and the grip stops
+  blinking.**
+  Two defects and a decision:
+
+  - **The grip flickers** while an edge is dragged. It is drawn only when the
+    pointer is inside the box's rectangle, and dragging an edge takes the
+    pointer outside it — so the affordance disappears under the hand using it.
+    A held edge draws its grip whatever the pointer is over
+    (`track::clip_grip_on` exists for exactly this and nobody calls it).
+  - **Past the ends of the content there is silence.** A box is a *window* onto
+    a file, so a trim past what the file holds has three defensible answers and
+    a multitrack usually offers a choice: leave the silence (what happens now),
+    **stop the edge at the content**, or **loop the content** under the longer
+    box. It is a policy of the box, so it is stated on the box.
+
+- ⬜ **G35e — Two boxes can be made to touch, at sample level.**
+  With no quantization a hand cannot land a box exactly against its neighbour,
+  which is why `j` never has two boxes to join. So a drag inside a lane
+  **snaps to the edges of the boxes already on it**, within a tolerance: the
+  boxes meet at the sample, and a hand that keeps pulling past the tolerance
+  goes on and overlaps them, which is a crossfade and legal.
+
+  It is a snap to *content* rather than to a grid, so it stands beside `snap`
+  and does not replace it.
+
+- ⬜ **G35f — Join, defined.**
+  `j` does nothing today: it asks whether two placements are within one sample
+  of each other, and with no quantization they never are. The rule the user
+  named, and it is one sentence per case:
+
+  - the held boxes of **one track** join (the track is what makes two boxes
+    joinable, as a lane already is and a pitch is for two notes);
+  - a **gap** between two of them becomes silence in the joined box;
+  - an **overlap** mixes the two signals rather than one winning.
+
+  A join is therefore an edit of *contents* and not only of placements, which is
+  the part the document has to answer: a joined box is a window onto more than
+  one source, which is the same shape "assembled samples" asks for and is the
+  reason those two land together.
+
+- ⬜ **G35g — The halves of a split play what they show.**
+  `e` cuts and the picture is right; the sound is not. A split moves the second
+  half's **window** over its source (`start`), and whatever sounds the box has
+  to read from that offset — the example's reader ignores it and starts every
+  box at frame zero, so both halves play the beginning. It is the wire's fact
+  reaching the player, and it belongs with G35d and G35f because all three are
+  about the window rather than the placement.
+
+- ⬜ **G35h — The chain: a clip's gain and a track's gain are two controls.**
+  The largest point, and the one the others wait on. Today the example applies
+  one number per box and the automation is read once at the box's start —
+  neither curve *plays*. What is needed is the **node structure** the server
+  holds a piece in, so that a parameter is controlled where it belongs in the
+  chain:
+
+  - a **clip group**: the source or playback node, then the clip's own curves
+    (its dynamic envelope, its pan, its per-clip effect parameters), then the
+    clip's fader;
+  - a **track group** holding the clip groups, then the track's curves, its
+    effect chain, and the track's fader.
+
+  A gain applied at the clip and a gain applied at the track are two controls on
+  one signal, in that order, and the picture already says so: a clip envelope is
+  drawn inside its box, a track automation in a row of its own.
+
+  A curve must **drive its fader while the piece plays**, which is the second
+  half: a break-point list on the timeline reaching a control the audio thread
+  reads, against the transport's position and with no message per frame — the
+  same discipline the playhead already keeps.
+
+  Open: whether a curve is played by a node reading the transport's position
+  (the shape the readers already have) or written into a control bus, and where
+  the curve's samples live. Decide it here rather than per parameter, because
+  everything the piece automates later goes down the same path.
+
+- ⬜ **G35i — An entered box keeps its own history.**
+  Reported from use: after editing a box's samples, closing that window and
+  opening it again, `Ctrl`+`Z` in the box's editor steps the **multitrack's**
+  last edit and the sample edits are gone. One order is right — it is what
+  `G34` decided — but a leg belonging to the take must still be the take's, so
+  either the reopened editor is not registering under the structure's own
+  identity or the sample edits never reached the pile. Diagnose before deciding:
+  the two candidates are the participant an entered editor registers as, and
+  whether the samples domain records an inverse at all through this path.
+
+**Order.** G35a and G35b first: reading a position and placing one are what
+every other point is checked by eye against, and G35b changes a rule the whole
+protocol states. Then G35c, which finishes the paste's coordinates and gives the stack the two
+verbs it has no other way to ask for.
+Then the window trio — G35d, G35e, G35g — which are the same subject seen three
+ways and share the arithmetic; G35f follows them because a join needs the snap
+that makes two boxes touch and the content vocabulary the trim policy names.
+G35h last of the audio work, since it is a structure the others do not need but
+which needs the piece to be stable under the hand first. G35i is independent and
+can land at any point; do it whenever the diagnosis is cheap.
+
+**Acceptance:** the same session that found these, run again — a piece opened,
+located from the ruler, played from the cursor, a track added, selected and
+removed from its header, a box trimmed
+against its content, two boxes snapped together and joined, a box split and both
+halves heard from the right place, a clip envelope and a track automation heard
+as two gains on one signal, and every one of them undone in one order.
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Five design rules bound it, all in the direction of keeping the host light:
