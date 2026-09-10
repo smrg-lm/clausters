@@ -675,6 +675,14 @@ pub struct TimeSpace {
     /// carries the position in a [`Ctx`]. Nothing a drag decides depends on
     /// where the playhead is.
     pub head: Option<f64>,
+    /// Where the axis' **position cursor** stands, in its units, or `None`
+    /// where nothing has placed one.
+    ///
+    /// The other line, and the one that is *placed*: a click on the time ruler
+    /// puts it there and nothing else moves it — not the content, not playing.
+    /// [`head`](Self::head) is where the music is; this is where the reader is,
+    /// which is where a playback starts and where a paste lands.
+    pub cursor: Option<f64>,
     /// Whether this element is the container's **active edit layer** — the one
     /// layer that acts and offers affordances
     /// ([`crate::host::layers`]).
@@ -715,6 +723,7 @@ impl TimeSpace {
             span,
             sel: None,
             head: None,
+            cursor: None,
             active: true,
             window: super::SourceWindow::default(),
         }

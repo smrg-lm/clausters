@@ -1395,6 +1395,7 @@ def waveform(*, autofit: bool | None = None,
              sel_start: float | None = None, sel_len: float | None = None,
              sel_min: float | None = None, sel_max: float | None = None,
              playhead_at: float | None = None, playhead: float | None = None,
+              cursor: float | None = None,
              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
              y_start: float | None = None,
              y_len: float | None = None, link: int | None = None, markers=None, axes: dict | None = None,
@@ -1477,6 +1478,16 @@ def waveform(*, autofit: bool | None = None,
     position in samples where a located, stopped transport parks the line
     (negative = none); it stands still while ``playhead_at`` is off, so a
     paused cursor does not drift with the clock.
+
+    ``cursor`` is the **other line**: the **position cursor**, in samples
+    (negative = none), where a playback starts and where a paste lands. It is
+    the one a hand *places* — by a click on the time ruler and by nothing else
+    — while the two playhead props are one line in two states and both say
+    where the *music* is. So the content never moves it, playing never moves
+    it, and it stays where it was put; a click that lands mid-playback moves
+    the mark and leaves the sound alone. Group-wide like the rest of the axis'
+    state, and reported as ``/gui_event id "locate" position`` when a click
+    places it.
     ``playhead_loop_start``/``playhead_loop_len`` (in
     samples) make that sweep **wrap** inside the region instead of running
     straight past it — what a looping playback does, so playing a selection on
@@ -1512,7 +1523,7 @@ def waveform(*, autofit: bool | None = None,
                        tempo_map=_tempo_map(tempo_map), beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
-                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_at=playhead_at, playhead=playhead, cursor=cursor,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        y_start=y_start, y_len=y_len, link=link))
@@ -1535,6 +1546,7 @@ def spectrogram(*, autofit: bool | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
                 sel_min: float | None = None, sel_max: float | None = None,
                 playhead_at: float | None = None, playhead: float | None = None,
+              cursor: float | None = None,
                 playhead_loop_start: float | None = None,
                 playhead_loop_len: float | None = None, y_start: float | None = None,
                 y_len: float | None = None, link: int | None = None, markers=None, axes: dict | None = None,
@@ -1584,7 +1596,7 @@ def spectrogram(*, autofit: bool | None = None,
                        beat_at=beat_at, quant=quant, autofit=autofit,
                        sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
-                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_at=playhead_at, playhead=playhead, cursor=cursor,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        y_start=y_start, y_len=y_len, link=link))
@@ -2239,6 +2251,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
                sel_min: float | None = None, sel_max: float | None = None,
                y_start: float | None = None, y_len: float | None = None,
                playhead_at: float | None = None, playhead: float | None = None,
+              cursor: float | None = None,
                playhead_loop_start: float | None = None,
                playhead_loop_len: float | None = None,
                link: int | None = None, theme: dict | None = None,
@@ -2325,14 +2338,14 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        sel_min=sel_min, sel_max=sel_max,
                        y_start=y_start, y_len=y_len,
-                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_at=playhead_at, playhead=playhead, cursor=cursor,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len, link=link,
                        autofit=autofit))
     return node("multitrack", id=id, **extra, **props)
 
 
-def timeruler(*, h: float = 20.0, autofit: bool | None = None,
+def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | None = None,
               ruler: str | None = None, dir: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
@@ -2378,9 +2391,11 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     span the group keeps, drawn as a band, looped by the transport: what gets
     played) — and they are told apart by where the gesture began, not by a mode:
     the body sweeps the first, the ruler the second. So a **drag scrolls** the
-    axis, **Alt+drag sweeps the range**, the wheel zooms, and a **click
-    locates** (emitting ``"locate"``) — a drag that never left the slop is where
-    the hand pointed. On a signal the range is not a second thing: the frames
+    axis, **Alt+drag sweeps the range**, the wheel zooms, and a **click places
+    the position cursor** (emitting ``"locate"``) — a drag that never left the
+    slop is where the hand pointed. **The ruler is the only place it is
+    placed**, which is what makes it the reader's mark rather than a side
+    effect of pointing at something. On a signal the range is not a second thing: the frames
     and the span are one selection there, so the ruler is another hand onto the
     one the view already has. And a lane's own ``ruler``, a roll's and a
     signal's are **strips** rather than widgets — the press lands on the view —
@@ -2400,7 +2415,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     """
     extra = _drop_none(theme=theme, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, dir=dir, sample_rate=sample_rate,
-                       tempo=tempo, tempo_map=_tempo_map(tempo_map),
+                       tempo=tempo, tempo_map=_tempo_map(tempo_map), cursor=cursor,
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
@@ -2413,6 +2428,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               sel_start: float | None = None, sel_len: float | None = None,
               sel_min: float | None = None, sel_max: float | None = None,
               playhead_at: float | None = None, playhead: float | None = None,
+              cursor: float | None = None,
               playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
@@ -2487,7 +2503,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len,
         sel_min=sel_min, sel_max=sel_max, playhead_at=playhead_at,
-        playhead=playhead, playhead_loop_start=playhead_loop_start,
+        playhead=playhead, cursor=cursor, playhead_loop_start=playhead_loop_start,
         playhead_loop_len=playhead_loop_len, autofit=autofit,
         y_start=y_start, y_len=y_len))
     if velocity is not None:
@@ -2823,7 +2839,7 @@ _X_AXIS = {
     "beat_at": "beat_at", "quant": "quant",
     "sample_rate": "sample_rate", "link": "link", "autofit": "autofit",
     "sel_start": "sel_start", "sel_len": "sel_len",
-    "playhead": "playhead", "playhead_at": "playhead_at",
+    "playhead": "playhead", "playhead_at": "playhead_at", "cursor": "cursor",
     "playhead_loop_start": "playhead_loop_start",
     "playhead_loop_len": "playhead_loop_len",
     "markers": "markers",

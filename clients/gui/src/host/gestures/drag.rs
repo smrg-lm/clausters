@@ -317,7 +317,8 @@ impl Gestures {
     /// clip, a note, empty lane space and a ruler all place the same cursor, and
     /// the content never moves it.
     ///
-    /// **The head is placed when the button comes up**, not when it goes down. A
+    /// **The position cursor is placed when the button comes up**, not when it
+    /// goes down. A
     /// press is not yet a gesture — the same movement is a click or a sweep
     /// depending on what happens next — and placing the head at the press puts
     /// it where the hand *started* rather than where the selection *begins*,
@@ -341,15 +342,15 @@ impl Gestures {
         if let Some(c) = click {
             // **A click on a marker is that marker's moment**, not the pixel's:
             // the arrow is a handle onto an exact time, which is most of what a
-            // marker is for. Anywhere else the click is the ordinary locate, at
-            // the time the pointer names.
-            let marker = c.ruler.and_then(|strip| {
+            // marker is for. Anywhere on the strip it is the ordinary placing,
+            // at the time the pointer names.
+            let marker = (|| {
                 let markers = host
                     .widget_kind(ctx.def_id, c.id)
                     .and_then(|k| k.editor().map(|e| e.markers.clone()))?;
-                super::nav::marker_under(host, ctx.def_id, c.id, strip, &markers, cx)
+                super::nav::marker_under(host, ctx.def_id, c.id, c.ruler, &markers, cx)
                     .and_then(|i| markers.get(i).map(|m| m.time))
-            });
+            })();
             match marker {
                 Some(time) => super::nav::locate_at(host, &mut out, ctx, c.id, time),
                 None => locate_timeline(host, &mut out, ctx, c.id, c.body, cx),

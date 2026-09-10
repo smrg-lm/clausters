@@ -796,6 +796,18 @@ export interface TimelineOptions extends WidgetOptions {
     selMin?: number;
     selMax?: number;
     /**
+     * **The position cursor** (negative = none): where a playback starts and
+     * where a paste lands, in the axis' own units.
+     *
+     * The other line, and the one a hand *places* — by a click on the time
+     * ruler and by nothing else. Neither playhead prop is it: those two are one
+     * line in two states (swept from the clock, or parked where the transport
+     * stopped) and both say where the **music** is. This says where the
+     * **reader** is, so the content never moves it, playing never moves it, and
+     * it stays where it was put. Group-wide, like the rest of the axis' state.
+     */
+    cursor?: number;
+    /**
      * The engine sample-clock value at timeline position 0 — the playhead
      * sweeps on its own from there (negative = none).
      */
@@ -2422,8 +2434,10 @@ export function piano(
  * the group keeps, drawn as a band, looped by the transport: what gets played)
  * — and they are told apart by where the gesture began, not by a mode: the body
  * sweeps the first, the ruler the second. So a **drag scrolls** the axis,
- * **Alt+drag sweeps the range**, the wheel zooms, and a **click locates** — a
- * drag that never left the slop is where the hand pointed. On a signal the
+ * **Alt+drag sweeps the range**, the wheel zooms, and a **click places the
+ * position cursor** — a drag that never left the slop is where the hand
+ * pointed. **The ruler is the only place it is placed**, which is what makes it
+ * the reader's mark rather than a side effect of pointing at something. On a signal the
  * range is not a second thing: the frames and the span are one selection there,
  * so the ruler is another hand onto the one the view already has. And a lane's
  * own `ruler`, a roll's and a signal's are **strips** rather than widgets — the
@@ -2849,7 +2863,7 @@ function tempoMapProp(map: TempoMap | string | undefined): string | undefined {
 function timelineProps(options: TimelineOptions, y: Props = {}, x: Props = {}): Props {
     const {
         ruler, sampleRate, tempo, tempoMap, beatAt, quant, selStart, selLen,
-        selMin, selMax, markers,
+        selMin, selMax, markers, cursor,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
         yStart, yLen, link, autofit, axes: pair, ...rest
     } = options;
@@ -2868,6 +2882,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}, x: Props = {}): 
                     ["sel_len", selLen],
                     ["playhead_at", playheadAt],
                     ["playhead", playhead],
+                    ["cursor", cursor],
                     ["playhead_loop_start", playheadLoopStart],
                     ["playhead_loop_len", playheadLoopLen],
                     ["link", link],

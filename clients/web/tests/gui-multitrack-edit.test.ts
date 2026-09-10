@@ -149,6 +149,29 @@ test("the piece is ruled from above by a strip of its own", () => {
     assert.equal(x.unit, "beats");
 });
 
+test("the position cursor is kept and told and is not an edit", () => {
+    // A click on the time ruler places the **position cursor**, and what arrives
+    // is `"locate"` with where it landed.
+    //
+    // It is where a playback starts and where a paste lands, so the editor keeps
+    // it — the playhead is where the *music* is and moves on its own, and an
+    // anchor that moved on its own would not be an anchor. It is not an edit and
+    // reaches no history.
+    const ed = editor(piece());
+    ed.draw();
+    const wid = [...ed.view!.widgets][0];
+    const told: number[] = [];
+    ed.onLocate = (beat) => told.push(beat);
+    assert.equal(
+        (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "locate", 4.0 * SR]),
+        false,
+        "placing is not an edit",
+    );
+    near(ed.cursor!, 4.0);
+    assert.equal(told.length, 1);
+    near(told[0], 4.0);
+});
+
 test("a source nobody loaded draws an empty box", () => {
     const ed = editor(piece(), {});
     assert.ok(

@@ -139,6 +139,15 @@ pub struct GroupState {
     pub playhead_at: f64,
     /// The static cursor of a located, stopped transport (`< 0` = none).
     pub playhead: f64,
+    /// **The position cursor** (`< 0` = none): where a playback starts and
+    /// where a paste lands — the same convention as `EditorProps::cursor`.
+    ///
+    /// The second line, and the only one a hand places. The playhead pair
+    /// above says where the *music* is, swept from the clock or parked where
+    /// the transport stopped; this says where the *reader* is, and nothing but
+    /// a click on the ruler moves it. Group-wide because a paste anchor that
+    /// differed between two lanes of one piece would not be an anchor.
+    pub cursor: f64,
     /// The sweep's loop region (samples; `len <= 0` = the straight pass) — the
     /// same convention as `EditorProps::playhead_loop_start`/`_len`. Group-wide
     /// like the anchor: linked views must wrap the line at the same place, or
@@ -169,6 +178,7 @@ impl GroupState {
             sel_len: editor.sel_len.round(),
             playhead_at: editor.playhead_at,
             playhead: editor.playhead,
+            cursor: editor.cursor,
             playhead_loop_start: editor.playhead_loop_start,
             playhead_loop_len: editor.playhead_loop_len,
             total: nav.len.max(0.0) as usize,
@@ -193,6 +203,12 @@ impl GroupState {
     pub fn head_at(&self, sample_clock: f64) -> Option<f64> {
         self.swept_at(sample_clock)
             .or_else(|| (self.playhead >= 0.0).then_some(self.playhead))
+    }
+
+    /// **The position cursor**, or `None` where none has been placed — the
+    /// line a click on the ruler puts down, which nothing else moves.
+    pub fn cursor(&self) -> Option<f64> {
+        (self.cursor >= 0.0).then_some(self.cursor)
     }
 
     /// Where the *swept* playhead stands — `Some` only while a transport is
@@ -367,6 +383,7 @@ impl TimelineGroups {
             span: self.total_of(id) as f64,
             sel: state.selection(),
             head: clock.and_then(|c| state.head_at(c)),
+            cursor: (state.cursor >= 0.0).then_some(state.cursor),
             // A member of a navigation group stands on its own rectangle: it is
             // its own layer, over its own contents — nothing above it is
             // deciding between claimants or showing a window of it.
@@ -875,9 +892,9 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// Sets the group's **static cursor** — where a located, stopped transport
-    /// sits. Group-wide, so all the lanes show one cursor.
-    pub fn set_timeline_cursor(&mut self, id: i32, pos: f64) -> Vec<i32> {
+    /// Sets the group's **parked playhead** — where a located, stopped
+    /// transport sits. Group-wide, so all the lanes show one line.
+    pub fn park_timeline_head(&mut self, id: i32, pos: f64) -> Vec<i32> {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
@@ -888,32 +905,23 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// **Places the one cursor** at `pos`: the group's static cursor, and — when
-    /// the transport is running — the sweep's anchor with it, so the line
-    /// carries on from where the hand pointed instead of running on from where
-    /// it was.
+    /// **Places the position cursor** at `pos` — the group's, so every lane of
+    /// the piece shows the one mark.
     ///
-    /// One cursor is the rule the window has: its position is a time on the
-    /// clock, and the drawn one and the playing one are the same thing. That
-    /// makes this a decision about *where the transport's position lives* rather
-    /// than a second gesture — the host answers the click at once and the owner
-    /// is told (`"locate"`), which is what re-cues whatever sounds.
-    ///
-    /// `clock` is the engine's sample clock the front is drawing this frame with
-    /// (`0.0` where it knows none); the anchor is a clock value, so
-    /// `playhead_at = clock - pos` is what puts the sweep at `pos` now. A
-    /// stopped group has no anchor to move and keeps none.
-    pub fn locate_timeline_cursor(&mut self, id: i32, pos: f64, clock: f64) -> Vec<i32> {
+    /// It moves nothing else, and that is the whole rule. The playhead is not
+    /// placed: it *starts* from here, and while the transport runs it is the
+    /// engine's own position — so a click that lands mid-playback leaves the
+    /// music exactly where it is and moves only the mark. What the click means
+    /// beyond the mark is the owner's (`"locate"`), which is where a seek
+    /// happens if one is wanted.
+    pub fn set_timeline_cursor(&mut self, id: i32, pos: f64) -> Vec<i32> {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
         let Some(state) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.playhead = pos;
-        if state.playhead_at >= 0.0 && clock >= 0.0 {
-            state.playhead_at = clock - pos;
-        }
+        state.cursor = pos;
         self.timeline_roots(key)
     }
 
@@ -991,6 +999,7 @@ impl Host {
                 sel_len: 0.0,
                 playhead_at: -1.0,
                 playhead: -1.0,
+                cursor: -1.0,
                 playhead_loop_start: 0.0,
                 playhead_loop_len: 0.0,
                 total: 1,
@@ -1149,7 +1158,7 @@ impl Host {
 
     /// Routes the shared timeline keys of one `/gui_set` on timeline widget
     /// `id` through the group model — `view_start`/`view_len`, `sel_start`/
-    /// `sel_len`, `playhead_at`, the `playhead_loop_*` pair and `link` (a
+    /// `sel_len`, `playhead_at`, `cursor`, the `playhead_loop_*` pair and `link` (a
     /// negative link unlinks) apply group-wide; every other key is applied to
     /// the widget itself by the caller. Pushes a redraw effect per affected window.
     pub(super) fn set_timeline_props(
@@ -1178,6 +1187,11 @@ impl Host {
                     }
                 }
                 "playhead" => {
+                    if let Some(pos) = v.as_f64() {
+                        roots.extend(self.park_timeline_head(id, pos));
+                    }
+                }
+                "cursor" => {
                     if let Some(pos) = v.as_f64() {
                         roots.extend(self.set_timeline_cursor(id, pos));
                     }
@@ -1373,6 +1387,7 @@ mod tests {
             sel_len: 0.0,
             playhead_at: at,
             playhead: parked,
+            cursor: -1.0,
             playhead_loop_start: loop_start,
             playhead_loop_len: loop_len,
             total: 1,

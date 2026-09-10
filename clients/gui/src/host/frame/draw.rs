@@ -317,14 +317,22 @@ pub(super) fn draw_editor_overlay(
             prev = Some([x, y_new]);
         }
     }
-    // Playhead: the engine clock relative to the widget's origin while playing,
-    // else the static cursor of a located, stopped transport.
-    if let Some(pos) = chrome.head_at(inputs.world.sample_clock)
-        && pos >= nav.start
-        && pos <= nav.start + nav.len
-    {
-        let x = sample_to_x(pos, nav, body);
-        mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), theme.playhead);
+    // **Two lines, and they mean two things.** The position cursor is where
+    // the reader put the mark — a click on the ruler and nothing else — and it
+    // goes down first, so where they coincide the playhead is the one that
+    // reads. The playhead is the engine clock relative to the widget's origin
+    // while playing, else the parked line of a located, stopped transport.
+    for (pos, color) in [
+        (chrome.cursor(), theme.cursor),
+        (chrome.head_at(inputs.world.sample_clock), theme.playhead),
+    ] {
+        if let Some(pos) = pos
+            && pos >= nav.start
+            && pos <= nav.start + nav.len
+        {
+            let x = sample_to_x(pos, nav, body);
+            mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), color);
+        }
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner —

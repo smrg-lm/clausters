@@ -114,7 +114,8 @@ the same color to within the 8 bits of the notation:
 | `plate` | `#0a0d129e` | The ground a **text plate** lays under a caption drawn over a picture (a clip's name over its take, a roll's cursor read-out): a translucent dark box, so the text reads without hiding what it is written on. Its alpha is the whole role. |
 | `focus` | `#73b2ffe6` | The ring around the widget holding the keyboard focus. Its own role rather than the accent: what is focused and what is *active* are two different questions, and a window answers both at once. |
 | `selection` | `#8cbff2` | The selection color; fills and edges derive by alpha. |
-| `playhead` | `#f28c4ce6` | The playhead line. |
+| `playhead` | `#f28c4ce6` | The playhead line — the one that **sweeps**, whose position is the engine's. |
+| `cursor` | `#9eccf2d9` | The **position cursor**: the line a click on the ruler places, where a playback starts and a paste lands. |
 | `ruler_text` | `#a6adb8` | Ruler tick labels. |
 | `ruler_line` | `#737a85` | Ruler tick lines. |
 | `object_fill` | `#293852` | A placed object's fill (a clip's body, a patch member box). |

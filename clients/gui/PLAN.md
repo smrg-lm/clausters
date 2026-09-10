@@ -881,7 +881,7 @@ would be written against a picture the first half had already changed.
   and pans away from the lanes it is ruling. The two `recording` examples,
   whose ruler is under its lanes, say `dir="up"`.
 
-- ⬜ **G35.1 — Two cursors, and only one of them is placed.**
+- ✅ **G35.1 — Two cursors, and only one of them is placed.**
   Playing and then clicking somewhere else leaves the sound running from where
   it was while the mark sits where the hand pointed. That is not a bug in the
   seek, it is two cursors wearing one name: the protocol states "a window has
@@ -903,6 +903,23 @@ would be written against a picture the first half had already changed.
 
   It changes a rule the whole protocol states, so it goes early, before anything
   is checked against the picture it corrects.
+
+  *Done 2026-09-09.* The position cursor is `cursor`, an **x-axis** property
+  and therefore the group's (`GroupState::cursor`, `TimeSpace::cursor`), drawn
+  in its own theme role beside the playhead's — two lines, two colours, two
+  questions. Placing it is one rule in one place: the click the machine already
+  derived at the press now survives **only where the press landed on a ruler
+  strip** (`Frame::ruler`, which the hit-test already answered for the gesture
+  table), so a box, bare stack and a roll's grid place nothing. `"locate"` stops
+  meaning *seek* and starts meaning *the reader is here*: `set_timeline_cursor`
+  moves the mark and touches neither playhead prop, so a click mid-playback
+  leaves the music alone. A key gesture anchors on the cursor and falls back to
+  the playhead only where none was ever placed (`cursor_of`), which is what
+  makes a cut and a paste land where the hand pointed rather than where the
+  music got to. The session host cues a **stopped** transport to the mark and
+  leaves a rolling one alone; a client hears it as `Editor.on_locate` /
+  `onLocate` with `Editor.cursor` kept beside the selection, and
+  `multitrack_audio.py` cues its transport from there.
 
 - ⬜ **G35.2 + G35.13 — The header is a surface, and the track is what it
   addresses.**

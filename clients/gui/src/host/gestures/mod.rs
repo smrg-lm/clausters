@@ -302,11 +302,13 @@ struct Click {
     id: i32,
     /// That axis' body, so the release reads the same pixels the press did.
     body: Rect,
-    /// The **ruler strip the press was on**, or `None` anywhere else. A click on
-    /// a marker is that marker's moment rather than the pixel's, and the strip
-    /// is where that is asked; it is derived at the press because a gesture may
-    /// have travelled off the strip it began on.
-    ruler: Option<Rect>,
+    /// The **ruler strip the press was on**. There is no other kind: the
+    /// position cursor is placed by a click on the ruler and by nothing else,
+    /// so a press that did not land on one is no click at all. It is derived at
+    /// the press because a gesture may have travelled off the strip it began
+    /// on, and the release asks it which marker was under the pointer — a click
+    /// on a marker is that marker's moment rather than the pixel's.
+    ruler: Rect,
     /// Where the press landed, in window pixels — what tells a click from a
     /// gesture, against the same hit slop every other sweep uses.
     origin_x: f64,

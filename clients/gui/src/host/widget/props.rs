@@ -429,6 +429,19 @@ pub struct EditorProps {
     /// the engine clock and *sweeps*; this one stands still — a located, stopped
     /// transport has a cursor, and it must not drift with the clock.
     pub playhead: f64,
+    /// **The position cursor** (`< 0` = none): where a playback starts and
+    /// where a paste lands, in the same timeline samples as the playhead.
+    ///
+    /// The other line, and the one a hand *places* — by a click on the time
+    /// ruler and by nothing else. Neither of the playhead props is it: those
+    /// two are one line in two states (swept from the clock, or parked where
+    /// the transport stopped), and both say where the **music** is. This says
+    /// where the **reader** is, so the content never moves it, playing never
+    /// moves it, and it stays where it was put.
+    ///
+    /// Group-wide like the rest of the axis' state, because a paste anchor
+    /// that differed between two lanes of one piece would not be an anchor.
+    pub cursor: f64,
     /// The sweep's **loop region**, in the same sample units as `playhead`:
     /// with `playhead_loop_len > 0` the swept line wraps inside
     /// `[playhead_loop_start, + len)` instead of running straight past it, so
@@ -501,6 +514,7 @@ impl EditorProps {
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
             playhead: number_f64(props, "playhead", -1.0),
+            cursor: number_f64(props, "cursor", -1.0),
             playhead_loop_start: number_f64(props, "playhead_loop_start", 0.0),
             playhead_loop_len: number_f64(props, "playhead_loop_len", 0.0),
             y_start: number_f64(props, "y_start", 0.0),
@@ -595,6 +609,7 @@ impl EditorProps {
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
             "playhead" => set_f64(&mut self.playhead, v),
+            "cursor" => set_f64(&mut self.cursor, v),
             "playhead_loop_start" => set_f64(&mut self.playhead_loop_start, v),
             "playhead_loop_len" => set_f64(&mut self.playhead_loop_len, v),
             "y_start" => set_f64(&mut self.y_start, v),

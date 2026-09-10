@@ -3272,8 +3272,11 @@ fn a_view_with_no_samples_refuses_instead_of_sweeping() {
     );
 }
 
-/// The roll locates too, on its grid and on the notes drawn over it: the
-/// cursor is the window's, and the content does not define it.
+/// **The position cursor is placed on the ruler and by nothing else.** It says
+/// where the *reader* is — where a playback starts and where a paste lands — so
+/// it is put somewhere on purpose rather than as a side effect of pointing at
+/// something: a click on the roll's grid, or on a note drawn over it, moves no
+/// line at all.
 #[test]
 fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
     let mut host = host_from(
@@ -3294,25 +3297,42 @@ fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
     let y = grid.y as f64 + grid.h as f64 * 0.5;
     g.press(&mut host, &ctx, x, y);
     let effects = g.release(&mut host, &ctx, x, y);
-    assert!(has_emit_tag(&effects, 90, "locate"), "a click is a cursor");
-    let cursor = host.timelines().state(key).unwrap().playhead;
     assert!(
-        (cursor - 2000.0).abs() < 40.0,
-        "at the time the pointer named: {cursor}"
+        !has_emit_tag(&effects, 90, "locate"),
+        "the grid is content, and content does not place the cursor: {effects:?}"
     );
-    // And a click on the note at the start of the roll locates there rather
-    // than nowhere: the note is content, and content does not move the cursor.
+    assert!(
+        host.timelines().state(key).unwrap().cursor < 0.0,
+        "nothing placed"
+    );
+    // Nor does a note drawn over it.
     let note_x = grid.x as f64 + 2.0;
     let note_y = pitch_y(&host, &ctx, 90, 60.0);
     g.press(&mut host, &ctx, note_x, note_y);
     let effects = g.release(&mut host, &ctx, note_x, note_y);
     assert!(
-        has_emit_tag(&effects, 90, "locate"),
-        "a click on a note is a click on the axis under it"
+        !has_emit_tag(&effects, 90, "locate"),
+        "a click on a note is not a place either"
     );
+    // The roll's **own ruler strip** — the bottom `ruler_h` of its rect, drawn
+    // by the view rather than by a widget — is where it *is* placed.
+    let rect = placed_rect(&host, &ctx, 90);
+    let on_ruler = (rect.y + rect.h) as f64 - 2.0;
+    g.press(&mut host, &ctx, x, on_ruler);
+    let effects = g.release(&mut host, &ctx, x, on_ruler);
     assert!(
-        host.timelines().state(key).unwrap().playhead < 200.0,
-        "at the pointer, near the start"
+        has_emit_tag(&effects, 90, "locate"),
+        "a click on the ruler is a place"
+    );
+    let cursor = host.timelines().state(key).unwrap().cursor;
+    assert!(
+        (cursor - 2000.0).abs() < 40.0,
+        "at the time the pointer named: {cursor}"
+    );
+    // And it is the **other** line: the playhead is never placed.
+    assert!(
+        host.timelines().state(key).unwrap().playhead < 0.0,
+        "the playhead is not the cursor"
     );
 }
 
@@ -3430,33 +3450,41 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
     );
     let effects = g.release(&mut host, &ctx, empty, midy);
     assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "bare stack is not the ruler: nothing is placed there: {effects:?}"
+    );
+
+    // Nor is a box: the clips are content, and content does not place the mark.
+    let on_clip = body.x as f64 + body.w as f64 * 0.02;
+    g.press(&mut host, &ctx, on_clip, midy);
+    let effects = g.release(&mut host, &ctx, on_clip, midy);
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a click on a clip is not a place: {effects:?}"
+    );
+
+    // The **ruler strip** is: the bottom `ruler_h` of the stack's rect.
+    let on_ruler = (rect.y + rect.h) as f64 - 2.0;
+    g.press(&mut host, &ctx, empty, on_ruler);
+    let effects = g.release(&mut host, &ctx, empty, on_ruler);
+    assert!(
         has_emit_tag(&effects, 70, "locate"),
-        "a click on bare stack is a cursor: {effects:?}"
+        "a click on the ruler places the cursor: {effects:?}"
     );
 
     // A sweep left a rectangle, and a rectangle is not a place.
-    g.press(&mut host, &ctx, empty, midy);
-    g.drag_to(&mut host, &ctx, empty + 90.0, midy);
-    let effects = g.release(&mut host, &ctx, empty + 90.0, midy);
+    g.press(&mut host, &ctx, empty, on_ruler);
+    g.drag_to(&mut host, &ctx, empty + 90.0, on_ruler);
+    let effects = g.release(&mut host, &ctx, empty + 90.0, on_ruler);
     assert!(
         !has_emit_tag(&effects, 70, "locate"),
         "a rectangle is not a cursor"
     );
 
-    // And a click on a clip locates too: the box is drawn on the axis, not
-    // instead of it.
-    let on_clip = body.x as f64 + body.w as f64 * 0.02;
-    g.press(&mut host, &ctx, on_clip, midy);
-    let effects = g.release(&mut host, &ctx, on_clip, midy);
-    assert!(
-        has_emit_tag(&effects, 70, "locate"),
-        "a click on a clip is a cursor too: {effects:?}"
-    );
-
     // Beside the axis — the header gutter — there is no position and no click.
     let effects = {
-        g.press(&mut host, &ctx, body.x as f64 - 10.0, midy);
-        g.release(&mut host, &ctx, body.x as f64 - 10.0, midy)
+        g.press(&mut host, &ctx, body.x as f64 - 10.0, on_ruler);
+        g.release(&mut host, &ctx, body.x as f64 - 10.0, on_ruler)
     };
     assert!(
         !has_emit_tag(&effects, 70, "locate"),

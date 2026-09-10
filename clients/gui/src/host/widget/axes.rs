@@ -76,6 +76,7 @@ const X_AXIS: &[(&str, &str)] = &[
     ("sel_start", "sel_start"),
     ("sel_len", "sel_len"),
     ("playhead", "playhead"),
+    ("cursor", "cursor"),
     ("playhead_at", "playhead_at"),
     ("playhead_loop_start", "playhead_loop_start"),
     ("playhead_loop_len", "playhead_loop_len"),

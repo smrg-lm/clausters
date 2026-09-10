@@ -149,8 +149,15 @@ theme_roles! {
     // -- Navigation chrome --
     /// The selection color; fills and edges derive by alpha.
     selection = [0.55, 0.75, 0.95, 1.0];
-    /// The playhead line.
+    /// The playhead line — the one that **sweeps**, whose position is the
+    /// engine's.
     playhead = [0.95, 0.55, 0.30, 0.9];
+    /// The **position cursor**: the line a click on the ruler places, where a
+    /// playback starts and a paste lands. Cooler and quieter than the
+    /// playhead's warm line, because the two are on screen at once and the eye
+    /// has to tell "where I put it" from "where the music is" without reading
+    /// either twice.
+    cursor = [0.62, 0.80, 0.95, 0.85];
     /// Ruler tick labels.
     ruler_text = [0.65, 0.68, 0.72, 1.0];
     /// Ruler tick lines.

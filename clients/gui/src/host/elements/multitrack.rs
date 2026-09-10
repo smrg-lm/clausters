@@ -1350,11 +1350,18 @@ impl Element for Multitrack {
                 None,
                 crate::host::graphics::selection::Vertical::Whole,
             );
-            if let Some(pos) = time.head
-                && let Some(x) = track::playhead_x(over, &nav, pos)
-            {
-                let (mesh, m, theme) = d.parts();
-                mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), theme.playhead);
+            // **Two lines, and they mean two things**: the position cursor is
+            // where the reader put the mark, the playhead is where the music
+            // is. The cursor goes down first, so where they coincide it is the
+            // playhead that reads.
+            for (pos, role) in [(time.cursor, false), (time.head, true)] {
+                if let Some(pos) = pos
+                    && let Some(x) = track::playhead_x(over, &nav, pos)
+                {
+                    let (mesh, m, theme) = d.parts();
+                    let color = if role { theme.playhead } else { theme.cursor };
+                    mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), color);
+                }
             }
         }
         if let Some(text) = &self.label {

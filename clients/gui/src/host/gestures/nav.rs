@@ -304,10 +304,10 @@ pub(super) fn transport_follows_selection(
     host.set_loop((len > 0.0).then(|| (start, start + len as u64)));
 }
 
-/// Locates the transport: the timeline position under the cursor becomes the
-/// group's static cursor (drawn at once on every lane, so the click lands
-/// where you see it) and leaves as `/gui_event <id> "locate" <position>` — the
-/// script seeks its playhead there, which is what actually moves the music.
+/// Places the **position cursor**: the timeline position under the pointer
+/// becomes the group's, drawn at once on every lane so the click lands where
+/// you see it, and leaves as `/gui_event <id> "locate" <position>` — where the
+/// owner starts a playback from and where a paste of its own would land.
 /// **The marker a press at `cx` landed on**, over the strip it was drawn in —
 /// asked of the group's *current* window, since the axis may have moved since
 /// the markers were set.
@@ -365,18 +365,25 @@ pub(super) fn set_markers(
 /// The transport's cursor at an **exact** position, rather than at the one a
 /// pixel names: what a click on a marker means, since a marker is the moment it
 /// was placed at and not the pixel it is drawn on.
-/// **The window's one cursor**, in the units of the axis widget `id` is on, or
-/// `None` where it is on no navigation group or none has been placed there yet.
+/// **Where a key gesture acts**, in the units of the axis widget `id` is on, or
+/// `None` where it is on no navigation group and nowhere a cut or a paste could
+/// land.
 ///
-/// The same answer the frame draws the line with ([`GroupState::head_at`]), so
-/// what a key gesture is anchored to is what the reader is looking at: while the
-/// transport runs that is the swept position, and stopped it is the cursor a
-/// click left behind.
+/// The **position cursor** — the line a click on the ruler placed — because
+/// that is the one a hand put somewhere on purpose: a cut and a paste land where
+/// the reader is, not where the music happens to have got to. Where none has
+/// been placed it falls back to the playhead ([`GroupState::head_at`]), so a
+/// window that has only ever been played still answers with a position rather
+/// than refusing the key.
 ///
 /// [`GroupState::head_at`]: super::super::timeline::GroupState::head_at
 pub(super) fn cursor_of(host: &Host, ctx: &GestureCtx, id: i32) -> Option<f64> {
     let key = host.timeline_key(id)?;
-    host.timelines().state(key)?.head_at(ctx.sample_clock)
+    let state = host.timelines().state(key)?;
+    if state.cursor >= 0.0 {
+        return Some(state.cursor);
+    }
+    state.head_at(ctx.sample_clock)
 }
 
 pub(super) fn locate_at(
@@ -386,13 +393,13 @@ pub(super) fn locate_at(
     id: i32,
     pos: f64,
 ) {
-    // **One cursor**: the drawn one and the playing one are the same, so a
-    // locate that lands while the transport is running re-anchors the sweep and
-    // it carries on from here — the click does not wait for the owner to seek,
-    // and the line does not run on from where it was in the meantime. The
-    // `"locate"` below is what actually moves the music: the host owns where the
-    // cursor *is*, the script owns what sounds under it.
-    let roots = host.locate_timeline_cursor(id, pos, ctx.sample_clock);
+    // **Two cursors, and this is the one that is placed.** The mark goes where
+    // the hand pointed and the music is left alone: the playhead is never
+    // placed, it starts from here and, while the transport runs, it is the
+    // engine's own position. So a click mid-playback moves the mark and
+    // nothing else. The `"locate"` below tells the owner where the reader put
+    // it — the host owns where the cursor *is*, the owner owns what it means.
+    let roots = host.set_timeline_cursor(id, pos);
     emit(
         host,
         out,

@@ -117,6 +117,25 @@ def test_the_piece_is_ruled_from_above_by_a_strip_of_its_own():
     assert ruler["axes"]["x"]["unit"] == "beats"
 
 
+def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
+    """A click on the time ruler places the **position cursor**, and what
+    arrives is `"locate"` with where it landed.
+
+    It is where a playback starts and where a paste lands, so the editor keeps
+    it -- the playhead is where the *music* is and moves on its own, and an
+    anchor that moved on its own would not be an anchor. It is not an edit and
+    reaches no history.
+    """
+    ed = editor(piece())
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    told = []
+    ed.on_locate = told.append
+    assert ed._route([wid, "locate", 4.0 * SR]) is False, "placing is not an edit"
+    assert ed.cursor == pytest.approx(4.0), "in the editor's units, which are beats"
+    assert told == [pytest.approx(4.0)]
+
+
 def test_a_source_nobody_loaded_draws_an_empty_box():
     ed = MultitrackEditor(piece(), sample_rate=SR, sources={})
     assert all(b[6] == -1 for b in clips(ed)), \

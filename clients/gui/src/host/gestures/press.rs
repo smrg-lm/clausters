@@ -188,21 +188,25 @@ impl Gestures {
             });
             return out;
         }
-        // **The click is the machine's, not a step's.** Where the press landed
-        // on the axis is read here, once, whatever the plans below do with it:
-        // one cursor is placed by a click regardless of what was drawn under the
-        // pointer, so a clip, a note and empty lane space all answer the same
-        // way (see [`Gestures::release`]). Beside the axis — a lane's header —
-        // there is no position, and no click.
+        // **The click is the machine's, not a step's**, and what it places is
+        // the **position cursor** — so it is read here, once, whatever the plans
+        // below do with it (see [`Gestures::release`]).
+        //
+        // **Only on the ruler.** The cursor says where the reader is, which is
+        // where a playback starts and where a paste lands, so it is placed
+        // deliberately and never as a side effect of pointing at something: a
+        // press on a box, on empty lane space or on a roll's grid moves no line
+        // at all. Beside the axis — a lane's header — there is no position
+        // either.
         self.click = hit.chain.iter().rev().find_map(|f| match (f.id, f.coords) {
-            (Some(id), interact::Coords::Time(axis)) if axis.spans(cx) => Some(super::Click {
-                id,
-                body: axis.body,
-                ruler: f
-                    .ruler
-                    .then(|| crate::host::frame::ruler_strip(f.rect, axis.body)),
-                origin_x: cx,
-            }),
+            (Some(id), interact::Coords::Time(axis)) if f.ruler && axis.spans(cx) => {
+                Some(super::Click {
+                    id,
+                    body: axis.body,
+                    ruler: crate::host::frame::ruler_strip(f.rect, axis.body),
+                    origin_x: cx,
+                })
+            }
             _ => None,
         });
         let mut element_ran = false;

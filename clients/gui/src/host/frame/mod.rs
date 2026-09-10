@@ -1140,6 +1140,7 @@ mod tests {
             x_len: 1.0,
             playhead_at: -1.0,
             playhead: -1.0,
+            cursor: -1.0,
             playhead_loop_start: 0.0,
             playhead_loop_len: 0.0,
             y_start: 0.0,

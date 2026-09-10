@@ -125,6 +125,14 @@ class Editor:
         #: `clausters.gui.Multitrack.on_change` carries. One call per gesture
         #: however many edits it took, because that is what a hand did.
         self.on_change = None
+        #: Called with the beat the **position cursor** was placed at, whenever
+        #: a click on the time ruler moves it. ``None`` to be told nothing.
+        #:
+        #: Not an edit, and it is deliberately not a seek: the cursor says where
+        #: the *reader* is, and what that means for the sound is the
+        #: application's -- normally cueing a stopped transport there, so the
+        #: next play starts from the mark, and leaving a rolling one alone.
+        self.on_locate = None
         #: The editor this one was **composed inside**, when it was one.
         #:
         #: A structure is not a piece: it has no transport, so a click on a
@@ -147,6 +155,14 @@ class Editor:
         #: which is the crate's own line: a selection is screen state, never
         #: persisted and never logged.
         self.selection: dict = {}
+        #: **Where the reader is**, in this editor's own units (beats for a
+        #: piece) -- the position cursor a click on the time ruler placed, and
+        #: `None` until one has been. It is where a playback starts and where a
+        #: paste lands, which is why it is worth keeping: the playhead is where
+        #: the *music* is and moves on its own, and an anchor that moved on its
+        #: own would not be an anchor. Screen state like the selection, never
+        #: logged and never part of what is edited.
+        self.cursor: float | None = None
         #: The version this editor was at when it last answered a host event --
         #: what turns "the version moved" into "it moved *by someone else*".
         self._applied: int = FIRST_VERSION
@@ -561,11 +577,20 @@ class Editor:
         The selection is still kept **typed**, because it is the value an
         operation is handed.
         """
-        if tag == "locate" and self.composed_in is not None and values:
-            # A click on the ruler: a seek of the piece this view is part of.
-            # A structure has no transport of its own, and a window inside a
-            # composition is not a second place to keep a position.
-            self.composed_in.locate(self.units_to_beats(float(values[0])))
+        if tag == "locate" and values:
+            # A click on the time ruler: the reader put the position cursor
+            # there. It is kept here whatever else happens to it -- a play
+            # starts from it, a paste lands on it -- and it is not a seek: the
+            # playhead is never placed.
+            self.cursor = self.units_to_beats(float(values[0]))
+            # Inside a composition the piece is the one that has a transport,
+            # so it is told: a structure has no transport of its own, and a
+            # window inside a composition is not a second place to keep a
+            # position.
+            if self.composed_in is not None:
+                self.composed_in.locate(self.cursor)
+            if callable(self.on_locate):
+                self.on_locate(self.cursor)
             return False
         if tag == "selection":
             self.selection = {

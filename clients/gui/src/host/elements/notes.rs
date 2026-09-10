@@ -931,14 +931,16 @@ impl Notes {
             self.editor.value_range(),
             crate::host::graphics::selection::Vertical::Pitch { lo, hi },
         );
-        if let Some(pos) = time.head
-            && pos >= nav.start
-            && pos <= nav.start + nav.len
-        {
-            mesh.rect(
-                Rect::new(to_x(pos), grid.y, m.trace_w, grid.h),
-                theme.playhead,
-            );
+        // The position cursor first, then the playhead over it: two lines that
+        // mean two things, and where they coincide the music's is the one that
+        // reads.
+        for (pos, color) in [(time.cursor, theme.cursor), (time.head, theme.playhead)] {
+            if let Some(pos) = pos
+                && pos >= nav.start
+                && pos <= nav.start + nav.len
+            {
+                mesh.rect(Rect::new(to_x(pos), grid.y, m.trace_w, grid.h), color);
+            }
         }
         // The readout: the note name under the cursor and the time, in the
         // grid's bottom-right corner.

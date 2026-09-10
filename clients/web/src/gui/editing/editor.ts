@@ -169,6 +169,26 @@ export class Editor<S = unknown> implements Adopting {
      * screen state, never persisted and never logged.
      */
     selection: Selection | Record<string, never> = {};
+    /**
+     * **Where the reader is**, in this editor's own units (beats for a piece) —
+     * the position cursor a click on the time ruler placed, and `null` until one
+     * has been. It is where a playback starts and where a paste lands, which is
+     * why it is worth keeping: the playhead is where the *music* is and moves on
+     * its own, and an anchor that moved on its own would not be an anchor.
+     * Screen state like the selection, never logged and never part of what is
+     * edited.
+     */
+    cursor: number | null = null;
+    /**
+     * Called with the beat the **position cursor** was placed at, whenever a
+     * click on the time ruler moves it. `null` to be told nothing.
+     *
+     * Not an edit, and deliberately not a seek: the cursor says where the
+     * *reader* is, and what that means for the sound is the application's —
+     * normally cueing a stopped transport there, so the next play starts from
+     * the mark, and leaving a rolling one alone.
+     */
+    onLocate: ((beat: number) => void) | null = null;
     /** Whether the data changed since the last render. */
     dirty = false;
 
@@ -689,12 +709,20 @@ export class Editor<S = unknown> implements Adopting {
      * handed.
      */
     protected observe(wid: number, tag: string, values: readonly unknown[]): boolean {
-        if (tag === "locate" && this.composedIn !== null && values.length > 0) {
-            // A click on the ruler: a seek of the piece this view is part of. A
-            // structure has no transport of its own, and a window inside a
-            // composition is not a second place to keep a position.
-            (this.composedIn as unknown as { locate(beat: number): void })
-                .locate(this.unitsToBeats(Number(values[0])));
+        if (tag === "locate" && values.length > 0) {
+            // A click on the time ruler: the reader put the position cursor
+            // there. It is kept here whatever else happens to it — a play starts
+            // from it, a paste lands on it — and it is not a seek: the playhead
+            // is never placed.
+            this.cursor = this.unitsToBeats(Number(values[0]));
+            // Inside a composition the piece is the one that has a transport, so
+            // it is told: a structure has no transport of its own, and a window
+            // inside a composition is not a second place to keep a position.
+            if (this.composedIn !== null) {
+                (this.composedIn as unknown as { locate(beat: number): void })
+                    .locate(this.cursor);
+            }
+            this.onLocate?.(this.cursor);
             return false;
         }
         if (tag === "selection") {

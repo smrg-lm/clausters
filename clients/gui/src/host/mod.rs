@@ -1991,6 +1991,9 @@ impl Host {
             "answer_own: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
+        // Read before the owner is borrowed: whether the transport is rolling is
+        // the host's, and the locate arm below asks it.
+        let rolling = self.piece_rolling;
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -2034,14 +2037,16 @@ impl Host {
                 }
                 return true;
             }
-            // **A locate is not an edit, and for a piece it is the one thing
-            // that moves the music.** The host owns where the cursor *is* and
-            // a script owns what sounds under it -- but a session host has no
-            // script, so the seek stops here or the transport never leaves
-            // where the last press left it. Answered rather than emitted, so
-            // the outbox does not wait for an acknowledgement nobody will
-            // send.
-            Some(OscType::String(tag)) if tag == "locate" && owner.draws_piece() => {
+            // **A locate is not an edit; it says where the reader is.** The
+            // host owns where the position cursor *is* and a script owns what
+            // it means -- but a session host has no script, so what it means
+            // stops here: a **stopped** transport is cued to the cursor, which
+            // is what makes the next play start from the mark. A **rolling**
+            // one is left alone, because the cursor is not the playhead: moving
+            // the mark mid-pass must not move the music. Answered rather than
+            // emitted, so the outbox does not wait for an acknowledgement
+            // nobody will send.
+            Some(OscType::String(tag)) if tag == "locate" && owner.draws_piece() && !rolling => {
                 let at = match args.get(1) {
                     Some(OscType::Float(v)) => f64::from(*v),
                     Some(OscType::Double(v)) => *v,
