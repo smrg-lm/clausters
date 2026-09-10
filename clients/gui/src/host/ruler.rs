@@ -35,7 +35,7 @@ use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
 use super::paint::Draw;
-use super::widget::RulerY;
+use super::widget::{RulerDir, RulerY};
 
 /// One ruler tick: its position as a fraction of the visible axis span
 /// (0 = start/bottom, 1 = end/top) and its label (`None` for a minor tick).
@@ -1088,10 +1088,15 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
     }
 }
 
-/// Draws the ticks of a horizontal ruler `strip` sitting under a view body:
-/// a mark up against the body's bottom edge (taller when labeled), the label
-/// centered under it and edge-clamped into the strip. The one drawing of the
-/// x-ruler strip — the editor frames and the plot both call it.
+/// Draws the ticks of a horizontal ruler `strip`: a mark against the edge
+/// `dir` names (taller when labeled), the label centered on it and
+/// edge-clamped into the strip. The one drawing of the x-ruler strip — the
+/// editor frames, the plot and the free-standing ruler all call it.
+///
+/// **The marks hug the side the content is on** ([`RulerDir`]), so a tick and
+/// the pixels it names touch: a strip reserved under a body draws along its
+/// top ([`RulerDir::Up`]), a ruler placed above a stack of lanes draws along
+/// its bottom.
 /// **How far down the strip a tick's label sits**, and how tall the tick
 /// itself is — named because a marker's arrow and its text stand on this same
 /// row, and two literals in two files is how they come to disagree the first
@@ -1099,9 +1104,10 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 pub(crate) const TICK_H: f32 = 6.0;
 pub(crate) const TICK_LABEL_TOP: f32 = 7.0;
 
-pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
+pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick], dir: RulerDir) {
     let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
+    let text_h = font::height(scale);
     for tick in ticks {
         let x = strip.x + strip.w * tick.frac as f32;
         let h = if tick.label.is_some() {
@@ -1109,21 +1115,21 @@ pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
         } else {
             TICK_H * 0.5
         };
-        mesh.rect(
-            Rect::new(x, strip.y, metrics.divider_w, h),
-            theme.ruler_line,
-        );
+        // The tick grows from the strip's near edge inward, and the label
+        // stands on the far side of it -- mirrored, so the row reads the same
+        // either way up.
+        let (ty, ly) = match dir {
+            RulerDir::Up => (strip.y, strip.y + TICK_LABEL_TOP),
+            RulerDir::Down => (
+                strip.y + strip.h - h,
+                strip.y + strip.h - TICK_LABEL_TOP - text_h,
+            ),
+        };
+        mesh.rect(Rect::new(x, ty, metrics.divider_w, h), theme.ruler_line);
         if let Some(label) = &tick.label {
             let w = font::width(label, scale);
             let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            font::text(
-                mesh,
-                label,
-                lx,
-                strip.y + TICK_LABEL_TOP,
-                scale,
-                theme.ruler_text,
-            );
+            font::text(mesh, label, lx, ly, scale, theme.ruler_text);
         }
     }
 }

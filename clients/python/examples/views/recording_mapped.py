@@ -140,10 +140,11 @@ win = view(
     *[waveform(name=f"take{i}", buffer=t.bufnum, sample_rate=RATE,
                fills=True, ruler="off", ruler_y="off", link=LANES)
       for i, t in enumerate(takes)],
-    timeruler(ruler="time", sample_rate=RATE, link=LANES, h=22),
+    # Under the lanes, so its marks point **up** at them.
+    timeruler(ruler="time", dir="up", sample_rate=RATE, link=LANES, h=22),
     waveform(name="long", buffer=long_take.bufnum, sample_rate=RATE,
              ruler="off", ruler_y="off", link=LONG),
-    timeruler(ruler="time", sample_rate=RATE, link=LONG, h=22),
+    timeruler(ruler="time", dir="up", sample_rate=RATE, link=LONG, h=22),
     title="the page's window, mapped", w=980, h=560, layout="col").open()
 
 # %% [markdown]

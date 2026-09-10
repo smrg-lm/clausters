@@ -599,6 +599,39 @@ fn multichannel_scope_and_spectrum_read_adjacent_buses() {
     assert_eq!(el.editor.ruler_y, RulerY::Off);
 }
 
+/// **A ruler points at what it rules**, and where it was placed is the only
+/// thing that says which way that is: a strip reserved under a body has its
+/// content above it (`up`), a free-standing ruler is placed above the lanes
+/// (`down`), and `dir` says so when a document places one the other way.
+#[test]
+fn a_ruler_faces_the_side_its_content_is_on() {
+    let n = node(
+        r#"{"type":"window","children":[
+            {"id":1,"type":"field"},
+            {"id":2,"type":"field","axes":{"x":{"dir":"up"}}},
+            {"id":3,"type":"signal","view":"trace","data":[0.0,1.0]}
+        ]}"#,
+    );
+    let mut n = n;
+    super::axes::flatten_tree(&mut n); // the pass a def makes on the way in
+    let mut w = Widget::from_node(9, &n, &[]).unwrap();
+    let dir = |w: &mut Widget, id: i32| w.find_mut(id).unwrap().kind.editor().unwrap().dir;
+    // Placed by the document, above what it rules until it says otherwise.
+    assert_eq!(dir(&mut w, 1), RulerDir::Down);
+    assert_eq!(dir(&mut w, 2), RulerDir::Up);
+    // A view's own strip is reserved under its body, and nothing moves it.
+    assert_eq!(dir(&mut w, 3), RulerDir::Up);
+    assert!(w.find_mut(1).unwrap().kind.apply("dir", &Value::from("up")));
+    assert_eq!(dir(&mut w, 1), RulerDir::Up);
+    assert!(
+        !w.find_mut(1)
+            .unwrap()
+            .kind
+            .apply("dir", &Value::from("sideways"))
+    );
+    assert_eq!(dir(&mut w, 1), RulerDir::Up);
+}
+
 #[test]
 fn waveform_editor_props_parse_and_apply() {
     let n = node(

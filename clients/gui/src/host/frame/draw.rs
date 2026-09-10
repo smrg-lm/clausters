@@ -10,7 +10,7 @@
 
 use super::*;
 use crate::host::graphics::selection;
-use crate::host::widget::Marker;
+use crate::host::widget::{Marker, RulerDir};
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
@@ -39,8 +39,8 @@ pub(crate) fn draw_time_ruler(
         time_unit(editor),
         metrics,
     );
-    ruler::draw_ticks_h(d, strip, &ticks);
-    draw_markers(d, strip, nav, &editor.markers);
+    ruler::draw_ticks_h(d, strip, &ticks, editor.dir);
+    draw_markers(d, strip, nav, &editor.markers, editor.dir);
 }
 
 /// **Where the ruler strip is**, given the widget's rect and the body it is
@@ -64,15 +64,16 @@ pub(crate) fn marker_w(m: &Metrics) -> f32 {
     1.5 * font::advance(m.caption_scale)
 }
 
-/// The markers on this strip: an **arrow pointing up into the ticks** at the
-/// exact time each one names, its label beside it.
+/// The markers on this strip: an **arrow pointing into the ticks** at the
+/// exact time each one names, its label beside it. It points the way the ticks
+/// grow ([`RulerDir`]), so it stands among them rather than opposite them.
 ///
 /// It points at the ruler and stops there. A marker draws no line down the
 /// picture — a playhead and a selection band are the two things that do, and a
 /// third would make three vertical lines mean three different things at a
 /// glance. What a marker is *for* is the click: the transport goes to the
 /// moment it was placed at, not to the pixel the hand landed on.
-fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
+fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: RulerDir) {
     if markers.is_empty() || strip.h <= 2.0 {
         return;
     }
@@ -96,25 +97,23 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker]) {
         // tall as the marks it points among.
         let h = (strip.h * 0.6).min(width);
         let half = width * 0.5;
-        mesh.tri(
-            [x, strip.y],
-            [x - half, strip.y + h],
-            [x + half, strip.y + h],
-            color,
-        );
+        let (apex, base) = match dir {
+            RulerDir::Up => (strip.y, strip.y + h),
+            RulerDir::Down => (strip.y + strip.h, strip.y + strip.h - h),
+        };
+        mesh.tri([x, apex], [x - half, base], [x + half, base], color);
         if !marker.label.is_empty() {
             let w = font::width(&marker.label, scale);
             let lx = (x + half + metrics.divider_w).min((strip.x + strip.w - w).max(strip.x));
             // The tick labels' own row, so the marker's name and the numbers
             // read as one line instead of two.
-            font::text(
-                mesh,
-                &marker.label,
-                lx,
-                strip.y + crate::host::ruler::TICK_LABEL_TOP,
-                scale,
-                color,
-            );
+            let ly = match dir {
+                RulerDir::Up => strip.y + crate::host::ruler::TICK_LABEL_TOP,
+                RulerDir::Down => {
+                    strip.y + strip.h - crate::host::ruler::TICK_LABEL_TOP - font::height(scale)
+                }
+            };
+            font::text(mesh, &marker.label, lx, ly, scale, color);
         }
     }
 }

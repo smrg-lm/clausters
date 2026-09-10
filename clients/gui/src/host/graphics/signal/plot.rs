@@ -41,7 +41,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::ruler::{self, TimeUnit};
 use crate::host::theme::with_alpha;
-use crate::host::widget::Ruler;
+use crate::host::widget::{Ruler, RulerDir};
 
 /// Sample rate assumed for the spectrum axis when the source brings none,
 /// matching the live views' fallback.
@@ -284,7 +284,7 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
     let (lo, hi) = value_range(p);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p), m);
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
+        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
     }
     for ch in 0..channels {
         let row = channel_rect(g.body, g.channels, if p.overlay { 0 } else { ch });
@@ -358,7 +358,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
             p.x_view.1,
             m,
         );
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
+        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
     for (ch, curve) in spec.curves.iter().enumerate() {

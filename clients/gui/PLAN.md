@@ -851,7 +851,7 @@ turned out to be one piece of work they are **one entry** here rather than two:
 splitting them would mean writing one rule in two places, and the second half
 would be written against a picture the first half had already changed.
 
-- ⬜ **G35.12 — The ruler is always there, and it points at what it rules.**
+- ✅ **G35.12 — The ruler is always there, and it points at what it rules.**
   A multitrack window opened by `edit` has no time ruler at all: the widget's
   own `ruler` is a strip inside its rectangle and the editor never places a
   `timeruler` above the stack, so a piece opens with no numbers on it. A ruler
@@ -867,6 +867,19 @@ would be written against a picture the first half had already changed.
 
   **First**, because reading a position is what every other point is checked by
   eye against.
+
+  *Done 2026-09-09.* `dir` is an **x-axis** property (`RulerDir`, `down`/`up`)
+  rather than the ruler widget's, because a strip is what every ruled view
+  reserves: `draw_ticks_h` takes it and mirrors the tick, the label and a
+  marker's arrow together, so the whole row turns over at once. The default is
+  `up` everywhere the host reserves the strip itself (under a body, which is
+  the drawing that already existed) and `down` for a free-standing `timeruler`
+  — `EditorProps::parse_ruler`, since a document that places a ruler places it
+  above what it rules. `MultitrackView` now builds the window as ruler over
+  piece, both in **one navigation group** (`group()`, the piece's own widget
+  id when the caller named none) — without that the ruler is a group of one
+  and pans away from the lanes it is ruling. The two `recording` examples,
+  whose ruler is under its lanes, say `dir="up"`.
 
 - ⬜ **G35.1 — Two cursors, and only one of them is placed.**
   Playing and then clicking somewhere else leaves the sound running from where

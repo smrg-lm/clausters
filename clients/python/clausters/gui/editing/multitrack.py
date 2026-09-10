@@ -363,9 +363,15 @@ class MultitrackView(View):
     """One `clausters.gui.guidef.multitrack`: the whole piece, in one widget.
 
     A row per track and a box per region — the crate's own mapping, crossed to
-    this window's axis. The widget draws its own ruler, its own headers and its
-    own vertical scroll, so there is no stack to compose and nothing per clip to
-    register.
+    this window's axis. The widget draws its own headers and its own vertical
+    scroll, so there is no stack to compose and nothing per clip to register.
+
+    **The one thing it does not draw is the ruler**, and an editor is where a
+    position is read, so the view places a `clausters.gui.guidef.timeruler`
+    above it: a strip of its own, in the same navigation group as the piece, so
+    it labels exactly what the lanes show and its ticks stand over the samples
+    they name. It rules from above, so its marks hug its bottom edge
+    (``dir="down"``, the default there).
     """
 
     def __init__(self, bridge: Bridge, *, link=None):
@@ -375,7 +381,7 @@ class MultitrackView(View):
         self.link = link
 
     def build(self, editor) -> dict:
-        from ..guidef import node, window
+        from ..guidef import node, timeruler, window
 
         # **The props are already what the wire takes**, so the node is made
         # from them directly rather than through `clausters.gui.guidef.multitrack`,
@@ -384,10 +390,23 @@ class MultitrackView(View):
         # flat form is the one `props` has to answer in anyway, since a
         # correction rides as a `/gui_set`.
         wid = self.widget(editor, "multitrack", editor.structure)
-        return window(node("multitrack", id=wid, **self.props(editor, wid)),
+        return window(timeruler(link=self.group(wid), ruler="beats",
+                                sample_rate=self.bridge.rate,
+                                tempo_map=self.bridge.tempo.dump()),
+                      node("multitrack", id=wid, **self.props(editor, wid)),
                       *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
+
+    def group(self, widget_id: int) -> int:
+        """**The navigation group the piece and its ruler share.**
+
+        A ruler rules by being on the same axis as what it is beside, and an
+        unlinked widget is a group of one keyed by itself — so the two would
+        pan and zoom apart. The piece's own widget id names the group when the
+        caller did not name one, which is the id nothing else can collide with.
+        """
+        return widget_id if self.link is None else self.link
 
     def props(self, editor, widget_id: int) -> dict:
         picture = _native.multitrack_picture(editor.structure.write())
@@ -419,8 +438,7 @@ class MultitrackView(View):
             # cannot disagree.
             "tempo_map": self.bridge.tempo.dump(),
         }
-        if self.link is not None:
-            props["link"] = self.link
+        props["link"] = self.group(widget_id)
         return props
 
 

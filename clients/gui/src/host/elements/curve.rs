@@ -278,7 +278,7 @@ impl Curve {
                 crate::host::frame::time_unit(&self.editor),
                 ctx.metrics,
             );
-            ruler::draw_ticks_h(d, strip, &ticks);
+            ruler::draw_ticks_h(d, strip, &ticks, self.editor.dir);
         }
         if let Some(strip_x) = r.value {
             let ticks = ruler::value_ticks(

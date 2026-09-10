@@ -2333,7 +2333,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
 
 
 def timeruler(*, h: float = 20.0, autofit: bool | None = None,
-              ruler: str | None = None, sample_rate: float | None = None,
+              ruler: str | None = None, dir: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
               markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
@@ -2386,15 +2386,21 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None,
     signal's are **strips** rather than widgets — the press lands on the view —
     so the table is read from where the press landed: the bottom of a view that
     has a ruler answers with the ruler's table, whoever drew it. ``h`` is this
-    one's thickness in logical pixels::
+    one's thickness in logical pixels.
+
+    ``dir`` says **which side its content is on**, and the ticks and numbers
+    hug that edge so a tick touches the pixels it names: ``"down"`` (the
+    default here — a ruler placed above the lanes draws along its bottom) or
+    ``"up"`` for one placed below them. A strip a view reserves under its own
+    body is always ``"up"``, and nothing has to say so::
 
         panel(timeruler(link=1, ruler="beats", tempo=2.0),
               track(clip(offset=0, dur=4, data=take), link=1),
               layout="col")
     """
     extra = _drop_none(theme=theme, color=color)
-    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, sample_rate=sample_rate, tempo=tempo,
-                       tempo_map=_tempo_map(tempo_map),
+    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, dir=dir, sample_rate=sample_rate,
+                       tempo=tempo, tempo_map=_tempo_map(tempo_map),
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
@@ -2812,7 +2818,7 @@ def _drop_none(**kwargs) -> dict:
 #: ``axes["y"]["unit"]``. Read by `_axes`, which is what every builder with an
 #: axis pair packs its flat keywords through.
 _X_AXIS = {
-    "ruler": "unit", "view_start": "start", "view_len": "len",
+    "ruler": "unit", "dir": "dir", "view_start": "start", "view_len": "len",
     "tempo": "tempo", "tempo_map": "tempo_map",
     "beat_at": "beat_at", "quant": "quant",
     "sample_rate": "sample_rate", "link": "link", "autofit": "autofit",

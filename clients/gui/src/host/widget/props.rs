@@ -140,6 +140,44 @@ impl Ruler {
     }
 }
 
+/// **Which side of a ruler strip its marks sit on** — the side the content it
+/// rules is on, which is the only thing that decides it.
+///
+/// A tick and the pixel it names have to be adjacent, so a ruler above a stack
+/// of lanes draws along its **bottom** edge (`Down`: the content is down there)
+/// and one below the stack draws along its **top** (`Up`). Put the marks on
+/// the far edge instead and the label sits between the tick and the thing the
+/// tick points at, which is how a ruler comes to be read one row off.
+///
+/// Only the document knows where it put the strip, so this is a prop
+/// (`dir: "down" | "up"`) rather than something the host infers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RulerDir {
+    /// The content is **below** the strip: marks along its bottom edge.
+    Down,
+    /// The content is **above** the strip: marks along its top edge. What an
+    /// inline strip reserved under a view's body always is.
+    Up,
+}
+
+impl RulerDir {
+    pub(crate) fn parse(props: &serde_json::Map<String, Value>, default: RulerDir) -> RulerDir {
+        props
+            .get("dir")
+            .and_then(Value::as_str)
+            .and_then(Self::from_str)
+            .unwrap_or(default)
+    }
+
+    fn from_str(s: &str) -> Option<RulerDir> {
+        match s {
+            "down" => Some(RulerDir::Down),
+            "up" => Some(RulerDir::Up),
+            _ => None,
+        }
+    }
+}
+
 /// The vertical (y) ruler of an editor-grade view: the unit its side strip
 /// labels, or `Off` for no strip at all. The waveform reads the amplitude
 /// units (`Norm`/`Db`/`Bits`/`Percent`, default `Norm`); the spectrogram uses
@@ -358,6 +396,12 @@ pub fn markers_json(markers: &[Marker]) -> Value {
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
+    /// The `dir` prop: which edge of the ruler strip its ticks and labels hug
+    /// ([`RulerDir`]). `Up` for every strip reserved *under* a view's body,
+    /// which is where the host puts its own; a free-standing `timeruler` is
+    /// placed by the document and defaults to `Down`, the ruler-above-the-
+    /// lanes it is usually placed as.
+    pub dir: RulerDir,
     pub ruler_y: RulerY,
     pub sample_rate: f64,
     pub bit_depth: u32,
@@ -427,11 +471,21 @@ pub struct EditorProps {
 }
 
 impl EditorProps {
+    /// The chrome of a **free-standing** ruler strip: the shared parse with
+    /// `dir` defaulting to [`RulerDir::Down`], because a document that places
+    /// a ruler of its own places it above what it rules.
+    pub(crate) fn parse_ruler(props: &serde_json::Map<String, Value>) -> EditorProps {
+        let mut editor = Self::parse(props, RulerY::Off);
+        editor.dir = RulerDir::parse(props, RulerDir::Down);
+        editor
+    }
+
     /// Parses the shared chrome; `default_y` is the view's own default
     /// vertical unit (`Norm` for the waveform, `Hz` for the spectrogram).
     pub(crate) fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
         EditorProps {
             ruler: Ruler::parse(props),
+            dir: RulerDir::parse(props, RulerDir::Up),
             ruler_y: RulerY::parse(props, default_y),
             sample_rate: number_f64(props, "sample_rate", 0.0),
             bit_depth: props
@@ -515,6 +569,11 @@ impl EditorProps {
     pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "ruler" => self.ruler.set(v),
+            "dir" => v
+                .as_str()
+                .and_then(RulerDir::from_str)
+                .map(|d| self.dir = d)
+                .is_some(),
             "ruler_y" => self.ruler_y.set(v),
             "sample_rate" => set_f64(&mut self.sample_rate, v),
             "bit_depth" => v

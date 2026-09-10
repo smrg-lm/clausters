@@ -34,7 +34,7 @@ import type { Curve, Curved } from "../../multitrack.ts";
 import { Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints }
     from "../../multitrack.ts";
 import type { Box, Placed, Region, Row } from "../../multitrack.ts";
-import { node, window as guiWindow } from "../guidef.ts";
+import { node, timeruler, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -555,9 +555,14 @@ function clipProps(boxes: readonly Box[], bridge: Bridge): unknown[] {
  * One `multitrack` widget: the whole piece, in one of them.
  *
  * A row per track and a box per region — the crate's own mapping, crossed to
- * this window's axis. The widget draws its own ruler, its own headers and its
- * own vertical scroll, so there is no stack to compose and nothing per clip to
- * register.
+ * this window's axis. The widget draws its own headers and its own vertical
+ * scroll, so there is no stack to compose and nothing per clip to register.
+ *
+ * **The one thing it does not draw is the ruler**, and an editor is where a
+ * position is read, so the view places a {@link timeruler} above it: a strip of
+ * its own, in the same navigation group as the piece, so it labels exactly what
+ * the lanes show and its ticks stand over the samples they name. It rules from
+ * above, so its marks hug its bottom edge (`dir: "down"`, the default there).
  */
 export class MultitrackView extends View<Multitrack> {
     readonly bridge: Bridge;
@@ -580,12 +585,30 @@ export class MultitrackView extends View<Multitrack> {
         const wid = this.widget(editor, "multitrack", editor.structure);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
+            timeruler({
+                link: this.group(wid),
+                ruler: "beats",
+                sampleRate: this.bridge.rate,
+                tempoMap: this.bridge.tempo.dump(),
+            }),
             node("multitrack", { id: wid, ...this.props(editor, wid) }),
             ...editor.extra,
         );
     }
 
-    override props(editor: Editor<Multitrack>, _widgetId: number): Record<string, PropValue> {
+    /**
+     * **The navigation group the piece and its ruler share.**
+     *
+     * A ruler rules by being on the same axis as what it is beside, and an
+     * unlinked widget is a group of one keyed by itself — so the two would pan
+     * and zoom apart. The piece's own widget id names the group when the caller
+     * did not name one, which is the id nothing else can collide with.
+     */
+    group(widgetId: number): number {
+        return this.link ?? widgetId;
+    }
+
+    override props(editor: Editor<Multitrack>, widgetId: number): Record<string, PropValue> {
         const picture = multitrackPicture(editor.structure.write());
         const props: Record<string, PropValue> = {
             lanes: laneProps(picture.rows) as PropValue,
@@ -618,7 +641,7 @@ export class MultitrackView extends View<Multitrack> {
             // cannot disagree.
             tempo_map: this.bridge.tempo.dump(),
         };
-        if (this.link !== undefined) props.link = this.link;
+        props.link = this.group(widgetId);
         return props;
     }
 }

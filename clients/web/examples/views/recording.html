@@ -176,12 +176,14 @@ socket.</div>
             name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
             fills: true, ruler: "off", rulerY: "off", link: LANES,
           })),
-          gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
+          // Under the lanes, so its marks point **up** at them: a tick and the
+          // samples it names have to touch.
+          gui.timeruler({ ruler: "time", dir: "up", sampleRate: RATE, link: LANES, h: 22 }),
           gui.waveform({
             name: "long", buffer: longTake.bufnum, sampleRate: RATE,
             ruler: "off", rulerY: "off", link: LONG,
           }),
-          gui.timeruler({ ruler: "time", sampleRate: RATE, link: LONG, h: 22 }),
+          gui.timeruler({ ruler: "time", dir: "up", sampleRate: RATE, link: LONG, h: 22 }),
         ).open($("stage"));
 
         // What the buttons do. **Record** plays four glissandi and records them

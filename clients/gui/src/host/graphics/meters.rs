@@ -19,6 +19,7 @@ use crate::host::layout::Rect;
 use crate::host::live::TapWindow;
 use crate::host::paint::{Color, Draw};
 use crate::host::ruler;
+use crate::host::widget::RulerDir;
 use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range
@@ -148,7 +149,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
             1.0,
             m,
         );
-        ruler::draw_ticks_h(d, strip, &ticks);
+        ruler::draw_ticks_h(d, strip, &ticks, RulerDir::Up);
     }
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();

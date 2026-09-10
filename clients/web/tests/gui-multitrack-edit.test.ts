@@ -122,12 +122,31 @@ test("the widget is told the flat rows and not one row per number", () => {
     // only place it was visible: every test read `view.props` and none read the
     // tree that is actually published.
     const ed = editor(piece());
-    const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] }).children[0];
-    assert.equal(drawn.type, "multitrack");
+    const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] })
+        .children.find((c) => c.type === "multitrack")!;
     assert.equal((drawn.lanes as unknown[]).length, 2 * 6, "two tracks, six numbers each");
     assert.deepEqual((drawn.lanes as unknown[]).slice(0, 3), ["10", "one", 96.0]);
     assert.equal((drawn.clips as unknown[]).length, 3 * 7, "three regions, seven numbers each");
     assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
+});
+
+test("the piece is ruled from above by a strip of its own", () => {
+    // An editor is where a position is read, and the widget draws no ruler — so
+    // the view places one above it, on the piece's own axis.
+    //
+    // The two have to be in **one navigation group**: an unlinked widget is a
+    // group of one keyed by itself, so a ruler that joined nothing would pan and
+    // zoom away from the lanes it is ruling.
+    const children = (editor(piece()).draw() as unknown as {
+        children: Record<string, unknown>[];
+    }).children;
+    const ruler = children[0];
+    const pieceNode = children[1];
+    assert.equal(ruler.type, "field", "the free-standing time ruler, above");
+    assert.equal(pieceNode.type, "multitrack");
+    const x = (ruler.axes as { x: Record<string, unknown> }).x;
+    assert.equal(x.link, pieceNode.link, "one axis, not two");
+    assert.equal(x.unit, "beats");
 });
 
 test("a source nobody loaded draws an empty box", () => {

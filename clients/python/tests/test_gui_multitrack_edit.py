@@ -94,12 +94,27 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     the tree that is actually published.
     """
     ed = editor(piece())
-    drawn = ed.draw()["children"][0]
-    assert drawn["type"] == "multitrack"
+    drawn = next(c for c in ed.draw()["children"] if c["type"] == "multitrack")
     assert len(drawn["lanes"]) == 2 * 6, "two tracks, six numbers each"
     assert drawn["lanes"][:3] == ["10", "one", 96.0]
     assert len(drawn["clips"]) == 3 * 7, "three regions, seven numbers each"
     assert drawn["clips"][:2] == ["12", "10"]
+
+
+def test_the_piece_is_ruled_from_above_by_a_strip_of_its_own():
+    """An editor is where a position is read, and the widget draws no ruler —
+    so the view places one above it, on the piece's own axis.
+
+    The two have to be in **one navigation group**: an unlinked widget is a
+    group of one keyed by itself, so a ruler that joined nothing would pan and
+    zoom away from the lanes it is ruling.
+    """
+    children = editor(piece()).draw()["children"]
+    ruler, piece_node = children[0], children[1]
+    assert ruler["type"] == "field", "the free-standing time ruler, above"
+    assert piece_node["type"] == "multitrack"
+    assert ruler["axes"]["x"]["link"] == piece_node["link"], "one axis, not two"
+    assert ruler["axes"]["x"]["unit"] == "beats"
 
 
 def test_a_source_nobody_loaded_draws_an_empty_box():

@@ -27,6 +27,7 @@ use crate::host::graphics::meters::{self, fraction};
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Draw, Mesh};
 use crate::host::ruler;
+use crate::host::widget::RulerDir;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
@@ -314,7 +315,7 @@ pub(crate) fn draw_spectrum(
             x_len,
             m,
         );
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
+        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
     }
     if let Some(strip_x) = strip_x {
         let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64, m);

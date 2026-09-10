@@ -116,7 +116,9 @@ win = view(
     *[waveform(name=f"take{i}", buffer=t.bufnum, sample_rate=rate,
                fills=True, ruler="off", ruler_y="off", link=LANES)
       for i, t in enumerate(takes)],
-    timeruler(ruler="time", sample_rate=rate, link=LANES),
+    # Under the lanes, so its marks point **up** at them: a tick and the
+    # samples it names have to touch.
+    timeruler(ruler="time", dir="up", sample_rate=rate, link=LANES),
     title=f"{TRACKS} takes, while they record",
     # A lane gets what is left over after the ruler, so the window is sized to
     # give every one of them the same room whatever the count — and capped, so

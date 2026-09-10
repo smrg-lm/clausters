@@ -2436,11 +2436,19 @@ export function timeruler(
     options: TimelineOptions & {
         /** A theme group over the strip. */
         theme?: Record<string, string>;
+        /**
+         * **Which side its content is on**, so the ticks and numbers hug that
+         * edge and a tick touches the pixels it names: `"down"` (the default
+         * here — a ruler placed above the lanes draws along its bottom) or
+         * `"up"` for one placed below them. A strip a view reserves under its
+         * own body is always `"up"`, and nothing has to say so.
+         */
+        dir?: string;
     } = {},
 ): GuiNode {
-    const { h = 20, theme, ...timeline } = options;
+    const { h = 20, theme, dir, ...timeline } = options;
     return node("field", {
-        ...timelineProps(timeline),
+        ...timelineProps(timeline, {}, drop([["dir", dir]])),
         h,
         ...drop([["theme", theme]]),
     });
@@ -2838,7 +2846,7 @@ function tempoMapProp(map: TempoMap | string | undefined): string | undefined {
 }
 
 /** The timeline chrome (and the generic options riding with it) as wire props. */
-function timelineProps(options: TimelineOptions, y: Props = {}): Props {
+function timelineProps(options: TimelineOptions, y: Props = {}, x: Props = {}): Props {
     const {
         ruler, sampleRate, tempo, tempoMap, beatAt, quant, selStart, selLen,
         selMin, selMax, markers,
@@ -2848,23 +2856,26 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
     return {
         ...rest,
         ...axes(
-            drop([
-                ["unit", ruler],
-                ["sample_rate", sampleRate],
-                ["tempo", tempo],
-                ["tempo_map", tempoMapProp(tempoMap)],
-                ["beat_at", beatAt],
-                ["quant", quant],
-                ["sel_start", selStart],
-                ["sel_len", selLen],
-                ["playhead_at", playheadAt],
-                ["playhead", playhead],
-                ["playhead_loop_start", playheadLoopStart],
-                ["playhead_loop_len", playheadLoopLen],
-                ["link", link],
-                ["autofit", autofit],
-                ["markers", markers === undefined ? undefined : flatMarkers(markers)],
-            ]),
+            {
+                ...drop([
+                    ["unit", ruler],
+                    ["sample_rate", sampleRate],
+                    ["tempo", tempo],
+                    ["tempo_map", tempoMapProp(tempoMap)],
+                    ["beat_at", beatAt],
+                    ["quant", quant],
+                    ["sel_start", selStart],
+                    ["sel_len", selLen],
+                    ["playhead_at", playheadAt],
+                    ["playhead", playhead],
+                    ["playhead_loop_start", playheadLoopStart],
+                    ["playhead_loop_len", playheadLoopLen],
+                    ["link", link],
+                    ["autofit", autofit],
+                    ["markers", markers === undefined ? undefined : flatMarkers(markers)],
+                ]),
+                ...x,
+            },
             {
                 ...drop([
                     ["start", yStart],

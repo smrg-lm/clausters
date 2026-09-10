@@ -1125,6 +1125,7 @@ mod tests {
     fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
         EditorProps {
             ruler,
+            dir: crate::host::widget::RulerDir::Up,
             ruler_y,
             sample_rate: 0.0,
             bit_depth: 16,

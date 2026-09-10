@@ -82,7 +82,7 @@ pub(super) fn build_kind(
         // first two are `multitrack` props now (`G34`): a lane cannot sit in a
         // void, so it is always inside the view that owns it.
         "field" => WidgetKind::TimeRuler {
-            editor: EditorProps::parse(props, RulerY::Off),
+            editor: EditorProps::parse_ruler(props),
         },
         // No arm above answers to this name, so it is an **element**: a
         // built-in that has moved behind the trait, else whatever a program
