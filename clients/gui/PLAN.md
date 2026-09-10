@@ -839,132 +839,66 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
 ## G35 — The multitrack editor, refined by using it
 
 Written 2026-09-09 from the first session spent **using** the editor rather than
-building it: `multitrack_audio.py` opened, played, cut and joined by hand. Every
-point below is something that session found, in the user's own words, and the
-milestone is one because they are one subject — a piece being edited — and
-because half of them share the two structures the other half needs (a second
-cursor, and a node chain that says where a gain is applied).
+building it: `multitrack_audio.py` opened, played, cut and joined by hand. The
+fourteen points below are what that session found, in the order the user named
+them, and they are one milestone because they are one subject — a piece being
+edited — and because several of them wait on two structures the rest need: a
+second cursor, and a node chain that says where a gain is applied.
 
-**What already works, recorded so it is not reopened**: selecting boxes by
-sweep and one at a time, moving them singly and as a block, entering a box with
-a double click (the editor opens and the multitrack's picture follows what it
-edits), and trimming as a *picture*.
+Two of the fourteen are **not work**: they record what already behaves, so it is
+not reopened by a later pass.
 
-- ⬜ **G35a — The ruler is always there, and it points at what it rules.**
-  A multitrack window opened by `edit` has no time ruler at all: the widget's
-  own `ruler` is a strip inside its rectangle and the editor never places a
-  `timeruler` above the stack, so a piece opens with no numbers on it. The ruler
-  is not optional in an editor — it is how a position is read — so the editor
-  places one.
-
-  And a ruler's marks belong on the side its content is: **a ruler above the
-  stack draws its ticks and numbers along its bottom edge, one below draws them
-  along its top**, so the tick and the pixel it names are adjacent instead of
-  separated by the label. It is a prop of the strip (`dir`, `"down"`/`"up"`),
-  because only the document knows which side of the ruler the content is on.
-  It applies to every ruled view, not just this one.
-
-- ⬜ **G35b — Two cursors, and only one of them is placed.**
-  Today a window has **one** cursor: a click anywhere on the axis locates, which
-  *is* the transport seek, so clicking during playback leaves the sound running
-  from where it was while the mark sits where the hand pointed — two things
-  disagreeing about what "the cursor" means. They are two cursors and always
-  were:
+- ⬜ **G35.1 — Two cursors, and only one of them is placed.**
+  Playing and then clicking somewhere else leaves the sound running from where
+  it was while the mark sits where the hand pointed. That is not a bug in the
+  seek, it is two cursors wearing one name: the protocol states "a window has
+  **one** cursor", placed by a click anywhere on the axis, and that click *is*
+  the transport seek. They are two and always were:
 
   - the **position cursor** — where a playback starts and where a paste lands.
-    It is placed by a click **on the time ruler** and by nothing else; the
-    content never moves it, and neither does playing.
-  - the **playhead** — the line that sweeps. It is never placed: it *starts*
-    from the position cursor, and while the transport runs it is the engine's
-    own position.
+    Placed by a click **on the time ruler** and by nothing else; the content
+    never moves it, playing never moves it, and it stays where it was put.
+  - the **playhead** — the line that sweeps. Never placed: it *starts* from the
+    position cursor, and while the transport runs it is the engine's own
+    position.
 
   So `"locate"` stops meaning "seek here" and starts meaning "the position
-  cursor is here"; play seeks the transport to the position cursor rather than
-  to wherever the last click was; and a click on a box or a lane no longer moves
-  anything. The wire already has two props for two lines (`playhead_at` and
-  `playhead`) — what it has not got is a *position* that is neither, and that is
-  what this adds, group-wide like the rest of the axis' state.
+  cursor is here"; play seeks the transport to the position cursor; and a click
+  on a box, a lane or a roll's grid moves nothing at all. The wire has two props
+  for two lines already (`playhead_at`, `playhead`); what it has not got is a
+  *position* that is neither, group-wide like the rest of the axis' state.
 
-- ⬜ **G35c — The header is a surface, and the track is what it addresses.**
-  The header answers a press for its three controls and for nothing else, so
-  the track itself — the thing the controls belong to — cannot be pointed at.
-  Three verbs land there, and they are one point because they are one surface:
+- ⬜ **G35.2 — A track is selected from its header, and that is the second
+  coordinate.**
+  A click on the **empty space of a track's header** selects that track, with a
+  visual indicator saying so. Not decoration: a paste needs two coordinates and
+  the piece only had one — the position cursor says *when*, the selected track
+  says *where* — so without it a paste can only guess the lane it came from.
+  The header answers a press for its three controls today and for nothing else,
+  which is why the track itself cannot be pointed at.
 
-  - **A click on a track's empty header space selects that track**, with a
-    visual indicator saying so. It is not decoration: a paste needs two
-    coordinates and the piece only had one — the position cursor says *when*,
-    the selected track says *where*, and without it a paste can only guess the
-    lane it came from.
-  - **A double click on the empty header space adds a track.** The gesture a
-    desktop already spends on "open this" is spent here on "make one", which is
-    what the stack has no other way to ask for.
-  - **Delete removes the selected track and everything on it.** Today Delete is
-    the held boxes'; with a track selected it is the track's, which is the
-    ordinary rule — a delete acts on what is in hand, and the header is what
-    puts a track there.
+  Open: one track or several, and whether the selection is the hand's (like the
+  box selection, which nothing on the wire states) or the view's. A paste anchor
+  needs one; a mixer strip may want more.
 
-  Open, and to settle when it is built: whether the double click that adds a
-  track is the one **below the last header** (where there is no track to point
-  at, so nothing else could be meant) or anywhere no control was hit — the
-  first is unambiguous, the second is what a hand reaches for. Whether the
-  selection is one track or several, and whether it is the hand's (like the box
-  selection, which nothing on the wire states) or the view's: the paste anchor
-  needs one, a mixer strip may want more.
+- ⬜ **G35.3 — A clip's gain is its own control, driven by its own envelope.**
+  The box `white` draws no contents and makes no sound; only its envelope is
+  drawn, and the samples appear when the box is entered — so the take is there
+  and the box is not showing or sounding it. The sound half is already
+  understood: the example reads the envelope once, at the box's first
+  break-point, where it is zero. The picture half is to be diagnosed — whether
+  the base view is not drawn or is being covered by the layer over it.
 
-- ⬜ **G35d — A trim knows what the content can do, and the grip stops
-  blinking.**
-  Two defects and a decision:
+  Then the point itself: a clip's envelope is a **control that plays**, and the
+  first parameter it drives is the clip's own gain. A clip gain and a track gain
+  are two different controls on one signal — the clip's applies to the clip, and
+  the track's applies again to what the clips together produced.
 
-  - **The grip flickers** while an edge is dragged. It is drawn only when the
-    pointer is inside the box's rectangle, and dragging an edge takes the
-    pointer outside it — so the affordance disappears under the hand using it.
-    A held edge draws its grip whatever the pointer is over
-    (`track::clip_grip_on` exists for exactly this and nobody calls it).
-  - **Past the ends of the content there is silence.** A box is a *window* onto
-    a file, so a trim past what the file holds has three defensible answers and
-    a multitrack usually offers a choice: leave the silence (what happens now),
-    **stop the edge at the content**, or **loop the content** under the longer
-    box. It is a policy of the box, so it is stated on the box.
-
-- ⬜ **G35e — Two boxes can be made to touch, at sample level.**
-  With no quantization a hand cannot land a box exactly against its neighbour,
-  which is why `j` never has two boxes to join. So a drag inside a lane
-  **snaps to the edges of the boxes already on it**, within a tolerance: the
-  boxes meet at the sample, and a hand that keeps pulling past the tolerance
-  goes on and overlaps them, which is a crossfade and legal.
-
-  It is a snap to *content* rather than to a grid, so it stands beside `snap`
-  and does not replace it.
-
-- ⬜ **G35f — Join, defined.**
-  `j` does nothing today: it asks whether two placements are within one sample
-  of each other, and with no quantization they never are. The rule the user
-  named, and it is one sentence per case:
-
-  - the held boxes of **one track** join (the track is what makes two boxes
-    joinable, as a lane already is and a pitch is for two notes);
-  - a **gap** between two of them becomes silence in the joined box;
-  - an **overlap** mixes the two signals rather than one winning.
-
-  A join is therefore an edit of *contents* and not only of placements, which is
-  the part the document has to answer: a joined box is a window onto more than
-  one source, which is the same shape "assembled samples" asks for and is the
-  reason those two land together.
-
-- ⬜ **G35g — The halves of a split play what they show.**
-  `e` cuts and the picture is right; the sound is not. A split moves the second
-  half's **window** over its source (`start`), and whatever sounds the box has
-  to read from that offset — the example's reader ignores it and starts every
-  box at frame zero, so both halves play the beginning. It is the wire's fact
-  reaching the player, and it belongs with G35d and G35f because all three are
-  about the window rather than the placement.
-
-- ⬜ **G35h — The chain: a clip's gain and a track's gain are two controls.**
-  The largest point, and the one the others wait on. Today the example applies
-  one number per box and the automation is read once at the box's start —
-  neither curve *plays*. What is needed is the **node structure** the server
-  holds a piece in, so that a parameter is controlled where it belongs in the
-  chain:
+- ⬜ **G35.4 — A track's automation drives its fader while the piece plays.**
+  The row under a track is drawn, edited and undone, and it does nothing. It has
+  to reach the fader **at playback time**, which is the same demand G35.3 makes
+  one level down — so the two are built together and what they need is the
+  **node structure the server holds a piece in**:
 
   - a **clip group**: the source or playback node, then the clip's own curves
     (its dynamic envelope, its pan, its per-clip effect parameters), then the
@@ -972,67 +906,153 @@ edits), and trimming as a *picture*.
   - a **track group** holding the clip groups, then the track's curves, its
     effect chain, and the track's fader.
 
-  A gain applied at the clip and a gain applied at the track are two controls on
-  one signal, in that order, and the picture already says so: a clip envelope is
-  drawn inside its box, a track automation in a row of its own.
+  A gain at the clip and a gain at the track are two controls in that order, and
+  the picture already says so: a clip envelope is drawn inside its box, a track
+  automation in a row of its own.
 
-  A curve must **drive its fader while the piece plays**, which is the second
-  half: a break-point list on the timeline reaching a control the audio thread
-  reads, against the transport's position and with no message per frame — the
-  same discipline the playhead already keeps.
+  Open, and to settle here rather than per parameter, because everything the
+  piece automates later goes down the same path: whether a curve is played by a
+  node reading the transport's position (the shape the readers already have) or
+  written into a control bus, and where the curve's samples live. With no
+  message per frame either way — the discipline the playhead already keeps.
 
-  Open: whether a curve is played by a node reading the transport's position
-  (the shape the readers already have) or written into a control bus, and where
-  the curve's samples live. Decide it here rather than per parameter, because
-  everything the piece automates later goes down the same path.
+- ✅ **G35.5 — Entering a box works, and the multitrack follows what it edits.**
+  Recorded rather than done: a double click opens the box's structure in its own
+  editor and the piece's picture updates with what that editor changes. Landed
+  with `G34`; here so a later pass does not reopen it.
 
-- ⬜ **G35i — An entered box keeps its own history.**
-  Reported from use: after editing a box's samples, closing that window and
-  opening it again, `Ctrl`+`Z` in the box's editor steps the **multitrack's**
-  last edit and the sample edits are gone. One order is right — it is what
-  `G34` decided — but a leg belonging to the take must still be the take's, so
-  either the reopened editor is not registering under the structure's own
-  identity or the sample edits never reached the pile. Diagnose before deciding:
-  the two candidates are the participant an entered editor registers as, and
-  whether the samples domain records an inverse at all through this path.
+- ⬜ **G35.6 — An entered box keeps its own history.**
+  After editing a box's samples, closing that window and opening it again,
+  `Ctrl`+`Z` in the box's editor steps the **multitrack's** last edit, and the
+  sample edits are gone. One order is right — that is what `G34` decided — but a
+  leg belonging to the take must still be the take's.
 
-- ⬜ **G35j — The header's mixer strip: a knob, and a meter beside the track.**
-  The fader is wrong for the room it has. A header is a narrow band beside a
-  lane, and a horizontal groove long enough to be read takes the width the name
-  needs — so the level control is a **knob**, which reads and turns in the space
-  a header actually has.
+  Diagnose before deciding. The two candidates: the participant the reopened
+  editor registers as, and whether the samples domain records an inverse at all
+  through this path. (A first probe with a stand-in take could not reproduce it:
+  the edit never applied, so the fault is further in than the registration.)
 
-  And a track shows what it is producing: a **thin vertical meter down the right
-  edge of the track**, over the amplitude of that track's output **after
-  everything has been applied** — its clips' own gains, its curves, its effects
-  and its fader. That is the number a hand moving the knob is watching, and it
-  is the one place in the piece where the picture is of the *sound* rather than
-  of the description.
+- ✅ **G35.7 — Selecting and moving boxes works.**
+  Recorded rather than done: a sweep and a click select, and a box moves singly
+  and as a block, across the stack. Here so a later pass does not reopen it.
 
-  It waits on G35h: a meter after the chain needs the chain to exist and to have
-  a point where the track's signal is one thing. The knob does not, and can land
-  on its own.
+- ⬜ **G35.8 — A trim knows what its content can do.**
+  A box is a **window** onto a file — a fragment that can be slid over the same
+  file's contents — so pulling an edge past what the file holds has three
+  defensible answers, and a multitrack usually offers the choice rather than
+  deciding: leave the silence (what happens now), **stop the edge at the
+  content**, or **loop the content** under the longer box. It is a policy of the
+  box, so it is stated on the box.
 
-**Order.** G35a and G35b first: reading a position and placing one are what
-every other point is checked by eye against, and G35b changes a rule the whole
-protocol states. Then G35c, which finishes the paste's coordinates and gives the stack the two
-verbs it has no other way to ask for.
-Then the window trio — G35d, G35e, G35g — which are the same subject seen three
-ways and share the arithmetic; G35f follows them because a join needs the snap
-that makes two boxes touch and the content vocabulary the trim policy names.
-G35h last of the audio work, since it is a structure the others do not need but
-which needs the piece to be stable under the hand first — and G35j's meter
-straight after it, being the first thing that reads what the chain produces.
-G35i and G35j's knob are independent and can land at any point; do them whenever
-the diagnosis or the room is at hand.
+- ⬜ **G35.9 — The trim grip stops blinking.**
+  The grip is drawn only while the pointer is inside the box's rectangle, and
+  dragging an edge takes the pointer outside it — so the affordance disappears
+  under the hand that is using it. A held edge draws its grip whatever the
+  pointer is over; `track::clip_grip_on` exists for exactly this case and
+  nobody calls it.
 
-**Acceptance:** the same session that found these, run again — a piece opened,
-located from the ruler, played from the cursor, a track added, selected and
-removed from its header, a box trimmed
-against its content, two boxes snapped together and joined, a box split and both
-halves heard from the right place, a clip envelope and a track automation heard
-as two gains on one signal, a level turned on a knob that fits its header with a
-meter beside it answering, and every one of them undone in one order.
+- ⬜ **G35.10 — The halves of a split play what they show.**
+  `e` cuts and the picture is right; the sound is not. A split moves the second
+  half's **window** over its source (`start`), and whatever sounds has to read
+  from that offset — the example's reader ignores it and starts every box at
+  frame zero, so both halves play the beginning. It is the wire's fact reaching
+  the player, and it is the same arithmetic G35.8 states a policy for.
+
+- ⬜ **G35.11 — Join, defined — and the snap that makes it reachable.**
+  `j` does nothing: it asks whether two placements are within **one sample** of
+  each other (`placement::adjacent(a, b, 1.0)`), and with no quantization a hand
+  never lands one there, so it never has two boxes to join. Two halves:
+
+  - a drag inside a lane **snaps to the edges of the boxes already on it**,
+    within a tolerance, so two boxes can be made to meet at the sample; a hand
+    that keeps pulling past the tolerance goes on and **overlaps** them, which
+    is a crossfade and legal. A snap to *content* rather than to a grid, so it
+    stands beside `snap` and does not replace it.
+  - then the rule, one sentence per case: the held boxes of **one track** join
+    (a track is what makes two boxes joinable, as a pitch is for two notes); a
+    **gap** between two of them becomes silence in the joined box; an
+    **overlap** mixes the two signals rather than one winning.
+
+  A join is therefore an edit of *contents* and not only of placements, which is
+  the part the document has to answer: a joined box is a window onto more than
+  one source — the same shape "assembled samples" asks for, which is why those
+  two land together.
+
+- ⬜ **G35.12 — The ruler is always there, and it points at what it rules.**
+  A multitrack window opened by `edit` has no time ruler at all: the widget's
+  own `ruler` is a strip inside its rectangle and the editor never places a
+  `timeruler` above the stack, so a piece opens with no numbers on it. A ruler
+  is not optional in an editor — it is how a position is read, and after G35.1
+  it is the only place a position is *placed* — so the editor places one.
+
+  And a ruler's marks belong on the side its content is: **a ruler above the
+  stack draws its ticks and numbers along its bottom edge, one below draws them
+  along its top**, so a tick and the pixel it names are adjacent instead of
+  separated by the label. A prop of the strip (`dir`, `"down"`/`"up"`), because
+  only the document knows which side of the ruler the content is on, and it
+  applies to every ruled view rather than to this one.
+
+- ⬜ **G35.13 — A track is made and removed from the header.**
+  **A double click on the empty header space adds a track** — the gesture a
+  desktop already spends on "open this", spent here on "make one", which is what
+  the stack has no other way to ask for. **Delete removes the selected track and
+  everything on it**: today Delete is the held boxes'; with a track selected it
+  is the track's, which is the ordinary rule — a delete acts on what is in hand,
+  and G35.2's header is what puts a track there.
+
+  Open, to settle when it is built: whether the double click that adds a track
+  is the one **below the last header** (where there is no track to point at, so
+  nothing else could be meant) or anywhere on a header no control was hit — the
+  first is unambiguous, the second is what a hand reaches for.
+
+- ⬜ **G35.14 — The header's level is a knob, and a track shows what it
+  produces.**
+  A header is a narrow band beside a lane, and a horizontal groove long enough
+  to be read takes the width the name needs — so the level control is a **knob**,
+  which reads and turns in the space a header actually has.
+
+  And a **thin vertical meter down the right edge of the track**, over the
+  amplitude that track is producing **after everything has been applied**: its
+  clips' own gains, its curves, its effects and its fader. That is the number a
+  hand on the knob is watching, and the one place in the piece where the picture
+  is of the *sound* rather than of the description. The knob stands alone; the
+  meter waits on G35.4, since a meter after the chain needs the chain to exist
+  and to have a point where the track's signal is one thing.
+
+**What is one piece of work.** Four of these are the same build seen twice, and
+splitting them would mean writing one rule in two places:
+
+- **G35.2 and G35.13** are one surface: selecting, adding and removing a track
+  are three verbs on the same header hit-test and the same visual state.
+- **G35.3 and G35.4** are one node structure at two levels — a gain applied at
+  the clip and a gain applied at the track — and **G35.14's meter** taps the
+  same chain.
+- **G35.8 and G35.10** are one arithmetic: what a box reads and from where. One
+  is a policy at the ends of the window, the other is that window reaching the
+  player.
+- The **snap** the join needs is inside **G35.11** rather than beside it: it is
+  what makes `j` have two boxes to act on at all.
+
+**Order.** G35.12 and G35.1 first — reading a position and placing one are what
+every other point is checked by eye against, and G35.1 changes a rule the whole
+protocol states. Then G35.2 with G35.13, which finish the paste's coordinates
+and give the stack the two verbs it has no other way to ask for. Then G35.9,
+which is a line and stops an affordance lying under the hand. Then the window
+work — G35.8 with G35.10, then G35.11 — which shares its arithmetic and ends
+with the join. Then G35.3 with G35.4, the chain, and G35.14's meter straight
+after it as the first thing that reads what the chain produces; G35.14's knob
+can land whenever there is a spare pass. G35.6 is independent: do it whenever
+the diagnosis is cheap.
+
+**Acceptance:** the same session that found these, run again — a piece opened
+with a ruler over it whose marks face the stack, located from that ruler, played
+from the cursor it placed, a track added, selected and removed from its header,
+a box trimmed against its content, two boxes snapped together and joined, a box
+split and both halves heard from the right place, a clip envelope and a track
+automation heard as two gains on one signal, a level turned on a knob that fits
+its header with a meter beside it answering, and every one of them undone in one
+order.
+
 
 ## L track — the look: layout, sizing and themes for the light widgets
 
