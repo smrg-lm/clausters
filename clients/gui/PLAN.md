@@ -996,6 +996,23 @@ edits), and trimming as a *picture*.
   the two candidates are the participant an entered editor registers as, and
   whether the samples domain records an inverse at all through this path.
 
+- ⬜ **G35j — The header's mixer strip: a knob, and a meter beside the track.**
+  The fader is wrong for the room it has. A header is a narrow band beside a
+  lane, and a horizontal groove long enough to be read takes the width the name
+  needs — so the level control is a **knob**, which reads and turns in the space
+  a header actually has.
+
+  And a track shows what it is producing: a **thin vertical meter down the right
+  edge of the track**, over the amplitude of that track's output **after
+  everything has been applied** — its clips' own gains, its curves, its effects
+  and its fader. That is the number a hand moving the knob is watching, and it
+  is the one place in the piece where the picture is of the *sound* rather than
+  of the description.
+
+  It waits on G35h: a meter after the chain needs the chain to exist and to have
+  a point where the track's signal is one thing. The knob does not, and can land
+  on its own.
+
 **Order.** G35a and G35b first: reading a position and placing one are what
 every other point is checked by eye against, and G35b changes a rule the whole
 protocol states. Then G35c, which finishes the paste's coordinates and gives the stack the two
@@ -1004,15 +1021,18 @@ Then the window trio — G35d, G35e, G35g — which are the same subject seen th
 ways and share the arithmetic; G35f follows them because a join needs the snap
 that makes two boxes touch and the content vocabulary the trim policy names.
 G35h last of the audio work, since it is a structure the others do not need but
-which needs the piece to be stable under the hand first. G35i is independent and
-can land at any point; do it whenever the diagnosis is cheap.
+which needs the piece to be stable under the hand first — and G35j's meter
+straight after it, being the first thing that reads what the chain produces.
+G35i and G35j's knob are independent and can land at any point; do them whenever
+the diagnosis or the room is at hand.
 
 **Acceptance:** the same session that found these, run again — a piece opened,
 located from the ruler, played from the cursor, a track added, selected and
 removed from its header, a box trimmed
 against its content, two boxes snapped together and joined, a box split and both
 halves heard from the right place, a clip envelope and a track automation heard
-as two gains on one signal, and every one of them undone in one order.
+as two gains on one signal, a level turned on a knob that fits its header with a
+meter beside it answering, and every one of them undone in one order.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 
