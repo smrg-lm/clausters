@@ -35,12 +35,15 @@ import {
     Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints, multitrackReadRows,
 } from "../../multitrack.ts";
 import type { Box, Placed, Region, Row, Strip } from "../../multitrack.ts";
-import { node, timeruler, window as guiWindow } from "../guidef.ts";
+import { button, label, layout, node, timeruler, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
-import type { PropValue } from "../host.ts";
+import type { GuiHost, PropValue } from "../host.ts";
+import type { WindowHandle } from "../handle.ts";
+import type { Server } from "../../defs/server/index.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
 
 /**
@@ -588,6 +591,23 @@ function clipProps(boxes: readonly Box[], bridge: Bridge): unknown[] {
  * the lanes show and its ticks stand over the samples they name. It rules from
  * above, so its marks hug its bottom edge (`dir: "down"`, the default there).
  */
+/**
+ * The names the transport row's three widgets carry. A name and not an id,
+ * because these are the widgets a **hand** addresses and a handler is hung on a
+ * name — and they are the piece's own, so a page's `extra` may carry anything it
+ * likes beside them.
+ */
+export const PLAY = "piece_play";
+export const STOP = "piece_stop";
+export const CLOCK = "piece_clock";
+
+/**
+ * How often the read-out asks the engine where the piece is, in seconds. The
+ * *line* asks nothing — the host draws it from the segment every frame — so this
+ * is the price of the number beside it and nothing else.
+ */
+export const CLOCK_TICK = 0.05;
+
 export class MultitrackView extends View<Multitrack> {
     readonly bridge: Bridge;
     /** The navigation group the view joins, so a ruler beside it rules it. */
@@ -598,11 +618,25 @@ export class MultitrackView extends View<Multitrack> {
      * with the piece's.
      */
     ruler: number | null = null;
+    /**
+     * The id of the piece's own widget, once one has been built — what a
+     * playhead is drawn on, so whoever moves the line does not have to guess
+     * which of the two ids is the picture.
+     */
+    piece: number | null = null;
+    /**
+     * Whether the window carries the transport row. It is the *view's* and not a
+     * page's `extra`: a piece that can be heard is played from the window it is
+     * drawn in, and every window over a piece has the same three controls in the
+     * same place.
+     */
+    transport: boolean;
 
-    constructor(bridge: Bridge, link?: number) {
+    constructor(bridge: Bridge, link?: number, transport = false) {
         super();
         this.bridge = bridge;
         this.link = link;
+        this.transport = Boolean(transport);
     }
 
     build(editor: Editor<Multitrack>): GuiNode {
@@ -619,6 +653,7 @@ export class MultitrackView extends View<Multitrack> {
         // that one gesture outside the only object that could hear it.
         const rid = this.widget(editor, "ruler", editor.structure, "ruler");
         this.ruler = rid;
+        this.piece = wid;
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
             timeruler({
@@ -630,8 +665,28 @@ export class MultitrackView extends View<Multitrack> {
                 tempoMap: this.bridge.tempo.dump(),
             }),
             node("multitrack", { id: wid, ...this.props(editor, wid) }),
+            ...(this.transport ? this.chrome() : []),
             ...editor.extra,
         );
+    }
+
+    /**
+     * The transport row: play/pause, stop, and where the piece is.
+     *
+     * Named rather than numbered, because these are the only widgets of this
+     * window a *hand* addresses and a handler is hung on a name. The names are
+     * the piece's own (`piece_*`), so a page's `extra` may carry anything it
+     * likes beside them.
+     */
+    chrome(): GuiNode[] {
+        // No rewind: stop already goes back to the mark, which is what tells it
+        // from pause.
+        return [layout(
+            { flow: "row", h: 40.0, gap: 6.0 },
+            button({ label: "play/pause", name: PLAY, w: 110.0 }),
+            button({ label: "stop", name: STOP, w: 110.0 }),
+            label("", { name: CLOCK, textSize: 2.0, weight: 1.0 }),
+        )];
     }
 
     /**
@@ -714,6 +769,13 @@ export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack
         | Record<number, number | object>;
     /** The navigation group the view joins. */
     link?: number;
+    /**
+     * The server the piece **sounds** on. Given one, the editor keeps a reader
+     * per box in a group the transport governs and draws the transport row; a
+     * piece opened with none still edits, which is why it is an option and not a
+     * requirement.
+     */
+    server?: Server;
 }
 
 /**
@@ -740,8 +802,18 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     readonly entered = new Map<string, Editor<never>>();
 
+    /**
+     * What the piece **sounds** as, when it can be heard at all: a
+     * {@link Playback} over the server this was given, and `null` for a piece
+     * opened with none.
+     */
+    playback: Playback | null = null;
+
+    /** The last read-out written, so an unchanged one is not written again. */
+    private shown: string | null = null;
+
     constructor(piece: Multitrack, options: MultitrackEditorOptions) {
-        const { sources, link, title = "Multitrack", ...rest } = options;
+        const { sources, link, server, title = "Multitrack", ...rest } = options;
         const bridge = new Bridge(
             piece,
             Number(options.sampleRate),
@@ -752,9 +824,116 @@ export class MultitrackEditor extends Editor<Multitrack> {
             title,
             tempoMap: bridge.tempo,
             domain: new MultitrackDomain(bridge),
-            view: new MultitrackView(bridge, link),
+            view: new MultitrackView(bridge, link, server !== undefined),
         });
         this.bridge = bridge;
+        if (server !== undefined) {
+            this.playback = new Playback(this, { server, host: this.host });
+        }
+    }
+
+    /**
+     * The id of the piece's own widget — what a playhead is drawn on. `null`
+     * before the picture has been drawn once.
+     */
+    get pieceWidget(): number | null {
+        return (this.view as MultitrackView | null)?.piece ?? null;
+    }
+
+    // ---- the piece, heard ----
+
+    /**
+     * Open the window, and hang the transport row on the playback.
+     *
+     * The wiring is here rather than in the constructor because that is where
+     * the window comes into being: {@link edit} builds the editor and opens it
+     * in two steps, so a piece has its readers before it has a screen — which is
+     * the right order anyway, since a piece can be played by a page that never
+     * draws it.
+     */
+    override async open(
+        host?: GuiHost,
+        options: { id?: number; stage?: unknown } = {},
+    ): Promise<WindowHandle> {
+        const handle = await super.open(host, options);
+        const playback = this.playback;
+        if (playback !== null) {
+            await playback.prepare();
+            playback.attach(this.host);
+            handle.widget(PLAY).onClick(() => void this.toggle());
+            handle.widget(STOP).onClick(() => this.stop());
+            void this.tick();
+        }
+        return handle;
+    }
+
+    /**
+     * The read-out, and the one round trip: the position is the engine's. It
+     * schedules itself until the window is gone, which is how it stops without
+     * anybody stopping it.
+     */
+    private async tick(): Promise<void> {
+        const playback = this.playback;
+        if (this.closed || playback === null || this.windowHandle === null) return;
+        await playback.refresh();
+        const text = `${playback.position.toFixed(3).padStart(8)} s   of ` +
+            `${this.structure.end.toFixed(3)} s`;
+        if (text !== this.shown) {
+            this.windowHandle.widget(CLOCK).set({ text });
+            this.shown = text;
+        }
+        setTimeout(() => void this.tick(), CLOCK_TICK * 1000);
+    }
+
+    /**
+     * Play, or pause where it stands. A pause freezes the governed group, so
+     * playing again continues rather than starting over.
+     */
+    async toggle(): Promise<void> {
+        const playback = this.playback;
+        if (playback === null) return;
+        await playback.refresh();
+        if (playback.playing) playback.pause();
+        else await playback.play();
+    }
+
+    /** Play the piece from where the position cursor is. */
+    async play(): Promise<void> {
+        await this.playback?.play();
+    }
+
+    /** Freeze the piece where it stands. */
+    pause(): void {
+        this.playback?.pause();
+    }
+
+    /** Halt and go back to the mark the position cursor is on. */
+    stop(): void {
+        this.playback?.stop();
+    }
+
+    /**
+     * The position cursor was placed, here or in a window entered from here: cue
+     * a stopped transport there and leave a rolling one alone.
+     *
+     * This is what a box's own ruler reaches, because a structure inside a piece
+     * has no transport of its own — the piece is the one that has one.
+     */
+    override locate(beat: number): void {
+        this.playback?.cue(beat);
+    }
+
+    /**
+     * The piece changed, whoever changed it: put the readers where it now says
+     * they are, and then tell the page.
+     *
+     * The readers go first because the page's own handler may look at what is
+     * sounding, and because a piece is a statement: making it true again is not
+     * a reaction to an edit, it is the same call the first one was.
+     */
+    override dataChanged(): void {
+        this.playback?.sync();
+        super.dataChanged();
     }
 
     /**
@@ -811,6 +990,10 @@ export class MultitrackEditor extends Editor<Multitrack> {
             // the piece it belongs to is not.
             open: this.host !== null,
         });
+        // **The piece is what this window is composed inside**, which is what a
+        // ruler clicked in there needs: a take has no transport of its own, so
+        // the position it places is the piece's to act on.
+        opened.composedIn = this as Editor;
         this.entered.set(name, opened);
         // **A window the reader closed is enterable again**, and it is the only
         // way one leaves this table: an editor that is merely not on screen is
@@ -828,6 +1011,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * window's.
      */
     override close(): this {
+        this.playback?.close();
         for (const opened of [...this.entered.values()]) {
             if (!opened.closed) opened.close();
         }

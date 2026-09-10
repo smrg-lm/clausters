@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: edit(piece)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 1000px; max-width: 100%; height: 560px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><code>edit(piece)</code>: a multitrack of audio, drawn,
+edited and played.
+
+The fourth structure, and the one that holds the other three: a
+<code>Multitrack</code> — the document the three applications share — opened with
+<code>gui.edit</code> like a buffer or a timeline. <b>One verb, and the editor is
+the application</b>: the picture, the gestures, the history, the readers on the
+server and the transport are all its, so this page writes a piece and hands it
+over.
+
+<b>Move a box</b>, drag its edge to trim it, drag it onto another lane, sweep a
+block and move it as one. <b>Click</b> a box to select it, <b>e</b> to split it
+at the position cursor, <b>j</b> to join a touching run, <b>q</b> to quantize.
+
+<b>Click the ruler</b> — or the slack between boxes — to place the <b>position
+cursor</b>, which is where the next play starts. The playhead is never placed:
+stopped, it stands on the mark. <b>play/pause</b> and <b>stop</b> are the
+window's own row.
+
+<b>Double click a box</b> to enter it: what a box holds is a structure like any
+other, so entering one opens the take in the sample editor — on the piece's own
+undo order, so <b>Ctrl+Z</b> walks a stroke drawn inside a box and a box dragged
+on the stack as one history.
+
+<b>The curves are drawn and not yet heard.</b> The row under the first track is a
+track automation and the line inside the first box is a clip envelope; both are
+edited and kept by the piece, and neither reaches a reader — a curve's
+<code>gain</code> and the knob's <code>gain</code> have to name one parameter of
+one node first.</div>
+
+      <button id="run">open the piece</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/edit_multitrack.py,
+      call for call: the same four takes rendered offline, the same piece
+      written plainly, and the same one `edit` over it.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/edit-multitrack.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session } from "../../dist/index.js";
+      import { gui } from "../../dist/index.js";
+      import { Buffer, Synth, SynthDef } from "../../dist/defs/index.js";
+      import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
+      import {
+        Automation, Content, Lane, Multitrack, Region, Track,
+      } from "../../dist/multitrack.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48_000.0;
+      const TAKE_DUR = 2.0;
+
+      /** Render `expr` for `secs` seconds offline and hand back its samples. */
+      async function gentake(name, expr, secs = TAKE_DUR) {
+        const session = await Session.nrt({ tempo: 1.0 });   // beats == seconds
+        const server = session.server;
+        await new SynthDef(name, out(0.0, expr)).send(server);
+        const node = new Synth(name, {}, { server });
+        server.sendBundleAfter(secs, [["/node_free", node.id]]);
+        const stats = await session.render({ sampleRate: SR, channels: 1 });
+        return stats.samples;
+      }
+
+      /** A box over the whole of one source, from its start. */
+      function box(id, at, source, name) {
+        return new Region({
+          id, position: at, length: TAKE_DUR, name,
+          content: Content.onto({
+            source: { source, lifetime: "session", generation: 0 },
+            start: 0.0, duration: TAKE_DUR,
+          }),
+        });
+      }
+
+      // source id -> the take it names, so the piece and the table below are
+      // written against one list.
+      const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink" };
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- the takes, rendered offline ----
+        const takes = {
+          white: await gentake("t_white", whiteNoise().mul(0.5)),
+          glide: await gentake("t_glide", sine(line(220.0, 440.0, TAKE_DUR)).mul(0.5)),
+          saw: await gentake("t_saw", saw(110.0).mul(0.5)),
+          pink: await gentake("t_pink", pinkNoise().mul(0.5)),
+        };
+
+        const session = await Session.embed({ tempo: 1.0, latency: 0.1 });
+        const server = session.server;
+        const bufs = {};
+        for (const [name, samples] of Object.entries(takes)) {
+          bufs[name] = await Buffer.fromSamples(samples, 1, SR, { server });
+        }
+        await server.sync();
+
+        // ---- the piece ----
+        // A **source id** is what the document names — never a path and never a
+        // buffer number — because a piece must open in a program that has no
+        // JavaScript in it. Which buffer each source was read into is the one
+        // thing about a piece that is not in the piece, and it travels beside it
+        // in `Sources`.
+        const noiseGain = new Automation({
+          id: 100, name: "gain", visible: true,
+          target: { ctl: "level", min: 0.0, max: 1.0 },
+          points: [{ at: 0.0, value: 1.0 }, { at: 8.0, value: 0.2 }],
+        });
+        const whiteFade = new Automation({
+          id: 101, name: "fade", visible: true,
+          target: { ctl: "amp", min: 0.0, max: 1.0 },
+          points: [{ at: 0.0, value: 0.2 }, { at: TAKE_DUR, value: 1.0 }],
+        });
+        const first = box(20, 0.0, 1, "white");
+        first.automation.push(whiteFade);
+
+        const piece = new Multitrack();
+        piece.tracks = [
+          new Track({
+            id: 10, name: "noise", automation: [noiseGain],
+            lanes: [new Lane({ id: 11, regions: [first, box(21, 6.0, 4, "pink")] })],
+          }),
+          new Track({
+            id: 12, name: "tone",
+            lanes: [new Lane({ id: 13, regions: [box(22, 2.0, 2, "glide")] })],
+          }),
+          new Track({
+            id: 14, name: "bass",
+            lanes: [new Lane({ id: 15, regions: [box(23, 4.0, 3, "saw")] })],
+          }),
+        ];
+
+        // ---- one verb ----
+        // A `Multitrack` opens as a `MultitrackEditor` — one `multitrack` widget
+        // with its own ruler and its own transport row, the crate's picture and
+        // the crate's reading of every gesture. Given a **server** it also
+        // sounds: one resident reader per box, in a group the server's transport
+        // governs, put where the piece says on every edit whoever made it.
+        await session.gui();
+        const sources = {};
+        for (const [id, take] of Object.entries(SOURCES)) sources[id] = bufs[take];
+        const editor = await gui.edit(piece, {
+          sampleRate: SR, server, sources,
+          title: "piece", width: 1000, height: 560, stage: $("stage"),
+        });
+
+        log("drag the boxes, click the ruler to place the cursor, play/pause to hear it");
+        // The script's ending: there `wait()` blocks so the process stays alive
+        // while the window is on screen. Here nothing exits and nothing may
+        // block, so the same verb is a promise.
+        editor.wait().then(() => log("the window is closed; the piece kept the edits"));
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

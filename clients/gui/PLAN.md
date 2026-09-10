@@ -834,12 +834,15 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   **Still open, and each has its home:** assembled samples (a box over several
   segments of several files); a box of notes reaching the editor's picture (the
   widget draws one, and `MultitrackView` states no `notes` yet); and
-  `multitrack_audio.html`, the web twin of the Python example.
+  the web twin of the Python example — **written 2026-09-10** as
+  `examples/editors/edit-multitrack.html`, beside the Python example's own
+  rename to `edit_multitrack.py`.
 
 ## G35 — The multitrack editor, refined by using it
 
 Written 2026-09-09 from the first session spent **using** the editor rather than
-building it: `multitrack_audio.py` opened, played, cut and joined by hand. The
+building it: the multitrack example opened, played, cut and joined by hand
+(`multitrack_audio.py` then, `edit_multitrack.py` since 2026-09-10). The
 fourteen points below are what that session found, and they are one milestone
 because they are one subject — a piece being edited — and because several of
 them wait on two structures the rest need: a second cursor, and a node chain
@@ -921,7 +924,8 @@ would be written against a picture the first half had already changed.
   music got to. The session host cues a **stopped** transport to the mark and
   leaves a rolling one alone; a client hears it as `Editor.on_locate` /
   `onLocate` with `Editor.cursor` kept beside the selection, and
-  `multitrack_audio.py` cues its transport from there.
+  the multitrack editor cues its own transport from there (`MultitrackEditor.locate`,
+  since 2026-09-10; the example did it by hand before that).
 
   *Amended the same day, from the first session using it.* Three things that
   session found, and they were one gesture between them — point at a box, put

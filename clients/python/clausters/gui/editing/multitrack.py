@@ -60,6 +60,19 @@ CURVE_SEXTUPLE = 6
 #: quintuples, each naming the curve it is on.
 POINT_QUINTUPLE = 5
 
+#: The names the transport row's three widgets carry. A name and not an id,
+#: because these are the widgets a **hand** addresses and a handler is hung on a
+#: name — and they are the piece's own, so a script's ``extra`` may carry
+#: anything it likes beside them.
+PLAY = "piece_play"
+STOP = "piece_stop"
+CLOCK = "piece_clock"
+
+#: How often the read-out asks the engine where the piece is, in seconds. The
+#: *line* asks nothing — the host draws it from the segment every frame — so this
+#: is the price of the number beside it and nothing else.
+CLOCK_TICK = 0.05
+
 #: The tempo a piece that never said one is read at, in beats per second — one,
 #: so a beat is a second. It is the **reader's** default and not the document's:
 #: a piece that said no tempo did not say one, and writing 120 into the format
@@ -358,7 +371,7 @@ class MultitrackView(View):
     (``dir="down"``, the default there).
     """
 
-    def __init__(self, bridge: Bridge, *, link=None):
+    def __init__(self, bridge: Bridge, *, link=None, transport: bool = False):
         super().__init__()
         self.bridge = bridge
         #: The navigation group the view joins, so a ruler beside it rules it.
@@ -367,6 +380,15 @@ class MultitrackView(View):
         #: Kept so a correction addressed to it answers with the *ruler's* props
         #: and not with the piece's.
         self.ruler: int | None = None
+        #: The id of the piece's own widget, once one has been built — what a
+        #: playhead is drawn on, so whoever moves the line does not have to
+        #: guess which of the two ids is the picture.
+        self.piece: int | None = None
+        #: Whether the window carries the transport row. It is the *view's* and
+        #: not a script's ``extra``: a piece that can be heard is played from the
+        #: window it is drawn in, and every window over a piece has the same
+        #: three controls in the same place.
+        self.transport = bool(transport)
 
     def build(self, editor) -> dict:
         from ..guidef import node, timeruler, window
@@ -384,14 +406,33 @@ class MultitrackView(View):
         # that one gesture outside the only object that could hear it.
         rid = self.widget(editor, "ruler", editor.structure, "ruler")
         self.ruler = rid
+        self.piece = wid
         return window(timeruler(id=rid, link=self.group(wid), ruler="beats",
                                 cursor=_cursor(editor),
                                 sample_rate=self.bridge.rate,
                                 tempo_map=self.bridge.tempo.dump()),
                       node("multitrack", id=wid, **self.props(editor, wid)),
+                      *(self.chrome() if self.transport else ()),
                       *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
+
+    def chrome(self) -> tuple:
+        """The transport row: play/pause, stop, and where the piece is.
+
+        Named rather than numbered, because these are the only widgets of this
+        window a *hand* addresses and a name is what a handler is hung on. The
+        names are the piece's own (``piece_*``), so a script's ``extra`` may
+        carry anything it likes beside them.
+        """
+        from ..guidef import button, label, layout
+
+        # No rewind: stop already goes back to the mark, which is what tells it
+        # from pause.
+        return (layout(button(label="play/pause", name=PLAY, w=110.0),
+                       button(label="stop", name=STOP, w=110.0),
+                       label("", name=CLOCK, text_size=2.0, weight=1.0),
+                       flow="row", h=40.0, gap=6.0),)
 
     def group(self, widget_id: int) -> int:
         """**The navigation group the piece and its ruler share.**
@@ -589,8 +630,8 @@ class MultitrackEditor(Editor):
     """
 
     def __init__(self, piece: Multitrack, *, sample_rate: float,
-                 sources=None, link=None, title: str = "Multitrack",
-                 **options):
+                 sources=None, link=None, server=None,
+                 title: str = "Multitrack", **options):
         bridge = Bridge(piece, sample_rate=sample_rate,
                         sources=Sources(sources) if not isinstance(sources, Sources)
                         else sources)
@@ -601,11 +642,111 @@ class MultitrackEditor(Editor):
         #: second double click on the same box raises the one that is already
         #: open rather than a second window over one structure.
         self.entered: dict = {}
+        #: What the piece **sounds** as, when it can be heard at all:
+        #: `clausters.gui.editing.playback.Playback` over the server this was
+        #: given, and ``None`` for a piece opened with none. A piece nobody can
+        #: play still edits, which is why it is an argument and not a
+        #: requirement.
+        self.playback = None
         super().__init__(piece, sample_rate=sample_rate,
                          tempo_map=bridge.tempo,
                          domain=MultitrackDomain(bridge),
-                         view=MultitrackView(bridge, link=link),
+                         view=MultitrackView(bridge, link=link,
+                                             transport=server is not None),
                          title=title, **options)
+        self._shown = None
+        if server is not None:
+            from .playback import Playback
+
+            self.playback = Playback(self, server=server)
+
+    @property
+    def piece_widget(self) -> "int | None":
+        """The id of the piece's own widget — what a playhead is drawn on.
+        ``None`` before the picture has been drawn once."""
+        return getattr(self.view, "piece", None)
+
+    # ---- the piece, heard ----
+
+    def open(self, host=None, id: "int | None" = None):
+        """Open the window, and hang the transport row on the playback.
+
+        The wiring is here rather than in the constructor because that is where
+        the window comes into being: `clausters.gui.edit` builds the editor and
+        opens it in two steps, so a piece has its readers before it has a screen
+        — which is the right order anyway, since a piece can be played by a
+        script that never draws it.
+        """
+        window = super().open(host, id)
+        if self.playback is not None and self._window is not None:
+            self.playback.attach(self._host)
+            self.window[PLAY].on_click(self.toggle)
+            self.window[STOP].on_click(self.stop)
+            self._tick()
+            self._host.clock.sched(CLOCK_TICK, self._tick)
+        return window
+
+    def _tick(self):
+        """The read-out, and the one round trip: the position is the engine's.
+
+        Returns the delay until the next reading, or ``None`` once the window is
+        gone — which is how a scheduled tick stops without anybody stopping it.
+        """
+        if self.closed or self.playback is None:
+            return None
+        end = self.structure.end
+        text = f"{self.playback.position:8.3f} s   of {end:.3f} s"
+        if text != self._shown:
+            self.window[CLOCK].set(text=text)
+            self._shown = text
+        return CLOCK_TICK
+
+    def toggle(self):
+        """Play, or pause where it stands. A pause freezes the governed group,
+        so playing again continues rather than starting over."""
+        if self.playback is None:
+            return
+        if self.playback.playing:
+            self.playback.pause()
+        else:
+            self.playback.play()
+
+    def play(self):
+        """Play the piece from where the position cursor is."""
+        if self.playback is not None:
+            self.playback.play()
+
+    def pause(self):
+        """Freeze the piece where it stands."""
+        if self.playback is not None:
+            self.playback.pause()
+
+    def stop(self):
+        """Halt and go back to the mark the position cursor is on."""
+        if self.playback is not None:
+            self.playback.stop()
+
+    def locate(self, beat: float):
+        """The position cursor was placed, here or in a window entered from
+        here: cue a stopped transport there and leave a rolling one alone.
+
+        This is what a box's own ruler reaches, because a structure inside a
+        piece has no transport of its own — the piece is the one that has one.
+        """
+        if self.playback is not None:
+            self.playback.cue(beat)
+
+    def data_changed(self) -> None:
+        """The piece changed, whoever changed it: put the readers where it now
+        says they are, and then tell the script.
+
+        The readers go first because the script's own handler may look at what is
+        sounding, and because a piece is a statement: making it true again is not
+        a reaction to an edit, it is the same call the first one was.
+        """
+        if self.playback is not None:
+            self.playback.sync()
+        super().data_changed()
 
     def interface(self, widget_id: int, tag: str, values) -> bool:
         """**A box was entered** — the double click the multitrack reports as
@@ -656,6 +797,10 @@ class MultitrackEditor(Editor):
                       # would put a box on screen while the piece it belongs to
                       # is not.
                       open=self._host is not None)
+        # **The piece is what this window is composed inside**, which is what a
+        # ruler clicked in there needs: a take has no transport of its own, so
+        # the position it places is the piece's to act on.
+        opened.composed_in = self
         self.entered[name] = opened
         # **A window the reader closed is enterable again**, and it is the only
         # way one leaves this table: an editor that is merely not on screen is
@@ -672,6 +817,8 @@ class MultitrackEditor(Editor):
         outlives both is the history, which is the data's and was never a
         window's.
         """
+        if self.playback is not None:
+            self.playback.close()
         for opened in list(self.entered.values()):
             if not opened.closed:
                 opened.close()

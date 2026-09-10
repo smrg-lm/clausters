@@ -123,6 +123,49 @@ moved. The piece carries **its own version** for exactly that: an editor of the
 piece is not editing the tree, so one counter for both would make every edit to
 either look like a change to both.
 
+## Editing a piece: `edit(piece)`, and what it plays
+
+A `Multitrack` is one of the fundamental structures, so it opens with the same
+verb the others do — and what opens is the multitrack **editor**: one widget
+drawing its own ruler, its own track headers, its own automation rows and its own
+boxes, over the same picture and the same reading of a gesture the standalone
+host uses.
+
+```python
+session.gui()
+editor = edit(piece, sample_rate=48_000.0, server=session.server,
+              sources={1: take, 2: other}, title="piece")
+```
+
+`sources` is the one fact about a piece that is not in the piece: the document
+names a **source id**, never a path and never a buffer number, so which buffer
+each source was read into travels beside it. The same table answers what a box
+opens as when it is entered — double click one and its take opens in the sample
+editor, on the piece's own undo order.
+
+**Given a `server`, the piece sounds.** The editor keeps one resident reader per
+box in a group the server's transport governs, and puts them where the piece says
+on every edit whoever made it — this window's gesture, a second window over the
+same piece, or a step of the history. Moving a box while it plays is one
+`/node_set` on a node that is already running, so it is heard where it was
+dropped with nothing that is sounding cut. The window carries the transport row
+that goes with it (play/pause, stop, and where the piece is), and `editor.play()`,
+`pause()` and `stop()` are the same three verbs from a script. A piece opened
+with no server still edits; it is simply not heard.
+
+Two cursors, and only one of them is placed: a click on the ruler — or on the
+slack between boxes — puts the **position cursor** down, which is where the next
+play starts, and a stopped transport is cued there. The playhead is never placed,
+so stop goes back to the mark rather than to the top.
+
+**A curve is drawn and not yet heard.** A track's level, its mute and its solo
+reach the readers; the automation drawn on a track and the envelope drawn inside
+a box do not, because a curve's `gain` and the header knob's `gain` have to name
+one parameter of one node first. Until that lands the curves are edited, undone
+and saved with the piece like everything else.
+
+`examples/editors/edit_multitrack.py` is the whole of it, by ear and by eye.
+
 ## The presentation: what a window shows, beside what the piece is
 
 Where a window is looking, how far it is zoomed, what the hand is holding, how

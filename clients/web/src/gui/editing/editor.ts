@@ -725,13 +725,12 @@ export class Editor<S = unknown> implements Adopting {
             // from it, a paste lands on it — and it is not a seek: the playhead
             // is never placed.
             this.cursor = this.unitsToBeats(Number(values[0]));
-            // Inside a composition the piece is the one that has a transport, so
-            // it is told: a structure has no transport of its own, and a window
-            // inside a composition is not a second place to keep a position.
-            if (this.composedIn !== null) {
-                (this.composedIn as unknown as { locate(beat: number): void })
-                    .locate(this.cursor);
-            }
+            // **Whoever has the transport is told**, and that is this editor
+            // when it has one and the piece it is composed inside when it does
+            // not: a structure has no transport of its own, and a window inside
+            // a composition is not a second place to keep a position.
+            this.locate(this.cursor);
+            this.composedIn?.locate(this.cursor);
             this.onLocate?.(this.cursor);
             return false;
         }
@@ -769,6 +768,17 @@ export class Editor<S = unknown> implements Adopting {
      * a view over an arrangement names what it is a selection *of*.
      */
     adoptSelection(_editor: Editor): void {}
+
+    /**
+     * The position cursor was placed at `beat`, here or in a window composed
+     * inside this one.
+     *
+     * Nothing by default, and that is the honest answer for a structure opened
+     * on its own: the mark is kept ({@link Editor.cursor}) and what it means for
+     * the sound needs a transport, which only something that can be *played*
+     * has. An editor that has one cues it here.
+     */
+    locate(_beat: number): void {}
 
     /**
      * Apply one payload to the structure and record how to put it back.

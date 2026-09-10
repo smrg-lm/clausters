@@ -1924,7 +1924,9 @@ wrapped beside the model, and `edit()` opening a piece.
   `pianoroll`, `pianoroll-midi`) make the same calls in the same order and none
   touches what moved here. Two are unpaired and neither is this milestone's:
   `multitrack_audio.py` has no page (`G34` owns writing one) and `session.py`
-  launches a standalone host, which a page has no counterpart for.
+  launches a standalone host, which a page has no counterpart for. *(The first
+  of those closed on 2026-09-10: the example is `edit_multitrack.py` /
+  `edit-multitrack.html`, one program in two languages.)*
 
 
 ### W31 - The timeline plays what is under the cursor (port of `C54`)

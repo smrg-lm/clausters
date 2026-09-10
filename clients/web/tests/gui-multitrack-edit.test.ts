@@ -15,7 +15,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { MultitrackEditor, MultitrackView, edit } from "../src/gui/editing/index.ts";
+import {
+    MultitrackEditor, MultitrackView, boxArgs, edit, trackLevel,
+} from "../src/gui/editing/index.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
@@ -657,4 +659,56 @@ test("a layer's points are its box's own time", () => {
     near(Number(fade.points[0].at), 0.0);
     near(Number(fade.points[0].value), 0.25);
     near(Number(fade.points[1].at), 2.0);
+});
+
+// ---- what the piece is heard as ----
+
+test("a box is read in frames from where its window opens", () => {
+    // The crossing from the piece to the readers: a box is placed in beats and
+    // read in frames, and a trimmed one reads on rather than restarting.
+    const ed = editor(piece());
+    const region = ed.structure.tracks[0].lanes[0].regions[1];
+    region.content = window(1, 0.5, 2.0);
+    const args = boxArgs(ed.bridge, region, 0.5);
+    assert.ok(args !== null);
+    assert.equal(args.buf, 7, "the buffer the source was read into");
+    near(args.at, 4.0 * SR);           // a beat is a second here
+    near(args.span, 2.0 * SR);
+    near(args.start, 0.5 * SR);        // where the window opens
+    assert.equal(args.loop, 0.0);
+    near(args.amp, 0.5);
+});
+
+test("a muted box and an unloaded source are not read", () => {
+    // Two different answers: a muted box is read at nothing, and a box whose
+    // source nobody loaded is not read at all — the second is a piece that
+    // arrived without its takes, which is not the same as a silent one.
+    const ed = editor(piece());
+    const region = ed.structure.tracks[0].lanes[0].regions[0];
+    region.muted = true;
+    assert.equal(boxArgs(ed.bridge, region, 0.5)?.amp, 0.0);
+
+    region.muted = false;
+    region.content = window(9);        // a source the table has no buffer for
+    assert.equal(boxArgs(ed.bridge, region, 0.5), null);
+});
+
+test("the mixer rules are the client's and a solo silences the rest", () => {
+    // The document holds the flags and never reads them: what a track
+    // contributes is the client's rule, because a level is not a fact about the
+    // piece.
+    const held = piece();
+    const [one, two] = held.tracks;
+    assert.equal(trackLevel(held, one), 1.0, "a track that said nothing is at full");
+
+    one.config = { level: 0.25 };
+    near(trackLevel(held, one), 0.25);
+
+    one.muted = true;
+    assert.equal(trackLevel(held, one), 0.0);
+    one.muted = false;
+
+    two.soloed = true;
+    assert.equal(trackLevel(held, one), 0.0, "another track is soloed");
+    assert.equal(trackLevel(held, two), 1.0);
 });

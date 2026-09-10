@@ -1470,7 +1470,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **The multitrack example is a driver with an editor in it, and it should be
+- ✅ **The multitrack example is a driver with an editor in it, and it should be
   `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py
   no sirve más como está. Había que rehacerlo con edit y sin todos los callbacks
   manuales que tiene ... debería llamarse `edit_multitrack.py` y ser casi tan
@@ -1499,6 +1499,30 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   sources=…)`, and a `hear()`/transport the library provides. Rename to
   `edit_multitrack.py` when that lands, so the four editor examples read as one
   family (`edit_samples`, `edit_curve`, `edit_notes`, `edit_multitrack`).
+
+  **Done 2026-09-10, and the verb went where the user said it belonged**
+  *("La aplicación **es** el editor que se usa con el verbo edit, no es algo que
+  hay que construir en un ejemplo distinto")*. The driver is now the editor's
+  own half — `gui.editing.playback` in both clients: the reader def, one resident
+  node per box in a group the server's transport governs, the mixer's rules over
+  a track's mute/solo/level, and the transport with its row of three widgets,
+  which is the **view's** and not a script's `extra`. `edit(piece, …,
+  server=…)` is what turns it on, `MultitrackEditor.play`/`pause`/`stop`/`locate`
+  are the verbs, and `data_changed` keeps the readers in step with whoever
+  edited. The example is what was left over: four takes, a piece written plainly,
+  `session.gui()` and one `edit` — beside `edit_samples.py` at last, with
+  `edit-multitrack.html` its twin.
+
+  **Two things it does not do, deliberately.** A curve is drawn and not heard
+  (the chain, `G35.3 + G35.4`, and the node system beside it), and a piece opened
+  with no server still edits — which is what makes "the editor is the
+  application" true rather than "the editor needs a server".
+
+  It also closed a gap nothing had reported: `Editor.locate` did not exist while
+  `_observe` already called `composed_in.locate(...)`, so a ruler clicked inside
+  an entered box would have raised `AttributeError` the moment anything set
+  `composed_in` — which nothing did. Both are there now: the hook, and the piece
+  setting itself as what an entered window is composed inside.
 
 - ⬜ **`form.Element` is a word two layers spend on different things, and one
   of them is frozen** *(found 2026-09-08 by the user, reading the multitrack

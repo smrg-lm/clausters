@@ -29,6 +29,8 @@ import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { MultitrackEditor, isPiece } from "./multitrack.ts";
+import type { MultitrackEditorOptions } from "./multitrack.ts";
+import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import { SamplesEditor, isSamples } from "./samples.ts";
 
@@ -61,6 +63,14 @@ export interface EditOptions {
      * is composing.
      */
     open?: boolean;
+    /**
+     * **A piece's own two**, ignored by every other structure: which server
+     * buffer each source was read into, and the server the piece sounds on.
+     * Given a server the editor keeps a reader per box and draws the transport
+     * row; a piece opened with none still edits.
+     */
+    sources?: MultitrackEditorOptions["sources"];
+    server?: Server;
 }
 
 /** Builds the editor `structure` asks for, without opening it. */

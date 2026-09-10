@@ -42,7 +42,7 @@ the pair is easy to find.
 The GUI examples drive the **clausters GUI host**, a separate process (or a
 browser tab) this client talks to over the widget protocol. The host itself,
 including the browser quick-start, is documented in the [Clausters server
-book](https://clausters.readthedocs.io/)'s clients chapter. `editors/multitrack_audio.py` is the one to
+book](https://clausters.readthedocs.io/)'s clients chapter. `editors/edit_multitrack.py` is the one to
 open first for a piece placed in time: lanes of audio clips on one shared axis,
-played by the server's transport (see
+edited and played by the multitrack editor `edit` opens (see
 [The document](composition.md)).
