@@ -148,11 +148,15 @@ fn parse_workers(value: &str) -> Result<usize, String> {
 
 /// A bus count: a **power of two**, like every other sized resource here.
 ///
+/// Only the live server takes bus counts on the command line -- a render is
+/// sized by its score -- so this is gated the way its caller is.
+///
 /// The rule is not arithmetic convenience -- nothing here indexes by mask --
 /// it is that a resource whose size is chosen at boot is chosen in the units
 /// people reason about it in, and a request for 1000 buses is a request for
 /// 1024 that someone typed by hand. Refusing it says so once, rather than the
 /// server quietly running with a size nobody meant.
+#[cfg(feature = "realtime")]
 fn power_of_two(flag: &str, value: &str) -> Result<usize, String> {
     let n: usize = value.parse().map_err(|e| format!("{flag}: {e}"))?;
     if !n.is_power_of_two() {

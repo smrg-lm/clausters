@@ -30,6 +30,7 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "faust")]
 use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
 #[cfg(feature = "synth")]
