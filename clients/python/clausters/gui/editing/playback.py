@@ -375,7 +375,25 @@ class Playback:
     def pause(self):
         """Freeze the piece where it stands, with every node's state intact."""
         self.transport.pause()
+        self._silence_meters()
         return self
+
+    def _silence_meters(self) -> None:
+        """**A frozen meter must not go on claiming a level.**
+
+        The transport freezes the piece's whole subtree, so a paused meter is
+        starved of time and its bus keeps the last value it wrote -- forever.
+        A picture of what the piece *was* doing then reads as what it is doing,
+        which is the one thing a meter may never say. Nothing on the server can
+        move it (a frozen node gets no time and a fall is time), so whoever
+        stopped it says so: the buses go to zero and the strip falls empty,
+        which is what is true of a piece that is not sounding.
+
+        The mark goes with the level. A held peak is "the loudest thing lately"
+        and lately ended when the transport did.
+        """
+        for bus, channels in self.meters.values():
+            self.server.send_msg("/bus_fill", bus.index, 2 * channels, 0.0)
 
     def stop(self):
         """Halt and go back to **the mark**, not to the top.
@@ -385,6 +403,7 @@ class Playback:
         rather than from wherever the last pass happened to end.
         """
         self.transport.pause()
+        self._silence_meters()
         return self.locate(self.editor.cursor or 0.0)
 
     def locate(self, beat: float):

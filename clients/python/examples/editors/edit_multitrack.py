@@ -28,8 +28,12 @@ What to do in the window:
   clips, its curves and its fader — with the peak it reached held beside it.
 
 **The takes are rendered here and the piece is written plainly**, which is all
-this file is: five buffers, three tracks, five boxes and two curves. Everything
+this file is: six buffers, three tracks, six boxes and two curves. Everything
 after that is `edit`.
+
+**The last box is loud on purpose**, so the meter has something to fill: it
+reaches full scale and the top of the column is red, where the boxes before it
+sit in the green and the amber.
 
 **The curves are heard.** The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the ``gain``
@@ -75,7 +79,11 @@ def gentake(name: str, expr, secs: float = TAKE_DUR) -> list:
 TAKES = {"white": gentake("t_white", white_noise() * 0.5),
          "glide": gentake("t_glide", sine(line(220.0, 440.0, TAKE_DUR)) * 0.5),
          "saw": gentake("t_saw", saw(110.0) * 0.5),
-         "pink": gentake("t_pink", pink_noise() * 0.5)}
+         "pink": gentake("t_pink", pink_noise() * 0.5),
+         #: Deliberately hot, to have something that fills a meter: centred, a
+         #: mono take comes out 3 dB down a side (the pan law), so 1.4 reads as
+         #: full scale on the track's meter and the last box is the red one.
+         "loud": gentake("t_loud", sine(330.0) * 1.4)}
 
 # %% [markdown]
 # ## The session and the takes on the server
@@ -115,7 +123,8 @@ server.sync()
 # %%
 #: source id -> the take it names, so the piece and the table below are written
 #: against one list.
-SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp"}
+SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
+           6: "loud"}
 
 
 def box(id: int, at: float, source: int, name: str) -> Region:
@@ -151,7 +160,8 @@ piece = Multitrack(tracks=[
           lanes=[Lane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
     Track(id=12, name="tone",
           lanes=[Lane(id=13, regions=[box(22, 2.0, 2, "glide"),
-                                      box(24, 8.0, 5, "comp")])]),
+                                      box(24, 8.0, 5, "comp"),
+                                      box(25, 10.0, 6, "loud")])]),
     #: **The fader is the track's own field**, like its width: what a piece
     #: sounds like is the piece's, so it is saved with it and reopens as it was.
     Track(id=14, name="bass", level=0.7,
