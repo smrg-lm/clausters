@@ -27,7 +27,9 @@
  */
 
 import { mixerDefs, multitrackPlan } from "../../core/clausters_core_web.js";
-import { Group } from "../../defs/node.ts";
+import { Buffer } from "../../defs/buffer.ts";
+import { Bus } from "../../defs/bus.ts";
+import { AddAction, Group, Synth } from "../../defs/node.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { GuiHost } from "../host.ts";
 import { Transport } from "../transport.ts";
@@ -43,6 +45,15 @@ export interface PlannedReader {
     looping: boolean;
 }
 
+/** One curve of the plan: the port it drives and the table a reader follows. */
+export interface PlannedCurve {
+    id: number;
+    port: string;
+    at: number;
+    step: number;
+    table: number[];
+}
+
 /** One clip of the plan: a box, its strip and its readers. */
 export interface PlannedClip {
     region: number;
@@ -50,6 +61,7 @@ export interface PlannedClip {
     gain: number;
     mute: number;
     readers: PlannedReader[];
+    curves: PlannedCurve[];
 }
 
 /** One track of the plan: its strip and the clips on it. */
@@ -59,6 +71,7 @@ export interface PlannedTrack {
     gain: number;
     mute: number;
     clips: PlannedClip[];
+    curves: PlannedCurve[];
 }
 
 /** The whole piece as instances: one graph, and everything else a slot. */
@@ -101,6 +114,26 @@ export class Playback {
     readonly clips = new Map<number, [Group, string, Ports, number]>();
     /** `region:channel` → its group and the ports last sent. */
     readonly readers = new Map<string, [Group, Ports]>();
+    /**
+     * Automation id → its node, its table, its bus, the group whose port it
+     * drives, that port, and the table last written.
+     *
+     * A curve is a node of this client's own rather than a member of the
+     * piece's graph: it writes a control bus and the port is **mapped** to it,
+     * which is what lets one curve drive a control three levels down without
+     * anybody learning the node behind it.
+     */
+    readonly curves = new Map<
+        number,
+        [Synth, Buffer, Bus, Group, string, number[]]
+    >();
+    /**
+     * The group the curve nodes live in, before the piece so a value is written
+     * in the block it is read.
+     */
+    curveGroup: Group | null = null;
+    /** The name of the curve def, as the core gives it. */
+    private curveDef = "";
     readonly transport: Transport;
 
     constructor(
@@ -201,7 +234,17 @@ export class Playback {
             // in step here.
             await this.server.transportGroup(this.piece);
         }
-        this.syncTracks(plan.tracks);
+        if (this.curveGroup === null) {
+            // Before the piece: a control bus written after it is read is a
+            // block late, every block, which on a fade is an audible lag.
+            this.curveGroup = new Group({
+                target: this.piece,
+                action: AddAction.BEFORE,
+                server: this.server,
+            });
+        }
+        await this.syncTracks(plan.tracks);
+        this.reapCurves(plan);
     }
 
     /**
@@ -217,7 +260,9 @@ export class Playback {
         const defs = JSON.parse(answer) as {
             synth: { name: string }[];
             graph: { name: string }[];
+            curve: string;
         };
+        this.curveDef = defs.curve;
         for (const [family, specs] of [
             ["synth", defs.synth],
             ["graph", defs.graph],
@@ -230,7 +275,7 @@ export class Playback {
         }
     }
 
-    private syncTracks(planned: PlannedTrack[]): void {
+    private async syncTracks(planned: PlannedTrack[]): Promise<void> {
         const seen = new Set<number>();
         for (const track of planned) {
             seen.add(track.track);
@@ -240,14 +285,19 @@ export class Playback {
                 this.tracks.set(track.track, group);
             }
             group.set({ gain: track.gain, mute: track.mute });
-            this.syncClips(track.track, group, track.clips);
+            await this.syncCurves(group, track.curves);
+            await this.syncClips(track.track, group, track.clips);
         }
         for (const id of [...this.tracks.keys()].filter((id) => !seen.has(id))) {
             this.freeTrack(id);
         }
     }
 
-    private syncClips(id: number, track: Group, planned: PlannedClip[]): void {
+    private async syncClips(
+        id: number,
+        track: Group,
+        planned: PlannedClip[],
+    ): Promise<void> {
         const seen = new Set<number>();
         for (const clip of planned) {
             seen.add(clip.region);
@@ -269,6 +319,7 @@ export class Playback {
                 if (moved !== null) group.set(moved);
             }
             this.clips.set(clip.region, [group, clip.slot, ports, id]);
+            await this.syncCurves(group, clip.curves);
             this.syncReaders(clip.region, group, clip.readers);
         }
         const mine = [...this.clips.entries()].filter(([, held]) => held[3] === id);
@@ -306,6 +357,82 @@ export class Playback {
                 this.readers.get(key)![0].free();
                 this.readers.delete(key);
             }
+        }
+    }
+
+    /**
+     * Put each curve's table on the server and map the port to it.
+     *
+     * The table is read at the transport's own position, so a locate costs no
+     * message at all — which is the whole reason a curve is a table and not a
+     * stream of sets.
+     */
+    private async syncCurves(owner: Group, planned: PlannedCurve[]): Promise<void> {
+        for (const curve of planned) {
+            const held = this.curves.get(curve.id);
+            if (held === undefined) {
+                const buffer = await Buffer.fromSamples(Float32Array.from(curve.table), 1, 0, {
+                    server: this.server,
+                });
+                const bus = Bus.control(1, { server: this.server });
+                const node = new Synth(
+                    this.curveDef,
+                    { out: bus.index, buf: buffer.bufnum, at: curve.at, step: curve.step },
+                    { target: this.curveGroup ?? undefined, server: this.server },
+                );
+                this.server.sendMsg(
+                    "/graph_map",
+                    ["i", owner.id],
+                    ["s", curve.port],
+                    ["i", bus.index],
+                );
+                this.curves.set(curve.id, [
+                    node, buffer, bus, owner, curve.port, curve.table,
+                ]);
+                continue;
+            }
+            const [node, buffer, bus, , port, sent] = held;
+            let table = buffer;
+            if (!same(curve.table, sent)) {
+                // A curve whose points moved is a new table, and a table is
+                // replaced rather than written into — its length changes with
+                // its first and last point. `buf` is an ordinary control, so
+                // the reader follows without stopping.
+                table = await Buffer.fromSamples(Float32Array.from(curve.table), 1, 0, {
+                    server: this.server,
+                });
+                node.set({ buf: table.bufnum, at: curve.at, step: curve.step });
+                buffer.free();
+            } else {
+                node.set({ at: curve.at, step: curve.step });
+            }
+            this.curves.set(curve.id, [node, table, bus, owner, port, curve.table]);
+        }
+    }
+
+    /**
+     * Free the curves the piece no longer has, and give their ports back.
+     *
+     * **Unmapping is not optional**: a port left mapped to a bus nobody writes
+     * holds whatever was in it, so a curve that was deleted would go on driving
+     * the control it drove, at the last value it happened to say.
+     */
+    private reapCurves(plan: Plan): void {
+        const alive = new Set<number>();
+        for (const track of plan.tracks) {
+            for (const curve of track.curves) alive.add(curve.id);
+            for (const clip of track.clips) {
+                for (const curve of clip.curves) alive.add(curve.id);
+            }
+        }
+        for (const [id, held] of [...this.curves.entries()]) {
+            if (alive.has(id)) continue;
+            const [node, buffer, bus, owner, port] = held;
+            this.server.sendMsg("/graph_map", ["i", owner.id], ["s", port], ["i", -1]);
+            node.free();
+            buffer.free();
+            bus.free();
+            this.curves.delete(id);
         }
     }
 
@@ -405,6 +532,15 @@ export class Playback {
      * holds is nodes, and nodes are not the composition.
      */
     close(): void {
+        for (const [, buffer, bus] of this.curves.values()) {
+            buffer.free();
+            bus.free();
+        }
+        this.curves.clear();
+        if (this.curveGroup !== null) {
+            this.curveGroup.free();
+            this.curveGroup = null;
+        }
         this.readers.clear();
         this.clips.clear();
         this.tracks.clear();
@@ -413,6 +549,11 @@ export class Playback {
             this.piece = null;
         }
     }
+}
+
+/** Whether two tables hold the same values. */
+function same(a: readonly number[], b: readonly number[]): boolean {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /** The ports of `now` that differ from `sent`, or `null` when none do. */

@@ -686,6 +686,62 @@ impl CmdTranslator {
     /// target (`mul`·v + `add`), mirroring each write and re-sorting if a
     /// target turns out to be a bus-index control. `group` may be an instance
     /// (shared surface) or a voice sub-group (voice surface).
+    /// `/graph_map instanceID port bus [audio]`: **drive a port from a bus**
+    /// instead of from a value.
+    ///
+    /// The other half of `/node_set` against a surface, and the one an
+    /// automation needs: a curve is a node writing a control bus, and what it
+    /// drives is a port — of a track, of a clip, of an effect three levels down
+    /// — whose member ids are private and are meant to stay that way. Without
+    /// this a client would have to be told the node behind a port, which is the
+    /// encapsulation the surface exists to keep.
+    ///
+    /// A negative bus **unmaps**, which is how a curve that was switched off
+    /// gives the port back to whoever sets it by hand. The port's own scaling
+    /// (`mul`/`add`) is not applied: a bus carries a signal and scaling it would
+    /// need a node, so a port with a scaled target maps the bus straight onto
+    /// the control and the scaling belongs to whatever wrote the bus.
+    pub(in crate::osc::translate) fn graph_map(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let [
+            OscType::Int(instance),
+            OscType::String(port),
+            OscType::Int(bus),
+            rest @ ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: instanceID, port, bus [, audio]".into());
+        };
+        let audio = matches!(rest.first(), Some(OscType::Int(1)));
+        let targets = self
+            .graph_instances
+            .get(instance)
+            .and_then(|inst| inst.surface.get(port.as_str()))
+            .or_else(|| {
+                self.graph_voices
+                    .get(instance)
+                    .and_then(|v| v.surface.get(port.as_str()))
+            });
+        let Some(targets) = targets.cloned() else {
+            return Err(format!("{instance} has no port '{port}'"));
+        };
+        for (node, index, _mul, _add) in targets {
+            cmds.push(Cmd::MapControl {
+                id: node,
+                index,
+                bus: *bus,
+                audio,
+            });
+            if self.mirror.set_map(node, index, *bus, audio) {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        Ok(())
+    }
+
     fn apply_surface(&mut self, group: i32, port: &str, value: f32, cmds: &mut Vec<Cmd>) {
         let targets = self
             .graph_instances

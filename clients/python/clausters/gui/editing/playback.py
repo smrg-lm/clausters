@@ -28,7 +28,9 @@ again.
 import json
 
 from ... import _native
-from ...defs.node import Group
+from ...defs.buffer import Buffer
+from ...defs.bus import Bus
+from ...defs.node import AddAction, Group, Synth
 from ..transport import Transport
 
 __all__ = ["Playback"]
@@ -70,6 +72,19 @@ class Playback:
         self.clips: dict = {}
         #: ``(region id, channel)`` -> ``(group, ports last sent)``.
         self.readers: dict = {}
+        #: automation id -> ``(synth, buffer, bus, owner group, port, table)``.
+        #: A curve is a node of this client's own rather than a member of the
+        #: piece's graph: it writes a control bus and the port is **mapped** to
+        #: it, which is what lets one curve drive a control three levels down
+        #: without anybody learning the node behind it.
+        self.curves: dict = {}
+        #: The group the curve nodes live in, before the piece so a value is
+        #: written in the block it is read.
+        self.curve_group = None
+        #: The name of the curve def, as the core gives it. Sent with all the
+        #: others -- it is in the same list, because it is one of the defs a
+        #: piece is played by.
+        self._curve_def = ""
         bridge = editor.bridge
         #: The piece's transport. ``head_clock="piece"`` says it once: the verbs
         #: become the server's and the host draws the line from the engine's own
@@ -129,7 +144,14 @@ class Playback:
             # reader's position is the engine's own rather than a number kept
             # in step here.
             self.server.transport_group(self.piece)
+        if self.curve_group is None:
+            # Before the piece: a control bus written after it is read is a
+            # block late, every block, which on a fade is an audible lag.
+            self.curve_group = Group(target=self.piece,
+                                     action=AddAction.BEFORE,
+                                     server=self.server)
         self._sync_tracks(plan["tracks"])
+        self._reap_curves(plan)
 
     def _send_defs(self, plan: dict) -> None:
         """Send the defs this piece's widths need, and only the ones not sent.
@@ -140,6 +162,7 @@ class Playback:
         """
         defs = _native.mixer_defs(
             [tuple(pair) for pair in plan.get("widths", [])], plan["channels"])
+        self._curve_def = defs.get("curve", "")
         for family, specs in (("synth", defs.get("synth", [])),
                               ("graph", defs.get("graph", []))):
             for spec in specs:
@@ -157,6 +180,7 @@ class Playback:
                 group = self.piece.add_slot("tracks")
                 self.tracks[track["track"]] = group
             group.set({"gain": track["gain"], "mute": track["mute"]})
+            self._sync_curves(group, track["curves"])
             self._sync_clips(track["track"], group, track["clips"])
         for id in [id for id in self.tracks if id not in seen]:
             self._free_track(id)
@@ -181,6 +205,7 @@ class Playback:
                 if moved:
                     group.set(moved)
             self.clips[clip["region"]] = (group, clip["slot"], ports, id)
+            self._sync_curves(group, clip["curves"])
             self._sync_readers(clip["region"], group, clip["readers"])
         mine = [r for r, held in self.clips.items() if held[3] == id]
         for region in [r for r in mine if r not in seen]:
@@ -210,6 +235,67 @@ class Playback:
             self.readers[key] = (group, ports)
         for key in [k for k in self.readers if k[0] == region and k not in seen]:
             self.readers.pop(key)[0].free()
+
+    # ---- the curves ----
+
+    def _sync_curves(self, owner, planned: list) -> None:
+        """Put each curve's table on the server and map the port to it.
+
+        A curve is **not** a member of the piece's graph, and that is the point:
+        it writes a control bus, the port is mapped to that bus, and the port's
+        own member ids stay private. The table is read at the transport's own
+        position, so a locate costs no message at all -- which is the whole
+        reason a curve is a table and not a stream of sets.
+        """
+        if not planned:
+            return
+        for curve in planned:
+            held = self.curves.get(curve["id"])
+            table = curve["table"]
+            if held is None:
+                buffer = Buffer.from_samples(table, server=self.server)
+                bus = Bus.control(1, server=self.server)
+                node = Synth(self._curve_def,
+                             {"out": float(bus.index), "buf": float(buffer.bufnum),
+                              "at": curve["at"], "step": curve["step"]},
+                             target=self.curve_group, server=self.server)
+                self.server.send_msg("/graph_map", owner.id, curve["port"],
+                                     int(bus.index))
+                self.curves[curve["id"]] = (node, buffer, bus, owner,
+                                            curve["port"], table)
+                continue
+            node, buffer, bus, _owner, port, sent = held
+            if table != sent:
+                # A curve whose points moved is a new table, and a table is
+                # replaced rather than written into -- its length changes with
+                # its first and last point. `buf` is an ordinary control, so
+                # the reader follows without stopping.
+                fresh = Buffer.from_samples(table, server=self.server)
+                node.set({"buf": float(fresh.bufnum), "at": curve["at"],
+                          "step": curve["step"]})
+                buffer.free()
+                buffer = fresh
+            else:
+                node.set({"at": curve["at"], "step": curve["step"]})
+            self.curves[curve["id"]] = (node, buffer, bus, owner, port, table)
+
+    def _reap_curves(self, plan: dict) -> None:
+        """Free the curves the piece no longer has, and give their ports back.
+
+        **Unmapping is not optional**: a port left mapped to a bus nobody writes
+        holds whatever was in it, so a curve that was deleted would go on
+        driving the control it drove, at the last value it happened to say.
+        """
+        alive = {c["id"] for track in plan["tracks"]
+                 for c in track["curves"]}
+        alive |= {c["id"] for track in plan["tracks"]
+                  for clip in track["clips"] for c in clip["curves"]}
+        for id in [id for id in self.curves if id not in alive]:
+            node, buffer, bus, owner, port, _table = self.curves.pop(id)
+            self.server.send_msg("/graph_map", owner.id, port, -1)
+            node.free()
+            buffer.free()
+            bus.free()
 
     def _free_clip(self, region, *, freeing: bool = True) -> None:
         for key in [k for k in self.readers if k[0] == region]:
@@ -280,6 +366,13 @@ class Playback:
     def close(self):
         """Free the piece's instance. The piece itself is untouched: what a
         playback holds is nodes, and nodes are not the composition."""
+        for _node, buffer, bus, *_rest in self.curves.values():
+            buffer.free()
+            bus.free()
+        self.curves.clear()
+        if self.curve_group is not None:
+            self.curve_group.free()
+            self.curve_group = None
         self.readers.clear()
         self.clips.clear()
         self.tracks.clear()

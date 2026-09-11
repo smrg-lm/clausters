@@ -306,3 +306,109 @@ fn a_port_at_any_level_reaches_the_strip_it_names() {
         );
     }
 }
+
+/// **A curve drives a port, and the port is a control of a node three levels
+/// down.** The whole of what a piece's automation is: a table read at the
+/// transport's own position, written to a control bus, mapped onto whatever the
+/// curve names — so a locate costs no message and the member ids stay private.
+#[test]
+fn a_curve_on_a_bus_drives_a_port() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    let (_piece, track, _clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+
+    // A table that rises from silence to unity over eight blocks, read one
+    // sample a block.
+    let step = BLOCK as f32;
+    let blocks = 8;
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(1), OscType::Int(blocks + 1), OscType::Int(1)],
+    );
+    s.settle_for(4);
+    for i in 0..=blocks {
+        send(
+            &mut s,
+            "/buffer_set",
+            vec![
+                OscType::Int(1),
+                OscType::Int(i),
+                OscType::Float(i as f32 / blocks as f32),
+            ],
+        );
+    }
+    s.settle_for(4);
+
+    // The curve node, and the track's gain mapped to what it writes.
+    let bus = 100;
+    send(
+        &mut s,
+        "/synth_new",
+        vec![
+            OscType::String(mixer::curve_name()),
+            OscType::Int(950),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("out".into()),
+            OscType::Float(bus as f32),
+            OscType::String(mixer::BUF.into()),
+            OscType::Float(1.0),
+            OscType::String(mixer::AT.into()),
+            OscType::Float(0.0),
+            OscType::String("step".into()),
+            OscType::Float(step),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(bus),
+        ],
+    );
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let heard: Vec<f32> = (0..blocks + 2).map(|_| peaks(&mut s, 1).0).collect();
+    assert!(
+        heard[0] < heard[heard.len() - 1],
+        "the curve opened the fader: {heard:?}"
+    );
+    assert!(
+        heard.windows(2).filter(|w| w[0] > w[1] + 1e-3).count() <= 1,
+        "and it rose rather than wandering: {heard:?}"
+    );
+
+    // Unmapping gives the port back, and what was last on the bus does not
+    // keep driving it.
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(-1),
+        ],
+    );
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Float(0.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    assert!(
+        peaks(&mut s, 4).0 < 1e-3,
+        "the hand has the fader back once the curve is unmapped"
+    );
+}

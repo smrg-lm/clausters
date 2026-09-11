@@ -906,6 +906,12 @@ A GraphDef splits into a **shared** part (members with no slot) and its **slots*
 
 `"voice": true` is the slot named `voice`, spelled the way it was before slots had names, and `/graph_newVoice instanceID id [port value]...` is `/graph_addSlot` on it. Both keep working unchanged.
 
+### Driving a port from a bus: `/graph_map`
+
+`/graph_map instanceID port bus [audio=0]` is the other half of `/node_set` against a surface: instead of writing a value it **maps** every control the port resolves to onto `bus`, so whatever writes that bus drives the port. A negative `bus` unmaps, which is how a port goes back to whoever sets it by hand.
+
+It exists because an automation needs it. A curve is a node writing a control bus, and what it drives is a port — of a track, of a clip, of an effect three levels down — whose member ids are private and are meant to stay that way; without this a client would have to be told the node behind a port, which is the encapsulation the surface exists to keep. The port's own scaling (`mul`/`add`) is **not** applied: a bus carries a signal and scaling one would need a node, so the bus is mapped straight onto the control and the scaling belongs to whatever wrote it. A port the instance does not have is a `/fail`.
+
 ### A member can be another GraphDef
 
 `{"def": "<graphname>", "kind": "graph"}` makes a member a whole nested graph rather than one node: it is instantiated as a **subgroup** with private buses of its own, and it is freed with its parent. That is what lets a track hold clips and a clip hold an effect chain without either being a second mechanism — and it means an effect can itself be a GraphDef, so a compound effect needs nothing new.

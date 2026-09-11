@@ -701,10 +701,24 @@ En este orden, porque cada una se puede probar sola:
    perilla escribe el mismo que escribiría la curva, pero nada mapea todavía una
    `Automation` a un puerto ni la compila a la tabla que `transport_pos` lee
    (§5). Esa es la fase que falta para que la curva suene.
-5. **Los canales y el vúmetro** (§6): el ancho de pista como campo del
-   documento, las reglas de mezcla y la balística del vúmetro en
-   `clausters-core`, el `meter` de *n* canales en el header (`G35.14`).
-6. **`mt.fx` de verdad**, cuando exista una especificación de efecto.
+5. ✅ **La curva suena** — *hecho 2026-09-10*, y es lo que cierra
+   `G35.3`/`G35.4`. `mt.curve` lee una tabla en `TransportPos` y escribe un bus
+   de control; `/graph_map instanceID port bus` mapea el puerto a ese bus, que
+   es la otra mitad de `/node_set` contra una superficie y lo único que permite
+   que una curva maneje un control tres niveles abajo sin que nadie aprenda el
+   nodo que hay detrás. La tabla la muestrea el crate, sobre el eje de frames,
+   así que un cambio de tempo la dobla como dobla todo lo demás.
+
+   **Desmapear no es opcional**: un puerto que quedó en un bus que nadie escribe
+   se queda con lo último que hubo ahí, así que una curva borrada seguiría
+   manejando el control con el último valor que dijo.
+
+6. **Los canales y el vúmetro** (§6): el ancho de pista como campo del documento
+   (hecho en la fase 3), las reglas de mezcla y la balística del vúmetro en
+   `clausters-core`, el `meter` de *n* canales en el header (`G35.14`). El
+   vúmetro necesita un UGen que todavía no existe: ataque instantáneo, caída
+   declarada en dB/s y retención de pico.
+7. **`mt.fx` de verdad**, cuando exista una especificación de efecto.
 
 ---
 

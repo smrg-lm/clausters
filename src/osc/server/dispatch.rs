@@ -438,6 +438,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_via_translate(m, f);
         Ok(())
     }),
+    ("/graph_map", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
     ("/graph_new", |s, _, m, f| {
         s.handle_via_translate(m, f);
         Ok(())

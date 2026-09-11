@@ -125,6 +125,11 @@ pub fn reader_name() -> String {
     format!("{PREFIX}.reader")
 }
 
+/// The name of the curve def: what makes an automation a control.
+pub fn curve_name() -> String {
+    format!("{PREFIX}.curve")
+}
+
 /// The name of the strip def for `inputs` channels in and `outputs` out.
 pub fn strip_name(inputs: usize, outputs: usize) -> String {
     format!("{PREFIX}.strip.{inputs}x{outputs}")
@@ -210,6 +215,49 @@ pub fn reader_def() -> Value {
             {"kind": "Mul", "inputs": [{"ugen": 5}, {"ugen": 3}]},
             {"kind": "Mul", "inputs": [{"ugen": 6}, {"control": 7}]},
             {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 7}]}
+        ]
+    })
+}
+
+/// How many frames one sample of a curve's table covers.
+///
+/// One block at the usual rate. A curve is read once a block anyway --
+/// [`curve_def`] writes a control bus, and a control bus is a value per block --
+/// so a finer table would be samples nothing can hear the difference of, and a
+/// coarser one would step where a fader should glide.
+pub const CURVE_STEP: f64 = 64.0;
+
+/// **What makes an automation a control**: a table read at the transport's own
+/// position, written to a control bus.
+///
+/// The alternative was a message per block from the client, and it fails for a
+/// reason worth stating: a locate would leave the curve wherever the last
+/// message put it, so every seek would need the whole thing re-sent, and the
+/// resolution of the automation would be the resolution of a socket. Read from
+/// the transport instead, the curve is simply *at* wherever the piece is --
+/// a locate costs nothing at all, and it works the same offline.
+///
+/// `BufRd` clamps a phase past either end when it is not looping, which is
+/// exactly what a curve should do: before its first point it holds the first
+/// value and after its last it holds the last.
+pub fn curve_def() -> Value {
+    json!({
+        "name": curve_name(),
+        "controls": [
+            control(OUT_BUS, 0.0),
+            control(BUF, 0.0),
+            control(AT, 0.0),
+            control("step", CURVE_STEP as f32),
+        ],
+        "ugens": [
+            // 0..1: how far into the curve the piece is, in table samples.
+            {"kind": "TransportPos", "inputs": [{"control": 2}]},
+            {"kind": "Div", "inputs": [{"ugen": 0}, {"control": 3}]},
+            // 2..3: the value there, onto the control bus the port is mapped to.
+            {"kind": "BufRd", "inputs": [
+                {"control": 1}, {"const": 0.0}, {"ugen": 1}, {"const": 0.0}
+            ]},
+            {"kind": "OutCtl", "inputs": [{"control": 0}, {"ugen": 2}]}
         ]
     })
 }
@@ -518,7 +566,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     strips.sort_unstable();
     strips.dedup();
 
-    let mut synth = vec![reader_def()];
+    let mut synth = vec![reader_def(), curve_def()];
     for &(inputs, outputs) in &strips {
         synth.push(strip_def(inputs, outputs)?);
     }
@@ -642,6 +690,7 @@ mod tests {
             .map(|d| d["name"].as_str().unwrap().to_string())
             .collect();
         assert!(synth.contains(&reader_name()));
+        assert!(synth.contains(&curve_name()));
         assert!(synth.contains(&strip_name(1, 2)));
 
         let mut sent: Vec<String> = synth;

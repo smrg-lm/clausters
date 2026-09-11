@@ -2113,6 +2113,37 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A curve was drawn, edited and saved, and heard by nothing** *(the oldest
+  half of `G35.3`/`G35.4`; closed 2026-09-10)*. An automation's target said
+  `gain` and the header knob said `gain` and they were two words spelled alike.
+  Now they are one port, and the curve reaches it.
+
+  **A curve is a table read at the transport's own position**, not a stream of
+  messages, and the difference is the whole design: with messages a locate would
+  leave the curve wherever the last one put it, so every seek would have to
+  re-send it, and the resolution of an automation would be the resolution of a
+  socket. `mt.curve` reads a buffer at `TransportPos` and writes a control bus,
+  so a curve is simply *at* wherever the piece is -- a locate costs nothing, and
+  it works the same offline. `BufRd` clamps past either end when it is not
+  looping, which is exactly a curve holding its first and last value.
+
+  **`/graph_map instanceID port bus` is what connects the two.** It is the other
+  half of `/node_set` against a surface: instead of writing a value it maps
+  every control the port resolves to onto a bus. Without it a client would have
+  to be told the node behind a port, which is the encapsulation the surface
+  exists to keep -- and a curve drives a port of a track, of a clip, or of an
+  effect three levels down. A negative bus unmaps, and unmapping is not optional:
+  a port left on a bus nobody writes holds whatever was last in it, so a deleted
+  curve would go on driving the control at the last value it happened to say.
+
+  The sampling is the crate's: `nodes::plan` hands back the table itself, on the
+  **frame** axis, so a tempo change bends a curve the way it bends everything
+  else. Linear between break-points -- a segment's shape lives in the opaque
+  `Point::data` this crate carries and never reads, so shaped segments are heard
+  as the straight lines between their points, which is named rather than
+  guessed. `tests/mixer_graph.rs` hears it: a table opens a track's fader over
+  eight blocks, and unmapping gives the fader back to the hand.
+
 - ✅ **The clients each drove the piece by hand, so the mixer existed twice**
   *(2026-09-10, the other half of the entry below)*. `playback` in both clients
   built reader nodes itself and worked out the mixing as it went. Now it asks:

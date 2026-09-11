@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use clausters_core::mixer;
 use clausters_core::tempomap::TempoMap;
 
-use crate::multitrack::{Content, Multitrack, Track};
+use crate::multitrack::{Automation, Content, Multitrack, Track};
 use crate::{NodeId, SourceId};
 
 /// What a caller knows about a source that the document does not: where its
@@ -67,6 +67,29 @@ pub struct PlannedReader {
     pub looping: bool,
 }
 
+/// One curve, ready to be heard: the port it drives and the table a reader
+/// follows.
+///
+/// **The table is sampled here** rather than handed over as break-points,
+/// because sampling it is arithmetic and arithmetic written twice is two
+/// answers. What a caller does with it is write it into a buffer and start a
+/// `mt.curve` over it -- which is the only part that needs a running server.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlannedCurve {
+    /// The automation this is, by the identity the document gives it.
+    pub id: NodeId,
+    /// The port it drives, resolved against the instance it is on.
+    pub port: String,
+    /// Where the table's first sample sits on the transport, in frames.
+    pub at: f64,
+    /// How many frames one sample of the table covers.
+    pub step: f64,
+    /// The values, one per `step` frames. Before the first and after the last a
+    /// reader clamps -- which is a curve holding its ends, and what every
+    /// automation does.
+    pub table: Vec<f32>,
+}
+
 /// One clip: a box, its strip and its readers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedClip {
@@ -80,6 +103,8 @@ pub struct PlannedClip {
     pub mute: f32,
     /// One per channel of the source.
     pub readers: Vec<PlannedReader>,
+    /// The curves over **this box alone** -- its own gain, its fades.
+    pub curves: Vec<PlannedCurve>,
 }
 
 /// One track: its strip and the clips on it.
@@ -96,6 +121,8 @@ pub struct PlannedTrack {
     pub mute: f32,
     /// The clips to add to it, in the order they are on the timeline.
     pub clips: Vec<PlannedClip>,
+    /// The curves over the track.
+    pub curves: Vec<PlannedCurve>,
 }
 
 /// The whole piece as instances: one graph, and everything else a slot.
@@ -110,6 +137,109 @@ pub struct Plan {
     /// Every `(source width, track width)` pair the piece uses, which is what
     /// [`clausters_core::mixer::defs_for`] is handed.
     pub widths: Vec<(usize, usize)>,
+}
+
+/// **The port an automation drives**, or `None` for one that names nothing.
+///
+/// [`Automation::target`] is opaque -- "in the client's terms and never read
+/// here" -- and that is right: what a curve drives is a name in the surface of
+/// whatever it is on, and the crate does not own that vocabulary either. What it
+/// *does* own is the shape the multitrack editor writes there, which is
+/// `{"port": "gain"}` and nothing else. A target that says something else is a
+/// curve this cannot hear, and it is left out rather than guessed at.
+pub fn curve_port(automation: &Automation) -> Option<&str> {
+    automation.target.0.get("port")?.as_str()
+}
+
+/// What a break-point curve says at `at`, holding its ends.
+///
+/// Linear between points. The shape of a segment lives in
+/// [`crate::Point::data`], which this crate carries and never reads, so a curve
+/// with shaped segments is heard as the straight lines between its points --
+/// named here rather than guessed, since reaching into an opaque blob for a
+/// shape is the kind of thing that is right once and wrong afterwards.
+fn value_at(points: &[crate::Point], at: f64) -> f64 {
+    let first = &points[0];
+    if at <= first.at {
+        return first.value;
+    }
+    for pair in points.windows(2) {
+        let (a, b) = (&pair[0], &pair[1]);
+        if at < b.at {
+            let span = b.at - a.at;
+            if span <= 0.0 {
+                return b.value;
+            }
+            return a.value + (b.value - a.value) * ((at - a.at) / span);
+        }
+    }
+    points[points.len() - 1].value
+}
+
+/// The curves over one thing, as tables on the **frame** axis.
+///
+/// `origin` is the beat the curve's own axis starts at: a track's automation is
+/// on the timeline and a clip's is the box's own time, which is the whole
+/// difference between the two places a curve lives.
+///
+/// Sampled on the frame axis rather than the musical one, so a tempo change
+/// bends the table the way it bends everything else -- a point two beats in is
+/// wherever two beats *are*, not wherever they were when the piece began.
+fn curves(
+    automation: &[Automation],
+    origin: f64,
+    step: f64,
+    frames: &dyn Fn(f64) -> f64,
+) -> Vec<PlannedCurve> {
+    let mut out = Vec::new();
+    for curve in automation {
+        if !curve.enabled || curve.points.is_empty() {
+            continue;
+        }
+        let Some(port) = curve_port(curve) else {
+            continue;
+        };
+        let first = frames(origin + curve.points[0].at);
+        let last = frames(origin + curve.points[curve.points.len() - 1].at);
+        let table: Vec<f32> = if last <= first || step <= 0.0 {
+            vec![curve.points[0].value as f32]
+        } else {
+            let count = ((last - first) / step).ceil() as usize + 1;
+            (0..count)
+                .map(|i| {
+                    let beat = beat_of(frames, origin, first + i as f64 * step);
+                    value_at(&curve.points, beat) as f32
+                })
+                .collect()
+        };
+        out.push(PlannedCurve {
+            id: curve.id,
+            port: port.to_string(),
+            at: first,
+            step,
+            table,
+        });
+    }
+    out
+}
+
+/// The beat, on a curve's own axis, that a frame falls on -- found by bisection
+/// over the same `frames` the rest of the plan uses, so the two axes cannot
+/// disagree about where a point is.
+fn beat_of(frames: &dyn Fn(f64) -> f64, origin: f64, frame: f64) -> f64 {
+    let (mut lo, mut hi) = (0.0f64, 1.0f64);
+    while frames(origin + hi) < frame && hi < 1.0e6 {
+        hi *= 2.0;
+    }
+    for _ in 0..48 {
+        let mid = 0.5 * (lo + hi);
+        if frames(origin + mid) < frame {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
 }
 
 /// **What a track's fader is at.**
@@ -196,6 +326,7 @@ pub fn plan(
                 gain: track_gain(track),
                 mute: track_mute(piece, track),
                 clips,
+                curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, &frames),
             });
             continue;
         };
@@ -241,6 +372,15 @@ pub fn plan(
                 gain: 1.0,
                 mute: if region.muted { 1.0 } else { 0.0 },
                 readers,
+                // A box's curves are the box's own time, so they start where it
+                // does: a fade drawn at its beginning is at *its* zero and not
+                // at the piece's.
+                curves: curves(
+                    &region.automation,
+                    region.position.get(),
+                    mixer::CURVE_STEP,
+                    &frames,
+                ),
             });
         }
         tracks.push(PlannedTrack {
@@ -249,6 +389,9 @@ pub fn plan(
             gain: track_gain(track),
             mute: track_mute(piece, track),
             clips,
+            // A track's curves are on the timeline, which is the whole
+            // difference between the two places a curve lives.
+            curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, &frames),
         });
     }
 
@@ -432,5 +575,137 @@ mod json_tests {
         let plan = plan(&piece, 48_000.0, 60.0, &table);
         assert_eq!(plan.tracks[0].clips.len(), 1, "the box is planned");
         assert_eq!(plan.tracks[0].clips[0].readers[0].buffer, 7);
+    }
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::*;
+    use crate::multitrack::{Automation, Lane, Track};
+    use crate::timebase::Beat;
+
+    fn curve(id: u64, target: serde_json::Value, points: &[(f64, f64)]) -> Automation {
+        Automation {
+            target: crate::Opaque(target),
+            points: points
+                .iter()
+                .map(|&(at, value)| crate::Point {
+                    at,
+                    value,
+                    data: crate::Opaque::none(),
+                })
+                .collect(),
+            ..Automation::new(NodeId(id), crate::Opaque::none())
+        }
+    }
+
+    fn track_with(automation: Vec<Automation>) -> Multitrack {
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        track.lanes[0] = Lane::new(NodeId(2));
+        track.automation = automation;
+        Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        }
+    }
+
+    /// **A curve becomes a table on the frame axis, and it holds its ends.** A
+    /// reader clamps past either end, which is what an automation does: before
+    /// its first point it is at the first value and after its last at the last.
+    #[test]
+    fn a_curve_is_sampled_into_a_table_that_holds_its_ends() {
+        let piece = track_with(vec![curve(
+            10,
+            serde_json::json!({"port": "gain"}),
+            &[(0.0, 0.0), (1.0, 1.0)],
+        )]);
+        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let [table] = &plan.tracks[0].curves[..] else {
+            panic!("one curve, got {:?}", plan.tracks[0].curves.len())
+        };
+        assert_eq!(table.port, "gain");
+        assert_eq!(table.at, 0.0, "it starts at its first point");
+        assert_eq!(table.step, mixer::CURVE_STEP);
+        // One second at 60 bpm, sampled every 64 frames.
+        assert_eq!(table.table.len(), 48_000 / 64 + 1);
+        assert!(table.table[0].abs() < 1e-6, "it starts at its first value");
+        assert!((table.table[table.table.len() - 1] - 1.0).abs() < 1e-3);
+        // Linear between the two, so the middle is the middle.
+        let middle = table.table[table.table.len() / 2];
+        assert!(
+            (middle - 0.5).abs() < 0.02,
+            "linear between points: {middle}"
+        );
+    }
+
+    /// **A curve that names nothing is not heard.** The target is opaque and the
+    /// crate owns only one shape in it; anything else is a curve this cannot
+    /// resolve, and guessing at it would drive a port nobody asked for.
+    #[test]
+    fn a_curve_whose_target_names_no_port_is_left_out() {
+        let piece = track_with(vec![
+            curve(10, serde_json::json!({"plugin": 3}), &[(0.0, 1.0)]),
+            curve(11, serde_json::Value::Null, &[(0.0, 1.0)]),
+        ]);
+        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        assert!(plan.tracks[0].curves.is_empty());
+    }
+
+    /// **A curve switched off is kept and not heard**, which is what
+    /// arming one means: the piece still holds it, and nothing drives the port.
+    #[test]
+    fn a_disabled_curve_is_not_planned() {
+        let mut held = curve(10, serde_json::json!({"port": "gain"}), &[(0.0, 1.0)]);
+        held.enabled = false;
+        let piece = track_with(vec![held]);
+        assert!(
+            plan(&piece, 48_000.0, 60.0, &HashMap::new()).tracks[0]
+                .curves
+                .is_empty()
+        );
+    }
+
+    /// **A box's curve is the box's own time.** A fade drawn at the start of a
+    /// clip two beats in begins two beats in, not at the top of the piece --
+    /// which is the whole difference between the two places a curve lives.
+    #[test]
+    fn a_clips_curve_starts_where_the_clip_does() {
+        let mut piece = track_with(Vec::new());
+        let mut region = crate::multitrack::Region::new(
+            NodeId(3),
+            Beat(2.0),
+            Beat(1.0),
+            Content::Window {
+                window: crate::SegmentRef {
+                    source: crate::SegmentSource::Samples(crate::SourceRef {
+                        source: crate::SourceId(1),
+                        lifetime: crate::Lifetime::Session,
+                        generation: 0,
+                        range: None,
+                    }),
+                    start: 0.0,
+                    duration: 1.0,
+                },
+                playrate: 1.0,
+                args: crate::Opaque::none(),
+                looping: false,
+            },
+        );
+        region.automation = vec![curve(
+            20,
+            serde_json::json!({"port": "gain"}),
+            &[(0.0, 0.0), (1.0, 1.0)],
+        )];
+        piece.tracks[0].lanes[0].regions = vec![region];
+        let table = HashMap::from([(
+            crate::SourceId(1),
+            SourceInfo {
+                buffer: 5,
+                channels: 1,
+            },
+        )]);
+        let plan = plan(&piece, 48_000.0, 60.0, &table);
+        let curve = &plan.tracks[0].clips[0].curves[0];
+        assert_eq!(curve.at, 2.0 * 48_000.0, "two beats in, in frames");
     }
 }

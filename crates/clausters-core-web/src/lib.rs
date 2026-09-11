@@ -2358,6 +2358,9 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
     serde_json::to_string(&serde_json::json!({
         "synth": defs.synth,
         "graph": defs.graph,
+        // The one def a caller instantiates by name rather than by the plan:
+        // a curve is a node of the caller's own, beside the piece.
+        "curve": clausters_core::mixer::curve_name(),
     }))
     .unwrap_or_default()
 }
