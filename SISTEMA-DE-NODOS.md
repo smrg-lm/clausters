@@ -423,10 +423,10 @@ y la primera está hecha (fase 6):
   seguido se actualiza en toda la aplicación. El nodo escribe **un valor por
   bloque por canal** y nada más; cada cuánto mirar lo decide el host, a la tasa
   de cuadro y no a la del bloque.
-- **El elemento GUI**, que **falta**: `clients/gui/src/host/elements/meter.rs`
-  ya existe para un canal; lo que no está es la tira vertical de *n* canales
-  dentro del header de la pista (`G35.14`), leyendo esos buses. Hasta que exista
-  nadie instancia un vúmetro, porque nadie dibuja uno.
+- **El elemento GUI**, hecho en `G35.14`: la tira vertical de *n* canales en el
+  header de la pista, sobre el prop `meters`, que dice qué buses leer y no qué
+  nivel dibujar. El ancho sale del conteo de canales y de nada más, y la columna
+  sube en decibeles (`measure::meter_fraction`, piso −60 dB).
 
 Se mide **post-fader**, que es lo que espera la mano: `post` está después del
 fader. La opción pre-fader por pista es otro cableado —leer el bus de mezcla del
@@ -749,9 +749,9 @@ En este orden, porque cada una se puede probar sola:
    puerto (`meter/out0`, `meter/out1`), porque el bus lo lee el host y entonces
    lo dice el host. Tres tests lo renderizan.
 
-   **Falta el dibujo**, que es `G35.14` y es del host: la tira vertical de *n*
-   canales en el header, que lee ese rango de buses. Hasta que exista, nadie
-   instancia un vúmetro, porque nadie dibuja uno.
+   **El dibujo** es `G35.14`, hecho el mismo día: la tira vertical de *n*
+   canales en el header lee ese rango de buses por cuadro, del segmento
+   compartido, así que un nivel que se mueve no cuesta ningún mensaje.
 7. **`mt.fx` de verdad**, cuando exista una especificación de efecto.
 
 ---
