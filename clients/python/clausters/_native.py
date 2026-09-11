@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 49
+CORE_ABI_VERSION = 50
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -223,6 +223,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_double),
     ]
     lib.clausters_core_curve_axis.restype = ctypes.c_int
+    # The projections (`clausters-editing`): a structure as the payload an
+    # endpoint reads. Size-then-fill, like the rest of the JSON surface.
+    lib.clausters_editing_points_props.argtypes = [
+        f64p_early, ctypes.c_size_t, ctypes.c_int,
+        ctypes.c_double, ctypes.c_double, ctypes.c_double,
+        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+    ]
+    lib.clausters_editing_points_props.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1200,6 +1208,29 @@ def curve_axis(values, kept=None) -> tuple:
         out[0], out[1] = float(kept[0]), float(kept[1])
     _lib.clausters_core_curve_axis(buf, n, 1 if kept is not None else 0, out)
     return float(out[0]), float(out[1])
+
+
+def points_props(points, kept=None, held: float = 0.0) -> dict:
+    """The props a break-point curve is **drawn with**: its points, the value
+    axis they stand on, and the time they span.
+
+    The projection rather than the rule. `curve_axis` answers what a curve is
+    drawn *against*; this assembles the whole payload a `clausters.gui.guidef.bpf`
+    is set with, so a script and a page send the same props for the same curve
+    (`clausters_editing_points_props`).
+
+    ``points`` are the flat ``t v shape curve`` quads; ``kept`` is the axis the
+    view already has and ``held`` the span it already has, both widened and
+    never narrowed. ``duration`` is absent from the answer when the curve spans
+    nothing.
+    """
+    _lib = lib()
+    n = len(points)
+    buf = (ctypes.c_double * n)(*[float(v) for v in points]) if n else None
+    lo, hi = (float(kept[0]), float(kept[1])) if kept is not None else (0.0, 0.0)
+    raw = size_then_fill(_lib.clausters_editing_points_props, buf, n,
+                         1 if kept is not None else 0, lo, hi, float(held))
+    return json.loads(raw) if raw else {}
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

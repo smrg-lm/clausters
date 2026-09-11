@@ -119,52 +119,37 @@ class PointsView(View):
         self._axis: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         self._span: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
-    def axis(self, structure, points) -> tuple:
-        """The value axis and the duration this curve is drawn against.
+    def drawn(self, structure, points) -> dict:
+        """The props this curve is drawn with, and the axis they settled on
+        remembered for the next time.
 
-        The value axis is the shared crate's (`clausters._native.curve_axis`):
-        the points' range with headroom the first time, and after that the axis
-        already in hand, widened only where the data stopped fitting inside it.
-        The time axis is the same rule with nothing to pad — the last point's
-        time, and never shorter than it has been — because a curve that refits
-        while a point is being dragged moves every *other* point on screen,
-        which is the same defect in the other direction.
+        **The projection is the crate's** (`clausters._native.points_props`):
+        the points, the value axis they stand on and the time they span, all in
+        one answer, so a script and a page set the same widget with the same
+        props. What is kept here is only what a *view* keeps — the axis and the
+        span in hand — because both of them only ever grow, and a curve that
+        refits while a point is being dragged moves every other point on
+        screen.
         """
-        values = [float(p[1]) for p in _quads(points)]
-        times = [float(p[0]) for p in _quads(points)] or [0.0]
-        lo, hi = _native.curve_axis(values, self._axis.get(structure))
-        span = max(max(times), self._span.get(structure, 0.0))
-        self._axis[structure], self._span[structure] = (lo, hi), span
-        return lo, hi, span
+        props = _native.points_props(points, self._axis.get(structure),
+                                     self._span.get(structure, 0.0))
+        self._axis[structure] = (props["min"], props["max"])
+        self._span[structure] = props.get("duration", 0.0)
+        return props
 
     def build(self, editor) -> dict:
         from ..guidef import window
 
-        points = editor.structure.to_points()
-        lo, hi, span = self.axis(editor.structure, points)
-        picture = self.catalogue(editor, "bpf", "curve", editor.structure, {
-            "points": list(points),
-            "min": lo,
-            "max": hi,
-            "duration": span,
-            "label": _name(editor.structure),
-        })
+        drawn = self.drawn(editor.structure, editor.structure.to_points())
+        picture = self.catalogue(editor, "bpf", "curve", editor.structure,
+                                 {**drawn, "duration": drawn.get("duration", 0.0),
+                                  "label": _name(editor.structure)})
         return window(picture, *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 
     def props(self, editor, widget_id: int) -> dict:
-        points = editor.structure.to_points()
-        lo, hi, span = self.axis(editor.structure, points)
-        props = {"points": points, "min": lo, "max": hi}
-        if span:
-            props["duration"] = span
-        return props
-
-
-def _quads(points):
-    """The flat ``[t, v, shape, curve, ...]`` list as quads."""
-    return [points[i:i + 4] for i in range(0, len(points) - 3, 4)]
+        return self.drawn(editor.structure, editor.structure.to_points())
 
 
 class PointsEditor(Editor):

@@ -1161,6 +1161,19 @@ export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uin
 export function patchCompile(patch: string): string;
 
 /**
+ * JS face: **the props a break-point curve is drawn with**, as a JSON string —
+ * `{"points": [...], "min": .., "max": .., "duration": ..}`.
+ *
+ * The projection, not the rule: `curveAxis` above answers what a curve is
+ * drawn against, and this assembles the whole payload a `bpf` widget is set
+ * with, so a page and a script send the same props for the same curve. Pass
+ * the axis and span the view already has as `keptLo`/`keptHi`/`held`; both are
+ * widened and never narrowed. `duration` is absent when the curve spans
+ * nothing.
+ */
+export function pointsProps(points: Float64Array, kept_lo?: number | null, kept_hi?: number | null, held?: number | null): string;
+
+/**
  * Beats to wait so a routine starts on the next `quant` boundary of the grid
  * (`quant <= 0` → now). The snapping rule every client shares.
  */
@@ -1389,6 +1402,7 @@ export interface InitOutput {
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
     readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
     readonly patchCompile: (a: number, b: number) => [number, number, number, number];
+    readonly pointsProps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
     readonly pyramid_channels: (a: number) => number;

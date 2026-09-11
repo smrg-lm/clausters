@@ -798,6 +798,33 @@ The wire the crate never touches is `docs/gui-protocol.md`: the host produces
 intents from gestures and draws what comes back, and the crate knows no widget.
 What joins them is the intent vocabulary, which both depend on and neither owns.
 
+### The projections: what a structure owes its endpoints
+
+`crates/clausters-editing` sits over the document and answers the questions the
+three endpoints ask about one structure: **the props a host draws it with**, the
+payloads an edit becomes, and the operations that make a server sound it. One
+implementation of each, bound by every client through the same two doors the
+core and the document use, and linked directly by a `standalone` host.
+
+It is a crate rather than a module of `clausters-document` because of that
+crate's own rule: **the wire stays out of it.** The document defines intents and
+outcomes and does not encode them, and a projection's answer is exactly an
+encoding — the props of a `/gui_*` message, the arguments of an OSC one. And it
+is not `clausters-core` either, because the projections that follow are over the
+document's types and the core does not depend on the document. The numeric and
+drawing *rules* stay in the core and are asked rather than restated: the axis a
+curve is drawn against is `clausters_core::envshape::curve_axis`, and the
+projection is the step after it, assembling that answer into the payload an
+endpoint reads.
+
+The line it does not cross is the one the whole layering rests on: **a
+projection is a function.** It keeps nothing. Where a picture's own state
+lives — the axis a view settled on, the zoom, the selection — is the endpoint's
+question, and the answer is that the host owns view state; a projection holding
+it would be a fourth place for it to live. The track that fills the crate out is
+`crates/clausters-document/PLAN.md`, "The projections: one implementation per
+question, whoever asks it".
+
 ### Playback time in a session: read, never computed
 
 A standalone host that edits a session sounds its takes through a monitor of its own, and the rule that shapes it is the server's: **the server is the only thing that manages playback time.** The monitor's readers follow the transport's position (`TransportPos` driving a `BufRd`) inside a group the host binds with `/transport_group`, so the three things an editor wants are transport commands rather than properties of a def — seeking is `/transport_locateSample`, looping a selection is `/transport_loop`, and pausing is `/transport_stop`, which freezes the readers with their state intact so playing again *continues* -- all of it but the smoothing, which is re-primed on the thaw so a fader under an automation comes back where the automation is rather than gliding there from where the music stopped (see [`schemas.md`](schemas.md)). The host computes no time at all: it sends a locate and reads a position back.

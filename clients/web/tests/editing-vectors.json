@@ -1,0 +1,202 @@
+[
+  {
+    "name": "a curve drawn for the first time",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      2.0,
+      0.25,
+      1.0,
+      0.0
+    ],
+    "kept": null,
+    "held": 0.0,
+    "props": {
+      "duration": 2.0,
+      "max": 1.1,
+      "min": -0.1,
+      "points": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0,
+        2.0,
+        0.25,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "an axis in hand is held, not recomputed",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.5,
+      1.0,
+      0.0
+    ],
+    "kept": [
+      -4.0,
+      4.0
+    ],
+    "held": 9.0,
+    "props": {
+      "duration": 9.0,
+      "max": 4.0,
+      "min": -4.0,
+      "points": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.5,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "and widened where the data left it",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      40.0,
+      1.0,
+      0.0
+    ],
+    "kept": [
+      -1.0,
+      1.0
+    ],
+    "held": 0.5,
+    "props": {
+      "duration": 1.0,
+      "max": 44.0,
+      "min": -1.0,
+      "points": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        40.0,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "a curve that spans nothing states no duration",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.5,
+      1.0,
+      0.0
+    ],
+    "kept": null,
+    "held": 0.0,
+    "props": {
+      "max": 0.55,
+      "min": 0.45,
+      "points": [
+        0.0,
+        0.5,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "a trailing partial quad is not a point",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.5,
+      1.0,
+      0.0,
+      3.0,
+      0.5,
+      1.0
+    ],
+    "kept": null,
+    "held": 0.0,
+    "props": {
+      "max": 0.55,
+      "min": 0.45,
+      "points": [
+        0.0,
+        0.5,
+        1.0,
+        0.0,
+        3.0,
+        0.5,
+        1.0
+      ]
+    }
+  },
+  {
+    "name": "shapes and curvature ride through untouched",
+    "kind": "points_props",
+    "points": [
+      0.0,
+      0.0,
+      5.0,
+      -3.5,
+      4.0,
+      1.0,
+      2.0,
+      0.0
+    ],
+    "kept": null,
+    "held": 0.0,
+    "props": {
+      "duration": 4.0,
+      "max": 1.1,
+      "min": -0.1,
+      "points": [
+        0.0,
+        0.0,
+        5.0,
+        -3.5,
+        4.0,
+        1.0,
+        2.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "an empty curve",
+    "kind": "points_props",
+    "points": [],
+    "kept": null,
+    "held": 0.0,
+    "props": {
+      "max": 1.0,
+      "min": -1.0,
+      "points": []
+    }
+  }
+]

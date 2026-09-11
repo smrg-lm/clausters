@@ -27,6 +27,11 @@ clausters-core = { path = "../clausters-core" }
 # applies one. Non-optional -- every client binds the same edit semantics, and a
 # build without it would be a client that has to re-derive them.
 clausters-document = { path = "../clausters-document" }
+# The projections: the props a structure is drawn with, the payloads an edit
+# becomes, the operations that make a server sound it. Non-optional for the same
+# reason the document is -- a client that had to re-derive one would be a client
+# that draws the same curve differently.
+clausters-editing = { path = "../clausters-editing" }
 # The native half of the notation layer (libverovio); `verovio` only.
 clausters-notation = { path = "../clausters-notation", optional = true }
 # `derive`, for the few request objects this surface parses itself -- an entry

@@ -5,6 +5,7 @@ members = [
     "crates/clausters-core",
     "crates/clausters-core-web",
     "crates/clausters-document",
+    "crates/clausters-editing",
     "crates/clausters-ffi",
     "crates/clausters-midi",
     "crates/clausters-notation",

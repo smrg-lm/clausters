@@ -323,6 +323,26 @@ to, in the order they must be applied.
 | `clausters_history_saved_reachable` | `JsHistory.saved_reachable` | `idiom` — a getter |
 | `clausters_history_clear` | `JsHistory.clear` | |
 
+## The projections
+
+What an editable structure owes its three endpoints, out of `clausters-editing`:
+the props a host draws it with, the payloads an edit becomes, the operations
+that make a server sound it. One implementation, so a page and a script send
+the same props for the same structure — a projection written twice is how one
+curve comes to be drawn two ways, and it is not a difference any compiler or
+test sees.
+
+**The rule and the projection are different layers and both are here.**
+`clausters_core_curve_axis` above answers what a curve is *drawn against*;
+`clausters_editing_points_props` assembles the whole payload a `bpf` widget is
+set with, axis included. The rule stays in the core because it serves views
+that are not projections (a clip's curve body); the assembly is a projection and
+sits over it.
+
+| C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
+|---|---|---|
+| `clausters_editing_points_props` | `points_props` | `idiom` — the props a break-point curve is drawn with. C sizes and fills a JSON buffer and takes the kept axis as a flag plus two `f64`s; wasm returns the JSON string and takes the kept axis as optional arguments — the same split `clausters_core_curve_axis` makes, and for the same reason |
+
 ## OSC
 
 | C ABI | wasm | Note |

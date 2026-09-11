@@ -21,7 +21,10 @@
  * @module
  */
 
-import { curveAxis as coreCurveAxis } from "../../core/clausters_core_web.js";
+import {
+    curveAxis as coreCurveAxis,
+    pointsProps as corePointsProps,
+} from "../../core/clausters_core_web.js";
 import { POINTS, domainEdit } from "../../document.ts";
 import { pointsToEnv } from "../../defs/ugens/env.ts";
 import { Automation } from "../../seq/automation.ts";
@@ -159,39 +162,38 @@ export class PointsView extends View<Automation> {
     private span = new Map<unknown, number>();
 
     /**
-     * The value axis and the duration this curve is drawn against.
+     * The props this curve is drawn with, and the axis they settled on
+     * remembered for the next time.
      *
-     * The value axis is the shared core's (`curveAxis` below): the points' range
-     * with headroom the first time, and after that the axis already in hand,
-     * widened only where the data stopped fitting inside it. The time axis is
-     * the same rule with nothing to pad — the last point's time, never shorter
-     * than it has been — because a curve that refits while a point is being
-     * dragged moves every *other* point on screen.
+     * **The projection is the crate's** (`pointsProps`): the points, the value
+     * axis they stand on and the time they span, all in one answer, so a page
+     * and a script set the same widget with the same props. What is kept here
+     * is only what a *view* keeps — the axis and the span in hand — because
+     * both only ever grow, and a curve that refits while a point is being
+     * dragged moves every other point on screen.
      */
-    axis(structure: Automation, points: readonly number[]): [number, number, number] {
-        const values: number[] = [];
-        const times: number[] = [0.0];
-        for (let i = 0; i + 3 < points.length; i += 4) {
-            times.push(Number(points[i]));
-            values.push(Number(points[i + 1]));
-        }
-        const [lo, hi] = curveAxis(values, this.kept.get(structure));
-        const span = Math.max(...times, this.span.get(structure) ?? 0.0);
-        this.kept.set(structure, [lo, hi]);
-        this.span.set(structure, span);
-        return [lo, hi, span];
+    drawn(structure: Automation, points: readonly number[]): Record<string, PropValue> {
+        const kept = this.kept.get(structure);
+        const props = JSON.parse(
+            corePointsProps(
+                Float64Array.from(points, Number),
+                kept?.[0],
+                kept?.[1],
+                this.span.get(structure) ?? 0.0,
+            ),
+        ) as Record<string, PropValue>;
+        this.kept.set(structure, [Number(props.min), Number(props.max)]);
+        this.span.set(structure, Number(props.duration ?? 0.0));
+        return props;
     }
 
     build(editor: Editor<Automation>): GuiNode {
-        const points = editor.structure.toPoints();
-        const [min, max, duration] = this.axis(editor.structure, points);
+        const drawn = this.drawn(editor.structure, editor.structure.toPoints());
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
             this.catalogue(editor, "bpf", "curve", editor.structure, {
-                points: [...points],
-                min,
-                max,
-                duration,
+                ...drawn,
+                duration: Number(drawn.duration ?? 0.0),
                 label: nameOf(editor.structure),
             }),
             ...editor.extra,
@@ -199,15 +201,7 @@ export class PointsView extends View<Automation> {
     }
 
     override props(editor: Editor<Automation>): Record<string, PropValue> {
-        const points = editor.structure.toPoints();
-        const [min, max, duration] = this.axis(editor.structure, points);
-        const props: Record<string, PropValue> = {
-            points: points as PropValue,
-            min,
-            max,
-        };
-        if (duration > 0) props.duration = duration;
-        return props;
+        return this.drawn(editor.structure, editor.structure.toPoints());
     }
 }
 

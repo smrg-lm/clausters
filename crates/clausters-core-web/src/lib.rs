@@ -1183,6 +1183,30 @@ pub fn curve_axis(values: &[f64], kept_lo: Option<f64>, kept_hi: Option<f64>) ->
     vec![lo, hi]
 }
 
+/// JS face: **the props a break-point curve is drawn with**, as a JSON string —
+/// `{"points": [...], "min": .., "max": .., "duration": ..}`.
+///
+/// The projection, not the rule: `curveAxis` above answers what a curve is
+/// drawn against, and this assembles the whole payload a `bpf` widget is set
+/// with, so a page and a script send the same props for the same curve. Pass
+/// the axis and span the view already has as `keptLo`/`keptHi`/`held`; both are
+/// widened and never narrowed. `duration` is absent when the curve spans
+/// nothing.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = pointsProps)]
+pub fn points_props(
+    points: &[f64],
+    kept_lo: Option<f64>,
+    kept_hi: Option<f64>,
+    held: Option<f64>,
+) -> String {
+    let kept = match (kept_lo, kept_hi) {
+        (Some(lo), Some(hi)) => Some((lo, hi)),
+        _ => None,
+    };
+    clausters_editing::points::props_json(points, kept, held.unwrap_or(0.0))
+}
+
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
 /// mismatch, an empty pair, or a constant channel.

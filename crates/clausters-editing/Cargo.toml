@@ -1,0 +1,14 @@
+[package]
+name = "clausters-editing"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The projections an editable structure owes its three endpoints: the props a host draws it with, the payloads an edit becomes, and the operations that make a server sound it. One implementation, bound by every client and linked by the host."
+
+[dependencies]
+# The drawing and numeric rules a projection is built out of -- a curve's axis,
+# the mixer's defs, the tempo map.
+clausters-core = { path = "../clausters-core" }
+# Flat data at the boundary: a projection's answer is JSON, because that is what
+# a prop payload and an OSC argument already are.
+serde_json = "1"

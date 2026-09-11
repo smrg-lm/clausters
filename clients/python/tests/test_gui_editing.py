@@ -292,13 +292,13 @@ def test_a_new_structure_does_not_inherit_a_freed_ones_screen_state():
 
     view = PointsView()
     gone = Automation(Env([0.0, 100.0], [2.0]), None, name="gone")
-    view.axis(gone, gone.to_points())
+    view.drawn(gone, gone.to_points())
     del gone
     gc.collect()
 
     fresh = Automation(Env([0.0, 1.0], [2.0]), None, name="fresh")
-    lo, hi, _span = view.axis(fresh, fresh.to_points())
-    assert hi < 10.0, f"it took the freed curve's axis: {(lo, hi)}"
+    drawn = view.drawn(fresh, fresh.to_points())
+    assert drawn["max"] < 10.0, f"it took the freed curve's axis: {drawn}"
 
 
 def test_a_drawers_id_space_goes_when_the_drawer_does():

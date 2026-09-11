@@ -33,6 +33,7 @@ mod builtins;
 mod bundle;
 mod clocksync;
 mod document;
+mod editing;
 mod envshape;
 mod history;
 mod measure;
@@ -329,7 +330,17 @@ pub use time::*;
 /// readers did: the client that could not find it was writing the mixer's half
 /// of this mapping in its own language already, and the half it did not have
 /// (a track added, a track gone) is exactly where two clients drift.
-pub const CORE_ABI_VERSION: u32 = 49;
+/// **v50 a projection is bound, not re-derived.** `clausters_editing_*` is the
+/// first door onto `clausters-editing`: what an editable structure owes its
+/// three endpoints -- the props a host draws it with, and in time the payloads
+/// an edit becomes and the operations that make a server sound it. The first of
+/// them is a break-point curve's props, which is deliberately the smallest
+/// payload there is: what it establishes is that a *projection* crosses here at
+/// all, beside the *rules* that already did. A projection written once per
+/// client is one no compiler and no test reads against its twin, and that is
+/// where a page and a script come to draw one curve two ways. **Additive**, and
+/// the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 50;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -19,6 +19,9 @@ clausters-core = { path = "../clausters-core", features = ["notation"] }
 # The document: one implementation of what an edit means, bound here as it is
 # bound over the C ABI, so the web client re-derives none of it.
 clausters-document = { path = "../clausters-document" }
+# The projections, bound here as they are bound over the C ABI: a page draws a
+# structure with the props the crate hands it, never with props of its own.
+clausters-editing = { path = "../clausters-editing" }
 # The MIDI file writers. Default features only -- `live` pulls midir in for a
 # virtual OS port, which is precisely what a page cannot have; what a page does
 # need is `write_smf`/`write_clip`, which are pure Rust over midly and compile

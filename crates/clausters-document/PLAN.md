@@ -1323,7 +1323,27 @@ So `domain.rs` -- the table that exists because otherwise "every binding would s
 
 The order is leaves before trunk: a projection is a function of a structure and moves on its own, while the conversation calls all of them and is smaller once they are gone. Each milestone leaves **both clients green and both twins deleted** -- a projection that exists in Rust *and* in a client is worse than one that exists only in a client, because now they can disagree silently in a third way.
 
-- ⬜ **O25 - The crate exists, and one projection crosses it end to end.** `clausters-editing`, with the **view projection for `points`** in it -- the smallest domain there is, one flat array of quadruples -- reached from Python through the C ABI and from the page through wasm, with `points.py`'s and `points.ts`'s own flatteners deleted. The payload is deliberately trivial: what this milestone proves is the *pipeline*, not the projection. **Acceptance:** `PointsView.props` in both clients is a call into the crate and nothing else; the bindings table names the new symbols and `tests/bindings.rs` plus `test_native_parity.py` pass; a curve edited in the Python GUI and the same curve edited in the page produce byte-identical props for the same structure, held by a vector test rather than by reading the two.
+- ✅ **O25 - The crate exists, and one projection crosses it end to end.** *(Closed 2026-09-11.)* `clausters-editing`, with the **view projection for `points`** in it -- the smallest domain there is, one flat array of quadruples -- reached from Python through the C ABI and from the page through wasm, with `points.py`'s and `points.ts`'s own flatteners deleted. The payload is deliberately trivial: what this milestone proves is the *pipeline*, not the projection. **Acceptance:** `PointsView.props` in both clients is a call into the crate and nothing else; the bindings table names the new symbols and `tests/bindings.rs` plus `test_native_parity.py` pass; a curve edited in the Python GUI and the same curve edited in the page produce byte-identical props for the same structure, held by a vector test rather than by reading the two.
+
+  **What landed.** `clausters-editing` with `points::props`, reached as
+  `clausters_editing_points_props` over the C ABI (core ABI **v50**) and as
+  `pointsProps` over wasm. Both clients' `PointsView` is now a single `drawn`
+  call that asks the crate and keeps only what a view keeps -- the axis and span
+  in hand -- so `axis()`, `_quads`, `curveAxis`'s caller and the "state no
+  duration when there is none" rule stopped existing twice. The parity is
+  `clients/web/tests/editing-vectors.json` and `editing-parity.test.ts`, seven
+  cases covering a first draw, a held axis, an axis the data outgrew, a curve
+  that spans nothing, a ragged tail and an empty curve; it is a file of its own
+  rather than a case in an existing one because it is where `O26`-`O29` land.
+
+  **What the small payload taught, and it is the reason to have started here.**
+  The axis a curve is drawn against was *already* shared (`curve_axis`, in the
+  core) and the two clients still drew from it differently -- one asked
+  `max(times)` over a list seeded with zero, the other over a list that might be
+  empty, and each assembled the props itself, including whether to state a
+  duration at all. **Sharing the rule is not sharing the projection**: what
+  crosses has to be the payload an endpoint reads, or the last step is written
+  per client and that is the step that carries the decisions.
 
 - ⬜ **O26 - The view projection for the rest.** `samples`, `events` and the multitrack -- the last of which is the one with substance (`_lanes`, `_clips`, `_curves`, `_layers`, `_points`, `_meters`, `_bases` and their twins), and the one where `multitrack::picture` stops being half a projection and becomes the whole of one. **Acceptance:** no client contains a function whose job is to shape a prop payload; the props of a session opened in both clients are equal field for field.
 
