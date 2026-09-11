@@ -138,17 +138,21 @@ pub unsafe extern "C" fn clausters_registry_node_partition(max_nodes: u64, out: 
     0
 }
 
-/// Width of the GraphDef private-bus reservation at the top of the audio bus
-/// space (before clamping to a smaller configured count).
+/// How much of an audio bus space of `audio_buses` is private to GraphDef
+/// instances — what a client subtracts before handing out buses of its own.
+///
+/// A function of the count and not a constant: the reservation is a *share* of
+/// what the server was configured with, so a client asks with the count that
+/// server reported rather than assuming the default.
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_registry_graph_audio_reserved() -> u64 {
-    registry::GRAPH_AUDIO_BUS_RESERVED as u64
+pub extern "C" fn clausters_registry_graph_audio_reserved(audio_buses: usize) -> u64 {
+    registry::graph_audio_reserved(audio_buses) as u64
 }
 
 /// Control-rate counterpart of [`clausters_registry_graph_audio_reserved`].
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_registry_graph_control_reserved() -> u64 {
-    registry::GRAPH_CONTROL_BUS_RESERVED as u64
+pub extern "C" fn clausters_registry_graph_control_reserved(control_buses: usize) -> u64 {
+    registry::graph_control_reserved(control_buses) as u64
 }
 
 #[cfg(test)]

@@ -28,28 +28,32 @@ from clausters.ipc import ShmClient
 def test_the_segment_size_is_the_one_the_server_builds():
     """Pinned on both sides: `tests/ipc.rs` asserts the same number in Rust.
 
-    It is the default-count instance of the layout — 16384 control buses, the
-    audio-bus region, 8 taps of 16384 samples, and 4096 directory rows of 32
-    bytes (24 until ABI v10 gave each buffer a write frontier) — and it comes
-    from the core rather than from arithmetic repeated here.
+    It is the default-count instance of the layout — 16384 control buses, an
+    audio-bus region of 1024 buses (two words each; a parameter since ABI v11,
+    where it had been fixed at 128), 8 taps of 16384 samples, and 4096
+    directory rows of 32 bytes (24 until ABI v10 gave each buffer a write
+    frontier) — and it comes from the core rather than from arithmetic repeated
+    here.
     """
-    assert _native.shm_segment_size(16384, 8, 16384, 4096) == 722_624 + 4096 * 32
+    assert _native.shm_segment_size(16384, 1024, 8, 16384, 4096) == 729_792 + 4096 * 32
 
 
-def _segment(tmp_path, control_buses=4, taps=1, tap_frames=64, buffers=4):
+def _segment(tmp_path, control_buses=4, audio_buses=8, taps=1, tap_frames=64,
+             buffers=4):
     """A segment as the server writes one, small enough to read by hand.
 
     Sized and initialised through the core, so what this test opens is a real
     segment rather than this file's idea of one.
     """
-    size = _native.shm_segment_size(control_buses, taps, tap_frames, buffers)
+    size = _native.shm_segment_size(control_buses, audio_buses, taps, tap_frames,
+                                    buffers)
     path = tmp_path / "seg"
     path.write_bytes(b"\0" * size)
     with open(path, "r+b") as handle:
         with mmap.mmap(handle.fileno(), 0) as mm:
             cell = (ctypes.c_char * size).from_buffer(mm)
             assert _native.shm_init(ctypes.addressof(cell), size,
-                                    control_buses, taps, tap_frames)
+                                    control_buses, audio_buses, taps, tap_frames)
             del cell
     return path
 

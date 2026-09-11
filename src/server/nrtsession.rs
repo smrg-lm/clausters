@@ -153,6 +153,7 @@ impl NrtSession {
                 let (segment, created) = Segment::open_or_create_full(
                     path,
                     cfg.control_buses,
+                    cfg.audio_buses,
                     DEFAULT_TAPS,
                     DEFAULT_TAP_FRAMES,
                 )

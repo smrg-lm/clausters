@@ -206,8 +206,8 @@ class AudioBusAllocator(_Allocator):
     (from ``ServerOptions``/``query_info``)."""
 
     def __init__(self, size: int, reserved: int = 2, share=None):
-        super().__init__("audio", size, reserved, _native.graph_bus_reserved()[0],
-                         share)
+        super().__init__("audio", size, reserved,
+                         _native.graph_bus_reserved(size, 0)[0], share)
 
 
 class ControlBusAllocator(_Allocator):
@@ -215,4 +215,4 @@ class ControlBusAllocator(_Allocator):
     ``ServerOptions``/``query_info``)."""
 
     def __init__(self, size: int, share=None):
-        super().__init__("control", size, 0, _native.graph_bus_reserved()[1], share)
+        super().__init__("control", size, 0, _native.graph_bus_reserved(0, size)[1], share)

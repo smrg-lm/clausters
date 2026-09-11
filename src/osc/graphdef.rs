@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 /// The constants live in `clausters_core::registry` — the shared resource
 /// model — so client allocators subtract the same reservation they were built
 /// against. Documented in `docs/schemas.md`.
-pub use clausters_core::registry::{GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED};
+pub use clausters_core::registry::{graph_audio_reserved, graph_control_reserved};
 
 /// Rate of an internal GraphDef bus.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]

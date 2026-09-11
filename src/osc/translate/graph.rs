@@ -167,7 +167,7 @@ impl CmdTranslator {
                 target: parent,
                 action: AddAction::Tail,
                 synth,
-                usage,
+                usage: crate::dsp::StageMask::of(&usage),
             });
             let _ = self.mirror.insert(
                 node_id,

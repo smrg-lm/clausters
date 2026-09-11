@@ -24,8 +24,8 @@ newer build stays readable by an older one.
 | `port` | integer | `57110` | `--port` | The base OSC port: UDP binds it and TCP follows it |
 | `workers` | integer | `0` (the server chooses) | `--workers` | DSP worker threads for `/group_parallel` groups |
 | `sample_rate` | integer (Hz) | `48000`; `0` follows the device | `--sample-rate` | The output rate the server imposes on the audio backend |
-| `audio_buses` | integer | `128` (also the hard maximum) | `--audio-buses` | Audio bus count; buses `0..outputs` are the hardware outs |
-| `control_buses` | integer | `16384` | `--control-buses` | Control bus count |
+| `audio_buses` | integer | `1024` | `--audio-buses` | Audio bus count, a power of two; buses `0..outputs` are the hardware outs, and the top half is private to GraphDef instances |
+| `control_buses` | integer | `16384` | `--control-buses` | Control bus count, a power of two; the top half is private to GraphDef instances |
 | `taps` | integer | `8`; `0` disables the tap region | `--taps` | Audio-tap rings in the shared segment — what `/bus_tap` routes an audio bus into, and what an oscilloscope reads |
 | `tap_frames` | integer (samples) | `16384`, rounded up to a power of two | `--tap-frames` | Per-tap ring capacity |
 | `outputs` | integer | the device's own channel count | `--outputs` | Hardware output channels |

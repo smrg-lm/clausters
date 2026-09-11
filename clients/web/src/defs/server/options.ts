@@ -12,18 +12,20 @@
 // meets a server that is already running.
 
 // Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
-// `DEFAULT_CONTROL_BUSES` (128 is the hard audio ceiling) and `--sample-rate`.
+// `DEFAULT_CONTROL_BUSES` (each a power of two, with no ceiling) and
+// `--sample-rate`.
 // They live here, on the server-configuration module, not in the bus one: how
 // many buses exist is the server's property, and these are only the fallback
 // when `/server_query` does not answer. The bus allocators carry no defaults
 // of their own.
-export const DEFAULT_AUDIO_BUSES = 128;
+export const DEFAULT_AUDIO_BUSES = 1024;
 export const DEFAULT_CONTROL_BUSES = 16384;
 export const DEFAULT_SAMPLE_RATE = 48000;
 // Boot-time pre-allocated pool sizes, mirroring the Rust server's `Limits`
 // defaults (`--max-nodes`/`--max-buffers`/`--max-graph-children`/
-// `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs, like 128 for
-// audio buses.
+// `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs -- a
+// compile-time invariant, unlike the bus counts, which are configured
+// resources with none.
 export const DEFAULT_MAX_NODES = 8192;
 export const DEFAULT_MAX_BUFFERS = 4096;
 export const DEFAULT_MAX_GRAPH_CHILDREN = 512;

@@ -48,7 +48,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
 /// version changed is recorded in `docs/ipc.md`, not here — a changelog in a
 /// constant is a changelog nobody updates.
-pub const ABI_VERSION: u32 = 10;
+pub const ABI_VERSION: u32 = 11;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had.
@@ -72,11 +72,15 @@ pub const DEFAULT_TAP_FRAMES: usize = 16384;
 /// ring follows without straddling the cursor's line.
 pub const TAP_ALIGN: usize = 64;
 
-/// Audio-bus slots the bus region is always sized for. The region is two words
-/// per bus and 1 KiB in total, small enough that making it a runtime parameter
-/// would give nothing — so it is the server's compile-time cap, and the server
-/// asserts the two agree.
-pub const AUDIO_BUS_SLOTS: usize = 128;
+/// Audio-bus slots a segment gets when nobody says otherwise — the server's
+/// own default audio-bus count, so a segment created with no `--audio-buses`
+/// can report on every bus that server has.
+///
+/// It used to be the count, full stop: the region is two words per bus and was
+/// sized once at compile time, which made it a second place the audio-bus
+/// count was decided and quietly capped what could be tapped or metered. It is
+/// a parameter now, like the control buses and the taps beside it.
+pub const DEFAULT_AUDIO_BUS_SLOTS: usize = 1024;
 
 /// The engine's block size, which the tap rings are written in whole multiples
 /// of. Here so a reader can check a window without linking the engine; the
@@ -199,8 +203,8 @@ pub const fn bus_region_offset(control_buses: usize) -> usize {
 
 /// Byte offset of the tap region: the audio-bus region's end, rounded up to
 /// [`TAP_ALIGN`] so the first tap cursor is cache-line aligned.
-pub const fn tap_region_offset(control_buses: usize) -> usize {
-    let end = bus_region_offset(control_buses) + 2 * AUDIO_BUS_SLOTS * size_of::<AtomicU32>();
+pub const fn tap_region_offset(control_buses: usize, audio_buses: usize) -> usize {
+    let end = bus_region_offset(control_buses) + 2 * audio_buses * size_of::<AtomicU32>();
     end.div_ceil(TAP_ALIGN) * TAP_ALIGN
 }
 
@@ -211,8 +215,13 @@ pub const fn tap_slot_size(tap_frames: usize) -> usize {
 
 /// Byte offset of the **buffer directory**: the tap region's end, and the
 /// segment's tail.
-pub const fn buffer_region_offset(control_buses: usize, taps: usize, tap_frames: usize) -> usize {
-    tap_region_offset(control_buses) + taps * tap_slot_size(tap_frames)
+pub const fn buffer_region_offset(
+    control_buses: usize,
+    audio_buses: usize,
+    taps: usize,
+    tap_frames: usize,
+) -> usize {
+    tap_region_offset(control_buses, audio_buses) + taps * tap_slot_size(tap_frames)
 }
 
 /// Bytes of one directory row.
@@ -220,21 +229,28 @@ pub const fn buffer_row_size() -> usize {
     size_of::<BufferRow>()
 }
 
-/// Total byte size of a segment carrying `control_buses` control slots, the
-/// fixed audio-bus region, `taps` rings of `tap_frames` samples, and a
-/// directory of `buffers` rows.
+/// Total byte size of a segment carrying `control_buses` control slots, an
+/// audio-bus region of `audio_buses`, `taps` rings of `tap_frames` samples, and
+/// a directory of `buffers` rows.
 pub const fn segment_size(
     control_buses: usize,
+    audio_buses: usize,
     taps: usize,
     tap_frames: usize,
     buffers: usize,
 ) -> usize {
-    buffer_region_offset(control_buses, taps, tap_frames) + buffers * size_of::<BufferRow>()
+    buffer_region_offset(control_buses, audio_buses, taps, tap_frames)
+        + buffers * size_of::<BufferRow>()
 }
 
 /// Default segment size (the default counts).
-pub const SEGMENT_SIZE: usize =
-    segment_size(16384, DEFAULT_TAPS, DEFAULT_TAP_FRAMES, DEFAULT_BUFFER_ROWS);
+pub const SEGMENT_SIZE: usize = segment_size(
+    16384,
+    DEFAULT_AUDIO_BUS_SLOTS,
+    DEFAULT_TAPS,
+    DEFAULT_TAP_FRAMES,
+    DEFAULT_BUFFER_ROWS,
+);
 
 /// The next **odd** number past `counter`: a slot goes live on an odd
 /// generation and empty on an even one, and every allocation takes a fresh one.
@@ -344,6 +360,7 @@ impl View {
         base: *mut u8,
         len: usize,
         control_buses: usize,
+        audio_buses: usize,
         taps: usize,
         tap_frames: usize,
     ) -> Self {
@@ -353,7 +370,7 @@ impl View {
         header.control_buses = control_buses as u32;
         header.taps = taps as u32;
         header.tap_frames = tap_frames as u32;
-        header.audio_buses = AUDIO_BUS_SLOTS as u32;
+        header.audio_buses = audio_buses as u32;
         // Nobody serves the rings yet: creating a segment is not claiming it,
         // because the process that creates one is not always the one that
         // serves it (an editor creates, its session serves).
@@ -366,7 +383,7 @@ impl View {
         // A zeroed directory would read as "every bus is recorded by tap 0";
         // `-1` is the absent marker `/bus_tap` uses. The levels are fine
         // zeroed: those bits are `0.0`, which is silence.
-        for bus in 0..AUDIO_BUS_SLOTS {
+        for bus in 0..audio_buses {
             view.set_tap_of_bus(bus, None);
         }
         view
@@ -374,9 +391,10 @@ impl View {
 
     fn shape_of(header: &Header, len: usize) -> Result<Shape, &'static str> {
         let control_buses = header.control_buses as usize;
+        let audio_buses = header.audio_buses as usize;
         let taps = header.taps as usize;
         let tap_frames = header.tap_frames as usize;
-        let buffers_offset = buffer_region_offset(control_buses, taps, tap_frames);
+        let buffers_offset = buffer_region_offset(control_buses, audio_buses, taps, tap_frames);
         // The mapped length must cover every region the header claims, plus
         // whole directory rows — the one region whose count is the segment's
         // own length rather than a field.
@@ -391,7 +409,7 @@ impl View {
             buffer_rows: ((len - buffers_offset) / size_of::<BufferRow>()) as u64,
             controls_offset: controls_offset() as u64,
             buses_offset: bus_region_offset(control_buses) as u64,
-            taps_offset: tap_region_offset(control_buses) as u64,
+            taps_offset: tap_region_offset(control_buses, audio_buses) as u64,
             buffers_offset: buffers_offset as u64,
             sample_rate_offset: std::mem::offset_of!(Header, sample_rate_bits) as u64,
             clock_offset: std::mem::offset_of!(Header, sample_clock) as u64,
@@ -919,18 +937,22 @@ fn read_ring(ring: &Ring, at: u32, into: &mut [u8]) {
 mod tests {
     use super::*;
 
+    /// The audio-bus count these fixtures are built at: small, since what is
+    /// checked here is the layout and not the size.
+    const AUDIO: usize = 64;
+
     /// A segment on the heap, aligned like a mapping: `u128` words, so the
     /// 8-byte atomics inside are aligned.
     struct Heap(Box<[u128]>, usize);
 
     impl Heap {
         fn new(control_buses: usize, taps: usize, tap_frames: usize, rows: usize) -> Self {
-            let size = segment_size(control_buses, taps, tap_frames, rows);
+            let size = segment_size(control_buses, AUDIO, taps, tap_frames, rows);
             Heap(vec![0u128; size.div_ceil(16)].into_boxed_slice(), size)
         }
         fn view(&mut self, control_buses: usize, taps: usize, tap_frames: usize) -> View {
             let (ptr, len) = (self.0.as_mut_ptr() as *mut u8, self.1);
-            unsafe { View::init(ptr, len, control_buses, taps, tap_frames) }
+            unsafe { View::init(ptr, len, control_buses, AUDIO, taps, tap_frames) }
         }
         fn attach(&mut self) -> Result<View, &'static str> {
             let (ptr, len) = (self.0.as_mut_ptr() as *mut u8, self.1);
@@ -948,7 +970,7 @@ mod tests {
         assert_eq!(shape.buffer_rows, 4);
         assert_eq!(shape.controls_offset, controls_offset() as u64);
         assert_eq!(shape.buses_offset, bus_region_offset(64) as u64);
-        assert_eq!(shape.taps_offset, tap_region_offset(64) as u64);
+        assert_eq!(shape.taps_offset, tap_region_offset(64, AUDIO) as u64);
         // Attaching again derives the same shape from the header alone, which
         // is the whole promise a second process relies on.
         assert_eq!(heap.attach().map(|v| v.shape()), Ok(shape));

@@ -329,7 +329,7 @@ pub use time::*;
 /// readers did: the client that could not find it was writing the mixer's half
 /// of this mapping in its own language already, and the half it did not have
 /// (a track added, a track gone) is exactly where two clients drift.
-pub const CORE_ABI_VERSION: u32 = 48;
+pub const CORE_ABI_VERSION: u32 = 49;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

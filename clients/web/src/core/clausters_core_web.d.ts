@@ -910,10 +910,13 @@ export function domainEdit(domain: string, state: string, payload: string): stri
 export function engraveOptions(scale: number, page_width: number, extra?: string | null): string;
 
 /**
- * JS face: the `[audio, control]` bus widths GraphDef instances reserve at
- * the top of each bus space (before clamping to a smaller configured count).
+ * JS face: the `[audio, control]` widths GraphDef instances reserve at the
+ * top of bus spaces of these sizes.
+ *
+ * A share of what the server was configured with rather than a fixed number,
+ * so ask with the counts *that* server reports.
  */
-export function graph_bus_reserved(): Uint32Array;
+export function graph_bus_reserved(audio_buses: number, control_buses: number): Uint32Array;
 
 /**
  * JS face: hertz -> **bark** (Traunmuller), the critical-band scale. Spelled
@@ -1344,7 +1347,7 @@ export interface InitOutput {
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly graph_bus_reserved: () => [number, number];
+    readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
     readonly history_canRedo: (a: number) => number;
     readonly history_canUndo: (a: number) => number;

@@ -68,11 +68,12 @@ pub unsafe extern "C" fn clausters_core_shm_shape(
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_shm_segment_size(
     control_buses: usize,
+    audio_buses: usize,
     taps: usize,
     tap_frames: usize,
     buffers: usize,
 ) -> usize {
-    clausters_core::shm::segment_size(control_buses, taps, tap_frames, buffers)
+    clausters_core::shm::segment_size(control_buses, audio_buses, taps, tap_frames, buffers)
 }
 
 /// Writes a fresh header over (`base`, `len`), making it a segment.
@@ -92,15 +93,17 @@ pub unsafe extern "C" fn clausters_core_shm_init(
     base: *mut u8,
     len: usize,
     control_buses: usize,
+    audio_buses: usize,
     taps: usize,
     tap_frames: usize,
 ) -> i32 {
-    if base.is_null() || len < clausters_core::shm::segment_size(control_buses, taps, tap_frames, 0)
+    if base.is_null()
+        || len < clausters_core::shm::segment_size(control_buses, audio_buses, taps, tap_frames, 0)
     {
         return SHM_TOO_SMALL;
     }
     // SAFETY: caller contract, and the length was just checked.
-    unsafe { View::init(base, len, control_buses, taps, tap_frames) };
+    unsafe { View::init(base, len, control_buses, audio_buses, taps, tap_frames) };
     0
 }
 

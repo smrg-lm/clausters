@@ -54,7 +54,7 @@ pub use clausters_core::shm::{
 
 /// The shared layout is sized for constants the engine also declares, so the
 /// two must agree — and here they are checked rather than trusted.
-const _: () = assert!(NUM_AUDIO_BUSES == shm::AUDIO_BUS_SLOTS);
+const _: () = assert!(NUM_AUDIO_BUSES == shm::DEFAULT_AUDIO_BUS_SLOTS);
 const _: () = assert!(BLOCK_SIZE == shm::BLOCK);
 const _: () = assert!(crate::dsp::buffer::NUM_BUFFERS == shm::DEFAULT_BUFFER_ROWS);
 
@@ -67,6 +67,7 @@ pub const DEFAULT_BUFFERS: usize = crate::dsp::buffer::NUM_BUFFERS;
 /// default counts).
 pub const SEGMENT_SIZE: usize = shm::segment_size(
     NUM_CONTROL_BUSES,
+    NUM_AUDIO_BUSES,
     DEFAULT_TAPS,
     DEFAULT_TAP_FRAMES,
     DEFAULT_BUFFERS,
@@ -225,13 +226,29 @@ impl Segment {
     /// A heap-backed segment carrying `control_buses` control slots and the
     /// default tap region.
     pub fn in_memory_with(control_buses: usize) -> Arc<Self> {
-        Self::in_memory_full(control_buses, DEFAULT_TAPS, DEFAULT_TAP_FRAMES)
+        Self::in_memory_full(
+            control_buses,
+            NUM_AUDIO_BUSES,
+            DEFAULT_TAPS,
+            DEFAULT_TAP_FRAMES,
+        )
     }
 
     /// A heap-backed segment with every region sized explicitly.
-    pub fn in_memory_full(control_buses: usize, taps: usize, tap_frames: usize) -> Arc<Self> {
+    pub fn in_memory_full(
+        control_buses: usize,
+        audio_buses: usize,
+        taps: usize,
+        tap_frames: usize,
+    ) -> Arc<Self> {
         check_tap_params(taps, tap_frames);
-        let size = shm::segment_size(control_buses, taps, tap_frames, DEFAULT_BUFFERS);
+        let size = shm::segment_size(
+            control_buses,
+            audio_buses,
+            taps,
+            tap_frames,
+            DEFAULT_BUFFERS,
+        );
         let mut words = vec![0u128; size.div_ceil(16)].into_boxed_slice();
         // SAFETY: the allocation is at least `size` bytes and 16-aligned, and
         // the box below keeps it alive for as long as the view.
@@ -240,6 +257,7 @@ impl Segment {
                 words.as_mut_ptr() as *mut u8,
                 size,
                 control_buses,
+                audio_buses,
                 taps,
                 tap_frames,
             )
@@ -262,7 +280,13 @@ impl Segment {
     /// `control_buses` (`--control-buses`).
     #[cfg(unix)]
     pub fn create_with(path: &Path, control_buses: usize) -> io::Result<Arc<Self>> {
-        Self::create_full(path, control_buses, DEFAULT_TAPS, DEFAULT_TAP_FRAMES)
+        Self::create_full(
+            path,
+            control_buses,
+            NUM_AUDIO_BUSES,
+            DEFAULT_TAPS,
+            DEFAULT_TAP_FRAMES,
+        )
     }
 
     /// Like [`create`](Self::create), with every region sized explicitly
@@ -271,11 +295,18 @@ impl Segment {
     pub fn create_full(
         path: &Path,
         control_buses: usize,
+        audio_buses: usize,
         taps: usize,
         tap_frames: usize,
     ) -> io::Result<Arc<Self>> {
         check_tap_params(taps, tap_frames);
-        let size = shm::segment_size(control_buses, taps, tap_frames, DEFAULT_BUFFERS);
+        let size = shm::segment_size(
+            control_buses,
+            audio_buses,
+            taps,
+            tap_frames,
+            DEFAULT_BUFFERS,
+        );
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -285,7 +316,7 @@ impl Segment {
         file.set_len(size as u64)?;
         let (ptr, len) = Self::map_file(&file, size)?;
         // SAFETY: the mapping we just made, sized for the counts given.
-        let view = unsafe { View::init(ptr, len, control_buses, taps, tap_frames) };
+        let view = unsafe { View::init(ptr, len, control_buses, audio_buses, taps, tap_frames) };
         Ok(Arc::new(Self {
             view,
             _backing: Backing::Mapped { ptr, len },
@@ -318,6 +349,7 @@ impl Segment {
     pub fn open_or_create_full(
         path: &Path,
         control_buses: usize,
+        audio_buses: usize,
         taps: usize,
         tap_frames: usize,
     ) -> io::Result<(Arc<Self>, bool)> {
@@ -338,7 +370,8 @@ impl Segment {
                         );
                     }
                 }
-                Self::create_full(path, control_buses, taps, tap_frames).map(|seg| (seg, true))
+                Self::create_full(path, control_buses, audio_buses, taps, tap_frames)
+                    .map(|seg| (seg, true))
             }
             Err(e) => Err(e),
         }

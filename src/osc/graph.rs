@@ -40,8 +40,9 @@ use crate::dsp::registry::BusRole;
 #[cfg(feature = "faust")]
 use crate::faust::synth::FaustDef;
 
-/// Bus-usage masks now live in [`crate::dsp`] (the engine's parallel
-/// scheduler uses them too); re-exported here for the analysis API.
+/// Bus-usage sets now live in [`crate::dsp`] (the engine's parallel scheduler
+/// summarizes them into a [`crate::dsp::StageMask`]); re-exported here for the
+/// analysis API.
 pub use crate::dsp::BusUsage;
 
 /// Analyzes a UGen def against a node's current control values. Returns the
@@ -84,11 +85,11 @@ pub fn faust_usage(def: &FaustDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
     };
     let out = first(controls.get(np).copied().unwrap_or(0.0), def.num_outputs);
     for i in 0..def.num_outputs {
-        usage.writes |= 1 << (out + i).min(NUM_AUDIO_BUSES - 1);
+        usage.mark_bus(out + i, false, true);
     }
     let inb = first(controls.get(np + 1).copied().unwrap_or(0.0), def.num_inputs);
     for i in 0..def.num_inputs {
-        usage.reads |= 1 << (inb + i).min(NUM_AUDIO_BUSES - 1);
+        usage.mark_bus(inb + i, true, false);
     }
     (usage, vec![np as u32, np as u32 + 1])
 }
@@ -107,7 +108,7 @@ pub fn stable_topo_sort(units: &[(i32, BusUsage)]) -> Vec<i32> {
     let edge = |i: usize, j: usize| i * n + j;
     for i in 0..n {
         for j in 0..n {
-            if i != j && units[i].1.writes & units[j].1.reads != 0 {
+            if i != j && units[i].1.feeds(&units[j].1) {
                 before[edge(i, j)] = true;
             }
         }
@@ -634,11 +635,16 @@ impl TreeMirror {
     /// A node's bus usage; for groups, the union over the whole subtree.
     pub fn usage_of(&self, id: i32) -> BusUsage {
         match self.nodes.get(&id).map(|n| &n.body) {
-            Some(MirrorBody::Synth { usage, .. }) => *usage,
-            Some(MirrorBody::Group { children, .. }) => children
-                .clone()
-                .iter()
-                .fold(BusUsage::default(), |acc, &c| acc.union(self.usage_of(c))),
+            Some(MirrorBody::Synth { usage, .. }) => usage.clone(),
+            Some(MirrorBody::Group { children, .. }) => {
+                children
+                    .clone()
+                    .iter()
+                    .fold(BusUsage::default(), |mut acc, &c| {
+                        acc.union_with(&self.usage_of(c));
+                        acc
+                    })
+            }
             None => BusUsage::default(),
         }
     }
@@ -730,7 +736,7 @@ impl TreeMirror {
         {
             for &(ctl, bus, audio) in maps {
                 if audio && bus >= 0 {
-                    usage.reads |= 1 << (bus as usize).min(NUM_AUDIO_BUSES - 1);
+                    usage.mark_bus(bus as usize, true, false);
                 }
                 if bus_controls.contains(&ctl) {
                     usage.dynamic = true;

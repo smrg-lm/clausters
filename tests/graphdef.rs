@@ -6,7 +6,7 @@
 #![cfg(feature = "synth")]
 
 use clausters::dsp::NUM_AUDIO_BUSES;
-use clausters::osc::graphdef::GRAPH_AUDIO_BUS_RESERVED;
+use clausters::osc::graphdef::graph_audio_reserved;
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::Cmd;
@@ -94,7 +94,7 @@ fn graph_new_wires_members_to_private_buses() {
     // sink reads the *same* bus and writes to hardware bus 0 ("OUT").
     let mix = control(&t, src, 0); // gsrc.out
     assert!(
-        mix as usize >= NUM_AUDIO_BUSES - GRAPH_AUDIO_BUS_RESERVED,
+        mix as usize >= NUM_AUDIO_BUSES - graph_audio_reserved(NUM_AUDIO_BUSES),
         "mix bus {mix} is private"
     );
     assert_eq!(control(&t, sink, 0), mix); // gsink.in == mix

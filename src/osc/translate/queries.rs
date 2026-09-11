@@ -217,8 +217,8 @@ impl CmdTranslator {
             args.push(OscType::Int(*audio as i32));
         }
         let usage = self.mirror.usage_of(id);
-        args.push(OscType::String(bus_list(usage.reads)));
-        args.push(OscType::String(bus_list(usage.writes)));
+        args.push(OscType::String(bus_list(usage.reads())));
+        args.push(OscType::String(bus_list(usage.writes())));
     }
 
     /// `/node_query.reply` arguments for `/node_query`: per-node detail beyond the tree
@@ -326,8 +326,8 @@ impl CmdTranslator {
             let dynamic = if usage.dynamic { "  dynamic" } else { "" };
             out.push_str(&format!(
                 "  {child} {kind}  reads {}  writes {}{dynamic}\n",
-                bus_list(usage.reads),
-                bus_list(usage.writes),
+                bus_list(usage.reads()),
+                bus_list(usage.writes()),
             ));
         }
         Ok(out)
@@ -335,13 +335,10 @@ impl CmdTranslator {
 }
 
 /// `u128` bus mask → "0,1,16" (or "-" when empty).
-fn bus_list(mask: u128) -> String {
-    if mask == 0 {
+fn bus_list(buses: impl Iterator<Item = usize>) -> String {
+    let buses: Vec<String> = buses.map(|b| b.to_string()).collect();
+    if buses.is_empty() {
         return "-".into();
     }
-    let buses: Vec<String> = (0..128)
-        .filter(|b| mask & (1 << b) != 0)
-        .map(|b| b.to_string())
-        .collect();
     buses.join(",")
 }

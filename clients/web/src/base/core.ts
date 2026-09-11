@@ -144,11 +144,18 @@ export function nodeIdPartition(maxNodes: number): NodeIdPartition {
 }
 
 /**
- * The `[audio, control]` bus widths GraphDef instances reserve at the top of
- * each bus space (before clamping to a smaller configured count). Requires a
- * prior `loadCore()`.
+ * The `[audio, control]` widths GraphDef instances reserve at the top of bus
+ * spaces of these sizes.
+ *
+ * A share of what the server was configured with rather than a fixed number,
+ * so ask with the counts *that* server reports: booting one with more buses
+ * has to give both sides more, or raising the count would buy a piece not one
+ * extra track. Requires a prior `loadCore()`.
  */
-export function graphBusReserved(): [number, number] {
-    const [audio, control] = graph_bus_reserved();
+export function graphBusReserved(
+    audioBuses: number,
+    controlBuses: number,
+): [number, number] {
+    const [audio, control] = graph_bus_reserved(audioBuses, controlBuses);
     return [audio, control];
 }

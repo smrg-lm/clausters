@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
-use crate::dsp::BusUsage;
+use crate::dsp::StageMask;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool_with};
 use crate::dsp::{
     Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, ReplyMsg,
@@ -61,7 +61,7 @@ pub enum Cmd {
         synth: Box<dyn SynthNode>,
         /// Bus masks analyzed at build time; the parallel scheduler
         /// partitions stages from this engine-owned copy.
-        usage: BusUsage,
+        usage: StageMask,
     },
     AddGroup {
         id: i32,
@@ -155,7 +155,7 @@ pub enum Cmd {
     /// masks so the parallel scheduler stays in sync.
     SetUsage {
         id: i32,
-        usage: BusUsage,
+        usage: StageMask,
     },
     /// `/group_parallel`: children of this group run in dependency stages on
     /// the worker pool.
@@ -541,7 +541,7 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
 
 /// Default bus counts (scsynth `-a`/`-c`), used by the simple constructors and
 /// the NRT renderer. The live server can override them with `--audio-buses`/
-/// `--control-buses`; audio is capped at 128 (the `BusUsage` mask is a `u128`).
+/// `--control-buses`; both are configured resources with no cap in the code.
 pub const DEFAULT_AUDIO_BUSES: usize = NUM_AUDIO_BUSES;
 pub const DEFAULT_CONTROL_BUSES: usize = NUM_CONTROL_BUSES;
 
@@ -578,8 +578,10 @@ pub fn engine_pair_full(
     limits: Limits,
 ) -> (Engine, EngineHandle) {
     let limits = limits.clamped();
-    // The mask is a `u128`, so 128 is the hard ceiling for audio buses.
-    let audio_buses = audio_buses.clamp(channels.max(1), NUM_AUDIO_BUSES);
+    // No ceiling: how many buses there are is a configured resource, and what
+    // it costs is memory plus the per-block clear (`tests/bus_scale.rs`
+    // measures both). The floor is the hardware channels, which are buses.
+    let audio_buses = audio_buses.max(channels.max(1));
     assert!(channels > 0 && channels <= audio_buses);
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY.max(2 * limits.max_nodes));

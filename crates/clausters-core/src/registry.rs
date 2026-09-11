@@ -24,13 +24,43 @@
 //! deliberately inexhaustible (and `release` degrades to live-count
 //! accounting).
 
-/// Width of the private-bus range GraphDef instances reserve at the **top**
-/// of each bus space (clamped to the space when a configured count is
-/// smaller). Lives here — not in the server — so client allocators subtract
-/// the same reservation they were built against instead of hardcoding it.
-pub const GRAPH_AUDIO_BUS_RESERVED: usize = 32;
-/// Control-rate counterpart of [`GRAPH_AUDIO_BUS_RESERVED`].
-pub const GRAPH_CONTROL_BUS_RESERVED: usize = 128;
+/// The **smallest** private-bus range GraphDef instances reserve at the top of
+/// the audio space, whatever the space is: enough for a handful of nested
+/// graphs on the smallest server anybody would boot.
+pub const GRAPH_AUDIO_BUS_FLOOR: usize = 32;
+/// Control-rate counterpart of [`GRAPH_AUDIO_BUS_FLOOR`].
+pub const GRAPH_CONTROL_BUS_FLOOR: usize = 128;
+
+/// **How much of a bus space is private to GraphDef instances**, given how
+/// many buses the server was configured with: half of it, never less than the
+/// floor and never more than the space.
+///
+/// A share and not a number, because it is a *partition* of a configured
+/// resource: a server booted with more buses has to hand the extra ones to
+/// both sides, or raising the count would not buy a piece a single track. That
+/// is exactly what a fixed 32 did -- a piece spends four private buses per
+/// track and one or two per clip, so a multitrack ran out at seven tracks and
+/// no configuration could change it.
+///
+/// Half, because the two sides are the two ways buses get used and neither is
+/// the minor one: a graph's private wiring is the bulk of a mixer, and a
+/// client's own buses are what everything outside one is patched with.
+///
+/// Lives here -- not in the server -- so a client subtracts the same
+/// reservation the server it is talking to was built with, computed from the
+/// count that server reports rather than agreed on by convention.
+pub fn graph_audio_reserved(audio_buses: usize) -> usize {
+    (audio_buses / 2)
+        .max(GRAPH_AUDIO_BUS_FLOOR)
+        .min(audio_buses)
+}
+
+/// Control-rate counterpart of [`graph_audio_reserved`].
+pub fn graph_control_reserved(control_buses: usize) -> usize {
+    (control_buses / 2)
+        .max(GRAPH_CONTROL_BUS_FLOOR)
+        .min(control_buses)
+}
 
 /// The boot-derived partition of the node-id space, every range scaled from
 /// the engine's node-table capacity (`--max-nodes`) — the one resource that

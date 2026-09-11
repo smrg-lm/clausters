@@ -183,13 +183,13 @@ class Allocator {
  */
 export class AudioBusAllocator extends Allocator {
     constructor(size: number, reserved = 2, share?: IdShare) {
-        super("audio", size, reserved, graphBusReserved()[0], share);
+        super("audio", size, reserved, graphBusReserved(size, 0)[0], share);
     }
 }
 
 /** `size` is the server's control-bus count. */
 export class ControlBusAllocator extends Allocator {
     constructor(size: number, share?: IdShare) {
-        super("control", size, 0, graphBusReserved()[1], share);
+        super("control", size, 0, graphBusReserved(0, size)[1], share);
     }
 }

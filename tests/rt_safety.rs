@@ -1113,7 +1113,7 @@ fn parallel_dispatch_does_not_allocate() {
                 action: AddAction::Tail,
                 synth,
                 usage: {
-                    let mut u = clausters::dsp::BusUsage::default();
+                    let mut u = clausters::dsp::StageMask::default();
                     u.mark(16.0 + i as f32, false, true);
                     u
                 },
@@ -1327,7 +1327,7 @@ fn tap_writes_do_not_allocate_on_the_audio_thread() {
     use clausters::server::engine::engine_pair_full;
     use clausters::server::ipc::Segment;
 
-    let segment = Segment::in_memory_full(1024, 2, 4096);
+    let segment = Segment::in_memory_full(1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 4096);
     let (mut engine, mut handle) =
         engine_pair_full(48_000.0, 2, 0, Some(segment), 128, 1024, Limits::default());
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];

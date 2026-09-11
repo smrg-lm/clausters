@@ -1035,7 +1035,7 @@ fn bench_chain(
 /// summing into that chain's private bus — the layout where /group_parallel
 /// shines: every subgroup is an independent unit of one big stage.
 fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
-    use clausters::dsp::BusUsage;
+    use clausters::dsp::StageMask;
     use clausters::synthdef::SynthDefSpec;
 
     let (mut engine, mut handle) = engine_pair_with_workers(SAMPLE_RATE as f32, 2, workers);
@@ -1081,7 +1081,7 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
         }))
         .unwrap();
         let def = Arc::new(compile(spec).unwrap());
-        let mut usage = BusUsage::default();
+        let mut usage = StageMask::default();
         usage.mark(bus as f32, false, true);
         for v in 0..voices {
             let mut synth = Box::new(UGenSynth::new(

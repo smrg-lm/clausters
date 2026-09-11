@@ -10,8 +10,9 @@ usage:
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
-      --audio-buses <n>    audio buses (default 128, the hard maximum)
-      --control-buses <n>  control buses (default 16384)
+      --audio-buses <n>    audio buses, a power of two (default 1024); half of
+                           them are private to GraphDef instances
+      --control-buses <n>  control buses, a power of two (default 16384)
       --taps <n>           audio-tap rings for oscilloscopes (default 8;
                            0 disables): /bus_tap routes an audio bus into one,
                            read from the shared segment or via /bus_tapStream
@@ -143,6 +144,25 @@ fn main() {
 
 fn parse_workers(value: &str) -> Result<usize, String> {
     value.parse().map_err(|e| format!("--workers: {e}"))
+}
+
+/// A bus count: a **power of two**, like every other sized resource here.
+///
+/// The rule is not arithmetic convenience -- nothing here indexes by mask --
+/// it is that a resource whose size is chosen at boot is chosen in the units
+/// people reason about it in, and a request for 1000 buses is a request for
+/// 1024 that someone typed by hand. Refusing it says so once, rather than the
+/// server quietly running with a size nobody meant.
+fn power_of_two(flag: &str, value: &str) -> Result<usize, String> {
+    let n: usize = value.parse().map_err(|e| format!("{flag}: {e}"))?;
+    if !n.is_power_of_two() {
+        return Err(format!(
+            "{flag}: {n} is not a power of two (try {} or {})",
+            n.next_power_of_two() / 2,
+            n.next_power_of_two()
+        ));
+    }
+    Ok(n)
 }
 
 /// Reads a carrier flag's optional `[addr:]port` argument: the next token,
@@ -441,13 +461,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let value = it
                     .next()
                     .ok_or(format!("--audio-buses needs a value\n{USAGE}"))?;
-                audio_buses = value.parse().map_err(|e| format!("--audio-buses: {e}"))?;
+                audio_buses = power_of_two("--audio-buses", value)?;
             }
             "--control-buses" => {
                 let value = it
                     .next()
                     .ok_or(format!("--control-buses needs a value\n{USAGE}"))?;
-                control_buses = value.parse().map_err(|e| format!("--control-buses: {e}"))?;
+                control_buses = power_of_two("--control-buses", value)?;
             }
             "--taps" => {
                 let value = it.next().ok_or(format!("--taps needs a value\n{USAGE}"))?;
@@ -591,6 +611,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let (seg, created) = Segment::open_or_create_full(
                 std::path::Path::new(path),
                 control_buses,
+                audio_buses,
                 taps,
                 tap_frames,
             )?;
@@ -610,7 +631,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             segment_created = created;
             Some(seg)
         }
-        None if taps > 0 => Some(Segment::in_memory_full(control_buses, taps, tap_frames)),
+        None if taps > 0 => Some(Segment::in_memory_full(
+            control_buses,
+            audio_buses,
+            taps,
+            tap_frames,
+        )),
         None => None,
     };
     // `rtprio` builds promote the audio callback to real-time scheduling,

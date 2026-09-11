@@ -448,14 +448,17 @@ pub fn node_id_partition(max_nodes: u32) -> Result<js_sys::Object, JsError> {
     Ok(out)
 }
 
-/// JS face: the `[audio, control]` bus widths GraphDef instances reserve at
-/// the top of each bus space (before clamping to a smaller configured count).
+/// JS face: the `[audio, control]` widths GraphDef instances reserve at the
+/// top of bus spaces of these sizes.
+///
+/// A share of what the server was configured with rather than a fixed number,
+/// so ask with the counts *that* server reports.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn graph_bus_reserved() -> Vec<u32> {
+pub fn graph_bus_reserved(audio_buses: usize, control_buses: usize) -> Vec<u32> {
     vec![
-        registry::GRAPH_AUDIO_BUS_RESERVED as u32,
-        registry::GRAPH_CONTROL_BUS_RESERVED as u32,
+        registry::graph_audio_reserved(audio_buses) as u32,
+        registry::graph_control_reserved(control_buses) as u32,
     ]
 }
 

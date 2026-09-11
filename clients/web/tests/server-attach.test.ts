@@ -50,7 +50,7 @@ test("a handle reaches nothing, and says nothing, until it is told to", () => {
     assert.equal(carrier.packets.length, 0);
     // And the allocators are sized from what it was told (here, the compiled
     // defaults), which is the guess `reconcile` exists to replace.
-    assert.equal(server.sizing.audioBuses, 128);
+    assert.equal(server.sizing.audioBuses, 1024);
     server.close();
 });
 

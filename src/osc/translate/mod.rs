@@ -41,9 +41,8 @@ use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::ugen_usage;
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror};
 use crate::osc::graphdef::{
-    BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
-    GraphInstance, GraphVoice, MAX_GRAPH_DEPTH, MemberKind, ResolvedSurface, VOICE_SLOT,
-    bus_channel,
+    BusRate, ControlValue, GraphDefSpec, GraphInstance, GraphVoice, MAX_GRAPH_DEPTH, MemberKind,
+    ResolvedSurface, VOICE_SLOT, bus_channel, graph_audio_reserved, graph_control_reserved,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
@@ -245,10 +244,11 @@ impl CmdTranslator {
         limits: Limits,
     ) -> Self {
         let limits = limits.clamped();
-        // Reserve the top of each bus space for GraphDef private buses, shrinking
-        // the reservation if the configured count is smaller than the default.
-        let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
-        let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
+        // The top half of each bus space is private to GraphDef instances --
+        // a share of what was configured rather than a fixed count, so booting
+        // a server with more buses actually buys a piece more tracks.
+        let audio_reserved = graph_audio_reserved(audio_buses);
+        let control_reserved = graph_control_reserved(control_buses);
         // Every node-id range scales from the node table's capacity — the
         // resource that actually bounds concurrent nodes (shared formula,
         // reported to clients over `/server_query`).
@@ -391,7 +391,7 @@ impl CmdTranslator {
     fn reanalyze_and_resort(&mut self, id: i32, cmds: &mut Vec<Cmd>) {
         self.refresh_usage(id);
         if self.mirror.synth_info(id).is_some() {
-            let usage = self.mirror.usage_of(id);
+            let usage = crate::dsp::StageMask::of(&self.mirror.usage_of(id));
             cmds.push(Cmd::SetUsage { id, usage });
         }
         self.resort_from(self.mirror.parent(id), cmds);
@@ -996,7 +996,7 @@ impl CmdTranslator {
                     target: *target,
                     action,
                     synth,
-                    usage,
+                    usage: crate::dsp::StageMask::of(&usage),
                 });
                 let body = MirrorBody::Synth {
                     def_name: name.clone(),

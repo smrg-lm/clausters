@@ -11,7 +11,7 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
-use crate::dsp::{BusUsage, DoneAction, ProcessCtx, ReplyMsg};
+use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -192,7 +192,7 @@ pub enum NodeKind {
         node: Box<dyn SynthNode>,
         /// Bus usage analyzed by the network thread at build time:
         /// the parallel scheduler partitions stages from this.
-        usage: BusUsage,
+        usage: StageMask,
     },
     Group(Group),
 }
@@ -1006,7 +1006,7 @@ impl NodeTree {
 
     /// Updates a synth's bus-usage masks (`Cmd::SetUsage`, after an `/node_set`
     /// on a control used as a bus index).
-    pub fn set_usage(&mut self, id: i32, usage: BusUsage) {
+    pub fn set_usage(&mut self, id: i32, usage: StageMask) {
         if let Some(idx) = self.find(id)
             && let Some(slot) = self.slot_mut(idx)
             && let NodeKind::Synth { usage: u, .. } = &mut slot.kind
@@ -1159,13 +1159,13 @@ impl NodeTree {
 
     /// A node's bus usage; for groups, the union over the subtree. Pure
     /// bitops over engine-owned masks — RT-safe.
-    fn subtree_usage(&self, idx: usize) -> BusUsage {
+    fn subtree_usage(&self, idx: usize) -> StageMask {
         match self.slot(idx).map(|s| &s.kind) {
             Some(NodeKind::Synth { usage, .. }) => *usage,
-            Some(NodeKind::Group(g)) => g.children.iter().fold(BusUsage::default(), |acc, &c| {
+            Some(NodeKind::Group(g)) => g.children.iter().fold(StageMask::default(), |acc, &c| {
                 acc.union(self.subtree_usage(c))
             }),
-            None => BusUsage::default(),
+            None => StageMask::default(),
         }
     }
 }
@@ -1197,7 +1197,7 @@ mod tests {
             node: Box::new(MockSynth {
                 done: DoneAction::None,
             }),
-            usage: BusUsage::default(),
+            usage: StageMask::default(),
         };
         assert!(
             tree.insert(id, kind, parent, AddAction::Tail, &mut |_| {})
@@ -1226,7 +1226,7 @@ mod tests {
             node: Box::new(MockSynth {
                 done: DoneAction::None,
             }),
-            usage: BusUsage::default(),
+            usage: StageMask::default(),
         };
         match tree.insert(id, kind, target, action, &mut |_| {}) {
             Ok(_) => panic!("insert {id} was supposed to fail"),

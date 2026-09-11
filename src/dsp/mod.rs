@@ -104,14 +104,23 @@ impl Block {
     pub const SILENCE: Block = Block([0.0; BLOCK_SIZE]);
 }
 /// Audio buses (scsynth `-a`); buses `0..channels` are the hardware outputs.
-pub const NUM_AUDIO_BUSES: usize = 128;
+///
+/// The default count, not a ceiling -- `--audio-buses` takes any power of two
+/// and the only cost is memory plus the per-block clear (`tests/bus_scale.rs`
+/// measures it: 1024 buses are 256 KB and a quarter of one percent of a
+/// block). It is 1024 because half of the space is private to GraphDef
+/// instances and a multitrack spends four of those per track, so this is the
+/// count at which a piece stops running out of buses before it runs out of
+/// anything else.
+pub const NUM_AUDIO_BUSES: usize = 1024;
 /// Control buses (scsynth `-c`).
 pub const NUM_CONTROL_BUSES: usize = 16384;
 /// Hard ceiling on inputs per UGen: the synth builds its input list on a
 /// fixed stack array of this width (see `synthdef::instance`), so it is a
 /// compile-time invariant, not a tunable. EnvGen already needs 21 (ADSR).
 /// The boot-time `--max-ugen-inputs` (see [`Limits`]) is a *runtime* limit
-/// clamped to this ceiling, the same way `--audio-buses` clamps to 128.
+/// clamped to this ceiling; `--audio-buses`, by contrast, has no ceiling at
+/// all -- it is a configured resource and nothing in the code caps it.
 pub const MAX_UGEN_INPUTS: usize = 32;
 
 /// Boot-time capacities for the pre-allocated pools (scsynth's `-n`/`-b`/…).
@@ -259,13 +268,114 @@ impl ControlBuses {
     }
 }
 
-/// Which audio buses a node reads and writes, as `u128` bitmasks.
-/// Computed by the network thread from the def and the node's current
-/// control values (`osc::graph`); shipped to the engine inside
-/// `Cmd::AddSynth` so the parallel scheduler partitions stages from
-/// engine-owned data — safety never depends on possibly stale mirror state.
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+/// **Which audio buses a node reads and writes**, exactly, however many buses
+/// the server was configured with.
+///
+/// Computed on the network thread from the def and the node's current control
+/// values (`osc::graph`), where allocating is free. Two things read it and
+/// they want different guarantees, which is why there are two types: **order**
+/// is decided from this one and has to be exact (a bus that looks used when it
+/// is not moves a node past another for no reason), while the engine's
+/// parallel staging is decided from [`StageMask`], where over-stating a use
+/// costs parallelism and nothing else.
+///
+/// The bit vector grows to whatever bus is marked, so nothing here caps the
+/// bus count -- a cap in a mask's *type* is what held the server at 128 audio
+/// buses, and the count is a configured resource like every other.
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct BusUsage {
+    reads: Vec<u64>,
+    writes: Vec<u64>,
+    /// A bus index fed by a computed signal: the node may touch *any* bus,
+    /// so it keeps its position and never runs in parallel with anything.
+    pub dynamic: bool,
+}
+
+fn bit_set(bits: &mut Vec<u64>, index: usize) {
+    let word = index / 64;
+    if word >= bits.len() {
+        bits.resize(word + 1, 0);
+    }
+    bits[word] |= 1 << (index % 64);
+}
+
+fn bits_overlap(a: &[u64], b: &[u64]) -> bool {
+    a.iter().zip(b).any(|(x, y)| x & y != 0)
+}
+
+fn bits_union(into: &mut Vec<u64>, from: &[u64]) {
+    if into.len() < from.len() {
+        into.resize(from.len(), 0);
+    }
+    for (slot, word) in into.iter_mut().zip(from) {
+        *slot |= word;
+    }
+}
+
+fn bits_list(bits: &[u64]) -> impl Iterator<Item = usize> + '_ {
+    bits.iter().enumerate().flat_map(|(word, &value)| {
+        (0..64).filter_map(move |bit| (value & (1 << bit) != 0).then_some(word * 64 + bit))
+    })
+}
+
+impl BusUsage {
+    /// Every bus read, ascending.
+    pub fn reads(&self) -> impl Iterator<Item = usize> + '_ {
+        bits_list(&self.reads)
+    }
+
+    /// Every bus written, ascending.
+    pub fn writes(&self) -> impl Iterator<Item = usize> + '_ {
+        bits_list(&self.writes)
+    }
+
+    /// Whether what `self` writes is read by `other` -- the dependency an
+    /// auto-ordered group is sorted by.
+    pub fn feeds(&self, other: &Self) -> bool {
+        bits_overlap(&self.writes, &other.reads)
+    }
+
+    /// Everything both of them touch: a group's usage is its children's.
+    pub fn union_with(&mut self, other: &Self) {
+        bits_union(&mut self.reads, &other.reads);
+        bits_union(&mut self.writes, &other.writes);
+        self.dynamic |= other.dynamic;
+    }
+
+    /// Marks one bus, converting like `dsp::io::audio_bus` does at run time.
+    pub fn mark(&mut self, value: f32, read: bool, write: bool) {
+        self.mark_bus(value.max(0.0) as usize, read, write);
+    }
+
+    /// Marks one bus by index.
+    pub fn mark_bus(&mut self, bus: usize, read: bool, write: bool) {
+        if read {
+            bit_set(&mut self.reads, bus);
+        }
+        if write {
+            bit_set(&mut self.writes, bus);
+        }
+    }
+}
+
+/// **How many lanes [`StageMask`] folds the buses into.** One `u128` a side.
+pub const STAGE_LANES: usize = 128;
+
+/// What the engine packs a parallel stage from: a **conservative summary** of
+/// a node's [`BusUsage`], folded into [`STAGE_LANES`] lanes.
+///
+/// It is `Copy` and allocation-free because the audio thread unions these over
+/// a subtree on every block, and the audio thread does not allocate. Two buses
+/// that land in one lane are treated as the same bus, so two nodes that do not
+/// actually collide may be put in different stages: **parallelism lost, never
+/// correctness** -- the scheduler's job is to prove disjointness, and a
+/// summary that over-states a use can only refuse to run things together.
+///
+/// The exact sets stay on the network thread, where order is decided. Shipped
+/// to the engine inside `Cmd::AddSynth`, so the scheduler partitions from
+/// engine-owned data and safety never depends on possibly stale mirror state.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct StageMask {
     pub reads: u128,
     pub writes: u128,
     /// A bus index fed by a computed signal: the node may touch *any* bus,
@@ -273,9 +383,22 @@ pub struct BusUsage {
     pub dynamic: bool,
 }
 
-const _: () = assert!(NUM_AUDIO_BUSES <= 128, "BusUsage bitmasks are u128");
+impl StageMask {
+    /// The summary of an exact usage.
+    pub fn of(usage: &BusUsage) -> Self {
+        let mut mask = Self {
+            dynamic: usage.dynamic,
+            ..Self::default()
+        };
+        for bus in usage.reads() {
+            mask.reads |= 1 << (bus % STAGE_LANES);
+        }
+        for bus in usage.writes() {
+            mask.writes |= 1 << (bus % STAGE_LANES);
+        }
+        mask
+    }
 
-impl BusUsage {
     pub fn union(self, other: Self) -> Self {
         Self {
             reads: self.reads | other.reads,
@@ -286,7 +409,7 @@ impl BusUsage {
 
     /// Marks one bus, converting like `dsp::io::audio_bus` does at run time.
     pub fn mark(&mut self, value: f32, read: bool, write: bool) {
-        let bus = (value.max(0.0) as usize).min(NUM_AUDIO_BUSES - 1);
+        let bus = (value.max(0.0) as usize) % STAGE_LANES;
         if read {
             self.reads |= 1 << bus;
         }

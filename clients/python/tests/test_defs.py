@@ -127,12 +127,14 @@ def test_audio_bus_allocator_reserves_outputs_and_graph_top():
     a.free(b2)
     # Next-fit rotates: fresh space first, the freed run again on wrap.
     assert a.alloc(2).index == 5
-    assert a.alloc(89).index == 7                  # rest of the free space
+    assert a.alloc(57).index == 7                  # rest of the free space
     assert a.alloc(2).index == 2                   # wrapped onto the freed run
-    # The GraphDef private range at the top (32 audio buses) is never handed
-    # out: 128 - 2 reserved - 32 = 94 allocatable.
+    # The GraphDef private range is the **top half** of the space, never handed
+    # out: 128 - 2 reserved - 64 = 62 allocatable. A share and not a fixed
+    # count, so a server booted with more buses gives both sides more -- which
+    # is the whole reason the count is configurable.
     a2 = AudioBusAllocator(size=128, reserved=2)
-    assert a2.alloc(94).index == 2
+    assert a2.alloc(62).index == 2
     with pytest.raises(RuntimeError, match="out of audio buses"):
         a2.alloc(1)
 

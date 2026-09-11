@@ -35,7 +35,7 @@ const recorder = (): Connection => ({
 });
 
 const SIZING = {
-    maxNodes: 8192, audioBuses: 128, controlBuses: 16384,
+    maxNodes: 8192, audioBuses: 1024, controlBuses: 16384,
     maxBuffers: 4096, channels: 2,
 };
 

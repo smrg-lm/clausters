@@ -3,11 +3,17 @@
 //! the same bus mix), `ReplaceOut` overwrites, `In` copies from an audio bus,
 //! `InCtl` reads a control bus as a constant for the whole block.
 
-use crate::dsp::{NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, UGen, at};
+use crate::dsp::{ProcessCtx, UGen, at};
 
 /// Bus index inputs are signals like everything else; read once per block.
+///
+/// Not clamped here: how many buses there are is a **configured** resource, so
+/// the only place that knows is the `Buses` this block is running against, and
+/// both doors there clamp an out-of-range index to the last bus. Clamping to a
+/// compile-time count instead is how a server configured with more buses than
+/// the default would have quietly moved a write from bus 500 to bus 127.
 fn audio_bus(input: &[f32]) -> usize {
-    (input[0].max(0.0) as usize).min(NUM_AUDIO_BUSES - 1)
+    input[0].max(0.0) as usize
 }
 
 /// Input 0: audio bus index. Output: the bus contents.
@@ -62,7 +68,7 @@ pub struct InCtl;
 
 impl UGen for InCtl {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let idx = (inputs[0][0].max(0.0) as usize).min(NUM_CONTROL_BUSES - 1);
+        let idx = inputs[0][0].max(0.0) as usize;
         output.fill(ctx.buses.control.get(idx));
     }
 }
@@ -76,7 +82,7 @@ pub struct OutCtl;
 
 impl UGen for OutCtl {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let idx = (at(inputs[0], 0).max(0.0) as usize).min(NUM_CONTROL_BUSES - 1);
+        let idx = at(inputs[0], 0).max(0.0) as usize;
         let signal = inputs[1];
         for (i, s) in output.iter_mut().enumerate() {
             *s = at(signal, i);

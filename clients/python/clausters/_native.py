@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 48
+CORE_ABI_VERSION = 49
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -295,11 +295,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ShmShape),
     ]
     lib.clausters_core_shm_segment_size.restype = ctypes.c_size_t
-    lib.clausters_core_shm_segment_size.argtypes = [ctypes.c_size_t] * 4
+    lib.clausters_core_shm_segment_size.argtypes = [ctypes.c_size_t] * 5
     lib.clausters_core_shm_init.restype = ctypes.c_int32
     lib.clausters_core_shm_init.argtypes = [
         ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
-        ctypes.c_size_t,
+        ctypes.c_size_t, ctypes.c_size_t,
     ]
     lib.clausters_core_shm_buffer_info.restype = ctypes.c_int32
     lib.clausters_core_shm_buffer_info.argtypes = [
@@ -607,9 +607,9 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_uint64, ctypes.POINTER(ctypes.c_int64),
     ]
     lib.clausters_registry_graph_audio_reserved.restype = ctypes.c_uint64
-    lib.clausters_registry_graph_audio_reserved.argtypes = []
+    lib.clausters_registry_graph_audio_reserved.argtypes = [ctypes.c_size_t]
     lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
-    lib.clausters_registry_graph_control_reserved.argtypes = []
+    lib.clausters_registry_graph_control_reserved.argtypes = [ctypes.c_size_t]
     lib.clausters_widgetids_new.restype = ctypes.c_void_p
     lib.clausters_widgetids_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
     lib.clausters_widgetids_free.restype = None
@@ -2897,12 +2897,18 @@ def node_id_partition(max_nodes: int) -> dict:
     return dict(zip(keys, out))
 
 
-def graph_bus_reserved() -> tuple[int, int]:
-    """The ``(audio, control)`` bus widths GraphDef instances reserve at the
-    top of each bus space (before clamping to a smaller configured count)."""
+def graph_bus_reserved(audio_buses: int, control_buses: int) -> tuple[int, int]:
+    """The ``(audio, control)`` widths GraphDef instances reserve at the top of
+    bus spaces of these sizes.
+
+    A share of what the server was configured with rather than a fixed number,
+    so ask with the counts *that* server reports: booting one with more buses
+    has to give both sides more, or raising the count would buy a piece not one
+    extra track.
+    """
     l = lib()
-    return (l.clausters_registry_graph_audio_reserved(),
-            l.clausters_registry_graph_control_reserved())
+    return (l.clausters_registry_graph_audio_reserved(int(audio_buses)),
+            l.clausters_registry_graph_control_reserved(int(control_buses)))
 
 
 # ---- sample-clock tracking model ----
@@ -3181,14 +3187,16 @@ def shm_shape(address: int, length: int) -> "ShmShape | None":
     return out if rc == 0 else None
 
 
-def shm_segment_size(control_buses: int, taps: int, tap_frames: int, buffers: int) -> int:
+def shm_segment_size(control_buses: int, audio_buses: int, taps: int,
+                     tap_frames: int, buffers: int) -> int:
     """How big a segment carrying these counts is — what a peer sizes a file to
     before creating one."""
-    return lib().clausters_core_shm_segment_size(control_buses, taps, tap_frames, buffers)
+    return lib().clausters_core_shm_segment_size(control_buses, audio_buses, taps,
+                                                tap_frames, buffers)
 
 
-def shm_init(address: int, length: int, control_buses: int, taps: int,
-             tap_frames: int) -> bool:
+def shm_init(address: int, length: int, control_buses: int, audio_buses: int,
+             taps: int, tap_frames: int) -> bool:
     """Writes a fresh header over the mapping at `address`, making it a segment.
 
     For a peer that **creates** one rather than attaching: in the editor's
@@ -3196,7 +3204,8 @@ def shm_init(address: int, length: int, control_buses: int, taps: int,
     server attaches to it. Nothing else may have attached yet.
     """
     return lib().clausters_core_shm_init(
-        ctypes.c_void_p(address), length, control_buses, taps, tap_frames) == 0
+        ctypes.c_void_p(address), length, control_buses, audio_buses, taps,
+        tap_frames) == 0
 
 
 def shm_buffer_info(address: int, length: int,
