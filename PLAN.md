@@ -2130,17 +2130,24 @@ finished work, where a pending item reads as done.
   that waits to be read, so two instances give both halves of a meter.
   `mt.meter` is the def that pairs it with `OutCtl`.
 
-- ⬜ **A track's meter has nowhere post-fader to read from** *(found 2026-09-10
-  wiring `mt.meter`)*. A meter is post-fader by default because that is what a
-  hand expects, and a track's strip writes straight into the **piece's** mix
-  bus, which every other track writes into too -- so a meter on it would read
-  the sum. The fix is a `post` bus private to the track that the strip writes
-  and the meters read, plus one node copying `post` into the piece's `mix`: one
-  more node per track, and the same shape a pre/post-fader send will want, so it
-  is worth taking with the sends rather than alone. Until then the def and its
-  ballistics exist and are tested against a render, and nothing instantiates one
-  per track. The other half is `G35.14` in `clients/gui/PLAN.md`: the vertical
-  strip of *n* channels in a track header, which reads that range of buses.
+- ✅ **A track's meter has nowhere post-fader to read from** *(found
+  2026-09-10 wiring the meter, fixed the same day)*. A meter is post-fader
+  because that is what a hand expects, and a track's strip wrote straight into
+  the **piece's** mix bus, which every other track writes into too -- so a meter
+  on it read the sum and called it the track. A strip now writes a `post` bus
+  private to its own instance, and `mt.send.<n>` carries `post` onward at a
+  gain: one more node per strip, and the same shape a pre/post-fader send wants,
+  so an extra send is another instance of a def that already exists rather than
+  a mechanism. The meters are a **slot** (`mt.meter.<n>`, one instance covering
+  the strip's width), so a piece nobody is looking at holds none and the level
+  and the mark that waits are two instances rather than two defs; where each
+  channel lands is a port (`meter/out0`, `meter/out1`), because the host reads
+  the bus and so the host says which one. `tests/mixer_graph.rs` renders it: a
+  silent track beside a loud one reads nothing, the master reads the sum, and
+  the send's gain shuts the track off without touching the fader an automation
+  writes. The other half is `G35.14` in `clients/gui/PLAN.md`: the vertical
+  strip of *n* channels in a track header, which reads that range of buses --
+  until it lands, nothing instantiates a meter, because nothing draws one.
 
 - ✅ **A curve was drawn, edited and saved, and heard by nothing** *(the oldest
   half of `G35.3`/`G35.4`; closed 2026-09-10)*. An automation's target said

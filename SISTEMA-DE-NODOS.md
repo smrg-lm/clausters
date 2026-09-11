@@ -713,20 +713,27 @@ En este orden, porque cada una se puede probar sola:
    se queda con lo último que hubo ahí, así que una curva borrada seguiría
    manejando el control con el último valor que dijo.
 
-6. 🔶 **Los canales y el vúmetro** (§6) — *parcial, 2026-09-10*. Hecho: el ancho
-   de pista como campo del documento (fase 3), las reglas de mezcla en el plan
-   (fase 3), la **balística** en `clausters_core::measure::Ballistics`, el UGen
-   `Meter` y el def `mt.meter`. Un vúmetro es **un número por bloque**, que es
-   justamente lo que lleva un bus de control, así que una pista medida cuesta un
-   nodo y un bus por canal y el host lee un *rango* de buses.
+6. ✅ **Los canales y el vúmetro** (§6) — *hecho 2026-09-10*. El ancho de pista
+   como campo del documento y las reglas de mezcla en el plan (fase 3), la
+   **balística** en `clausters_core::measure::Ballistics`, el UGen `Meter`, y el
+   cableado: un strip escribe un bus `post` propio de su instancia y
+   `mt.send.<n>` lo lleva al bus que le toca, a una ganancia.
 
-   **Falta el cableado y el dibujo**, y el cableado es una decisión: el strip de
-   una pista escribe directo en el bus de mezcla de la **pieza**, donde escriben
-   todas las demás, así que un vúmetro ahí leería la suma. Hace falta un bus
-   `post` privado de la pista que el strip escriba y los vúmetros lean, más un
-   nodo que copie `post` a `mix` — un nodo más por pista, y es la misma forma que
-   va a querer un send pre/post fader, así que conviene tomarlo con los sends.
-   El dibujo es `G35.14`.
+   **Por qué el nodo de más**: todas las pistas escriben en el bus de mezcla del
+   master, así que un vúmetro ahí leería la suma y la llamaría la pista. Con
+   `post`, lo que un vúmetro lee es *ese* strip. Y como el send tiene ganancia,
+   un send extra —post-fader, porque `post` está después del fader— es otra
+   instancia de un def que ya existe y no un mecanismo nuevo.
+
+   El vúmetro es un **slot** (`mt.meter.<n>`, una instancia cubre el ancho
+   entero): una pieza que nadie mira no tiene ninguno, y el nivel y la marca que
+   espera son dos instancias en vez de dos defs. Dónde cae cada canal es un
+   puerto (`meter/out0`, `meter/out1`), porque el bus lo lee el host y entonces
+   lo dice el host. Tres tests lo renderizan.
+
+   **Falta el dibujo**, que es `G35.14` y es del host: la tira vertical de *n*
+   canales en el header, que lee ese rango de buses. Hasta que exista, nadie
+   instancia un vúmetro, porque nadie dibuja uno.
 7. **`mt.fx` de verdad**, cuando exista una especificación de efecto.
 
 ---

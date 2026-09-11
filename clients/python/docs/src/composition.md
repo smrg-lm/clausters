@@ -551,6 +551,14 @@ Which one applies follows from the source's width -- `Track.channels` and
 `Multitrack.channels`, both fields of the document, because the width decides
 the mix and reopening a piece has to give back the mix it was left with.
 
+A strip writes an output bus of its own and a **send** carries it onward at a
+gain -- one node between a track and the master. That is what lets a meter mean
+something: every track writes into the master's mix, so a meter there would read
+the sum and call it the track. A meter is a **slot** on a strip, so a piece
+nobody is looking at holds none, and each one writes one control bus per channel
+-- one number a block, with the fall and the peak hold applied on the server, so
+two clients cannot draw two different falls off one signal.
+
 And the transport plays the piece rather than a client stepping it: each reader
 reads the position the engine publishes, so moving a box is one `set` and a
 locate is no message at all.

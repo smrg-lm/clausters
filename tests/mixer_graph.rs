@@ -175,6 +175,27 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
     (900, 910, 920, 930)
 }
 
+/// Adds a meter to a strip's meter slot, writing channel 0 to `bus` and
+/// channel 1 to the one after it.
+fn meter(s: &mut NrtSession, instance: i32, id: i32, bus: i32, hold: f32) {
+    send(
+        s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(instance),
+            OscType::String(mixer::METER_SLOT.into()),
+            OscType::Int(id),
+            OscType::String(mixer::METER_OUT0.into()),
+            OscType::Float(bus as f32),
+            OscType::String(mixer::METER_OUT1.into()),
+            OscType::Float((bus + 1) as f32),
+            OscType::String(mixer::METER_HOLD_PORT.into()),
+            OscType::Float(hold),
+        ],
+    );
+    s.settle_for(4);
+}
+
 /// **A piece is one `/graph_new`, and everything else is added to what is
 /// already sounding.** Four levels of nesting — piece, track, clip, reader —
 /// and the sound comes out of the hardware bus at the end of them.
@@ -426,25 +447,10 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
     dc(&mut s, 0, 48_000, 1.0);
     one_box(&mut s, (8 * BLOCK) as f32, 0.0);
 
-    // A meter on the hardware bus the piece writes to, and its mark beside it.
-    for (id, bus, hold) in [(960, 110, 0.0f32), (961, 111, mixer::METER_HOLD)] {
-        send(
-            &mut s,
-            "/synth_new",
-            vec![
-                OscType::String(mixer::meter_name()),
-                OscType::Int(id),
-                OscType::Int(3), // after the piece, so it reads what was written
-                OscType::Int(900),
-                OscType::String("in0".into()),
-                OscType::Float(0.0),
-                OscType::String("out".into()),
-                OscType::Float(bus as f32),
-                OscType::String("hold".into()),
-                OscType::Float(hold),
-            ],
-        );
-    }
+    // The master's own level, and its mark beside it: two instances of one
+    // slot, which is what makes the mark cost nothing when nobody looks.
+    meter(&mut s, 900, 960, 110, 0.0);
+    meter(&mut s, 900, 961, 112, mixer::METER_HOLD);
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
@@ -453,11 +459,15 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
     let _sounding = peaks(&mut s, 6);
     let loud = bus_value(&mut s, 110);
     assert!(loud > 0.2, "the meter read the level: {loud}");
+    assert!(
+        bus_value(&mut s, 111) > 0.2,
+        "and the second channel has a bus of its own"
+    );
 
     // Past the box, the level falls and the mark does not.
     let _silence = peaks(&mut s, 12);
     let fallen = bus_value(&mut s, 110);
-    let held = bus_value(&mut s, 111);
+    let held = bus_value(&mut s, 112);
     assert!(
         fallen < loud,
         "it falls once the box is over: {fallen} < {loud}"
@@ -465,6 +475,84 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
     assert!(
         held >= fallen,
         "and the mark is still up there: {held} >= {fallen}"
+    );
+}
+
+/// **A track's meter reads that track and not the piece.** Every track writes
+/// into the master's mix bus, so a meter there would read the sum and call it
+/// the track -- which is why a strip writes its own `post` bus and a send
+/// carries it the rest of the way.
+#[test]
+fn a_track_is_metered_on_its_own_output() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    let (piece, loud_track, ..) = one_box(&mut s, (16 * BLOCK) as f32, 0.0);
+
+    // A second track with nothing on it, beside the one that sounds.
+    let quiet_track = 911;
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(piece),
+            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::Int(quiet_track),
+        ],
+    );
+    meter(&mut s, loud_track, 970, 120, 0.0);
+    meter(&mut s, quiet_track, 971, 122, 0.0);
+    meter(&mut s, piece, 972, 124, 0.0);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _sounding = peaks(&mut s, 8);
+    assert!(
+        bus_value(&mut s, 120) > 0.2,
+        "the track that sounds reads its own level"
+    );
+    assert!(
+        bus_value(&mut s, 122) < 1e-3,
+        "the track that does not sound reads nothing, not the piece"
+    );
+    assert!(
+        bus_value(&mut s, 124) > 0.2,
+        "and the master reads the sum, which is its own output"
+    );
+}
+
+/// **A track's output is a send**, so turning it down turns the track down in
+/// the master without touching the fader the automation writes.
+#[test]
+fn a_strips_output_is_a_send_with_a_gain() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    let (_, track, ..) = one_box(&mut s, (16 * BLOCK) as f32, 0.0);
+    meter(&mut s, track, 980, 130, 0.0);
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let (open, _) = peaks(&mut s, 6);
+    let metered = bus_value(&mut s, 130);
+
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::SEND_GAIN.into()),
+            OscType::Float(0.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 8);
+    let (shut, _) = peaks(&mut s, 4);
+    assert!(open > 0.2 && shut < 1e-3, "shut: {open} -> {shut}");
+    assert!(
+        bus_value(&mut s, 130) > 0.2 * metered,
+        "and the track still reads its own level, which is before the send"
     );
 }
 

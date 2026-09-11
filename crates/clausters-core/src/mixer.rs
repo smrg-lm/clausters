@@ -110,6 +110,35 @@ pub const FX_SLOT: &str = "fx";
 pub const OUT_BUS: &str = "out";
 /// The bus a strip mixes its sources on, private to each instance.
 pub const MIX_BUS: &str = "mix";
+/// The bus a strip **writes**, private to each instance: what this strip alone
+/// sounds like, after its own fader.
+///
+/// A strip could write straight into whatever it feeds, and until something
+/// wanted to *listen to one strip* that was enough. A meter is that something:
+/// every track writes into the master's mix bus, so a meter there would read
+/// the whole piece and call it the track. So the output has a place of its own
+/// and what leaves it is a [`send_def`] -- one node per strip, which is also
+/// exactly the shape an extra send wants.
+pub const POST_BUS: &str = "post";
+/// The port a meter's first channel is told to write to. A port and not a
+/// private bus: a host reads the level, so the host says where it lands.
+pub const METER_OUT0: &str = "meter/out0";
+/// The port a meter's second channel is told to write to.
+pub const METER_OUT1: &str = "meter/out1";
+/// The port a meter's fall is set on, in decibels per second.
+pub const METER_DECAY_PORT: &str = "meter/decay";
+/// The port a meter's peak hold is set on, in seconds.
+pub const METER_HOLD_PORT: &str = "meter/hold";
+/// The port a strip's output gain is set on: unity is the ordinary wire to
+/// whatever the strip feeds.
+pub const SEND_GAIN: &str = "send/gain";
+
+/// The slot a strip's meters fill.
+///
+/// A slot and not a member, so a piece nobody is looking at costs no meters at
+/// all -- and so both halves of what a meter shows (the level, and the mark
+/// that waits) are two instances of one def rather than a second def.
+pub const METER_SLOT: &str = "meters";
 
 /// The widths a strip is written for. Past stereo is a downmix table and a
 /// decision about which one, and it is refused rather than guessed.
@@ -120,9 +149,14 @@ pub fn reader_name() -> String {
     format!("{PREFIX}.reader")
 }
 
-/// The name of the meter def: what a strip's output reads as.
-pub fn meter_name() -> String {
-    format!("{PREFIX}.meter")
+/// The name of the meter def for a strip of `channels`.
+pub fn meter_name(channels: usize) -> String {
+    format!("{PREFIX}.meter.{channels}")
+}
+
+/// The name of the send def for `channels`.
+pub fn send_name(channels: usize) -> String {
+    format!("{PREFIX}.send.{channels}")
 }
 
 /// The name of the curve def: what makes an automation a control.
@@ -271,35 +305,73 @@ pub fn curve_def() -> Value {
     })
 }
 
-/// **What a strip's output reads as**: one channel in, one control bus out,
-/// with the ballistics that make a level legible.
+/// **What a strip's output reads as**: `channels` channels in, one control bus
+/// out per channel, with the ballistics that make a level legible.
 ///
 /// A meter is **one number a block**, which is exactly what a control bus
 /// carries — so a metered strip costs one node and one bus per channel, and a
 /// host reads a *range* of buses rather than one per message. A finer answer
 /// would be samples nothing can read.
 ///
-/// Two of these give both halves of what a meter shows: one with no hold is the
-/// level, one with [`METER_HOLD`] is the mark that waits to be read. The
-/// ballistics are applied here rather than by whoever draws, so two clients
-/// cannot draw two different falls off one signal.
-pub fn meter_def() -> Value {
-    json!({
-        "name": meter_name(),
-        "controls": [
-            control("in0", 0.0),
-            control(OUT_BUS, 0.0),
-            control("decay", METER_DECAY),
-            control("hold", 0.0),
-        ],
-        "ugens": [
-            {"kind": "In", "inputs": [{"control": 0}]},
-            {"kind": "Meter", "inputs": [
-                {"ugen": 0}, {"control": 2}, {"control": 3}
-            ]},
-            {"kind": "OutCtl", "inputs": [{"control": 1}, {"ugen": 1}]}
-        ]
-    })
+/// It is written by width rather than per channel because it is a **slot**
+/// member, and a slot names one def: every instance of it is wired the same
+/// way, so one instance has to cover the strip's whole width. Two of them give
+/// both halves of what a meter shows: one with no hold is the level, one with
+/// [`METER_HOLD`] is the mark that waits to be read. The ballistics are applied
+/// here rather than by whoever draws, so two clients cannot draw two different
+/// falls off one signal.
+pub fn meter_def(channels: usize) -> Result<Value, String> {
+    check(channels, "meter")?;
+    let controls = vec![
+        control("in0", 0.0),
+        control("in1", 0.0),
+        control("out0", 0.0),
+        control("out1", 0.0),
+        control("decay", METER_DECAY),
+        control("hold", 0.0),
+    ];
+    let mut ugens = Vec::new();
+    for channel in 0..channels {
+        let read = 2 * channel as u32;
+        ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
+        ugens.push(json!({"kind": "Meter", "inputs": [
+            {"ugen": read}, {"control": 4}, {"control": 5}
+        ]}));
+        ugens.push(json!({"kind": "OutCtl", "inputs": [
+            {"control": 2 + channel}, {"ugen": read + 1}
+        ]}));
+    }
+    Ok(json!({ "name": meter_name(channels), "controls": controls, "ugens": ugens }))
+}
+
+/// **What leaves a strip**: the strip's own output bus, at a gain, onto the bus
+/// it feeds.
+///
+/// The wire from a track to the master is one of these at unity, and that is
+/// not a detour: a strip writes to its own [`POST_BUS`] so that a meter has
+/// something to read that is *this strip* (see there), and something has to
+/// carry it the rest of the way. Having a gain on it means an extra send —
+/// post-fader, since `post` is after the fader — is another instance of this
+/// def pointed at another bus, and needs no new mechanism when sends are taken.
+pub fn send_def(channels: usize) -> Result<Value, String> {
+    check(channels, "send")?;
+    let controls = vec![
+        control("in0", 0.0),
+        control("in1", 0.0),
+        control("out0", 0.0),
+        control("out1", 0.0),
+        lagged(GAIN, 1.0),
+    ];
+    let mut ugens = Vec::new();
+    for channel in 0..channels {
+        let read = 2 * channel as u32;
+        ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
+        ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": read}, {"control": 4}]}));
+        ugens.push(json!({"kind": "Out", "inputs": [
+            {"control": 2 + channel}, {"ugen": read + 1}
+        ]}));
+    }
+    Ok(json!({ "name": send_name(channels), "controls": controls, "ugens": ugens }))
 }
 
 /// **The channel strip**: `inputs` channels in, gain and mute, then the image,
@@ -473,6 +545,40 @@ fn strip_wiring(input: &str, inputs: usize, output: &str, outputs: usize) -> Val
     })
 }
 
+/// The buses a meter reads, given the strip's output bus and its width.
+fn meter_wiring(input: &str, channels: usize) -> Value {
+    json!({
+        "in0": format!("{input}:0"),
+        "in1": if channels == 2 { format!("{input}:1") } else { format!("{input}:0") },
+    })
+}
+
+/// The surface a track and the master share: the four controls of their own
+/// strip, the send's gain, and the meter slot's -- which is what lets a host
+/// say **where** it wants the level written without learning a private bus.
+fn surface_of(meter: usize) -> Value {
+    let mut surface = json!({
+        GAIN:  [{"member": 0, "control": GAIN}],
+        PAN:   [{"member": 0, "control": PAN}],
+        WIDTH: [{"member": 0, "control": WIDTH}],
+        MUTE:  [{"member": 0, "control": MUTE}],
+        SEND_GAIN: [{"member": 1, "control": GAIN}],
+    });
+    let object = surface.as_object_mut().expect("an object");
+    for (port, control) in [
+        (METER_OUT0, "out0"),
+        (METER_OUT1, "out1"),
+        (METER_DECAY_PORT, "decay"),
+        (METER_HOLD_PORT, "hold"),
+    ] {
+        object.insert(
+            port.to_string(),
+            json!([{"member": meter, "control": control}]),
+        );
+    }
+    surface
+}
+
 /// **A clip**: readers onto a private bus, then a strip onto the bus the track
 /// hands it.
 ///
@@ -516,43 +622,47 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
     }))
 }
 
-/// **A track**: clips onto a private mix bus, then a strip onto the bus the
-/// master hands it.
+/// **A track**: clips onto a private mix bus, then a strip onto the track's own
+/// output bus, and a send from there onto the bus the master hands it.
 ///
 /// The clips are a slot of **nested graphs**, which is what a clip being a
 /// thing with its own gain, its own image and its own chain amounts to; the
 /// track's own effects are the same slot shape and are empty today.
+///
+/// The strip does not write into the master directly, and the node in between
+/// is what makes a meter mean anything -- see [`POST_BUS`] and [`send_def`].
 pub fn track_graph(channels: usize) -> Result<Value, String> {
     check(channels, "track")?;
     Ok(json!({
         "name": track_name(channels),
         "buses": [
             {"name": MIX_BUS, "rate": "audio", "channels": channels},
+            {"name": POST_BUS, "rate": "audio", "channels": channels},
             {"name": OUT_BUS, "rate": "audio", "channels": channels, "external": true},
         ],
         "members": [
             {"def": strip_name(channels, channels),
-             "controls": strip_wiring(MIX_BUS, channels, OUT_BUS, channels)},
+             "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)},
+            {"def": send_name(channels),
+             "controls": strip_wiring(POST_BUS, channels, OUT_BUS, channels)},
             {"def": clip_name(1, channels), "kind": "graph", "slot": clip_slot(1),
              "controls": {OUT_BUS: MIX_BUS}},
             {"def": clip_name(2, channels), "kind": "graph", "slot": clip_slot(2),
              "controls": {OUT_BUS: MIX_BUS}},
+            {"def": meter_name(channels), "slot": METER_SLOT,
+             "controls": meter_wiring(POST_BUS, channels)},
         ],
-        "surface": {
-            GAIN:  [{"member": 0, "control": GAIN}],
-            PAN:   [{"member": 0, "control": PAN}],
-            WIDTH: [{"member": 0, "control": WIDTH}],
-            MUTE:  [{"member": 0, "control": MUTE}],
-        },
+        "surface": surface_of(4),
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
     }))
 }
 
-/// **The piece**: tracks onto the master bus, then the master strip onto the
-/// hardware.
+/// **The piece**: tracks onto the master bus, then the master strip onto its
+/// own output, and a send from there onto the hardware.
 ///
 /// The master is the same strip as everything else, which is the point -- the
-/// last fader in the chain is not a different kind of thing.
+/// last fader in the chain is not a different kind of thing, and it is metered
+/// by the same slot for the same reason.
 ///
 /// **The tracks are a slot of this** rather than instances beside it, and that
 /// is not a nicety: a track's output is a bus, the master's mix bus is private
@@ -566,19 +676,19 @@ pub fn piece_graph(channels: usize) -> Result<Value, String> {
         "name": piece_name(channels),
         "buses": [
             {"name": MIX_BUS, "rate": "audio", "channels": channels},
+            {"name": POST_BUS, "rate": "audio", "channels": channels},
         ],
         "members": [
             {"def": strip_name(channels, channels),
-             "controls": strip_wiring(MIX_BUS, channels, "OUT", channels)},
+             "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)},
+            {"def": send_name(channels),
+             "controls": strip_wiring(POST_BUS, channels, "OUT", channels)},
             {"def": track_name(channels), "kind": "graph", "slot": TRACK_SLOT,
              "controls": {OUT_BUS: MIX_BUS}},
+            {"def": meter_name(channels), "slot": METER_SLOT,
+             "controls": meter_wiring(POST_BUS, channels)},
         ],
-        "surface": {
-            GAIN:  [{"member": 0, "control": GAIN}],
-            PAN:   [{"member": 0, "control": PAN}],
-            WIDTH: [{"member": 0, "control": WIDTH}],
-            MUTE:  [{"member": 0, "control": MUTE}],
-        },
+        "surface": surface_of(3),
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
     }))
 }
@@ -606,7 +716,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     strips.sort_unstable();
     strips.dedup();
 
-    let mut synth = vec![reader_def(), curve_def(), meter_def()];
+    let mut synth = vec![reader_def(), curve_def()];
     for &(inputs, outputs) in &strips {
         synth.push(strip_def(inputs, outputs)?);
     }
@@ -619,6 +729,10 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     tracks.sort_unstable();
     tracks.dedup();
     for &channels in &tracks {
+        // The meter and the send are per strip width, and every track width
+        // and the master's need theirs before the graph that names them.
+        synth.push(meter_def(channels)?);
+        synth.push(send_def(channels)?);
         for inputs in 1..=MAX_CHANNELS {
             graph.push(clip_graph(inputs, channels)?);
         }
