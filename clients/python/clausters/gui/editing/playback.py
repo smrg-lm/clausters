@@ -171,6 +171,7 @@ class Playback:
             [tuple(pair) for pair in plan.get("widths", [])], plan["channels"])
         self._curve_def = defs.get("curve", "")
         self._meter_hold = float(defs.get("meterHold", 0.0))
+        sent = False
         for family, specs in (("synth", defs.get("synth", [])),
                               ("graph", defs.get("graph", []))):
             for spec in specs:
@@ -178,6 +179,15 @@ class Playback:
                     continue
                 self.server.send_msg("/def_send", family, json.dumps(spec))
                 self._sent.add(spec["name"])
+                sent = True
+        if sent:
+            # **The batch is closed before anything else is sent.** A def send
+            # is asynchronous and answers `/done`, so a `/done` left in flight
+            # is a `/done` the next command that waits for one takes as its
+            # own -- and a buffer alloc that returns before it ran is written
+            # into before it exists. One barrier for the whole batch, and only
+            # when something was actually sent.
+            self.server.sync()
 
     def _sync_tracks(self, planned: list) -> None:
         seen = set()

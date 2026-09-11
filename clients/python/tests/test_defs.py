@@ -240,6 +240,36 @@ def test_group_new_and_graph_build_their_own_message():
     assert iface.sent[-1] == ("/graph_newVoice", [inst.id, voice.id, "freq", 440.0])
 
 
+def test_a_wait_for_done_ignores_another_commands_done():
+    """A ``/done`` names the command it closes, so one left in flight by an
+    earlier async send is not the next wait's to take.
+
+    This is the bug that shape prevents: a def send answers ``/done`` and
+    nobody waited for it, a buffer alloc waits for ``/done`` and takes that
+    one, and the write that follows lands on a buffer the server has not
+    allocated yet -- with no error anywhere to say why."""
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    # The def send's, still in flight, then this command's own.
+    iface.queue_reply("/done", "/def_send", "graph")
+    iface.queue_reply("/done", "/buffer_alloc", 5)
+    addr, args = srv.request("/buffer_alloc", 5, 64, 1, expect=("/done", "/fail"))
+    assert (addr, args[0]) == ("/done", "/buffer_alloc"), \
+        "the wait went past the def send's done and took its own"
+
+
+def test_a_fail_is_reported_to_whoever_is_waiting():
+    """The rule stops at ``/done``: an error still ends the wait whatever
+    command it names, which is what lets a batched write close on one barrier
+    and still raise instead of losing the failure."""
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/fail", "/buffer_setRange", "no buffer allocated at 5")
+    addr, args = srv.request("/server_sync", 1,
+                             expect=("/server_sync.reply", "/fail"))
+    assert (addr, args[0]) == ("/fail", "/buffer_setRange")
+
+
 def test_faustdef_send_waits_for_done_and_raises_on_fail():
     iface = _FakeInterface()
     srv = Server(interface=iface)

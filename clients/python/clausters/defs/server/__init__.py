@@ -87,6 +87,22 @@ __all__ = [
 ]
 
 
+def _answers(addr: str, reply: str, args) -> bool:
+    """Whether a ``/done`` closes **this** command.
+
+    A ``/done`` names the command it is about in its first argument, so one
+    that names another command is another request's and is not this wait's to
+    take. Anything else -- an ordinary reply address, and ``/fail`` -- is
+    matched by address alone, as it always was: an error is **reported to
+    whoever is waiting** rather than filtered, which is what lets a batched
+    write close on one barrier and still raise (see `Server._barrier`).
+    """
+    if reply != "/done":
+        return True
+    named = str(args[0]) if args else ""
+    return not named.startswith("/") or named == addr
+
+
 class Server(ServerQueries, ServerStreams, ServerTransport):
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
@@ -447,6 +463,13 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
                 continue
             raddr, rargs = _osclib.decode(packet)
             log.debug("<- %s %s", raddr, rargs)
+            if expect is not None and raddr in expect and not _answers(addr, raddr, rargs):
+                # Somebody else's completion. A ``/done`` names the command it
+                # closes, and taking one that names another is how a wait
+                # returns before its own command ran -- a buffer written into
+                # before the alloc that was still in flight, and no error
+                # anywhere to say why.
+                continue
             if expect is None or raddr in expect:
                 return raddr, rargs
         raise ReplyTimeout(f"no reply to {addr}")
