@@ -92,10 +92,12 @@ pub struct Box {
 
 /// The key a client's fader is kept under in a track's opaque table.
 ///
-/// The document holds no mixer: a track has `muted` and `soloed` because those
-/// are facts about the piece, and a level is the client's own idea carried in
-/// `config`. Naming the key here is what keeps every client's fader the same
-/// fader.
+/// The key a track's fader was carried under before it was a field.
+///
+/// Kept because a piece written by an older build has it in [`Track::config`],
+/// and [`level_of`] still reads it when the field is at unity -- what a file
+/// said is what a file meant. Nothing writes it any more: the fader is
+/// [`Track::level`].
 pub const LEVEL: &str = "level";
 
 /// The rows a piece draws as, top to bottom.
@@ -329,19 +331,16 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
         };
         track.muted = strip.mute;
         track.soloed = strip.solo;
-        // The fader is the client's key in an opaque table, written over what
-        // is there: a track's config is its instrument and its routing too.
-        // **Only when it moved.** The level defaults to unity for a track that
-        // never named one ([`level_of`]), so writing it unconditionally would
-        // put a key into every config the first time any row was reported and
-        // make a piece that changed nothing look edited.
+        // **Only when it moved.** A track that never named a level sits at
+        // unity, so writing one unconditionally would make a piece that
+        // changed nothing look edited.
         let gain = strip.gain.max(0.0);
         if (gain - level_of(&track)).abs() > f64::EPSILON {
-            if !track.config.0.is_object() {
-                track.config.0 = serde_json::Value::Object(serde_json::Map::new());
-            }
+            track.level = gain;
+            // What an older piece carried in the table is now the field's, and
+            // leaving it would be two answers to one question.
             if let Some(table) = track.config.0.as_object_mut() {
-                table.insert(LEVEL.to_string(), serde_json::Value::from(gain));
+                table.remove(LEVEL);
             }
         }
         tracks.push(track);
@@ -580,8 +579,12 @@ fn active_lane(track: &Track) -> Option<&Lane> {
     track.active_lane().or_else(|| track.lanes.first())
 }
 
-/// The fader out of a track's own table; a track with none is at unity.
-fn level_of(track: &Track) -> f64 {
+/// The fader a track is at: its own field, falling back to the key an older
+/// piece carried it under (see [`LEVEL`]).
+pub fn level_of(track: &Track) -> f64 {
+    if track.level != 1.0 {
+        return track.level;
+    }
     track
         .config
         .0

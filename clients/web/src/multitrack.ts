@@ -456,6 +456,13 @@ export class Track {
      */
     soloed: boolean;
     /**
+     * Where this track's fader is, as a linear gain. A field of its own for the
+     * reason {@link Track.channels} is one: what a piece sounds like is the
+     * piece's, not a key one client reads out of a table it was only meant to
+     * carry.
+     */
+    level: number;
+    /**
      * How wide this track is, in channels. A field of its own rather than a
      * line in {@link Track.config}, because it decides the mix: reopening a
      * piece has to give back the mix it was left with, and both clients have to
@@ -473,6 +480,7 @@ export class Track {
         automation?: Automation[];
         muted?: boolean;
         soloed?: boolean;
+        level?: number;
         channels?: number;
         config?: unknown;
         extra?: Extra;
@@ -484,6 +492,7 @@ export class Track {
         this.automation = fields.automation ?? [];
         this.muted = fields.muted ?? false;
         this.soloed = fields.soloed ?? false;
+        this.level = fields.level ?? 1;
         this.channels = fields.channels ?? 2;
         this.config = fields.config;
         this.extra = fields.extra ?? {};
@@ -514,6 +523,7 @@ export class Track {
         if (this.automation.length) out.automation = this.automation.map((a) => a.write());
         if (this.muted) out.muted = true;
         if (this.soloed) out.soloed = true;
+        if (this.level !== 1) out.level = this.level;
         if (this.channels !== 2) out.channels = this.channels;
         if (this.config !== undefined) out.config = this.config;
         return { ...out, ...this.extra };
@@ -528,10 +538,11 @@ export class Track {
             automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
             muted: Boolean(written.muted),
             soloed: Boolean(written.soloed),
+            level: written.level === undefined ? 1 : num(written.level),
             channels: written.channels === undefined ? 2 : num(written.channels),
             config: written.config,
             extra: rest(written, "id", "name", "lanes", "active", "automation",
-                        "muted", "soloed", "channels", "config"),
+                        "muted", "soloed", "level", "channels", "config"),
         });
     }
 }

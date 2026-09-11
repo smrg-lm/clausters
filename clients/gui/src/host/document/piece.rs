@@ -276,23 +276,18 @@ pub fn read_lanes(
         };
         let (muted, soloed) = (truthy_at(lane, 3), truthy_at(lane, 4));
         let level = f64::from(float_at(lane, 5) as f32);
-        let held = track
-            .config
-            .0
-            .get(picture::LEVEL)
-            .and_then(Value::as_f64)
-            .unwrap_or(1.0);
+        let held = picture::level_of(track);
         if track.muted == muted && track.soloed == soloed && held == level {
             continue;
         }
         track.muted = muted;
         track.soloed = soloed;
-        // The fader is the client's key in an opaque table, so it is written
-        // over what is there rather than replacing it: a track's config is its
-        // instrument and its routing too.
-        let mut config = track.config.0.as_object().cloned().unwrap_or_default();
-        config.insert(picture::LEVEL.into(), json!(level));
-        track.config = clausters_document::Opaque(Value::Object(config));
+        track.level = level;
+        // What an older piece carried in the opaque table is the field's now,
+        // and leaving both would be two answers to one question.
+        if let Some(table) = track.config.0.as_object_mut() {
+            table.remove(picture::LEVEL);
+        }
         changed = true;
     }
     if !changed {
@@ -741,11 +736,7 @@ mod tests {
         };
         assert!(!tracks[0].muted, "the one nobody touched is untouched");
         assert!(tracks[1].muted);
-        assert_eq!(
-            tracks[1].config.0["level"].as_f64(),
-            Some(0.5),
-            "and the fader is in its table"
-        );
+        assert_eq!(tracks[1].level, 0.5, "and the fader is a field of its own");
     }
 
     /// End to end through the crate's own door: the edits this reads apply, and

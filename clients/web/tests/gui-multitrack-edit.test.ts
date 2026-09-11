@@ -313,7 +313,7 @@ test("the strip is the piece's and undoes", () => {
         ]),
     );
     assert.equal(held.track(20)!.muted, true);
-    near(Number((held.track(20)!.config as { level: number }).level), 0.5);
+    near(held.track(20)!.level, 0.5);
     assert.equal(held.track(10)!.muted, false, "the one nobody touched is untouched");
     assert.ok(ed.undo());
     assert.equal(held.track(20)!.muted, false);
@@ -733,7 +733,7 @@ test("the mixer rules reach the plan and a solo silences the rest", () => {
     assert.equal(plan(ed).tracks[0].gain, 1.0, "a track that said nothing is at full");
     assert.equal(plan(ed).tracks[0].mute, 0.0);
 
-    one.config = { level: 0.25 };
+    one.level = 0.25;
     near(plan(ed).tracks[0].gain, 0.25);
 
     one.muted = true;

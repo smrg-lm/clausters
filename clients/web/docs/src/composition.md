@@ -590,6 +590,9 @@ bug and `pan` is one name for both:
 Which one applies follows from the source's width -- `Track.channels` and
 `Multitrack.channels`, both fields of the document, because the width decides
 the mix and reopening a piece has to give back the mix it was left with.
+A track's fader is `Track.level`, a field for the same reason: what a piece
+sounds like is the piece's, not a key one client reads out of a table it was
+only meant to carry.
 
 A strip writes an output bus of its own and a **send** carries it onward at a
 gain -- one node between a track and the master. That is what lets a meter mean

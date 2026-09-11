@@ -261,7 +261,7 @@ def test_the_strip_is_the_pieces_and_undoes():
                       "10", "", 96.0, 0, 0, 1.0,
                       "20", "", 96.0, 1, 0, 0.5])
     assert held.track(20).muted
-    assert held.track(20).config["level"] == pytest.approx(0.5)
+    assert held.track(20).level == pytest.approx(0.5)
     assert not held.track(10).muted, "the one nobody touched is untouched"
     assert ed.undo()
     assert not held.track(20).muted

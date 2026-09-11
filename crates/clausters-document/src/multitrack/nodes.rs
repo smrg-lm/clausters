@@ -242,21 +242,13 @@ fn beat_of(frames: &dyn Fn(f64) -> f64, origin: f64, frame: f64) -> f64 {
     0.5 * (lo + hi)
 }
 
-/// **What a track's fader is at.**
+/// **What a track's fader is at**, as the mixer wants it.
 ///
-/// Read out of [`Track::config`], which is the one key this crate looks inside
-/// an opaque blob for — and it is there because the host's own row reader
-/// already writes it there, so a second place would be a second answer. It
-/// belongs beside [`Track::channels`] as a field of its own for exactly the
-/// reasons that one is, and moving it is a change to the row reader rather than
-/// to this: written down in `PLAN.md` rather than done in passing.
+/// [`Track::level`] is the number and this is only its width: a piece is read
+/// in `f64` because that is what a document says and played in `f32` because
+/// that is what a control is.
 pub fn track_gain(track: &Track) -> f32 {
-    track
-        .config
-        .0
-        .get("level")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(1.0) as f32
+    crate::multitrack::picture::level_of(track) as f32
 }
 
 /// **What silences a track**: its own mute, or somebody else's solo.
@@ -527,15 +519,18 @@ mod tests {
         );
     }
 
-    /// **A track that said nothing about its level is at full.** The knob's
-    /// value is the one key read out of the opaque configuration, because the
-    /// host's row reader already writes it there.
+    /// **A track that said nothing about its level is at full**, and a piece
+    /// written before the fader was a field still plays at the level it was
+    /// saved with.
     #[test]
-    fn a_tracks_fader_is_read_where_the_row_reader_writes_it() {
+    fn a_tracks_fader_is_its_own_field_and_an_old_one_still_reads() {
         let mut p = piece();
         assert_eq!(track_gain(&p.tracks[0]), 1.0);
-        p.tracks[0].config = crate::Opaque(serde_json::json!({"level": 0.25}));
+        p.tracks[0].level = 0.25;
         assert_eq!(track_gain(&p.tracks[0]), 0.25);
+        p.tracks[0].level = 1.0;
+        p.tracks[0].config = crate::Opaque(serde_json::json!({"level": 0.5}));
+        assert_eq!(track_gain(&p.tracks[0]), 0.5);
     }
 }
 

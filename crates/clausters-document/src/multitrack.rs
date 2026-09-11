@@ -157,12 +157,13 @@ fn is_stereo(channels: &usize) -> bool {
     *channels == 2
 }
 
+/// Unity: a playrate that changes nothing, a fader that does nothing.
 fn one() -> f64 {
     1.0
 }
 
-fn is_one(rate: &f64) -> bool {
-    *rate == 1.0
+fn is_one(value: &f64) -> bool {
+    *value == 1.0
 }
 
 impl Content {
@@ -453,6 +454,17 @@ pub struct Track {
     /// was marked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub soloed: bool,
+    /// **Where this track's fader is**, as a linear gain. Unity by default,
+    /// which is where a track that never said otherwise sits.
+    ///
+    /// A field of its own for the reason [`Track::channels`] is one: it decides
+    /// what the piece sounds like, so reopening has to give back the mix it was
+    /// left with, and a key in [`Track::config`] is a thing one client
+    /// interprets and another carries. The mixer's rules on top of it -- what a
+    /// mute does, what somebody else's solo does -- are still nobody's business
+    /// here; what is here is the number.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub level: f64,
     /// **How wide this track is**, in channels.
     ///
     /// A field of its own rather than a line in [`Track::config`], because the
@@ -487,6 +499,7 @@ impl Track {
             automation: Vec::new(),
             muted: false,
             soloed: false,
+            level: one(),
             channels: stereo(),
             config: Opaque::none(),
             extra: Extra::new(),

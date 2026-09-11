@@ -400,6 +400,10 @@ class Track:
     #: Marked as soloed. Whether a solo anywhere silences everything else is the
     #: mixer's rule and not the document's.
     soloed: bool = False
+    #: Where this track's fader is, as a linear gain. A field of its own for
+    #: the reason `channels` is one: what a piece sounds like is the piece's,
+    #: not a key one client reads out of a table it was only meant to carry.
+    level: float = 1.0
     #: How wide this track is, in channels. A field of its own rather than a
     #: line in `config`, because it decides the mix: reopening a piece has to
     #: give back the mix it was left with, and both clients have to write it
@@ -435,6 +439,8 @@ class Track:
             out["muted"] = True
         if self.soloed:
             out["soloed"] = True
+        if self.level != 1.0:
+            out["level"] = self.level
         if self.channels != 2:
             out["channels"] = self.channels
         if self.config is not None:
@@ -445,7 +451,7 @@ class Track:
     @classmethod
     def read(cls, written: dict) -> "Track":
         known = ("id", "name", "lanes", "active", "automation", "muted",
-                 "soloed", "channels", "config")
+                 "soloed", "level", "channels", "config")
         return cls(
             id=int(written["id"]),
             name=written.get("name"),
@@ -454,6 +460,7 @@ class Track:
             automation=[Automation.read(a) for a in written.get("automation", [])],
             muted=bool(written.get("muted", False)),
             soloed=bool(written.get("soloed", False)),
+            level=float(written.get("level", 1.0)),
             channels=int(written.get("channels", 2)),
             config=written.get("config"),
             extra=_rest(written, *known),

@@ -141,13 +141,7 @@ pub fn gain(track: &Track, soloing: bool) -> f64 {
     if track.muted || (soloing && !track.soloed) {
         return 0.0;
     }
-    track
-        .config
-        .0
-        .get("level")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(1.0)
-        .max(0.0)
+    clausters_document::multitrack::picture::level_of(track).max(0.0)
 }
 
 /// What a region reads: the buffer, its shape, where its own zero opens, and
@@ -513,7 +507,7 @@ mod tests {
         assert_eq!(amp_of(&soloed, 20), 1.0);
 
         let mut faded = piece();
-        faded.tracks[0].config = Opaque(serde_json::json!({"level": 0.25}));
+        faded.tracks[0].level = 0.25;
         assert_eq!(amp_of(&faded, 10), 0.25);
 
         // A region's own mute is the region's, and it survives its track being
