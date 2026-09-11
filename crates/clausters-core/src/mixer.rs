@@ -332,7 +332,12 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
     ];
     let mut ugens = Vec::new();
     for channel in 0..channels {
-        let read = 2 * channel as u32;
+        // Three UGens per channel, so the stride is three: the second channel's
+        // `In` is UGen 3, not UGen 2. Getting that wrong does not fail -- every
+        // index is a valid UGen -- it silently meters the wrong node, which is
+        // what a second channel reading a raw sample instead of its own level
+        // looked like.
+        let read = 3 * channel as u32;
         ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
         ugens.push(json!({"kind": "Meter", "inputs": [
             {"ugen": read}, {"control": 4}, {"control": 5}
@@ -364,7 +369,10 @@ pub fn send_def(channels: usize) -> Result<Value, String> {
     ];
     let mut ugens = Vec::new();
     for channel in 0..channels {
-        let read = 2 * channel as u32;
+        // Three UGens per channel, so the stride is three -- see `meter_def`,
+        // which had the same slip: at two, the right channel wrote the bus it
+        // read and never passed through the gain.
+        let read = 3 * channel as u32;
         ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
         ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": read}, {"control": 4}]}));
         ugens.push(json!({"kind": "Out", "inputs": [

@@ -476,6 +476,22 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
         held >= fallen,
         "and the mark is still up there: {held} >= {fallen}"
     );
+
+    // **Every channel is metered, not just the first.** Measured while the
+    // level is falling, because that is where a channel reading its raw
+    // *signal* instead of its meter is told from one that is metered: the
+    // signal is already zero and a meter is on its way down. A centred mono
+    // take is the same amplitude on both sides, so the two buses agree to the
+    // sample.
+    let fallen_right = bus_value(&mut s, 111);
+    assert!(
+        (fallen_right - fallen).abs() < 1e-6,
+        "the right channel is a meter and falls with the left:          {fallen_right} against {fallen}"
+    );
+    assert!(
+        (bus_value(&mut s, 113) - held).abs() < 1e-6,
+        "and so is its mark"
+    );
 }
 
 /// **A track's meter reads that track and not the piece.** Every track writes
@@ -534,7 +550,7 @@ fn a_strips_output_is_a_send_with_a_gain() {
     meter(&mut s, track, 980, 130, 0.0);
     send(&mut s, "/transport_play", vec![]);
     s.settle_for(2);
-    let (open, _) = peaks(&mut s, 6);
+    let (open, open_right) = peaks(&mut s, 6);
     let metered = bus_value(&mut s, 130);
 
     send(
@@ -548,8 +564,15 @@ fn a_strips_output_is_a_send_with_a_gain() {
     );
     s.settle_for(2);
     let _settling = peaks(&mut s, 8);
-    let (shut, _) = peaks(&mut s, 4);
+    let (shut, shut_right) = peaks(&mut s, 4);
     assert!(open > 0.2 && shut < 1e-3, "shut: {open} -> {shut}");
+    // **Both channels**, because a gain that reached only the first would be a
+    // right channel no fader, no mute and no send could ever quiet -- and at
+    // the default gain of one it would sound exactly right.
+    assert!(
+        open_right > 0.2 && shut_right < 1e-3,
+        "and the right channel went through the same gain:          {open_right} -> {shut_right}"
+    );
     assert!(
         bus_value(&mut s, 130) > 0.2 * metered,
         "and the track still reads its own level, which is before the send"
