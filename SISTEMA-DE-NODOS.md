@@ -713,11 +713,20 @@ En este orden, porque cada una se puede probar sola:
    se queda con lo último que hubo ahí, así que una curva borrada seguiría
    manejando el control con el último valor que dijo.
 
-6. **Los canales y el vúmetro** (§6): el ancho de pista como campo del documento
-   (hecho en la fase 3), las reglas de mezcla y la balística del vúmetro en
-   `clausters-core`, el `meter` de *n* canales en el header (`G35.14`). El
-   vúmetro necesita un UGen que todavía no existe: ataque instantáneo, caída
-   declarada en dB/s y retención de pico.
+6. 🔶 **Los canales y el vúmetro** (§6) — *parcial, 2026-09-10*. Hecho: el ancho
+   de pista como campo del documento (fase 3), las reglas de mezcla en el plan
+   (fase 3), la **balística** en `clausters_core::measure::Ballistics`, el UGen
+   `Meter` y el def `mt.meter`. Un vúmetro es **un número por bloque**, que es
+   justamente lo que lleva un bus de control, así que una pista medida cuesta un
+   nodo y un bus por canal y el host lee un *rango* de buses.
+
+   **Falta el cableado y el dibujo**, y el cableado es una decisión: el strip de
+   una pista escribe directo en el bus de mezcla de la **pieza**, donde escriben
+   todas las demás, así que un vúmetro ahí leería la suma. Hace falta un bus
+   `post` privado de la pista que el strip escriba y los vúmetros lean, más un
+   nodo que copie `post` a `mix` — un nodo más por pista, y es la misma forma que
+   va a querer un send pre/post fader, así que conviene tomarlo con los sends.
+   El dibujo es `G35.14`.
 7. **`mt.fx` de verdad**, cuando exista una especificación de efecto.
 
 ---

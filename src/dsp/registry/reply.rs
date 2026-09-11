@@ -6,6 +6,24 @@
 use super::*;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
+    // --- the meter: a level with the ballistics a person can read
+    //     (`dsp::measure`); one number a block, which is what a control bus
+    //     carries. ---
+    desc(
+        "Meter",
+        Fixed(3),
+        &[
+            inp("signal", 0.0),
+            inp_opt("decay", 20.0),
+            inp_opt("hold", 0.0),
+        ],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(crate::dsp::measure::Meter::new()),
+    ),
     // --- side-effect UGens: reply/observe, no `Out` required. Control or
     //     audio rate; their output is silence (SendTrig/SendReply) or the
     //     polled signal passed through (Poll). ---

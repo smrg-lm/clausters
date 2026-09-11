@@ -412,3 +412,77 @@ fn a_curve_on_a_bus_drives_a_port() {
         "the hand has the fader back once the curve is unmapped"
     );
 }
+
+/// **A meter reads a level the way a person does**: up at once, down at a
+/// declared rate, and a peak that stays put long enough to be seen.
+///
+/// Rendered rather than unit-tested, because what has to be true is that the
+/// def compiles, the UGen runs at the engine's own rate and the value lands on
+/// a control bus a host can read as a range.
+#[test]
+fn a_meter_writes_a_readable_level_to_a_control_bus() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    one_box(&mut s, (8 * BLOCK) as f32, 0.0);
+
+    // A meter on the hardware bus the piece writes to, and its mark beside it.
+    for (id, bus, hold) in [(960, 110, 0.0f32), (961, 111, mixer::METER_HOLD)] {
+        send(
+            &mut s,
+            "/synth_new",
+            vec![
+                OscType::String(mixer::meter_name()),
+                OscType::Int(id),
+                OscType::Int(3), // after the piece, so it reads what was written
+                OscType::Int(900),
+                OscType::String("in0".into()),
+                OscType::Float(0.0),
+                OscType::String("out".into()),
+                OscType::Float(bus as f32),
+                OscType::String("hold".into()),
+                OscType::Float(hold),
+            ],
+        );
+    }
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _sounding = peaks(&mut s, 6);
+    let loud = bus_value(&mut s, 110);
+    assert!(loud > 0.2, "the meter read the level: {loud}");
+
+    // Past the box, the level falls and the mark does not.
+    let _silence = peaks(&mut s, 12);
+    let fallen = bus_value(&mut s, 110);
+    let held = bus_value(&mut s, 111);
+    assert!(
+        fallen < loud,
+        "it falls once the box is over: {fallen} < {loud}"
+    );
+    assert!(
+        held >= fallen,
+        "and the mark is still up there: {held} >= {fallen}"
+    );
+}
+
+/// One control bus's value, over the wire.
+fn bus_value(s: &mut NrtSession, index: i32) -> f32 {
+    send(s, "/bus_get", vec![OscType::Int(index)]);
+    let mut buf = vec![0u8; 1 << 16];
+    for _ in 0..64 {
+        while let Some(len) = s.poll_into(&mut buf) {
+            if let Ok(clausters::rosc::OscPacket::Message(m)) =
+                clausters::osc::decode_packet(&buf[..len])
+                && m.addr == "/bus_get.reply"
+                && let Some(OscType::Float(v)) = m.args.last()
+            {
+                return *v;
+            }
+        }
+        s.settle();
+    }
+    panic!("the bus never answered")
+}

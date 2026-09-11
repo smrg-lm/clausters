@@ -57,6 +57,7 @@ pub mod lag;
 pub mod line;
 #[cfg(feature = "synth")]
 pub mod local;
+pub mod measure;
 #[cfg(feature = "synth")]
 pub mod nodectl;
 #[cfg(feature = "synth")]

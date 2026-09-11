@@ -244,3 +244,127 @@ mod stats_tests {
         assert_eq!(channel_stats(&[], 2, 0), (0.0, 0.0)); // no samples
     }
 }
+
+/// **A meter's ballistics**: instant attack, a declared fall, and a peak that
+/// stays put long enough to be read.
+///
+/// A meter that drew the raw peak of each block would be unreadable: it
+/// flickers, and a transient shows for one frame of the screen or none at all.
+/// Every meter anybody has ever read answers the same three rules instead, and
+/// they are here rather than in a drawing routine because two clients drawing
+/// two different falls off one signal is two answers to a question that has one.
+///
+/// - **The attack is instantaneous.** A meter that smoothed its way up would
+///   under-read exactly the thing it exists to catch.
+/// - **The fall is a fixed number of decibels per second**, so the slope on
+///   screen is the same whatever the level — which is what makes the picture
+///   readable as a rate rather than as a shape.
+/// - **A peak is held** for a declared time and then falls at the same rate, so
+///   the mark is still there when an eye gets to it.
+///
+/// One state per channel; [`Ballistics::tick`] takes the peak of a block and
+/// the seconds it lasted, and answers what to show. It allocates nothing and
+/// branches on nothing but its own state, so the audio thread may call it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Ballistics {
+    /// What is shown now, in linear amplitude.
+    level: f32,
+    /// How long the current value has been held, in seconds.
+    held: f32,
+}
+
+impl Ballistics {
+    /// A meter showing silence.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// What is shown now.
+    pub fn level(self) -> f32 {
+        self.level
+    }
+
+    /// Advances by `seconds` against a block whose peak was `peak`.
+    ///
+    /// `decay_db` is the fall in decibels per second (the field's value for a
+    /// peak meter is about 20) and `hold` the seconds a new peak stays before
+    /// it begins to fall. `hold` of zero is the ordinary meter; a second or two
+    /// is the mark that waits to be read.
+    pub fn tick(&mut self, peak: f32, seconds: f32, decay_db: f32, hold: f32) -> f32 {
+        let peak = peak.abs();
+        if peak >= self.level {
+            // Instantaneous attack, and the hold starts again from here.
+            self.level = peak;
+            self.held = 0.0;
+            return self.level;
+        }
+        self.held += seconds;
+        if self.held < hold {
+            return self.level;
+        }
+        // `x dB` of fall is a factor of `10^(-x/20)`; over `seconds` at
+        // `decay_db` per second that is `10^(-decay_db * seconds / 20)`.
+        let factor = powf10(-decay_db * seconds / 20.0);
+        self.level = (self.level * factor).max(peak);
+        self.level
+    }
+}
+
+/// `10^x`, written as `exp(x · ln 10)` so the constant is visible rather than
+/// hidden inside a `powf` whose base nobody can see.
+#[inline]
+fn powf10(x: f32) -> f32 {
+    (x * core::f32::consts::LN_10).exp()
+}
+
+#[cfg(test)]
+mod ballistics_tests {
+    use super::*;
+
+    /// **It rises at once and falls at the rate it was given.** Twenty decibels
+    /// a second means a tenth of the amplitude after one second, whatever the
+    /// level was.
+    #[test]
+    fn it_attacks_instantly_and_falls_at_the_declared_rate() {
+        let mut meter = Ballistics::new();
+        assert_eq!(meter.tick(0.8, 0.001, 20.0, 0.0), 0.8, "up in one block");
+        // A second of silence at 20 dB/s.
+        for _ in 0..100 {
+            meter.tick(0.0, 0.01, 20.0, 0.0);
+        }
+        let after = meter.level();
+        assert!(
+            (after - 0.08).abs() < 0.005,
+            "a tenth of the amplitude after a second: {after}"
+        );
+    }
+
+    /// **A peak stays put long enough to be read**, and then falls like
+    /// everything else — which is the difference between a mark and a flicker.
+    #[test]
+    fn a_held_peak_waits_before_it_falls() {
+        let mut meter = Ballistics::new();
+        meter.tick(1.0, 0.01, 20.0, 1.0);
+        for _ in 0..50 {
+            meter.tick(0.0, 0.01, 20.0, 1.0);
+        }
+        assert_eq!(meter.level(), 1.0, "half a second in, it has not moved");
+        for _ in 0..100 {
+            meter.tick(0.0, 0.01, 20.0, 1.0);
+        }
+        assert!(meter.level() < 1.0, "past the hold it falls");
+    }
+
+    /// **A louder block wins immediately, however far the meter had fallen** —
+    /// the attack is the one rule with no exception.
+    #[test]
+    fn a_new_peak_takes_it_back_at_once() {
+        let mut meter = Ballistics::new();
+        meter.tick(1.0, 0.01, 20.0, 0.0);
+        for _ in 0..200 {
+            meter.tick(0.0, 0.01, 20.0, 0.0);
+        }
+        assert!(meter.level() < 0.2);
+        assert_eq!(meter.tick(0.5, 0.01, 20.0, 0.0), 0.5);
+    }
+}

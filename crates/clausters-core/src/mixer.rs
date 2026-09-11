@@ -38,11 +38,6 @@
 //! cannot be checked. The slot is a nested-graph slot, so an effect may itself
 //! be a GraphDef and a compound effect needs no new mechanism.
 //!
-//! **The meter**: it wants an instant attack, a declared decay in dB/s and a
-//! peak hold, and no UGen here does that yet — a `Lag` decays exponentially,
-//! which is not the same picture. The def is the meter's, not the strip's, so
-//! adding it later does not disturb the strip.
-//!
 //! **Widths past stereo**: [`strip_def`] is written for 1 and 2 channels, which
 //! is what a track declares today. The general N→M downmix (BS.775 and its
 //! relatives) is named where the widths are checked and refused.
@@ -123,6 +118,11 @@ pub const MAX_CHANNELS: usize = 2;
 /// The name of the reader def: what one channel of one box sounds as.
 pub fn reader_name() -> String {
     format!("{PREFIX}.reader")
+}
+
+/// The name of the meter def: what a strip's output reads as.
+pub fn meter_name() -> String {
+    format!("{PREFIX}.meter")
 }
 
 /// The name of the curve def: what makes an automation a control.
@@ -219,6 +219,15 @@ pub fn reader_def() -> Value {
     })
 }
 
+/// The fall of a meter, in decibels per second. The field's value for a peak
+/// meter, and a number rather than a taste: the slope on screen is what makes
+/// the picture readable as a *rate*.
+pub const METER_DECAY: f32 = 20.0;
+
+/// How long a peak mark stays put before it begins to fall, in seconds. Long
+/// enough that an eye arriving late still finds it.
+pub const METER_HOLD: f32 = 1.5;
+
 /// How many frames one sample of a curve's table covers.
 ///
 /// One block at the usual rate. A curve is read once a block anyway --
@@ -258,6 +267,37 @@ pub fn curve_def() -> Value {
                 {"control": 1}, {"const": 0.0}, {"ugen": 1}, {"const": 0.0}
             ]},
             {"kind": "OutCtl", "inputs": [{"control": 0}, {"ugen": 2}]}
+        ]
+    })
+}
+
+/// **What a strip's output reads as**: one channel in, one control bus out,
+/// with the ballistics that make a level legible.
+///
+/// A meter is **one number a block**, which is exactly what a control bus
+/// carries — so a metered strip costs one node and one bus per channel, and a
+/// host reads a *range* of buses rather than one per message. A finer answer
+/// would be samples nothing can read.
+///
+/// Two of these give both halves of what a meter shows: one with no hold is the
+/// level, one with [`METER_HOLD`] is the mark that waits to be read. The
+/// ballistics are applied here rather than by whoever draws, so two clients
+/// cannot draw two different falls off one signal.
+pub fn meter_def() -> Value {
+    json!({
+        "name": meter_name(),
+        "controls": [
+            control("in0", 0.0),
+            control(OUT_BUS, 0.0),
+            control("decay", METER_DECAY),
+            control("hold", 0.0),
+        ],
+        "ugens": [
+            {"kind": "In", "inputs": [{"control": 0}]},
+            {"kind": "Meter", "inputs": [
+                {"ugen": 0}, {"control": 2}, {"control": 3}
+            ]},
+            {"kind": "OutCtl", "inputs": [{"control": 1}, {"ugen": 1}]}
         ]
     })
 }
@@ -566,7 +606,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     strips.sort_unstable();
     strips.dedup();
 
-    let mut synth = vec![reader_def(), curve_def()];
+    let mut synth = vec![reader_def(), curve_def(), meter_def()];
     for &(inputs, outputs) in &strips {
         synth.push(strip_def(inputs, outputs)?);
     }

@@ -2113,6 +2113,35 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A meter's ballistics were nobody's, so a level had no readable shape**
+  *(2026-09-10, with the node system)*. A picture of the raw block peak is
+  unreadable: it flickers, and a transient shows for one frame of the screen or
+  for none. Every meter anybody has ever read answers three rules instead --
+  instantaneous attack, a fall of a fixed number of decibels per second, and a
+  peak held long enough to be seen -- and those rules are arithmetic, so they
+  are `clausters_core::measure::Ballistics` and there is one of them. Two
+  clients drawing two different falls off one signal would be two answers to a
+  question that has one.
+
+  `Meter(signal, decay, hold)` runs them on the server: one number a block,
+  which is exactly what a control bus carries, so a metered strip costs one node
+  and one bus per channel and a host reads a *range* of buses rather than a
+  message per value. `hold` of 0 is the level and a second or two is the mark
+  that waits to be read, so two instances give both halves of a meter.
+  `mt.meter` is the def that pairs it with `OutCtl`.
+
+- ⬜ **A track's meter has nowhere post-fader to read from** *(found 2026-09-10
+  wiring `mt.meter`)*. A meter is post-fader by default because that is what a
+  hand expects, and a track's strip writes straight into the **piece's** mix
+  bus, which every other track writes into too -- so a meter on it would read
+  the sum. The fix is a `post` bus private to the track that the strip writes
+  and the meters read, plus one node copying `post` into the piece's `mix`: one
+  more node per track, and the same shape a pre/post-fader send will want, so it
+  is worth taking with the sends rather than alone. Until then the def and its
+  ballistics exist and are tested against a render, and nothing instantiates one
+  per track. The other half is `G35.14` in `clients/gui/PLAN.md`: the vertical
+  strip of *n* channels in a track header, which reads that range of buses.
+
 - ✅ **A curve was drawn, edited and saved, and heard by nothing** *(the oldest
   half of `G35.3`/`G35.4`; closed 2026-09-10)*. An automation's target said
   `gain` and the header knob said `gain` and they were two words spelled alike.
