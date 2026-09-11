@@ -786,6 +786,26 @@ pub trait UGen: Send {
         0
     }
 
+    /// **The node is coming back after time it did not see.** Called on every
+    /// UGen of every synth under the transport's group when the transport
+    /// rolls again, and nowhere else.
+    ///
+    /// A transport stop is not a node pause. A paused node is a node holding
+    /// still, and resuming it should find it exactly as it was; a stopped
+    /// transport is a piece that is **not there**, while everything that
+    /// drives it -- the position, the curves writing the buses its ports are
+    /// mapped to -- goes on moving without it. So the state that spans a stop
+    /// is a picture of a moment that has passed, and a smoother that glides
+    /// out of it puts out a value nothing asked for: the click at a box whose
+    /// envelope begins in silence, and the level a meter shows before the
+    /// piece has played a sample.
+    ///
+    /// Only *smoothing* resets -- a state whose whole job is to remember where
+    /// the input was. A filter's memory, a delay line and an oscillator's phase
+    /// are the signal itself and stay. Runs on the audio thread, so it is
+    /// arithmetic and nothing else.
+    fn resume(&mut self) {}
+
     /// Tells the UGen which node it lives in, once, when the node enters the
     /// tree. The only consumer today is `FFT`'s hop-phase stagger, which
     /// derives a deterministic per-instance offset from the id — same id, same

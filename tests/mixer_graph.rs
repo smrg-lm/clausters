@@ -774,3 +774,131 @@ fn a_curve_starts_where_it_says_it_starts() {
         "and it comes up right after"
     );
 }
+
+/// **A stop is not a pause of the numbers.** The transport freezes the piece's
+/// subtree, so every smoother in it is starved of time and keeps the value it
+/// had when the music stopped -- while the curve that drives it, which is not
+/// in that subtree, goes on writing wherever the position now is. Play again
+/// and the strip glides from the old value to the new one over the lag, which
+/// is a burst of whatever the box holds at a level nothing asked for: the click
+/// at a box that begins in silence.
+#[test]
+fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 0.8);
+    let (_piece, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+
+    // A curve flat at unity, then flat at zero: the envelope's first point
+    // dragged to the floor while the transport stands still.
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(1), OscType::Int(4), OscType::Int(1)],
+    );
+    s.settle_for(4);
+    for i in 0..4 {
+        send(
+            &mut s,
+            "/buffer_set",
+            vec![OscType::Int(1), OscType::Int(i), OscType::Float(1.0)],
+        );
+    }
+    s.settle_for(4);
+    let bus = 100;
+    send(
+        &mut s,
+        "/synth_new",
+        vec![
+            OscType::String(mixer::curve_name()),
+            OscType::Int(950),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("out".into()),
+            OscType::Float(bus as f32),
+            OscType::String(mixer::BUF.into()),
+            OscType::Float(1.0),
+            OscType::String(mixer::AT.into()),
+            OscType::Float(0.0),
+            OscType::String("step".into()),
+            OscType::Float(BLOCK as f32),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(clip),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(bus),
+        ],
+    );
+    s.settle_for(4);
+
+    // It played once at unity.
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let (heard, _) = peaks(&mut s, 8);
+    assert!(heard > 0.5, "it played at unity first: {heard}");
+
+    // Stopped, the envelope's first point goes to zero, and the piece rewinds.
+    send(&mut s, "/transport_stop", vec![]);
+    s.settle_for(2);
+    for i in 0..4 {
+        send(
+            &mut s,
+            "/buffer_set",
+            vec![OscType::Int(1), OscType::Int(i), OscType::Float(0.0)],
+        );
+    }
+    send(&mut s, "/transport_locate", vec![OscType::Float(0.0)]);
+    s.settle_for(4);
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let (left, _) = peaks(&mut s, 4);
+    assert!(
+        left < 1e-4,
+        "a box whose envelope says zero is silent from the first sample: {left}"
+    );
+}
+
+/// And the same is true of what the meter says. A held peak means "the loudest
+/// thing lately"; lately ended when the transport did, so a meter thawed with
+/// the last pass's mark still up draws a level the piece has not played a
+/// sample of.
+#[test]
+fn a_thawed_meter_does_not_report_the_pass_before_it() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    // The box is one block long, so a rewind puts the piece in front of
+    // silence with the loud pass still in the meter's memory.
+    let (_piece, track, ..) = one_box(&mut s, BLOCK as f32, 0.0);
+    meter(&mut s, track, 970, 120, mixer::METER_HOLD);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _sounding = peaks(&mut s, 8);
+    assert!(bus_value(&mut s, 120) > 0.2, "it read the loud pass");
+
+    send(&mut s, "/transport_stop", vec![]);
+    s.settle_for(2);
+    // Past the box, where there is nothing to hear.
+    send(
+        &mut s,
+        "/transport_locate",
+        vec![OscType::Float((8 * BLOCK) as f32 / SR as f32)],
+    );
+    s.settle_for(2);
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _silent = peaks(&mut s, 4);
+    assert!(
+        bus_value(&mut s, 120) < 1e-3,
+        "and it reads the silence it is playing now: {}",
+        bus_value(&mut s, 120)
+    );
+}

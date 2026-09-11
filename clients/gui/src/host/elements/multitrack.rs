@@ -1591,8 +1591,23 @@ impl Element for Multitrack {
                 true
             }
             "clips" => {
+                // **A correction does not empty the hand.** The list is
+                // replaced whole, so the indices the selection holds mean
+                // nothing afterwards -- but the *names* do, and the boxes are
+                // the same boxes. Dropping it made a split unjoinable: the
+                // client answers a minted name with the whole picture, that
+                // picture arrives between the cut and the `j`, and the two
+                // halves the hand was still holding were let go on the way.
+                let held: Vec<String> = self
+                    .selected
+                    .iter()
+                    .filter_map(|i| self.clips.get(*i).map(|c| c.name.clone()))
+                    .collect();
                 self.clips = parse_clips(&parse::as_array_props("clips", v));
-                self.selected.clear();
+                self.selected = held
+                    .iter()
+                    .filter_map(|name| self.clips.iter().position(|c| &c.name == name))
+                    .collect();
                 true
             }
             // **The track automations**: rows of their own under the lanes
@@ -1629,6 +1644,18 @@ impl Element for Multitrack {
             }
             "loops" => {
                 self.loops = names_of(v);
+                true
+            }
+            // **Where each track's level is read from.** Set like every other
+            // list here, and it has to be: the buses are allocated when a track
+            // reaches the server, so a track made *after* the window opened --
+            // a double click on the header -- names buses this element was
+            // never built with. Read only at construction, its strip never
+            // appeared, and since the strip's width is what the header lays the
+            // name out against, the name spread over the space the meters
+            // should have had.
+            "meters" => {
+                self.meters = parse_meters(&parse::as_array_props("meters", v));
                 true
             }
             "gap" => {
@@ -2485,6 +2512,22 @@ mod tests {
         assert!(
             mt.live_header(&mt.lanes[1], &ctx).meters.is_empty(),
             "a track with no meter draws no strip"
+        );
+
+        // **And the prop is set, not only built with.** A track's buses are
+        // allocated when the track reaches the server, so one made after the
+        // window opened -- a double click on the header -- names buses this
+        // element never saw. Dropped, its strip never appeared and the name
+        // spread over the space the strip should have taken.
+        let mut mt = mt;
+        assert!(mt.set(
+            "meters",
+            &Value::from(r#"["one", 10, 12, 2, "two", 10, 12, 2]"#)
+        ));
+        assert_eq!(
+            mt.live_header(&mt.lanes[1], &ctx).meters,
+            vec![(1.0, 1.0), (0.0, 0.0)],
+            "the track that was told about later has its strip"
         );
     }
 
@@ -3646,6 +3689,33 @@ mod tests {
         assert_eq!(mt.clips.len(), 2);
         assert_eq!(mt.clips[0].place.dur, 500.0);
         assert_eq!(mt.clips[0].place.offset, 0.0);
+    }
+
+    /// **A correction does not empty the hand.** The client answers a name the
+    /// host minted with the whole picture, so a `clips` payload arrives right
+    /// after a split -- between the cut and the `j` that would put it back.
+    /// Clearing the selection there let the two halves go, and a join had
+    /// nothing to join.
+    #[test]
+    fn a_clips_correction_leaves_the_selection_where_it_was() {
+        let mut mt = piece();
+        mt.selected = vec![0, 1];
+        assert!(mt.set(
+            "clips",
+            &Value::from(r#"["b", "tone", 500, 500, 0, "", 0, "a", "noise", 0, 500, 0, "", 0]"#)
+        ));
+        assert_eq!(
+            mt.selected
+                .iter()
+                .map(|i| mt.clips[*i].name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"],
+            "the same boxes, wherever the new list put them"
+        );
+
+        // And a box the picture no longer has is simply not held any more.
+        assert!(mt.set("clips", &Value::from(r#"["a", "noise", 0, 500, 0, "", 0]"#)));
+        assert_eq!(mt.selected, vec![0]);
     }
 
     /// **A cut half is a clip like any other, and it changes lanes.** The old

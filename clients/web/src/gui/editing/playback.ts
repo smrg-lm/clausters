@@ -94,6 +94,43 @@ export type Ports = Record<string, number>;
  * over the same piece, or a step of the history — and {@link Playback.sync}
  * makes what sounds be what is drawn.
  */
+/**
+ * The ports the **hand** writes: everything a curve is not driving.
+ *
+ * A mapped control is taken back by a plain `/node_set` — that is the
+ * protocol's own rule, and the right one, since it is what gives the fader
+ * back when a curve is deleted. It also means that anything sending a value
+ * for a port a curve drives **silences that curve**, and a piece re-syncs on
+ * every edit, so adding a box to a track was enough to stop its automation
+ * from being heard.
+ */
+function handPorts(ports: Ports, curves: PlannedCurve[]): Ports {
+    const driven = new Set(curves.map((curve) => curve.port));
+    return Object.fromEntries(
+        Object.entries(ports).filter(([port]) => !driven.has(port)),
+    );
+}
+
+/**
+ * Whether a clip that is already sounding can be **set** into its new shape,
+ * or has to be made again.
+ *
+ * Two things it cannot be set into. A source of another **width** is another
+ * clip def — a mono take is panned into the track and a stereo one is
+ * balanced — and that is the wiring, not a control. And a clip that changed
+ * **track**: a clip is a slot *inside* a track's group, so the node carries no
+ * track id to update. Setting it would leave it sounding through the track it
+ * came from — that track's fader, that track's mute, that track's automation —
+ * while the picture drew it on the new one.
+ */
+function staysPut(
+    held: [Group, string, Ports, number],
+    slot: string,
+    track: number,
+): boolean {
+    return held[1] === slot && held[3] === track;
+}
+
 export class Playback {
     readonly editor: MultitrackEditor;
     readonly server: Server;
@@ -297,7 +334,7 @@ export class Playback {
                 this.tracks.set(track.track, group);
                 this.meter(track.track, group, track.channels);
             }
-            group.set({ gain: track.gain, mute: track.mute });
+            group.set(handPorts({ gain: track.gain, mute: track.mute }, track.curves));
             await this.syncCurves(group, track.curves);
             await this.syncClips(track.track, group, track.clips);
         }
@@ -337,12 +374,9 @@ export class Playback {
         const seen = new Set<number>();
         for (const clip of planned) {
             seen.add(clip.region);
-            const ports: Ports = { gain: clip.gain, mute: clip.mute };
+            const ports = handPorts({ gain: clip.gain, mute: clip.mute }, clip.curves);
             let held = this.clips.get(clip.region);
-            // A source of another width is another clip def — a mono take is
-            // panned into the track and a stereo one is balanced — so it is the
-            // one change that cannot be a set.
-            if (held !== undefined && held[1] !== clip.slot) {
+            if (held !== undefined && !staysPut(held, clip.slot, id)) {
                 this.freeClip(clip.region);
                 held = undefined;
             }
@@ -427,7 +461,22 @@ export class Playback {
                 ]);
                 continue;
             }
-            const [node, buffer, bus, , port, sent] = held;
+            const [node, buffer, bus, heldOwner, port, sent] = held;
+            if (heldOwner.id !== owner.id) {
+                // **The map belongs to the node, not to the curve.** A clip
+                // that changed track is a new node — a clip is a slot inside
+                // its track's group — and the port that was mapped went away
+                // with the old one, while the curve went on writing a bus
+                // nobody reads. The hand does not send that port either
+                // (`handPorts` leaves it to the curve), so the box came back
+                // at the def's own default.
+                this.server.sendMsg(
+                    "/graph_map",
+                    ["i", owner.id],
+                    ["s", curve.port],
+                    ["i", bus.index],
+                );
+            }
             let table = buffer;
             if (!same(curve.table, sent)) {
                 // A curve whose points moved is a new table, and a table is

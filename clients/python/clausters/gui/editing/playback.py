@@ -343,7 +343,18 @@ class Playback:
                 self.curves[curve["id"]] = (node, buffer, bus, owner,
                                             curve["port"], table)
                 continue
-            node, buffer, bus, _owner, port, sent = held
+            node, buffer, bus, held_owner, port, sent = held
+            if held_owner.id != owner.id:
+                # **The map belongs to the node, not to the curve.** A clip
+                # that changed track is a new node -- a clip is a slot inside
+                # its track's group -- and the port that was mapped went away
+                # with the old one, while the curve went on writing a bus
+                # nobody reads. The hand does not send that port either
+                # (`hand_ports` leaves it to the curve), so the box came back
+                # at the def's own default: a clip dragged to another track
+                # lost its envelope and played flat out.
+                self.server.send_msg("/graph_map", owner.id, curve["port"],
+                                     int(bus.index))
             if table != sent:
                 # A curve whose points moved is a new table, and a table is
                 # replaced rather than written into -- its length changes with

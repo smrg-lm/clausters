@@ -2166,6 +2166,26 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A stop froze the piece's state, and it came back holding it** *(found
+  2026-09-11 by ear in the multitrack example; fixed the same day)*. The
+  transport governs a group by **pausing** it, so while stopped nothing in the
+  piece gets a block -- while everything that drives it goes on moving: the
+  position, and the curve nodes outside the group writing the buses its ports
+  are mapped to. So every smoother inside kept the value the music ended on. On
+  play a strip glided from there to where the automation now was, over the
+  fader's ten milliseconds, which is a burst of whatever the box holds at a
+  level nothing asked for -- measured at 0.56 where the envelope said zero, and
+  fainter the further into the timeline the box sat, since by then more of the
+  glide was over. The same freeze made a meter report the *last* pass's peak
+  before the new one had played a sample. Both are one thing: **a transport
+  stop is not a node pause.** A paused node should resume exactly as it was; a
+  stopped transport is a piece that is not there, so `SynthNode::resume` --
+  called on the governed subtree, and only when it thaws -- lets every smoother
+  forget where it was. Only smoothing: a filter's memory, a delay line and an
+  oscillator's phase are the signal itself and stay. Held by
+  `a_thawed_strip_does_not_glide_down_from_where_it_stopped` and
+  `a_thawed_meter_does_not_report_the_pass_before_it`.
+
 - ⬜ **A track's width is a document field the piece cannot honour yet** *(found
   2026-09-11, reading the meter's channel count against the strip it draws)*.
   `Track.channels` is a field of the document and the plan reports it per

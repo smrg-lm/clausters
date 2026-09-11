@@ -865,3 +865,45 @@ def test_a_metered_track_names_the_buses_the_host_reads():
     assert props(ed)["meters"] == [], "a piece nobody plays has no meters"
     ed.playback = FakePlayback()
     assert props(ed)["meters"] == ["10", 40, 42, 2]
+
+
+def test_a_curve_follows_its_port_when_the_clip_is_made_again():
+    """**The map belongs to the node, not to the curve.**
+
+    A clip that changed track is a new node -- a clip is a slot inside its
+    track's group -- so the port that was mapped went away with the old one.
+    Left unmapped, the curve went on writing a bus nobody reads, and since the
+    hand does not send that port either (a curve owns the port it names), the
+    box came back at the def's own default: a box dragged to another track
+    lost its envelope and played flat out.
+    """
+    from clausters.gui.editing.playback import Playback
+
+    class Server(list):
+        def send_msg(self, *args):
+            self.append(args)
+
+    class Node:
+        def set(self, ports):
+            pass
+
+    class Owner:
+        def __init__(self, id):
+            self.id = id
+
+    class Bus:
+        index = 7
+
+    playback = object.__new__(Playback)
+    playback.server = Server()
+    held, table = Owner(1), [0.0, 1.0]
+    playback.curves = {5: (Node(), "buffer", Bus(), held, "gain", table)}
+    planned = [{"id": 5, "port": "gain", "table": table, "at": 0.0, "step": 64.0}]
+
+    playback._sync_curves(held, planned)
+    assert playback.server == [], "the node that kept its port keeps its map"
+
+    fresh = Owner(2)
+    playback._sync_curves(fresh, planned)
+    assert playback.server == [("/graph_map", 2, "gain", 7)]
+    assert playback.curves[5][3] is fresh, "and the curve knows whose port it is"

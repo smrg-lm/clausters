@@ -4091,6 +4091,38 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **The `meters` prop was read once and never again** *(found 2026-09-11 by
+  eye, a track made by double click showing no strip; fixed the same day)*.
+  `Multitrack::set` had an arm for every list it draws except this one, so the
+  buses reached the element at construction and a later correction was dropped.
+  A track's meter buses are allocated when the track reaches the server, which
+  for a track made in the host is *after* the window opened -- so exactly the
+  tracks that need the prop set were the ones that never got it. It also
+  explained the layout report that came with it: the header lays the name out
+  against what the strip takes off the right edge, so a lane with no meters
+  gave the name the whole band and the name spread over the space the strip
+  should have had. Held by `a_metered_track_declares_its_buses_and_reads_them`.
+
+- ✅ **A correction emptied the hand, so a split could not be joined** *(found
+  2026-09-11 by use; fixed the same day)*. Setting `clips` cleared the
+  selection, which was right while the payload only ever came from the client's
+  own first draw. Since the client answers a name the host minted with the
+  whole picture, that payload now arrives **between** the cut and the `j` that
+  would put it back: the two halves the hand was still holding were let go on
+  the way, and a join had nothing to join. The list is still replaced whole --
+  the indices it holds are meaningless afterwards -- but the *names* are not,
+  and the boxes are the same boxes, so the selection is re-read through them.
+  Held by `a_clips_correction_leaves_the_selection_where_it_was`.
+
+- ✅ **A curve kept pointing at the node its clip used to be** *(found
+  2026-09-11 by ear, a box dragged to another track playing flat out; fixed the
+  same day)*. A clip that changed track is made again rather than set -- a clip
+  is a slot inside its track's group -- and `/graph_map` names a **node**, so
+  the map went away with the old one while the curve went on writing a bus
+  nobody reads. The hand does not send that port either, since a curve owns the
+  port it names, so the box came back at the def's own default. Both clients
+  re-map when the owner they hold is not the owner they are given.
+
 - ✅ **The example's first box makes no sound, and the reason is that a curve is
   not a control yet** *(found by use 2026-09-10; closed 2026-09-11 by
   `G35.3`/`G35.4` and the example's pass onto them)*. `multitrack_audio.py` read

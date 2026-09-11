@@ -1154,6 +1154,15 @@ impl Engine {
                     self.transport_rolling = rolling;
                     if let Some(group) = self.transport_group {
                         self.tree.set_paused(group, !rolling);
+                        if rolling {
+                            // **A piece comes back where the transport is, not
+                            // where it stopped.** The subtree saw none of the
+                            // time that passed, so every smoother in it still
+                            // holds the value the music ended on while the
+                            // curves driving them have long since moved --
+                            // see `SynthNode::resume`.
+                            self.tree.resume_subtree(group);
+                        }
                     }
                 }
                 Cmd::TransportGroup { id } => {

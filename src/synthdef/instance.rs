@@ -206,6 +206,12 @@ impl SynthNode for UGenSynth {
         self.ugens.iter().map(|u| u.latency()).sum()
     }
 
+    fn resume(&mut self) {
+        for u in &mut self.ugens {
+            u.resume();
+        }
+    }
+
     fn set_node_id(&mut self, id: i32) {
         for u in &mut self.ugens {
             u.set_node_id(id);

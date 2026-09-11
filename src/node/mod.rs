@@ -50,6 +50,14 @@ pub trait SynthNode: Send {
         0
     }
 
+    /// **The transport rolled again**: hand every UGen its
+    /// [`resume`](crate::dsp::UGen::resume), which is where a smoother forgets
+    /// the value it was holding when the piece stopped. Called only on the
+    /// subtree the transport governs, and only when it thaws. Default:
+    /// ignored (a Faust synth's smoothing is its own and not reachable from
+    /// here). Runs on the audio thread -- allocation-free.
+    fn resume(&mut self) {}
+
     /// Tells the synth its node id, once, when the engine inserts it into the
     /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
     /// voices, direct embedding). `UGenSynth` forwards it to its UGens — the
@@ -709,6 +717,36 @@ impl NodeTree {
                         i += 1;
                     }
                     None => i += 1,
+                }
+            }
+        }
+        true
+    }
+
+    /// Calls [`SynthNode::resume`] on every synth at or under `group_id`.
+    ///
+    /// The transport's thaw, and the one caller. The same depth-first walk
+    /// [`deep_free`](Self::deep_free) makes, over the same pre-allocated
+    /// stack, so it is RT-safe: it visits nodes and changes nothing about the
+    /// tree.
+    pub fn resume_subtree(&mut self, group_id: i32) -> bool {
+        let Some(idx) = self.find(group_id) else {
+            return false;
+        };
+        if self.group_of(idx).is_none() {
+            return false;
+        }
+        debug_assert!(self.dfs_stack.is_empty());
+        self.dfs_stack.clear();
+        self.dfs_stack.push(idx);
+        while let Some(gidx) = self.dfs_stack.pop() {
+            let mut i = 0;
+            while let Some(&child) = self.group_of(gidx).unwrap().children.get(i) {
+                i += 1;
+                match self.slot_mut(child).map(|s| &mut s.kind) {
+                    Some(NodeKind::Synth { node, .. }) => node.resume(),
+                    Some(NodeKind::Group(_)) => self.dfs_stack.push(child),
+                    None => {}
                 }
             }
         }

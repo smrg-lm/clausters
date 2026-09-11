@@ -43,6 +43,13 @@ impl Default for Meter {
 }
 
 impl UGen for Meter {
+    fn resume(&mut self) {
+        // A held peak is "the loudest thing lately", and lately ended when the
+        // transport did: a meter thawed with the old pass's peak still up
+        // reports a level the piece has not played yet.
+        self.state = Ballistics::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let signal = inputs[0];
         let mut peak = 0.0f32;

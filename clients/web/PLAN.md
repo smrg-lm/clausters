@@ -3054,6 +3054,16 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **Two playback fixes never crossed over, and the page was the older
+  program** *(found 2026-09-11 while porting a third; fixed the same day)*.
+  `handPorts` (a curve owns the port it names, so the hand does not write it)
+  and `staysPut` (a clip that changed track is made again, not set) were
+  written in Python and left there, so the page went on taking automations back
+  with a plain set on every edit and leaving a dragged box sounding through the
+  track it came from. Neither is a platform difference and neither shows in a
+  build: the two files simply drifted. Both are now module functions of the
+  same names, doing the same thing in the same place.
+
 - ✅ **A page spelled with an underscore had no twin at all** *(found and fixed
   2026-09-05)*. `views/tempo_ruler.html` was named the way its script is, and a
   pair is found by path with `_` becoming `-`, so the audit saw two examples

@@ -46,6 +46,12 @@ impl Default for Lag {
 }
 
 impl UGen for Lag {
+    fn resume(&mut self) {
+        // Primed again from the first input it sees, which is the value its
+        // driver has *now* rather than the one it had when the music stopped.
+        self.primed = false;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let x = at(inputs[0], i);
@@ -84,6 +90,10 @@ impl Default for VarLag {
 }
 
 impl UGen for VarLag {
+    fn resume(&mut self) {
+        self.primed = false;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let x = at(inputs[0], i);
