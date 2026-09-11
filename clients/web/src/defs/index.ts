@@ -69,7 +69,7 @@ export { AudioBusAllocator, Bus, ControlBusAllocator } from "./bus.ts";
 export type { BusLike, BusRate } from "./bus.ts";
 
 export { Buffer, BufferAllocator, NUM_BUFFERS } from "./buffer.ts";
-export type { BufferLike } from "./buffer.ts";
+export type { BufferLike, Part } from "./buffer.ts";
 
 export { SynthDef } from "./synthdef.ts";
 export type { ControlSpec, SpecInput, SynthDefSpec, UgenSpec } from "./synthdef.ts";

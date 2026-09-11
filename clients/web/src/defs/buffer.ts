@@ -28,6 +28,30 @@ import { resolveServer } from "./wire.ts";
 
 export const NUM_BUFFERS = 4096;
 
+/**
+ * One source's contribution to a join — what {@link Buffer.stitch} takes and
+ * {@link Buffer.parts} gives back.
+ *
+ * `source` is a {@link Buffer} or a bare slot number, `start` the first frame
+ * read from it and `frames` how many it contributes. `fadeIn` and `fadeOut` are
+ * linear fades in frames, which is the few milliseconds an editor puts on a
+ * cut: two spans that do not continue each other make a step, and a step is a
+ * click however well the frames are read.
+ *
+ * `channels` maps the join's channels onto the source's, one entry per channel
+ * of the join — the source channel that channel reads, or a negative number for
+ * silence. It is routing and not level. Left out, channel *c* reads source
+ * channel *c*, which is what a join of takes of the same width means.
+ */
+export interface Part {
+    source: Buffer | number;
+    start?: number;
+    frames: number;
+    fadeIn?: number;
+    fadeOut?: number;
+    channels?: number[];
+}
+
 /** What every `Buffer` constructor takes: which server, and how long to wait. */
 export interface BufferOptions {
     /** How long to wait for the server's `/done`; the handle's by default. */
@@ -90,6 +114,96 @@ export class Buffer {
     }
 
     // ---- constructors ----
+
+    /**
+     * Installs a **join** over other buffers (`/buffer_stitch`): a buffer whose
+     * samples are spans of theirs, read as one.
+     *
+     * That is how a cut assembled from several takes — or from one take in
+     * another order — plays as **one** reader. Without it the reader would have
+     * to change which buffer it reads with sample accuracy, and the buffer a
+     * reader reads is an initial-rate control: every seam would be a new node
+     * and a control message in the middle of playback.
+     *
+     * A join **owns no samples**, so every command that writes into it refuses
+     * (`setSamples`, `fill`, `gain`, `reverse`, `read`), and so do the
+     * recording UGens: writing would mean writing through to whichever take a
+     * frame lands on, which is one edit becoming an edit of several. It takes
+     * nothing away — a join is *replaced* rather than edited, which costs the
+     * list of parts and not the samples. The sources are held for as long as
+     * the join exists, so freeing a take something is stitched over does not
+     * silence it.
+     *
+     * `channels` is how wide the join is, defaulting to the first part's
+     * source's width; `sampleRate` 0 means the server's, and every source must
+     * already be at the join's rate — a join is not a resampler.
+     */
+    static async stitch(
+        parts: Part[],
+        {
+            channels,
+            sampleRate = 0.0,
+            wait = true,
+            timeout,
+            server: on,
+        }: BufferOptions & {
+            channels?: number;
+            sampleRate?: number;
+            wait?: boolean;
+        } = {},
+    ): Promise<Buffer> {
+        const server = resolveServer(on);
+        const first = parts[0];
+        if (!first) throw new Error("a join needs at least one part");
+        const width =
+            channels ??
+            (typeof first.source === "number" ? 0 : first.source.channels);
+        if (!width) {
+            throw new Error(
+                "the join's width: the first part's source does not know its own, " +
+                    "so say how many channels the join has",
+            );
+        }
+        const args: MsgArg[] = [];
+        let frames = 0;
+        for (const part of parts) {
+            const source =
+                typeof part.source === "number" ? part.source : part.source.bufnum;
+            const mapped = part.channels ?? [...Array(width).keys()];
+            if (mapped.length !== width) {
+                throw new Error(
+                    `a part maps ${mapped.length} channels and the join has ` +
+                        `${width}: every part spells its whole map`,
+                );
+            }
+            args.push(
+                ["i", Math.trunc(source)],
+                ["i", Math.trunc(part.start ?? 0)],
+                ["i", Math.trunc(part.frames)],
+                ["i", Math.trunc(part.fadeIn ?? 0)],
+                ["i", Math.trunc(part.fadeOut ?? 0)],
+                ...mapped.map((c): MsgArg => ["i", Math.trunc(c)]),
+            );
+            frames += Math.trunc(part.frames);
+        }
+        const bufnum = server.buffers.alloc();
+        const head: MsgArg[] = [
+            ["i", bufnum],
+            ["i", width],
+            ["f", sampleRate],
+        ];
+        if (!wait) {
+            server.sendMsg("/buffer_stitch", ...head, ...args);
+            return new Buffer(bufnum, frames, width, sampleRate, server);
+        }
+        try {
+            await server.command("/buffer_stitch", [...head, ...args], timeout);
+        } catch (error) {
+            server.buffers.free(bufnum);
+            throw error;
+        }
+        return new Buffer(bufnum, frames, width, sampleRate, server);
+    }
 
     /** Allocates a zeroed buffer (`/buffer_alloc`). */
     static async alloc(
@@ -707,6 +821,42 @@ export class Buffer {
         });
         this.record = parseBufferList(msg.args)[0]!;
         return this.record;
+    }
+
+    /**
+     * What this buffer is a join **of** (`/buffer_parts`), as parts in the
+     * order they play — and an empty list when it owns its samples.
+     *
+     * That empty list is the answer to "is this a join", and it is worth asking
+     * before drawing: a join refuses every write, so a view that would offer an
+     * editable waveform over one finds out by being refused, which is honest
+     * but late. The parts come back in the terms `stitch` takes them in, so
+     * what is read can be edited and sent back.
+     *
+     * The sources come back as slot numbers rather than `Buffer` handles: what
+     * the server holds is an index, and which handle in this program stands for
+     * it is this program's business.
+     */
+    async parts(timeout?: number): Promise<Part[]> {
+        const msg = await this.srv().request("/buffer_parts", [["i", this.bufnum]], {
+            expect: ["/buffer_parts.reply"],
+            timeout,
+        });
+        const ints = msg.args.map((a) => Number(a));
+        const channels = Math.max(1, ints[1] ?? 1);
+        const width = 5 + channels;
+        const out: Part[] = [];
+        for (let at = 3; at + width <= ints.length; at += width) {
+            out.push({
+                source: ints[at]!,
+                start: ints[at + 1]!,
+                frames: ints[at + 2]!,
+                fadeIn: ints[at + 3]!,
+                fadeOut: ints[at + 4]!,
+                channels: ints.slice(at + 5, at + width),
+            });
+        }
+        return out;
     }
 
     /**

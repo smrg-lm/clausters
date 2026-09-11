@@ -237,3 +237,45 @@ test("samples the client holds become a buffer over a socket too", { skip: !hasS
         buffer.free();
     });
 });
+
+test("a join plays as one buffer and says what it is made of", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        // The same test the Python client runs, through the same two calls: a
+        // cut assembled from two takes is one buffer, and asking what it is
+        // made of is how a view learns it may not offer an editable waveform
+        // over it.
+        const one = await Buffer.fromSamples(
+            new Float32Array([1.0, 2.0, 3.0, 4.0]), 1, 0, { server });
+        const two = await Buffer.fromSamples(
+            new Float32Array([5.0, 6.0, 7.0, 8.0]), 1, 0, { server });
+
+        // The second take's tail, then the first take's head: one take out of
+        // order is the same mechanism as two takes.
+        const join = await Buffer.stitch(
+            [{ source: two, start: 2, frames: 2 }, { source: one, start: 0, frames: 2 }],
+            { server },
+        );
+        assert.equal(join.frames, 4);
+        assert.equal(join.channels, 1);
+        const read = await join.getSamples({ start: 0, count: 4 });
+        assert.deepEqual(Array.from(read), [7.0, 8.0, 1.0, 2.0]);
+
+        const parts = await join.parts();
+        assert.deepEqual(
+            parts.map((p) => [p.source, p.start, p.frames]),
+            [[two.bufnum, 2, 2], [one.bufnum, 0, 2]],
+        );
+        assert.deepEqual(parts[0]!.channels, [0], "every part spells its whole map");
+
+        // A buffer that owns its samples answers with no parts, which is the
+        // answer to "is this a join" rather than a refusal.
+        assert.deepEqual(await one.parts(), []);
+
+        // And a join is read, never written: it is replaced instead.
+        await assert.rejects(() => join.setSamples(new Float32Array([0.0])));
+
+        join.free();
+        one.free();
+        two.free();
+    });
+});

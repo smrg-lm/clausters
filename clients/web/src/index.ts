@@ -190,7 +190,7 @@ export { AddAction, Group, Node, Synth } from "./defs/node.ts";
 export type { Controls, GroupOptions, NodeLike, Placement } from "./defs/node.ts";
 export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
-export type { BufferOptions } from "./defs/buffer.ts";
+export type { BufferOptions, Part } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";
 export { FaustDef } from "./defs/faustdef.ts";
 export { GraphDef } from "./defs/graphdef.ts";

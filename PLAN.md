@@ -2347,6 +2347,10 @@ finished work, where a pending item reads as done.
   which is what `/buffer_alloc` and `/buffer_gen` already do, and re-cutting one
   costs the list of parts rather than the samples.
 
+  **The clients speak it** (2026-09-10): `Buffer.stitch` with a `Part` per
+  span, and `parts()` over `/buffer_parts` -- the same two calls in both, since
+  a command no client can send is a command that exists only in a test.
+
 - ⬜ **What a join costs is 0.010% of a block per reader, and the number that
   reads as alarming is the wrong one** *(measured 2026-09-10, closing the
   entry above)*. `cargo test --release --test buffer_stitch -- --ignored

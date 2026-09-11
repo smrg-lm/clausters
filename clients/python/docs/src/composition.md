@@ -566,6 +566,35 @@ And the transport plays the piece rather than a client stepping it: each reader
 reads the position the engine publishes, so moving a box is one `set` and a
 locate is no message at all.
 
+### A cut that plays as one reader
+
+A box is a window onto a buffer, and a cut assembled from several takes -- or
+from one take in another order -- is not that. `Buffer.stitch` installs a
+**join**: a buffer whose samples are spans of other buffers, read as one.
+
+```python
+from clausters.defs import Part
+
+cut = Buffer.stitch([Part(verse, 0, 2 * 48000), Part(chorus, 4800, 48000)],
+                    server=server)
+```
+
+Without it a reader would have to change which buffer it reads with sample
+accuracy, and the buffer a reader reads is an initial-rate control: every seam
+would be a new node and a control message in the middle of playback -- which is
+exactly what a piece that plays itself from the transport must not need. The
+fades on a part are the few milliseconds an editor puts on a cut; a source is
+held for as long as the join exists, so freeing a take something was cut from
+does not silence it.
+
+A join **owns no samples**, so everything that writes into it refuses: writing
+would mean writing through to whichever take a frame lands on, which is one edit
+becoming an edit of several. Nothing is lost by that -- a join is *replaced*
+rather than edited, and re-cutting one costs the list of parts and not the
+samples. `take.parts()` is how a view asks before it offers an editable
+waveform: the parts when it is a join, an empty list when the buffer owns what
+it holds.
+
 ### Where a recording lands
 
 A `Buffer` holds a take and a `RecordingStream` follows one as it is written,

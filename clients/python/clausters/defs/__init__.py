@@ -28,7 +28,7 @@ from .asdef import as_def, expr_channels
 from .boxes import Box
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
-from .buffer import Buffer, BufferAllocator
+from .buffer import Buffer, BufferAllocator, Part
 from .expr import Expr, FaustExpr, SynthExpr
 from .faustdef import FaustDef
 from .graphdef import GraphDef
@@ -253,6 +253,7 @@ __all__ = [
     "ControlBusAllocator",
     "Buffer",
     "BufferAllocator",
+    "Part",
     "AddAction",
     "Group",
     "Synth",

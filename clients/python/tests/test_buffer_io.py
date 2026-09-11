@@ -186,3 +186,45 @@ def test_a_write_past_the_end_is_refused():
     # And the refusal left the buffer alone.
     assert max(abs(v) for v in buf.get_samples(0, 4)) == 0.0
     buf.free()
+
+
+def test_a_join_plays_as_one_buffer_and_says_what_it_is_made_of():
+    """A cut assembled from two takes is one buffer: `stitch` installs it,
+    reading it crosses the seam, and `parts` says what it is made of -- which
+    is the question to ask before offering an editable waveform over one, since
+    a join refuses every write."""
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        from clausters.defs import Part
+        from clausters.errors import CommandError
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    server = session.server
+    one = Buffer.from_samples([1.0, 2.0, 3.0, 4.0], server=server)
+    two = Buffer.from_samples([5.0, 6.0, 7.0, 8.0], server=server)
+
+    # The second take's tail, then the first take's head: one take out of order
+    # is the same mechanism as two takes.
+    join = Buffer.stitch([Part(two, 2, 2), Part(one, 0, 2)], server=server)
+    assert (join.frames, join.channels) == (4, 1)
+    assert list(join.get_samples(0, 4)) == pytest.approx([7.0, 8.0, 1.0, 2.0])
+
+    parts = join.parts()
+    assert [(p.source, p.start, p.frames) for p in parts] == [
+        (two.bufnum, 2, 2), (one.bufnum, 0, 2)]
+    assert parts[0].channels == [0], "every part spells its whole map"
+
+    # A buffer that owns its samples answers with no parts, which is the answer
+    # to "is this a join" rather than a refusal.
+    assert one.parts() == []
+
+    # And a join is read, never written: it is replaced instead.
+    with pytest.raises(CommandError):
+        join.set_samples([0.0])
+
+    join.free()
+    one.free()
+    two.free()
