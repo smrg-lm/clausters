@@ -698,6 +698,98 @@ def test_rewind_puts_the_cursor_back_at_the_top():
     assert ed.cursor == 0.0
 
 
+class _AdoptingHost:
+    """A host that adopts what it is told, the way the real one does: it keeps
+    the names of the last picture pushed to it."""
+
+    def __init__(self):
+        self.names = None
+        self.rows = None
+        self.pushes = 0
+
+    def push(self, seq, *corrections, doc_version=0, reason=None):
+        self.pushes += 1
+        for _wid, props in corrections:
+            if "clips" in props:
+                self.names = list(props["clips"][::7])
+            if "lanes" in props:
+                self.rows = list(props["lanes"][::6])
+
+    def ack(self, seq, doc_version=0, reason=None):
+        pass
+
+    def set(self, wid, **props):
+        pass
+
+
+def _wired(ed) -> _AdoptingHost:
+    """An editor answering a host, without opening a window."""
+    host = _AdoptingHost()
+    ed.app.echo.host = host
+    ed._window = 1
+    ed.draw()
+    return host
+
+
+def test_a_name_the_host_minted_is_answered_with_the_one_the_piece_kept():
+    """The host makes a **track** from a double click and a **box** from a
+    split, and in both it mints the word while the document mints the id.
+
+    Until the picture goes back the two are naming the same thing differently,
+    and a name the piece does not know is not ignored -- it is read as
+    something *new*. So the next report about that box minted it again, and
+    again after that: a split box took a fresh id on every drag, losing
+    whatever was hung on it, and a box dropped on a track the host had just
+    made landed on a track nobody had.
+    """
+    held = piece()
+    ed = editor(held)
+    host = _wired(ed)
+    wid = next(iter(ed.view.widgets))
+
+    def ids():
+        return [r.id for t in held.tracks for lane in t.lanes for r in lane.regions]
+
+    def boxes():
+        flat = props(ed)["clips"]
+        return [flat[i:i + 7] for i in range(0, len(flat), 7)]
+
+    # A split, reported as the host reports one: the second half under a name
+    # the host minted and the client never said.
+    payload = []
+    for box in boxes():
+        if box[0] == "12":
+            first = list(box)
+            first[3] = 1.0 * SR
+            payload += first
+            payload += ["white 2", box[1], 1.0 * SR, 1.0 * SR, 1.0 * SR, "", box[6]]
+        else:
+            payload += list(box)
+    ed.apply("/gui_event", [wid, 1, ed._version, "clips", *payload])
+    split = ids()
+    assert len(split) == 4, "the split landed"
+    assert host.pushes == 1, "and the picture went back with it"
+    assert host.names == [str(i) for i in split], "under the ids the piece kept"
+
+    # The next gesture, reported with the names the host was just given: the
+    # boxes are the same boxes.
+    payload = []
+    for name, box in zip(host.names, boxes()):
+        row = list(box)
+        row[0] = name
+        row[2] = float(row[2]) + 1000.0
+        payload += row
+    ed.apply("/gui_event", [wid, 2, ed._version, "clips", *payload])
+    assert ids() == split, "nothing was minted a second time"
+
+    # And a track made in the host: the same rule, and the `meters` prop rides
+    # with it -- a track that reached the server has buses to read.
+    rows = list(props(ed)["lanes"]) + ["track 1", "three", 96.0, 0, 0, 1.0]
+    ed.apply("/gui_event", [wid, 3, ed._version, "lanes", *rows])
+    assert host.rows == [str(t.id) for t in held.tracks]
+    assert len(held.tracks) == 3
+
+
 def test_a_track_made_in_the_host_is_a_track_in_the_plan():
     """A double click on a header makes a track, and what the host sends back
     is the rows as they now stand. The claim here is the other half: what the

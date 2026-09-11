@@ -411,6 +411,8 @@ class MultitrackView(View):
         #: playhead is drawn on, so whoever moves the line does not have to
         #: guess which of the two ids is the picture.
         self.piece: int | None = None
+        #: The row names the host was last told, by id — see `props`.
+        self.told: "tuple | None" = None
         #: Whether the window carries the transport row. It is the *view's* and
         #: not a script's ``extra``: a piece that can be heard is played from the
         #: window it is drawn in, and every window over a piece has the same
@@ -529,6 +531,16 @@ class MultitrackView(View):
             "cursor": _cursor(editor),
         }
         props["link"] = self.group(widget_id)
+        #: **What the host was last told things are called.** The rows and the
+        #: boxes, by name. A row or a box the *host* made carries a word it
+        #: minted (``track 1``, ``white 2``); the id is the document's and is
+        #: minted when the report is read, so until the picture goes back the
+        #: two are naming the same thing differently -- and every later report
+        #: about it names something the piece does not have, which mints it
+        #: **again**. `MultitrackEditor.data_changed` compares this with what
+        #: the piece now holds and answers with the picture when they differ.
+        self.told = (frozenset(props["lanes"][::SEXTUPLE]),
+                     frozenset(props["clips"][::SEPTUPLE]))
         return props
 
 
@@ -813,7 +825,47 @@ class MultitrackEditor(Editor):
         """
         if self.playback is not None:
             self.playback.sync()
+        self._answer_with_the_picture()
         super().data_changed()
+
+    def _answer_with_the_picture(self) -> None:
+        """**A name the host minted is answered with the one the piece kept.**
+
+        A gesture is normally answered with an acknowledgement and nothing else,
+        because the report described the result: the host drew what it sent and
+        the piece agreed. The cases where it does not are the ones where the
+        host **makes** something -- a track from a double click, a box from a
+        split or a paste. There the host mints the word (``track 1``,
+        ``white 2``) and the document mints the id, so until the picture goes
+        back the two are naming the same thing differently.
+
+        And a name the piece does not know is not ignored: it is read as
+        something *new*. So the next report about that row or that box mints it
+        again, and again after that -- a split box took a fresh id on every
+        drag, losing whatever was hung on it, and a box dropped on a new track
+        landed on a track nobody had.
+
+        So when the names the host was last told differ from the ones the piece
+        now holds, the whole picture goes back as a correction. It carries the
+        `meters` prop with it, which is the other half of the same fact for a
+        track: one that reached the server has buses to read, and a host that
+        never heard of it draws no strip.
+        """
+        view, piece = self.view, self.piece_widget
+        if self._host is None or self._window is None or piece is None:
+            return
+        told = getattr(view, "told", None)
+        if told is None:
+            return
+        rows = frozenset(str(track.id) for track in self.structure.tracks)
+        boxes = frozenset(str(region.id) for track in self.structure.tracks
+                          for lane in track.lanes for region in lane.regions)
+        if told == (rows, boxes):
+            return
+        self._corrections = []
+        self._resync(piece)
+        self._acknowledge(0)
+        self._corrections = []
 
     def interface(self, widget_id: int, tag: str, values) -> bool:
         """**A box was entered** — the double click the multitrack reports as

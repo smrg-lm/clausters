@@ -677,6 +677,11 @@ export class MultitrackView extends View<Multitrack> {
      */
     piece: number | null = null;
     /**
+     * **What the host was last told things are called** — the rows and the
+     * boxes, by name. See {@link props}.
+     */
+    told: readonly [ReadonlySet<string>, ReadonlySet<string>] | null = null;
+    /**
      * Whether the window carries the transport row. It is the *view's* and not a
      * page's `extra`: a piece that can be heard is played from the window it is
      * drawn in, and every window over a piece has the same three controls in the
@@ -817,6 +822,20 @@ export class MultitrackView extends View<Multitrack> {
             cursor: cursorOf(editor),
         };
         props.link = this.group(widgetId);
+        // **What the host was last told things are called.** A row or a box the
+        // *host* made carries a word it minted (`track 1`, `white 2`); the id is
+        // the document's and is minted when the report is read, so until the
+        // picture goes back the two are naming the same thing differently — and
+        // every later report about it names something the piece does not have,
+        // which mints it **again**. `MultitrackEditor.dataChanged` compares this
+        // with what the piece now holds and answers with the picture when they
+        // differ.
+        this.told = [
+            new Set((props.lanes as unknown[]).filter((_v, i) => i % SEXTUPLE === 0)
+                .map(String)),
+            new Set((props.clips as unknown[]).filter((_v, i) => i % SEPTUPLE === 0)
+                .map(String)),
+        ];
         return props;
     }
 }
@@ -1016,7 +1035,51 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     override dataChanged(): void {
         this.playback?.sync();
+        this.answerWithThePicture();
         super.dataChanged();
+    }
+
+    /**
+     * **A name the host minted is answered with the one the piece kept.**
+     *
+     * A gesture is normally answered with an acknowledgement and nothing else,
+     * because the report described the result: the host drew what it sent and
+     * the piece agreed. The cases where it does not are the ones where the host
+     * **makes** something — a track from a double click, a box from a split or
+     * a paste. There the host mints the word (`track 1`, `white 2`) and the
+     * document mints the id, so until the picture goes back the two are naming
+     * the same thing differently.
+     *
+     * And a name the piece does not know is not ignored: it is read as
+     * something *new*. So the next report about that row or that box mints it
+     * again, and again after that — a split box took a fresh id on every drag,
+     * losing whatever was hung on it, and a box dropped on a new track landed
+     * on a track nobody had.
+     *
+     * So when the names the host was last told differ from the ones the piece
+     * now holds, the whole picture goes back as a correction. It carries the
+     * `meters` prop with it, which is the other half of the same fact for a
+     * track: one that reached the server has buses to read, and a host that
+     * never heard of it draws no strip.
+     */
+    private answerWithThePicture(): void {
+        const view = this.view as MultitrackView | null;
+        const piece = this.pieceWidget;
+        if (this.host === null || this.windowId === null || piece === null) return;
+        const told = view?.told ?? null;
+        if (told === null) return;
+        const rows = new Set(this.structure.tracks.map((track) => String(track.id)));
+        const boxes = new Set(
+            this.structure.tracks.flatMap((track) =>
+                track.lanes.flatMap((lane) => lane.regions.map((r) => String(r.id)))),
+        );
+        const same = (a: ReadonlySet<string>, b: ReadonlySet<string>) =>
+            a.size === b.size && [...a].every((name) => b.has(name));
+        if (same(told[0], rows) && same(told[1], boxes)) return;
+        this.corrections = [];
+        this.resync(piece);
+        this.acknowledge(0);
+        this.corrections = [];
     }
 
     /**

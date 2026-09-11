@@ -191,6 +191,94 @@ test("the position cursor is kept and told and is not an edit", () => {
     near(Number(view.props(ed, rid).cursor), 4.0 * SR);
 });
 
+/** A host that adopts what it is told, the way the real one does. */
+class AdoptingHost {
+    names: string[] | null = null;
+    rows: string[] | null = null;
+    pushes = 0;
+    push(_seq: number, corrections: [number, Record<string, unknown>][]): void {
+        this.pushes += 1;
+        for (const [, props] of corrections) {
+            const clips = props.clips as unknown[] | undefined;
+            const lanes = props.lanes as unknown[] | undefined;
+            if (clips) this.names = clips.filter((_v, i) => i % 7 === 0).map(String);
+            if (lanes) this.rows = lanes.filter((_v, i) => i % 6 === 0).map(String);
+        }
+    }
+    ack(): void {}
+    set(): void {}
+}
+
+function wired(ed: MultitrackEditor): AdoptingHost {
+    const host = new AdoptingHost();
+    const inner = ed as unknown as {
+        app: { echo: { host: unknown } };
+        windowId: number | null;
+    };
+    inner.app.echo.host = host;
+    inner.windowId = 1;
+    ed.draw();
+    return host;
+}
+
+test("a name the host minted is answered with the one the piece kept", () => {
+    // The host makes a **track** from a double click and a **box** from a
+    // split, and in both it mints the word while the document mints the id.
+    //
+    // Until the picture goes back the two are naming the same thing
+    // differently, and a name the piece does not know is not ignored — it is
+    // read as something *new*. So the next report about that box minted it
+    // again, and again after that.
+    const held = piece();
+    const ed = editor(held);
+    const host = wired(ed);
+    const wid = [...ed.view!.widgets.keys()][0];
+    const ids = () =>
+        held.tracks.flatMap((t) => t.lanes.flatMap((l) => l.regions.map((r) => r.id)));
+    const apply = (seq: number, tag: string, values: unknown[]) =>
+        ed.apply("/gui_event", [
+            wid,
+            seq,
+            (ed as unknown as { version: number }).version,
+            tag,
+            ...values,
+        ]);
+
+    const payload: unknown[] = [];
+    for (const box of clips(ed)) {
+        if (box[0] === "12") {
+            const first = [...box];
+            first[3] = 1.0 * SR;
+            payload.push(...first);
+            payload.push("white 2", box[1], 1.0 * SR, 1.0 * SR, 1.0 * SR, "", box[6]);
+        } else {
+            payload.push(...box);
+        }
+    }
+    apply(1, "clips", payload);
+    const split = ids();
+    assert.equal(split.length, 4, "the split landed");
+    assert.equal(host.pushes, 1, "and the picture went back with it");
+    assert.deepEqual(host.names, split.map(String), "under the ids the piece kept");
+
+    // The next gesture, reported with the names the host was just given.
+    const again: unknown[] = [];
+    clips(ed).forEach((box, i) => {
+        const row = [...box];
+        row[0] = host.names![i];
+        row[2] = Number(row[2]) + 1000.0;
+        again.push(...row);
+    });
+    apply(2, "clips", again);
+    assert.deepEqual(ids(), split, "nothing was minted a second time");
+
+    // And a track made in the host: the same rule.
+    const rows = [...(props(ed).lanes as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0];
+    apply(3, "lanes", rows);
+    assert.deepEqual(host.rows, held.tracks.map((t) => String(t.id)));
+    assert.equal(held.tracks.length, 3);
+});
+
 test("rewind puts the cursor back at the top", () => {
     // The cursor's own verb. Stop goes back to the **mark** — which is what
     // tells it from pause — so with nothing else the way back to the top is

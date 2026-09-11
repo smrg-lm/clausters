@@ -87,7 +87,14 @@ impl UGen for OutCtl {
         for (i, s) in output.iter_mut().enumerate() {
             *s = at(signal, i);
         }
-        let last = output.last().copied().unwrap_or_else(|| at(signal, 0));
-        ctx.buses.control.set(idx, last);
+        // **The block's value is the one it starts at.** A control bus carries
+        // one number a block, and whoever reads it holds that number for the
+        // whole block -- so writing the block's *last* sample hands a reader
+        // running later in the same block a value a block early. That is
+        // inaudible on anything slow and a click on the first block of a fade:
+        // an envelope that says zero at a box's start put out the value a
+        // block after it instead, and a piece thawed from a stop has nothing
+        // to smooth it with.
+        ctx.buses.control.set(idx, at(signal, 0));
     }
 }

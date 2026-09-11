@@ -689,3 +689,88 @@ fn where_the_transport_clicks() {
          readers cannot do for themselves: a frozen node gets no time."
     );
 }
+
+/// **A curve's first block is the value it starts at.** A box whose clip
+/// envelope begins at zero is silent where it begins, and anything audible
+/// there is a click nobody drew.
+///
+/// The control bus carries one number a block and whoever reads it holds that
+/// number for the whole block, so writing the block's *last* sample handed the
+/// strip a value a block early: an envelope that says zero at the box's start
+/// put out the value a block after it, and a piece thawed from a stop has no
+/// smoothing left to hide it with.
+#[test]
+fn a_curve_starts_where_it_says_it_starts() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 0.8);
+    let (_piece, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+
+    // The envelope: zero at the box's start, rising to unity over eight blocks,
+    // one sample a block -- the clip envelope an editor draws.
+    let step = BLOCK as f32;
+    let blocks = 8;
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(1), OscType::Int(blocks + 1), OscType::Int(1)],
+    );
+    s.settle_for(4);
+    for i in 0..=blocks {
+        send(
+            &mut s,
+            "/buffer_set",
+            vec![
+                OscType::Int(1),
+                OscType::Int(i),
+                OscType::Float(i as f32 / blocks as f32),
+            ],
+        );
+    }
+    s.settle_for(4);
+    let bus = 100;
+    send(
+        &mut s,
+        "/synth_new",
+        vec![
+            OscType::String(mixer::curve_name()),
+            OscType::Int(950),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("out".into()),
+            OscType::Float(bus as f32),
+            OscType::String(mixer::BUF.into()),
+            OscType::Float(1.0),
+            OscType::String(mixer::AT.into()),
+            OscType::Float(0.0),
+            OscType::String("step".into()),
+            OscType::Float(step),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(clip),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(bus),
+        ],
+    );
+    s.settle_for(4);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let first = s.run_to_vec(BLOCK as u64).expect("ran");
+    let peak = first.iter().step_by(2).fold(0.0f32, |m, &x| m.max(x.abs()));
+    assert!(
+        peak < 1e-6,
+        "the box is silent where its envelope says zero: {peak}"
+    );
+    let second = s.run_to_vec(BLOCK as u64).expect("ran");
+    assert!(
+        second.iter().step_by(2).any(|x| x.abs() > 1e-4),
+        "and it comes up right after"
+    );
+}

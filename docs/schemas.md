@@ -313,7 +313,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `Sum4` | a, b, c, d | `a + b + c + d` |
 | `In` | bus | copies an audio bus (read once per block) |
 | `InCtl` | bus | a control-bus value, constant over the block |
-| `OutCtl` | bus, signal | writes the signal's latest per-block value to a **control** bus (the write side of `InCtl`); passes the signal through as its output |
+| `OutCtl` | bus, signal | writes the signal's per-block value to a **control** bus — the value the block **starts** at, since a reader holds one number for the whole block and the block's last sample would reach a reader running later in that same block a block early (the write side of `InCtl`); passes the signal through as its output |
 | `Out` | bus, signal | **sums** the signal into an audio bus |
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
 | `PlayBuf` | bufnum, chan, rate, loop, trigger, startPos, doneAction | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — multiply by `BufRateScale(bufnum)`, i.e. `file_sr / server_sr`, for the file's pitch). A pass begins at `startPos` and a rising `trigger` re-cues there mid-play, so one player is a re-usable voice; without `loop`, reaching the end stops it and fires `doneAction` (`2` frees the synth, so a one-shot leaves the tree by itself), and a looping player never finishes, so its action never fires. The last three come **after** `loop` rather than in scsynth's order (`rate, trigger, startPos, loop`): inputs are positional, so putting `startPos` before `loop` would silently re-read every existing `loop` argument as a cue frame |
