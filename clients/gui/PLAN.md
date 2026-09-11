@@ -1130,15 +1130,14 @@ would be written against a picture the first half had already changed.
   written into a control bus, and where the curve's samples live — with no
   message per frame either way, the discipline the playhead already keeps.
 
-- ⬜ **G35.14 — The header's level is a knob, and a track shows what it
+- ✅ **G35.14 — The header's level is a knob, and a track shows what it
   produces.**
   Straight after the chain, because the meter is the first thing that reads what
   the chain produces.
 
   A header is a narrow band beside a lane, and a horizontal groove long enough
   to be read takes the width the name needs — so the level control is a **knob**,
-  which reads and turns in the space a header actually has. This half stands
-  alone and can land in any spare pass.
+  which reads and turns in the space a header actually has.
 
   *The knob done 2026-09-09.* A square cell like the two toggles beside it, and
   the **same dial** a `knob` widget draws (`controls::knob_dial`, factored out
@@ -1149,13 +1148,36 @@ would be written against a picture the first half had already changed.
   jump the value to wherever the press landed. The header also stopped asking
   for the width a groove needed, so a stack of tracks is narrower than it was.
 
-  And a **thin vertical meter down the right edge of the track**, over the
-  amplitude that track is producing **after everything has been applied**: its
-  clips' own gains, its curves, its effects and its fader. That is the number a
-  hand on the knob is watching, and the one place in the piece where the picture
-  is of the *sound* rather than of the description. It waits on the entry above:
-  a meter after the chain needs the chain to exist and to have a point where the
-  track's signal is one thing.
+  *The meter done 2026-09-11.* A thin column per channel down the right edge of
+  the header, over the amplitude the track is producing **after everything has
+  been applied** — its clips' own gains, its curves and its fader. That is the
+  number a hand on the knob is watching, and the one place in the piece where
+  the picture is of the *sound* rather than of the description.
+
+  **What it reads is a bus, not a value.** The `meters` prop says where to look
+  — the lane, the first bus of the level run, the first of the mark run, how
+  many channels each is — and the host reads them every frame out of the shared
+  segment, so a level that moves every block costs no message at all. A prop of
+  its own rather than two more fields on `lanes`, because `lanes` is what a hand
+  *edited* and a bus number in it would be a number the host was expected to
+  hand back unchanged.
+
+  Three things the drawing had to get right. The strip comes off the right edge
+  **before** anything else is laid out, so a meter is beside a name rather than
+  over it, and the group's indent holds it (`gutter`) or the band would take it
+  out of the name. Its width follows the **channel count and nothing else** — a
+  level is not a size, or a moving meter would move the controls under it, and
+  the hit test (which never reads a bus) lays the header out where the drawing
+  did. And the column stands in **decibels**
+  (`clausters_core::measure::meter_fraction`, beside the ballistics for the same
+  reason they are there): half of unity is -6 dB, which is a tenth of the way
+  down a 60 dB strip and not half of it, and a linear column spends nine tenths
+  of its height on the top 20 dB nobody mixes in.
+
+  The other half is the clients': `Playback` allocates `2 * channels` control
+  buses per track and adds **two** meters to the track's slot — one with no hold
+  for the level, one with the core's hold for the mark that waits — so a piece
+  nobody plays holds none, and both clients do it with the same two calls.
 
 - ⬜ **G35.6 — An entered box keeps its own history.**
   After editing a box's samples, closing that window and opening it again,

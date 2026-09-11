@@ -511,6 +511,22 @@ function laneProps(rows: readonly Row[]): unknown[] {
 }
 
 /**
+ * The playback's meter buses as the widget's flat quadruples: the lane, the
+ * first bus of the level run, the first of the mark run, and how many channels
+ * each run is.
+ */
+function meterBuses(editor: Editor<Multitrack>): unknown[] {
+    const playback = (editor as { playback?: { meters?: Map<number, [{ index: number }, number]> } })
+        .playback;
+    if (playback?.meters === undefined) return [];
+    const out: unknown[] = [];
+    for (const [track, [bus, channels]] of playback.meters) {
+        out.push(String(track), bus.index, bus.index + channels, channels);
+    }
+    return out;
+}
+
+/**
  * The crate's **track automations** as the widget's flat sextuples: a row of
  * its own under the track it names.
  */
@@ -770,6 +786,11 @@ export class MultitrackView extends View<Multitrack> {
                 .filter((b) => b.looping)
                 .map((b) => String(b.region))
                 .join(" "),
+            // **Where each track's level is read from**: the control buses its
+            // meters write, which the host reads every frame straight out of
+            // the shared segment. A piece with no playback names none, and a
+            // header with nothing to read draws no strip.
+            meters: meterBuses(editor),
             weight: 1.0,
             ruler: "beats",
             sample_rate: this.bridge.rate,

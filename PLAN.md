@@ -1935,6 +1935,39 @@ milestone, carrying a checkbox like everything unresolved, and leaving this
 list when a milestone absorbs it (the milestone is then the record, and says
 where it came from).
 
+- ⬜ **`mt.fx` is a declared empty slot, and what an effect *is* as a document
+  is unspecified** *(named 2026-09-11, finishing the multitrack's node system)*.
+  `mt.clip` and `mt.track` both declare an `fx` slot and both leave it empty,
+  which was deliberate: a send to nowhere and an insert of nothing cannot be
+  heard and so cannot be checked. **The wiring side needs nothing more** -- the
+  slot is a nested-graph slot, so an effect may itself be a GraphDef and a
+  compound effect needs no new mechanism.
+
+  What is missing is the **document**, and it is four questions, none of them
+  about nodes:
+
+  - **The preset**: what is saved when a piece is saved, and what reloading it
+    means for an effect whose parameters are a def's and not this project's.
+    A leaf is opaque for a reason; an effect's state is the same kind of thing
+    and probably the same answer, but it has to be said.
+  - **The declared latency and who compensates it**: today nothing in a piece
+    has any, so every path is aligned by construction. One effect with a
+    look-ahead ends that, and the compensation is the master's problem rather
+    than the effect's -- which makes it a rule about the piece, not a field.
+  - **Bypass**: whether it is a state of the chain or of the effect, and whether
+    a bypassed effect keeps running (its tail survives, it costs what it cost)
+    or stops (it is free, and re-enabling it clicks).
+  - **The tail**: what happens to a reverb when the effect is taken out of the
+    chain, or the clip under it is deleted, or the transport is located
+    somewhere else.
+
+  Until those are answered the slot stays empty, and that is not a gap in the
+  node system: the shape of the hole is right, and a wrong answer to any of the
+  four would be much harder to take back than a missing feature. The full
+  statement of what is decided and what is open is in `SISTEMA-DE-NODOS.md`
+  (the spec the node system was built from), which is a temporary file -- this
+  entry is what outlives it.
+
 - ✅ **A UGen's trailing inputs could be declared optional, so a def survives one growing** *(named 2026-08-16, after S17 moved `PlayBuf` from four inputs to seven and every stored def that used it stopped compiling — seven of them on the author's machine, warning at every boot)*. Arity is exact: `synthdef::compile` rejects a UGen whose input count is not the descriptor's, and `UGenInput.default` is advisory metadata the server never applies. So a UGen that grows breaks every def written against it, including the ones already persisted on disk and the ones inside a saved bundle.
 
   **The cheap version is the dangerous one and is refused**: "fill whatever is missing from the defaults" makes a short def legal in all 189 input slots of the catalog, and `BinaryOpUGen` is `a=0.0, b=0.0` — a `Mul` truncated to one input would compile, fill `b=0`, and silence the chain with no `/fail` and no name. That is precisely the failure S17 chose an unusual input order to avoid.

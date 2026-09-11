@@ -15,6 +15,8 @@
 //! lane's clips through the same [`View`], so a clip at offset 8 lines up
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
+use clausters_core::measure;
+
 use super::meters::fraction;
 use super::signal::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
@@ -55,12 +57,33 @@ pub struct Header {
     pub solo: Option<bool>,
     /// The level knob's value over `[0, 1]`, when the lane offers one.
     pub level: Option<f32>,
+    /// **What the track is producing**, one entry per channel: the level and
+    /// the mark that waits, both linear amplitudes as the server's ballistics
+    /// left them ([`clausters_core::measure::Ballistics`]).
+    ///
+    /// Empty when the lane is not metered, which is the ordinary case: a piece
+    /// nobody is playing has no meters to read. The *length* is what the layout
+    /// depends on, so a hit test builds this with the same number of silent
+    /// entries the drawing reads live values into -- otherwise a press would
+    /// land on pixels the strip had moved.
+    pub meters: Vec<(f32, f32)>,
 }
 
 impl Header {
     /// Whether the header carries anything below its name row.
     fn has_controls(&self) -> bool {
         self.mute.is_some() || self.solo.is_some() || self.level.is_some()
+    }
+
+    /// What the meter strip takes off the right edge of the band, in the
+    /// coordinates of `m`: one thin column per channel and a hair between them,
+    /// and nothing at all when the lane is not metered.
+    pub fn meter_w(&self, m: &Metrics) -> f32 {
+        if self.meters.is_empty() {
+            return 0.0;
+        }
+        let column = (m.box_side * 0.25).max(2.0);
+        self.meters.len() as f32 * column + (self.meters.len() - 1) as f32 * m.divider_w + m.pad
     }
 
     /// The width this header **wants**, in the coordinates of `m`: the size
@@ -80,6 +103,7 @@ impl Header {
         let controls = toggles + usize::from(self.level.is_some());
         m.header_w
             .max(controls as f32 * (m.box_side + m.pad) + 2.0 * m.pad)
+            + self.meter_w(m)
     }
 }
 
@@ -93,6 +117,10 @@ pub struct HeaderParts {
     pub mute: Option<Rect>,
     pub solo: Option<Rect>,
     pub level: Option<Rect>,
+    /// The meter strip along the right edge, when the lane is metered. Not a
+    /// [`HeaderPart`]: it is the one thing in the band a hand cannot press, so
+    /// a press over it falls through to the band itself.
+    pub meters: Option<Rect>,
 }
 
 /// One of a header's interactive parts.
@@ -122,6 +150,28 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         (band.w - 2.0 * m.pad).max(0.0),
         (band.h - 2.0 * m.pad).max(0.0),
     );
+    // **The strip comes off the right before anything is laid out**, so the
+    // name and the controls have the width that is actually theirs -- a meter
+    // drawn over a name would be a meter drawn over a name.
+    let strip = header.meter_w(m);
+    let meters = (strip > 0.0 && inner.w > strip).then(|| {
+        Rect::new(
+            inner.x + inner.w - strip + m.pad,
+            inner.y,
+            strip - m.pad,
+            inner.h,
+        )
+    });
+    let inner = Rect::new(
+        inner.x,
+        inner.y,
+        if meters.is_some() {
+            inner.w - strip
+        } else {
+            inner.w
+        },
+        inner.h,
+    );
     let name_h = font::height(m.text_scale);
     let label = Rect::new(inner.x, inner.y, inner.w, name_h.min(inner.h));
     let mut parts = HeaderParts {
@@ -129,6 +179,7 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         mute: None,
         solo: None,
         level: None,
+        meters,
     };
     // The control row needs a row of its own under the name; a lane too short
     // for both keeps the name.
@@ -211,6 +262,7 @@ pub fn level_after(from: f32, dy: f64, cell: Rect) -> f32 {
 fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     let (mesh, m, theme) = d.parts();
     let parts = header_parts(band, header, m);
+    draw_meter_strip(mesh, m, theme, parts.meters, &header.meters);
     let mut toggle =
         |rect: Option<Rect>, on: bool, letter: &str, lit: crate::host::paint::Color| {
             let Some(r) = rect else { return };
@@ -242,6 +294,63 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
             radius,
             level,
         );
+    }
+}
+
+/// **A track shows what it produces**: one column per channel down the right
+/// edge of the header, over the amplitude the track is making *after
+/// everything has been applied* — its clips' gains, its curves and its fader.
+///
+/// It is the one place in a piece where the picture is of the **sound** rather
+/// than of the description, which is why it is worth the strip: everything else
+/// in a header says what was asked for, and this says what came out.
+///
+/// The column stands in decibels ([`clausters_core::measure::meter_fraction`]),
+/// and the mark is the peak the server is holding — a hairline across the
+/// column rather than a second column, because it is the same axis read at
+/// another moment.
+fn draw_meter_strip(
+    mesh: &mut crate::host::paint::Mesh,
+    m: &Metrics,
+    theme: &crate::host::theme::Theme,
+    rect: Option<Rect>,
+    channels: &[(f32, f32)],
+) {
+    let Some(rect) = rect else { return };
+    if channels.is_empty() || rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    let gaps = (channels.len() - 1) as f32 * m.divider_w;
+    let column = ((rect.w - gaps) / channels.len() as f32).max(1.0);
+    for (i, &(level, mark)) in channels.iter().enumerate() {
+        let x = rect.x + i as f32 * (column + m.divider_w);
+        let cell = Rect::new(x, rect.y, column, rect.h);
+        mesh.rect(cell, theme.field);
+        let fill = rect.h * measure::meter_fraction(level, measure::METER_FLOOR_DB);
+        if fill > 0.0 {
+            mesh.rect(
+                Rect::new(cell.x, cell.y + cell.h - fill, cell.w, fill),
+                if level >= 1.0 {
+                    theme.warn
+                } else {
+                    theme.accent
+                },
+            );
+        }
+        let held = measure::meter_fraction(mark, measure::METER_FLOOR_DB);
+        if held > 0.0 {
+            let y = cell.y + cell.h - cell.h * held;
+            mesh.line(
+                [cell.x, y],
+                [cell.x + cell.w, y],
+                m.divider_w,
+                if mark >= 1.0 {
+                    theme.warn
+                } else {
+                    theme.hilite
+                },
+            );
+        }
     }
 }
 

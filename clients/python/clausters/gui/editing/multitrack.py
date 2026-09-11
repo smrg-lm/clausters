@@ -498,6 +498,11 @@ class MultitrackView(View):
             # frame) and how the samples draw under a box longer than they are.
             "loops": " ".join(str(b["region"]) for b in picture.get("boxes", [])
                               if b.get("looping")),
+            # **Where each track's level is read from**: the control buses its
+            # meters write, which the host reads every frame straight out of the
+            # shared segment. A piece with no playback names none, and a header
+            # with nothing to read draws no strip.
+            "meters": _meters(editor),
             "weight": 1.0,
             "ruler": "beats",
             "sample_rate": self.bridge.rate,
@@ -551,6 +556,19 @@ def _lanes(rows) -> list:
         out += [str(row["track"]), str(row.get("label", "")), ROW_H,
                 bool(row.get("mute")), bool(row.get("solo")),
                 float(row.get("gain", 1.0))]
+    return out
+
+
+def _meters(editor) -> list:
+    """The playback's meter buses as the widget's flat quadruples: ``lane``,
+    the first bus of the level run, the first of the mark run, and how many
+    channels each run is."""
+    playback = getattr(editor, "playback", None)
+    if playback is None:
+        return []
+    out = []
+    for track, (bus, channels) in playback.meters.items():
+        out += [str(track), int(bus.index), int(bus.index) + channels, channels]
     return out
 
 

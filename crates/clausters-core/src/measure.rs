@@ -310,6 +310,33 @@ impl Ballistics {
     }
 }
 
+/// **Where a meter's floor is**, in decibels. Sixty below unity is the field's
+/// span for a peak meter: quiet enough that a fade reads as a fade to the end,
+/// short enough that the loud half of the scale keeps most of the strip.
+pub const METER_FLOOR_DB: f32 = -60.0;
+
+/// **How high a column stands for an amplitude**, over `0..1`.
+///
+/// A meter is read in decibels and not in amplitude, and the difference is the
+/// whole of whether it is legible: half of unity is -6 dB, which is a tenth of
+/// the way down a 60 dB strip and not half of it, and a linear column spends
+/// nine tenths of its height on the top 20 dB of a signal nobody mixes in.
+///
+/// Here rather than in whoever paints, for the reason [`Ballistics`] is here:
+/// the same amplitude has to stand the same height in every window that draws
+/// it, and a mapping written twice is two answers to one question.
+pub fn meter_fraction(amplitude: f32, floor_db: f32) -> f32 {
+    let amplitude = amplitude.abs();
+    let floor = floor_db.min(-1.0);
+    if amplitude <= 0.0 {
+        return 0.0;
+    }
+    // 20·log10(a), which is `ln(a) / ln(10) · 20`, against a floor that is the
+    // bottom of the strip.
+    let db = 20.0 * amplitude.ln() / core::f32::consts::LN_10;
+    ((db - floor) / -floor).clamp(0.0, 1.0)
+}
+
 /// `10^x`, written as `exp(x · ln 10)` so the constant is visible rather than
 /// hidden inside a `powf` whose base nobody can see.
 #[inline]
@@ -320,6 +347,29 @@ fn powf10(x: f32) -> f32 {
 #[cfg(test)]
 mod ballistics_tests {
     use super::*;
+
+    /// **A meter is read in decibels**: unity is the top, the floor is the
+    /// bottom, and half the amplitude is a tenth of the way down rather than
+    /// halfway.
+    #[test]
+    fn a_column_stands_where_the_decibels_say() {
+        assert_eq!(meter_fraction(1.0, METER_FLOOR_DB), 1.0);
+        assert_eq!(
+            meter_fraction(0.0, METER_FLOOR_DB),
+            0.0,
+            "silence is the floor"
+        );
+        let half = meter_fraction(0.5, METER_FLOOR_DB);
+        assert!(
+            (half - 0.9).abs() < 0.01,
+            "-6 dB of 60 is nine tenths up: {half}"
+        );
+        assert_eq!(
+            meter_fraction(2.0, METER_FLOOR_DB),
+            1.0,
+            "and past unity it is the top, not past it"
+        );
+    }
 
     /// **It rises at once and falls at the rate it was given.** Twenty decibels
     /// a second means a tenth of the amplitude after one second, whatever the

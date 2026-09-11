@@ -106,6 +106,14 @@ export class Playback {
     /** Track id → its slot group. */
     readonly tracks = new Map<number, Group>();
     /**
+     * Track id → the control buses its meters write and how wide it is: a run
+     * of `2 * channels`, the level first and the mark that waits after it.
+     *
+     * What the host reads every frame, straight out of the shared segment,
+     * which is why a level that moves every block costs no message.
+     */
+    readonly meters = new Map<number, [Bus, number]>();
+    /**
      * Region id → its group, its slot, the ports last sent, and which track it
      * is on. The slot is kept because a source of another width is another clip
      * def, which is the one change a `set` cannot express; the track is kept so
@@ -134,6 +142,8 @@ export class Playback {
     curveGroup: Group | null = null;
     /** The name of the curve def, as the core gives it. */
     private curveDef = "";
+    /** How long a meter's mark waits, in seconds, as the core says. */
+    private meterHold = 0;
     readonly transport: Transport;
 
     constructor(
@@ -261,8 +271,10 @@ export class Playback {
             synth: { name: string }[];
             graph: { name: string }[];
             curve: string;
+            meterHold: number;
         };
         this.curveDef = defs.curve;
+        this.meterHold = Number(defs.meterHold ?? 0);
         for (const [family, specs] of [
             ["synth", defs.synth],
             ["graph", defs.graph],
@@ -283,6 +295,7 @@ export class Playback {
             if (group === undefined) {
                 group = this.piece!.addSlot("tracks");
                 this.tracks.set(track.track, group);
+                this.meter(track.track, group, track.channels);
             }
             group.set({ gain: track.gain, mute: track.mute });
             await this.syncCurves(group, track.curves);
@@ -291,6 +304,29 @@ export class Playback {
         for (const id of [...this.tracks.keys()].filter((id) => !seen.has(id))) {
             this.freeTrack(id);
         }
+    }
+
+    /**
+     * Put this track's meters on it, and remember where they write.
+     *
+     * **Two of them**, which is one def twice: with no hold it is the level,
+     * with the core's hold it is the mark that stays up long enough to be read.
+     * Both are slot instances, so a piece nobody meters holds none — and the
+     * buses are allocated here because it is this client that allocates buses,
+     * and told to the meter as a port because it is the host that reads them.
+     */
+    private meter(id: number, track: Group, channels: number): void {
+        const width = Math.max(1, Math.trunc(channels));
+        const bus = Bus.control(2 * width, { server: this.server });
+        for (const [run, hold] of [[0, 0], [width, this.meterHold]] as const) {
+            const ports: Ports = {
+                "meter/out0": bus.index + run,
+                "meter/hold": hold,
+            };
+            if (width > 1) ports["meter/out1"] = bus.index + run + 1;
+            track.addSlot("meters", ports);
+        }
+        this.meters.set(id, [bus, width]);
     }
 
     private async syncClips(
@@ -446,10 +482,16 @@ export class Playback {
     }
 
     private freeTrack(id: number): void {
-        // Freeing the group frees everything inside it, so the clips only have
-        // to leave the table — which is what the track id in it is for.
+        // Freeing the group frees everything inside it, so the clips and the
+        // meters only have to leave the table — which is what the track id in
+        // them is for. The buses are not the group's, so they are given back.
         for (const [region, held] of [...this.clips.entries()]) {
             if (held[3] === id) this.freeClip(region, false);
+        }
+        const metered = this.meters.get(id);
+        if (metered !== undefined) {
+            metered[0].free();
+            this.meters.delete(id);
         }
         this.tracks.get(id)?.free();
         this.tracks.delete(id);
@@ -541,6 +583,8 @@ export class Playback {
             this.curveGroup.free();
             this.curveGroup = null;
         }
+        for (const [bus] of this.meters.values()) bus.free();
+        this.meters.clear();
         this.readers.clear();
         this.clips.clear();
         this.tracks.clear();

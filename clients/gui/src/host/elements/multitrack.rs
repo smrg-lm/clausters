@@ -42,7 +42,7 @@ use crate::host::widget::element::{
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
-use crate::host::widget::{EditorProps, GestureMap, RulerY, SourceWindow};
+use crate::host::widget::{EditorProps, GestureMap, Rate, RulerY, SourceWindow};
 use crate::viewport::View;
 
 /// One JSON scalar as the OSC primitive it is — **flat primitives at the
@@ -180,6 +180,17 @@ pub struct Multitrack {
     /// because the wire has always carried one, and a reader who zoomed a track
     /// in must not lose it to the next fader move.
     zoom: HashMap<String, f32>,
+    /// **Where each metered track's level is read from**, by lane name.
+    ///
+    /// A meter is a *bus*, not a value: the host reads it every frame, straight
+    /// out of the shared segment, so a level that moves every block costs no
+    /// message at all. What the client says is where to look — which is the
+    /// only half of it a client could know, since it is the client that
+    /// allocated the buses and put the meters on the track.
+    ///
+    /// Empty is the ordinary state: a piece nobody is playing has no meters,
+    /// and a header with nothing to read draws no strip.
+    meters: HashMap<String, LaneMeter>,
     /// **Which boxes wrap**, by name — the `loops` prop, a name set exactly as
     /// `hidden` is.
     ///
@@ -286,6 +297,7 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             loops: Vec::new(),
+            meters: HashMap::new(),
             zoom: HashMap::new(),
             selected: Vec::new(),
             track: None,
@@ -349,6 +361,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
+        meters: parse_meters(props),
         zoom: HashMap::new(),
         holding: None,
         selected: Vec::new(),
@@ -396,6 +409,54 @@ fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
                 solo: truthy(&c[4]).unwrap_or(false),
                 gain: c[5].as_f64().unwrap_or(1.0) as f32,
             })
+        })
+        .collect()
+}
+
+/// **What one track's meter is read out of**: two runs of control buses, one
+/// value per channel each.
+///
+/// Two buses and not one because a meter shows two things — the level, and the
+/// mark that waits to be read — and they are the same measurement with
+/// different ballistics, which is why the server writes both rather than
+/// letting two clients invent two falls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LaneMeter {
+    /// The first control bus of the level run.
+    level: i32,
+    /// The first control bus of the held-peak run; negative for no mark.
+    mark: i32,
+    /// How many channels the track has, which is how long each run is.
+    channels: usize,
+}
+
+/// The `meters` prop: the flat `lane level mark channels` quadruple array.
+///
+/// Its own prop rather than two more fields on `lanes`, because a meter is not
+/// a thing this widget reports back: the `lanes` payload is an **edit** a hand
+/// made, and a bus number in it would be a bus number the host was expected to
+/// return unchanged.
+fn parse_meters(props: &Map<String, Value>) -> HashMap<String, LaneMeter> {
+    let Some(Value::Array(items)) = props.get("meters") else {
+        return HashMap::new();
+    };
+    items
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter_map(|c| {
+            let channels = c[3].as_i64().unwrap_or(0).max(0) as usize;
+            if channels == 0 {
+                return None;
+            }
+            Some((
+                c[0].as_str()?.to_string(),
+                LaneMeter {
+                    level: c[1].as_i64().unwrap_or(-1) as i32,
+                    mark: c[2].as_i64().unwrap_or(-1) as i32,
+                    channels,
+                },
+            ))
         })
         .collect()
 }
@@ -1440,7 +1501,36 @@ impl Multitrack {
             mute: Some(lane.mute),
             solo: Some(lane.solo),
             level: Some(lane.gain),
+            // **Silent, and the right length**: the strip's width follows the
+            // channel count and nothing else, so a hit test lays the header out
+            // exactly where the drawing did without reading a bus.
+            meters: self
+                .meters
+                .get(&lane.name)
+                .map_or_else(Vec::new, |m| vec![(0.0, 0.0); m.channels]),
         }
+    }
+
+    /// The same header with the **levels read**, which only a draw can do: the
+    /// values are in the shared segment and are one atomic load each, so a
+    /// meter costs a frame's read rather than a message.
+    fn live_header(&self, lane: &Lane, ctx: &Ctx) -> track::Header {
+        let mut header = self.header(lane, ctx.indent);
+        let Some(meter) = self.meters.get(&lane.name) else {
+            return header;
+        };
+        for (channel, slot) in header.meters.iter_mut().enumerate() {
+            let channel = channel as i32;
+            *slot = (
+                ctx.world.level(meter.level + channel, Rate::Control),
+                if meter.mark < 0 {
+                    0.0
+                } else {
+                    ctx.world.level(meter.mark + channel, Rate::Control)
+                },
+            );
+        }
+        header
     }
 }
 
@@ -1557,7 +1647,7 @@ impl Element for Multitrack {
                     d,
                     at[i],
                     Some(lane.shown()),
-                    &self.header(lane, ctx.indent),
+                    &self.live_header(lane, ctx),
                     false,
                     ctx.indent,
                     self.track == Some(i),
@@ -1585,6 +1675,7 @@ impl Element for Multitrack {
                         mute: None,
                         solo: None,
                         level: None,
+                        meters: Vec::new(),
                     },
                     false,
                     ctx.indent,
@@ -2169,11 +2260,16 @@ impl Element for Multitrack {
     /// with these lanes starts its ticks over the same sample. Without it there
     /// is no band, and a lane draws no name and no controls at all.
     fn gutter(&self, m: &Metrics) -> f32 {
+        // The strip is part of the band, so the widest metered track is part of
+        // what the group's indent has to hold -- otherwise the meters would be
+        // drawn over the names rather than beside them.
+        let widest = self.meters.values().map(|m| m.channels).max().unwrap_or(0);
         let header = track::Header {
             w: None,
             mute: Some(false),
             solo: Some(false),
             level: Some(1.0),
+            meters: vec![(0.0, 0.0); widest],
         };
         header.width(m)
     }
@@ -2187,8 +2283,23 @@ impl Element for Multitrack {
             .collect();
         takes.sort_unstable();
         takes.dedup();
+        // **A metered track asks for its buses**, which is what makes the
+        // window animate: the declaration is the subscription, the same way a
+        // `meter` widget's rate is.
+        let mut buses = Vec::new();
+        for meter in self.meters.values() {
+            for channel in 0..meter.channels as i32 {
+                buses.push(meter.level + channel);
+                if meter.mark >= 0 {
+                    buses.push(meter.mark + channel);
+                }
+            }
+        }
+        buses.sort_unstable();
+        buses.dedup();
         Needs {
             takes,
+            buses,
             // **A swept line is a picture driven by the clock**, so the window
             // has to be told: an anchored playhead moves with no message and
             // nothing else would ask for the frame it moves on.
@@ -2308,6 +2419,95 @@ mod tests {
         "clips": ["a", "noise", 0, 48000, 0, "", 0,
                   "b", "tone", 96000, 48000, 0, "take 2", 0]
     }"#;
+
+    /// **A metered track asks for its buses and reads them.** The declaration
+    /// is the subscription -- nothing else would ask the window for the frames
+    /// a level moves on -- and what a strip shows is the bus, read where it
+    /// stands rather than sent per block.
+    #[test]
+    fn a_metered_track_declares_its_buses_and_reads_them() {
+        struct Buses;
+        impl crate::host::BusSource for Buses {
+            fn control(&self, index: usize) -> f32 {
+                // Bus 10 is unity, 11 is silence, 12 is the mark above them.
+                match index {
+                    10 => 1.0,
+                    12 => 1.0,
+                    _ => 0.0,
+                }
+            }
+            fn level(&self, _bus: i32) -> f32 {
+                0.0
+            }
+        }
+
+        let mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1.0, "two", "", 100, 0, 0, 1.0],
+                "meters": ["one", 10, 12, 2]}"#,
+        ));
+        assert_eq!(
+            mt.needs().buses,
+            vec![10, 11, 12, 13],
+            "both runs, both channels, and nothing for the track with no meter"
+        );
+
+        let buses = Buses;
+        let world = crate::host::world::World {
+            bus: Some(&buses),
+            ..Default::default()
+        };
+        let metrics = crate::host::metrics::Metrics::default();
+        let ctx = Ctx {
+            world: &world,
+            metrics: &metrics,
+            rect: Rect::new(0.0, 0.0, 800.0, 200.0),
+            indent: 120.0,
+            scale: 1.0,
+            time: None,
+            clip: None,
+            focused: false,
+        };
+        let live = mt.live_header(&mt.lanes[0], &ctx);
+        assert_eq!(live.meters, vec![(1.0, 1.0), (0.0, 0.0)]);
+        assert!(
+            mt.live_header(&mt.lanes[1], &ctx).meters.is_empty(),
+            "a track with no meter draws no strip"
+        );
+    }
+
+    /// **The strip is laid out from the channel count alone**, which is what
+    /// lets a press land on the pixels a control was drawn on: the hit test
+    /// never reads a bus, so its header must still be the width the drawing's
+    /// was.
+    #[test]
+    fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
+        let mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1.0], "meters": ["one", 10, 12, 2]}"#,
+        ));
+        let m = crate::host::metrics::Metrics::default();
+        let plain = from_props(&props(r#"{"lanes": ["one", "", 100, 0, 0, 1.0]}"#));
+        assert!(
+            mt.gutter(&m) > plain.gutter(&m),
+            "the band holds the strip beside the name rather than over it"
+        );
+
+        let mut quiet = mt.header(&mt.lanes[0], 0.0);
+        let loud = {
+            let mut h = quiet.clone();
+            h.meters = vec![(1.0, 1.0); 2];
+            h
+        };
+        assert_eq!(
+            quiet.width(&m),
+            loud.width(&m),
+            "a level is not a size: a moving meter would move the name under it"
+        );
+        quiet.meters.clear();
+        assert!(
+            quiet.width(&m) < loud.width(&m),
+            "and no meter takes no room"
+        );
+    }
 
     /// **A box's base view is what its contents are**, and it is drawn by the
     /// element that draws it anywhere else: samples through the signal

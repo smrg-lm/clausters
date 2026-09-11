@@ -2361,6 +2361,11 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
         // The one def a caller instantiates by name rather than by the plan:
         // a curve is a node of the caller's own, beside the piece.
         "curve": clausters_core::mixer::curve_name(),
+        // **How long a meter's mark waits**, in seconds: a meter is added by
+        // the caller (it is the caller who allocated the buses it writes), and
+        // the level and the mark are the same def with this as the difference.
+        // A number, so it is not the same taste twice in two clients.
+        "meterHold": clausters_core::mixer::METER_HOLD,
     }))
     .unwrap_or_default()
 }

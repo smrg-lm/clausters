@@ -686,3 +686,23 @@ def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
     two.soloed = True
     assert _plan(ed)["tracks"][0]["mute"] == 1.0, "another track is soloed"
     assert _plan(ed)["tracks"][1]["mute"] == 0.0
+
+
+def test_a_metered_track_names_the_buses_the_host_reads():
+    """The meters are the playback's and the strip is the host's, so what the
+    widget carries is *where to look*: a lane, the level run and the mark run,
+    and how many channels each is.
+
+    The host reads those buses itself every frame, which is why a level that
+    moves every block costs no message at all.
+    """
+    class FakeBus:
+        index = 40
+
+    class FakePlayback:
+        meters = {10: (FakeBus(), 2)}
+
+    ed = editor(piece())
+    assert props(ed)["meters"] == [], "a piece nobody plays has no meters"
+    ed.playback = FakePlayback()
+    assert props(ed)["meters"] == ["10", 40, 42, 2]

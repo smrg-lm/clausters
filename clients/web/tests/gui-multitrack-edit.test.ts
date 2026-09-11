@@ -744,3 +744,18 @@ test("the mixer rules reach the plan and a solo silences the rest", () => {
     assert.equal(plan(ed).tracks[0].mute, 1.0, "another track is soloed");
     assert.equal(plan(ed).tracks[1].mute, 0.0);
 });
+
+test("a metered track names the buses the host reads", () => {
+    // The meters are the playback's and the strip is the host's, so what the
+    // widget carries is *where to look*: a lane, the level run and the mark
+    // run, and how many channels each is.
+    //
+    // The host reads those buses itself every frame, which is why a level that
+    // moves every block costs no message at all.
+    const ed = editor(piece());
+    assert.deepEqual(props(ed).meters, [], "a piece nobody plays has no meters");
+    (ed as unknown as { playback: unknown }).playback = {
+        meters: new Map([[10, [{ index: 40 }, 2]]]),
+    };
+    assert.deepEqual(props(ed).meters, ["10", 40, 42, 2]);
+});

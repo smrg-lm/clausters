@@ -65,6 +65,13 @@ class Playback:
         self.piece = None
         #: track id -> its slot group.
         self.tracks: dict = {}
+        #: track id -> ``(bus, channels)``: the control buses that track's
+        #: meters write, a run of ``2 * channels`` -- the level first and the
+        #: mark that waits after it. What the host reads every frame, and the
+        #: reason a level that moves every block costs no message.
+        self.meters: dict = {}
+        #: How long a meter's mark waits, in seconds, as the core says.
+        self._meter_hold = 0.0
         #: region id -> ``(group, slot, ports last sent, track id)``. The slot
         #: is kept because a source of another width is another clip def, which
         #: is the one change a `set` cannot express; the track is kept so a
@@ -163,6 +170,7 @@ class Playback:
         defs = _native.mixer_defs(
             [tuple(pair) for pair in plan.get("widths", [])], plan["channels"])
         self._curve_def = defs.get("curve", "")
+        self._meter_hold = float(defs.get("meterHold", 0.0))
         for family, specs in (("synth", defs.get("synth", [])),
                               ("graph", defs.get("graph", []))):
             for spec in specs:
@@ -179,11 +187,31 @@ class Playback:
             if group is None:
                 group = self.piece.add_slot("tracks")
                 self.tracks[track["track"]] = group
+                self._meter(track["track"], group, track["channels"])
             group.set({"gain": track["gain"], "mute": track["mute"]})
             self._sync_curves(group, track["curves"])
             self._sync_clips(track["track"], group, track["clips"])
         for id in [id for id in self.tracks if id not in seen]:
             self._free_track(id)
+
+    def _meter(self, id, track, channels: int) -> None:
+        """Put this track's meters on it, and remember where they write.
+
+        **Two of them**, which is one def twice: with no hold it is the level,
+        with the core's hold it is the mark that stays up long enough to be
+        read. Both are slot instances, so a piece nobody meters holds none -- and
+        the buses are allocated here because it is this client that allocates
+        buses, and told to the meter as a port because it is the host that reads
+        them.
+        """
+        channels = max(1, int(channels))
+        bus = Bus.control(2 * channels, server=self.server)
+        for run, hold in ((0, 0.0), (channels, self._meter_hold)):
+            ports = {"meter/out0": float(bus.index + run), "meter/hold": hold}
+            if channels > 1:
+                ports["meter/out1"] = float(bus.index + run + 1)
+            track.add_slot("meters", ports)
+        self.meters[id] = (bus, channels)
 
     def _sync_clips(self, id, track, planned: list) -> None:
         seen = set()
@@ -305,10 +333,14 @@ class Playback:
             group.free()
 
     def _free_track(self, id) -> None:
-        # Freeing the group frees everything inside it, so the clips only have
-        # to leave the table -- which is what the track id in it is for.
+        # Freeing the group frees everything inside it, so the clips and the
+        # meters only have to leave the table -- which is what the track id in
+        # them is for. The buses are not the group's, so they are given back.
         for region in [r for r, held in self.clips.items() if held[3] == id]:
             self._free_clip(region, freeing=False)
+        held = self.meters.pop(id, None)
+        if held is not None:
+            held[0].free()
         self.tracks.pop(id).free()
 
     # ---- the transport ----
@@ -373,6 +405,9 @@ class Playback:
         if self.curve_group is not None:
             self.curve_group.free()
             self.curve_group = None
+        for bus, _channels in self.meters.values():
+            bus.free()
+        self.meters.clear()
         self.readers.clear()
         self.clips.clear()
         self.tracks.clear()
