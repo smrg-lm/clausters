@@ -397,46 +397,59 @@ La tabla de coeficientes va en `clausters-core` (`mixdown`), una sola vez.
 
 ### 6.3 El vúmetro
 
-Un `meter` por pista, de `channels` canales, y uno del master. Necesita las dos
-mitades:
+Un vúmetro por pista, de `channels` canales, y uno del master. Las dos mitades,
+y la primera está hecha (fase 6):
 
-- **El grafo**: un miembro `meter` en `mt.track` que escribe en **buses de
-  control**, uno por canal (decidido: el pico/RMS ya es un escalar por bloque, y
-  el *audio tap* está pensado para forma de onda, que es mover miles de muestras
-  para mostrar una). Son buses privados de la instancia, consecutivos, así que
-  el elemento lee un rango y no *n* buses sueltos — un `/bus_getRange` o un
-  `/bus_stream` por pista, no uno por canal.
+- **El grafo**: `mt.meter.<n>` lee el bus `post` del strip —el bus propio que un
+  strip escribe, y que existe justamente para esto: todas las pistas escriben en
+  el bus de mezcla del master, así que medir ahí sería medir la suma— y escribe
+  **buses de control**, uno por canal. Un pico ya es un escalar por bloque, que
+  es exactamente lo que lleva un bus de control; el *audio tap* está pensado
+  para forma de onda, que es mover miles de muestras para mostrar una.
 
-  **La eficiencia es el requisito, no un deseo**: un vúmetro por pista es lo que
-  más seguido se actualiza en toda la aplicación. El nodo escribe **un valor por
-  bloque por canal** y nada más; el que decide cada cuánto mirar es el host, a
-  la tasa de cuadro y no a la del bloque.
-- **El elemento GUI**: `clients/gui/src/host/elements/meter.rs` ya existe para
-  un canal. Lo que falta es la tira vertical de *n* canales dentro del header de
-  la pista (`G35.14`), leyendo *n* buses consecutivos.
+  **Es un slot y no un miembro fijo**, por dos razones. Una pieza que nadie está
+  mirando no tiene ningún vúmetro, que es lo que hace que la eficiencia sea un
+  hecho y no una intención. Y las dos mitades de lo que muestra un vúmetro —el
+  nivel y la marca que espera— son **dos instancias del mismo def** con distinto
+  `hold`, en vez de dos defs.
 
-Se mide **post-fader por defecto** (es lo que espera la mano), con la opción
-pre-fader declarada por pista.
+  **Los buses los dice el host**, por los puertos `meter/out0` y `meter/out1`,
+  porque es el host el que los lee: pedirle que averigüe un bus privado de una
+  instancia sería inventar una pregunta que no hace falta. Que sean
+  consecutivos, y entonces un rango en vez de *n* lecturas sueltas, es del lado
+  del que los pide.
 
-**La balística, que hoy no está hecha y hace falta.** Un vúmetro que dibuja el
-pico crudo de cada bloque es ilegible: parpadea. Las tres reglas del campo, y
-las tres van en `clausters-core` (una vez, para los dos clientes y el host —
-son aritmética, no dibujo):
+  **La eficiencia es el requisito, no un deseo**: un vúmetro es lo que más
+  seguido se actualiza en toda la aplicación. El nodo escribe **un valor por
+  bloque por canal** y nada más; cada cuánto mirar lo decide el host, a la tasa
+  de cuadro y no a la del bloque.
+- **El elemento GUI**, que **falta**: `clients/gui/src/host/elements/meter.rs`
+  ya existe para un canal; lo que no está es la tira vertical de *n* canales
+  dentro del header de la pista (`G35.14`), leyendo esos buses. Hasta que exista
+  nadie instancia un vúmetro, porque nadie dibuja uno.
+
+Se mide **post-fader**, que es lo que espera la mano: `post` está después del
+fader. La opción pre-fader por pista es otro cableado —leer el bus de mezcla del
+strip en vez de su `post`— y queda anotada con los sends (§10.3), que necesitan
+la misma elección.
+
+**La balística** está en `clausters_core::measure::Ballistics` y la corre el
+UGen `Meter`, una vez para los dos clientes y el host — son aritmética, no
+dibujo:
 
 - **Ataque instantáneo**: el pico sube en el mismo bloque en que ocurre. Nunca
   se suaviza hacia arriba: para eso está el vúmetro.
-- **Caída con constante declarada**: baja a una tasa fija en dB/s (el valor del
-  campo son ~20 dB/s para el pico, y hay que poder cambiarlo). Es lo que hace
-  que un transitorio se vea.
+- **Caída con constante declarada**: baja a una tasa fija en dB/s (el defecto
+  son 20 dB/s, y es un control). Es lo que hace que un transitorio se vea.
 - **Retención del pico máximo**: una marca que se queda quieta un tiempo
-  declarado (~1–2 s) y después cae, más el máximo absoluto de la pasada, que se
-  retiene hasta que la mano lo borre — que es lo que se mira para saber si algo
-  clippeó mientras uno no estaba mirando.
+  declarado (1,5 s de defecto) y después cae. El máximo absoluto de la pasada
+  —el que se retiene hasta que la mano lo borre, para saber si algo clippeó
+  mientras uno no miraba— es del que dibuja: es acumular el máximo de lo que ya
+  está leyendo.
 
 Lo que el nodo escribe en el bus es el valor **ya con balística aplicada**, para
-que dos clientes distintos no dibujen dos caídas distintas de la misma señal, y
-para que el host no tenga que muestrear más seguido que su propio cuadro. La
-marca de retención es un segundo bus por canal.
+que dos clientes no dibujen dos caídas distintas de la misma señal, y para que
+el host no tenga que muestrear más seguido que su propio cuadro.
 
 ---
 
@@ -594,14 +607,16 @@ El grupo de cada tramo es de **ancho fijo** (`5 + channels`) justamente porque
 el mapa es variádico: con una cola de largo desconocido no hay manera de
 distinguir una entrada del mapa del índice de buffer del tramo siguiente.
 
-**Lo que no se pudo hacer, y por qué**: que `/buffer_query` traiga una bandera.
-Su respuesta es un **grupo repetido de 4** por buffer, así que agregar un quinto
-campo no es el apéndice inofensivo que sí admite `/server_query.reply` — todo
-parser que la corta de a cuatro leería la bandera como el índice del buffer
-siguiente. Por ahora un cliente se entera de que un buffer es un cosido cuando
-lo rechazan al escribirlo, que es honesto pero tarde. La salida es una respuesta
-propia (`/buffer_parts bufnum` → los tramos, que un editor de joins quiere de
-todos modos), anotada en `PLAN.md`.
+**Lo que no se pudo hacer así, y por qué**: que `/buffer_query` traiga una
+bandera. Su respuesta es un **grupo repetido de 4** por buffer, así que agregar
+un quinto campo no es el apéndice inofensivo que sí admite `/server_query.reply`
+— todo parser que la corta de a cuatro leería la bandera como el índice del
+buffer siguiente. Sin eso un cliente se enteraba de que un buffer es un cosido
+cuando lo rechazaban al escribirlo, que es honesto pero tarde. La salida fue una
+respuesta propia, **`/buffer_parts bufnum`** (hecho 2026-09-10): los tramos en
+los mismos términos en que `/buffer_stitch` los toma, que un editor de joins
+quiere de todos modos y que se puede editar y devolver. Un buffer que es dueño
+de sus muestras contesta sin tramos, que es la respuesta a la pregunta.
 
 **El disco: no es urgente, pero es importante — anotado en §10.4.** Un `DiskIn`
 transmitiendo sobre una lista de segmentos es el mismo problema una capa más
@@ -800,10 +815,16 @@ el orden del bypass, y qué pasa con la cola cuando se lo saca de la cadena.
 `mt.track` los declara en §3.2 y quedan **vacíos** hasta que haya efectos a
 dónde mandarlos — un send a ninguna parte no se puede probar y no se puede oír.
 
-**Lo que ya lo admite**: un send es un slot, o sea la misma repetición con
-nombre que un clip o un efecto (§2.2d), y su destino es un bus `external`, o sea
-el mismo mecanismo de §10.1. **Lo que falta**: la elección pre/post por send
-(que es un cableado distinto, no un control), y el destino, que es §10.1.
+**Lo que ya lo admite**: el def existe. `mt.send.<n>` es el nodo que lleva el
+bus `post` de un strip al bus que le toca, a una ganancia, y es lo que hoy une
+una pista con el master (fase 6): un send post-fader extra es *otra instancia de
+ese mismo def* apuntada a otro bus. Y un send es un slot, o sea la misma
+repetición con nombre que un clip o un efecto (§2.2d), con el destino como bus
+`external`, que es el mecanismo de §10.1.
+
+**Lo que falta**: la elección pre/post por send — que es un cableado distinto y
+no un control, porque un pre-fader lee el bus de mezcla del strip y no su
+`post` — y el destino, que es §10.1.
 
 ### 10.4 El disco: `DiskIn` sobre segmentos
 
