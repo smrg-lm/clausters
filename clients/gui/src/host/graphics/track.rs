@@ -17,7 +17,7 @@
 
 use clausters_core::measure;
 
-use super::meters::fraction;
+use super::meters::{self, fraction};
 use super::signal::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::layout::Rect;
@@ -305,10 +305,10 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
 /// than of the description, which is why it is worth the strip: everything else
 /// in a header says what was asked for, and this says what came out.
 ///
-/// The column stands in decibels ([`clausters_core::measure::meter_fraction`]),
-/// and the mark is the peak the server is holding — a hairline across the
-/// column rather than a second column, because it is the same axis read at
-/// another moment.
+/// The column stands in decibels ([`clausters_core::measure::meter_fraction`])
+/// and is drawn by [`meters::draw_column`], the one column in this host — so a
+/// track's meter, a `meter` widget and a mixer's strip read alike, down to
+/// where the green becomes red.
 fn draw_meter_strip(
     mesh: &mut crate::host::paint::Mesh,
     m: &Metrics,
@@ -322,35 +322,18 @@ fn draw_meter_strip(
     }
     let gaps = (channels.len() - 1) as f32 * m.divider_w;
     let column = ((rect.w - gaps) / channels.len() as f32).max(1.0);
+    let scale = meters::Scale::decibels();
     for (i, &(level, mark)) in channels.iter().enumerate() {
         let x = rect.x + i as f32 * (column + m.divider_w);
-        let cell = Rect::new(x, rect.y, column, rect.h);
-        mesh.rect(cell, theme.field);
-        let fill = rect.h * measure::meter_fraction(level, measure::METER_FLOOR_DB);
-        if fill > 0.0 {
-            mesh.rect(
-                Rect::new(cell.x, cell.y + cell.h - fill, cell.w, fill),
-                if level >= 1.0 {
-                    theme.warn
-                } else {
-                    theme.accent
-                },
-            );
-        }
-        let held = measure::meter_fraction(mark, measure::METER_FLOOR_DB);
-        if held > 0.0 {
-            let y = cell.y + cell.h - cell.h * held;
-            mesh.line(
-                [cell.x, y],
-                [cell.x + cell.w, y],
-                m.divider_w,
-                if mark >= 1.0 {
-                    theme.warn
-                } else {
-                    theme.hilite
-                },
-            );
-        }
+        meters::draw_column(
+            mesh,
+            m,
+            theme,
+            Rect::new(x, rect.y, column, rect.h),
+            measure::meter_fraction(level, measure::METER_FLOOR_DB),
+            measure::meter_fraction(mark, measure::METER_FLOOR_DB),
+            scale,
+        );
     }
 }
 

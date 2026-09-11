@@ -1179,6 +1179,21 @@ would be written against a picture the first half had already changed.
   for the level, one with the core's hold for the mark that waits — so a piece
   nobody plays holds none, and both clients do it with the same two calls.
 
+  *The scale done 2026-09-11, after the first eye pass.* Three things the first
+  cut got wrong, and all three were general rather than the strip's: the column
+  stood in a well the colour of the header, so one track's meter ran into the
+  next (`meter_field`, darker than any panel); it was one flat colour, where a
+  meter is read by **where** it changes colour (`meter_low`/`meter_mid`/
+  `meter_high`, ramped over the height with the two levels the core now names —
+  `METER_WARN_DB` at -18 dBFS, the field's alignment level, and `METER_HOT_DB`
+  at -6); and it was drawn by the strip's own code, so a `meter` widget and a
+  mixer would each have grown their own. The column is now
+  `graphics::meters::draw_column`, the one column this host draws, and the
+  widget renders through it. The pass also turned up why the right channel moved on
+  its own over a mono take, which was the def and not the drawing: the meter's
+  UGen indices advanced by two where each channel pushes three, so the second
+  channel wrote its raw input to the bus and metered its neighbour.
+
 - ⬜ **G35.6 — An entered box keeps its own history.**
   After editing a box's samples, closing that window and opening it again,
   `Ctrl`+`Z` in the box's editor steps the **multitrack's** last edit, and the
@@ -4060,16 +4075,29 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **The example's first box makes no sound, and the reason is that a curve is
-  not a control yet** *(found by use 2026-09-10; the picture half was a client
-  bug and is fixed -- see below)*. `multitrack_audio.py` reads a clip envelope
-  **once**, at the box's first break-point, and writes it into the reader's
-  `amp`: the `white` box's envelope starts at zero, so the box is silent for as
-  long as it is on screen. Nothing is wrong with the document, the picture or
-  the report -- what is missing is `G35.3`, where a curve becomes a control that
-  *plays*. Left as it is on purpose: fixing it in the example would mean the
-  example sampling the curve per block, which is the thing the milestone exists
-  to stop.
+- ✅ **The example's first box makes no sound, and the reason is that a curve is
+  not a control yet** *(found by use 2026-09-10; closed 2026-09-11 by
+  `G35.3`/`G35.4` and the example's pass onto them)*. `multitrack_audio.py` read
+  a clip envelope **once**, at the box's first break-point, and wrote it into
+  the reader's `amp`: the `white` box's envelope starts at zero, so the box was
+  silent for as long as it was on screen. Nothing was wrong with the document,
+  the picture or the report -- what was missing was the curve becoming a control
+  that *plays*, which is what `mt.curve` plus `/graph_map` now do. It was left
+  alone on purpose rather than patched in the example, since sampling the curve
+  per block is exactly what the milestone existed to stop.
+
+- ⬜ **A take reloads into the web host's views over and over** *(found
+  2026-09-11, driving `edit-multitrack.html` from a browser to check the port
+  against its Python twin; **not diagnosed**)*. The page's console prints
+  `buffer N: 96000 frames x 1 channel(s) loaded into K view(s)` for the visible
+  takes about four times a second, with nothing on screen changing and no
+  gesture in flight, and `K` wanders (9 to 12) between lines. It predates the
+  work that found it -- the same lines come out of the previous commit's page --
+  so it is recorded rather than fixed here. Two things to settle before it is
+  worth touching: whether a reload copies samples or only re-binds a view (the
+  cost is nothing like the same), and why the count of views moves when the
+  window does not. The native host is where to compare, since the host is one
+  program compiled twice and a loop in only one of them names its own cause.
 
 - ✅ **Buffer 0 is a buffer, and `x or -1` said it was not** *(found by use
   2026-09-10, on the box the example loads first)*. `Sources.bufnum` answered

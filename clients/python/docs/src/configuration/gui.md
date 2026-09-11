@@ -77,7 +77,7 @@ A host running in a browser tab has no config file, so the page passes the same
 table as JSON to `GuiBridge.theme` (and its sizing sibling `GuiBridge.metrics`)
 — see the [web client book](https://clausters-web.readthedocs.io/).
 
-The 66 roles, named by **function** rather than by widget, so one entry restyles
+The 70 roles, named by **function** rather than by widget, so one entry restyles
 everything that means the same thing by it. The defaults are written here as the
 hex a file would use; the host holds them as floats, so a value copied back is
 the same color to within the 8 bits of the notation:
@@ -138,6 +138,10 @@ the same color to within the 8 bits of the notation:
 | `flag` | `#f2bf73` | A marker flag (an OSC marker, an overview's pressed key). |
 | `trigger` | `#d9cc6666` | The oscilloscope's trigger-level line. |
 | `warn` | `#d96b6b` | The negative/warning readout (the phase scope's anti-correlation). |
+| `meter_field` | `#0a0a0d` | The well a meter's column stands in: darker than any panel it sits on, because a column is read against its own empty space. |
+| `meter_low` | `#3dc770` | A meter's column below the alignment level (-18 dBFS): the level a mix works at. |
+| `meter_mid` | `#f2cc40` | Its column between the alignment level and the hot end (-6 dBFS): headroom being used. |
+| `meter_high` | `#eb4738` | Its column in the last decibels before full scale, and the whole of it at or past unity. |
 | `key_white` | `#dbdee6` | A playable white key. |
 | `key_white_dim` | `#d1d6e0` | The piano roll's dimmer white key. |
 | `key_black` | `#1a1c24` | A black key. |

@@ -9,6 +9,8 @@
 //! shared memory and keeps the scope's rolling history. Keeping it GPU- and
 //! shm-free makes it unit-testable without a window.
 
+use clausters_core::measure;
+
 use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
@@ -32,21 +34,152 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
     Axis::ranged(min as f64, max as f64, Unit::Norm).fraction_clamped(value as f64) as f32
 }
 
-/// Draws a vertical level meter: a framed field with a green column rising from
-/// the bottom to `fraction` of the body height, plus the raw value as text.
+/// **The scale a meter's column is coloured on**: the two heights, as fractions
+/// of the column, where it stops being green and where it is red.
+///
+/// The levels themselves are the shared core's
+/// ([`measure::METER_WARN_DB`], [`measure::METER_HOT_DB`]) — this is only where
+/// they land on *this* column, which depends on what its height measures. A
+/// strip drawn in decibels and a widget drawn over a plain amplitude range put
+/// the same two levels at different heights, and both are then read the same
+/// way: green is headroom, amber is using it, red is about to run out.
+#[derive(Debug, Clone, Copy)]
+pub struct Scale {
+    /// Where the alignment level falls, as a fraction of the height.
+    pub warn: f32,
+    /// Where the hot end falls.
+    pub hot: f32,
+}
+
+impl Scale {
+    /// The decibel strip, from [`measure::METER_FLOOR_DB`] up to full scale —
+    /// what a channel's meter stands on.
+    pub fn decibels() -> Self {
+        Self {
+            warn: measure::meter_fraction_db(measure::METER_WARN_DB, measure::METER_FLOOR_DB),
+            hot: measure::meter_fraction_db(measure::METER_HOT_DB, measure::METER_FLOOR_DB),
+        }
+    }
+
+    /// The same two levels on a column whose height is an **amplitude** placed
+    /// in `min..max` — the `meter` widget's own axis, whatever range it was
+    /// given.
+    pub fn amplitude(min: f32, max: f32) -> Self {
+        Self {
+            warn: fraction(measure::amplitude_of_db(measure::METER_WARN_DB), min, max),
+            hot: fraction(measure::amplitude_of_db(measure::METER_HOT_DB), min, max),
+        }
+    }
+}
+
+/// The colour a column has at `height` (0 at the bottom of the well, 1 at the
+/// top): green up to the alignment level, then through amber to red.
+///
+/// A function of the **height** and not of the current level, which is what
+/// makes the strip readable at a glance: a colour that moved with the signal
+/// would say only "loud", while a fixed scale says *how* loud by where the
+/// colour changes.
+pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32) -> Color {
+    let mix = |a: Color, b: Color, t: f32| -> Color {
+        let t = t.clamp(0.0, 1.0);
+        [
+            a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t,
+            a[3] + (b[3] - a[3]) * t,
+        ]
+    };
+    let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
+    if height <= warn {
+        theme.meter_low
+    } else if height >= hot {
+        // Past the hot end it goes the rest of the way to red by the top, so
+        // the last band is a ramp and not a flat cap.
+        mix(
+            theme.meter_mid,
+            theme.meter_high,
+            (height - hot) / (1.0 - hot).max(1e-6),
+        )
+    } else {
+        mix(
+            theme.meter_low,
+            theme.meter_mid,
+            (height - warn) / (hot - warn).max(1e-6),
+        )
+    }
+}
+
+/// **One meter column**, and the only place this host draws one: the well, the
+/// column standing in it up to `fill`, and the held peak as a hairline at
+/// `mark` (a hairline rather than a second column, because it is the same axis
+/// read at another moment). Both are fractions of the cell's height; a `mark`
+/// at or below zero draws none.
+///
+/// Written once because a meter is about to exist in three places — a track's
+/// header, the `meter` widget, and the mixer that has not been built — and
+/// three columns drawn by three call sites is three answers to how loud a
+/// signal is.
+pub fn draw_column(
+    mesh: &mut crate::host::paint::Mesh,
+    m: &crate::host::metrics::Metrics,
+    theme: &crate::host::theme::Theme,
+    cell: Rect,
+    fill: f32,
+    mark: f32,
+    scale: Scale,
+) {
+    if cell.w <= 0.0 || cell.h <= 0.0 {
+        return;
+    }
+    mesh.rect(cell, theme.meter_field);
+    let fill = fill.clamp(0.0, 1.0);
+    if fill > 0.0 {
+        // The gradient in bands, one per device row at most: a column in a
+        // header is a few dozen pixels tall, so this is a handful of quads and
+        // never finer than the screen can show.
+        let bands = (cell.h.ceil() as usize).clamp(1, 48);
+        let step = fill / bands as f32;
+        for band in 0..bands {
+            let low = band as f32 * step;
+            let color = column_color(theme, scale, low + step * 0.5);
+            let h = cell.h * step;
+            mesh.rect(
+                Rect::new(cell.x, cell.y + cell.h * (1.0 - low) - h, cell.w, h),
+                color,
+            );
+        }
+    }
+    if mark > 0.0 {
+        let y = cell.y + cell.h * (1.0 - mark.clamp(0.0, 1.0));
+        mesh.line([cell.x, y], [cell.x + cell.w, y], m.divider_w, theme.text);
+    }
+}
+
+/// Draws a vertical level meter: a framed well with the column rising from the
+/// bottom to `fraction` of the body height, plus the raw value as text. The
+/// column is the shared one ([`draw_column`]), so this widget, a track's meter
+/// strip and a mixer's all read alike.
 pub fn draw_meter(d: &mut Draw, rect: Rect, value: f32, fraction: f32, label: Option<&str>) {
+    draw_meter_scaled(d, rect, value, fraction, label, Scale::amplitude(0.0, 1.0));
+}
+
+/// [`draw_meter`] told which scale its height is on, which only the widget
+/// knows: its `min`..`max` is its axis and the colours follow it.
+pub fn draw_meter_scaled(
+    d: &mut Draw,
+    rect: Rect,
+    value: f32,
+    fraction: f32,
+    label: Option<&str>,
+    scale: Scale,
+) {
     label_strip(d, label, rect);
     let (mesh, m, theme) = d.parts();
     let body = body_rect(rect, label.is_some(), m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, theme.field);
-    let fill_h = body.h * fraction.clamp(0.0, 1.0);
-    mesh.rect(
-        Rect::new(body.x, body.y + body.h - fill_h, body.w, fill_h),
-        theme.accent,
-    );
+    draw_column(mesh, m, theme, body, fraction, 0.0, scale);
     mesh.border(body, m.divider_w, theme.accent);
     super::corner_text(d, &fmt(value), body);
 }
@@ -389,6 +522,65 @@ mod tests {
         assert!(
             draw(&swinging, -1.0, 1.0) > row.h * 0.8,
             "and a swinging one is the body its own data fills"
+        );
+    }
+
+    /// **The colour changes where the level says, on whichever axis the column
+    /// has.** The two levels are the core's; a decibel strip and a plain
+    /// amplitude range put them at different heights and both are read the same
+    /// way.
+    #[test]
+    fn a_columns_colour_is_placed_by_the_level_and_not_by_the_pixel() {
+        let db = Scale::decibels();
+        assert!(
+            (db.warn - 0.7).abs() < 0.01,
+            "-18 of 60 is seven tenths up: {}",
+            db.warn
+        );
+        assert!(db.warn < db.hot && db.hot < 1.0, "{db:?}");
+
+        let linear = Scale::amplitude(0.0, 1.0);
+        assert!(
+            linear.warn < 0.2 && (linear.hot - 0.5).abs() < 0.01,
+            "on an amplitude axis -6 dB is half of unity: {linear:?}"
+        );
+
+        let theme = crate::host::theme::Theme::default();
+        assert_eq!(
+            column_color(&theme, db, db.warn * 0.5),
+            theme.meter_low,
+            "headroom is green all the way up to the alignment level"
+        );
+        let top = column_color(&theme, db, 1.0);
+        assert!(
+            top.iter()
+                .zip(theme.meter_high)
+                .all(|(a, b)| (a - b).abs() < 1e-5),
+            "and red at the top: {top:?}"
+        );
+        let middle = column_color(&theme, db, (db.warn + db.hot) * 0.5);
+        assert!(
+            middle != theme.meter_low && middle != theme.meter_mid,
+            "between the two it is a ramp and not a band: {middle:?}"
+        );
+    }
+
+    /// **A column is drawn against its own empty space**, so the well is always
+    /// there and the mark is drawn over it even when nothing is sounding.
+    #[test]
+    fn an_empty_meter_is_still_a_well() {
+        let m = Metrics::default();
+        let theme = crate::host::theme::Theme::default();
+        let cell = Rect::new(0.0, 0.0, 8.0, 60.0);
+        let mut mesh = crate::host::paint::Mesh::new();
+        draw_column(&mut mesh, &m, &theme, cell, 0.0, 0.0, Scale::decibels());
+        let empty = mesh.vertex_count();
+        assert!(empty > 0, "the well is drawn");
+        mesh.clear();
+        draw_column(&mut mesh, &m, &theme, cell, 0.5, 0.9, Scale::decibels());
+        assert!(
+            mesh.vertex_count() > empty,
+            "and a level and a mark are more than the well"
         );
     }
 }

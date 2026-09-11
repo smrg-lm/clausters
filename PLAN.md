@@ -2146,6 +2146,18 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ⬜ **A track's width is a document field the piece cannot honour yet** *(found
+  2026-09-11, reading the meter's channel count against the strip it draws)*.
+  `Track.channels` is a field of the document and the plan reports it per
+  track, but a piece instantiates its tracks from one slot -- `mt.piece.<n>`
+  declares `tracks` as `mt.track.<n>` with the **piece's** width -- so a track
+  of another width gets the piece's strip and only its *meter* is drawn at the
+  width it asked for. Nothing today writes a track of another width, which is
+  why it has not been heard. The shape of the fix is the clip slot's, which
+  already solved the same problem one level down: a slot per width
+  (`clips.1`, `clips.2`), so the piece would declare `tracks.1` and `tracks.2`
+  and the plan would name which one each track fills.
+
 - ✅ **A meter's ballistics were nobody's, so a level had no readable shape**
   *(2026-09-10, with the node system)*. A picture of the raw block peak is
   unreadable: it flickers, and a transient shows for one frame of the screen or

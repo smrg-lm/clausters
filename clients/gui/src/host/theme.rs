@@ -218,6 +218,22 @@ theme_roles! {
     /// The negative/warning readout (the phase scope's anti-correlation).
     warn = [0.85, 0.42, 0.42, 1.0];
 
+    // -- Meters --
+    /// The well a meter's column stands in: darker than any panel it sits on,
+    /// because a column is read against its own empty space and a well that
+    /// matched the header would leave one track's meter indistinguishable from
+    /// the next.
+    meter_field = [0.04, 0.04, 0.05, 1.0];
+    /// A meter's column below the alignment level
+    /// (`clausters_core::measure::METER_WARN_DB`): the level a mix works at.
+    meter_low = [0.24, 0.78, 0.44, 1.0];
+    /// Its column between the alignment level and the hot end
+    /// (`clausters_core::measure::METER_HOT_DB`): headroom being used.
+    meter_mid = [0.95, 0.80, 0.25, 1.0];
+    /// Its column in the last decibels before full scale, and the whole of it
+    /// at or past unity.
+    meter_high = [0.92, 0.28, 0.22, 1.0];
+
     // -- The keyboard --
     /// A playable white key.
     key_white = [0.86, 0.87, 0.90, 1.0];

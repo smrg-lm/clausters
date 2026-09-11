@@ -327,14 +327,46 @@ pub const METER_FLOOR_DB: f32 = -60.0;
 /// it, and a mapping written twice is two answers to one question.
 pub fn meter_fraction(amplitude: f32, floor_db: f32) -> f32 {
     let amplitude = amplitude.abs();
-    let floor = floor_db.min(-1.0);
     if amplitude <= 0.0 {
         return 0.0;
     }
-    // 20·log10(a), which is `ln(a) / ln(10) · 20`, against a floor that is the
-    // bottom of the strip.
-    let db = 20.0 * amplitude.ln() / core::f32::consts::LN_10;
+    // 20·log10(a), which is `ln(a) / ln(10) · 20`.
+    meter_fraction_db(20.0 * amplitude.ln() / core::f32::consts::LN_10, floor_db)
+}
+
+/// The same height, for a level already **in decibels** -- which is how the
+/// marks on the scale are stated.
+///
+/// The two doors are one mapping: whoever draws the scale asks where -18 dB
+/// falls, whoever draws the column asks where this block's peak falls, and a
+/// column that stood at a different place from its own mark would be a picture
+/// of nothing.
+pub fn meter_fraction_db(db: f32, floor_db: f32) -> f32 {
+    let floor = floor_db.min(-1.0);
     ((db - floor) / -floor).clamp(0.0, 1.0)
+}
+
+/// **Where a meter stops reading as headroom**, in decibels below full scale.
+///
+/// -18 dBFS is the field's alignment level -- what a nominal signal sits at, so
+/// that the peaks above it have somewhere to go. Below it a meter is showing
+/// a level that is *working*, and the colour says so.
+pub const METER_WARN_DB: f32 = -18.0;
+
+/// **Where a meter is warning**, in decibels below full scale.
+///
+/// The last six decibels before full scale: not clipping, which is a fact the
+/// meter states by reaching the top, but the span where a peak that grows any
+/// further will. A scale coloured at these two marks is read as three bands
+/// without anybody reading a number -- which is the whole use of a meter at a
+/// glance and the reason the two live here and not in a painter.
+pub const METER_HOT_DB: f32 = -6.0;
+
+/// The amplitude a level in decibels is, the inverse of the reading a meter
+/// does -- what places [`METER_WARN_DB`] and [`METER_HOT_DB`] on a scale that
+/// is drawn in amplitude rather than in decibels.
+pub fn amplitude_of_db(db: f32) -> f32 {
+    powf10(db / 20.0)
 }
 
 /// `10^x`, written as `exp(x · ln 10)` so the constant is visible rather than
@@ -368,6 +400,26 @@ mod ballistics_tests {
             meter_fraction(2.0, METER_FLOOR_DB),
             1.0,
             "and past unity it is the top, not past it"
+        );
+    }
+
+    /// **The scale's marks are placed by the same mapping as the column.** A
+    /// meter whose colours changed at one height and whose level stood at
+    /// another would be two scales in one strip.
+    #[test]
+    fn the_marks_stand_where_their_own_levels_do() {
+        for db in [METER_WARN_DB, METER_HOT_DB, -3.0, -40.0] {
+            let by_db = meter_fraction_db(db, METER_FLOOR_DB);
+            let by_amplitude = meter_fraction(amplitude_of_db(db), METER_FLOOR_DB);
+            assert!(
+                (by_db - by_amplitude).abs() < 1e-5,
+                "{db} dB: {by_db} against {by_amplitude}"
+            );
+        }
+        assert!(
+            meter_fraction_db(METER_WARN_DB, METER_FLOOR_DB)
+                < meter_fraction_db(METER_HOT_DB, METER_FLOOR_DB),
+            "and the warning is under the hot end"
         );
     }
 

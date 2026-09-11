@@ -62,7 +62,17 @@ impl Element for Meter {
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let value = ctx.world.level(self.bus, self.rate);
         let fraction = meters::fraction(value, self.min, self.max);
-        meters::draw_meter(d, ctx.rect, value, fraction, self.label.as_deref());
+        // The colours are placed on **this** meter's axis: the two levels are
+        // the shared core's, and where they land depends on the range the
+        // widget was given.
+        meters::draw_meter_scaled(
+            d,
+            ctx.rect,
+            value,
+            fraction,
+            self.label.as_deref(),
+            meters::Scale::amplitude(self.min, self.max),
+        );
     }
 
     fn needs(&self) -> Needs {
