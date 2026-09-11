@@ -8068,3 +8068,27 @@ wasm export, `TempoMap.dump()` in TypeScript and `TempoMap.dump()` in Python.
 The general rule it settles: **when a house name and a language's stdlib name
 disagree, the house name wins unless the language's spelling carries a meaning
 here too.**
+
+## A shared region is a picture of a join, not a replacement for it
+
+The server copies a buffer's samples into a shared-memory region when a peer
+can map one, so an editor draws a take with no message at all. A **join**
+(`/buffer_stitch`) has no samples of its own to copy, so the copy path read it
+sample by sample and installed the flattened result — and that install reached
+the engine and the mirror as well as the region, which quietly undid the whole
+of what a join is: the sources stopped being named (`/buffer_parts` answered
+"not a join"), the memory a join exists not to duplicate was duplicated, and
+the reader lost the run it reads a cut by. It was invisible because the
+flattened copy *sounds right*: it is the same samples.
+
+So the two are separated. The region gets the samples — a peer wants a picture
+of the cut and draws it like any other take — and the server keeps the join.
+What makes that safe is a rule that was already there: **a join is read, never
+written**, and it is replaced rather than edited, so the picture cannot go
+stale under the peer without the replacement it would be drawn from arriving
+too.
+
+The general form, worth stating because sharing will reach other shapes: what
+is published for a peer to *look at* is a rendering, and what the server keeps
+is the thing itself. A publication that replaces its subject is a bug however
+equal the two look from outside.

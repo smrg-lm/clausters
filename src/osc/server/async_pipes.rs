@@ -331,6 +331,19 @@ impl OscServer {
         // peer opening this take maps a summary instead of computing one.
         self.overviews.publish(index, &region_path, &buffer);
         self.shared_buffers[index] = Some(region_path);
+        if buffer.is_stitched() {
+            // **A join stays a join.** What went into the region is a picture
+            // of it -- the samples a peer draws, which is what a peer wants --
+            // but what the engine and the mirror keep is the join itself.
+            // Handing back the flattened copy instead would quietly undo the
+            // whole of it: the sources would stop being named (so
+            // `/buffer_parts` would answer "not a join"), the memory a join
+            // exists not to duplicate would be duplicated, and the reader would
+            // lose the run it reads a cut by. A join is replaced rather than
+            // written, so the picture cannot go stale under the peer without
+            // the replacement it is drawn from arriving too.
+            return buffer;
+        }
         // Shared samples are samples somebody may be drawing, so the buffer publishes
         // how far it has been written: a recording fills a picture in another
         // process with one relaxed store per block and no message at all.

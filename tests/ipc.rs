@@ -647,6 +647,148 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// **A join keeps being a join once its samples are shared.**
+///
+/// Sharing copies a buffer's samples into a region so a peer can draw them with
+/// no message at all, and the copy is what a peer wants of a join too -- a cut
+/// is drawn like any other take. What must not follow is the server keeping
+/// that copy *instead of* the join: the sources would stop being named, the
+/// memory a join exists not to duplicate would be duplicated, and a reader
+/// would lose the run it reads a cut by. So both are asserted at once: the peer
+/// maps the samples, and the server still answers what the buffer is made of.
+#[test]
+fn a_shared_join_is_still_a_join() {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-stitch-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let segment = Segment::create(&path).expect("segment");
+    let (mut engine, handle) = engine_pair_full(
+        SR,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        clausters::dsp::Limits::default(),
+    );
+    let mut server = OscServer::headless(
+        ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        },
+        handle,
+        0.0,
+    );
+    server
+        .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+        .unwrap();
+    server.share_buffers_at(path.clone());
+    let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
+
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut pump = |server: &mut OscServer, engine: &mut _, until: &dyn Fn() -> bool| {
+        for _ in 0..400 {
+            server.step();
+            clausters::server::engine::Engine::process_block(engine, &mut out);
+            if until() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        false
+    };
+
+    // A take, filled with a constant so what the join reads is arithmetic.
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_alloc",
+            vec![OscType::Int(4), OscType::Int(8), OscType::Int(1)],
+        )
+    ));
+    let seg = Arc::clone(&segment);
+    assert!(
+        pump(&mut server, &mut engine, &|| seg.buffer_info(4).is_some()),
+        "the take was allocated"
+    );
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_fill",
+            vec![
+                OscType::Int(4),
+                OscType::Int(0),
+                OscType::Int(8),
+                OscType::Float(0.5),
+            ],
+        )
+    ));
+    let seg = Arc::clone(&segment);
+    assert!(pump(&mut server, &mut engine, &|| {
+        seg.map_buffer(&path, 4)
+            .is_some_and(|(_, b)| b.at(0) == 0.5)
+    }));
+
+    // The join over it: the take's second half, then its first.
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_stitch",
+            vec![
+                OscType::Int(5),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::Int(4),
+                OscType::Int(4),
+                OscType::Int(4),
+                OscType::Int(0),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        )
+    ));
+    let seg = Arc::clone(&segment);
+    assert!(
+        pump(&mut server, &mut engine, &|| seg.buffer_info(5).is_some()),
+        "the join reached the directory"
+    );
+    let (_, mapped) = segment
+        .map_buffer(&path, 5)
+        .expect("a peer maps the join's samples like any other take");
+    assert_eq!(mapped.frames(), 4);
+    assert_eq!(mapped.at(0), 0.5, "and they are the samples it reads");
+
+    // And the server still knows what it is made of.
+    assert!(client.push(0, &encode("/buffer_parts", vec![OscType::Int(5)])));
+    let mut buf = vec![0u8; 1 << 16];
+    let mut parts = None;
+    for _ in 0..400 {
+        server.step();
+        engine.process_block(&mut out);
+        while let Some((_, len)) = client.try_pop(&mut buf) {
+            if let Ok((_, OscPacket::Message(msg))) =
+                clausters::rosc::decoder::decode_udp(&buf[..len])
+                && msg.addr == "/buffer_parts.reply"
+            {
+                parts = Some(msg.args.len());
+            }
+        }
+        if parts.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(
+        parts,
+        Some(3 + 6),
+        "the header plus one part: sharing the samples did not flatten the join"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
 /// **The overview beside the region**: the summary a peer maps instead of
 /// building, and the rule that keeps it true — it follows the writes span by
 /// span rather than being rebuilt or left to rot.
