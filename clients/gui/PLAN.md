@@ -3607,6 +3607,22 @@ Following the project rule: code + tests, a clear commit message (the record of 
   (silence in the joined one) and an **overlap** (a mix of the two signals).
   Possibly a milestone of its own; it needs thinking through before it is one.
 
+  **What the gap cost before it was closed off** *(found by use 2026-09-11: the
+  user cut a take into pieces, pulled some edges to show more, shuffled the
+  order and joined them all)*. Join did not ask whether the pieces read one run
+  -- it stated one window over the whole span from where the *first* piece read,
+  which for anything but the halves of a cut is a different recording than the
+  one that was there: it played straight through material the pieces skipped,
+  and where the first piece read late in its take it ran off the end and the
+  rest was **silence**. So `j` now leaves a run alone unless each box reads on
+  from where the one before it stops, over the same source
+  (`placement::continues`). That is honest and it is not the feature: what the
+  user was asking for is exactly this entry, and the piece of it that already
+  exists is `/buffer_stitch` -- a join over fragments **is** a stitched buffer,
+  and the server reads one as fast as a plain one. What is missing is the
+  document's half: a box that reads several runs needs a content the format can
+  state, or the cut is gone the moment the piece is saved and reopened.
+
 - ⬜ **A shortcut is the application's, not the widget's** *(raised 2026-09-08
   by the user, closing `G34`'s host logic: "los shortcut documentalos cuando
   hagas la documentacion del elemento, luego se deberian poder cambiar pero eso

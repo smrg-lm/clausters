@@ -302,6 +302,26 @@ pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
     second.offset <= first.offset + first.dur.max(0.0) + tol
 }
 
+/// Whether `b` **reads on from where `a` stops** — the second condition a join
+/// has, and the one that was missing.
+///
+/// [`merge`] states one window over the whole span, reading the source from
+/// where the earlier box read: that is exactly right for two halves of a cut,
+/// and wrong for anything else. Two boxes that read *different* runs of a
+/// source — reordered fragments, a piece whose edge was pulled to show more —
+/// cannot be said in one window at all: joined anyway, the box plays straight
+/// through material the pieces skipped, and runs into silence past the end of
+/// what it reads. One box over several runs is a **cut**, which is a buffer
+/// the server stitches and not a placement (see `clients/gui/PLAN.md`, "Join
+/// over fragments").
+///
+/// So the test is the inverse of [`split_at`]'s rule: the later box's window
+/// opens exactly where the earlier box's window closes.
+pub fn continues(a: Placement, b: Placement, tol: f64) -> bool {
+    let (first, second) = if a.offset <= b.offset { (a, b) } else { (b, a) };
+    (second.start - (first.start + first.dur.max(0.0))).abs() <= tol
+}
+
 /// **Indexed access to a run of boxes**, whatever they are stored as.
 ///
 /// Not a common item type and not a slice: notes live contiguously in a

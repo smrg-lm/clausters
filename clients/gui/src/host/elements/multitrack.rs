@@ -1152,11 +1152,22 @@ impl Multitrack {
         true
     }
 
-    /// **Join the held clips that touch, on one lane** — a pitch is what makes
-    /// two notes one voice, and a **lane** is what makes two clips joinable.
+    /// **Join the held clips that touch and read on from each other, on one
+    /// lane** — a pitch is what makes two notes one voice, and a **lane** is
+    /// what makes two clips joinable.
     ///
     /// A run is read over what is there, so an overlap joins as readily as a
     /// juxtaposition: two boxes sharing pixels are not two boxes to a reader.
+    ///
+    /// **Touching is not enough.** A join states one window over the whole
+    /// span, reading the source from where the earlier box read, so two boxes
+    /// that read different runs of it — fragments put back in another order, a
+    /// piece whose edge was pulled to show more — cannot be said that way:
+    /// joined anyway, the box played straight through material the pieces
+    /// skipped and ran into silence past the end of what it read. So a pair
+    /// that does not continue is left alone ([`placement::continues`]), and
+    /// joining such a run is the cut the server stitches rather than a
+    /// placement — see `clients/gui/PLAN.md`, "Join over fragments".
     fn join_held(&mut self) -> bool {
         let mut held = self.selected.clone();
         held.sort_by(|a, b| {
@@ -1172,7 +1183,9 @@ impl Multitrack {
             let mut j = i + 1;
             while j < held.len()
                 && self.clips[held[j]].lane == self.clips[head].lane
+                && self.clips[held[j]].source == self.clips[head].source
                 && placement::adjacent(self.clips[head].place, self.clips[held[j]].place, 1.0)
+                && placement::continues(self.clips[head].place, self.clips[held[j]].place, 1.0)
             {
                 self.clips[head].place =
                     placement::merge(self.clips[head].place, self.clips[held[j]].place);
@@ -3124,9 +3137,11 @@ mod tests {
         let m = Metrics::default();
         let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
         let len = 1000.0;
+        // The two halves of a cut: `b` reads on from where `a` stops, which is
+        // the other half of what a join needs.
         let mut mt = from_props(&props(
             r#"{"lanes": ["one", "", 100, 0, 0, 1],
-                "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 500, 200, 0, "", 0]}"#,
+                "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 500, 200, 200, "", 0]}"#,
         ));
         let inp = input(&m, rect, len);
 
@@ -3172,6 +3187,58 @@ mod tests {
         assert_eq!(mt.clips.len(), 1);
         assert_eq!(mt.clips[0].place.offset, 0.0);
         assert_eq!(mt.clips[0].place.dur, 400.0, "the two spans, whole");
+    }
+
+    /// **Touching is not enough**: two boxes that read *different* runs of a
+    /// source cannot be said in one window, so `j` leaves them alone.
+    ///
+    /// A join states one window over the whole span, reading the source from
+    /// where the earlier box read. Joined anyway, fragments put back in another
+    /// order played straight through material they skipped and ran into silence
+    /// past the end of what they read -- audio nobody asked for, in place of
+    /// audio somebody cut.
+    #[test]
+    fn boxes_that_do_not_read_on_from_each_other_do_not_join() {
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 200, 400, "", 0, "b", "one", 200, 200, 0, "", 0]}"#,
+        ));
+        mt.selected = vec![0, 1];
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        assert!(
+            mt.key(
+                &Key::Char('j'),
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: None,
+                },
+            )
+            .is_none(),
+            "the second reads the source's head where the first left off at 600"
+        );
+        assert_eq!(mt.clips.len(), 2, "and both boxes are still there");
+
+        // Two over **different sources** are the same case: a box is a window
+        // onto one of them.
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+                "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 200, 200, 200, "", 1]}"#,
+        ));
+        mt.selected = vec![0, 1];
+        assert!(
+            mt.key(
+                &Key::Char('j'),
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: None,
+                },
+            )
+            .is_none(),
+            "one window names one source"
+        );
+        assert_eq!(mt.clips.len(), 2);
     }
 
     /// **A box is a window onto a source, and an edge stops where the source
