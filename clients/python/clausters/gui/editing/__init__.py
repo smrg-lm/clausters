@@ -53,7 +53,7 @@ from .editor import Editor, not_an_edit
 from .events import NotesDomain, NotesEditor, NotesView
 from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
                          Sources)
-from .playback import Playback, reader
+from .playback import Playback
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
                       measures)
@@ -87,7 +87,6 @@ __all__ = [
     "View",
     "edit",
     "not_an_edit",
-    "reader",
     "watch",
     "measures",
 ]

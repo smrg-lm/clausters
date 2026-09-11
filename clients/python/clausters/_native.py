@@ -528,6 +528,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_view_props.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
+    lib.clausters_mixer_defs.restype = ctypes.c_size_t
+    lib.clausters_mixer_defs.argtypes = [
+        u8p, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_multitrack_plan.restype = ctypes.c_size_t
+    lib.clausters_multitrack_plan.argtypes = [
+        u8p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_history_free.restype = None
@@ -1416,6 +1425,44 @@ def view_props(kind: str, facts) -> dict:
     return answer if isinstance(answer, dict) else {}
 
 
+def mixer_defs(widths, master: int = 2) -> dict:
+    """The defs a piece of these widths is played by, in the order they must be
+    sent: ``{"synth": [...], "graph": [...]}``.
+
+    ``widths`` is a list of ``(source channels, track channels)`` pairs and
+    ``master`` the piece's own width. What a track and a clip *are* on the
+    server is the shared core's and there is one of it -- two clients writing
+    their own channel strips is two mixers, which is how the same piece comes to
+    sound different in two places.
+
+    Answers ``{}`` for a width nothing is written for: past stereo is a downmix
+    table, and which table is a decision rather than a guess.
+    """
+    answer = _read_json(lib().clausters_mixer_defs,
+                        [list(pair) for pair in widths], int(master))
+    return answer if isinstance(answer, dict) else {}
+
+
+def multitrack_plan(piece: dict, sample_rate: float, default_bpm: float,
+                    sources: dict) -> dict:
+    """What to instantiate to play ``piece`` -- the instance plan.
+
+    ``sources`` maps a source id to ``{"buffer": n, "channels": n}``: where a
+    source's samples actually are on a running server, which is the one fact
+    about a piece that is not in the piece. ``default_bpm`` is the tempo a piece
+    that never stated one is read at -- the caller's, because a document that
+    invented 120 would be deciding a musical question.
+
+    Three rules live in it and each was written twice before it did: beats
+    crossed to frames through the tempo map, the source's width picking the
+    clip's wiring, and what a solo anywhere does to everything else.
+    """
+    table = {str(k): v for k, v in sources.items()}
+    answer = _read_json(lib().clausters_multitrack_plan, piece,
+                        float(sample_rate), float(default_bpm), table)
+    return answer if isinstance(answer, dict) else {}
+
+
 def _read_json(fn, *values):
     """The size-then-fill call a read-only JSON door makes: every argument
     goes in as bytes and a length, and the answer comes back parsed.
@@ -1429,6 +1476,12 @@ def _read_json(fn, *values):
     args = []
     held = []
     for value in values:
+        # A bare number is a **scalar argument** and goes through as one: a
+        # width, a sample rate. Everything else is a payload -- a string as it
+        # is, anything else as JSON -- and travels as bytes and a length.
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            args.append(value)
+            continue
         raw = value.encode("utf-8") if isinstance(value, str) else \
             json.dumps(value).encode("utf-8")
         buf = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)

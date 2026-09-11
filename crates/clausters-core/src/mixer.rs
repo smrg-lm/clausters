@@ -82,11 +82,19 @@ pub const AT: &str = "at";
 pub const SPAN: &str = "span";
 /// The first frame of the source a box reads.
 pub const START: &str = "start";
-/// The buffer a box reads. Initial-rate: changing it is a new node, which is
-/// why a box that is a join is one stitched buffer rather than several readers.
+/// The buffer a box reads.
+///
+/// **Not initial-rate**, deliberately: `BufRd` looks the buffer up once a
+/// block, so this is an ordinary control and changing which buffer a box reads
+/// is a `/node_set` rather than a new node. That matters because re-cutting a
+/// join *is* a new buffer — a stitched one is replaced rather than edited — and
+/// a box that had to be rebuilt for it would stop and restart every time a hand
+/// moved a seam.
 pub const BUF: &str = "buf";
 /// Which channel of the source a reader takes.
 pub const CHAN: &str = "chan";
+/// Whether the window wraps past the end of its source.
+pub const LOOP: &str = "loop";
 
 /// The slot a clip's readers fill: one per channel of the source.
 pub const SOURCE_SLOT: &str = "source";
@@ -155,10 +163,6 @@ fn control(name: &str, default: f32) -> Value {
     json!({ "name": name, "default": default })
 }
 
-fn ir(name: &str, default: f32) -> Value {
-    json!({ "name": name, "default": default, "rate": "ir" })
-}
-
 fn lagged(name: &str, default: f32) -> Value {
     // Ten milliseconds: long enough that a jump between two samples is a ramp
     // rather than a click, short enough that a hand does not hear it.
@@ -182,12 +186,12 @@ pub fn reader_def() -> Value {
         "name": reader_name(),
         "controls": [
             control(OUT_BUS, 0.0),
-            ir(BUF, 0.0),
-            ir(CHAN, 0.0),
+            control(BUF, 0.0),
+            control(CHAN, 0.0),
             control(AT, 0.0),
             control(SPAN, 0.0),
             control(START, 0.0),
-            ir("loop", 0.0),
+            control(LOOP, 0.0),
             lagged(GAIN, 1.0),
         ],
         "ugens": [
@@ -415,6 +419,9 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
             AT:    [{"member": 1, "control": AT}],
             SPAN:  [{"member": 1, "control": SPAN}],
             START: [{"member": 1, "control": START}],
+            BUF:   [{"member": 1, "control": BUF}],
+            CHAN:  [{"member": 1, "control": CHAN}],
+            LOOP:  [{"member": 1, "control": LOOP}],
             "source/gain": [{"member": 1, "control": GAIN}],
         },
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }

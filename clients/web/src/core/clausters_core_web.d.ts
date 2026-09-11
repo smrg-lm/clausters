@@ -998,6 +998,19 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
 
 /**
+ * **The defs a piece of these widths is played by** — `{"synth": [...],
+ * "graph": [...]}`, each list in the order it must be sent, or an empty string
+ * for a width nothing is written for.
+ *
+ * `widths` is a JSON array of `[source channels, track channels]` pairs and
+ * `master` the piece's own width. What a track and a clip *are* on the server
+ * is `clausters_core::mixer`'s and there is one of it: two clients writing
+ * their own channel strips is two mixers, which is how the same piece comes to
+ * sound different in two places.
+ */
+export function mixerDefs(widths: string, master: number): string;
+
+/**
  * **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
  * or an empty string for a piece that will not parse.
  *
@@ -1012,6 +1025,22 @@ export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number):
  * source was read into is the page's own table.
  */
 export function multitrackPicture(piece: string): string;
+
+/**
+ * **What to instantiate to play a piece** — the instance plan, or an empty
+ * string for a piece that will not parse.
+ *
+ * `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
+ * where a source's samples actually are on a running server, which is the one
+ * fact about a piece that is not in the piece. `default_bpm` is the tempo a
+ * piece that never stated one is read at — the caller's, because a document
+ * that invented 120 would be deciding a musical question.
+ *
+ * Three rules live in it and each was written twice before it did: beats
+ * crossed to frames through the tempo map, the source's width picking the
+ * clip's wiring, and what a solo anywhere does to everything else.
+ */
+export function multitrackPlan(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
 
 /**
  * **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
@@ -1343,7 +1372,9 @@ export interface InitOutput {
     readonly mel_to_hz: (a: number) => number;
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackPicture: (a: number, b: number) => [number, number];
+    readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackReadPoints: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackReadRows: (a: number, b: number, c: number, d: number) => [number, number];

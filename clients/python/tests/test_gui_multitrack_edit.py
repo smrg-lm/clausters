@@ -611,57 +611,78 @@ def test_a_layer_s_points_are_its_box_s_own_time():
 
 # ---- what the piece is heard as ----
 
-def test_a_box_is_read_in_frames_from_where_its_window_opens():
+def _plan(ed) -> dict:
+    """The instance plan for an editor's piece, the way `Playback` asks for it.
+
+    The plan itself is the crate's and is tested there; what these check is the
+    **crossing** — that this client hands it the piece, the axis and the source
+    table it actually holds, which is the half a client can get wrong on its
+    own.
+    """
+    from clausters import _native
+
+    return _native.multitrack_plan(ed.structure.write(), ed.bridge.rate,
+                                   ed.bridge.bpm, ed.bridge.sources.table())
+
+
+def test_a_box_is_planned_in_frames_from_where_its_window_opens():
     """The crossing from the piece to the readers: a box is placed in beats and
     read in frames, and a trimmed one reads on rather than restarting."""
-    from clausters.gui.editing.playback import box_args
-
     ed = editor(piece())
     region = ed.structure.tracks[0].lanes[0].regions[1]
     region.content = window(1, start=0.5, duration=2.0)
-    args = box_args(ed.bridge, region, 0.5)
-    assert args is not None
-    assert args["buf"] == 7.0, "the buffer the source was read into"
-    assert args["at"] == pytest.approx(4.0 * SR), "a beat is a second here"
-    assert args["span"] == pytest.approx(2.0 * SR)
-    assert args["start"] == pytest.approx(0.5 * SR), "where the window opens"
-    assert args["loop"] == 0.0
-    assert args["amp"] == pytest.approx(0.5)
+    reader = _plan(ed)["tracks"][0]["clips"][1]["readers"][0]
+    assert reader["buffer"] == 7, "the buffer the source was read into"
+    assert reader["at"] == pytest.approx(4.0 * SR), "a beat is a second here"
+    assert reader["span"] == pytest.approx(2.0 * SR)
+    assert reader["start"] == pytest.approx(0.5 * SR), "where the window opens"
+    assert reader["looping"] is False
 
 
 def test_a_muted_box_and_an_unloaded_source_are_not_read():
-    """Two different answers: a muted box is read at nothing, and a box whose
-    source nobody loaded is not read at all — the second is a piece that arrived
-    without its takes, which is not the same as a silent one."""
-    from clausters.gui.editing.playback import box_args
-
+    """Two different answers: a muted box is planned at nothing, and a box whose
+    source nobody loaded is not planned at all — the second is a piece that
+    arrived without its takes, which is not the same as a silent one."""
     ed = editor(piece())
     region = ed.structure.tracks[0].lanes[0].regions[0]
     region.muted = True
-    assert box_args(ed.bridge, region, 0.5)["amp"] == 0.0
+    assert _plan(ed)["tracks"][0]["clips"][0]["mute"] == 1.0
 
     region.muted = False
     region.content = window(9)          # a source the table has no buffer for
-    assert box_args(ed.bridge, region, 0.5) is None
+    planned = [c["region"] for c in _plan(ed)["tracks"][0]["clips"]]
+    assert region.id not in planned
 
 
-def test_the_mixer_rules_are_the_clients_and_a_solo_silences_the_rest():
+def test_the_source_table_carries_the_width_that_picks_the_wiring():
+    """A mono take is panned into its track and a stereo one is balanced, so
+    which clip def a box goes in follows from the source's width — and the width
+    is the client's to report, since only it loaded the samples."""
+    ed = editor(piece())
+    table = ed.bridge.sources.table()
+    assert table[1]["buffer"] == 7
+    assert table[1]["channels"] >= 1
+    assert 9 not in table, "a source nobody loaded is not in it"
+    assert _plan(ed)["tracks"][0]["clips"][0]["slot"].startswith("clips.")
+
+
+def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
     """The document holds the flags and never reads them: what a track
-    contributes is the client's rule, because a level is not a fact about the
-    piece."""
-    from clausters.gui.editing.playback import track_level
-
-    p = piece()
+    contributes is the mixer's rule, and the mixer is in the crate — so both
+    clients get the same answer instead of each writing one."""
+    ed = editor(piece())
+    p = ed.structure
     one, two = p.tracks
-    assert track_level(p, one) == 1.0, "a track that said nothing is at full"
+    assert _plan(ed)["tracks"][0]["gain"] == 1.0, "a track that said nothing is at full"
+    assert _plan(ed)["tracks"][0]["mute"] == 0.0
 
     one.config = {"level": 0.25}
-    assert track_level(p, one) == pytest.approx(0.25)
+    assert _plan(ed)["tracks"][0]["gain"] == pytest.approx(0.25)
 
     one.muted = True
-    assert track_level(p, one) == 0.0
+    assert _plan(ed)["tracks"][0]["mute"] == 1.0
     one.muted = False
 
     two.soloed = True
-    assert track_level(p, one) == 0.0, "another track is soloed"
-    assert track_level(p, two) == 1.0
+    assert _plan(ed)["tracks"][0]["mute"] == 1.0, "another track is soloed"
+    assert _plan(ed)["tracks"][1]["mute"] == 0.0

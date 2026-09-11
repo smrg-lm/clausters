@@ -56,8 +56,8 @@ export {
 // so the reference has to resolve, but a page builds one no more than the Python
 // client's does — `MultitrackEditor` makes it.
 export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
-export { Playback, READER, boxArgs, reader, trackLevel } from "./playback.ts";
-export type { BoxArgs } from "./playback.ts";
+export { Playback } from "./playback.ts";
+export type { Plan, PlannedClip, PlannedReader, PlannedTrack, Ports } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView, quads } from "./points.ts";
 export type { CratePoint } from "./points.ts";
 export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";

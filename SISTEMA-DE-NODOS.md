@@ -676,9 +676,31 @@ En este orden, porque cada una se puede probar sola:
    ley de paneo a un par estéreo, o sea que atenúa 3 dB en el centro — tres
    strips en serie le sacarían 9 dB a una pieza por nada, así que el balance se
    escribe acá como `min(1, 1 ∓ pan)`, unidad en el centro.
-4. **`playback` reescrito sobre eso**, en los dos clientes: deja de armar nodos
-   y pasa a instanciar el plan. Es donde `G35.3`/`G35.4` se cierran — la curva
-   suena porque escribe el mismo puerto que la perilla.
+4. ✅ **`playback` reescrito sobre eso**, en los dos clientes — *hecho
+   2026-09-10*. Dejó de armar nodos: ahora pide el plan (`multitrack_plan`),
+   manda los defs que falten (`mixer_defs`) y **compara** lo planificado contra
+   lo que ya suena, mandando la diferencia. Los dos clientes corren las mismas
+   dos llamadas, que es por qué una pieza suena igual en los dos.
+
+   Es un diff y no una reconstrucción porque los nodos tienen que **quedarse**:
+   rehacer el árbol en cada edición reiniciaría todo lo que está sonando, y una
+   mano arrastrando una caja escucharía su propio gesto como un tartamudeo. Lo
+   único que no se puede decir con un `set` —un clip cuya fuente cambió de
+   **ancho**, que es otro cableado— se rehace.
+
+   Tres cosas aparecieron: (a) `BufRd` lee el bufnum una vez por bloque, así que
+   `buf` no tiene por qué ser `ir` — cambiar de buffer es un `set`, que es
+   exactamente lo que un cosido recosido necesita; (b) el fader de la pista se
+   lee de `config["level"]`, que es donde el lector de filas del host ya lo
+   escribe, y merece ser un campo propio al lado de `channels` (anotado); (c)
+   **la unidad de `SegmentRef::start` estaba documentada al revés** — decía
+   frames y todo lo que la lee (la picture, el host, los dos clientes) dice
+   segundos.
+
+   Lo que **no** cierra todavía: `G35.3`/`G35.4`. Los puertos existen y la
+   perilla escribe el mismo que escribiría la curva, pero nada mapea todavía una
+   `Automation` a un puerto ni la compila a la tabla que `transport_pos` lee
+   (§5). Esa es la fase que falta para que la curva suene.
 5. **Los canales y el vúmetro** (§6): el ancho de pista como campo del
    documento, las reglas de mezcla y la balística del vúmetro en
    `clausters-core`, el `meter` de *n* canales en el header (`G35.14`).

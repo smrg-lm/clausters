@@ -15,9 +15,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { multitrackPlan } from "../src/core/clausters_core_web.js";
 import {
-    MultitrackEditor, MultitrackView, boxArgs, edit, trackLevel,
+    MultitrackEditor, MultitrackView, edit,
 } from "../src/gui/editing/index.ts";
+import type { Plan } from "../src/gui/editing/index.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
@@ -663,52 +665,82 @@ test("a layer's points are its box's own time", () => {
 
 // ---- what the piece is heard as ----
 
-test("a box is read in frames from where its window opens", () => {
+/**
+ * The instance plan for an editor's piece, the way `Playback` asks for it.
+ *
+ * The plan itself is the crate's and is tested there; what these check is the
+ * **crossing** — that this client hands it the piece, the axis and the source
+ * table it actually holds, which is the half a client can get wrong on its own.
+ */
+function plan(ed: MultitrackEditor): Plan {
+    return JSON.parse(
+        multitrackPlan(
+            JSON.stringify(ed.structure.write()),
+            ed.bridge.rate,
+            ed.bridge.bpm,
+            JSON.stringify(ed.bridge.sources.table()),
+        ),
+    ) as Plan;
+}
+
+test("a box is planned in frames from where its window opens", () => {
     // The crossing from the piece to the readers: a box is placed in beats and
     // read in frames, and a trimmed one reads on rather than restarting.
     const ed = editor(piece());
     const region = ed.structure.tracks[0].lanes[0].regions[1];
     region.content = window(1, 0.5, 2.0);
-    const args = boxArgs(ed.bridge, region, 0.5);
-    assert.ok(args !== null);
-    assert.equal(args.buf, 7, "the buffer the source was read into");
-    near(args.at, 4.0 * SR);           // a beat is a second here
-    near(args.span, 2.0 * SR);
-    near(args.start, 0.5 * SR);        // where the window opens
-    assert.equal(args.loop, 0.0);
-    near(args.amp, 0.5);
+    const reader = plan(ed).tracks[0].clips[1].readers[0];
+    assert.equal(reader.buffer, 7, "the buffer the source was read into");
+    near(reader.at, 4.0 * SR);            // a beat is a second here
+    near(reader.span, 2.0 * SR);
+    near(reader.start, 0.5 * SR);         // where the window opens
+    assert.equal(reader.looping, false);
 });
 
 test("a muted box and an unloaded source are not read", () => {
-    // Two different answers: a muted box is read at nothing, and a box whose
-    // source nobody loaded is not read at all — the second is a piece that
+    // Two different answers: a muted box is planned at nothing, and a box whose
+    // source nobody loaded is not planned at all — the second is a piece that
     // arrived without its takes, which is not the same as a silent one.
     const ed = editor(piece());
     const region = ed.structure.tracks[0].lanes[0].regions[0];
     region.muted = true;
-    assert.equal(boxArgs(ed.bridge, region, 0.5)?.amp, 0.0);
+    assert.equal(plan(ed).tracks[0].clips[0].mute, 1.0);
 
     region.muted = false;
     region.content = window(9);        // a source the table has no buffer for
-    assert.equal(boxArgs(ed.bridge, region, 0.5), null);
+    const planned = plan(ed).tracks[0].clips.map((c) => c.region);
+    assert.ok(!planned.includes(region.id));
 });
 
-test("the mixer rules are the client's and a solo silences the rest", () => {
+test("the source table carries the width that picks the wiring", () => {
+    // A mono take is panned into its track and a stereo one is balanced, so
+    // which clip def a box goes in follows from the source's width — and the
+    // width is the client's to report, since only it loaded the samples.
+    const ed = editor(piece());
+    const table = ed.bridge.sources.table();
+    assert.equal(table["1"].buffer, 7);
+    assert.ok(table["1"].channels >= 1);
+    assert.equal(table["9"], undefined, "a source nobody loaded is not in it");
+    assert.ok(plan(ed).tracks[0].clips[0].slot.startsWith("clips."));
+});
+
+test("the mixer rules reach the plan and a solo silences the rest", () => {
     // The document holds the flags and never reads them: what a track
-    // contributes is the client's rule, because a level is not a fact about the
-    // piece.
-    const held = piece();
-    const [one, two] = held.tracks;
-    assert.equal(trackLevel(held, one), 1.0, "a track that said nothing is at full");
+    // contributes is the mixer's rule, and the mixer is in the crate — so both
+    // clients get the same answer instead of each writing one.
+    const ed = editor(piece());
+    const [one, two] = ed.structure.tracks;
+    assert.equal(plan(ed).tracks[0].gain, 1.0, "a track that said nothing is at full");
+    assert.equal(plan(ed).tracks[0].mute, 0.0);
 
     one.config = { level: 0.25 };
-    near(trackLevel(held, one), 0.25);
+    near(plan(ed).tracks[0].gain, 0.25);
 
     one.muted = true;
-    assert.equal(trackLevel(held, one), 0.0);
+    assert.equal(plan(ed).tracks[0].mute, 1.0);
     one.muted = false;
 
     two.soloed = true;
-    assert.equal(trackLevel(held, one), 0.0, "another track is soloed");
-    assert.equal(trackLevel(held, two), 1.0);
+    assert.equal(plan(ed).tracks[0].mute, 1.0, "another track is soloed");
+    assert.equal(plan(ed).tracks[1].mute, 0.0);
 });

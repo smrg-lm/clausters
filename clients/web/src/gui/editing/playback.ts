@@ -3,132 +3,117 @@
  *
  * The multitrack editor's other half. {@link MultitrackView} says what a piece
  * looks like and {@link MultitrackDomain} says what a gesture makes of it; this
- * says what it is heard as, and it is the same object either way — a piece is a
- * statement, so putting the readers where it says is one verb whether it is the
- * first time or the hundredth.
+ * says what it is heard as.
  *
- * **A box is a reader.** Each one is a single resident node reading its buffer
- * at the transport's position — no queue, nothing scheduled, nothing re-cued.
- * Moving a box while it plays is one `/node_set` on a node that is already
- * running, so it is heard where it was dropped with nothing that is sounding
- * cut, and the seeking, the pausing and the looping are the server transport's.
+ * **It decides nothing.** What a track and a clip *are* on the server is the
+ * shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
+ * strip under all of them), and which of them a given piece needs is the
+ * document crate's — `multitrackPlan` answers it, wired to which buffer, at
+ * which frame, with which level. So this module is a **diff**: it compares the
+ * plan against what is already sounding and sends the difference. Both clients
+ * run the same two calls, which is why one piece sounds the same in both of
+ * them.
  *
- * **The time is the server's**, which settles everything under it: play, pause
- * and stop are `Server.transportPlay`, `Server.transportStop` and
- * `Server.transportLocateSample`; the readers are one **governed** group, so a
- * pause freezes them with every node's state intact and playing again continues
- * rather than starting over; and the host draws the line from the engine's own
- * position, with nothing sent per frame.
- *
- * **What is not here yet is the chain.** A track's level, its mute and its solo
- * reach the readers; the curves drawn on a track and inside a box do not,
- * because a curve's `gain` and the knob's `gain` have to name one parameter of
- * one node before either can drive it, and that is the synthesis node system's
- * design rather than this module's. Until it exists a curve is drawn, edited and
- * kept by the piece, and heard by nothing.
+ * **Why a diff and not a rebuild.** A piece plays itself from the transport:
+ * every reader reads the engine's own position, so a locate is no message at all
+ * and moving a box is one `set`. That only holds if the nodes **stay**:
+ * rebuilding the tree on every edit would restart everything that is sounding,
+ * and a hand dragging a box would hear its own gesture as a stutter. So a track,
+ * a clip and a reader are each added once and set thereafter, and only the one
+ * thing a set cannot express — a clip whose source changed *width*, which is a
+ * different wiring — is torn down and made again.
  *
  * @module
  */
 
-import { Group, Synth } from "../../defs/node.ts";
+import { mixerDefs, multitrackPlan } from "../../core/clausters_core_web.js";
+import { Group } from "../../defs/node.ts";
 import type { Server } from "../../defs/server/index.ts";
-import { SynthDef } from "../../defs/synthdef.ts";
-import { bufRd, control, out, transportPos } from "../../defs/ugens/index.ts";
-import type { Multitrack, Region, Track } from "../../multitrack.ts";
 import type { GuiHost } from "../host.ts";
 import { Transport } from "../transport.ts";
-import type { Bridge, MultitrackEditor } from "./multitrack.ts";
+import type { MultitrackEditor } from "./multitrack.ts";
 
-/**
- * The def every box is read by. One name for the whole client, because it is one
- * def: a box is a window onto a source and they differ by their controls.
- */
-export const READER = "clausters.box";
-
-/**
- * The controls a box cannot change without being started again: what it reads
- * and whether it wraps are read at the rate the reader is built with.
- */
-export const FIXED = ["buf", "loop"] as const;
-
-/** What one box is read with — the controls {@link boxArgs} answers. */
-export type BoxArgs = Record<string, number>;
-
-/**
- * The def a box sounds through: a buffer read at the transport's position.
- *
- * No position of its own — seeking, looping and pausing are the transport's, and
- * moving a box is one `/node_set` of `at`. `transportPos` is the transport's
- * position minus where the box starts, so the reader is at frame 0 when the
- * transport reaches it, and the gate is the box's length (`bufRd` clamps past
- * the end instead of going quiet).
- *
- * **A box is a window onto a source, and it reads from where the window opens.**
- * `start` is that frame, so trimming the left edge or splitting a box makes the
- * piece play what the picture shows: without it every box would read from frame
- * zero and both halves of a split would play the beginning.
- */
-export function reader(name = READER): SynthDef {
-    const buf = control("buf", 0.0, { rate: "ir" });
-    const at = control("at", 0.0);           // where it starts, in transport frames
-    const span = control("span", 0.0);       // how long it lasts, in frames
-    const start = control("start", 0.0);     // the frame of the source its zero reads
-    const wrap = control("loop", 0.0, { rate: "ir" });  // whether it wraps
-    const amp = control("amp", 0.5, { lag: 0.02 });
-    const pos = transportPos(at);
-    const live = pos.ge(0.0).mul(pos.lt(span));
-    const sig = bufRd(buf, 0.0, pos.add(start), wrap).mul(live).mul(amp);
-    return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+/** One reader of the plan: one channel of one box. */
+export interface PlannedReader {
+    channel: number;
+    buffer: number;
+    at: number;
+    span: number;
+    start: number;
+    looping: boolean;
 }
 
+/** One clip of the plan: a box, its strip and its readers. */
+export interface PlannedClip {
+    region: number;
+    slot: string;
+    gain: number;
+    mute: number;
+    readers: PlannedReader[];
+}
+
+/** One track of the plan: its strip and the clips on it. */
+export interface PlannedTrack {
+    track: number;
+    channels: number;
+    gain: number;
+    mute: number;
+    clips: PlannedClip[];
+}
+
+/** The whole piece as instances: one graph, and everything else a slot. */
+export interface Plan {
+    graph: string;
+    channels: number;
+    tracks: PlannedTrack[];
+    widths: [number, number][];
+}
+
+/** The ports a strip is driven through. */
+export type Ports = Record<string, number>;
+
 /**
- * The readers of one piece, and the transport that moves them.
+ * The instance of one piece, and the transport that moves it.
  *
  * Built by {@link MultitrackEditor} when it is given a server, and reachable as
  * its `playback`. Nothing here is subscribed to anything: the editor tells it
  * the piece changed, whoever changed it — this window's gesture, a second window
- * over the same piece, or a step of the history — and {@link Playback.sync} puts
- * the readers where the piece now says they are.
+ * over the same piece, or a step of the history — and {@link Playback.sync}
+ * makes what sounds be what is drawn.
  */
 export class Playback {
     readonly editor: MultitrackEditor;
     readonly server: Server;
-    /** The level a box at full track level is read at. */
-    readonly amp: number;
+    /** The master's own level. */
+    readonly gain: number;
+    /** The def names already sent. A take of another width asks for more. */
+    private readonly sent = new Set<string>();
+    /** The `mt.piece` instance: one group, and everything else a slot in it. */
+    piece: Group | null = null;
+    /** Track id → its slot group. */
+    readonly tracks = new Map<number, Group>();
     /**
-     * region id → `[node, what it was last set with]`. The controls are kept
-     * beside the node because two of them are **initial-rate** — what a box
-     * reads and whether it wraps are fixed when the reader is built — so telling
-     * a change of those from a move means knowing what was sent.
+     * Region id → its group, its slot, the ports last sent, and which track it
+     * is on. The slot is kept because a source of another width is another clip
+     * def, which is the one change a `set` cannot express; the track is kept so
+     * a track that went away takes its clips out of the table with it.
      */
-    readonly nodes = new Map<number, [Synth, BoxArgs]>();
-    /**
-     * **The group the transport governs**, and the call this rests on: from here
-     * the engine freezes that subtree on a stop and thaws it on a play, with
-     * every node's state intact. A group of its own and never the root, which
-     * would freeze every sound the session has.
-     */
-    group: Group | null;
-    /**
-     * The piece's transport. `headClock: "piece"` says it once: the verbs become
-     * the server's and the host draws the line from the engine's own position
-     * instead of an anchor kept in step here.
-     */
+    readonly clips = new Map<number, [Group, string, Ports, number]>();
+    /** `region:channel` → its group and the ports last sent. */
+    readonly readers = new Map<string, [Group, Ports]>();
     readonly transport: Transport;
 
     constructor(
         editor: MultitrackEditor,
-        { server, host = null, group, amp = 0.5 }: {
+        { server, host = null, gain = 0.5 }: {
             server: Server;
             host?: GuiHost | null;
-            group?: Group;
-            amp?: number;
+            gain?: number;
         },
     ) {
         this.editor = editor;
         this.server = server;
-        this.amp = Number(amp);
-        this.group = group ?? new Group({ server });
+        this.gain = Number(gain);
         const bridge = editor.bridge;
         this.transport = new Transport(
             host,
@@ -145,18 +130,16 @@ export class Playback {
     }
 
     /**
-     * Send the def, bind the group the transport governs, and put the readers
-     * where the piece says.
+     * Instantiate the piece, bind the group the transport governs, and put
+     * every track, clip and reader where the piece says.
      *
      * The half of building one that talks to the server, which in a page is a
-     * promise: the same three calls the script makes in its constructor, made
-     * where they can be waited for.
+     * promise: the same calls the script makes in its constructor, made where
+     * they can be waited for.
      */
     async prepare(): Promise<this> {
-        await reader().send(this.server);
-        if (this.group !== null) await this.server.transportGroup(this.group);
+        await this.syncAsync();
         this.transport.locate(this.editor.cursor ?? 0.0);
-        this.sync();
         return this;
     }
 
@@ -175,60 +158,174 @@ export class Playback {
         this.transport.locate(this.transport.position);
     }
 
-    // ---- the readers ----
+    // ---- the instance ----
 
     /**
-     * Make what is drawn be what sounds.
+     * What the piece is, as instances: the crate's answer, not this module's
+     * opinion of it.
+     */
+    plan(): Plan | null {
+        const bridge = this.editor.bridge;
+        const answer = multitrackPlan(
+            JSON.stringify(this.editor.structure.write()),
+            bridge.rate,
+            bridge.bpm,
+            JSON.stringify(bridge.sources.table()),
+        );
+        return answer === "" ? null : (JSON.parse(answer) as Plan);
+    }
+
+    /**
+     * Make what sounds be what is drawn.
      *
-     * The whole of it, and it runs on every edit whoever made it. A box that went
-     * away takes its node with it; one that moved is a set on the node that is
-     * already sounding.
+     * The whole of it, and it runs on every edit whoever made it. Everything
+     * that is already right is left alone, which is what lets a hand drag a box
+     * without hearing the rest of the piece restart.
      */
     sync(): void {
-        const seen = new Set<number>();
-        for (const track of this.editor.structure.tracks) {
-            const gain = this.amp * trackLevel(this.editor.structure, track);
-            const lane = track.activeLane;
-            for (const region of lane?.regions ?? []) {
-                const args = boxArgs(this.editor.bridge, region, gain);
-                if (args === null) continue;
-                seen.add(region.id);
-                const held = this.nodes.get(region.id);
-                if (held === undefined) {
-                    this.nodes.set(region.id, [this.start(args), args]);
-                    continue;
-                }
-                const [node, sent] = held;
-                // `buf` and `loop` are **initial-rate**: what a box reads and
-                // whether it wraps are fixed when the reader is built, so a
-                // change of either is a new reader and everything else is a set
-                // on the one that is already sounding.
-                if (FIXED.some((key) => args[key] !== sent[key])) {
-                    node.free();
-                    this.nodes.set(region.id, [this.start(args), args]);
-                    continue;
-                }
-                const moved: BoxArgs = {};
-                for (const [key, value] of Object.entries(args)) {
-                    if (!(FIXED as readonly string[]).includes(key) && value !== sent[key]) {
-                        moved[key] = value;
-                    }
-                }
-                if (Object.keys(moved).length > 0) node.set(moved);
-                this.nodes.set(region.id, [node, args]);
-            }
+        void this.syncAsync();
+    }
+
+    /** {@link Playback.sync}, waited for — what a page's own setup uses. */
+    async syncAsync(): Promise<void> {
+        const plan = this.plan();
+        if (plan === null) return;
+        await this.sendDefs(plan);
+        if (this.piece === null) {
+            this.piece = Group.graph(plan.graph, { gain: this.gain }, {
+                server: this.server,
+            });
+            // **The piece's group is the transport's**: from here the engine
+            // freezes that subtree on a stop and thaws it on a play, and every
+            // reader's position is the engine's own rather than a number kept
+            // in step here.
+            await this.server.transportGroup(this.piece);
         }
-        for (const [id, [node]] of [...this.nodes]) {
-            if (!seen.has(id)) {
-                node.free();
-                this.nodes.delete(id);
+        this.syncTracks(plan.tracks);
+    }
+
+    /**
+     * Send the defs this piece's widths need, and only the ones not sent.
+     *
+     * In the order the core gives them: a graph never names one that has not
+     * been sent, and getting that wrong fails in another process at
+     * instantiation with nothing to point at.
+     */
+    private async sendDefs(plan: Plan): Promise<void> {
+        const answer = mixerDefs(JSON.stringify(plan.widths), plan.channels);
+        if (answer === "") return;
+        const defs = JSON.parse(answer) as {
+            synth: { name: string }[];
+            graph: { name: string }[];
+        };
+        for (const [family, specs] of [
+            ["synth", defs.synth],
+            ["graph", defs.graph],
+        ] as const) {
+            for (const spec of specs) {
+                if (this.sent.has(spec.name)) continue;
+                await this.server.command("/def_send", [family, JSON.stringify(spec)]);
+                this.sent.add(spec.name);
             }
         }
     }
 
-    /** One reader, in the governed group. */
-    private start(args: BoxArgs): Synth {
-        return new Synth(READER, args, { target: this.group ?? undefined, server: this.server });
+    private syncTracks(planned: PlannedTrack[]): void {
+        const seen = new Set<number>();
+        for (const track of planned) {
+            seen.add(track.track);
+            let group = this.tracks.get(track.track);
+            if (group === undefined) {
+                group = this.piece!.addSlot("tracks");
+                this.tracks.set(track.track, group);
+            }
+            group.set({ gain: track.gain, mute: track.mute });
+            this.syncClips(track.track, group, track.clips);
+        }
+        for (const id of [...this.tracks.keys()].filter((id) => !seen.has(id))) {
+            this.freeTrack(id);
+        }
+    }
+
+    private syncClips(id: number, track: Group, planned: PlannedClip[]): void {
+        const seen = new Set<number>();
+        for (const clip of planned) {
+            seen.add(clip.region);
+            const ports: Ports = { gain: clip.gain, mute: clip.mute };
+            let held = this.clips.get(clip.region);
+            // A source of another width is another clip def — a mono take is
+            // panned into the track and a stereo one is balanced — so it is the
+            // one change that cannot be a set.
+            if (held !== undefined && held[1] !== clip.slot) {
+                this.freeClip(clip.region);
+                held = undefined;
+            }
+            let group: Group;
+            if (held === undefined) {
+                group = track.addSlot(clip.slot, ports);
+            } else {
+                group = held[0];
+                const moved = changed(ports, held[2]);
+                if (moved !== null) group.set(moved);
+            }
+            this.clips.set(clip.region, [group, clip.slot, ports, id]);
+            this.syncReaders(clip.region, group, clip.readers);
+        }
+        const mine = [...this.clips.entries()].filter(([, held]) => held[3] === id);
+        for (const [region] of mine.filter(([region]) => !seen.has(region))) {
+            this.freeClip(region);
+        }
+    }
+
+    private syncReaders(region: number, clip: Group, planned: PlannedReader[]): void {
+        const seen = new Set<string>();
+        for (const reader of planned) {
+            const key = `${region}:${reader.channel}`;
+            seen.add(key);
+            const ports: Ports = {
+                buf: reader.buffer,
+                chan: reader.channel,
+                at: reader.at,
+                span: reader.span,
+                start: reader.start,
+                loop: reader.looping ? 1.0 : 0.0,
+            };
+            const held = this.readers.get(key);
+            if (held === undefined) {
+                this.readers.set(key, [clip.addSlot("source", ports), ports]);
+                continue;
+            }
+            // Every one of these is an ordinary control, `buf` included, so a
+            // box that was re-cut over a different buffer keeps sounding.
+            const moved = changed(ports, held[1]);
+            if (moved !== null) held[0].set(moved);
+            this.readers.set(key, [held[0], ports]);
+        }
+        for (const key of [...this.readers.keys()]) {
+            if (key.startsWith(`${region}:`) && !seen.has(key)) {
+                this.readers.get(key)![0].free();
+                this.readers.delete(key);
+            }
+        }
+    }
+
+    private freeClip(region: number, freeing = true): void {
+        for (const key of [...this.readers.keys()]) {
+            if (key.startsWith(`${region}:`)) this.readers.delete(key);
+        }
+        const held = this.clips.get(region);
+        this.clips.delete(region);
+        if (freeing && held !== undefined) held[0].free();
+    }
+
+    private freeTrack(id: number): void {
+        // Freeing the group frees everything inside it, so the clips only have
+        // to leave the table — which is what the track id in it is for.
+        for (const [region, held] of [...this.clips.entries()]) {
+            if (held[3] === id) this.freeClip(region, false);
+        }
+        this.tracks.get(id)?.free();
+        this.tracks.delete(id);
     }
 
     // ---- the transport ----
@@ -263,7 +360,7 @@ export class Playback {
         return this;
     }
 
-    /** Freeze the readers where they stand, with every node's state intact. */
+    /** Freeze the piece where it stands, with every node's state intact. */
     pause(): this {
         this.transport.pause();
         return this;
@@ -304,68 +401,29 @@ export class Playback {
     }
 
     /**
-     * Free the readers and the group they live in. The piece is untouched: what
-     * a playback holds is nodes, and nodes are not the composition.
+     * Free the piece's instance. The piece itself is untouched: what a playback
+     * holds is nodes, and nodes are not the composition.
      */
     close(): void {
-        for (const [node] of this.nodes.values()) node.free();
-        this.nodes.clear();
-        if (this.group !== null) {
-            this.group.free();
-            this.group = null;
+        this.readers.clear();
+        this.clips.clear();
+        this.tracks.clear();
+        if (this.piece !== null) {
+            this.piece.free();
+            this.piece = null;
         }
     }
 }
 
-/**
- * What one box is read with, or `null` for a box that cannot be read — one whose
- * source nobody loaded, or one that is a window onto something that is not a
- * source at all.
- *
- * The whole crossing from the piece to the readers, and it is where the two axes
- * meet: a box is placed in **beats** and read in **frames**, and the conversion
- * is the editor's bridge rather than a ratio written here.
- */
-export function boxArgs(bridge: Bridge, region: Region, gain: number): BoxArgs | null {
-    const window = windowOf(region);
-    if (window === null) return null;
-    const source = (window as { source?: { source?: number } }).source?.source;
-    const bufnum = source === undefined ? -1 : bridge.sources.bufnum(source);
-    if (bufnum < 0) return null;
-    return {
-        buf: bufnum,
-        loop: region.content.looping ? 1.0 : 0.0,
-        at: bridge.frameAt(region.position),
-        span: bridge.framesOver(region.position, region.length),
-        // **Where the window opens**, in the source's own frames: a trim of the
-        // left edge and a split both move it, and a reader that ignored it would
-        // play the beginning twice.
-        start: Number((window as { start?: number }).start ?? 0.0) * bridge.rate,
-        amp: region.muted ? 0.0 : gain,
-    };
-}
-
-/**
- * What a track contributes: nothing when it is muted, nothing when another is
- * soloed, its level otherwise.
- *
- * The mixer's rules, and they are the client's because the **document** holds
- * the flags and never reads them — a level is not a fact about the piece, it is
- * what somebody set the knob to.
- */
-export function trackLevel(piece: Multitrack, track: Track): number {
-    const soloing = piece.tracks.some((t) => t.soloed);
-    if (track.muted || (soloing && !track.soloed)) return 0.0;
-    const level = (track.config as { level?: number } | null | undefined)?.level;
-    return level === undefined ? 1.0 : Number(level);
-}
-
-/**
- * The window a region is, or `null` for a box that is a window onto something
- * else (a composite).
- */
-function windowOf(region: Region): object | null {
-    const content = region.content.write() as { window?: unknown };
-    const window = content.window;
-    return typeof window === "object" && window !== null ? window : null;
+/** The ports of `now` that differ from `sent`, or `null` when none do. */
+function changed(now: Ports, sent: Ports): Ports | null {
+    const moved: Ports = {};
+    let any = false;
+    for (const [key, value] of Object.entries(now)) {
+        if (value !== sent[key]) {
+            moved[key] = value;
+            any = true;
+        }
+    }
+    return any ? moved : null;
 }

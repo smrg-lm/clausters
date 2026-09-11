@@ -228,6 +228,16 @@ pub struct SourceRef {
     /// Whether it outlives the session.
     pub lifetime: Lifetime,
     /// The content generation last seen. Bumped by a destructive edit.
+    ///
+    /// **Defaulted, and that is not a convenience.** [`SegmentSource`] is
+    /// untagged, so a `SourceRef` that will not read does not fail — it falls
+    /// through to the next variant, and then the whole [`Body`] or
+    /// [`Content`](crate::multitrack::Content) around it becomes `Unknown`. A
+    /// window would quietly stop being a window, drawn as opaque and played by
+    /// nothing, with no error anywhere. Zero is the generation a source has
+    /// never been edited at, which is what a writer that did not mention one
+    /// meant.
+    #[serde(default)]
     pub generation: u64,
     /// The part of the source used, or the whole of it when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -296,13 +306,18 @@ impl SegmentSource {
 
 /// One window of a [`Body::Segments`]: which source, from where, for how long.
 ///
-/// The length is in the unit the source **measures** — seconds for samples,
-/// whose seconds were fixed when they were recorded and which no tempo change
-/// moves; beats for a node. The start is in the unit the source is
-/// **addressed** in, which for samples is the frame (the client's own
-/// coordinate, bridged by whoever knows the rate, which is never this crate)
-/// and for a node is the beat. [`SourceRef::range`] says the same thing in
-/// frames alone and is what a writer that knows the frame count uses instead.
+/// **Both are in the unit the source measures** — seconds for samples, whose
+/// seconds were fixed when they were recorded and which no tempo change moves;
+/// beats for a node.
+///
+/// Said twice because it was written down wrong once: this said the *start* was
+/// in frames while [`multitrack::picture::Box::start`] said seconds, and every
+/// reader of it — the picture, the host, both clients — meant seconds. A unit
+/// stated one way and meant the other is the cheapest possible bug to write and
+/// among the more expensive to find, since nothing about it is visible until a
+/// box plays from somewhere nobody put it. [`SourceRef::range`] is the one that
+/// speaks frames, and it is what a writer that knows the frame count uses
+/// instead.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentRef {
     /// What this window is onto.

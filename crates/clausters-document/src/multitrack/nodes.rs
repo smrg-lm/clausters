@@ -28,6 +28,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use clausters_core::mixer;
 use clausters_core::tempomap::TempoMap;
 
@@ -40,7 +42,7 @@ use crate::{NodeId, SourceId};
 /// A buffer number is not a property of a piece — the same piece opened twice
 /// has two of them — which is exactly why the document holds a source id and a
 /// session table holds this.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SourceInfo {
     /// The server buffer holding the samples.
     pub buffer: i32,
@@ -49,7 +51,7 @@ pub struct SourceInfo {
 }
 
 /// One reader: one channel of one box.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedReader {
     /// Which channel of the source it takes.
     pub channel: usize,
@@ -66,7 +68,7 @@ pub struct PlannedReader {
 }
 
 /// One clip: a box, its strip and its readers.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedClip {
     /// The region this plays, which is the identity the editor knows it by.
     pub region: NodeId,
@@ -81,12 +83,14 @@ pub struct PlannedClip {
 }
 
 /// One track: its strip and the clips on it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedTrack {
     /// The track this is, by the identity the document gives it.
     pub track: NodeId,
     /// How wide it is.
     pub channels: usize,
+    /// Its fader, linear.
+    pub gain: f32,
     /// `1.0` when the mixer's rule silences it — its own mute, or somebody
     /// else's solo.
     pub mute: f32,
@@ -95,7 +99,7 @@ pub struct PlannedTrack {
 }
 
 /// The whole piece as instances: one graph, and everything else a slot.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     /// The graph to instantiate — `mt.piece.<channels>`.
     pub graph: String,
@@ -106,6 +110,23 @@ pub struct Plan {
     /// Every `(source width, track width)` pair the piece uses, which is what
     /// [`clausters_core::mixer::defs_for`] is handed.
     pub widths: Vec<(usize, usize)>,
+}
+
+/// **What a track's fader is at.**
+///
+/// Read out of [`Track::config`], which is the one key this crate looks inside
+/// an opaque blob for — and it is there because the host's own row reader
+/// already writes it there, so a second place would be a second answer. It
+/// belongs beside [`Track::channels`] as a field of its own for exactly the
+/// reasons that one is, and moving it is a change to the row reader rather than
+/// to this: written down in `PLAN.md` rather than done in passing.
+pub fn track_gain(track: &Track) -> f32 {
+    track
+        .config
+        .0
+        .get("level")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32
 }
 
 /// **What silences a track**: its own mute, or somebody else's solo.
@@ -172,6 +193,7 @@ pub fn plan(
             tracks.push(PlannedTrack {
                 track: track.id,
                 channels,
+                gain: track_gain(track),
                 mute: track_mute(piece, track),
                 clips,
             });
@@ -201,10 +223,11 @@ pub fn plan(
                     buffer: info.buffer,
                     at,
                     span: (end - at).max(0.0),
-                    // The window's own start is in the source's addressing
-                    // unit, which for samples is the frame -- the one place a
-                    // number in this document is not on the musical axis.
-                    start: window.start,
+                    // The window's own start is in the source's **seconds**,
+                    // the unit a recording measures in and no tempo scales --
+                    // the same one `picture::Box::start` reports and both
+                    // clients write.
+                    start: window.start * sample_rate,
                     looping: *looping,
                 })
                 .collect();
@@ -223,6 +246,7 @@ pub fn plan(
         tracks.push(PlannedTrack {
             track: track.id,
             channels,
+            gain: track_gain(track),
             mute: track_mute(piece, track),
             clips,
         });
@@ -304,6 +328,10 @@ mod tests {
         assert_eq!(clips[0].readers[0].at, 0.0);
         assert_eq!(clips[0].readers[0].span, 2.0 * 48_000.0);
         assert_eq!(clips[1].readers[0].at, 2.0 * 48_000.0);
+        assert_eq!(
+            clips[0].readers[0].start, 0.0,
+            "and the window's own start is in the source's seconds, crossed here"
+        );
     }
 
     /// **The source's width picks the slot**, because a mono take is panned
@@ -354,5 +382,55 @@ mod tests {
             1.0,
             "a mute is about this track and a solo about the others, so a mute wins"
         );
+    }
+
+    /// **A track that said nothing about its level is at full.** The knob's
+    /// value is the one key read out of the opaque configuration, because the
+    /// host's row reader already writes it there.
+    #[test]
+    fn a_tracks_fader_is_read_where_the_row_reader_writes_it() {
+        let mut p = piece();
+        assert_eq!(track_gain(&p.tracks[0]), 1.0);
+        p.tracks[0].config = crate::Opaque(serde_json::json!({"level": 0.25}));
+        assert_eq!(track_gain(&p.tracks[0]), 0.25);
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    /// **The plan reads the piece a client writes**, including one that left out
+    /// a field it had nothing to say about.
+    ///
+    /// The two structures are one format in two languages, and a field that
+    /// round-trips in the type and not through the JSON is exactly the kind of
+    /// gap nothing else catches. This one is worth a test rather than a
+    /// comment: [`SegmentSource`](crate::SegmentSource) is untagged, so a
+    /// `SourceRef` missing a defaulted field does not fail — the window quietly
+    /// becomes opaque content, drawn as a box and played by nothing.
+    #[test]
+    fn a_piece_written_by_a_client_plans() {
+        let written = r#"{"tracks":[{"id":1,"lanes":[{"id":2,"regions":[
+            {"id":3,"position":0.0,"length":2.0,"content":{"fill":"window",
+             "window":{"source":{"source":1,"lifetime":"session"},
+                       "start":0.0,"duration":2.0}}}]}]}]}"#;
+        let piece: Multitrack = serde_json::from_str(written).expect("it reads");
+        assert_eq!(piece.tracks.len(), 1);
+        assert_eq!(
+            piece.tracks[0].active_lane().expect("a lane").regions.len(),
+            1
+        );
+
+        let table = HashMap::from([(
+            crate::SourceId(1),
+            SourceInfo {
+                buffer: 7,
+                channels: 1,
+            },
+        )]);
+        let plan = plan(&piece, 48_000.0, 60.0, &table);
+        assert_eq!(plan.tracks[0].clips.len(), 1, "the box is planned");
+        assert_eq!(plan.tracks[0].clips[0].readers[0].buffer, 7);
     }
 }

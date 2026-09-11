@@ -177,6 +177,34 @@ export class Sources {
         return typeof held === "object" ? held : undefined;
     }
 
+    /**
+     * The whole table as the instance plan reads it: source id →
+     * `{ buffer, channels }`.
+     *
+     * The one fact about a piece that is not in the piece, handed to the crate
+     * so it can say which slot a box goes in — a mono take is panned into its
+     * track and a stereo one is balanced, and that follows from the source's
+     * width and nothing else. A source nobody loaded is left out, and a box
+     * over it is simply not playing yet.
+     */
+    table(): Record<string, { buffer: number; channels: number }> {
+        const out: Record<string, { buffer: number; channels: number }> = {};
+        for (const source of this.buffers.keys()) {
+            const bufnum = this.bufnum(source);
+            if (bufnum < 0) continue;
+            const held = this.buffers.get(source);
+            const channels =
+                typeof held === "object" && held !== null
+                    ? Number((held as { channels?: unknown }).channels ?? 1)
+                    : 1;
+            out[String(source)] = {
+                buffer: bufnum,
+                channels: Math.max(1, Math.trunc(channels || 1)),
+            };
+        }
+        return out;
+    }
+
     /** The source a buffer number came from, or `undefined`. */
     source(bufnum: number): number | undefined {
         for (const [source, held] of this.buffers) {
@@ -201,11 +229,18 @@ export class Bridge {
     rate: number;
     sources: Sources;
     tempo: TempoMap;
+    /**
+     * The tempo, in beats per minute, a piece that states none is read at. The
+     * reader's own: a piece that never said a tempo did not say one, and a
+     * document that invented 120 would be deciding a musical question.
+     */
+    bpm: number;
 
     constructor(piece: Multitrack, sampleRate: number, sources?: Sources) {
         this.rate = Number(sampleRate);
         this.sources = sources ?? new Sources();
         this.tempo = tempoMap(piece);
+        this.bpm = DEFAULT_TEMPO * 60.0;
     }
 
     /** Re-read the tempo map, for an edit that moved one. */

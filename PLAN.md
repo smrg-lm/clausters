@@ -2113,6 +2113,52 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **The clients each drove the piece by hand, so the mixer existed twice**
+  *(2026-09-10, the other half of the entry below)*. `playback` in both clients
+  built reader nodes itself and worked out the mixing as it went. Now it asks:
+  `clausters_multitrack_plan` for what to instantiate and `clausters_mixer_defs`
+  for what to send, and what it does with the answer is **compare it against
+  what is already sounding and send the difference**. Both clients run the same
+  two calls, which is what makes one piece sound the same in both of them.
+
+  A diff rather than a rebuild, and that is not an optimization: a piece plays
+  itself from the transport, which only holds if the nodes stay. Rebuilding on
+  every edit would restart everything sounding, and a hand dragging a box would
+  hear its own gesture as a stutter. The one change a `set` cannot express -- a
+  clip whose source changed *width*, which is a different wiring -- is torn down
+  and made again, and nothing else is.
+
+  Three things it turned up:
+
+  - **`buf` did not have to be initial-rate.** `BufRd` reads its bufnum once a
+    block, so it is an ordinary control and changing which buffer a box reads is
+    a `/node_set`. That matters because re-cutting a join *is* a new buffer -- a
+    stitched one is replaced rather than edited -- and a box rebuilt for it
+    would stop and restart every time a hand moved a seam.
+  - **`SegmentRef::start`'s unit was documented backwards.** It said frames
+    while `picture::Box::start` said seconds, and every reader of it -- the
+    picture, the host, both clients -- meant seconds. A unit stated one way and
+    meant the other is the cheapest bug to write and among the more expensive to
+    find: nothing about it shows until a box plays from somewhere nobody put it.
+    Corrected, with the contradiction written into the comment so it is not
+    re-introduced.
+  - **A track's fader is read out of `config["level"]`**, which is the one key
+    the crate looks inside an opaque blob for, and it is there because the
+    host's own row reader already writes it there -- a second place would be a
+    second answer. See the entry below.
+
+- ⬜ **A track's level should be a field, beside its width** *(named 2026-09-10
+  writing the instance plan)*. `Track::channels` became a field of the document
+  because it decides the mix and both clients must write it identically;
+  `level` is the same kind of thing and is still a key inside `Track::config`,
+  which the crate now has to reach into -- the one place it reads an opaque
+  blob, against its own rule that configuration is carried and never
+  interpreted. It stayed where it is because the host's row reader
+  (`multitrack::picture`'s `SetTracks` path) writes it there, so moving it is a
+  change to that reader and its tests rather than a rename. Take it with the
+  next thing that touches the row reader; `mute` and `solo` are already fields,
+  so `level` is the odd one of the three.
+
 - ✅ **A piece had no node system, so `gain` on a curve and `gain` on a knob
   were two words spelled alike** *(named 2026-09-10 by the user; the defs and
   the plan landed the same day)*. `clausters_core::mixer` says what a track and

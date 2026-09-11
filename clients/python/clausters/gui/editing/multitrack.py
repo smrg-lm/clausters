@@ -149,6 +149,27 @@ class Sources:
         found = self.buffers.get(int(source))
         return None if isinstance(found, (int, float)) else found
 
+    def table(self) -> dict:
+        """The whole table as the instance plan reads it: source id ->
+        ``{"buffer": n, "channels": n}``.
+
+        The one fact about a piece that is not in the piece, handed to the crate
+        so it can say which slot a box goes in -- a mono take is panned into its
+        track and a stereo one is balanced, and that follows from the source's
+        width and nothing else. A source nobody loaded is left out, and a box
+        over it is simply not playing yet.
+        """
+        out: dict = {}
+        for source in self.buffers:
+            bufnum = self.bufnum(source)
+            if bufnum < 0:
+                continue
+            held = self.buffers[source]
+            channels = getattr(held, "channels", 1)
+            out[int(source)] = {"buffer": bufnum,
+                                "channels": max(1, int(channels or 1))}
+        return out
+
     def source(self, bufnum: int):
         """The source a buffer number came from, or ``None``."""
         for source, held in self.buffers.items():
@@ -171,6 +192,11 @@ class Bridge:
         self.rate = float(sample_rate)
         self.sources = sources or Sources()
         self.tempo = tempo_map(piece)
+        #: The tempo, in beats per minute, a piece that states none is read at.
+        #: The reader's own: a piece that never said a tempo did not say one,
+        #: and a document that invented 120 would be deciding a musical
+        #: question.
+        self.bpm = DEFAULT_TEMPO * 60.0
 
     def refresh(self, piece: Multitrack) -> None:
         """Re-read the tempo map, for an edit that moved one."""

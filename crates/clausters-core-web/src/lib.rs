@@ -2337,6 +2337,68 @@ pub fn multitrack_picture(piece: &str) -> String {
     .unwrap_or_default()
 }
 
+/// **The defs a piece of these widths is played by** — `{"synth": [...],
+/// "graph": [...]}`, each list in the order it must be sent, or an empty string
+/// for a width nothing is written for.
+///
+/// `widths` is a JSON array of `[source channels, track channels]` pairs and
+/// `master` the piece's own width. What a track and a clip *are* on the server
+/// is `clausters_core::mixer`'s and there is one of it: two clients writing
+/// their own channel strips is two mixers, which is how the same piece comes to
+/// sound different in two places.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mixerDefs)]
+pub fn mixer_defs(widths: &str, master: usize) -> String {
+    let Ok(widths) = serde_json::from_str::<Vec<(usize, usize)>>(widths) else {
+        return String::new();
+    };
+    let Ok(defs) = clausters_core::mixer::defs_for(&widths, master) else {
+        return String::new();
+    };
+    serde_json::to_string(&serde_json::json!({
+        "synth": defs.synth,
+        "graph": defs.graph,
+    }))
+    .unwrap_or_default()
+}
+
+/// **What to instantiate to play a piece** — the instance plan, or an empty
+/// string for a piece that will not parse.
+///
+/// `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
+/// where a source's samples actually are on a running server, which is the one
+/// fact about a piece that is not in the piece. `default_bpm` is the tempo a
+/// piece that never stated one is read at — the caller's, because a document
+/// that invented 120 would be deciding a musical question.
+///
+/// Three rules live in it and each was written twice before it did: beats
+/// crossed to frames through the tempo map, the source's width picking the
+/// clip's wiring, and what a solo anywhere does to everything else.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackPlan)]
+pub fn multitrack_plan(piece: &str, sample_rate: f64, default_bpm: f64, sources: &str) -> String {
+    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
+    else {
+        return String::new();
+    };
+    let Ok(table) = serde_json::from_str::<
+        std::collections::HashMap<String, clausters_document::multitrack::nodes::SourceInfo>,
+    >(sources) else {
+        return String::new();
+    };
+    let table = table
+        .into_iter()
+        .filter_map(|(id, info)| {
+            id.parse::<u64>()
+                .ok()
+                .map(|id| (clausters_document::SourceId(id), info))
+        })
+        .collect();
+    let plan =
+        clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
+    serde_json::to_string(&plan).unwrap_or_default()
+}
+
 /// **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
 /// the piece's own vocabulary, or an empty string for input that will not
 /// parse.

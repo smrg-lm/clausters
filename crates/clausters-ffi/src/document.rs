@@ -50,7 +50,7 @@ use std::sync::Mutex;
 
 use clausters_document::{
     Against, Body, Document, Grouping, Intent, Mapping, Node, NodeId, Opaque, Rules, Selection,
-    Unit, apply as apply_intent,
+    SourceId, Unit, apply as apply_intent,
 };
 
 /// A document handle safe to share across the binding's threads.
@@ -563,6 +563,118 @@ pub unsafe extern "C" fn clausters_view_props(
         return 0;
     };
     let Ok(answer) = serde_json::to_string(&props) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **The defs a piece of these widths is played by**, as JSON:
+/// `{"synth": [...], "graph": [...]}`, each list in the order it must be sent.
+///
+/// `widths` is a JSON array of `[source channels, track channels]` pairs and
+/// `master` the piece's own width. What a track and a clip *are* on the server
+/// is [`clausters_core::mixer`]'s and there is one of it: two clients writing
+/// their own channel strips is two mixers, which is how the same piece comes to
+/// sound different in two places.
+///
+/// `0` for a width nothing is written for — past stereo is a downmix table and
+/// which table is a decision, so it is refused rather than guessed.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface.
+///
+/// # Safety
+/// `widths` must be null or readable for `widths_len` bytes, and `out` null or
+/// writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_mixer_defs(
+    widths: *const u8,
+    widths_len: usize,
+    master: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(widths) = (unsafe { text(widths, widths_len) }) else {
+        return 0;
+    };
+    let Ok(widths) = serde_json::from_str::<Vec<(usize, usize)>>(&widths) else {
+        return 0;
+    };
+    let Ok(defs) = clausters_core::mixer::defs_for(&widths, master) else {
+        return 0;
+    };
+    let Ok(answer) = serde_json::to_string(&serde_json::json!({
+        "synth": defs.synth,
+        "graph": defs.graph,
+    })) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **What to instantiate to play a piece**, as JSON — the instance plan.
+///
+/// `piece` is a multitrack and `sources` a JSON object from source id to
+/// `{"buffer": n, "channels": n}`: where a source's samples actually are on a
+/// running server, which is the one fact about a piece that is not in the
+/// piece. `default_bpm` is the tempo a piece that never stated one is read at —
+/// the caller's, because a document that invented 120 would be deciding a
+/// musical question.
+///
+/// The answer names the graph to instantiate, the tracks in the order they are
+/// shown, and for each clip which slot it goes in and which frames its readers
+/// play. Three rules live in it and each was written twice before it did: beats
+/// crossed to frames through the tempo map, the source's width picking the
+/// clip's wiring, and what a solo anywhere does to everything else — which the
+/// document deliberately does not hold, since it records that a track was
+/// *marked* and what a mark does to the others is a mixer's question.
+///
+/// `0` for a piece or a source table that will not parse.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface.
+///
+/// # Safety
+/// `piece` and `sources` must be null or readable for their lengths, and `out`
+/// null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_multitrack_plan(
+    piece: *const u8,
+    piece_len: usize,
+    sample_rate: f64,
+    default_bpm: f64,
+    sources: *const u8,
+    sources_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(piece), Some(sources)) = (unsafe { text(piece, piece_len) }, unsafe {
+        text(sources, sources_len)
+    }) else {
+        return 0;
+    };
+    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(&piece)
+    else {
+        return 0;
+    };
+    let Ok(table) = serde_json::from_str::<
+        std::collections::HashMap<String, clausters_document::multitrack::nodes::SourceInfo>,
+    >(&sources) else {
+        return 0;
+    };
+    let table = table
+        .into_iter()
+        .filter_map(|(id, info)| id.parse::<u64>().ok().map(|id| (SourceId(id), info)))
+        .collect();
+    let plan =
+        clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
+    let Ok(answer) = serde_json::to_string(&plan) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
