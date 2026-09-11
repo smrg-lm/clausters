@@ -43,6 +43,7 @@ use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror};
 use crate::osc::graphdef::{
     BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
     GraphInstance, GraphVoice, MAX_GRAPH_DEPTH, MemberKind, ResolvedSurface, VOICE_SLOT,
+    bus_channel,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;

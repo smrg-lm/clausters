@@ -46,7 +46,8 @@ def piece() -> dict:
                                  content=Content.composite(
                                      {"id": 2, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
-    guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)])
+    # Mono, so the new width field is exercised rather than defaulted away.
+    guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)], channels=1)
     return Multitrack(tracks=[vocals, guitar]).write()
 
 

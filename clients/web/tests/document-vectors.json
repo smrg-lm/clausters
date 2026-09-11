@@ -1307,6 +1307,7 @@
         "others": [],
         "label": "retune it",
         "skipped": [],
+        "remaining": [],
         "document": {
           "version": 6,
           "root": {
@@ -1379,6 +1380,7 @@
         "others": [],
         "label": "drop it on the grid",
         "skipped": [],
+        "remaining": [],
         "document": {
           "version": 7,
           "root": {
@@ -1452,6 +1454,7 @@
         "others": [],
         "label": "move the take",
         "skipped": [],
+        "remaining": [],
         "document": {
           "version": 8,
           "root": {
@@ -1526,6 +1529,7 @@
         "others": [],
         "label": "move the event",
         "skipped": [],
+        "remaining": [],
         "document": {
           "version": 9,
           "root": {
@@ -2182,7 +2186,8 @@
               {
                 "id": 21
               }
-            ]
+            ],
+            "channels": 1
           }
         ]
       },
@@ -2225,6 +2230,7 @@
               "name": "vocals"
             },
             {
+              "channels": 1,
               "id": 20,
               "lanes": [
                 {
@@ -2318,7 +2324,8 @@
               {
                 "id": 21
               }
-            ]
+            ],
+            "channels": 1
           }
         ]
       },
@@ -2388,6 +2395,7 @@
               "name": "vocals"
             },
             {
+              "channels": 1,
               "id": 20,
               "lanes": [
                 {
@@ -2476,7 +2484,8 @@
               {
                 "id": 21
               }
-            ]
+            ],
+            "channels": 1
           }
         ]
       },
@@ -2533,6 +2542,7 @@
               "name": "vocals"
             },
             {
+              "channels": 1,
               "id": 20,
               "lanes": [
                 {

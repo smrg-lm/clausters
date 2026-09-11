@@ -18,3 +18,9 @@ serde = { version = "1", features = ["derive"] }
 # parser reads every document a session saved, so exactness is the format's
 # concern before it is the history's.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# The node system: `multitrack::nodes` says what a piece is as nodes and
+# groups, which means it needs the tempo map that turns a beat into a second
+# (`clausters_core::tempomap`) and the def and port names a piece is wired with
+# (`clausters_core::mixer`). Both are the shared rule rather than a second one,
+# which is the whole reason to depend on it instead of restating them here.
+clausters-core = { path = "../clausters-core" }

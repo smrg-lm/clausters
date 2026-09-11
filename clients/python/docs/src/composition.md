@@ -514,6 +514,47 @@ A lane's **height** is the other kind of thing and is in no document. It says
 nothing about what the piece is; resizing a lane (Ctrl+wheel) changes the view
 and no file.
 
+### What a piece is as nodes: the channel strip, three times
+
+A piece is a picture and a sound, and this is the second one. What plays it is
+not a driver a script writes: it is three GraphDefs over **one** shape, the
+channel strip every fixed-channel mixer has had for fifty years.
+
+```text
+in -> [pre-fader inserts] -> fader (+ mute) -> pan/width -> [post inserts] -> out
+```
+
+A **clip** is that strip over its readers, a **track** is that strip over its
+clips, and the **master** is that strip over its tracks. A clip's gain and a
+track's gain are both real and they are different stages -- the first corrects
+the take, the second mixes it -- which is why an envelope on a clip is not
+another name for the track's fader.
+
+The pieces of it are named once, in `clausters_core::mixer`, and both clients
+bind the same names: `gain`, `pan`, `width`, `mute`, and a box's own `at`,
+`span` and `start`. **The knob in the header, the automation curve and a
+`/node_set` all write the same port of the same instance** -- that is what makes
+an automation whose target says `gain` drive the gain the header shows, rather
+than a second thing spelled the same.
+
+Two words are worth keeping apart, because confusing them is the classic mixer
+bug and `pan` is one name for both:
+
+- Over a **mono** source, `pan` is a pan: an equal-power law that puts about
+  -3 dB on each side at the centre. The same signal sent to both sides instead
+  would be 3 dB too loud in the middle.
+- Over a **stereo** source, `pan` is a **balance**: it attenuates one side and
+  leaves the centre untouched. A pan law here would take 3 dB off every strip,
+  and there are three of them in a row.
+
+Which one applies follows from the source's width -- `Track.channels` and
+`Multitrack.channels`, both fields of the document, because the width decides
+the mix and reopening a piece has to give back the mix it was left with.
+
+And the transport plays the piece rather than a client stepping it: each reader
+reads the position the engine publishes, so moving a box is one `set` and a
+locate is no message at all.
+
 ### Where a recording lands
 
 A `Buffer` holds a take and a `RecordingStream` follows one as it is written,

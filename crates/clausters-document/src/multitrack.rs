@@ -49,6 +49,7 @@ use crate::timebase::Beat;
 use crate::{Node, NodeId, Opaque, SegmentRef};
 
 pub mod edit;
+pub mod nodes;
 pub mod picture;
 
 /// Anything a newer writer wrote that this build has no field for, carried so a
@@ -145,6 +146,15 @@ pub enum Content {
     /// A fill this build does not know, preserved whole.
     #[serde(untagged)]
     Unknown(Value),
+}
+
+/// The width a track is unless it says otherwise.
+fn stereo() -> usize {
+    2
+}
+
+fn is_stereo(channels: &usize) -> bool {
+    *channels == 2
 }
 
 fn one() -> f64 {
@@ -443,6 +453,15 @@ pub struct Track {
     /// was marked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub soloed: bool,
+    /// **How wide this track is**, in channels.
+    ///
+    /// A field of its own rather than a line in [`Track::config`], because the
+    /// two clients have to write it the same way: it decides the mix, so
+    /// reopening a piece has to give back the mix it was left with, and an
+    /// opaque one client interprets and the other does not would not. Two by
+    /// default, which is what a track is unless it says otherwise.
+    #[serde(default = "stereo", skip_serializing_if = "is_stereo")]
+    pub channels: usize,
     /// What this track is, in the client's terms: its instrument, its routing,
     /// its plugins. Carried, never interpreted.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
@@ -468,6 +487,7 @@ impl Track {
             automation: Vec::new(),
             muted: false,
             soloed: false,
+            channels: stereo(),
             config: Opaque::none(),
             extra: Extra::new(),
         }
@@ -656,6 +676,12 @@ pub struct Multitrack {
     /// The tracks, in the order they are shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<Track>,
+    /// **How wide the piece is**, in channels — the master's own width, and
+    /// what a track's output is mixed into. Here for the reason
+    /// [`Track::channels`] is: it decides the mix, so it has to survive a save
+    /// and it has to mean the same thing to both clients.
+    #[serde(default = "stereo", skip_serializing_if = "is_stereo")]
+    pub channels: usize,
     /// The tempo map, in position order. Empty means the reader's own default,
     /// which the document does not name: a piece that never said a tempo did
     /// not say one, and inventing 120 here would be this crate deciding a
@@ -693,6 +719,7 @@ impl Default for Multitrack {
         Self {
             version: crate::FIRST_VERSION,
             tracks: Vec::new(),
+            channels: stereo(),
             tempo: Vec::new(),
             meter: Vec::new(),
             markers: Vec::new(),

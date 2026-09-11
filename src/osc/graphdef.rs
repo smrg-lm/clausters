@@ -72,11 +72,36 @@ fn one() -> usize {
 /// is how a member is wired — its bus-selecting control (`out`/`in` on a
 /// Faust def, or whatever control feeds an `Out`/`In` UGen) is set to a
 /// private bus, uniformly for SynthDef and FaustDef members.
+///
+/// **A bus name may name one of its channels**, `"mix:1"`, resolving to the
+/// bus's first index plus 1 — and `"OUT:1"` names the hardware's second
+/// channel, so a master's own stereo output is written the same way. A UGen has one output, so a stereo writer is two
+/// `Out` rows and each of them needs *its own* bus index — and a member cannot
+/// compute one, because a bus-selecting input must be a control or a constant
+/// for the wiring to be readable at all. Without this, a multichannel private
+/// bus could be allocated and only its first channel could ever be reached,
+/// which is to say a mixer could not be written.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ControlValue {
     Num(f32),
     Bus(String),
+}
+
+/// Splits a bus reference into its name and its channel offset: `"mix"` is
+/// channel 0 of `mix`, `"mix:1"` its second channel.
+///
+/// A name with a `:` that is not a number is left whole, so a bus called
+/// `a:b` stays findable and the failure is "unknown bus" rather than a silent
+/// wire to somewhere else.
+pub fn bus_channel(reference: &str) -> (&str, usize) {
+    match reference.rsplit_once(':') {
+        Some((name, channel)) => match channel.parse::<usize>() {
+            Ok(channel) => (name, channel),
+            Err(_) => (reference, 0),
+        },
+        None => (reference, 0),
+    }
 }
 
 /// What a member is an instance **of**.
@@ -217,11 +242,23 @@ impl GraphDefSpec {
             self.buses.iter().map(|b| b.name.as_str()).collect();
         for (i, m) in self.members.iter().enumerate() {
             for v in m.controls.values() {
-                if let ControlValue::Bus(name) = v
-                    && name != "OUT"
-                    && !bus_names.contains(name.as_str())
-                {
-                    return Err(format!("member {i}: unknown internal bus '{name}'"));
+                if let ControlValue::Bus(reference) = v {
+                    let (name, channel) = bus_channel(reference);
+                    // `OUT` is the hardware, and `OUT:1` its second channel:
+                    // the master's own output is a stereo write like any other.
+                    if name == "OUT" {
+                        continue;
+                    }
+                    let Some(bus) = self.buses.iter().find(|b| b.name == name) else {
+                        return Err(format!("member {i}: unknown internal bus '{reference}'"));
+                    };
+                    if channel >= bus.channels.max(1) {
+                        return Err(format!(
+                            "member {i}: bus '{name}' has {} channels and '{reference}' asks for {}",
+                            bus.channels.max(1),
+                            channel + 1
+                        ));
+                    }
                 }
             }
             for bus in m.maps.values() {

@@ -144,9 +144,16 @@ impl CmdTranslator {
                 };
                 let value = match cval {
                     ControlValue::Num(v) => *v,
-                    ControlValue::Bus(b) if b == "OUT" => 0.0,
-                    // validate() guaranteed the name resolves.
-                    ControlValue::Bus(b) => bus_index[b.as_str()] as f32,
+                    // validate() guaranteed the name resolves and the channel
+                    // is inside the bus. `OUT` is the hardware, whose first
+                    // channel is bus 0.
+                    ControlValue::Bus(b) => {
+                        let (name, channel) = bus_channel(b);
+                        match name {
+                            "OUT" => channel as f32,
+                            name => (bus_index[name] + channel) as f32,
+                        }
+                    }
                 };
                 synth.set_control(index, value);
                 if let Some(slot) = controls.get_mut(index as usize) {
@@ -383,17 +390,23 @@ impl CmdTranslator {
             let mut given = HashMap::new();
             for (child_bus, value) in &member.controls {
                 let index = match value {
-                    ControlValue::Bus(b) if b == "OUT" => 0,
-                    ControlValue::Bus(b) => match plan.bus_index.get(b.as_str()) {
-                        Some(&i) => i,
-                        None => {
-                            let name = member.def.clone();
-                            self.release_plan(plan);
-                            return Err(format!(
-                                "member {mi} ('{name}'): unknown internal bus '{b}'"
-                            ));
+                    ControlValue::Bus(b) => {
+                        let (bus, channel) = bus_channel(b);
+                        if bus == "OUT" {
+                            given.insert(child_bus.clone(), channel);
+                            continue;
                         }
-                    },
+                        match plan.bus_index.get(bus) {
+                            Some(&i) => i + channel,
+                            None => {
+                                let name = member.def.clone();
+                                self.release_plan(plan);
+                                return Err(format!(
+                                    "member {mi} ('{name}'): unknown internal bus '{b}'"
+                                ));
+                            }
+                        }
+                    }
                     ControlValue::Num(v) => *v as usize,
                 };
                 given.insert(child_bus.clone(), index);
@@ -462,7 +475,22 @@ impl CmdTranslator {
             child_of.insert(mi, id);
         }
         self.resort_from(Some(group_id), cmds);
-        let surface = self.resolve_ports(&def, &node_of, &child_of);
+        let mut surface = self.resolve_ports(&def, &node_of, &child_of);
+        // **A slot that *is* one graph answers that graph's ports too.** A slot
+        // of clips holds one `mt.clip` and nothing else, so the group a caller
+        // was handed would otherwise answer only the ports the *parent's* def
+        // thought to re-export, and the clip's own surface would be reachable
+        // by no id the caller has. Its ports are spliced in rather than
+        // replacing anything: an explicit re-export still wins.
+        if slot.is_some()
+            && node_of.is_empty()
+            && let [(_, only)] = child_of.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()[..]
+            && let Some(child) = self.graph_instances.get(&only)
+        {
+            for (port, targets) in child.surface.clone() {
+                surface.entry(port).or_insert(targets);
+            }
+        }
         let defaults: Vec<(String, f32)> = def
             .defaults
             .iter()
@@ -567,6 +595,7 @@ impl CmdTranslator {
         rest: &[OscType],
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
+        let instance = self.slot_instance(instance)?;
         let Some(inst) = self.graph_instances.get(&instance) else {
             return Err(format!("GraphDef instance {instance} not found"));
         };
@@ -610,6 +639,29 @@ impl CmdTranslator {
             return Err("expected: instanceID, voiceID [, port, value ...]".into());
         };
         self.graph_add_slot(*instance, VOICE_SLOT, *id, rest, cmds)
+    }
+
+    /// The instance an id means when a slot is added to it.
+    ///
+    /// A slot group that *is* one nested graph — a track inside a piece, a clip
+    /// inside a track — stands for that graph, because that is what the caller
+    /// was handed and what everything else about it already answers to. Any
+    /// other id is itself.
+    fn slot_instance(&self, id: i32) -> Result<i32, String> {
+        let Some(voice) = self.graph_voices.get(&id) else {
+            return Ok(id);
+        };
+        match voice.children.values().copied().collect::<Vec<_>>()[..] {
+            [only] => Ok(only),
+            [] => Err(format!(
+                "{id} fills the '{}' slot with nodes, not with a graph, so it has no slots of its own",
+                voice.slot
+            )),
+            _ => Err(format!(
+                "{id} fills the '{}' slot with several graphs; name the one to add to",
+                voice.slot
+            )),
+        }
     }
 
     /// `/graph_addSlot instanceID slot id [port value ...]` off the wire.

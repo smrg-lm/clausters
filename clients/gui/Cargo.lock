@@ -338,6 +338,7 @@ dependencies = [
 name = "clausters-document"
 version = "0.10.0"
 dependencies = [
+ "clausters-core",
  "serde",
  "serde_json",
 ]

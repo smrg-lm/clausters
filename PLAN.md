@@ -2113,6 +2113,51 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A piece had no node system, so `gain` on a curve and `gain` on a knob
+  were two words spelled alike** *(named 2026-09-10 by the user; the defs and
+  the plan landed the same day)*. `clausters_core::mixer` says what a track and
+  a clip **are** on the server -- `mt.reader`, `mt.strip.<in>x<out>`,
+  `mt.clip.<in>x<out>`, `mt.track.<n>`, `mt.piece.<n>` -- and what their
+  surfaces answer to; `clausters_document::multitrack::nodes` says which of them
+  a given piece needs, wired to which buffer, at which frame, with which level.
+  Between the two nothing is left for a client to work out, which is why a piece
+  will sound the same in both of them. `tests/mixer_graph.rs` hears it rather
+  than reading it back: a whole piece is one `/graph_new` and everything after
+  it is a slot added to what is already sounding.
+
+  **Three things the work turned up, and all three changed the design.**
+
+  - **The master has to contain the tracks.** A track's output is a bus, the
+    master's mix bus is private to the master's instance, and a graph
+    instantiated on its own could never name it. So a piece is `mt.piece` with a
+    `tracks` slot, a track holds a `clips` slot, a clip holds a `source` slot of
+    readers -- four levels, one `/graph_new`, and containment is what hands each
+    child the bus it writes to.
+  - **A GraphDef could not say which *channel* of a bus a member gets.** A UGen
+    has one output, so a stereo writer is two `Out` rows and each needs its own
+    bus index, which a member cannot compute (a bus input must be a control or a
+    constant). Without it a multichannel private bus could be allocated and only
+    its first channel ever reached -- which is to say a mixer could not be
+    written. `"mix:1"` now names one, and `"OUT:1"` the hardware's second.
+  - **`Balance2` is the pan law over a pair, so it is 3 dB down at centre.**
+    Three strips in series -- clip, track, master -- would take 9 dB off a piece
+    for nothing. A balance *attenuates one side and leaves the centre alone*, so
+    the law is written in the strip as `min(1, 1 -+ pan)`. The UGen is not
+    wrong; it is not a balance, and the name is scsynth's.
+
+  Two fields joined the document with it, both additive and defaulted so every
+  file written until today reads unchanged: `Track::channels` and
+  `Multitrack::channels`. They are fields rather than lines in `config` because
+  the width decides the mix, so reopening a piece has to give back the mix it
+  was left with and both clients have to write it identically -- which is the
+  definition of a field the format owns. Ported to both clients with the
+  parity vectors that cover them.
+
+  Deliberately not in it: **effects** (the slot is declared and empty -- a send
+  to nowhere cannot be heard, so it cannot be checked) and **the meter** (it
+  wants an instant attack, a decay in dB/s and a peak hold, and no UGen does
+  that yet).
+
 - ✅ **A GraphDef was one level of wiring, and a piece is not one level**
   *(named 2026-09-10 specifying the multitrack's node system; landed the same
   day)*. A track holds clips, a clip holds an effect chain, and each of those is

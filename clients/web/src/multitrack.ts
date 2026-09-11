@@ -455,6 +455,13 @@ export class Track {
      * mixer's rule and not the document's.
      */
     soloed: boolean;
+    /**
+     * How wide this track is, in channels. A field of its own rather than a
+     * line in {@link Track.config}, because it decides the mix: reopening a
+     * piece has to give back the mix it was left with, and both clients have to
+     * write it the same way. Two unless the track says otherwise.
+     */
+    channels: number;
     config?: unknown;
     extra: Extra;
 
@@ -466,6 +473,7 @@ export class Track {
         automation?: Automation[];
         muted?: boolean;
         soloed?: boolean;
+        channels?: number;
         config?: unknown;
         extra?: Extra;
     }) {
@@ -476,6 +484,7 @@ export class Track {
         this.automation = fields.automation ?? [];
         this.muted = fields.muted ?? false;
         this.soloed = fields.soloed ?? false;
+        this.channels = fields.channels ?? 2;
         this.config = fields.config;
         this.extra = fields.extra ?? {};
     }
@@ -505,6 +514,7 @@ export class Track {
         if (this.automation.length) out.automation = this.automation.map((a) => a.write());
         if (this.muted) out.muted = true;
         if (this.soloed) out.soloed = true;
+        if (this.channels !== 2) out.channels = this.channels;
         if (this.config !== undefined) out.config = this.config;
         return { ...out, ...this.extra };
     }
@@ -518,9 +528,10 @@ export class Track {
             automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
             muted: Boolean(written.muted),
             soloed: Boolean(written.soloed),
+            channels: written.channels === undefined ? 2 : num(written.channels),
             config: written.config,
             extra: rest(written, "id", "name", "lanes", "active", "automation",
-                        "muted", "soloed", "config"),
+                        "muted", "soloed", "channels", "config"),
         });
     }
 }
@@ -668,6 +679,12 @@ export class Multitrack {
      */
     version = FIRST_VERSION;
     tracks: Track[] = [];
+    /**
+     * How wide the piece is, in channels — the master's own width, and what a
+     * track's output is mixed into. Here for the reason {@link Track.channels}
+     * is.
+     */
+    channels = 2;
     tempo: Tempo[] = [];
     meter: Meter[] = [];
     markers: Marker[] = [];
@@ -750,6 +767,7 @@ export class Multitrack {
         // number, so nothing is lost by leaving it out.
         if (this.version !== FIRST_VERSION) out.version = this.version;
         if (this.tracks.length) out.tracks = this.tracks.map((t) => t.write());
+        if (this.channels !== 2) out.channels = this.channels;
         if (this.tempo.length) out.tempo = this.tempo.map((t) => t.write());
         if (this.meter.length) out.meter = this.meter.map((m) => m.write());
         if (this.markers.length) out.markers = this.markers.map((m) => m.write());
@@ -763,12 +781,13 @@ export class Multitrack {
         const piece = new Multitrack();
         piece.version = (written.version as number) ?? FIRST_VERSION;
         piece.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
+        piece.channels = written.channels === undefined ? 2 : num(written.channels);
         piece.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
         piece.meter = ((written.meter as Extra[]) ?? []).map(Meter.read);
         piece.markers = ((written.markers as Extra[]) ?? []).map(Marker.read);
         if (written.loop_span) piece.loopSpan = Span.read(written.loop_span as Extra);
         if (written.punch) piece.punch = Span.read(written.punch as Extra);
-        piece.extra = rest(written, "version", "tracks", "tempo", "meter",
+        piece.extra = rest(written, "version", "tracks", "channels", "tempo", "meter",
                            "markers", "loop_span", "punch");
         return piece;
     }

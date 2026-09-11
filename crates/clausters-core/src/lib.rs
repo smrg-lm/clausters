@@ -88,6 +88,7 @@ pub mod edit;
 pub mod envshape;
 pub mod fft;
 pub mod measure;
+pub mod mixer;
 #[cfg(feature = "notation")]
 pub mod notation;
 pub mod osc;

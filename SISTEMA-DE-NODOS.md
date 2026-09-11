@@ -657,8 +657,25 @@ En este orden, porque cada una se puede probar sola:
    realiza**: toda la caminata fallable ocurre primero y guarda con qué devolver
    todo si algo falla; realizar emite comandos y no puede fallar. La regla de
    todo-o-nada que tenía un nivel es la misma regla sobre un árbol.
-3. **Los defs `mt.clip` / `mt.track` / `mt.master`** y el plan de instancias en
-   Rust (§4.3). Sin efectos: `mt.fx` queda como el hueco declarado.
+3. ✅ **Los defs y el plan de instancias en Rust** — *hecho 2026-09-10*.
+   `clausters_core::mixer` (los defs: `mt.reader`, `mt.strip.<i>x<o>`,
+   `mt.clip.<i>x<o>`, `mt.track.<n>`, `mt.piece.<n>`, y el vocabulario de
+   puertos) y `clausters_document::multitrack::nodes` (el plan: qué instanciar,
+   con qué buffer, en qué frame, con qué nivel). `tests/mixer_graph.rs` los
+   **escucha** en vez de leerlos: la pieza entera es un `/graph_new` y todo lo
+   demás un slot, una toma mono se panea en vez de copiarse, una caja suena
+   donde el transporte dice y en ningún otro lado, y un puerto en cualquier
+   nivel llega al control que nombra.
+
+   **Tres cosas que aparecieron haciéndolo, y las tres cambiaron el diseño**:
+   (a) el master tiene que **contener** las pistas — el bus de mezcla del master
+   es privado de su instancia y una pista instanciada aparte no podría nombrarlo
+   nunca, así que la pieza es `mt.piece` con un slot `tracks`; (b) un `GraphDef`
+   no podía decir **qué canal** de un bus recibe un miembro, y sin eso un mixer
+   no se puede escribir: ahora `"mix:1"` (y `"OUT:1"`); (c) `Balance2` aplica la
+   ley de paneo a un par estéreo, o sea que atenúa 3 dB en el centro — tres
+   strips en serie le sacarían 9 dB a una pieza por nada, así que el balance se
+   escribe acá como `min(1, 1 ∓ pan)`, unidad en el centro.
 4. **`playback` reescrito sobre eso**, en los dos clientes: deja de armar nodos
    y pasa a instanciar el plan. Es donde `G35.3`/`G35.4` se cierran — la curva
    suena porque escribe el mismo puerto que la perilla.

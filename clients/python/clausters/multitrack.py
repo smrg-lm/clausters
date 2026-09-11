@@ -400,6 +400,11 @@ class Track:
     #: Marked as soloed. Whether a solo anywhere silences everything else is the
     #: mixer's rule and not the document's.
     soloed: bool = False
+    #: How wide this track is, in channels. A field of its own rather than a
+    #: line in `config`, because it decides the mix: reopening a piece has to
+    #: give back the mix it was left with, and both clients have to write it
+    #: the same way. Two unless the track says otherwise.
+    channels: int = 2
     config: "dict | None" = None
     extra: dict = field(default_factory=dict)
 
@@ -430,6 +435,8 @@ class Track:
             out["muted"] = True
         if self.soloed:
             out["soloed"] = True
+        if self.channels != 2:
+            out["channels"] = self.channels
         if self.config is not None:
             out["config"] = self.config
         out.update(self.extra)
@@ -438,7 +445,7 @@ class Track:
     @classmethod
     def read(cls, written: dict) -> "Track":
         known = ("id", "name", "lanes", "active", "automation", "muted",
-                 "soloed", "config")
+                 "soloed", "channels", "config")
         return cls(
             id=int(written["id"]),
             name=written.get("name"),
@@ -447,6 +454,7 @@ class Track:
             automation=[Automation.read(a) for a in written.get("automation", [])],
             muted=bool(written.get("muted", False)),
             soloed=bool(written.get("soloed", False)),
+            channels=int(written.get("channels", 2)),
             config=written.get("config"),
             extra=_rest(written, *known),
         )
@@ -567,6 +575,9 @@ class Multitrack:
     #: number would make every edit to either look like a change to both.
     version: int = FIRST_VERSION
     tracks: list = field(default_factory=list)
+    #: How wide the piece is, in channels — the master's own width, and what a
+    #: track's output is mixed into. Here for the reason `Track.channels` is.
+    channels: int = 2
     tempo: list = field(default_factory=list)
     meter: list = field(default_factory=list)
     markers: list = field(default_factory=list)
@@ -636,6 +647,8 @@ class Multitrack:
             out["version"] = self.version
         if self.tracks:
             out["tracks"] = [t.write() for t in self.tracks]
+        if self.channels != 2:
+            out["channels"] = self.channels
         if self.tempo:
             out["tempo"] = [t.write() for t in self.tempo]
         if self.meter:
@@ -652,13 +665,14 @@ class Multitrack:
     @classmethod
     def read(cls, written: dict) -> "Multitrack":
         """An arrangement from the crate's JSON."""
-        known = ("version", "tracks", "tempo", "meter", "markers", "loop_span",
-                 "punch")
+        known = ("version", "tracks", "channels", "tempo", "meter", "markers",
+                 "loop_span", "punch")
         loop = written.get("loop_span")
         punch = written.get("punch")
         return cls(
             version=written.get("version", FIRST_VERSION),
             tracks=[Track.read(t) for t in written.get("tracks", [])],
+            channels=int(written.get("channels", 2)),
             tempo=[Tempo.read(t) for t in written.get("tempo", [])],
             meter=[Meter.read(m) for m in written.get("meter", [])],
             markers=[Marker.read(m) for m in written.get("markers", [])],
