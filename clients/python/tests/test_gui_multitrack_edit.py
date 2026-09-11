@@ -707,6 +707,24 @@ def test_the_hand_does_not_write_the_port_a_curve_drives():
     assert hand_ports(ports, [{"port": "gain"}, {"port": "mute"}]) == {}
 
 
+def test_a_clip_that_changed_track_is_made_again_and_not_set():
+    """A clip is a slot inside a track's group, so a box dragged to another
+    track cannot be moved with a ``set``: there is no track id on the node to
+    change.
+
+    Left as a set, it goes on sounding through the track it came from -- that
+    fader, that mute, that automation -- while the picture draws it on the new
+    one. From the outside that reads as the mute travelling with the box, and
+    the box is simply still there.
+    """
+    from clausters.gui.editing.playback import stays_put
+
+    held = ("group", "clips.1", {"gain": 1.0}, 10)
+    assert stays_put(held, "clips.1", 10), "same track, same width: a set"
+    assert not stays_put(held, "clips.1", 12), "another track: made again"
+    assert not stays_put(held, "clips.2", 10), "another width: made again"
+
+
 def test_a_metered_track_names_the_buses_the_host_reads():
     """The meters are the playback's and the strip is the host's, so what the
     widget carries is *where to look*: a lane, the level run and the mark run,

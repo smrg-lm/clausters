@@ -58,6 +58,26 @@ def hand_ports(ports: dict, curves: list) -> dict:
     return {port: value for port, value in ports.items() if port not in driven}
 
 
+def stays_put(held, slot: str, track) -> bool:
+    """Whether a clip that is already sounding can be **set** into its new
+    shape, or has to be made again.
+
+    Two things it cannot be set into. A source of another **width** is another
+    clip def -- a mono take is panned into the track and a stereo one is
+    balanced -- and that is the wiring, not a control.
+
+    And a clip that changed **track**: a clip is a slot *inside* a track's
+    group, so the node carries no track id to update. Setting it would leave it
+    sounding through the track it came from -- that track's fader, that track's
+    mute, that track's automation -- while the picture drew it on the new one.
+    A box dragged onto a muted track stayed audible and one dragged off it
+    stayed silent, which reads as the mute travelling with the box: it is the
+    box that never left.
+    """
+    _group, held_slot, _ports, held_track = held
+    return held_slot == slot and held_track == track
+
+
 class Playback:
     """The instance of one piece, and the transport that moves it.
 
@@ -253,10 +273,7 @@ class Playback:
             ports = hand_ports({"gain": clip["gain"], "mute": clip["mute"]},
                                clip["curves"])
             held = self.clips.get(clip["region"])
-            # A source of another width is another clip def -- a mono take is
-            # panned into the track and a stereo one is balanced -- so it is the
-            # one change that cannot be a set.
-            if held is not None and held[1] != clip["slot"]:
+            if held is not None and not stays_put(held, clip["slot"], id):
                 self._free_clip(clip["region"])
                 held = None
             if held is None:
