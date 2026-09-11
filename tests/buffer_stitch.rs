@@ -344,26 +344,44 @@ fn what_a_join_costs_per_sample() {
         SR,
     );
 
-    // Reads forward, interpolating between neighbours, exactly as `read_lin`
-    // does: the far side of a seam is a second lookup.
-    let run = |buf: &Buffer, label: &str| {
+    // Reads forward, interpolating between neighbours. **Twice**, because the
+    // two are the whole question: per sample (`Buffer::sample`, which resolves
+    // the part on every read) and per run (`Buffer::run_at` held across the
+    // block, which is what a reader does).
+    let run = |buf: &Buffer, label: &str, held: bool| {
         let mut acc = 0.0f32;
         let start = Instant::now();
         for b in 0..BLOCKS {
             let base = (b * BLOCK) % (FRAMES - BLOCK - 1);
+            let mut run = buf.run_at(base);
             for i in 0..BLOCK {
                 let f = base + i;
-                acc += buf.sample(f, 0) * 0.5 + buf.sample(f + 1, 0) * 0.5;
+                if held {
+                    if !run.holds(f) {
+                        run = buf.run_at(f);
+                    }
+                    acc += run.sample(f, 0) * 0.5 + run.sample(f + 1, 0) * 0.5;
+                } else {
+                    acc += buf.sample(f, 0) * 0.5 + buf.sample(f + 1, 0) * 0.5;
+                }
             }
         }
         let per_block = start.elapsed().as_secs_f64() / BLOCKS as f64 * 1e9;
-        println!("{label:>24}: {per_block:7.1} ns/block  (checksum {acc:e})");
+        println!("{label:>28}: {per_block:7.1} ns/block  (checksum {acc:e})");
         per_block
     };
 
-    let plain = run(&take, "plain buffer");
-    let joined = run(&one, "join, one part");
-    let cut = run(&many, "join, 256 parts");
+    let plain = run(&take, "plain buffer", true);
+    let per_sample = run(&one, "join, one part, per sample", false);
+    let cut_per_sample = run(&many, "join, 256 parts, per sample", false);
+    let joined = run(&one, "join, one part", true);
+    let cut = run(&many, "join, 256 parts", true);
+    println!(
+        "        the run held instead of resolved per sample: \
+         one part {:+.1}%, 256 parts {:+.1}%",
+        (joined / per_sample - 1.0) * 100.0,
+        (cut / cut_per_sample - 1.0) * 100.0
+    );
     // Two framings, because the first one alone misleads. A microbenchmark of
     // nothing but the load makes any added work look enormous; what decides
     // whether it can be afforded is the block budget one reader eats.

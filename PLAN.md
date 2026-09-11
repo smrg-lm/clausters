@@ -2384,64 +2384,51 @@ finished work, where a pending item reads as done.
   span, and `parts()` over `/buffer_parts` -- the same two calls in both, since
   a command no client can send is a command that exists only in a test.
 
-- ⬜ **What a join costs is 0.010% of a block per reader, and the number that
-  reads as alarming is the wrong one** *(measured 2026-09-10, closing the
-  entry above)*. `cargo test --release --test buffer_stitch -- --ignored
-  --nocapture` reads 64-frame blocks interpolated: a plain buffer 212 ns, a
-  join 345 ns -- **+63%**, against an acceptance of 10% written before it was
-  measured. That criterion was the wrong measure: a microbenchmark of nothing
-  but the load makes three added operations look enormous. Against the block
-  budget the same numbers are 0.016% and 0.026%, so a join costs **a hundredth
-  of a percent of a block more than a plain buffer, per reader** -- the same
-  framing `dsp::buffer`'s own docs use for the atomics, and for the same
-  reason.
+- ✅ **What a join costs, and the number that reads as alarming is the wrong
+  one** *(measured 2026-09-10; the per-run read landed 2026-09-11)*. Two
+  measurements, and they were taken in the wrong order the first time round.
 
-  Restructuring `Buffer::sample` to match the storage once (instead of going
-  through `cells()` and an `Option`) took the *plain* read from 379 ns to 212
-  and the join from 565 to 345, so both got faster and the ratio got worse.
+  **The microbenchmark** (`cargo test --release --test buffer_stitch --
+  --ignored --nocapture`) reads 64-frame blocks interpolated. Resolving the
+  part **on every sample** measured +63% over a plain buffer, against an
+  acceptance of 10% written before anything was measured. That criterion was
+  the wrong measure: a microbenchmark of nothing but the load makes three added
+  operations look enormous, and against the block budget the same numbers were
+  0.016% and 0.026% — a hundredth of a percent of a block more, per reader.
 
-  **And the engine-level measurement, which is the one that decides anything**
-  (`cargo test --release --test stitch_load -- --ignored --nocapture`: N
-  `PlayBuf` readers in one engine, timed by `process_block`). At 128
-  simultaneous readers -- 128 clips sounding at the same instant, which is more
-  than a piece usually has -- a block costs **5.0% of its budget over plain
-  buffers and 7.5% over joins**. The ratio holds at +50-65% across every reader
-  count; the absolute stays small because reading a buffer was never what an
-  engine spends its time on. How many parts a join has barely matters (the
-  cursor does its job: 8 parts and 256 parts measure the same), and the
-  crossfade is about a fifth of the difference -- the rest is the per-sample
-  lookup itself, which is two more pointer chases than an indexed load.
+  **The engine-level measurement is the one that decides anything** (`cargo
+  test --release --test stitch_load -- --ignored --nocapture`: N `PlayBuf`
+  readers in one engine, timed by `process_block`). At 128 simultaneous readers
+  — more clips sounding at one instant than a piece usually has — a block cost
+  **5.0% of its budget over plain buffers and 7.5% over joins**.
 
-  **The two answers, in order.** First, and free: **only stitch what is
-  actually a join**. A box that is one window over one take is a plain buffer
-  and costs exactly what it costs today; the join is built when the hand cuts
-  one, and then it pays for a capability it is using. That is a rule for the
-  client's compilation step (the plan's phase 4), not a change here. Second, if
-  it ever measures as a problem: **resolve the part once per run instead of per
-  sample**.
+  **The per-run read**, taken 2026-09-11 rather than postponed further, because
+  it turned out to be the shape of the thing and not an optimization bolted on
+  it. `Buffer::run_at(frame)` answers the contiguous run a frame falls in — one
+  part of a join, the whole of a plain buffer — and `dsp::buf`'s `Reader` holds
+  it across a block, asking again only when a frame leaves it. The lookup it
+  removes was **two** questions, and a run answers both once: which part holds
+  the frame, and where that part's source keeps its samples (`PartRun`), so a
+  read inside a run is the indexed load a plain buffer costs. The per-sample
+  path stays as the fallback for the seam, a jump, a modulated rate and a phase
+  running backwards — and the same run makes a **plain** buffer's read an
+  indexed load too, so the fast path is uniform rather than a stitched-only
+  branch.
 
-  That one is **postponed on purpose, and it is not a big change** -- a
-  `Buffer::run_at(frame)` answering the contiguous run a frame falls in, plus
-  callers that hold a run while their index stays inside it. It is postponed
-  because it is not measurable yet: what would justify it is a piece with a
-  hundred sounding boxes, and there is none. Where it goes, so it is not
-  re-derived:
+  **What it measured.** Per read, holding the run instead of resolving per
+  sample is **-50%** on a join (one part or 256, the same). In an engine at 128
+  readers: plain **5.0% → 4.2%** of a block (every buffer reader in the server
+  got faster), joins **7.5% → 5.3%**, so the join's overhead went from **+50%
+  to +29%**. With the crossfades off it is **+16%**, which says what the rest
+  is: the fade is the remaining difference, and a fade is audio somebody asked
+  for rather than overhead. How many parts a join has still barely matters (the
+  cursor does its job) — what a 256-part join pays is that far more of its
+  samples fall inside a fade.
 
-  - **`src/dsp/buf.rs`, `read_lin` and its two callers** (`PlayBuf`, `BufRd`).
-    A reader advances monotonically and a 64-frame block almost always lies
-    inside one part; the per-sample path stays as the fallback, for the block
-    that crosses a seam and for a modulated or reversed rate.
-  - **`src/dsp/stitch.rs`** gains the run query beside `Stitch::sample`. The
-    storage does not otherwise change, and a plain buffer's run is its whole
-    length, so the fast path is uniform rather than a stitched-only branch.
-  - **`tests/stitch_load.rs`** is the before/after: the acceptance is that a
-    join lands within noise of a plain buffer at 128 readers, and both
-    measurements are already ignored tests, so the comparison is one command.
-
-  The pointers are in the code at both ends -- `read_lin`'s doc comment says
-  what would go there and why it has not, and `dsp::stitch`'s module docs point
-  at it -- because a note that lives only in a plan is a note the person editing
-  the function never sees.
+  **And the free rule stands, which is where the real saving is**: only stitch
+  what is actually a join. A box that is one window over one take is a plain
+  buffer and costs exactly that; the join is built when a hand cuts one, and
+  then it pays for a capability it is using.
 
 - ✅ **A client cannot ask whether a buffer is a join** *(found 2026-09-10
   writing `/buffer_stitch`, answered the same day)*. `/buffer_query.reply` is a

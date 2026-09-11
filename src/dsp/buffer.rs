@@ -137,6 +137,56 @@ impl Storage {
     }
 }
 
+/// A stretch of one buffer that reads with no lookup — what
+/// [`Buffer::run_at`] hands out.
+///
+/// It is `Copy` and holds only borrows, so a reader keeps one in a local across
+/// a block and drops it at the end of the call: there is nothing to invalidate,
+/// because the buffer it borrows cannot be replaced while it is borrowed.
+#[derive(Clone, Copy)]
+pub struct Run<'a> {
+    /// The buffer this is a run of — what a frame outside the run is read
+    /// through.
+    buffer: &'a Buffer,
+    /// The part and its source's cells, when the buffer is a join. `None` is a
+    /// plain buffer, whose run is the whole of it.
+    part: Option<crate::dsp::stitch::PartRun<'a>>,
+    /// The cells of a plain buffer, taken once so a read inside the run is an
+    /// indexed load — the same saving the part gives a join, so the fast path
+    /// is uniform rather than a stitched-only branch.
+    cells: Option<&'a [AtomicU32]>,
+    /// The first frame of the run, on this buffer's own axis.
+    start: usize,
+    /// One past its last frame.
+    end: usize,
+}
+
+impl Run<'_> {
+    /// Whether `frame` is inside this run — the check a reader makes per sample
+    /// instead of a lookup.
+    #[inline]
+    pub fn holds(&self, frame: usize) -> bool {
+        frame >= self.start && frame < self.end
+    }
+
+    /// One sample, **for a frame this run holds**. A frame outside it is read
+    /// through the buffer, which resolves it the ordinary way rather than
+    /// answering something wrong.
+    #[inline]
+    pub fn sample(&self, frame: usize, channel: usize) -> f32 {
+        if !self.holds(frame) || channel >= self.buffer.channels() {
+            // Outside the run, or a channel this buffer does not have: the
+            // ordinary read, which answers 0 where there is nothing.
+            return self.buffer.sample(frame, channel);
+        }
+        match (self.part, self.cells) {
+            (Some(part), _) => part.sample(frame - self.start, channel),
+            (None, Some(cells)) => Buffer::load(&cells[frame * self.buffer.channels() + channel]),
+            (None, None) => self.buffer.sample(frame, channel),
+        }
+    }
+}
+
 impl std::fmt::Debug for Buffer {
     /// Shape only — buffers hold millions of samples.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -261,6 +311,49 @@ impl Buffer {
     #[inline]
     pub fn cells(&self) -> Option<&[AtomicU32]> {
         self.data.cells()
+    }
+
+    /// **The contiguous run `frame` falls in**: a stretch of this buffer over
+    /// which reading needs no lookup, handed out once for a caller to read a
+    /// whole block out of.
+    ///
+    /// Over a plain buffer that is the whole of it, and a run reads exactly
+    /// what [`Buffer::sample`] reads. Over a [join](crate::dsp::stitch) it is
+    /// **one part**, and that is the point: a join resolves which part a frame
+    /// belongs to on every sample, and a reader advancing monotonically crosses
+    /// a seam once a block at the very most. The caller asks again when a frame
+    /// leaves the run ([`Run::holds`]), so the per-sample path stays the
+    /// fallback for the block that does cross one, and for a phase that jumps,
+    /// runs backwards or is modulated.
+    #[inline]
+    pub fn run_at(&self, frame: usize) -> Run<'_> {
+        match &self.data {
+            Storage::Stitched(stitch) => match stitch.run_at(frame) {
+                Some(part) => Run {
+                    buffer: self,
+                    part: Some(crate::dsp::stitch::PartRun::new(part)),
+                    cells: None,
+                    start: part.start(),
+                    end: part.end(),
+                },
+                // Past the end there is no run: everything falls through to the
+                // read that answers 0.
+                None => Run {
+                    buffer: self,
+                    part: None,
+                    cells: None,
+                    start: frame,
+                    end: frame,
+                },
+            },
+            _ => Run {
+                buffer: self,
+                part: None,
+                cells: self.data.cells(),
+                start: 0,
+                end: self.frames,
+            },
+        }
     }
 
     /// The join this buffer is, when it is one.

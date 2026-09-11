@@ -152,7 +152,10 @@ fn what_a_join_costs_a_whole_engine() {
         );
     }
     println!(
-        "\nHow many parts a join has barely matters (the cursor); \
-         what costs is the per-sample lookup itself, and the crossfade on top of it."
+        "\nA reader holds the run it is inside (`Buffer::run_at`), so the lookup is \
+         once a block and not once a sample.\nWhat is left over a plain buffer is \
+         mostly the crossfade -- which is audio somebody asked for -- and how many \
+         parts a join has still barely matters, except that a shorter part spends \
+         more of itself inside a fade."
     );
 }

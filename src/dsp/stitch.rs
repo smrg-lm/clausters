@@ -18,20 +18,33 @@
 //! nothing, locks nothing and reads no file: the sources are `Arc`s cloned when
 //! the stitch was built, on the network thread.
 //!
-//! # What it costs, and why the cursor is here
+//! # What it costs, and why a reader holds a run
 //!
-//! One lookup per sample. A reader almost always asks for the frame after the
-//! one it just asked for, so the last part used is remembered and checked
-//! before anything else; the part after it is checked second, which
-//! is what crossing a seam looks like. Only a real jump pays the binary search,
-//! over a list that is as long as the join has pieces. The cursor is shared by
+//! One lookup, **per run rather than per sample**. A reader advances
+//! monotonically and a block almost always lies inside one part, so a reader
+//! asks which part a frame is in ([`Stitch::run_at`]), holds the answer as a
+//! [`PartRun`] and reads the whole block out of it; the per-sample path is
+//! what a frame outside the run falls back to, which is the seam, a jump, a
+//! modulated rate or a phase running backwards. That is `dsp::buf`'s
+//! [`Reader`](crate::dsp::buf) and not this module, because a reader is what
+//! knows it is advancing.
+//!
+//! The lookup it saves was two questions, and a run answers both once: *which
+//! part* holds this frame, and *where* that part's source keeps its samples —
+//! so a read inside a run is the indexed load a plain buffer costs, not a
+//! resolution.
+//!
+//! The cursor is what makes the remaining lookup cheap. The last part used is
+//! remembered and checked before anything else; the part after it is checked
+//! second, which is what crossing a seam looks like. Only a real jump pays the
+//! binary search, over a list as long as the join has pieces. It is shared by
 //! every reader of the buffer and is a *hint*: two readers at two places make
-//! each other miss, and a miss is a binary search and not a wrong answer.
+//! each other miss, and a miss is a binary search and not a wrong answer —
+//! which also stopped being a contended write on every sample when the run
+//! arrived.
 //!
-//! The lookup is per sample, and the place it could stop being per sample is
-//! `dsp::buf`'s `read_lin` rather than here — a reader knows it is advancing
-//! and this does not. That is written down where it would be made, and in
-//! `PLAN.md`; the measurements that would justify it are `tests/stitch_load.rs`.
+//! The numbers are in `tests/stitch_load.rs` (an engine full of readers) and
+//! `tests/buffer_stitch.rs` (the read itself), both `--ignored`.
 //!
 //! # A stitch is read, never written
 //!
@@ -93,6 +106,88 @@ pub struct Part {
     /// The first frame of this part **in the stitched buffer** — the cumulative
     /// sum, computed once at build so a lookup is a comparison.
     start: usize,
+}
+
+/// **A part with its source's cells already taken** — what a reader holds while
+/// it stays inside one part.
+///
+/// The lookup a join costs is two questions, not one: *which part* holds this
+/// frame, and *where* that part's source keeps its samples. Resolving the first
+/// once a block leaves the second, which is a match on the source's storage per
+/// sample; taking it here leaves an indexed load, which is what a plain buffer
+/// costs. A source that is itself a join has no cells and takes the general
+/// path, one level deeper.
+#[derive(Clone, Copy)]
+pub struct PartRun<'a> {
+    part: &'a Part,
+    /// The source's cells, when it has some. A source that is itself a join has
+    /// none and takes the general path, one level deeper.
+    cells: Option<&'a [std::sync::atomic::AtomicU32]>,
+    /// The source's channel count, which is the stride of an interleaved read.
+    stride: usize,
+}
+
+impl<'a> PartRun<'a> {
+    /// Opens a run over `part`.
+    #[inline]
+    pub fn new(part: &'a Part) -> Self {
+        Self {
+            part,
+            cells: part.src.cells(),
+            stride: part.src.channels(),
+        }
+    }
+
+    /// The part this is a run over.
+    #[inline]
+    pub fn part(&self) -> &Part {
+        self.part
+    }
+
+    /// One sample, `inner` frames into the part.
+    #[inline]
+    pub fn sample(&self, inner: usize, channel: usize) -> f32 {
+        let Some(&src_ch) = self.part.map.get(channel) else {
+            return 0.0;
+        };
+        if src_ch < 0 {
+            return 0.0;
+        }
+        let frame = self.part.src_start + inner;
+        // The part was validated when it was built -- its span is inside its
+        // source and its map inside the source's channels -- so this is an
+        // indexed load and not a second bounds check.
+        let value = match self.cells {
+            Some(cells) => Buffer::load(&cells[frame * self.stride + src_ch as usize]),
+            None => self.part.src.sample(frame, src_ch as usize),
+        };
+        if self.part.faded {
+            value * fade(self.part, inner)
+        } else {
+            value
+        }
+    }
+}
+
+impl Part {
+    /// One sample of this part, `inner` frames into it — the one-off read, for
+    /// a caller that is not staying. A caller that is holds a [`PartRun`].
+    #[inline]
+    pub fn sample(&self, inner: usize, channel: usize) -> f32 {
+        PartRun::new(self).sample(inner, channel)
+    }
+
+    /// The first frame of this part **in the stitched buffer**.
+    #[inline]
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    /// One past its last frame there.
+    #[inline]
+    pub fn end(&self) -> usize {
+        self.start + self.frames
+    }
 }
 
 impl std::fmt::Debug for Part {
@@ -219,32 +314,22 @@ impl Stitch {
     /// channel the part maps to nothing.
     #[inline]
     pub fn sample(&self, frame: usize, channel: usize) -> f32 {
-        if frame >= self.frames {
-            return 0.0;
+        match self.run_at(frame) {
+            Some(part) => part.sample(frame - part.start, channel),
+            None => 0.0,
         }
-        let part = &self.parts[self.at(frame)];
-        let Some(&src_ch) = part.map.get(channel) else {
-            return 0.0;
-        };
-        if src_ch < 0 {
-            return 0.0;
-        }
-        let inner = frame - part.start;
-        // The part was validated when it was built — its span is inside the
-        // source and its map inside the source's channels — so this is an
-        // indexed load and not a second bounds check. A source that is itself a
-        // join has no cells and takes the general path.
-        let src = &*part.src;
-        let at = (part.src_start + inner) * src.channels() + src_ch as usize;
-        let value = match src.cells() {
-            Some(cells) => Buffer::load(&cells[at]),
-            None => src.sample(part.src_start + inner, src_ch as usize),
-        };
-        if part.faded {
-            value * fade(part, inner)
-        } else {
-            value
-        }
+    }
+
+    /// **The part holding `frame`**, for a caller that is about to read a whole
+    /// run out of it rather than one sample.
+    ///
+    /// This is the lookup [`Stitch::sample`] does every time, handed out once:
+    /// a reader advances monotonically and a block almost always lies inside
+    /// one part, so holding the part costs one resolution a block instead of
+    /// two a sample. `None` past the end.
+    #[inline]
+    pub fn run_at(&self, frame: usize) -> Option<&Part> {
+        (frame < self.frames).then(|| &self.parts[self.at(frame)])
     }
 
     /// Which part holds `frame`. The cursor first, then the part after it, then

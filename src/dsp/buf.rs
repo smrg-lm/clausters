@@ -23,43 +23,64 @@
 //! does — the pool reaches the audio thread through an `Arc`, and the cells
 //! carry the mutability.
 
-use crate::dsp::buffer::Buffer;
+use crate::dsp::buffer::{Buffer, Run};
 use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
-/// Reads `buf` at fractional frame `pos` (must be within `0..frames`) with
-/// linear interpolation; the upper frame wraps when looping, clamps
-/// otherwise.
+/// **A reader's place in a buffer**: the buffer, and the contiguous run it is
+/// currently inside.
 ///
-/// **This is where a per-run read would go, and it is deliberately not here
-/// yet.** Over a [stitched buffer](crate::dsp::stitch) each of the two
-/// [`Buffer::sample`](Buffer::sample) calls below resolves which part the frame
-/// belongs to on its own — one cursor check, and a binary search on a jump —
-/// which measures at +50-65% against a plain buffer per read, and at 3.6% → 6.2%
-/// of a block's budget with 128 readers running (`tests/stitch_load.rs`). The
-/// absolute is small because reading a buffer was never what an engine spends
-/// its time on, so this is not a problem today.
+/// Over a plain buffer the run is the whole of it and this is
+/// [`Buffer::sample`] with a bounds check in front. Over a
+/// [join](crate::dsp::stitch) it is what makes a join cost what a buffer costs:
+/// the join otherwise resolves which part a frame belongs to **on every
+/// sample** — twice per interpolated read — and a reader advancing
+/// monotonically crosses a seam once a block at the very most. So the part is
+/// resolved when the block enters it and held while the frames stay inside,
+/// and the per-sample path is the fallback for the block that does cross one,
+/// and for a phase that jumps, runs backwards or is modulated.
 ///
-/// What would remove it: a reader advances monotonically and a 64-frame block
-/// almost always lies inside **one** part, so a `Buffer` that could answer *the
-/// contiguous run containing this frame* would let a caller hold that run and
-/// read inside it with no lookup at all, falling back to this per-sample path
-/// only where a run ends. That is a change to the callers here — `PlayBuf`,
-/// `BufRd` and this function — rather than to the storage, and the reason it is
-/// postponed is that nothing yet measures whether it is worth its complication:
-/// take it when a piece with a hundred sounding boxes exists to measure, and
-/// keep `tests/stitch_load.rs` as the before/after. Also recorded in `PLAN.md`.
-#[inline]
-fn read_lin(buf: &Buffer, pos: f64, channel: usize, looping: bool) -> f32 {
-    let f0 = pos as usize; // pos >= 0 by contract
-    let frac = (pos - f0 as f64) as f32;
-    let f1 = if f0 + 1 < buf.frames() {
-        f0 + 1
-    } else if looping {
-        0
-    } else {
-        f0
-    };
-    buf.sample(f0, channel) * (1.0 - frac) + buf.sample(f1, channel) * frac
+/// One of these lives in a local for the length of a `process` call: a run
+/// borrows the buffer, and the buffer cannot be replaced while it is borrowed.
+struct Reader<'a> {
+    buf: &'a Buffer,
+    run: Run<'a>,
+}
+
+impl<'a> Reader<'a> {
+    /// A reader of `buf`, opened on the run frame 0 falls in.
+    #[inline]
+    fn new(buf: &'a Buffer) -> Self {
+        Self {
+            buf,
+            run: buf.run_at(0),
+        }
+    }
+
+    /// Reads at fractional frame `pos` (must be within `0..frames`) with linear
+    /// interpolation; the upper frame wraps when looping, clamps otherwise.
+    ///
+    /// The two frames are read through the run when it holds them, and through
+    /// the buffer when they are not — which is exactly the seam: the last frame
+    /// of a part interpolates towards the first of the next, and reading a zero
+    /// there would click at every cut.
+    #[inline]
+    fn read(&mut self, pos: f64, channel: usize, looping: bool) -> f32 {
+        let f0 = pos as usize; // pos >= 0 by contract
+        let frac = (pos - f0 as f64) as f32;
+        let f1 = if f0 + 1 < self.buf.frames() {
+            f0 + 1
+        } else if looping {
+            0
+        } else {
+            f0
+        };
+        // The run is re-taken only when the frame left it, so a block that
+        // stays inside one part pays one comparison per sample.
+        if !self.run.holds(f0) {
+            self.run = self.buf.run_at(f0);
+        }
+        self.run.sample(f0, channel) * (1.0 - frac) + self.run.sample(f1, channel) * frac
+    }
 }
 
 /// Self-advancing buffer player. Inputs: 0 buffer index, 1 channel,
@@ -122,6 +143,7 @@ impl UGen for PlayBuf {
             return;
         };
         let frames = buf.frames() as f64;
+        let mut reader = Reader::new(buf);
         for (i, s) in output.iter_mut().enumerate() {
             // The trigger is read whatever else is happening: re-cueing a
             // finished player is how one is played again.
@@ -143,7 +165,7 @@ impl UGen for PlayBuf {
                     continue;
                 }
             }
-            *s = read_lin(buf, self.phase, channel, looping);
+            *s = reader.read(self.phase, channel, looping);
             self.phase += at(inputs[2], i) as f64;
         }
     }
@@ -176,6 +198,7 @@ impl UGen for BufRd {
             output.fill(0.0);
             return;
         }
+        let mut reader = Reader::new(buf);
         for (i, s) in output.iter_mut().enumerate() {
             let raw = at(inputs[2], i) as f64;
             let pos = if looping {
@@ -183,7 +206,7 @@ impl UGen for BufRd {
             } else {
                 raw.clamp(0.0, frames - 1.0)
             };
-            *s = read_lin(buf, pos, channel, looping);
+            *s = reader.read(pos, channel, looping);
         }
     }
 }
@@ -421,5 +444,98 @@ impl UGen for BufInfo {
             None => 0.0,
         };
         output.fill(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dsp::stitch::{PartSpec, Stitch};
+    use std::sync::Arc;
+
+    /// **The run is an optimization, so it must answer exactly what the
+    /// per-sample path answers** — at the seam, inside a fade, and after a
+    /// phase that jumped backwards, which are the three places a held run could
+    /// be the wrong one.
+    #[test]
+    fn a_held_run_reads_what_the_per_sample_path_reads() {
+        let take = Arc::new(Buffer::new(
+            (0..64).map(|i| i as f32).collect(),
+            1,
+            64,
+            48_000.0,
+        ));
+        // Three parts out of order, the middle one faded at both ends.
+        let join = Buffer::stitched(
+            Stitch::new(
+                vec![
+                    PartSpec {
+                        src: Arc::clone(&take),
+                        src_index: 0,
+                        src_start: 32,
+                        frames: 8,
+                        fade_in: 0,
+                        fade_out: 0,
+                        map: vec![0],
+                    },
+                    PartSpec {
+                        src: Arc::clone(&take),
+                        src_index: 0,
+                        src_start: 0,
+                        frames: 8,
+                        fade_in: 3,
+                        fade_out: 3,
+                        map: vec![0],
+                    },
+                    PartSpec {
+                        src: Arc::clone(&take),
+                        src_index: 0,
+                        src_start: 16,
+                        frames: 8,
+                        fade_in: 0,
+                        fade_out: 0,
+                        map: vec![0],
+                    },
+                ],
+                1,
+                48_000.0,
+            )
+            .expect("built"),
+            1,
+            48_000.0,
+        );
+
+        // The per-sample reference: `Buffer::sample` twice, which is what
+        // `read_lin` was before a reader held anything.
+        let reference = |pos: f64| {
+            let f0 = pos as usize;
+            let frac = (pos - f0 as f64) as f32;
+            let f1 = if f0 + 1 < join.frames() { f0 + 1 } else { f0 };
+            join.sample(f0, 0) * (1.0 - frac) + join.sample(f1, 0) * frac
+        };
+
+        let mut reader = Reader::new(&join);
+        // Forward over the whole join, on half frames so every read
+        // interpolates — including across both seams.
+        let mut pos = 0.0;
+        while pos < 23.0 {
+            let read = reader.read(pos, 0, false);
+            assert!(
+                (read - reference(pos)).abs() < 1e-6,
+                "at {pos}: {read} vs {}",
+                reference(pos)
+            );
+            pos += 0.5;
+        }
+        // And a phase that jumps backwards, which is what makes the held run
+        // the wrong one until it is re-taken.
+        for pos in [20.0, 3.0, 19.5, 8.25, 0.0] {
+            let read = reader.read(pos, 0, false);
+            assert!(
+                (read - reference(pos)).abs() < 1e-6,
+                "after a jump to {pos}: {read} vs {}",
+                reference(pos)
+            );
+        }
     }
 }
