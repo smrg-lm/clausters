@@ -379,11 +379,18 @@ slack between boxes — puts the **position cursor** down, which is where the ne
 play starts, and a stopped transport is cued there. The playhead is never placed,
 so stop goes back to the mark rather than to the top.
 
-**A curve is drawn and not yet heard.** A track's level, its mute and its solo
-reach the readers; the automation drawn on a track and the envelope drawn inside
-a box do not, because a curve's `gain` and the header knob's `gain` have to name
-one parameter of one node first. Until that lands the curves are edited, undone
-and saved with the piece like everything else.
+**A curve is heard.** A track's level, its mute and its solo reach the readers,
+and so do the automation drawn on a track and the envelope drawn inside a box:
+each names the `gain` port of the node it is on -- the same port the header's
+knob writes -- so a point dragged while the piece plays is heard where it is
+drawn.
+
+**And a track shows what it produces.** The strip in each header is one column
+per channel over that track's own output, after its clips, its curves and its
+fader. It is read in decibels, which is what makes it legible: the column is
+green up to the alignment level (-18 dBFS), ambers through the headroom above
+it and is red in the last six decibels before full scale, with the peak it
+reached held beside it.
 
 `examples/editors/edit-multitrack.html` is the whole of it, by ear and by eye.
 

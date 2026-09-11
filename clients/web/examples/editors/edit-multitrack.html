@@ -43,11 +43,20 @@ other, so entering one opens the take in the sample editor — on the piece's ow
 undo order, so <b>Ctrl+Z</b> walks a stroke drawn inside a box and a box dragged
 on the stack as one history.
 
-<b>The curves are drawn and not yet heard.</b> The row under the first track is a
-track automation and the line inside the first box is a clip envelope; both are
-edited and kept by the piece, and neither reaches a reader — a curve's
-<code>gain</code> and the knob's <code>gain</code> have to name one parameter of
-one node first.</div>
+<b>Watch the meters</b> while it plays: the strip in each track's header is one
+column per channel, in decibels, over what that track produces <i>after</i> its
+clips, its curves and its fader — with the peak it reached held beside it.
+
+<b>The curves are heard.</b> The row under the first track is a track automation
+and the line inside the first box is a clip envelope; each names the
+<code>gain</code> port of the node it sits on — the same port the header's knob
+writes — so a point dragged while the piece plays is heard where it is drawn.
+
+<b>The last box is a join</b>: one buffer whose samples are spans of two takes,
+crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
+<b>one</b> reader like any other take. Put the cursor inside it and play: the
+reader finds the span it lands in once and reads it like a plain buffer from
+there.</div>
 
       <button id="run">open the piece</button>
       <div id="stage"></div>
@@ -104,7 +113,10 @@ one node first.</div>
 
       // source id -> the take it names, so the piece and the table below are
       // written against one list.
-      const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink" };
+      const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp" };
+
+      const HALF = Math.floor((TAKE_DUR * SR) / 2);
+      const FADE = Math.floor(0.010 * SR);
 
       async function run() {
         $("run").disabled = true;
@@ -123,6 +135,18 @@ one node first.</div>
         for (const [name, samples] of Object.entries(takes)) {
           bufs[name] = await Buffer.fromSamples(samples, 1, SR, { server });
         }
+        // ---- a fifth take that is a cut ----
+        // The **join**: half of the glide and the second half of the saw, read
+        // as one buffer with a ten-millisecond crossfade at the seam. Two spans
+        // that do not continue each other make a step, and a step is a click
+        // however well the frames are read. A join owns no samples — it is
+        // spans of the buffers above — so it refuses every write, and
+        // `Buffer.parts` is how a program asks what one is made of before it
+        // offers to draw it.
+        bufs.comp = await Buffer.stitch(
+          [{ source: bufs.glide, start: 0, frames: HALF, fadeOut: FADE },
+           { source: bufs.saw, start: HALF, frames: HALF, fadeIn: FADE }],
+          { sampleRate: SR, server });
         await server.sync();
 
         // ---- the piece ----
@@ -133,12 +157,12 @@ one node first.</div>
         // in `Sources`.
         const noiseGain = new Automation({
           id: 100, name: "gain", visible: true,
-          target: { ctl: "level", min: 0.0, max: 1.0 },
+          target: { port: "gain" },
           points: [{ at: 0.0, value: 1.0 }, { at: 8.0, value: 0.2 }],
         });
         const whiteFade = new Automation({
           id: 101, name: "fade", visible: true,
-          target: { ctl: "amp", min: 0.0, max: 1.0 },
+          target: { port: "gain" },
           points: [{ at: 0.0, value: 0.2 }, { at: TAKE_DUR, value: 1.0 }],
         });
         const first = box(20, 0.0, 1, "white");
@@ -152,10 +176,15 @@ one node first.</div>
           }),
           new Track({
             id: 12, name: "tone",
-            lanes: [new Lane({ id: 13, regions: [box(22, 2.0, 2, "glide")] })],
+            lanes: [new Lane({
+              id: 13, regions: [box(22, 2.0, 2, "glide"), box(24, 8.0, 5, "comp")],
+            })],
           }),
+          // **The fader is the track's own field**, like its width: what a
+          // piece sounds like is the piece's, so it is saved with it and
+          // reopens as it was.
           new Track({
-            id: 14, name: "bass",
+            id: 14, name: "bass", level: 0.7,
             lanes: [new Lane({ id: 15, regions: [box(23, 4.0, 3, "saw")] })],
           }),
         ];

@@ -23,16 +23,23 @@ What to do in the window:
   other, so entering one opens the take in the sample editor — on the **piece's**
   own undo order, so `Ctrl`+`Z` walks a stroke drawn inside a box and a box
   dragged on the stack as one history.
+- **Watch the meters** while it plays: the strip in each track's header is one
+  column per channel, in decibels, over what that track produces *after* its
+  clips, its curves and its fader — with the peak it reached held beside it.
 
 **The takes are rendered here and the piece is written plainly**, which is all
-this file is: four buffers, three tracks, four boxes and two curves. Everything
+this file is: five buffers, three tracks, five boxes and two curves. Everything
 after that is `edit`.
 
-**The curves are drawn and not yet heard.** The row under the first track is a
-track automation and the line inside the first box is a clip envelope; both are
-edited and kept by the piece, and neither reaches a reader — a curve's ``gain``
-and the knob's ``gain`` have to name one parameter of one node first, which is
-the synthesis node system's design.
+**The curves are heard.** The row under the first track is a track automation
+and the line inside the first box is a clip envelope; each names the ``gain``
+port of the node it sits on — the same port the header's knob writes — so a
+point dragged while the piece plays is heard where it is drawn.
+
+**The last box is a join**: one buffer whose samples are spans of two takes,
+crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
+**one** reader like any other take. Put the cursor inside it and play: the reader
+finds the span it lands in once and reads it like a plain buffer from there.
 
 Run it as a script (``python edit_multitrack.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter.
@@ -40,7 +47,7 @@ Needs a display and a GPU adapter.
 
 # %%
 from clausters import Buffer, Session, Synth
-from clausters.defs import SynthDef, out
+from clausters.defs import Part, SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
 from clausters.multitrack import (Automation, Content, Lane, Multitrack, Region,
@@ -76,13 +83,30 @@ TAKES = {"white": gentake("t_white", white_noise() * 0.5),
 # %%
 session = Session.live(tempo=1.0, latency=0.1)
 server = session.server
-BUFS = {name: Buffer.from_samples(samples, server=server)
+BUFS = {name: Buffer.from_samples(samples, sample_rate=SR, server=server)
         for name, samples in TAKES.items()}
+
+# %% [markdown]
+# ## A fifth take that is a cut
+# The **join**: half of the glide and the second half of the saw, read as one
+# buffer with a ten-millisecond crossfade at the seam. Two spans that do not
+# continue each other make a step, and a step is a click however well the frames
+# are read. A join owns no samples — it is spans of the buffers above — so it
+# refuses every write, and `clausters.Buffer.parts` is how a program asks what it
+# is made of before it offers to draw one.
+
+# %%
+HALF = int(TAKE_DUR * SR) // 2
+FADE = int(0.010 * SR)
+BUFS["comp"] = Buffer.stitch(
+    [Part(BUFS["glide"], start=0, frames=HALF, fade_out=FADE),
+     Part(BUFS["saw"], start=HALF, frames=HALF, fade_in=FADE)],
+    sample_rate=SR, server=server)
 server.sync()
 
 # %% [markdown]
 # ## The piece
-# Three tracks, one lane each, four boxes. A **source id** is what the document
+# Three tracks, one lane each, five boxes. A **source id** is what the document
 # names — never a path and never a buffer number — because a piece must open in
 # a program that has no Python in it. Which buffer each source was read into is
 # the one thing about a piece that is not in the piece, and it travels beside it
@@ -91,7 +115,7 @@ server.sync()
 # %%
 #: source id -> the take it names, so the piece and the table below are written
 #: against one list.
-SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink"}
+SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp"}
 
 
 def box(id: int, at: float, source: int, name: str) -> Region:
@@ -105,17 +129,17 @@ def box(id: int, at: float, source: int, name: str) -> Region:
 
 #: **A track automation**: a row of its own under the track, as long as the
 #: timeline, because a track's gain does not begin and end with a box. ``target``
-#: is the client's own word for what it drives, and the range is read out of it —
-#: the document says what a curve automates and never reads it.
+#: names the **port** it drives on whatever it is on — the one shape the document
+#: crate reads there, because a curve that named nothing could only be guessed at.
 noise_gain = Automation(id=100, name="gain", visible=True,
-                        target={"ctl": "level", "min": 0.0, "max": 1.0},
+                        target={"port": "gain"},
                         points=[{"at": 0.0, "value": 1.0},
                                 {"at": 8.0, "value": 0.2}])
 
 #: **A clip envelope**: a layer drawn inside its box, lasting exactly as long as
-#: the box does. Its time is the box's own, from zero.
+#: the box does. Its time is the box's own, from zero, and its port is the clip's.
 white_fade = Automation(id=101, name="fade", visible=True,
-                        target={"ctl": "amp", "min": 0.0, "max": 1.0},
+                        target={"port": "gain"},
                         points=[{"at": 0.0, "value": 0.2},
                                 {"at": TAKE_DUR, "value": 1.0}])
 
@@ -126,8 +150,11 @@ piece = Multitrack(tracks=[
     Track(id=10, name="noise", automation=[noise_gain],
           lanes=[Lane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
     Track(id=12, name="tone",
-          lanes=[Lane(id=13, regions=[box(22, 2.0, 2, "glide")])]),
-    Track(id=14, name="bass",
+          lanes=[Lane(id=13, regions=[box(22, 2.0, 2, "glide"),
+                                      box(24, 8.0, 5, "comp")])]),
+    #: **The fader is the track's own field**, like its width: what a piece
+    #: sounds like is the piece's, so it is saved with it and reopens as it was.
+    Track(id=14, name="bass", level=0.7,
           lanes=[Lane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
 ])
 
