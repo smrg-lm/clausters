@@ -648,6 +648,7 @@ function clipProps(boxes: readonly Box[], bridge: Bridge): unknown[] {
  * name — and they are the piece's own, so a page's `extra` may carry anything it
  * likes beside them.
  */
+export const REWIND = "piece_rewind";
 export const PLAY = "piece_play";
 export const STOP = "piece_stop";
 export const CLOCK = "piece_clock";
@@ -730,10 +731,14 @@ export class MultitrackView extends View<Multitrack> {
      * likes beside them.
      */
     chrome(): GuiNode[] {
-        // No rewind: stop already goes back to the mark, which is what tells it
-        // from pause.
+        // **Rewind is not stop.** Stop goes back to the *mark* — which is what
+        // tells it from pause — and the mark is wherever a hand last put it, so
+        // with nothing else the way back to the top is finding beat zero on
+        // screen and clicking it. Rewind puts the mark there, which is a
+        // statement about the cursor and not about the transport.
         return [layout(
             { flow: "row", h: 40.0, gap: 6.0 },
+            button({ label: "|<", name: REWIND, w: 44.0 }),
             button({ label: "play/pause", name: PLAY, w: 110.0 }),
             button({ label: "stop", name: STOP, w: 110.0 }),
             label("", { name: CLOCK, textSize: 2.0, weight: 1.0 }),
@@ -916,6 +921,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (playback !== null) {
             await playback.prepare();
             playback.attach(this.host);
+            handle.widget(REWIND).onClick(() => this.rewind());
             handle.widget(PLAY).onClick(() => void this.toggle());
             handle.widget(STOP).onClick(() => this.stop());
             void this.tick();
@@ -951,6 +957,27 @@ export class MultitrackEditor extends Editor<Multitrack> {
         await playback.refresh();
         if (playback.playing) playback.pause();
         else await playback.play();
+    }
+
+    /**
+     * Put the **position cursor** back at the top, and cue a stopped transport
+     * there.
+     *
+     * The cursor's own verb, not the transport's: it is where the next play
+     * starts, and stop goes back to it rather than to the top. A hand that has
+     * been working at bar forty otherwise has to find beat zero on screen to
+     * get back to it.
+     */
+    rewind(): void {
+        this.cursor = 0.0;
+        this.locate(0.0);
+        // The host owns where the cursor *is*, so it is told rather than left
+        // to find out on the next redraw — the same way the transport tells it
+        // where the playhead stands.
+        const piece = this.pieceWidget;
+        if (this.host !== null && piece !== null) {
+            this.host.set(piece, { cursor: 0.0 });
+        }
     }
 
     /** Play the piece from where the position cursor is. */

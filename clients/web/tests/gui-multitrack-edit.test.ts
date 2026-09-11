@@ -191,6 +191,16 @@ test("the position cursor is kept and told and is not an edit", () => {
     near(Number(view.props(ed, rid).cursor), 4.0 * SR);
 });
 
+test("rewind puts the cursor back at the top", () => {
+    // The cursor's own verb. Stop goes back to the **mark** — which is what
+    // tells it from pause — so with nothing else the way back to the top is
+    // finding beat zero on screen and clicking it.
+    const ed = editor(piece());
+    ed.cursor = 12.0;
+    ed.rewind();
+    assert.equal(ed.cursor, 0.0);
+});
+
 test("buffer zero is a buffer", () => {
     // The first buffer an allocator hands out is a buffer, and a box over it
     // draws — `|| -1` said it did not, so the first take a page loaded was the

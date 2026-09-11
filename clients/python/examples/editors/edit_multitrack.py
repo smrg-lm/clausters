@@ -16,9 +16,11 @@ What to do in the window:
 - **Click the ruler** — or the slack between boxes — to place the **position
   cursor**, which is where the next play starts. The playhead is never placed:
   stopped, it stands on the mark.
-- **play/pause** and **stop** are the window's own row. A pause freezes the
-  readers where they stand, so playing again continues rather than starting
-  over, and stop goes back to the mark rather than to the top.
+- **rewind**, **play/pause** and **stop** are the window's own row. A pause
+  freezes the readers where they stand, so playing again continues rather than
+  starting over; stop goes back to the mark rather than to the top; and rewind
+  puts the **mark** back at the top, which is the cursor's verb and not the
+  transport's.
 - **Double click a box** to enter it: what a box holds is a structure like any
   other, so entering one opens the take in the sample editor — on the **piece's**
   own undo order, so `Ctrl`+`Z` walks a stroke drawn inside a box and a box

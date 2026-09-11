@@ -1935,6 +1935,26 @@ milestone, carrying a checkbox like everything unresolved, and leaving this
 list when a milestone absorbs it (the milestone is then the record, and says
 where it came from).
 
+- ⬜ **The transport's edges are square, so a stop and a play are clicks**
+  *(found by ear 2026-09-11 while the multitrack example played, and then
+  measured: `tests/mixer_graph.rs`, `where_the_transport_clicks`)*. A stop
+  freezes the governed subtree and a play thaws it, both at a block boundary
+  and both instantly, so the output steps by whatever was sounding -- 0.566 of
+  full scale on a piece playing a constant, which is the worst case and the
+  clearest one. Every mixer in the field ramps those edges over a few
+  milliseconds, and this cannot be done where it would naturally go: a frozen
+  node gets no time, so the fade has to have happened *before* the freeze.
+
+  **What it needs is a declick window the engine owns.** A stop becomes "ramp
+  the governed subtree's output down over N ms, then freeze", and a play "thaw,
+  then ramp up" -- which asks two things this does not have yet: a place to
+  apply the gain (the piece's master strip is the obvious one, but the
+  transport governs subtrees that are not pieces, so the engine wants something
+  that is not the mixer's), and a rule for what the transport position does
+  during the window (it must not advance, or a stop would play material past
+  where it stopped). Neither is hard; both are decisions. Until then a pause
+  mid-note clicks, and the example says so.
+
 - ⬜ **`mt.fx` is a declared empty slot, and what an effect *is* as a document
   is unspecified** *(named 2026-09-11, finishing the multitrack's node system)*.
   `mt.clip` and `mt.track` both declare an `fx` slot and both leave it empty,

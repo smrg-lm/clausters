@@ -688,6 +688,36 @@ def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
     assert _plan(ed)["tracks"][1]["mute"] == 0.0
 
 
+def test_rewind_puts_the_cursor_back_at_the_top():
+    """The cursor's own verb. Stop goes back to the **mark** -- which is what
+    tells it from pause -- so with nothing else the way back to the top is
+    finding beat zero on screen and clicking it."""
+    ed = editor(piece())
+    ed.cursor = 12.0
+    ed.rewind()
+    assert ed.cursor == 0.0
+
+
+def test_a_track_made_in_the_host_is_a_track_in_the_plan():
+    """A double click on a header makes a track, and what the host sends back
+    is the rows as they now stand. The claim here is the other half: what the
+    host adds is added on the **server** too, empty or not.
+
+    A track with nothing on it is still a strip, a fader and a meter -- it is
+    where the next box will land, and a piece that only instantiated the tracks
+    that happened to have boxes would build them at the moment a box was
+    dropped, which is the one moment it must not.
+    """
+    ed = editor(piece())
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    rows = list(props(ed)["lanes"]) + ["0", "three", 96.0, 0, 0, 1.0]
+    assert ed._route([wid, "lanes", *rows])
+    planned = _plan(ed)["tracks"]
+    assert [t["track"] for t in planned] == [10, 20, 23]
+    assert planned[2]["clips"] == [], "and it is planned empty rather than left out"
+
+
 def test_the_hand_does_not_write_the_port_a_curve_drives():
     """A curve owns the port it names, and the fader's value is not sent for it.
 

@@ -64,6 +64,7 @@ POINT_QUINTUPLE = 5
 #: because these are the widgets a **hand** addresses and a handler is hung on a
 #: name — and they are the piece's own, so a script's ``extra`` may carry
 #: anything it likes beside them.
+REWIND = "piece_rewind"
 PLAY = "piece_play"
 STOP = "piece_stop"
 CLOCK = "piece_clock"
@@ -444,7 +445,7 @@ class MultitrackView(View):
                       layout="col")
 
     def chrome(self) -> tuple:
-        """The transport row: play/pause, stop, and where the piece is.
+        """The transport row: rewind, play/pause, stop, and where the piece is.
 
         Named rather than numbered, because these are the only widgets of this
         window a *hand* addresses and a name is what a handler is hung on. The
@@ -453,9 +454,13 @@ class MultitrackView(View):
         """
         from ..guidef import button, label, layout
 
-        # No rewind: stop already goes back to the mark, which is what tells it
-        # from pause.
-        return (layout(button(label="play/pause", name=PLAY, w=110.0),
+        # **Rewind is not stop.** Stop goes back to the *mark* -- which is
+        # what tells it from pause -- and the mark is wherever a hand last put
+        # it, so with nothing else the way back to the top is finding beat zero
+        # on screen and clicking it. Rewind puts the mark there, which is a
+        # statement about the cursor and not about the transport.
+        return (layout(button(label="|<", name=REWIND, w=44.0),
+                       button(label="play/pause", name=PLAY, w=110.0),
                        button(label="stop", name=STOP, w=110.0),
                        label("", name=CLOCK, text_size=2.0, weight=1.0),
                        flow="row", h=40.0, gap=6.0),)
@@ -724,6 +729,7 @@ class MultitrackEditor(Editor):
         window = super().open(host, id)
         if self.playback is not None and self._window is not None:
             self.playback.attach(self._host)
+            self.window[REWIND].on_click(self.rewind)
             self.window[PLAY].on_click(self.toggle)
             self.window[STOP].on_click(self.stop)
             self._tick()
@@ -754,6 +760,23 @@ class MultitrackEditor(Editor):
             self.playback.pause()
         else:
             self.playback.play()
+
+    def rewind(self):
+        """Put the **position cursor** back at the top, and cue a stopped
+        transport there.
+
+        The cursor's own verb, not the transport's: it is where the next play
+        starts, and stop goes back to it rather than to the top. A hand that
+        has been working at bar forty otherwise has to find beat zero on screen
+        to get back to it.
+        """
+        self.cursor = 0.0
+        self.locate(0.0)
+        # The host owns where the cursor *is*, so it is told rather than left
+        # to find out on the next redraw -- the same way the transport tells it
+        # where the playhead stands.
+        if self._host is not None and self.piece_widget is not None:
+            self._host.set(self.piece_widget, cursor=0.0)
 
     def play(self):
         """Play the piece from where the position cursor is."""

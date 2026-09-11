@@ -636,3 +636,56 @@ fn bus_value(s: &mut NrtSession, index: i32) -> f32 {
     }
     panic!("the bus never answered")
 }
+
+/// Where the click is: the step the output takes at a transport stop and at a
+/// play from a cue inside a take.
+///
+/// A measurement rather than an assertion, and the number it prints is what a
+/// declick would have to remove:
+/// `cargo test --test mixer_graph where_the_transport -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn where_the_transport_clicks() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    // A take that is loud everywhere, so a cut anywhere is a step of that
+    // size: a constant is the worst case and the clearest one.
+    dc(&mut s, 0, 48_000, 0.8);
+    one_box(&mut s, 48_000.0, 0.0);
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _rolling = peaks(&mut s, 8);
+
+    /// The largest sample-to-sample jump in the left channel of a run, read
+    /// **across** the block seams -- which is where a transport edge lands.
+    fn step(out: &[f32]) -> f32 {
+        out.as_chunks::<2>()
+            .0
+            .windows(2)
+            .map(|w| (w[1][0] - w[0][0]).abs())
+            .fold(0.0f32, f32::max)
+    }
+    let run =
+        |s: &mut NrtSession, blocks: usize| s.run_to_vec((blocks * BLOCK) as u64).expect("ran");
+
+    let rolling = run(&mut s, 4);
+    send(&mut s, "/transport_stop", vec![]);
+    s.settle_for(2);
+    let mut stopping = rolling[rolling.len() - 2..].to_vec();
+    stopping.extend(run(&mut s, 4));
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let mut starting = stopping[stopping.len() - 2..].to_vec();
+    starting.extend(run(&mut s, 4));
+
+    println!("the largest step while it rolls:  {:.4}", step(&rolling));
+    println!("the largest step at the stop:     {:.4}", step(&stopping));
+    println!("the largest step at the play:     {:.4}", step(&starting));
+    println!(
+        "\nA step the size of what was sounding is a click. The transport \
+         freezes the subtree and thaws it, so a stop and a play are square \
+         edges of whatever the take happened to be at -- which is what a \
+         declick ramp over a few milliseconds would take off, and what the \
+         readers cannot do for themselves: a frozen node gets no time."
+    );
+}

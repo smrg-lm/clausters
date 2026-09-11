@@ -370,14 +370,17 @@ on every edit whoever made it — this window's gesture, a second window over th
 same piece, or a step of the history. Moving a box while it plays is one
 `/node_set` on a node that is already running, so it is heard where it was
 dropped with nothing that is sounding cut. The window carries the transport row
-that goes with it (play/pause, stop, and where the piece is), and `editor.play()`,
-`pause()` and `stop()` are the same three verbs from a page. A piece opened with
+that goes with it (rewind, play/pause, stop, and where the piece is), and
+`editor.play()`, `pause()`, `stop()` and `rewind()` are the same verbs from a
+page. A piece opened with
 no server still edits; it is simply not heard.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
 slack between boxes — puts the **position cursor** down, which is where the next
 play starts, and a stopped transport is cued there. The playhead is never placed,
-so stop goes back to the mark rather than to the top.
+so stop goes back to the mark rather than to the top -- and **rewind** is what
+puts the mark itself back at the top, which is a statement about the cursor and
+not about the transport.
 
 **A curve is heard.** A track's level, its mute and its solo reach the readers,
 and so do the automation drawn on a track and the envelope drawn inside a box:
