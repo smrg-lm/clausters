@@ -284,6 +284,52 @@ impl OscServer {
         Ok(())
     }
 
+    /// `/buffer_parts bufnum` -> `/buffer_parts.reply bufnum channels sampleRate
+    /// [srcBufnum srcStart frames fadeIn fadeOut chan...]...`: what a join is
+    /// made of, in the terms `/buffer_stitch` takes, so a reply can be edited
+    /// and sent back.
+    ///
+    /// **A buffer that owns its samples answers with no parts**, which is the
+    /// answer to "is this a join": a client that would draw an editable
+    /// waveform asks before it draws one rather than finding out by being
+    /// refused when it writes. An unallocated slot answers with `channels = 0`
+    /// and no parts, on the rule `/buffer_query` follows -- absence is a state
+    /// and not a protocol error.
+    ///
+    /// Its own reply rather than a field on `/buffer_query.reply`, whose
+    /// repeating group is four wide: a fifth field would be read as the next
+    /// buffer's index by every parser that chunks it. Synchronous, answered
+    /// from the mirror like the rest of the queries.
+    pub(in crate::osc::server) fn handle_buffer_parts(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let bufnum = args.int()?;
+        let buffer = self.mirror_buffer(bufnum);
+        let mut out = vec![OscType::Int(bufnum)];
+        out.push(OscType::Int(
+            buffer.as_ref().map_or(0, |b| b.channels() as i32),
+        ));
+        out.push(OscType::Float(
+            buffer.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
+        ));
+        if let Some(stitch) = buffer.as_ref().and_then(|b| b.stitch()) {
+            for part in stitch.parts() {
+                out.push(OscType::Int(part.src_index));
+                out.push(OscType::Int(part.src_start as i32));
+                out.push(OscType::Int(part.frames as i32));
+                out.push(OscType::Int(part.fade_in as i32));
+                out.push(OscType::Int(part.fade_out as i32));
+                for &to in part.map.iter() {
+                    out.push(OscType::Int(to));
+                }
+            }
+        }
+        self.reply(from, "/buffer_parts.reply", out);
+        Ok(())
+    }
+
     /// `/buffer_get bufnum index...` → `/buffer_get.reply bufnum index value...`: read single
     /// samples (flat, interleaved) from the buffer mirror. Out-of-range indices
     /// (and any index into an unallocated buffer) read as `0.0`, mirroring how

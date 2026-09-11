@@ -324,6 +324,7 @@ fn a_stitched_buffer_does_not_allocate_on_the_audio_thread() {
     let parts: Vec<PartSpec> = (0..64)
         .map(|i| PartSpec {
             src: Arc::clone(&takes[i % 2]),
+            src_index: (i % 2) as i32,
             src_start: i * 8,
             frames: 16,
             fade_in: 4,

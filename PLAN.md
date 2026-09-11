@@ -2214,17 +2214,20 @@ finished work, where a pending item reads as done.
     host's own row reader already writes it there -- a second place would be a
     second answer. See the entry below.
 
-- ⬜ **A track's level should be a field, beside its width** *(named 2026-09-10
-  writing the instance plan)*. `Track::channels` became a field of the document
-  because it decides the mix and both clients must write it identically;
-  `level` is the same kind of thing and is still a key inside `Track::config`,
-  which the crate now has to reach into -- the one place it reads an opaque
-  blob, against its own rule that configuration is carried and never
-  interpreted. It stayed where it is because the host's row reader
-  (`multitrack::picture`'s `SetTracks` path) writes it there, so moving it is a
-  change to that reader and its tests rather than a rename. Take it with the
-  next thing that touches the row reader; `mute` and `solo` are already fields,
-  so `level` is the odd one of the three.
+- ✅ **A track's level should be a field, beside its width** *(named 2026-09-10
+  writing the instance plan; done the same day)*. `Track::channels` became a
+  field of the document because it decides the mix and both clients must write
+  it identically; `level` is the same kind of thing and was a key inside
+  `Track::config`, which the crate had to reach into -- the one place it read an
+  opaque blob, against its own rule that configuration is carried and never
+  interpreted. It is `Track::level` now, `f64`, unity by default and left out of
+  the file when it is there. `picture::level_of` is the one reader and still
+  answers the old key when the field is at unity, so a piece written before this
+  plays at the level it was saved with; both row readers -- the crate's
+  `SetTracks` path and the host's -- write the field and drop the key as they
+  pass, so nothing ends up with two answers. The same field in both clients,
+  since a document read in one and written in the other has to come back the
+  same.
 
 - ✅ **A piece had no node system, so `gain` on a curve and `gain` on a knob
   were two words spelled alike** *(named 2026-09-10 by the user; the defs and
@@ -2403,16 +2406,22 @@ finished work, where a pending item reads as done.
   at it -- because a note that lives only in a plan is a note the person editing
   the function never sees.
 
-- ⬜ **A client cannot ask whether a buffer is a join** *(found 2026-09-10,
-  writing `/buffer_stitch`)*. `/buffer_query.reply` is a **4-wide repeating
-  group** per buffer, so appending a fifth field is not the harmless append
-  `/server_query.reply` takes -- every parser that chunks it by four would
-  read the flag as the next buffer's index. A client therefore learns a buffer
-  is a join only by being refused when it writes, which is honest but late: a
-  view that would draw an editable waveform wants to know before it draws one.
-  The fix is a reply of its own (`/buffer_parts bufnum` -> the parts, which a
-  join editor wants anyway) rather than a field bolted onto a shape that
-  cannot carry it.
+- ✅ **A client cannot ask whether a buffer is a join** *(found 2026-09-10
+  writing `/buffer_stitch`, answered the same day)*. `/buffer_query.reply` is a
+  **4-wide repeating group** per buffer, so appending a fifth field is not the
+  harmless append `/server_query.reply` takes -- every parser that chunks it by
+  four would read the flag as the next buffer's index. A client therefore
+  learned a buffer was a join only by being refused when it wrote, which is
+  honest but late: a view that would draw an editable waveform wants to know
+  before it draws one. So it is a reply of its own: **`/buffer_parts bufnum`**
+  -> `/buffer_parts.reply bufnum channels sampleRate [srcBufnum srcStart frames
+  fadeIn fadeOut chan...]...`, the parts in the terms `/buffer_stitch` takes
+  them, which a join editor wants anyway and which can be edited and sent back.
+  A buffer that owns its samples answers with no parts -- that is the answer to
+  the question -- and an empty slot answers `channels = 0`, on the rule
+  `/buffer_query` follows. `Part` carries the number its source was stitched
+  under for this and reads it nowhere else: a join is `Arc`s once it is built,
+  and an index is what a client speaks.
 
 - ✅ **A page's engine died on any ephemeral Faust def** *(found 2026-09-05 by
   driving the web examples in a browser; fixed the same day)*. `play(expr)`

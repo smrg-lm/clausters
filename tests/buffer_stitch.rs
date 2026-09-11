@@ -309,6 +309,7 @@ fn what_a_join_costs_per_sample() {
         Stitch::new(
             vec![PartSpec {
                 src: Arc::clone(&take),
+                src_index: 0,
                 src_start: 0,
                 frames: FRAMES,
                 fade_in: 0,
@@ -327,6 +328,7 @@ fn what_a_join_costs_per_sample() {
             (0..256)
                 .map(|i| PartSpec {
                     src: Arc::clone(&take),
+                    src_index: 0,
                     src_start: i * (FRAMES / 256),
                     frames: FRAMES / 256,
                     fade_in: 0,
@@ -378,4 +380,50 @@ fn what_a_join_costs_per_sample() {
         joined / budget * 100.0,
         (joined - plain) / budget * 100.0
     );
+}
+
+/// **A client can ask whether a buffer is a join**, and gets back the parts in
+/// the terms it would stitch them in.
+///
+/// Before this the only way to find out was to be refused when writing, which
+/// is honest but late: a view that would draw an editable waveform wants to
+/// know before it draws one.
+#[test]
+fn a_join_says_what_it_is_made_of() {
+    let mut s = session();
+    mono(&mut s, 0, &[1.0, 2.0, 3.0, 4.0]);
+    mono(&mut s, 1, &[5.0, 6.0, 7.0, 8.0]);
+    stitch(
+        &mut s,
+        2,
+        1,
+        vec![part(1, 2, 2, 0, 0, 0), part(0, 0, 3, 1, 1, 0)],
+    );
+
+    send(&mut s, "/buffer_parts", vec![OscType::Int(2)]);
+    let m = reply(&mut s, "/buffer_parts.reply").expect("the join answers");
+    let ints: Vec<i32> = m.args[3..]
+        .iter()
+        .map(|a| match a {
+            OscType::Int(i) => *i,
+            other => panic!("a part is ints: {other:?}"),
+        })
+        .collect();
+    assert_eq!(m.args[1], OscType::Int(1), "one channel");
+    assert_eq!(
+        ints,
+        vec![1, 2, 2, 0, 0, 0, 0, 0, 3, 1, 1, 0],
+        "the parts as they were given, in order"
+    );
+
+    // **A buffer that owns its samples answers with no parts**, which is the
+    // answer to the question rather than a refusal, and so does a slot with
+    // nothing in it.
+    send(&mut s, "/buffer_parts", vec![OscType::Int(0)]);
+    let m = reply(&mut s, "/buffer_parts.reply").expect("a plain buffer answers");
+    assert_eq!(m.args.len(), 3, "bufnum, channels, rate and nothing else");
+    send(&mut s, "/buffer_parts", vec![OscType::Int(60)]);
+    let m = reply(&mut s, "/buffer_parts.reply").expect("an empty slot answers");
+    assert_eq!(m.args[1], OscType::Int(0), "no channels, and no failure");
+    assert!(fails(&mut s).is_empty(), "nothing was refused");
 }

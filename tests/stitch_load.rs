@@ -66,6 +66,7 @@ fn joined_with(src: &Arc<Buffer>, parts: usize, fade: usize) -> Arc<Buffer> {
     let specs = (0..parts)
         .map(|i| PartSpec {
             src: Arc::clone(src),
+            src_index: 0,
             src_start: i * span,
             frames: span,
             fade_in: fade,

@@ -616,6 +616,7 @@ fn stitch_parts(
         }
         parts.push(crate::dsp::stitch::PartSpec {
             src: source,
+            src_index: src,
             src_start: src_start as usize,
             frames: frames as usize,
             fade_in: fade_in as usize,

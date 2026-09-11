@@ -59,6 +59,13 @@ pub struct Part {
     /// as long as something is stitched over it, so freeing the take a join was
     /// cut from does not silence the join.
     pub src: Arc<Buffer>,
+    /// The number the source was stitched under.
+    ///
+    /// Carried and never read while playing: a join is `Arc`s once it is built,
+    /// and an index is what a *client* speaks. It is here so `/buffer_parts` can
+    /// answer a join in the same terms `/buffer_stitch` was given it in, which
+    /// is what makes a reply something a client can edit and send back.
+    pub src_index: i32,
     /// The first frame read from `src`.
     pub src_start: usize,
     /// How many frames this part contributes.
@@ -104,6 +111,7 @@ impl std::fmt::Debug for Part {
 /// cumulative starts.
 pub struct PartSpec {
     pub src: Arc<Buffer>,
+    pub src_index: i32,
     pub src_start: usize,
     pub frames: usize,
     pub fade_in: usize,
@@ -161,6 +169,7 @@ impl Stitch {
             let (fade_in, fade_out) = (spec.fade_in.min(half), spec.fade_out.min(half));
             parts.push(Part {
                 src: spec.src,
+                src_index: spec.src_index,
                 src_start: spec.src_start,
                 frames: spec.frames,
                 // Two fades that overlap would multiply into a notch in the
@@ -191,6 +200,12 @@ impl Stitch {
     /// How many parts it has — what a query reports and a test reads.
     pub fn len(&self) -> usize {
         self.parts.len()
+    }
+
+    /// The parts in order — what `/buffer_parts` reports and what a join editor
+    /// reads to draw the seams it would move.
+    pub fn parts(&self) -> &[Part] {
+        &self.parts
     }
 
     /// Whether it has no parts. It never does: [`Stitch::new`] refuses one.
@@ -309,6 +324,7 @@ mod tests {
     fn spec(src: &Arc<Buffer>, src_start: usize, frames: usize) -> PartSpec {
         PartSpec {
             src: Arc::clone(src),
+            src_index: 0,
             src_start,
             frames,
             fade_in: 0,
