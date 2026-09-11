@@ -36,6 +36,28 @@ from ..transport import Transport
 __all__ = ["Playback"]
 
 
+def hand_ports(ports: dict, curves: list) -> dict:
+    """The ports the **hand** writes: everything a curve is not driving.
+
+    A mapped control is taken back by a plain ``/node_set`` -- that is the
+    protocol's own rule, and the right one, since it is what gives the fader
+    back when a curve is deleted. It also means that anything sending a value
+    for a port a curve drives **silences that curve**, and a piece re-syncs on
+    every edit, so adding a box to a track was enough to stop its automation
+    from being heard: the set arrived after the map and the curve went on
+    writing a bus nobody read.
+
+    So the two stop competing. A curve owns the port it names and the hand's
+    value is not sent for it, which is also what a mixer means by an automation
+    in read: touching the fader under a curve does nothing until the curve is
+    gone. Writing *through* a curve -- touch, latch -- is a mode nothing has
+    yet, and it would be this function's answer changing rather than a set
+    slipping past.
+    """
+    driven = {curve["port"] for curve in curves}
+    return {port: value for port, value in ports.items() if port not in driven}
+
+
 class Playback:
     """The instance of one piece, and the transport that moves it.
 
@@ -198,7 +220,8 @@ class Playback:
                 group = self.piece.add_slot("tracks")
                 self.tracks[track["track"]] = group
                 self._meter(track["track"], group, track["channels"])
-            group.set({"gain": track["gain"], "mute": track["mute"]})
+            group.set(hand_ports({"gain": track["gain"], "mute": track["mute"]},
+                                 track["curves"]))
             self._sync_curves(group, track["curves"])
             self._sync_clips(track["track"], group, track["clips"])
         for id in [id for id in self.tracks if id not in seen]:
@@ -227,7 +250,8 @@ class Playback:
         seen = set()
         for clip in planned:
             seen.add(clip["region"])
-            ports = {"gain": clip["gain"], "mute": clip["mute"]}
+            ports = hand_ports({"gain": clip["gain"], "mute": clip["mute"]},
+                               clip["curves"])
             held = self.clips.get(clip["region"])
             # A source of another width is another clip def -- a mono take is
             # panned into the track and a stereo one is balanced -- so it is the

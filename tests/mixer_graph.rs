@@ -406,6 +406,45 @@ fn a_curve_on_a_bus_drives_a_port() {
         "and it rose rather than wandering: {heard:?}"
     );
 
+    // **A set takes the port back**, which is the rule the other half of this
+    // rests on: setting a mapped control is how a hand reclaims a fader, and
+    // therefore how a client that re-sends a track's gain on every edit
+    // silences its own automation without touching the curve at all. The
+    // client's answer is not to send a value for a port a curve drives
+    // (`hand_ports`); this is the behaviour that makes that necessary.
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Float(0.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    assert!(
+        peaks(&mut s, 4).0 < 1e-3,
+        "the set holds against a curve that is still writing the bus"
+    );
+    // Mapped again, the curve drives it again -- the set took the port, it did
+    // not break the curve.
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(bus),
+        ],
+    );
+    s.settle_for(2);
+    let _resettling = peaks(&mut s, 40);
+    assert!(
+        peaks(&mut s, 4).0 > 1e-3,
+        "and mapping it again hands it back to the curve"
+    );
+
     // Unmapping gives the port back, and what was last on the bus does not
     // keep driving it.
     send(

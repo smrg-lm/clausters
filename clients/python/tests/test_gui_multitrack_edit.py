@@ -688,6 +688,25 @@ def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
     assert _plan(ed)["tracks"][1]["mute"] == 0.0
 
 
+def test_the_hand_does_not_write_the_port_a_curve_drives():
+    """A curve owns the port it names, and the fader's value is not sent for it.
+
+    A mapped control is taken back by a plain ``/node_set`` -- the protocol's
+    own rule, and the one that gives the fader back when a curve is deleted.
+    The other side of it is that a piece re-syncs on **every** edit, so a track
+    whose gain was re-sent each time lost its automation the moment a box was
+    added: the set landed after the map and the curve went on writing a bus
+    nobody read any more.
+    """
+    from clausters.gui.editing.playback import hand_ports
+
+    ports = {"gain": 0.7, "mute": 0.0}
+    assert hand_ports(ports, []) == ports, "with no curve the hand writes both"
+    assert hand_ports(ports, [{"port": "gain"}]) == {"mute": 0.0}, \
+        "a curve on the gain leaves the mute to the hand"
+    assert hand_ports(ports, [{"port": "gain"}, {"port": "mute"}]) == {}
+
+
 def test_a_metered_track_names_the_buses_the_host_reads():
     """The meters are the playback's and the strip is the host's, so what the
     widget carries is *where to look*: a lane, the level run and the mark run,
