@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit } from "../src/gui/editing/index.ts";
+import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit, watch }
+    from "../src/gui/editing/index.ts";
+import { unwatch } from "../src/base/log.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
@@ -507,10 +509,47 @@ test("two editors in one application keep their own floor", async () => {
             0.0, 300.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
         true,
     );
-    assert.ok(left.editing.version > before, "the neighbour moved the version");
+    const version = (left as unknown as { editing: { version: number } }).editing.version;
+    assert.ok(version > before, "the neighbour moved the version");
     assert.equal(
         left.echo.state.applied,
         before,
         "the neighbour's edit answered for this window's conversation",
     );
+});
+
+test("the editing trace is silent until it is watched", async () => {
+    // The five joints, and the fact that they cost nothing unarmed. A window in
+    // front of a person fails in ways nothing else sees, so the path says what
+    // it did — but a library that printed by default would make every importer
+    // pay for the formatting.
+    //
+    // The Python twin is
+    // `test_gui_editing.py::test_the_editing_trace_is_silent_until_it_is_watched`.
+    const curve = aCurve();
+    const editor = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
+    const { wid } = await opened(editor);
+
+    const quiet: string[] = [];
+    assert.equal(
+        editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 250.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
+        true,
+    );
+    assert.equal(quiet.length, 0, "silent unless asked");
+
+    const said: string[] = [];
+    watch({ debug: (line) => said.push(line), warn: (line) => said.push(line) });
+    try {
+        assert.equal(
+            editor.apply("/gui_event",
+                [wid, 2, 0, "points", 0.0, 350.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
+            true,
+        );
+    } finally {
+        unwatch();
+    }
+    const printed = said.join("\n");
+    assert.ok(printed.includes("event "), printed);
+    assert.ok(printed.includes("record ["), printed);
+    assert.ok(printed.includes("ack "), printed);
 });

@@ -3979,3 +3979,11 @@ than being ticked here.
   the same seven operators the page excuses, and an entry that grows a builder
   has to leave the list. Checked by breaking it: renaming the kind `meter` builds
   fails the test with the kind's name in the message.
+
+- ✅ **The client's log had no port, so the page said nothing at all** *(found
+  and fixed 2026-09-12; the entry is in `clients/web/PLAN.md`, "The editing path
+  said nothing in the page")*. This side gained `clausters.log.unwatch` out of
+  it: the page needed a way to leave a test as it found it and Python had no such
+  verb, so it grew one rather than the two surfaces differing by one. The areas,
+  the doors and the nesting rule are now tested on both sides (`test_log.py` and
+  its twin), which they never were.

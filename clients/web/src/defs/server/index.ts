@@ -41,6 +41,12 @@ import {
 } from "../../base/osc.ts";
 import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
 import { ROOT_NODE_ID } from "../node.ts";
+/**
+ * This area's logger — every message and bundle sent to the audio server, and
+ * every reply. Silent unless `CLAUSTERS_LOG=server` (or `watch("server")`).
+ */
+const log = area("server");
+
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
 import { pageConnection, ScoreConnection, WsConnection } from "../../base/connection.ts";
@@ -76,6 +82,7 @@ import type { ServerSizing } from "./options.ts";
 import { ServerQueries } from "./queries.ts";
 import { ServerStreams } from "./streams.ts";
 import { ServerTransport } from "./transport.ts";
+import { area } from "../../base/log.ts";
 
 // The package's public surface: `Server` plus what its configuration is made
 // of. The names re-exported here are the ones the module answered to before it
@@ -606,6 +613,7 @@ export class Server {
      * door.
      */
     private dispatch(msg: OscMessage): void {
+        log.debug("<- %s %s", msg.addr, msg.args);
         for (const p of [...this.pending]) {
             if (p.match(msg)) {
                 this.pending.delete(p);
@@ -669,6 +677,7 @@ export class Server {
      * buffers, opening the groups a piece is built on.
      */
     sendMsg(addr: string, ...args: MsgArg[]): void {
+        log.debug("-> %s %s", addr, args);
         if (this.scoring) {
             // A message has no time, so in a score it lands at the top —
             // which is exactly what "no time" means for a render.
@@ -709,6 +718,7 @@ export class Server {
         } = {},
     ): void {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
+        log.debug("-> bundle at beat %s: %s", when.beat ?? when, messages);
         if (this.scoring) {
             // NRT: seconds from the render's start — logical, and independent
             // of any timebase, since no wall clock is involved.

@@ -23,6 +23,7 @@
 
 import { conversationAnswer, conversationRead } from "../../core/clausters_core_web.js";
 import type { GuiHost, PropValue } from "../host.ts";
+import { log } from "./trace.ts";
 
 /** One correction: the widget, and what it should be drawing. */
 export type Correction = [number, Record<string, PropValue>];
@@ -183,6 +184,17 @@ export class Echo {
             corrections?: { widget: number; props: Record<string, PropValue> }[];
         };
         if (answered.answer === "silent") return;
+        log.debug(
+            "ack    seq=%s version=%s%s%s",
+            seq,
+            this.version,
+            this.corrections.length === 0
+                ? ""
+                : " correcting " + this.corrections
+                    .map(([wid, props]) => `${wid}(${Object.keys(props).sort().join(" ")})`)
+                    .join(", "),
+            reason === undefined ? "" : ` reason=${JSON.stringify(reason)}`,
+        );
         const version = answered.docVersion ?? this.version;
         if (answered.answer === "push") {
             const corrections: Correction[] = (answered.corrections ?? []).map(

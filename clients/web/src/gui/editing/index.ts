@@ -26,6 +26,10 @@
  * - {@link Editing} — the editing context: the history, the version, and the
  *   views to tell. An editor **asks for it and never builds one**, which is what
  *   makes two windows over one thing walk one undo order.
+ * - `trace` — the path said out loud, at five points: an event routed, an entry
+ *   recorded, a step of the pile, a publish, an acknowledgement. Silent unless
+ *   asked (`CLAUSTERS_LOG=gui.editing`, or {@link watch}), because what a window
+ *   in front of a person does wrong is otherwise visible to nobody.
  * {@link edit} is how a person calls it: one verb over the fundamental
  * structures, dispatching on what the structure is — {@link SamplesEditor} over
  * a `Buffer`, {@link PointsEditor} over an `Automation`, {@link NotesEditor}
@@ -73,4 +77,5 @@ export { Echo } from "./echo.ts";
 export type { Correction, Envelope, Turn } from "./echo.ts";
 export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";
 export type { GenericEditorOptions, Leg } from "./editor.ts";
+export { log, watch } from "./trace.ts";
 export { View } from "./view.ts";

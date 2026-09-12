@@ -4266,16 +4266,30 @@ sound.
   place the conversion belongs, the flattening for playback. It lands in the same
   commit as the Python fix, since it is one arrangement model in two languages.
 
-- ⬜ **The editing path says nothing in the page** *(found 2026-09-12, reviewing
-  the two editing subpackages against each other)*. Python's
-  `clausters/gui/editing/trace.py` says the path out loud at five joints — an
-  event routed, an entry recorded, a step of the pile, a publish, an
-  acknowledgement — armed by `CLAUSTERS_LOG=gui.editing` or `watch()`, and its
-  `__init__` lists it as one of the collaborators. The page has no counterpart,
-  and no logging module at all under `src/base`, so an editing session that goes
-  wrong in front of a person is visible to nobody on this side. The gap is wider
-  than editing — it is `clausters.log` that has no port — so what lands first is
-  the area mechanism, with editing as the first area on it.
+- ✅ **The editing path said nothing in the page** *(found and fixed
+  2026-09-12)*. Python's `clausters/gui/editing/trace.py` said the path out loud
+  at five joints — an event routed, an entry recorded, a step of the pile, a
+  publish, an acknowledgement — and the page had no counterpart and no logging
+  module at all under `src/base`, so an editing session that went wrong in front
+  of a person was visible to nobody on this side.
+
+  The gap was wider than editing, so what landed is the whole of it:
+  `base/log.ts` with the same three areas (`server`, `gui`, `gui.editing`), the
+  same `watch`/`unwatch` doors and the same nesting rule — an ancestor answers
+  for its children and arming both prints once, which is the defect Python's
+  `_already_watched` exists for. `gui/editing/trace.ts` is the narrowed door, and
+  every call site is the Python one, argument for argument: the two sends and the
+  reply in `defs/server`, the send and the event in `gui/host.ts`, and the five
+  joints.
+
+  **The environment is the one thing that could not be ported as it stands**: a
+  page has no environment variables, so it reads `globalThis.CLAUSTERS_LOG` or a
+  `?clausters-log=` in its own URL, and `process.env.CLAUSTERS_LOG` under node.
+  Same spelling, same values.
+
+  `unwatch` came out of writing it — the page needed it to leave a test as it
+  found it, and Python had no such verb, so it grew one too rather than the two
+  surfaces differing by one.
 
 - ✅ **The intents an edit projects were collected and nobody read one**
   *(found and collapsed 2026-09-12; written in full in

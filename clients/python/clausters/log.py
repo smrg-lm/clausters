@@ -23,11 +23,16 @@ formatting, so nothing is formatted until somebody asks. Log calls pass their
 values as arguments rather than building a string, so a disabled logger costs a
 level comparison.
 
-Two doors, and they mean different things. `watch()` is the one a script calls;
-`CLAUSTERS_LOG` is for the case this exists for — a person running an example,
-watching a window, about to do the thing that breaks — and takes an area or a
-list of them (`CLAUSTERS_LOG=1` for everything, `CLAUSTERS_LOG=gui,server` for
-two, `CLAUSTERS_LOG=gui.editing` for one).
+Two doors, and they mean different things. `watch()` is the one a script calls
+(and `unwatch()` puts it back); `CLAUSTERS_LOG` is for the case this exists for
+— a person running an example, watching a window, about to do the thing that
+breaks — and takes an area or a list of them (`CLAUSTERS_LOG=1` for everything,
+`CLAUSTERS_LOG=gui,server` for two, `CLAUSTERS_LOG=gui.editing` for one).
+
+The web client's `base/log.ts` is this module, area for area and door for door.
+What differs there is only the environment: a page has no environment variables,
+so it reads `globalThis.CLAUSTERS_LOG` or a `?clausters-log=` in its own URL, and
+under node the same `CLAUSTERS_LOG`.
 """
 
 import logging
@@ -69,6 +74,26 @@ def watch(area: str = "", stream=None, level: int = logging.DEBUG) -> logging.Lo
         named.addHandler(handler)
     named.setLevel(level)
     return named
+
+
+def unwatch(area: "str | None" = None) -> None:
+    """Stop printing one area — the handler this module installed goes and any
+    the caller added stays. ``unwatch()`` silences everything.
+
+    The other half of `watch`, and what a test that armed an area uses to leave
+    the process as it found it.
+    """
+    named = (log if area is None or area == ""
+             else logging.getLogger(f"clausters.{area}"))
+    named.handlers = [h for h in named.handlers if not getattr(h, _MARK, False)]
+    if area is None:
+        # Everything: an area armed on its own carries its own handler, and the
+        # root's going does not take it.
+        for name in list(logging.root.manager.loggerDict):
+            if name == "clausters" or name.startswith("clausters."):
+                one = logging.getLogger(name)
+                one.handlers = [h for h in one.handlers
+                                if not getattr(h, _MARK, False)]
 
 
 def _already_watched(named: logging.Logger) -> bool:

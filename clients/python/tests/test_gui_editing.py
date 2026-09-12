@@ -594,3 +594,38 @@ def test_two_editors_in_one_application_keep_their_own_floor():
     assert left.echo.state["applied"] == before, (
         "the neighbour's edit answered for this window's conversation"
     )
+
+
+def test_the_editing_trace_is_silent_until_it_is_watched():
+    """The five joints, and the fact that they cost nothing unarmed.
+
+    A window in front of a person fails in ways nothing else sees, so the path
+    says what it did — but a library that printed by default would make every
+    importer pay for the formatting. The twin is
+    `clients/web/tests/gui-edit.test.ts`.
+    """
+    import io
+
+    from clausters.log import unwatch
+    from clausters.gui.editing import watch
+
+    ed = an_editor()
+    host = FakeHost()
+    ed.open(host)
+    wid = host.tree["children"][0]["id"]
+
+    quiet = io.StringIO()
+    unwatch()
+    assert ed.apply("/gui_event", [wid, 1, 0, "dial", 0.25]) is True
+    assert quiet.getvalue() == "", "silent unless asked"
+
+    printed = io.StringIO()
+    watch(printed)
+    try:
+        assert ed.apply("/gui_event", [wid, 2, 0, "dial", 0.75]) is True
+    finally:
+        unwatch()
+    said = printed.getvalue()
+    assert "event " in said, said
+    assert "record [" in said, said
+    assert "ack " in said, said

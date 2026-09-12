@@ -62,6 +62,10 @@ export type { SessionOptions } from "./session.ts";
 export { defaultSession, main } from "./base/main.ts";
 export type { Main, SessionLike } from "./base/main.ts";
 export { Environment, RandomContext } from "./base/environment.ts";
+// What the client did, said out loud. Importing the module arms `CLAUSTERS_LOG`,
+// the way `clausters.log` does on the Python side.
+export { ENV as LOG_ENV, area, unwatch, watch } from "./base/log.ts";
+export type { Area, LogSink } from "./base/log.ts";
 // The operator vocabulary as methods, exported the way the Python client
 // exports `AbstractObject` from `clausters.base`: what a subclass implements
 // to make one written expression compose a graph, a per-bin program or a value.

@@ -39,6 +39,7 @@ import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import type { Echo } from "./echo.ts";
+import { log } from "./trace.ts";
 
 /**
  * The base a host-less draw counts widget ids from. Above the hand-picked range
@@ -338,8 +339,13 @@ export class Application {
         this.unreachable = null;
         const history = context.history;
         const waiting = direction === "undo" ? history?.undoLabel : history?.redoLabel;
+        const before: [string | undefined, string | undefined] | null =
+            history === null ? null : [history.undoLabel, history.redoLabel];
         const legs = context.step(direction);
-        if (legs === undefined) return false;
+        if (legs === undefined) {
+            log.debug("%s   nothing stepped (at %s)", direction, before);
+            return false;
+        }
         if (!context.distribute(legs, walker)) {
             // **A step nobody could apply is not a step.** The walk moves the
             // pile's cursor before anything is projected, so an entry naming a
@@ -350,8 +356,15 @@ export class Application {
             // open that window and the entry is still on top, waiting.
             context.step(direction === "undo" ? "redo" : "undo");
             this.unreachable = waiting ?? null;
+            log.debug("%s   nothing could apply it (at %s)", direction, before);
             return false;
         }
+        log.debug(
+            "%s   %s -> %s",
+            direction,
+            before,
+            history === null ? null : [history.undoLabel, history.redoLabel],
+        );
         // **Once for the walk, not once per window.** The version is the
         // context's, and every view reports the same one.
         context.version += 1;
@@ -391,6 +404,12 @@ export class Application {
         const host = this.host;
         if (host === null) return;
         const id = Math.trunc(widgetId);
+        log.debug(
+            "publish %s: %d widget(s)%s",
+            id,
+            widgets(tree),
+            window === undefined ? "" : ` inside window ${window}`,
+        );
         if (window === undefined) host.define(id, tree, blobs);
         else host.redefine(id, tree, blobs, Math.trunc(window));
     }
@@ -406,4 +425,17 @@ export class Application {
         if (host === null) return !until();
         return host.waitWhile(until, timeout);
     }
+}
+
+/**
+ * How many widgets a published tree holds — the trace's measure of what a redraw
+ * cost, now that how much of it the host rebuilds is the host's.
+ */
+function widgets(tree: GuiNode): number {
+    const children = (tree.children ?? []) as unknown[];
+    let n = 1;
+    for (const child of children) {
+        if (child !== null && typeof child === "object") n += widgets(child as GuiNode);
+    }
+    return n;
 }

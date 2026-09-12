@@ -22,6 +22,7 @@
 // "never block the clock" discipline of the reference client is here simply
 // the language.
 
+import { area } from "../base/log.ts";
 import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
 import type { MsgArg, OscMessage } from "../base/osc.ts";
 import { encodeImmediateBundle } from "../base/osc.ts";
@@ -48,6 +49,12 @@ import type { ClaustersGui, PageGuiConnection, Stage } from "./page.ts";
 // module and the GuiDef builders behind it. Re-exported here, where callers
 // have always found it.
 export { guiHost, newGuiHost, pageGuiConnection } from "./page.ts";
+/**
+ * This area's logger — every command sent to the GUI host and every event from
+ * it. Silent unless `CLAUSTERS_LOG=gui` (or `watch("gui")`).
+ */
+const log = area("gui");
+
 export type { ClaustersGui, EventListener, PageGuiConnection, Stage } from "./page.ts";
 
 /**
@@ -1189,6 +1196,7 @@ export class GuiHost {
             return;
         }
         for (const msg of messages) {
+            log.debug("<- %s %s", msg.addr, msg.args);
             for (const p of [...this.pending]) {
                 if (p.match(msg)) {
                     this.pending.delete(p);
@@ -1246,6 +1254,7 @@ export class GuiHost {
      * protocol fixes the type (an id is an int) and by inference otherwise.
      */
     private send(addr: string, ...args: MsgArg[]): void {
+        log.debug("-> %s %s", addr, args);
         this.connection.send(encodeMessage(addr, args.map(oscArg)));
     }
 

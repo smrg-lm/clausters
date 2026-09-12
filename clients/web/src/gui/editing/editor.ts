@@ -43,6 +43,7 @@ import type { Adopting } from "./context.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
 import { Echo } from "./echo.ts";
+import { log } from "./trace.ts";
 import type { View } from "./view.ts";
 
 let notAnEditHeld: readonly string[] = [];
@@ -688,8 +689,14 @@ export class Editor<S = unknown> implements Adopting {
         const id = Math.trunc(Number(args[0]));
         const tag = String(args[1]);
         const rest = args.slice(2);
-        if (notAnEdit().includes(tag)) return this.observe(id, tag, rest);
-        if (this.interface(id, tag, rest)) return false;
+        if (notAnEdit().includes(tag)) {
+            log.debug("event  %s %s -> screen state", id, tag);
+            return this.observe(id, tag, rest);
+        }
+        if (this.interface(id, tag, rest)) {
+            log.debug("event  %s %s -> this editor's own", id, tag);
+            return false;
+        }
         if (this.domain === null) return false;
         // **One reading of one gesture.** The payloads, what an undo menu calls
         // them and why the gesture was refused all come off the same answer,
@@ -697,6 +704,16 @@ export class Editor<S = unknown> implements Adopting {
         // times is how they come to be three answers.
         const taken = this.domain.read(this.structure, tag, rest);
         const payloads = taken.payloads;
+        log.debug(
+            "event  %s %s -> %s",
+            id,
+            tag,
+            payloads.length === 0
+                ? "no payload"
+                : payloads
+                    .map((p) => String((p as { intent?: unknown }).intent))
+                    .join(", "),
+        );
         if (payloads.length === 0) {
             // Nothing, or a refusal. A refusal says why and hands the widget
             // back what it should be drawing, so the picture stops agreeing with
@@ -812,6 +829,7 @@ export class Editor<S = unknown> implements Adopting {
         if (this.domain === null) return false;
         const before = this.domain.current(this.structure, payload);
         if (!this.domain.project(this.structure, payload)) return false;
+        log.debug("record [%s] %s", label, (payload as { intent?: unknown }).intent);
         if (before !== null && before !== undefined) {
             this.editing.history.record(
                 [{
@@ -859,6 +877,7 @@ export class Editor<S = unknown> implements Adopting {
             this.editing.changed();
         }
         if (!moved) return false;
+        log.debug("record [%s] %d leg(s)", label, legs.length);
         if (legs.length > 0) this.editing.history.record(legs, { label });
         this.version += 1;
         this.dirty = true;
