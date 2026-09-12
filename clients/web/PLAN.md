@@ -4318,3 +4318,12 @@ sound.
   siblings; the prose in `gui/editing/edit.ts` and `gui-multitrack-edit.test.ts`
   that still named them is corrected to `multitrackProps`/`editingIntake`, and
   the four **wasm exports** are gone with their C ABI twins (core ABI **v55**).
+
+- ✅ **A box closed blocked the piece's whole undo order** *(found by use
+  2026-09-12 in the Python example and fixed in both clients the same day;
+  written in full in `clients/python/PLAN.md`)*. The applier was a **view**, so a
+  box whose window had closed left an entry nobody could apply — and a refused
+  step puts the cursor back, so the pile blocked rather than missing one step.
+  The participants are structures now: `Editing.identity` takes an `Applier` (a
+  `Domain`, or a `Score` for a page) and `distribute` asks those. `projectLegs`
+  left the `Adopting` interface with it.

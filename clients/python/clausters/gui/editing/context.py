@@ -65,13 +65,15 @@ class Editing:
         self.version = FIRST_VERSION
         #: The views drawing this data, weakly: an editor that goes away takes
         #: its window with it, and a context does not keep one alive.
-        #: ``id(structure) -> (structure, identity)`` — what each structure was
-        #: registered in the pile as. One identity per structure and not per
-        #: view: two windows over one thing are one structure in the order, and
-        #: minting a second identity for the second window would leave its undo
-        #: walking legs that name somebody else. The object is held beside the
-        #: number so its ``id`` cannot be reused by something else while the
-        #: context is alive.
+        #: ``id(structure) -> (structure, identity, applier)`` — what each
+        #: structure was registered in the pile as, and what can put an edit
+        #: back onto it. One identity per structure and not per view: two
+        #: windows over one thing are one structure in the order, and minting a
+        #: second identity for the second window would leave its undo walking
+        #: legs that name somebody else. The object is held beside the number so
+        #: its ``id`` cannot be reused by something else while the context is
+        #: alive — and the **applier** is held because the pile's scope is this
+        #: context while a window's is a window: see `distribute`.
         self._structures: dict = {}
         self._views: list = []
         #: How deep the current turn is, and whether anything moved in it. One
@@ -95,20 +97,43 @@ class Editing:
             setattr(structure, ATTR, context)
         return context
 
-    def identity(self, structure, domain: str) -> int:
-        """This structure's identity in the pile, minted on first ask.
+    def identity(self, structure, domain: str, applier=None) -> int:
+        """This structure's identity in the pile, minted on first ask, with
+        **what can put an edit back onto it**.
 
         **Once per structure, not once per view.** Two windows over one thing
         are one structure in the undo order, so a second identity for the
         second window would leave its undo walking legs that name somebody
         else — which looks exactly like a dead button.
+
+        ``applier`` is anything answering ``project(structure, payload)`` — an
+        editor hands its `clausters.gui.editing.Domain`, and a
+        `clausters.gui.notation.Score` hands itself. It is kept **here**, beside
+        the identity, because that is the scope the pile has: an entry names a
+        structure and the order over entries is global, so an entry that only
+        *some of the time* has somebody to apply it is an entry that blocks
+        every entry behind it. Registered once and kept, applying an edit stops
+        depending on whether a window happens to be open.
         """
         key = id(structure)
         found = self._structures.get(key)
         if found is None:
-            found = (structure, self.history.register(domain))
+            found = (structure, self.history.register(domain), applier)
+            self._structures[key] = found
+        elif found[2] is None and applier is not None:
+            # Registered by something that could not apply (a caller that only
+            # wanted the number); the first that can, wins the slot.
+            found = (found[0], found[1], applier)
             self._structures[key] = found
         return found[1]
+
+    def applier(self, identity: int):
+        """What puts an edit back onto the structure this identity names, or
+        ``None`` for one nothing registered."""
+        for _, mine, applier in self._structures.values():
+            if mine == identity:
+                return applier
+        return None
 
     def attach(self, view):
         """Take a view into this data's list, so an edit made in one window can
@@ -141,28 +166,45 @@ class Editing:
         walked = self.history.walk(direction)
         return None if walked is None else walked["legs"]
 
-    def distribute(self, legs: list, walker) -> bool:
-        """Hand a step's legs round **everything registered here** and say
-        whether anything moved.
+    def distribute(self, legs: list, walker=None) -> bool:
+        """Put a step's legs back onto the structures they name, and say whether
+        anything moved.
 
         One entry can name several structures — a stroke over a take and a bend
         of the curve above it are one order, and so is an edit to a page beside
-        a lane — so the step is offered to every participant and each takes the
-        legs naming the structure it holds. Whoever is walking is included
-        whether or not it is in the list, since a structure with no window open
-        still holds legs the step may name.
+        a lane — so the legs come routed and each goes to whatever was
+        registered for that identity.
 
-        It lives here rather than on the editor because a participant need not
-        be one: what this asks of a thing is `project_legs`, and a
-        `clausters.gui.notation.Score` answers it without drawing anything.
+        **It asks the structures, not the windows**, and that is the whole of
+        why it is written this way. A pile is ordered and global to this
+        context, while a window comes and goes: when the applier was a *view*, a
+        box entered from a piece and then closed left an entry nobody could
+        apply, the step was refused, and — since a refused step puts the cursor
+        back — every edit behind it became unreachable too. The pile was not
+        missing one step, it was **blocked**. What can put an edit back is a
+        structure and its vocabulary, neither of which is on screen, so that is
+        what `identity` registers and this is what asks.
+
+        ``walker`` is kept for callers that pass it and is not read: who drew the
+        gesture matters to the redraw, which is the turn's, not to this.
         """
-        views = self.views()
-        walkers = (views if any(view is walker for view in views)
-                   else [walker, *views])
         stepped = False
-        for view in walkers:
-            stepped |= bool(view.project_legs(legs))
+        for leg in legs:
+            applier = self.applier(int(leg.get("structure", -1)))
+            if applier is None:
+                continue
+            structure = self.structure_of(int(leg.get("structure", -1)))
+            for payload in leg.get("payloads", ()):
+                if isinstance(payload, dict):
+                    stepped |= bool(applier.project(structure, payload))
         return stepped
+
+    def structure_of(self, identity: int):
+        """The structure this identity names, or ``None``."""
+        for structure, mine, _ in self._structures.values():
+            if mine == identity:
+                return structure
+        return None
 
     def changed(self):
         """Say that the data changed in the turn being run.

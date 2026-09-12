@@ -49,7 +49,7 @@
 export { Application, BASE_ID } from "./application.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "./context.ts";
-export type { Adopting } from "./context.ts";
+export type { Adopting, Applier } from "./context.ts";
 export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";

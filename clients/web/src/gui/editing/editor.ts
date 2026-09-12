@@ -39,7 +39,7 @@ import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
-import type { Adopting } from "./context.ts";
+import type { Adopting, Applier } from "./context.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
 import { Echo } from "./echo.ts";
@@ -451,9 +451,14 @@ export class Editor<S = unknown> implements Adopting {
      * per view.
      */
     protected registered(): number {
+        // **The domain goes with it**, because it is what puts an edit back and
+        // the pile's scope is the context's rather than this window's: a step
+        // must reach this structure whether or not the window that made the
+        // edit is still open.
         this.structureId ??= this.editing.identity(
             this.structure as object,
             this.domain?.name ?? "",
+            (this.domain ?? null) as Applier | null,
         );
         return this.structureId;
     }
@@ -1003,27 +1008,6 @@ export class Editor<S = unknown> implements Adopting {
         return this.app.step(direction, this);
     }
 
-    /**
-     * Project the legs of a history step that name **this** editor's structure,
-     * and say whether anything moved.
-     *
-     * The other half of {@link Editor.step}: what the walk hands round, so an
-     * editor that holds one of the structures an entry touched writes it back
-     * through its own domain — the same door an edit goes through, which is what
-     * keeps the two from disagreeing about what a payload means.
-     */
-    projectLegs(legs: readonly Leg[]): boolean {
-        if (this.domain === null) return false;
-        const mine = this.registered();
-        let applied = false;
-        for (const leg of legs) {
-            if (Math.trunc(Number(leg.structure ?? -1)) !== mine) continue;
-            for (const payload of leg.payloads ?? []) {
-                applied = this.domain.project(this.structure, payload) || applied;
-            }
-        }
-        return applied;
-    }
 
     /**
      * Draw what a history walk left behind: every widget resynced, and the host

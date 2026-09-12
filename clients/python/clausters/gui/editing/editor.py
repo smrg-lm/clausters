@@ -369,8 +369,13 @@ class Editor:
         one per view.
         """
         if self._structure_id is None:
+            # **The domain goes with it**, because it is what puts an edit back
+            # and the pile's scope is the context's rather than this window's:
+            # a step must reach this structure whether or not the window that
+            # made the edit is still open.
             self._structure_id = self._editing.identity(
-                self.structure, getattr(self.domain, "name", "") or "")
+                self.structure, getattr(self.domain, "name", "") or "",
+                applier=self.domain)
         return self._structure_id
 
     # ---- the forward draw ----
@@ -500,12 +505,19 @@ class Editor:
             stepped = (self.redo if turn.get("redo") else self.undo)()
             # **A refusal says why.** A step nobody could apply is the one case
             # where nothing happening is not "the pile is at its end": the entry
-            # belongs to a structure whose window is closed, and it is still
-            # there waiting for it. Saying so is the difference between a dead
-            # button and one that is telling you where to press it.
+            # named a structure nothing in this context can write to, and it is
+            # still there rather than stepped over. Saying so is the difference
+            # between a dead button and one that says what it is waiting for.
+            #
+            # **It no longer says "a window that is not open"**, which is what it
+            # used to say and was the visible face of a worse thing: the applier
+            # was a *view*, so closing a box entered from a piece left an entry
+            # nobody could apply and the whole pile blocked behind it. The
+            # applier is the structure's vocabulary now
+            # (`clausters.gui.editing.Editing.identity`), which no window owns.
             if not stepped and self.app.unreachable is not None:
-                self._reason = (f"{self.app.unreachable}: that edit belongs to a "
-                                "window that is not open")
+                self._reason = (f"{self.app.unreachable}: nothing here can put "
+                                "that edit back")
             self._acknowledge(seq, reason=self._reason)
             return stepped
         if kind == "stale":
@@ -800,30 +812,6 @@ class Editor:
         `reflect_step`, below.
         """
         return self.app.step(direction, self)
-
-    def project_legs(self, legs: list) -> bool:
-        """Project the leg of a history step that names **this** editor's
-        structure, and say whether anything moved.
-
-        The other half of `_step`: what the walk hands round, so an editor that
-        holds one of the structures an entry touched writes it back through its
-        own domain — the same door an edit goes through, which is what keeps the
-        two from disagreeing about what a payload means.
-
-        The step arrives already gathered per structure, so what is left here is
-        finding this editor's entry and applying its payloads in order.
-        """
-        if self.domain is None:
-            return False
-        mine = self._registered()
-        applied = False
-        for leg in legs:
-            if int(leg.get("structure", -1)) != mine:
-                continue
-            for payload in leg.get("payloads", ()):
-                if isinstance(payload, dict):
-                    applied |= bool(self.domain.project(self.structure, payload))
-        return applied
 
     def reflect_step(self) -> None:
         """Draw what a history walk left behind: every widget resynced, and the

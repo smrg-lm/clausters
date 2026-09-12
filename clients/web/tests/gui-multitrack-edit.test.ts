@@ -620,44 +620,72 @@ test("a reopened box undoes its own edit and not the piece's", async () => {
     assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "the stroke is undone");
 });
 
-test("an undo nobody can apply is not a step", async () => {
-    // **A step nobody could apply is not a step.**
+test("a box closed does not block the piece's undo", async () => {
+    // **The pile's scope is the context's, not a window's.**
     //
-    // The walk moves the pile's cursor before anything is projected, so an entry
-    // naming a structure no participant holds — a box whose window was closed —
-    // was stepped *over*: the edit stayed and the order lost it. Closing the box,
-    // undoing in the piece's window and opening it again left the samples edited
-    // and unreachable, which is the one thing a history may not do.
+    // An entry names a structure, and what puts an edit back onto one is its
+    // *vocabulary* — neither of which is on screen. When the applier was a
+    // **view** instead, a box entered from a piece and then closed left an entry
+    // nobody could apply: the step was refused, and since a refused step puts
+    // the cursor back, the very next undo hit the same entry. The pile was not
+    // missing one step, it was **blocked** — every edit the piece had made
+    // behind that entry was unreachable until the box was opened again.
     //
-    // Found by use 2026-09-10.
+    // Found by use 2026-09-12, by hand, in the Python example. The earlier
+    // reading of it (2026-09-10) is the one this replaces: the refusal was
+    // correct given a view-shaped participant, and the participant was wrong.
+    //
+    // The Python twin is
+    // `test_gui_multitrack_edit.py::test_a_box_closed_does_not_block_the_piece_s_undo`.
     const take = new Take();
-    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const held = piece();
+    const ed = new MultitrackEditor(held, { sampleRate: SR, sources: { 1: take } });
     ed.draw();
     const wid = [...ed.view!.widgets][0];
     const route = (e: unknown, args: unknown[]) =>
         (e as unknown as { route(args: unknown[]): boolean }).route(args);
     assert.ok(route(ed, [wid, "clips", "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7]));
+    const moved = regionAt(held, 12)!.position;
     const box = (await ed.enter("12"))!;
     box.draw();
     const bwid = [...box.view!.widgets][0];
     assert.ok(route(box, [bwid, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]]));
     await settled();
 
+    // The box's window goes, and its editor with it.
     box.close();
     ed.entered.delete("12");
 
-    assert.equal(ed.undo(), false, "nothing could apply it");
+    // The stroke is still the top of the pile, and an undo in the **piece's**
+    // window performs it: the take and its vocabulary are registered in the
+    // context, and neither went with the window.
+    assert.equal(ed.undo(), true, "the piece can put back an edit made inside a box");
     await settled();
-    assert.deepEqual(take.frames.slice(2, 4), [1.0, 1.0], "the edit is still there");
-    assert.equal(ed.app.unreachable, "draw the samples");
+    assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "and it is the stroke");
+    assert.equal(ed.app.unreachable, null);
 
-    // Which is what makes it recoverable: the entry is still on top, waiting
-    // for the window that can perform it.
-    const again = (await ed.enter("12"))!;
-    assert.ok(again.undo(), "the stroke is still the top of the pile");
+    // ...and the order keeps going, which is the half that was actually broken:
+    // a refused step put the cursor back, so everything behind it was walled off.
+    assert.equal(ed.undo(), true, "the entry behind it is reachable");
+    assert.notEqual(regionAt(held, 12)!.position, moved, "the box went back");
+
+    // Both come forward again, in order.
+    assert.equal(ed.redo(), true);
+    assert.equal(regionAt(held, 12)!.position, moved);
+    assert.equal(ed.redo(), true);
     await settled();
-    assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0]);
+    assert.deepEqual(take.frames.slice(2, 4), [1.0, 1.0]);
 });
+
+/** The region of this id, wherever it sits. */
+function regionAt(held: Multitrack, id: number) {
+    for (const track of held.tracks) {
+        for (const lane of track.lanes) {
+            for (const region of lane.regions) if (region.id === id) return region;
+        }
+    }
+    return undefined;
+}
 
 test("a box with nothing to open opens nothing", async () => {
     // A source named by number alone is a box the caller gave no structure for,

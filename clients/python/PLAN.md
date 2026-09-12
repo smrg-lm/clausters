@@ -3927,6 +3927,9 @@ than being ticked here.
   space, one undo walk — with a floor each. Held by a test in both clients that
   was checked by making the echo shared again and watching it fail.
 
+  **And the by-eye check of it found the real one**, which is the entry below:
+  the undo order was blocked by any box whose window had been closed.
+
 - ✅ **The session format was restated in both clients, and it had already
   drifted** *(found and fixed 2026-09-12)*. `O31` moved the crate's
   `session::FORMAT` to 2 — `Location::Segments` is a tagged variant an older
@@ -3987,3 +3990,35 @@ than being ticked here.
   verb, so it grew one rather than the two surfaces differing by one. The areas,
   the doors and the nesting rule are now tested on both sides (`test_log.py` and
   its twin), which they never were.
+
+- ✅ **A box closed blocked the piece's whole undo order** *(found by use
+  2026-09-12 by the user, editing `examples/editors/edit_multitrack.py` by hand;
+  fixed the same day, with the user)*. Enter a box, draw in it, close it, and
+  `Ctrl`+`Z` in the piece answered *"refused: draw the samples: that edit belongs
+  to a window that is not open"* — and then answered it again, forever: a refused
+  step puts the cursor back, so the entry stayed on top and **every edit the
+  piece had made behind it was unreachable**. Not one step missing; the pile
+  blocked.
+
+  **The conflict was one of scope, and the user named it as one.** A pile is
+  ordered and global to an editing context, while *who could apply an entry* was
+  a **view** — and views come and go. An ordered stack cannot hold entries that
+  are only sometimes appliable. The crate had it right all along: `history.walk`
+  routes legs by **structure identity**, and it was this client that went looking
+  for the applier among `views()`.
+
+  So the participants are structures, not views: `Editing.identity` now takes
+  what can put an edit back — a `Domain` for an editor, the `Score` itself for a
+  page — and keeps it beside the identity, which is the scope the pile has.
+  `distribute` asks those and nothing else; the views are told only to redraw,
+  which is what a view is for. `Editor.project_legs` and `Score.project_legs`
+  are gone: they were the view-shaped participant protocol, and one way of
+  applying is the point.
+
+  The refusal survives for the case it actually describes — an entry naming a
+  structure nothing in the context can write to — and no longer blames a window.
+  Both readings that lost are worth recording: **a stack per box** would drop the
+  shared order the design asked for (a stroke inside a box and a drag of that box
+  would stop having an order between them), and **skipping the unappliable entry**
+  loses an edit from the order, which `Application.step` already refuses to do
+  and rightly.

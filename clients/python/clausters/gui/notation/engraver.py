@@ -115,8 +115,13 @@ class Score:
 
     @property
     def _structure(self) -> int:
-        """This score's identity in the pile — minted once, per score."""
-        return self._editing.identity(self, "score")
+        """This score's identity in the pile — minted once, per score.
+
+        It registers **itself** as what puts an edit back: a page is a state
+        rather than a payload in some vocabulary, so what applies one is `load`
+        and there is no `clausters.gui.editing.Domain` in between.
+        """
+        return self._editing.identity(self, "score", applier=self)
 
     def _record(self, before: str, label: str) -> None:
         """Record one edit: the MEI it produced, and the one it replaced.
@@ -141,22 +146,16 @@ class Score:
                 label=label)
             context.changed()
 
-    def project_legs(self, legs: list) -> bool:
-        """Put back the legs of a history step that name **this** score.
+    def project(self, structure, payload) -> bool:
+        """Put one payload of a history step back onto this score.
 
-        What the context hands round, already gathered per structure. A page is
-        not a view — nothing here redraws — so a caller re-engraves after a step
-        exactly as it does after an edit.
+        What `clausters.gui.editing.Editing.distribute` asks of whatever was
+        registered for a structure — a `clausters.gui.editing.Domain` for an
+        editor, and this for a page, which is a **state** rather than a payload
+        in a vocabulary.
         """
-        moved = False
-        for leg in legs:
-            if int(leg.get("structure", -1)) != self._structure:
-                continue
-            for payload in leg.get("payloads", ()):
-                mei = (payload or {}).get("mei")
-                if isinstance(mei, str):
-                    moved |= self.load(mei)
-        return moved
+        mei = (payload or {}).get("mei")
+        return self.load(mei) if isinstance(mei, str) else False
 
     def adopt(self) -> None:
         """Another window in this context edited. Nothing here: a score is data

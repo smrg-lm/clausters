@@ -463,16 +463,20 @@ def test_a_reopened_box_undoes_its_own_edit_and_not_the_pieces():
     assert _region_at(written, 12).position == moved, "the piece did not move"
 
 
-def test_an_undo_nobody_can_apply_is_not_a_step():
-    """**A step nobody could apply is not a step.**
+def test_a_box_closed_does_not_block_the_piece_s_undo():
+    """**The pile's scope is the context's, not a window's.**
 
-    The walk moves the pile's cursor before anything is projected, so an entry
-    naming a structure no participant holds — a box whose window was closed —
-    was stepped *over*: the edit stayed and the order lost it. Closing the box,
-    undoing in the piece's window and opening it again left the samples edited
-    and unreachable, which is the one thing a history may not do.
+    An entry names a structure, and what puts an edit back onto one is its
+    *vocabulary* — neither of which is on screen. When the applier was a **view**
+    instead, a box entered from a piece and then closed left an entry nobody
+    could apply: the step was refused, and since a refused step puts the cursor
+    back, the very next undo hit the same entry. The pile was not missing one
+    step, it was **blocked** — every edit the piece had made behind that entry
+    was unreachable until the box was opened again.
 
-    Found by use 2026-09-10.
+    Found by use 2026-09-12, by hand, in `examples/editors/edit_multitrack.py`.
+    The earlier reading of it (2026-09-10) is the one this replaces: the refusal
+    was correct given a view-shaped participant, and the participant was wrong.
     """
     take = Take()
     written = piece()
@@ -481,6 +485,7 @@ def test_an_undo_nobody_can_apply_is_not_a_step():
     wid = next(iter(ed.view.widgets))
     assert ed.apply("/gui_event", [wid, 0, 0, "clips",
                                    "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7])
+    moved = _region_at(written, 12).position
     ed._route([wid, "enter", "12"])
     box = ed.entered["12"]
     box.draw()
@@ -491,17 +496,21 @@ def test_an_undo_nobody_can_apply_is_not_a_step():
     box.close()
     ed.entered.pop("12", None)
 
-    # An undo in the piece's window now names the stroke, which nothing here
-    # can write: the pile does not move, and it says why.
-    assert ed.undo() is False, "nothing could apply it"
-    assert take.frames[2:4] == [1.0, 1.0], "and the edit is still there"
-    assert ed.app.unreachable == "draw the samples"
+    # The stroke is still the top of the pile, and an undo in the **piece's**
+    # window performs it: the take and its vocabulary are registered here, and
+    # neither went with the window.
+    assert ed.undo() is True, "the piece can put back an edit made inside a box"
+    assert take.frames[2:4] == [0.0, 0.0], "and it is the stroke that was undone"
+    assert ed.app.unreachable is None
 
-    # Which is what makes it recoverable: the entry is still on top, waiting
-    # for the window that can perform it.
-    ed._route([wid, "enter", "12"])
-    assert ed.entered["12"].undo(), "the stroke is still the top of the pile"
-    assert take.frames[2:4] == [0.0, 0.0]
+    # ...and the order keeps going, which is the half that was actually broken:
+    # a refused step put the cursor back, so everything behind it was walled off.
+    assert ed.undo() is True, "the entry behind it is reachable"
+    assert _region_at(written, 12).position != moved, "the box went back"
+
+    # Both come forward again, in order.
+    assert ed.redo() is True and _region_at(written, 12).position == moved
+    assert ed.redo() is True and take.frames[2:4] == [1.0, 1.0]
 
 
 def _region_at(held, region_id: int):

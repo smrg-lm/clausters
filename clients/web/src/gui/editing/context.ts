@@ -47,6 +47,11 @@ export const FIRST_VERSION = 1;
  * What a context needs of a view: something with a window it can bring back in
  * step. {@link Editor} is the one that implements it.
  */
+/** What can put one payload of a history step back onto a structure. */
+export interface Applier {
+    project(structure: never | object, payload: unknown): boolean;
+}
+
 export interface Adopting {
     /**
      * Another view of this composition edited it: bring this window in step.
@@ -67,14 +72,6 @@ export interface Adopting {
      * edit, and the window that made it is not exempt from having changed.
      */
     dataChanged?(): void;
-    /**
-     * Put back the legs of a history step that name **this** participant's
-     * structure, and say whether anything moved.
-     *
-     * What {@link Editing.distribute} hands round. A participant need not draw
-     * anything: a `Score` answers this and has no window at all.
-     */
-    projectLegs(legs: readonly unknown[]): boolean;
 }
 
 /** Where a structure's context lives, keyed by the object it belongs to. */
@@ -109,7 +106,12 @@ export class Editing {
      * in the order, and minting a second identity for the second window would
      * leave its undo walking legs that name somebody else.
      */
-    protected readonly structures = new Map<object, number>();
+    /**
+     * What each structure was registered in the pile as, and **what can put an
+     * edit back onto it**. The applier is held here because the pile's scope is
+     * this context while a window's is a window: see {@link Editing.distribute}.
+     */
+    protected readonly structures = new Map<object, { id: number; applier: Applier | null }>();
     protected readonly attached = new Set<WeakRef<Adopting>>();
     /**
      * How deep the current turn is, and whether anything moved in it. One
@@ -140,20 +142,46 @@ export class Editing {
     }
 
     /**
-     * This structure's identity in the pile, minted on first ask.
+     * This structure's identity in the pile, minted on first ask, with **what
+     * can put an edit back onto it**.
      *
      * **Once per structure, not once per view.** Two windows over one thing are
      * one structure in the undo order, so a second identity for the second
      * window would leave its undo walking legs that name somebody else — which
      * looks exactly like a dead button.
+     *
+     * `applier` is anything answering `project(structure, payload)` — an editor
+     * hands its {@link Domain}, and a `Score` hands itself. It is kept **here**,
+     * beside the identity, because that is the scope the pile has: an entry
+     * names a structure and the order over entries is global, so an entry that
+     * only *some of the time* has somebody to apply it is an entry that blocks
+     * every entry behind it. Registered once and kept, applying an edit stops
+     * depending on whether a window happens to be open.
      */
-    identity(structure: object, domain: string): number {
-        let found = this.structures.get(structure);
+    identity(structure: object, domain: string, applier: Applier | null = null): number {
+        const found = this.structures.get(structure);
         if (found === undefined) {
-            found = this.history.register(domain);
-            this.structures.set(structure, found);
+            const id = this.history.register(domain);
+            this.structures.set(structure, { id, applier });
+            return id;
         }
-        return found;
+        // Registered by something that could not apply (a caller that only
+        // wanted the number); the first that can, wins the slot.
+        if (found.applier === null && applier !== null) found.applier = applier;
+        return found.id;
+    }
+
+    /**
+     * What puts an edit back onto the structure this identity names, with the
+     * structure itself — or `undefined` for one nothing registered.
+     */
+    applierOf(identity: number): { structure: object; applier: Applier } | undefined {
+        for (const [structure, held] of this.structures) {
+            if (held.id === identity && held.applier !== null) {
+                return { structure, applier: held.applier };
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -190,25 +218,39 @@ export class Editing {
     }
 
     /**
-     * Hand a step's legs round **everything registered here** and say whether
+     * Put a step's legs back onto the structures they name, and say whether
      * anything moved.
      *
      * One entry can name several structures — a stroke over a take and a bend of
      * the curve above it are one order, and so is an edit to a page beside a
-     * lane — so the step is offered to every participant and each takes the
-     * legs naming the structure it holds. Whoever is walking is included whether or not it is in the
-     * list, since a structure with no window open still holds legs the step may
-     * name.
+     * lane — so the legs come routed and each goes to whatever was registered
+     * for that identity.
      *
-     * It lives here rather than on the editor because a participant need not be
-     * one: what this asks of a thing is {@link Adopting.projectLegs}, and a
-     * `Score` answers it without drawing anything.
+     * **It asks the structures, not the windows**, and that is the whole of why
+     * it is written this way. A pile is ordered and global to this context,
+     * while a window comes and goes: when the applier was a *view*, a box
+     * entered from a piece and then closed left an entry nobody could apply, the
+     * step was refused, and — since a refused step puts the cursor back — every
+     * edit behind it became unreachable too. The pile was not missing one step,
+     * it was **blocked**. What can put an edit back is a structure and its
+     * vocabulary, neither of which is on screen, so that is what
+     * {@link Editing.identity} registers and this is what asks.
+     *
+     * `walker` is kept for callers that pass it and is not read: who drew the
+     * gesture matters to the redraw, which is the turn's, not to this.
      */
-    distribute(legs: readonly unknown[], walker: Adopting): boolean {
-        const views = this.views();
-        const walkers = views.includes(walker) ? views : [walker, ...views];
+    distribute(legs: readonly unknown[], _walker?: Adopting): boolean {
         let stepped = false;
-        for (const view of walkers) stepped = view.projectLegs(legs) || stepped;
+        for (const leg of legs) {
+            const named = leg as { structure?: number; payloads?: readonly unknown[] };
+            const held = this.applierOf(Number(named.structure ?? -1));
+            if (held === undefined) continue;
+            for (const payload of named.payloads ?? []) {
+                if (payload !== null && typeof payload === "object") {
+                    stepped = held.applier.project(held.structure, payload) || stepped;
+                }
+            }
+        }
         return stepped;
     }
 

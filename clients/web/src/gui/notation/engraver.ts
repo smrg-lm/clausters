@@ -205,9 +205,15 @@ export class Score {
         return context;
     }
 
-    /** This score's identity in the pile — minted once, per score. */
+    /**
+     * This score's identity in the pile — minted once, per score.
+     *
+     * It registers **itself** as what puts an edit back: a page is a state
+     * rather than a payload in some vocabulary, so what applies one is
+     * {@link Score.load} and there is no `Domain` in between.
+     */
     private get structure(): number {
-        return this.editing.identity(this, "score");
+        return this.editing.identity(this, "score", this);
     }
 
     /**
@@ -244,22 +250,15 @@ export class Score {
     }
 
     /**
-     * Put back the legs of a history step that name **this** score.
+     * Put one payload of a history step back onto this score.
      *
-     * What the context hands round, already gathered per structure. A page is
-     * not a view — nothing here redraws — so a caller re-engraves after a step
-     * exactly as it does after an edit.
+     * What {@link Editing.distribute} asks of whatever was registered for a
+     * structure — a `Domain` for an editor, and this for a page, which is a
+     * **state** rather than a payload in a vocabulary.
      */
-    projectLegs(legs: readonly unknown[]): boolean {
-        let moved = false;
-        for (const leg of legs as { structure?: number; payloads?: { mei?: unknown }[] }[]) {
-            if (Math.trunc(Number(leg.structure ?? -1)) !== this.structure) continue;
-            for (const payload of leg.payloads ?? []) {
-                const mei = payload?.mei;
-                if (typeof mei === "string") moved = this.load(mei) || moved;
-            }
-        }
-        return moved;
+    project(_structure: object, payload: unknown): boolean {
+        const mei = (payload as { mei?: unknown } | null)?.mei;
+        return typeof mei === "string" ? this.load(mei) : false;
     }
 
     /**
