@@ -1,8 +1,8 @@
 """Editing: the subdomain of the GUI where a picture writes back.
 
 Everything that turns a gesture into a change of the data, and the change back
-into a picture. It is a subpackage rather than a module because it is five
-collaborators and two editors, and because the boundaries between them are the
+into a picture. It is a subpackage rather than a module because it is six
+collaborators and four editors, and because the boundaries between them are the
 whole design:
 
 - `Application` — the window set: the host, the widget-id space, the

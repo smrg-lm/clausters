@@ -3890,3 +3890,37 @@ than being ticked here.
   the bridge that writes the document. **Related:** "Two views of one
   arrangement keep two histories" (Found by use) — a note with no id is also a
   note a history cannot name.
+
+- ⬜ **The intents an edit projects are collected and nobody reads one**
+  *(found 2026-09-12, reviewing `gui/editing/application.py` and `context.py`
+  against the multitrack editor)*. `Editing.moved` appends an intent per edit
+  and `Editing.turn` works out a `whole` bit from the list, and both are handed
+  to `adopt` — which every implementation ignores: `Editor.adopt` resyncs every
+  widget it holds and the `Score`'s does nothing. The seam was for adopting a
+  placement or a length as a **prop** so a foreign edit would not cost a
+  redefine, and it stopped being needed when `Application.publish` stopped
+  sending differences: the host reconciles a whole tree and keeps the screen
+  state a redefine used to drop.
+
+  What shipped is the removal of the dead half — `Editing.restructured` (no
+  caller in either client), `Editing.register` (`identity` is the door) and
+  `Application.id_of` are gone, and the doc comments on `moved`, `turn` and
+  `adopt` now say what the code does instead of describing the optimization.
+  **What is open is whether the seam stays at all**: `moved` is now `changed`
+  with a payload nothing reads, and the honest end of this is either a view
+  that answers an intent without redrawing, or `moved`/`intents`/`whole`
+  collapsing into `changed`. Both clients carry the same shape, so it lands in
+  both.
+
+- ⬜ **A box entered from a piece gets its own `Application`** *(found
+  2026-09-12, same review)*. `MultitrackEditor.enter` passes `context=` so the
+  undo order is the piece's, but not `app=`, so every entered box builds an
+  application of its own. It works — the id space is the host's once there is a
+  host, and `Editor.open` subscribes `apply` to the host directly — but it is
+  the case `application.py`'s own module docstring gives as the reason the class
+  exists ("several editors can share one ... the only thing shaped like one was
+  the multitrack"). A piece and the boxes opened out of it are one window set
+  and should be one application; what has to be checked first is what `Echo`
+  being one per application means for a box answering its own gestures, since
+  today each box has its own stamp and its own floor. The web client's
+  `enter` does the same thing and changes with it.

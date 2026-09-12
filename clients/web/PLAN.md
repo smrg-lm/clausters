@@ -4265,3 +4265,22 @@ sound.
   of what contains it, a duration in the unit of the material — and so is the
   place the conversion belongs, the flattening for playback. It lands in the same
   commit as the Python fix, since it is one arrangement model in two languages.
+
+- ⬜ **The editing path says nothing in the page** *(found 2026-09-12, reviewing
+  the two editing subpackages against each other)*. Python's
+  `clausters/gui/editing/trace.py` says the path out loud at five joints — an
+  event routed, an entry recorded, a step of the pile, a publish, an
+  acknowledgement — armed by `CLAUSTERS_LOG=gui.editing` or `watch()`, and its
+  `__init__` lists it as one of the collaborators. The page has no counterpart,
+  and no logging module at all under `src/base`, so an editing session that goes
+  wrong in front of a person is visible to nobody on this side. The gap is wider
+  than editing — it is `clausters.log` that has no port — so what lands first is
+  the area mechanism, with editing as the first area on it.
+
+- ⬜ **The intents an edit projects are collected and nobody reads one**
+  *(found 2026-09-12; written in full in `clients/python/PLAN.md`, "The intents
+  an edit projects are collected and nobody reads one")*. The page carries the
+  same shape: `Editing.moved` fills `intents`, `turn` derives `whole`, and
+  `Editor.adopt` names both with a leading underscore because it reads neither.
+  The dead half is already gone from both clients; whether the seam stays is one
+  decision for the two of them.

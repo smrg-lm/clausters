@@ -275,14 +275,6 @@ export class Application {
     }
 
     /**
-     * The id already drawing that name, or `undefined` — a lookup, which mints
-     * nothing and does not count as drawing it.
-     */
-    idOf(structure: number, role: string, key = "", drawer?: object): number | undefined {
-        return this.#ids(drawer).idOf(Math.trunc(structure), role, String(key));
-    }
-
-    /**
      * Start `drawer`'s draw: from here, every name it asks for counts as drawn,
      * and {@link Application.retireIds} takes back the rest.
      *

@@ -50,8 +50,11 @@ export const FIRST_VERSION = 1;
  */
 export interface Adopting {
     /**
-     * Another view of this composition edited it: bring this window in step —
-     * as props, or as a whole redraw when `whole`.
+     * Another view of this composition edited it: bring this window in step.
+     *
+     * Neither argument is read by anything that implements this. They are the
+     * seam for a view that could answer an intent as a prop instead of redrawing
+     * — see {@link Editing.moved} for why nothing needs to.
      */
     adopt(intents: readonly Intent[], whole: boolean): void;
     /**
@@ -115,13 +118,12 @@ export class Editing {
      */
     protected depth = 0;
     /**
-     * What the turn being run did: the intents it projected, and whether it
-     * changed **which widgets exist**. The two are answered differently by the
-     * other windows, which is the whole reason they are collected rather than
-     * reduced to a bit.
+     * The intents the turn being run projected onto the composition. Carried to
+     * {@link Adopting.adopt} for a view that can answer one as a **prop**; no
+     * view does today, and what they are still read for is the one bit `adopt`
+     * acts on — a turn that projected none is one nothing here can describe.
      */
     protected intents: Intent[] = [];
-    protected structural = false;
     protected changedInTurn = false;
 
     constructor() {
@@ -141,15 +143,6 @@ export class Editing {
             contexts.set(structure, context);
         }
         return context as T;
-    }
-
-    /**
-     * Take an unnamed structure into this history and get its identity — the
-     * crate's `History.register`. {@link Editing.identity} is the door an editor
-     * uses; this one is for a caller registering something it will route itself.
-     */
-    register(domain: string): number {
-        return this.history.register(domain);
     }
 
     /**
@@ -245,27 +238,22 @@ export class Editing {
     }
 
     /**
-     * One intent this turn wrote onto the data.
+     * One intent this turn wrote onto the data — a {@link Editing.changed} that
+     * says *what* changed.
      *
-     * The other windows adopt these as **props** — the placement, the length,
-     * the notes — which is what keeps a foreign edit from costing a redefine. A
-     * redefine rebuilds every widget and drops what the host had in flight, so
-     * doing it per edit makes a window flicker under a hand that is not even in
-     * it.
+     * **No view answers one as a prop today**, and the doc comment used to
+     * claim otherwise: adopting the placement or the length instead of redrawing
+     * is what this was collected for, and it stopped being needed when
+     * {@link Application.publish} stopped sending differences — the host
+     * reconciles a whole tree now and keeps the screen state that a redefine
+     * used to drop, so there is nothing left for a prop to save.
+     *
+     * What the list is still read for is its length, in {@link Editing.turn}: a
+     * turn that changed something and projected no intent is one nothing here
+     * can describe.
      */
     moved(intent: Intent): void {
         this.intents.push(intent);
-        this.changedInTurn = true;
-    }
-
-    /**
-     * Say that the turn changed **which widgets exist** — a cut, a split, a
-     * join, an undo of one. This is the case no prop can carry: a widget that
-     * was not there a moment ago is not a value, so the other windows have to
-     * be redrawn whole.
-     */
-    restructured(): void {
-        this.structural = true;
         this.changedInTurn = true;
     }
 
@@ -285,16 +273,15 @@ export class Editing {
         } finally {
             this.depth -= 1;
             if (this.depth === 0) {
-                const { intents, structural, changedInTurn: changed } = this;
+                const { intents, changedInTurn: changed } = this;
                 this.intents = [];
-                this.structural = false;
                 this.changedInTurn = false;
                 if (changed) {
                     // A turn that changed something and projected no intent is
                     // one nothing here can describe — a trim, a patch cord, a
                     // gesture applied to the objects directly — so the honest
                     // answer for the other windows is the whole picture.
-                    const whole = structural || intents.length === 0;
+                    const whole = intents.length === 0;
                     for (const held of [...this.attached]) {
                         const view = held.deref();
                         if (view === undefined) this.attached.delete(held);

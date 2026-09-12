@@ -34,7 +34,6 @@ a script writes changes.
 
 import weakref
 
-from ... import _native
 from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
 from .echo import Echo
@@ -254,12 +253,6 @@ class Application:
         """
         table = self._ids(drawer)
         return table.id_for(self._owner(drawer, table), int(structure), role, str(key))
-
-    def id_of(self, structure: int, role: str, key: str = "",
-              drawer=None) -> "int | None":
-        """The id already drawing that name, or ``None`` — a lookup, which mints
-        nothing and does not count as drawing it."""
-        return self._ids(drawer).id_of(int(structure), role, str(key))
 
     def reset_ids(self, drawer=None) -> None:
         """Start ``drawer``'s draw: from here, every name it asks for counts as

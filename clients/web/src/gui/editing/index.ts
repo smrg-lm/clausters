@@ -2,10 +2,14 @@
  * Editing: the subdomain of the GUI where a picture writes back.
  *
  * Everything that turns a gesture into a change of the data, and the change back
- * into a picture. It is a subpackage rather than a module because it is four
- * collaborators and two editors, and because the boundaries between them are the
- * whole design:
+ * into a picture. It is a subpackage rather than a module because it is five
+ * collaborators and four editors, and because the boundaries between them are
+ * the whole design:
  *
+ * - {@link Application} — the window set: the host, the widget-id space, the
+ *   acknowledgement and the walk of the undo order. Everything true of a
+ *   **session on screen** rather than of one structure, so several editors can
+ *   share one — and an editor handed none is an application of one.
  * - {@link Editor} — the generic one. It edits **one structure** and imports
  *   nothing from the arrangement: it opens a window through its {@link View},
  *   turns a gesture into a payload through its {@link Domain}, answers the host
@@ -22,11 +26,12 @@
  * - {@link Editing} — the editing context: the history, the version, and the
  *   views to tell. An editor **asks for it and never builds one**, which is what
  *   makes two windows over one thing walk one undo order.
- * {@link edit} is how a person calls it: one verb over the three fundamental
+ * {@link edit} is how a person calls it: one verb over the fundamental
  * structures, dispatching on what the structure is — {@link SamplesEditor} over
  * a `Buffer`, {@link PointsEditor} over an `Automation`, {@link NotesEditor}
- * over a `Timeline`. Each is `Editor` with its own domain and view in it and
- * nothing else, which is what the split was for.
+ * over a `Timeline`, {@link MultitrackEditor} over a `Multitrack`. Each is
+ * `Editor` with its own domain and view in it and nothing else, which is what
+ * the split was for.
  *
  * {@link View} here is **not** `gui/guidef.ts`'s `View`, and only this one is
  * reached through this module: the guidef one is a tree you can open, this one is

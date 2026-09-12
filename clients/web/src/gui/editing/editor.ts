@@ -907,8 +907,16 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Another view of this structure edited it: bring this window in step. A
-     * window that is not open has nothing to bring in step.
+     * Another view of this structure edited it: bring this window in step, by
+     * **redrawing every widget this editor holds**.
+     *
+     * Neither argument is read. They are the seam for a view that could answer
+     * an intent as a prop instead — which is what a redraw cost back when a
+     * definition meant *free this and build that*; it no longer does, since the
+     * host reconciles ({@link Application.publish}) and keeps the screen state a
+     * redefine used to drop.
+     *
+     * A window that is not open has nothing to bring in step.
      */
     adopt(_intents: readonly Intent[], _whole: boolean): void {
         if (this.host === null || this.windowId === null) return;

@@ -117,8 +117,6 @@ test("a named id is the same number on every redraw and a lease is not", () => {
     const leased = app.newId(drawer);
     assert.equal(app.idFor(7, "waveform", "", drawer), first, "a name is an identity");
     assert.notEqual(app.newId(drawer), leased, "a lease is not");
-    assert.equal(app.idOf(7, "waveform", "", drawer), first);
-    assert.equal(app.idOf(7, "roll", "", drawer), undefined, "a lookup mints nothing");
 });
 
 test("a draw retires only the names it stopped drawing", () => {

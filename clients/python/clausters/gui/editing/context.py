@@ -79,12 +79,11 @@ class Editing:
         #: its own `undo`, which changes the data on its own — and the other
         #: windows want *one* redraw, not two.
         self._depth = 0
-        #: What the turn being run did: the intents it projected, and whether it
-        #: changed **which widgets exist**. The two are answered differently by
-        #: the other windows, which is the whole reason they are collected
-        #: rather than reduced to a bit.
+        #: The intents the turn being run projected onto the data. Carried to
+        #: `adopt` for a view that can answer one as a **prop**; no view does
+        #: today, and what they are still read for is the one bit `adopt` acts
+        #: on — a turn that projected none is one nothing here can describe.
         self._intents: list = []
-        self._structural = False
         self._changed = False
 
     @classmethod
@@ -100,12 +99,6 @@ class Editing:
             context = cls()
             setattr(structure, ATTR, context)
         return context
-
-    def register(self, domain: str) -> int:
-        """Take an unnamed structure into this history and get its identity —
-        the crate's `History.register`. `identity` is the door an editor uses;
-        this one is for a caller registering something it will route itself."""
-        return self.history.register(domain)
 
     def identity(self, structure, domain: str) -> int:
         """This structure's identity in the pile, minted on first ask.
@@ -185,23 +178,21 @@ class Editing:
         self._changed = True
 
     def moved(self, intent: dict):
-        """One intent this turn wrote onto the data.
+        """One intent this turn wrote onto the data — a `changed` that says
+        *what* changed.
 
-        The other windows adopt these as **props** — the placement, the length,
-        the notes — which is what keeps a foreign edit from costing a redefine.
-        A redefine rebuilds every widget and drops what the host had in flight,
-        so doing it per edit makes a window flicker under a hand that is not
-        even in it."""
+        **No view answers one as a prop today**, and the docstring used to claim
+        otherwise: adopting the placement or the length instead of redrawing is
+        what this was collected for, and it stopped being needed when
+        `clausters.gui.editing.Application.publish` stopped sending differences
+        — the host reconciles a whole tree now and keeps the screen state that a
+        redefine used to drop, so there is nothing left for a prop to save.
+
+        What the list is still read for is its length, in `turn`: a turn that
+        changed something and projected no intent is one nothing here can
+        describe.
+        """
         self._intents.append(intent)
-        self._changed = True
-
-    def restructured(self):
-        """Say that the turn changed **which widgets exist** — a cut, a split, a
-        join, an undo of one.
-
-        This is the case no prop can carry: a widget that was not there a moment
-        ago is not a value, so the other windows have to be redrawn whole."""
-        self._structural = True
         self._changed = True
 
     @contextmanager
@@ -213,6 +204,10 @@ class Editing:
         to the window whose gesture it answered, so a second window would go on
         drawing something that had changed under it. Nested turns collapse into
         one, because a gesture that reaches here twice is still one gesture.
+
+        What each of them is told is `adopt`, and **every view answers it by
+        redrawing what it holds**: the intents and the `whole` bit ride along
+        for a view that could answer one more cheaply, and none does.
         """
         self._depth += 1
         try:
@@ -220,15 +215,14 @@ class Editing:
         finally:
             self._depth -= 1
             if self._depth == 0:
-                intents, structural, changed = (
-                    self._intents, self._structural, self._changed)
-                self._intents, self._structural, self._changed = [], False, False
+                intents, changed = self._intents, self._changed
+                self._intents, self._changed = [], False
                 if changed:
                     # A turn that changed something and projected no intent is
                     # one nothing here can describe -- a trim, a patch cord, a
                     # gesture applied to the objects directly -- so the honest
                     # answer for the other windows is the whole picture.
-                    whole = structural or not intents
+                    whole = not intents
                     for view in self.views():
                         if view is not source:
                             view.adopt(intents, whole)

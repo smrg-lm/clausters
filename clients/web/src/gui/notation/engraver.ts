@@ -265,6 +265,8 @@ export class Score {
     /**
      * Another window in this context edited. Nothing here: a score is data and
      * draws nothing of its own — whoever engraved the page redraws it.
+     *
+     * It takes no argument, the way no {@link Editor} reads one either.
      */
     adopt(): void {}
 
