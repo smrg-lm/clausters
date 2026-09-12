@@ -361,3 +361,27 @@ def test_the_crate_refuses_a_document_whose_id_names_two_different_nodes():
 
 # ---- the source table, and reopening into a running system ----
 
+
+
+def test_the_session_format_constant_is_the_crates():
+    """`clausters.document.SESSION_FORMAT` is a literal, so this is what keeps
+    it the crate's.
+
+    It is a literal because a `clausters.multitrack.Session` is plain data and
+    writing one must not need a native load. The cost of that is exactly this
+    check: without it the number drifts silently, which is what happened when
+    the crate moved to 2 for a source whose samples are spans of other sources
+    and both clients went on stamping 1 onto files that could carry one — a file
+    telling an older build it was safe to read.
+    """
+    from clausters import _native
+    from clausters.document import SESSION_FORMAT
+
+    try:
+        crate = _native.session_format()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+    assert SESSION_FORMAT == crate, (
+        f"the client stamps format {SESSION_FORMAT} and the crate writes "
+        f"{crate}: a session written here would claim a shape it does not have"
+    )

@@ -26,6 +26,7 @@ import {
     domainCoalesceKey,
     domainEdit,
     resolveSelection,
+    SESSION_FORMAT,
 } from "../src/document.ts";
 import type {
     Against,
@@ -340,4 +341,22 @@ test("a domain inverts its own edits the same way in both languages", () => {
             `${domain}: ${JSON.stringify(payload)}`,
         );
     }
+});
+
+test("the session format constant is the crate's", async () => {
+    // `SESSION_FORMAT` is a literal, so this is what keeps it the crate's. It is
+    // a literal because a `Session` is plain data and writing one must not need
+    // an `await loadCore()`. The cost of that is exactly this check: without it
+    // the number drifts silently, which is what happened when the crate moved to
+    // 2 for a source whose samples are spans of other sources and both clients
+    // went on stamping 1 onto files that could carry one -- a file telling an
+    // older build it was safe to read.
+    await loadCore();
+    const { sessionFormat } = await import("../src/core/clausters_core_web.js");
+    assert.equal(
+        SESSION_FORMAT,
+        sessionFormat(),
+        "the page stamps a format the crate does not write: a session written "
+            + "here would claim a shape it does not have",
+    );
 });

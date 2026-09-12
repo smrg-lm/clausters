@@ -3925,51 +3925,55 @@ than being ticked here.
   today each box has its own stamp and its own floor. The web client's
   `enter` does the same thing and changes with it.
 
-- ⬜ **The session format is restated in both clients, and it had already
-  drifted** *(found 2026-09-12, sweeping the clients for what the projections
-  track left behind)*. `O31` moved the crate's `session::FORMAT` from 1 to 2 —
-  `Location::Segments` is a tagged variant an older reader must fail on rather
-  than misread, which is the one thing the counter is for — and neither client
-  moved. `clausters.document.SESSION_FORMAT` said 1, `Session.format` defaulted
-  to 1, and a session built and written here was stamped 1 while the crate
-  stamps 2, so a file carrying a joined source would have told an older build it
-  was safe to read.
+- ✅ **The session format was restated in both clients, and it had already
+  drifted** *(found and fixed 2026-09-12)*. `O31` moved the crate's
+  `session::FORMAT` to 2 — `Location::Segments` is a tagged variant an older
+  reader must fail on rather than misread, which is the one thing the counter is
+  for — and neither client moved. A session built and written by a client was
+  stamped 1 while the crate stamps 2, so a file carrying a joined source told an
+  older build it was safe to read.
 
-  Both now say 2, and a session **read** keeps the number it was written with,
-  so an old file round-trips unpromoted. **What is open is that the number is
-  restated at all.** `session.rs`'s own module header states the rule this
-  breaks — "it has two writers in two languages ... so the shape lives once,
-  beside the tree it carries" — and there are three writers of the number today:
-  the crate, this client and the page. The fix is a door (`session_format`, or
-  the format riding in something a client already asks for) so a client carries
-  it rather than knowing it; that is a new C ABI symbol and a `CORE_ABI_VERSION`
-  bump, which is why it is written down rather than done in the sweep that found
-  it. Related: the same is true of `FIRST_VERSION`, which is restated in three
-  places and has never moved.
+  **The number stays a literal in both, and that is the decision.** Reading it
+  from the crate was tried and gives the wrong shape: a `Session` is plain data,
+  nothing else in `clausters.multitrack` opens the library and nothing in
+  `multitrack.ts` loads the core, so binding it would make *writing a session*
+  need a native load — an `await loadCore()` on a page that has never needed one.
+  What keeps the two literals the crate's is a **test in each client** that asks
+  the new door and compares (`test_the_session_format_constant_is_the_crates`,
+  and its twin in `document-parity.test.ts`), which is exactly the check that did
+  not exist. Both were verified by setting the constant back to 1 and watching
+  them fail.
 
-- ⬜ **Four readers the crate exports and nobody calls** *(found 2026-09-12,
-  same sweep)*. `clausters_multitrack_picture`, `_read`, `_read_points` and
+  The door is `clausters_session_format` / `sessionFormat`, core ABI **v55**. A
+  session **read** keeps the number it was written with, so an old file
+  round-trips unpromoted.
+
+- ✅ **Four readers the crate exported and nobody called** *(found and fixed
+  2026-09-12)*. `clausters_multitrack_picture`, `_read`, `_read_points` and
   `_read_rows` were the doors before `O26` and `O27`; the view is
   `clausters_editing_multitrack_props` now and the reading is
-  `clausters_editing_intake`. `O29` deleted the page's wrappers; this client's
-  four went the same way in the sweep, and the prose in three files and one test
-  that still named them as where the picture and the reading come from is
-  corrected. **What is open is the C ABI itself**: those four symbols are called
-  by neither client, and the standalone host links the crate in Rust rather than
-  through them, so they may reach nobody at all. Removing them is a
-  `CORE_ABI_VERSION` bump and wants a check that no host path uses them; leaving
-  them is a door that invites the wrong call, since `picture` is half of what
-  `props` answers. `docs/bindings.md` describes all four as live and says nothing
-  about being superseded, which is the part that is wrong either way.
+  `clausters_editing_intake`. `O29` deleted the page's wrappers, this client's
+  four went in the sweep that found this, and the four **C ABI and wasm exports**
+  are gone too (core ABI **v55**, breaking) along with their rows in
+  `docs/bindings.md`. Nothing called them: both clients moved off them at `O29`
+  and the standalone host links the crate in Rust rather than through the ABI.
 
-- ⬜ **Nothing on this side checks the builders against the server's catalog**
-  *(found 2026-09-12, when a refreshed parity vector failed the page's check)*.
-  `clients/web/tests/ugen-catalog.test.ts` compares every kind the server
-  declares against the TypeScript builders and fails on one that has neither a
-  builder nor a line saying it is built another way. This client has the machinery
-  it would need — `ugen_input_names` already maps kind to builder signature — and
-  no test over it, so `Meter` reached the server (the meter strip) and neither
-  client could write it: the page's check was reading a vector that had gone
-  stale, and nothing here was reading anything. `meter` is a builder in both
-  clients now; what is open is the check, which has to be this side's, since a
-  vector generated here cannot catch what is missing here.
+  A door that answers half of what its replacement answers is a door that invites
+  the wrong call — `picture` is the first half of what `props` says — which is
+  why they were removed rather than left with a note. **Found while doing it**:
+  the first cut took `mixer_defs` and `multitrack_plan` with them, because the
+  four are interleaved with those in `clausters-core-web`; `tests/bindings.rs`
+  caught it immediately, which is what that test is for.
+
+- ✅ **Nothing on this side checked the builders against the server's catalog**
+  *(found 2026-09-12, when a refreshed parity vector failed the page's check;
+  fixed the same day)*. `test_ugen_catalog_matches_the_python_callables` existed
+  and contrasted every signature against `/ugen_query` — but a kind with **no**
+  callable was skipped in one line (`if fn is None ... continue`), and a builder
+  that was never written has no signature to disagree with. So the one drift
+  that matters most was the one drift it could not see, and `Meter` reached the
+  server (the meter strip) with neither client able to write it. The skip is an
+  assertion now, against a declared `_NO_CALLABLE` list held exact both ways —
+  the same seven operators the page excuses, and an entry that grows a builder
+  has to leave the list. Checked by breaking it: renaming the kind `meter` builds
+  fails the test with the kind's name in the message.

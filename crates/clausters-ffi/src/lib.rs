@@ -379,10 +379,33 @@ pub use time::*;
 /// hands it back. `clausters_editing_multitrack_names` goes with them, the
 /// minting correction's half that is a fact about the piece. **Additive**, and
 /// the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 54;
+/// **v55 the superseded readers go, and the format is askable.** The four
+/// doors `O26` and `O27` replaced -- `clausters_multitrack_picture` and the
+/// three `clausters_multitrack_read*` -- are **removed**: the view is
+/// `clausters_editing_multitrack_props` and the reading is
+/// `clausters_editing_intake`, both clients have called those since `O29`, and
+/// a door that answers half of what its replacement answers is a door that
+/// invites the wrong call. `clausters_session_format` arrives in their place,
+/// so a client can ask what format the crate writes instead of only knowing.
+/// **Breaking**: a caller of the four is a caller of symbols that no longer
+/// exist.
+pub const CORE_ABI_VERSION: u32 = 55;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_abi_version() -> u32 {
     CORE_ABI_VERSION
+}
+
+/// The session format this build writes — [`clausters_document::session::FORMAT`].
+///
+/// A client **carries** this number rather than knowing it. It was restated in
+/// both clients until 2026-09-12, and by then it had already drifted: the crate
+/// moved to 2 for a source whose samples are spans of other sources, and both
+/// clients went on stamping 1 onto files that could contain one. The session
+/// module's own rule is that the shape lives once beside the tree it carries,
+/// and the number is part of the shape.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_session_format() -> u32 {
+    clausters_document::session::FORMAT
 }

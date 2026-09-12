@@ -456,9 +456,12 @@ export const FIRST_VERSION = 1;
  * sources, which is a tagged variant an older reader must fail on rather than
  * read as something else.
  *
- * It is restated here rather than bound, and that is why it drifted: the crate
- * moved to 2 and this said 1 until somebody read the two side by side. See
- * `clients/web/PLAN.md`, "The session format is restated in both clients".
+ * A literal rather than a call into the core, deliberately: a `Session` is plain
+ * data and `multitrack.ts` opens the core for nothing else, so reading the
+ * number from wasm would make writing a session need an `await loadCore()` it
+ * has never needed. What keeps the two in step instead is a **test** that asks
+ * the crate (`sessionFormat`) and compares — which is the check that did not
+ * exist when this said 1 and the crate had moved to 2.
  */
 export const SESSION_FORMAT = 2;
 

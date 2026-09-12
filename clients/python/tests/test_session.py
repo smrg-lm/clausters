@@ -374,6 +374,21 @@ _WIRE_ORDER_DIFFERS = {
     **_WIRE_CHANNEL_IS_THE_BUILDERS,
 }
 
+# Kinds with no builder of their own, because another surface builds them. The
+# contrast below **fails** on a kind that is in neither this list nor the
+# callables: a kind the server grew and no client can write is exactly what the
+# signature check cannot see, since a missing builder has no signature to
+# disagree with. `Meter` sat here unwritten for a week for that reason.
+_NO_CALLABLE = {
+    "Add": "built by the `+` operator on a graph node",
+    "Sub": "built by the `-` operator on a graph node",
+    "Mul": "built by the `*` operator on a graph node",
+    "Div": "built by the `/` operator on a graph node",
+    "BinaryOpUGen": "built by every other binary selector on a graph node",
+    "UnaryOpUGen": "built by every unary selector method on a graph node",
+    "RangeMapUGen": "built by every range-map method on a graph node",
+}
+
 
 def _python_callables_by_kind():
     """Maps each wire kind to the `clausters.defs.ugens` callable that builds
@@ -417,7 +432,20 @@ def test_ugen_catalog_matches_the_python_callables():
         checked = 0
         for u in catalog:
             fn = by_kind.get(u.name)
-            if fn is None or u.name in _WIRE_ORDER_DIFFERS:
+            if fn is None:
+                # **A kind with no callable is the failure this cannot see
+                # otherwise.** Everything below contrasts a signature against
+                # the wire, and a builder that was never written has no
+                # signature to disagree with -- so without this the check is
+                # silent about the one drift that matters most, a UGen the
+                # server grew that nobody can write.
+                assert u.name in _NO_CALLABLE, (
+                    f"{u.name} has no Python builder and is not declared as "
+                    f"built another way -- the packages move together, so a "
+                    f"kind the server grew needs one here too"
+                )
+                continue
+            if u.name in _WIRE_ORDER_DIFFERS:
                 continue
             params = [p for p in inspect.signature(fn).parameters.values()
                       if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
@@ -453,6 +481,15 @@ def test_ugen_catalog_matches_the_python_callables():
         for name in _WIRE_ORDER_DIFFERS:
             assert name in kinds, f"{name} is no longer in the server catalog"
             assert name in by_kind, f"{name} has no Python callable any more"
+        # The same exactness for the other list, and the other way round: an
+        # entry here must still be a live kind that still has no callable, so a
+        # builder written later cannot leave its own excuse standing.
+        for name in _NO_CALLABLE:
+            assert name in kinds, f"{name} is no longer in the server catalog"
+            assert name not in by_kind, (
+                f"{name} has a Python callable now -- take it out of "
+                f"_NO_CALLABLE so it is contrasted like the rest"
+            )
     finally:
         s.close()
 

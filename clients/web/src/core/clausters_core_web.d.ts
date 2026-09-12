@@ -1109,22 +1109,6 @@ export function mixerDefs(widths: string, master: number): string;
 export function multitrackNames(piece: string): string;
 
 /**
- * **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
- * or an empty string for a piece that will not parse.
- *
- * The multitrack view's own mapping, and there is one of it: what a row and a
- * box *are* is the format's business, so the standalone host and every client
- * draw the same picture of the same piece rather than each deriving one.
- *
- * **In beats and seconds.** A timeline axis counts sample frames and this
- * crate has no tempo function; a page crosses with the tempo-map calls it
- * already binds, and a *length* is the difference of two positions there.
- * `source` is the document's source id, not a server buffer: which buffer a
- * source was read into is the page's own table.
- */
-export function multitrackPicture(piece: string): string;
-
-/**
  * **What to instantiate to play a piece** — the instance plan, or an empty
  * string for a piece that will not parse.
  *
@@ -1151,57 +1135,6 @@ export function multitrackPlan(piece: string, sample_rate: number, default_bpm: 
  * played from are the same samples.
  */
 export function multitrackProps(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
-
-/**
- * **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
- * the piece's own vocabulary, or an empty string for input that will not
- * parse.
- *
- * The reader every multitrack view needs and none should write: the report is
- * the *piece* rather than the gesture, so a move, a block drag, a trim, a
- * split, a delete and a paste all arrive as one list, and telling them apart
- * is one rule written once. `placed` is a JSON array of the boxes as they now
- * stand.
- *
- * A box whose name is not a region's id is a **new** region — a split names
- * its halves after the box they came from — and one over samples the caller
- * could not resolve is not invented at all, since the document would name a
- * source nobody can open.
- */
-export function multitrackRead(piece: string, placed: string): string;
-
-/**
- * **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
- * the piece's own vocabulary, or an empty string for input that will not
- * parse.
- *
- * The twin of {@link multitrackRead} for the light views. The report is every
- * curve there is, rows and layers alike, for the same reason a box report is
- * every box, so what comes out is the difference: one `SetAutomation` per
- * curve whose break-points actually moved, and nothing at all for a hand that
- * looked without editing.
- *
- * A name that is no automation's id is dropped rather than minted: a curve is
- * declared by whoever holds the piece, and a hand that dragged a break-point
- * made no new one.
- */
-export function multitrackReadPoints(piece: string, reported: string): string;
-
-/**
- * **What a report of a multitrack's rows means** — `{"intents": [...]}`, in
- * the piece's own vocabulary, or an empty string for input that will not
- * parse.
- *
- * The third of the readers, beside {@link multitrackRead} for the boxes and
- * {@link multitrackReadPoints} for the curves. The report is every row, in the
- * order they are shown, so what comes out is the difference and it is **one**
- * `SetTracks` whatever changed: a name that is a track's id is that track
- * (with the strip's mute, solo and level on it), a name that is no track's id
- * is a track a hand made, a track the report leaves out is gone with its
- * boxes, and the order is the report's. The ids a new track needs are minted
- * from the piece itself, so there is nothing for a caller to reserve.
- */
-export function multitrackReadRows(piece: string, reported: string): string;
 
 /**
  * JS face: the boot-derived node-id partition for a node table of
@@ -1300,6 +1233,18 @@ export function secs_to_beats(tempo: number, base_beats: number, base_seconds: n
  * Seconds → sample count at `sample_rate` (ties to even).
  */
 export function secs_to_samples(secs: number, sample_rate: number): number;
+
+/**
+ * **The session format this build writes** — the crate's `session::FORMAT`.
+ *
+ * Both clients keep the number as a **literal**, because a `Session` is plain
+ * data and writing one must not need an `await loadCore()`. What keeps the two
+ * literals the crate's is a test in each client that asks this and compares —
+ * the check that did not exist when the format moved to 2 and both clients
+ * went on stamping 1 onto files that could carry a source whose samples are
+ * spans of other sources.
+ */
+export function sessionFormat(): number;
 
 /**
  * Apply one operation to a score model, both as JSON, returning the new model.
@@ -1505,12 +1450,8 @@ export interface InitOutput {
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackNames: (a: number, b: number) => [number, number];
-    readonly multitrackPicture: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly multitrackReadPoints: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly multitrackReadRows: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1579,6 +1520,7 @@ export interface InitOutput {
     readonly score_undo: (a: number) => number;
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
+    readonly sessionFormat: () => number;
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];

@@ -4285,17 +4285,18 @@ sound.
   The dead half is already gone from both clients; whether the seam stays is one
   decision for the two of them.
 
-- ⬜ **The session format is restated in both clients, and it had already
-  drifted** *(found 2026-09-12; written in full in `clients/python/PLAN.md`,
-  "The session format is restated in both clients")*. `SESSION_FORMAT` and
-  `Session.format` said 1 while the crate has been at 2 since `O31`. Both now
-  say 2 here too, and a session read keeps the number it was written with; what
-  is open is that a client knows the number rather than carrying it.
+- ✅ **The session format was restated in both clients, and it had already
+  drifted** *(found and fixed 2026-09-12; written in full in
+  `clients/python/PLAN.md`)*. `SESSION_FORMAT` and `Session.format` said 1 while
+  the crate has been at 2 since `O31`. Both say 2 now, and the number stays a
+  **literal** on purpose: a `Session` is plain data and `multitrack.ts` opens the
+  core for nothing else, so reading it from wasm would make writing a session
+  need an `await loadCore()`. `document-parity.test.ts` asks the new
+  `sessionFormat` door and compares instead.
 
-- ⬜ **Four readers the crate exports and nobody calls** *(found 2026-09-12;
-  written in full in `clients/python/PLAN.md`)*. `O29` already deleted this
+- ✅ **Four readers the crate exported and nobody called** *(found and fixed
+  2026-09-12; written in full in `clients/python/PLAN.md`)*. `O29` deleted this
   package's wrappers over `multitrackPicture`/`multitrackRead` and its two
-  siblings; what stayed is the prose in `gui/editing/edit.ts` and
-  `gui-multitrack-edit.test.ts` naming them as where the picture and the reading
-  come from, now corrected to `multitrackProps`/`editingIntake`. Whether the C
-  ABI and wasm doors themselves go is one decision for the crate.
+  siblings; the prose in `gui/editing/edit.ts` and `gui-multitrack-edit.test.ts`
+  that still named them is corrected to `multitrackProps`/`editingIntake`, and
+  the four **wasm exports** are gone with their C ABI twins (core ABI **v55**).

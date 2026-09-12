@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 54
+CORE_ABI_VERSION = 55
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -271,6 +271,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_names.restype = ctypes.c_size_t
+    lib.clausters_session_format.restype = ctypes.c_uint32
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -553,22 +554,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_tempomap_from_changes.restype = ctypes.c_void_p
     lib.clausters_tempomap_from_changes.argtypes = [
         ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double,
-    ]
-    lib.clausters_multitrack_picture.restype = ctypes.c_size_t
-    lib.clausters_multitrack_picture.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-    ]
-    lib.clausters_multitrack_read.restype = ctypes.c_size_t
-    lib.clausters_multitrack_read.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-    ]
-    lib.clausters_multitrack_read_points.restype = ctypes.c_size_t
-    lib.clausters_multitrack_read_points.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-    ]
-    lib.clausters_multitrack_read_rows.restype = ctypes.c_size_t
-    lib.clausters_multitrack_read_rows.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_view_not_an_edit.restype = ctypes.c_size_t
     lib.clausters_view_not_an_edit.argtypes = [u8p, ctypes.c_size_t]
@@ -1523,8 +1508,16 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
     return json.loads(ctypes.string_at(out, n).decode("utf-8"))
 
 
+def session_format() -> int:
+    """**The session format this build writes** — the crate's
+    ``session::FORMAT``, carried rather than known.
 
-
+    It is asked of the library rather than written down here because it was
+    written down here, in two clients, and had already drifted: the crate moved
+    to 2 for a source whose samples are spans of other sources and both clients
+    went on stamping 1 onto files that could carry one.
+    """
+    return int(lib().clausters_session_format())
 
 
 def view_not_an_edit() -> tuple:

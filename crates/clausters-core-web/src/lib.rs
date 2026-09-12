@@ -2473,34 +2473,6 @@ pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
     serde_json::to_string(&edited).unwrap_or_default()
 }
 
-/// **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
-/// or an empty string for a piece that will not parse.
-///
-/// The multitrack view's own mapping, and there is one of it: what a row and a
-/// box *are* is the format's business, so the standalone host and every client
-/// draw the same picture of the same piece rather than each deriving one.
-///
-/// **In beats and seconds.** A timeline axis counts sample frames and this
-/// crate has no tempo function; a page crosses with the tempo-map calls it
-/// already binds, and a *length* is the difference of two positions there.
-/// `source` is the document's source id, not a server buffer: which buffer a
-/// source was read into is the page's own table.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = multitrackPicture)]
-pub fn multitrack_picture(piece: &str) -> String {
-    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
-    else {
-        return String::new();
-    };
-    serde_json::to_string(&serde_json::json!({
-        "rows": clausters_document::multitrack::picture::rows(&piece),
-        "boxes": clausters_document::multitrack::picture::boxes(&piece),
-        "curves": clausters_document::multitrack::picture::curves(&piece),
-        "layers": clausters_document::multitrack::picture::layers(&piece),
-    }))
-    .unwrap_or_default()
-}
-
 /// **The defs a piece of these widths is played by** — `{"synth": [...],
 /// "graph": [...]}`, each list in the order it must be sent, or an empty string
 /// for a width nothing is written for.
@@ -2571,83 +2543,18 @@ pub fn multitrack_plan(piece: &str, sample_rate: f64, default_bpm: f64, sources:
     serde_json::to_string(&plan).unwrap_or_default()
 }
 
-/// **What a report of a multitrack's curves means** — `{"intents": [...]}`, in
-/// the piece's own vocabulary, or an empty string for input that will not
-/// parse.
+/// **The session format this build writes** — the crate's `session::FORMAT`.
 ///
-/// The twin of {@link multitrackRead} for the light views. The report is every
-/// curve there is, rows and layers alike, for the same reason a box report is
-/// every box, so what comes out is the difference: one `SetAutomation` per
-/// curve whose break-points actually moved, and nothing at all for a hand that
-/// looked without editing.
-///
-/// A name that is no automation's id is dropped rather than minted: a curve is
-/// declared by whoever holds the piece, and a hand that dragged a break-point
-/// made no new one.
+/// Both clients keep the number as a **literal**, because a `Session` is plain
+/// data and writing one must not need an `await loadCore()`. What keeps the two
+/// literals the crate's is a test in each client that asks this and compares —
+/// the check that did not exist when the format moved to 2 and both clients
+/// went on stamping 1 onto files that could carry a source whose samples are
+/// spans of other sources.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = multitrackReadPoints)]
-pub fn multitrack_read_points(piece: &str, reported: &str) -> String {
-    let (Ok(piece), Ok(reported)) = (
-        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
-        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Curved>>(reported),
-    ) else {
-        return String::new();
-    };
-    let intents = clausters_document::multitrack::picture::read_points(&piece, &reported);
-    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
-}
-
-/// **What a report of a multitrack's rows means** — `{"intents": [...]}`, in
-/// the piece's own vocabulary, or an empty string for input that will not
-/// parse.
-///
-/// The third of the readers, beside {@link multitrackRead} for the boxes and
-/// {@link multitrackReadPoints} for the curves. The report is every row, in the
-/// order they are shown, so what comes out is the difference and it is **one**
-/// `SetTracks` whatever changed: a name that is a track's id is that track
-/// (with the strip's mute, solo and level on it), a name that is no track's id
-/// is a track a hand made, a track the report leaves out is gone with its
-/// boxes, and the order is the report's. The ids a new track needs are minted
-/// from the piece itself, so there is nothing for a caller to reserve.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = multitrackReadRows)]
-pub fn multitrack_read_rows(piece: &str, reported: &str) -> String {
-    let (Ok(piece), Ok(reported)) = (
-        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
-        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Strip>>(reported),
-    ) else {
-        return String::new();
-    };
-    let intents = clausters_document::multitrack::picture::read_rows(&piece, &reported);
-    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
-}
-
-/// **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
-/// the piece's own vocabulary, or an empty string for input that will not
-/// parse.
-///
-/// The reader every multitrack view needs and none should write: the report is
-/// the *piece* rather than the gesture, so a move, a block drag, a trim, a
-/// split, a delete and a paste all arrive as one list, and telling them apart
-/// is one rule written once. `placed` is a JSON array of the boxes as they now
-/// stand.
-///
-/// A box whose name is not a region's id is a **new** region — a split names
-/// its halves after the box they came from — and one over samples the caller
-/// could not resolve is not invented at all, since the document would name a
-/// source nobody can open.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = multitrackRead)]
-pub fn multitrack_read(piece: &str, placed: &str) -> String {
-    let (Ok(piece), Ok(placed)) = (
-        serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece),
-        serde_json::from_str::<Vec<clausters_document::multitrack::picture::Placed>>(placed),
-    ) else {
-        return String::new();
-    };
-    let next = clausters_document::multitrack::picture::fresh_id(&piece);
-    let intents = clausters_document::multitrack::picture::read(&piece, &placed, next);
-    serde_json::to_string(&serde_json::json!({ "intents": intents })).unwrap_or_default()
+#[wasm_bindgen(js_name = sessionFormat)]
+pub fn session_format() -> u32 {
+    clausters_document::session::FORMAT
 }
 
 /// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
