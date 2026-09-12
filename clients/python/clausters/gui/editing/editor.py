@@ -546,7 +546,12 @@ class Editor:
             return False
         if self.domain is None:
             return False
-        payloads = self.domain.payloads(self.structure, tag, values)
+        # **One reading of one gesture.** The payloads, what an undo menu calls
+        # them and why the gesture was refused all come off the same answer,
+        # because they are three things about *one* report and reading it three
+        # times is how they come to be three answers.
+        taken = self.domain.read(self.structure, tag, values)
+        payloads = taken.get("payloads") or []
         log.debug("event  %s %r -> %s", wid, tag,
                   "no payload" if not payloads
                   else ", ".join(str(p.get("intent")) for p in payloads))
@@ -554,14 +559,15 @@ class Editor:
             # Nothing, or a refusal. A refusal says why and hands the widget
             # back what it should be drawing, so the picture stops agreeing
             # with the hand instead of with the structure.
-            reason = self.domain.refusal(self.structure, tag, values)
+            reason = taken.get("refusal")
             if reason is not None:
                 self._reason = reason
                 self._resync(wid)
             return False
+        label = str(taken.get("label") or "edit")
         if len(payloads) == 1:
-            return self._edit(payloads[0], self.domain.label(payloads[0]))
-        return self._edit_all(payloads, self.domain.label(payloads[0]))
+            return self._edit(payloads[0], label)
+        return self._edit_all(payloads, label)
 
     def interface(self, widget_id: int, tag: str, values) -> bool:
         """**An interface event**: a tag that asks this editor for something

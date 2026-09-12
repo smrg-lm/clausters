@@ -8,7 +8,7 @@
  * and nothing else.
  *
  * **Nothing here derives the picture, and nothing here reads a gesture.** Both
- * are the crate's (`multitrackPicture` and `multitrackRead`), which is what
+ * are the crate's (`multitrackProps` and `editingIntake`), which is what
  * makes this client, the Python client and the standalone host draw the same
  * piece and read the same report: what a row and a box *are*, and what a list of
  * boxes *means*, are one rule each and not one per language. What this adds is
@@ -32,8 +32,7 @@ import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit } from "../../document.ts";
 import type { Curve, Curved } from "../../multitrack.ts";
 import {
-    Multitrack, multitrackPicture, multitrackProps, multitrackRead, multitrackReadPoints,
-    multitrackReadRows,
+    Multitrack, multitrackProps,
 } from "../../multitrack.ts";
 import type { Box, Placed, Region, Row, Strip } from "../../multitrack.ts";
 import { button, label, layout, node, timeruler, window as guiWindow } from "../guidef.ts";
@@ -67,12 +66,6 @@ const ROW_H = 96.0;
  * because what it draws is one line and not a stack of boxes.
  */
 const CURVE_H = 40.0;
-
-/**
- * What the widget's `points` prop takes and reports: flat
- * `curve t v shape amount` quintuples, each naming the curve it is on.
- */
-const POINT_QUINTUPLE = 5;
 
 /**
  * The tempo a piece that never said one is read at, in beats per second — one,
@@ -290,149 +283,44 @@ export class Bridge {
     }
 }
 
-/** A flat payload as groups of `n`; a trailing partial group is dropped rather
- * than half-read, the rule every flat payload here follows. */
-function groups(values: readonly unknown[], n: number): unknown[][] {
-    const out: unknown[][] = [];
-    for (let i = 0; i + n <= values.length; i += n) out.push(values.slice(i, i + n));
-    return out;
-}
-
 /**
  * A piece's vocabulary: the crate's `MultitrackIntent`, both ways.
  *
- * It reads nothing itself. A report of the boxes goes to `multitrackRead`, which
- * is the same reader the standalone host uses, and an edit is applied through
- * `domainEdit`, which is where the inverse comes from.
+ * It reads nothing itself. A gesture goes to `editingIntake`, which is the same
+ * reading the standalone host does, and an edit is applied through `domainEdit`,
+ * which is where the inverse comes from.
  */
 export class MultitrackDomain extends Domain<Multitrack> {
     override readonly name = MULTITRACK;
+    override readonly ingested = true;
     readonly bridge: Bridge;
-
-    /** What an undo menu calls each of the piece's verbs. */
-    static readonly LABELS: Record<string, string> = {
-        placeregion: "move a clip",
-        trimregion: "trim a clip",
-        setlane: "edit the clips",
-        settracks: "mix a track",
-        splitregion: "split a clip",
-        joinregions: "join the clips",
-        setautomation: "draw a curve",
-    };
 
     constructor(bridge: Bridge) {
         super();
         this.bridge = bridge;
     }
 
-    // ---- a gesture, as edits ----
-
-    override payloads(piece: Multitrack, tag: string, values: readonly unknown[]): unknown[] {
-        if (tag === "clips") return multitrackRead(this.state(piece), this.placed(values));
-        if (tag === "lanes") return this.strips(piece, values);
-        if (tag === "points") {
-            const state = this.state(piece);
-            return multitrackReadPoints(
-                state,
-                this.curved(values, basesOf(multitrackPicture(state))),
-            );
-        }
-        return [];
-    }
-
     /**
-     * The singular door, for the one-edit case. {@link MultitrackDomain.payloads}
-     * is what a multitrack actually goes through: a report is the piece, so one
-     * message is however many edits it takes.
-     */
-    payload(piece: Multitrack, tag: string, values: readonly unknown[]): unknown {
-        const found = this.payloads(piece, tag, values);
-        return found.length === 1 ? found[0] : null;
-    }
-
-    /**
-     * The flat `clips` payload as the crate's boxes: names as they came,
-     * positions in beats, the window's own numbers in seconds.
-     */
-    private placed(values: readonly unknown[]): Placed[] {
-        const out: Placed[] = [];
-        for (const group of groups(values, SEPTUPLE)) {
-            const [name, lane, at, dur, start, , source] = group;
-            const row = Number(String(lane));
-            // A row is named by its track's id and never renamed, so a name that
-            // is not one names no row this piece has.
-            if (!Number.isFinite(row)) continue;
-            const position = this.bridge.beatAt(Number(at));
-            const length = this.bridge.beatAt(Number(at) + Number(dur)) - position;
-            out.push({
-                name: String(name),
-                row: Math.trunc(row),
-                position,
-                length,
-                start: Number(start) / (this.bridge.rate || 1.0),
-                // How much a **new** box shows: the stretch it occupies, crossed
-                // to the wall clock the only way a length may be.
-                content: this.bridge.tempo.spanSecs(position, position + length),
-                source: this.bridge.sources.source(Number(source)),
-            });
-        }
-        return out;
-    }
-
-    /**
-     * The flat `points` payload as the crate's curves: one entry per curve
-     * named, its break-points back on the musical axis.
+     * The report, the piece it is over, and the axis a beat lands on.
      *
-     * The widget reports **every** curve there is, in one list, so they are
-     * gathered by name here — the crate reads the difference and says nothing
-     * about the ones that did not move.
+     * A report of the boxes, the rows or the break-points is the **whole**
+     * structure rather than the gesture, so the piece has to be in hand for the
+     * reading to say what the difference is. The rate and the source table are
+     * the same two the picture is drawn with, which is what keeps a box from
+     * going out on one axis and coming back on another.
      */
-    private curved(values: readonly unknown[], bases: Map<string, number>): Curved[] {
-        const found = new Map<string, Curved["points"]>();
-        for (const group of groups(values, POINT_QUINTUPLE)) {
-            const [name, at, value, shape, amount] = group;
-            const points = found.get(String(name)) ?? [];
-            // **Against the same base the picture was drawn from**: a layer's
-            // time is its box's own, so a break-point inside one comes back as
-            // a beat from that box's start.
-            const base = bases.get(String(name)) ?? 0;
-            points.push({
-                at: this.bridge.beatIn(base, Number(at)),
-                value: Number(value),
-                // **What a shape is stays the page's**: the crate carries a
-                // point's data and never reads it, which is what keeps an undo
-                // from putting a bent curve back straight.
-                data: { shape: Math.trunc(Number(shape)), curve: Number(amount) },
-            });
-            found.set(String(name), points);
-        }
-        return [...found].map(([name, points]) => ({ name, points }));
-    }
-
-    /**
-     * The mixer's payload: mute, solo and the fader, in the piece's one verb
-     * over a track.
-     *
-     * A strip saying what the track already says is not an edit, which is what
-     * keeps one fader drag from rewriting every track — and the whole list
-     * travels because the piece has no verb for one track.
-     */
-    /**
-     * The rows' payload as the crate reads it: what a report of every row
-     * *means*, in the piece's one verb over its tracks.
-     *
-     * The whole list travels because the piece has no verb for one track — a
-     * report is the piece here as it is for the boxes — so the difference is
-     * what comes out, and it is one `settracks` whatever changed: a level
-     * moved, a track added, a track gone with its boxes.
-     *
-     * **The rule is the crate's**, like the boxes' and the curves': a client
-     * that read this payload itself would be writing the mapping a second time
-     * in its own language, which is how one client comes to add a track the
-     * other cannot.
-     */
-    private strips(piece: Multitrack, values: readonly unknown[]): unknown[] {
-        return multitrackReadRows(piece.write(), rowProps(values));
+    override request(
+        piece: Multitrack,
+        _tag: string,
+        values: readonly unknown[],
+    ): Record<string, unknown> {
+        return {
+            values: [...values],
+            state: this.state(piece),
+            rate: this.bridge.rate,
+            defaultBpm: this.bridge.bpm,
+            sources: this.bridge.sources.table(),
+        };
     }
 
     // ---- the state, and writing one back ----
@@ -466,34 +354,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
         this.bridge.refresh(piece);
         return true;
     }
-
-    override label(payload: unknown): string {
-        const intent = String((payload as { intent?: unknown })?.intent ?? "");
-        return MultitrackDomain.LABELS[intent] ?? "edit the piece";
-    }
 }
-
-/** The crate's rows as the widget's flat sextuples. */
-/**
- * The flat `lanes` payload as the crate's strips.
- *
- * The label and the height are dropped rather than sent: a row's label is the
- * track's name where it has one and a made-up one where it has not, and its
- * height is this window's. Neither is a fact about the piece, so neither is
- * reported into it.
- */
-function rowProps(values: readonly unknown[]): Strip[] {
-    return [...groups(values, SEXTUPLE)].map((group) => {
-        const [name, , , mute, solo, gain] = group;
-        return {
-            name: String(name),
-            mute: Number(mute) !== 0,
-            solo: Number(solo) !== 0,
-            gain: Number(gain),
-        };
-    });
-}
-
 /**
  * The position cursor in timeline samples: where the editor last saw it placed,
  * and the top of the piece until a hand places one.
@@ -568,24 +429,6 @@ function domainOf(curve: Curve): [number, number] {
     const target = curve.target as Record<string, unknown> | undefined;
     if (!target || typeof target !== "object") return [0.0, 1.0];
     return [Number(target.min ?? 0.0), Number(target.max ?? 1.0)];
-}
-
-/**
- * **What each curve's time is measured from**, by curve name.
- *
- * A track automation runs the timeline, so it is measured from the origin; a
- * clip envelope is drawn inside its box and is measured from where that box
- * starts. It is the one thing that differs between the two on the wire, and the
- * reason it is worked out here is that the beat→frame crossing is the page's.
- */
-function basesOf(picture: { boxes: readonly Box[]; curves: readonly Curve[]; layers: readonly Curve[] }): Map<string, number> {
-    const where = new Map(picture.boxes.map((box) => [String(box.region), Number(box.position)]));
-    const bases = new Map<string, number>();
-    for (const curve of picture.curves) bases.set(String(curve.automation), 0);
-    for (const curve of picture.layers) {
-        bases.set(String(curve.automation), where.get(String(curve.owner)) ?? 0);
-    }
-    return bases;
 }
 
 /**

@@ -22,29 +22,6 @@ from .domain import Domain
 from .editor import Editor
 from .view import View
 
-#: What the ``pianoroll`` widget sends and takes per note.
-QUINTUPLE = 5
-
-#: And per OSC marker: the time and the label.
-PAIR = 2
-
-
-def quintuples(flat) -> list:
-    """A flat ``notes`` payload as ``(start, dur, pitch, velocity, channel)``
-    tuples, dropping a trailing partial group rather than guessing at it."""
-    values = list(flat)
-    return [tuple(values[i:i + QUINTUPLE])
-            for i in range(0, len(values) - (QUINTUPLE - 1), QUINTUPLE)]
-
-
-def pairs(flat) -> list:
-    """A flat ``osc`` payload as ``(time, label)`` tuples, dropping a trailing
-    odd value the same way `quintuples` drops a partial group."""
-    values = list(flat)
-    return [(float(values[i]), str(values[i + 1]))
-            for i in range(0, len(values) - (PAIR - 1), PAIR)]
-
-
 def _label_of(item) -> "str | None":
     """The label the roll's OSC lane draws for an item, or ``None`` when the
     item is not one of that lane's — an `OscItem` labels with its address, a
@@ -70,11 +47,13 @@ class NotesDomain(Domain):
     """
 
     name = _native.EVENTS
+    ingested = True
 
     def __init__(self, *, tempo: float = 1.0, editable: bool = True):
+        super().__init__()
         #: What a beat is worth on the view's axis. The roll draws in timeline
-        #: samples and a timeline is in beats, so the crossing happens here —
-        #: the editor's bridge is what supplies it.
+        #: samples and a timeline is in beats, so the crossing happens in the
+        #: reading — the editor's bridge is what supplies this.
         self.units_per_beat = 1.0
         self.tempo = float(tempo)
         #: Whether a note may be written back onto this timeline. A roll over
@@ -83,106 +62,18 @@ class NotesDomain(Domain):
         #: widget's own ``notes_editable`` and this is the second half of it,
         #: for a host that does not read the prop.
         self.editable = bool(editable)
-        #: What the last payload was a gesture *of*. Both lanes state the same
-        #: whole-list intent, so the payload alone cannot say which hand made
-        #: it, and an undo menu that called a dragged marker "edit the notes"
-        #: would be naming the wrong lane.
-        self._verb = "edit the notes"
 
-    def payload(self, structure, tag: str, values) -> "dict | None":
-        if not self.editable:
-            return None
-        if tag == "notes":
-            self._verb = "edit the notes"
-            return {"intent": "setevents",
-                    "events": self._notes_now(structure, values)}
-        if tag == "osc":
-            markers = self._markers_now(structure, values)
-            if markers is None:
-                return None      # an unnamed marker — see `refusal`
-            self._verb = "edit the markers"
-            return {"intent": "setevents", "events": markers}
-        return None
+    def request(self, structure, tag: str, values) -> dict:
+        """The report, the timeline it is over, and the axis it was drawn on.
 
-    def refusal(self, structure, tag: str, values) -> "str | None":
-        """Why a marker gesture this domain understands cannot be written.
-
-        A marker *is* a message, and the address is the whole of what it sends;
-        the roll has no way to type one, so a marker added there has nothing to
-        become. Saying so is the point — a picture that springs back with
-        nothing attached teaches "sometimes it does not work" rather than "not
-        here".
+        **The whole timeline travels, not the lane the gesture drew.** Both
+        lanes state a whole-list intent, so a payload that named only the notes
+        would be an edit that deletes every marker — and the reading needs the
+        untouched lane in hand to carry it through.
         """
-        if tag == "osc" and self.editable and \
-                self._markers_now(structure, values) is None:
-            return ("a marker is the message it sends, and a roll cannot say "
-                    "which: add it with timeline.add(beat, OscItem(addr, ...)) "
-                    "and drag it here")
-        return None
-
-    def _notes_now(self, structure, values) -> list:
-        """The whole timeline after a ``notes`` gesture: the drawn notes, with
-        every marker left exactly where it is."""
-        held = [item for _beat, item in structure if isinstance(item, SeqEvent)]
-        events = []
-        for i, (start, dur, pitch, velocity, channel) in enumerate(quintuples(values)):
-            was = held[i] if i < len(held) else None
-            length = float(dur) / self.units_per_beat
-            if was is not None:
-                # **An edit updates the note it names; it does not rebuild it.**
-                # Order is the only identity the payload carries, so the i-th
-                # note's own event is copied and the drawn fields written over
-                # it — which keeps the instrument and everything else the
-                # author put there.
-                params = dict(was)
-                params.update(midinote=int(pitch), sustain=length)
-                if int(velocity) != _velocity(was):
-                    params.update(velocity=int(velocity),
-                                  amp=max(0.0, min(1.0, int(velocity) / 127.0)))
-            else:
-                params = dict(midinote=int(pitch), dur=length, legato=1.0,
-                              amp=max(0.0, min(1.0, int(velocity) / 127.0)),
-                              velocity=int(velocity))
-            if int(channel):
-                params["channel"] = int(channel)
-            events.append({"at": float(start) / self.units_per_beat,
-                           "data": _plain(params)})
-        return events + self._kept(structure, lambda item: isinstance(item, SeqEvent))
-
-    def _markers_now(self, structure, values) -> "list | None":
-        """The whole timeline after an ``osc`` gesture — the notes untouched and
-        the markers as the lane now holds them — or ``None`` when the gesture
-        added one that has no message to send.
-
-        **A marker is matched by its label**, which is its address, and only
-        then by order among the ones that share it. The payload carries the
-        label the lane drew, so the message a marker sends survives being
-        dragged and — unlike the notes one lane up, where order is the only
-        identity there is — survives a *neighbour* being removed as well.
-        """
-        held = [(beat, item) for beat, item in structure
-                if _label_of(item) is not None]
-        taken = set()
-        markers = []
-        for time, label in pairs(values):
-            was = next((i for i, (_b, item) in enumerate(held)
-                        if i not in taken and _label_of(item) == label), None)
-            if was is None:
-                return None
-            taken.add(was)
-            markers.append({"at": float(time) / self.units_per_beat,
-                            "data": _plain(item_data(held[was][1]))})
-        return self._kept(structure,
-                          lambda item: _label_of(item) is not None) + markers
-
-    @staticmethod
-    def _kept(structure, drawn) -> list:
-        """The items the gesture did **not** draw, as the crate holds them —
-        what keeps the lane nobody touched out of the edit that rebuilt the
-        other one, and out of the inverse that puts it back."""
-        return [{"at": float(beat), "data": _plain(item_data(item))}
-                for beat, item in structure
-                if not drawn(item) and item_data(item) is not None]
+        return {"values": list(values), "state": self.state(structure),
+                "unitsPerBeat": float(self.units_per_beat or 1.0),
+                "editable": bool(self.editable)}
 
     def state(self, structure) -> list:
         """The timeline as the crate holds it — every item, notes and markers
@@ -226,9 +117,6 @@ class NotesDomain(Domain):
         # timeline somebody reads as empty -- see `Timeline.replace`.
         structure.replace(rebuilt + others)
         return True
-
-    def label(self, payload: dict) -> str:
-        return self._verb
 
 
 class NotesView(View):
@@ -300,7 +188,7 @@ def _osc(editor) -> list:
 
     The label is the whole of what the lane can say — the message's arguments
     are not drawn — which is why a marker moved or removed there is matched
-    back to its item **by label** (`NotesDomain._markers_now`) and one added
+    back to its item **by label**, in the crate's reading, and one added
     there is refused: the address is what a marker sends, and the lane has no
     way to type one.
     """

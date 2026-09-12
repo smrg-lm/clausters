@@ -156,7 +156,7 @@ An editor orchestrates rather than performs, and it is four collaborators
 | | what it is | what it deliberately is not |
 |---|---|---|
 | `View` | the picture of one structure, and the registry from widget id to what it shows | not the vocabulary: one structure is drawn several ways |
-| `Domain` | gesture → payload, payload → the client object, the label, the coalesce key | not **how an edit inverts** — that is the shared crate's, so it is not written once per language — and it does not draw |
+| `Domain` | what a gesture needs read with it, and the applied payload written onto the client object | not **what a gesture means** and not **how an edit inverts** — both are the shared crate's, so neither is written once per language — and it does not draw |
 | `Echo` | the acknowledgement: the stamp, the version, the corrections, the reason | not anything about what was edited |
 | `Editing` | the editing context: the history, and the views to tell | **not the editor's** — it is asked for, never built, which is what makes two windows walk one undo order |
 

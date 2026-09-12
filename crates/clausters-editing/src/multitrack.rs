@@ -37,9 +37,12 @@ use std::collections::HashMap;
 use serde_json::{Map, Value, json};
 
 use clausters_core::tempomap::TempoMap;
-use clausters_document::SourceId;
+use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_document::multitrack::{Multitrack, picture};
+use clausters_document::{Beat, NodeId, Opaque, SourceId};
+
+use crate::intake::{Intake, groups, number, text};
 
 /// How tall a track's row is drawn.
 pub const ROW_H: f64 = 96.0;
@@ -79,11 +82,30 @@ pub struct Look<'a> {
 pub trait Buffers {
     /// The buffer `source` was read into, or `-1` for a source nobody read.
     fn bufnum(&self, source: SourceId) -> i64;
+
+    /// **The other direction**: the source a buffer number came from, or `None`
+    /// for a buffer this piece knows nothing about.
+    ///
+    /// Both are here because a box is *drawn* from a buffer and *read back*
+    /// into a source, and a caller that answered only one of them would have
+    /// the other written beside it — which is the second table this trait
+    /// exists to prevent.
+    fn source(&self, bufnum: i64) -> Option<SourceId>;
 }
 
 impl Buffers for HashMap<SourceId, i64> {
     fn bufnum(&self, source: SourceId) -> i64 {
         self.get(&source).copied().unwrap_or(-1)
+    }
+
+    fn source(&self, bufnum: i64) -> Option<SourceId> {
+        (bufnum >= 0)
+            .then(|| {
+                self.iter()
+                    .find(|(_, held)| **held == bufnum)
+                    .map(|(id, _)| *id)
+            })
+            .flatten()
     }
 }
 
@@ -91,6 +113,10 @@ impl Buffers for HashMap<SourceId, i64> {
 impl Buffers for () {
     fn bufnum(&self, _source: SourceId) -> i64 {
         -1
+    }
+
+    fn source(&self, _bufnum: i64) -> Option<SourceId> {
+        None
     }
 }
 
@@ -116,6 +142,19 @@ impl Look<'_> {
     /// under a tempo that moves.
     pub fn frame_in(&self, base: f64, at: f64) -> f64 {
         self.frames_over(base, at)
+    }
+
+    /// The beat a frame falls on: the inverse of
+    /// [`frame_at`](Self::frame_at), and the way an edit comes back.
+    pub fn beat_at(&self, frame: f64) -> f64 {
+        self.tempo
+            .beats_at(frame / if self.rate == 0.0 { 1.0 } else { self.rate })
+    }
+
+    /// The beat, measured **from `base`**, that a frame from `base` falls on —
+    /// the inverse of [`frame_in`](Self::frame_in).
+    pub fn beat_in(&self, base: f64, frame: f64) -> f64 {
+        self.beat_at(self.frame_at(base) + frame) - base
     }
 
     fn bufnum(&self, source: Option<SourceId>) -> i64 {
@@ -214,10 +253,7 @@ pub fn layers(piece: &Multitrack) -> Vec<Value> {
 /// the origin, and a clip envelope is drawn inside its box and is measured from
 /// where that box starts.
 pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
-    let where_: HashMap<u64, f64> = picture::boxes(piece)
-        .iter()
-        .map(|b| (b.region.0, b.position.0))
-        .collect();
+    let bases = bases(piece);
     let mut out = Vec::new();
     let mut write = |curve: &picture::Curve, base: f64| {
         for point in &curve.points {
@@ -240,7 +276,13 @@ pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         write(&curve, 0.0);
     }
     for curve in picture::layers(piece) {
-        write(&curve, where_.get(&curve.owner.0).copied().unwrap_or(0.0));
+        write(
+            &curve,
+            bases
+                .get(&curve.automation.0.to_string())
+                .copied()
+                .unwrap_or(0.0),
+        );
     }
     out
 }
@@ -300,16 +342,7 @@ pub fn props_json(piece: &str, rate: f64, default_bpm: f64, sources: &str) -> St
     let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
         return "{}".into();
     };
-    let table: HashMap<SourceId, i64> =
-        serde_json::from_str::<HashMap<String, SourceInfo>>(sources)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|(id, info)| {
-                id.parse::<u64>()
-                    .ok()
-                    .map(|id| (SourceId(id), i64::from(info.buffer)))
-            })
-            .collect();
+    let table = table(&serde_json::from_str::<Value>(sources).unwrap_or(Value::Null));
     let tempo = tempo_map(&piece, default_bpm);
     let look = Look {
         tempo: &tempo,
@@ -335,6 +368,230 @@ pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
         .collect();
     let default = default_bpm / 60.0;
     TempoMap::from_changes(&changes, default).unwrap_or_else(|_| TempoMap::new(default))
+}
+
+/// What the `lanes` prop takes and reports: flat `name label height mute solo
+/// gain` sextuples.
+pub const SEXTUPLE: usize = 6;
+
+/// What the `clips` prop takes and reports: flat `name lane at duration start
+/// label source` septuples.
+pub const SEPTUPLE: usize = 7;
+
+/// What the `points` prop takes and reports: flat `curve t v shape amount`
+/// quintuples, each naming the curve it is on.
+pub const POINT_QUINTUPLE: usize = 5;
+
+/// **What each curve's time is measured from**, by curve name.
+///
+/// A track automation runs the timeline, so it is measured from the origin; a
+/// clip envelope is drawn inside its box and is measured from where that box
+/// starts. It is the one thing that differs between the two on the wire, and
+/// both [`points`] and [`intake`] read it from here so a break-point cannot go
+/// out against one base and come back against another.
+fn bases(piece: &Multitrack) -> HashMap<String, f64> {
+    let where_: HashMap<u64, f64> = picture::boxes(piece)
+        .iter()
+        .map(|b| (b.region.0, b.position.0))
+        .collect();
+    let mut out: HashMap<String, f64> = picture::curves(piece)
+        .iter()
+        .map(|c| (c.automation.0.to_string(), 0.0))
+        .collect();
+    for curve in picture::layers(piece) {
+        let base = where_.get(&curve.owner.0).copied().unwrap_or(0.0);
+        out.insert(curve.automation.0.to_string(), base);
+    }
+    out
+}
+
+/// The flat `clips` report as the crate's boxes: names as they came, positions
+/// in beats, the window's own numbers in seconds.
+///
+/// A row is named by its **track's id** and never renamed, so a name that is
+/// not one names no row this piece has and the box on it is dropped rather than
+/// placed somewhere it was not.
+fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
+    let mut out = Vec::new();
+    for group in groups(values, SEPTUPLE) {
+        let Ok(row) = text(&group[1]).parse::<u64>() else {
+            continue;
+        };
+        let (at, dur) = (number(&group[2]), number(&group[3]));
+        let position = look.beat_at(at);
+        let length = look.beat_at(at + dur) - position;
+        out.push(picture::Placed {
+            name: text(&group[0]),
+            row: NodeId(row),
+            position: Beat(position),
+            length: Beat(length),
+            start: number(&group[4]) / if look.rate == 0.0 { 1.0 } else { look.rate },
+            // How much a **new** box shows: the stretch it occupies, crossed to
+            // the wall clock the only way a length may be.
+            content: look.tempo.span_secs(position, position + length),
+            source: look.sources.source(number(&group[6]) as i64),
+        });
+    }
+    out
+}
+
+/// The flat `points` report as the crate's curves: one entry per curve named,
+/// its break-points back on the musical axis.
+///
+/// The widget reports **every** curve there is, in one list, so they are
+/// gathered by name here — the reader says nothing about the ones that did not
+/// move.
+fn curved(piece: &Multitrack, values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
+    let bases = bases(piece);
+    let mut order: Vec<String> = Vec::new();
+    let mut found: HashMap<String, Vec<clausters_document::points::Point>> = HashMap::new();
+    for group in groups(values, POINT_QUINTUPLE) {
+        let name = text(&group[0]);
+        // **Against the same base the picture was drawn from**: a layer's time
+        // is its box's own, so a break-point inside one comes back as a beat
+        // from that box's start.
+        let base = bases.get(&name).copied().unwrap_or(0.0);
+        let points = found.entry(name.clone()).or_insert_with(|| {
+            order.push(name.clone());
+            Vec::new()
+        });
+        points.push(clausters_document::points::Point {
+            at: look.beat_in(base, number(&group[1])),
+            value: number(&group[2]),
+            // **What a shape is stays the client's**: the document carries a
+            // point's data and never reads it, which is what keeps an undo from
+            // putting a bent curve back straight.
+            data: Opaque(json!({
+                "shape": number(&group[3]) as i64,
+                "curve": number(&group[4]),
+            })),
+        });
+    }
+    order
+        .into_iter()
+        .map(|name| picture::Curved {
+            points: found.remove(&name).unwrap_or_default(),
+            name,
+        })
+        .collect()
+}
+
+/// The flat `lanes` report as the crate's strips.
+///
+/// The label and the height are **dropped rather than reported**: a row's label
+/// is the track's name where it has one and a made-up one where it has not, and
+/// its height is this window's. Neither is a fact about the piece.
+fn strips(values: &[Value]) -> Vec<picture::Strip> {
+    groups(values, SEXTUPLE)
+        .map(|group| picture::Strip {
+            name: text(&group[0]),
+            mute: number(&group[3]) != 0.0,
+            solo: number(&group[4]) != 0.0,
+            gain: number(&group[5]),
+        })
+        .collect()
+}
+
+/// **What an undo menu calls each of the piece's verbs.**
+///
+/// One table, because a menu entry a hand reads is part of what an edit *is* to
+/// the person who made it — and a verb named two ways in two clients is the same
+/// divergence as a verb applied two ways, only quieter.
+pub fn label(intent: &MultitrackIntent) -> &'static str {
+    match intent {
+        MultitrackIntent::PlaceRegion { .. } => "move a clip",
+        MultitrackIntent::TrimRegion { .. } => "trim a clip",
+        MultitrackIntent::SetLane { .. } => "edit the clips",
+        MultitrackIntent::SetTracks { .. } => "mix a track",
+        MultitrackIntent::SplitRegion { .. } => "split a clip",
+        MultitrackIntent::JoinRegions { .. } => "join the clips",
+        MultitrackIntent::SetAutomation { .. } => "draw a curve",
+        _ => "edit the piece",
+    }
+}
+
+/// **What a gesture over a piece means**, in the piece's own vocabulary.
+///
+/// Three tags, and each of them reports the **whole** structure rather than the
+/// gesture: every box, every row, every break-point. So a move, a block drag, a
+/// trim, a split, a delete and a paste all arrive the same way and telling them
+/// apart is one rule, [`clausters_document::multitrack::picture`]'s, written
+/// once — and what comes back is the *difference*, which is why a hand that
+/// looked without editing produces nothing at all.
+///
+/// The label is the first payload's, because the payloads of one report are one
+/// thing a hand did and go into the pile as one entry.
+pub fn read(
+    piece: &Multitrack,
+    tag: &str,
+    values: &[Value],
+    look: &Look<'_>,
+) -> Vec<MultitrackIntent> {
+    match tag {
+        "clips" => picture::read(piece, &placed(values, look), picture::fresh_id(piece)),
+        "lanes" => picture::read_rows(piece, &strips(values)),
+        "points" => picture::read_points(piece, &curved(piece, values, look)),
+        _ => Vec::new(),
+    }
+}
+
+/// [`read`] as the payloads and the label an endpoint carries.
+///
+/// The label is the **first** intent's, because the intents of one report are
+/// one thing a hand did and go into the pile as one entry.
+pub fn intake(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Intake {
+    if !matches!(tag, "clips" | "lanes" | "points") {
+        return Intake::nothing();
+    }
+    let intents = read(piece, tag, values, look);
+    let named = intents
+        .first()
+        .map_or("edit the piece", |first| label(first));
+    let payloads = intents
+        .iter()
+        .map(|intent| serde_json::to_value(intent).unwrap_or(Value::Null))
+        .collect();
+    Intake::edits(payloads, named)
+}
+
+/// [`intake`] against a piece and a source table given as JSON values, which
+/// is how the one door carries them.
+///
+/// An unreadable piece answers [`Intake::nothing`]: there is no piece to say
+/// what the gesture meant, and inventing one would write an edit against a
+/// structure nobody has.
+pub fn intake_value(
+    piece: &Value,
+    tag: &str,
+    values: &[Value],
+    rate: f64,
+    default_bpm: f64,
+    sources: &Value,
+) -> Intake {
+    let Ok(piece) = serde_json::from_value::<Multitrack>(piece.clone()) else {
+        return Intake::nothing();
+    };
+    let table = table(sources);
+    let tempo = tempo_map(&piece, default_bpm);
+    let look = Look {
+        tempo: &tempo,
+        rate,
+        sources: &table,
+    };
+    intake(&piece, tag, values, &look)
+}
+
+/// The instance plan's source table as the buffer question this crate asks.
+fn table(sources: &Value) -> HashMap<SourceId, i64> {
+    serde_json::from_value::<HashMap<String, SourceInfo>>(sources.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(id, info)| {
+            id.parse::<u64>()
+                .ok()
+                .map(|id| (SourceId(id), i64::from(info.buffer)))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -374,15 +631,22 @@ mod tests {
             Point {
                 at: 0.0,
                 value: 0.0,
-                data: Opaque::none(),
+                data: shape(),
             },
             Point {
                 at,
                 value: 1.0,
-                data: Opaque::none(),
+                data: shape(),
             },
         ];
         a
+    }
+
+    /// What the wire says about a segment, which is what the widget reports
+    /// back: linear, with no bend. A point that carries it round-trips exactly,
+    /// which is the case a real piece is in after its first edit.
+    fn shape() -> Opaque {
+        Opaque(json!({ "shape": 1, "curve": 0.0 }))
     }
 
     fn look<'a>(tempo: &'a TempoMap, sources: &'a HashMap<SourceId, i64>) -> Look<'a> {
@@ -501,5 +765,86 @@ mod tests {
         assert_eq!(answer, props(&piece, &look(&tempo, &table)));
 
         assert_eq!(props_json("not a piece", 48_000.0, 60.0, "{}"), "{}");
+    }
+
+    /// **A gesture goes out and comes back on the same axis.** The props are
+    /// read, one box is moved four beats along in the widget's own frames, and
+    /// what comes back names the beat it was moved to — the round trip that was
+    /// written once per client before this existed.
+    #[test]
+    fn a_box_dragged_in_frames_comes_back_in_beats() {
+        let piece = piece();
+        let tempo = tempo_map(&piece, 60.0);
+        let table = HashMap::new();
+        let look = look(&tempo, &table);
+        let mut drawn = clips(&piece, &look);
+        drawn[2] = json!(number(&drawn[2]) + 4.0 * 48_000.0);
+
+        let taken = intake(&piece, "clips", &drawn, &look);
+        assert_eq!(taken.payloads.len(), 1);
+        assert_eq!(taken.label, "move a clip");
+        let moved = &taken.payloads[0];
+        assert_eq!(moved["intent"], json!("placeregion"));
+        assert_eq!(
+            moved["position"],
+            json!(8.0),
+            "four beats past the four it was at"
+        );
+    }
+
+    /// **A layer's break-point goes back against the base it was drawn
+    /// against.** It is the divergence the view projection surfaced, seen from
+    /// the other direction: a curve read out and reported back unchanged is no
+    /// edit at all, and it only is if both halves measure from the box.
+    #[test]
+    fn a_curve_reported_back_unchanged_is_not_an_edit() {
+        let piece = piece();
+        let tempo = tempo_map(&piece, 60.0);
+        let table = HashMap::new();
+        let look = look(&tempo, &table);
+        let drawn = points(&piece, &look);
+
+        let taken = intake(&piece, "points", &drawn, &look);
+        assert!(
+            taken.payloads.is_empty(),
+            "a hand that looked without editing moved nothing: {:?}",
+            taken.payloads
+        );
+
+        // And one that did move a layer's point names that layer alone.
+        let mut dragged = drawn.clone();
+        dragged[3 * 5 + 2] = json!(0.75);
+        let taken = intake(&piece, "points", &dragged, &look);
+        assert_eq!(taken.payloads.len(), 1);
+        assert_eq!(taken.payloads[0]["intent"], json!("setautomation"));
+        assert_eq!(taken.payloads[0]["automation"], json!(5));
+        assert_eq!(taken.label, "draw a curve");
+    }
+
+    /// A tag no hand over a piece makes is nothing, and a row named by
+    /// something that is no track's id places no box.
+    #[test]
+    fn a_report_this_piece_cannot_place_is_dropped_and_not_guessed_at() {
+        let piece = piece();
+        let tempo = tempo_map(&piece, 60.0);
+        let table = HashMap::new();
+        let look = look(&tempo, &table);
+        assert_eq!(intake(&piece, "meters", &[], &look), Intake::nothing());
+
+        let stray = vec![
+            json!("n9"),
+            json!("not-a-track"),
+            json!(0.0),
+            json!(48_000.0),
+            json!(0.0),
+            json!("stray"),
+            json!(-1),
+        ];
+        let taken = intake(&piece, "clips", &stray, &look);
+        assert_eq!(
+            taken.payloads[0]["intent"],
+            json!("setlane"),
+            "the piece lost the box it had and gained none"
+        );
     }
 }

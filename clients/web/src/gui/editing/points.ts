@@ -66,22 +66,15 @@ export interface CratePoint {
  */
 export class PointsDomain extends Domain<Automation> {
     override readonly name = POINTS;
-
-    payload(_structure: Automation, tag: string, values: readonly unknown[]): unknown {
-        if (tag !== "points" || values.length === 0) return null;
-        return {
-            intent: "setpoints",
-            points: quads(values).map(([at, value, shape, curve]) => ({
-                at,
-                value,
-                data: { shape, curve },
-            })),
-        };
-    }
+    override readonly ingested = true;
 
     /**
      * The curve as the crate holds it — the state `current` is read against and
      * `project` writes back.
+     *
+     * **The `Env` seam, not a gesture.** It is here rather than in the crate for
+     * the reason `project` is: what it crosses is the object *this page* holds,
+     * and the vocabulary on the other side is already the crate's.
      */
     state(structure: Automation): CratePoint[] {
         return quads(structure.toPoints()).map(([at, value, shape, curve]) => ({
@@ -103,10 +96,6 @@ export class PointsDomain extends Domain<Automation> {
         // synth reads cannot disagree about which of the two happened.
         void structure.refill();
         return true;
-    }
-
-    override label(): string {
-        return "draw the curve";
     }
 }
 

@@ -44,15 +44,6 @@ SEXTUPLE = 6
 #: source`` septuples.
 SEPTUPLE = 7
 
-#: What the widget's ``curves`` prop takes: flat ``name lane label min max
-#: height`` sextuples. Its ``layers`` prop takes the same without the height,
-#: since a layer is as tall as the box it is drawn on.
-CURVE_SEXTUPLE = 6
-
-#: What its ``points`` prop takes and reports: flat ``curve t v shape amount``
-#: quintuples, each naming the curve it is on.
-POINT_QUINTUPLE = 5
-
 #: The names the transport row's three widgets carry. A name and not an id,
 #: because these are the widgets a **hand** addresses and a handler is hung on a
 #: name — and they are the piece's own, so a script's ``extra`` may carry
@@ -237,102 +228,26 @@ class MultitrackDomain(Domain):
     """
 
     name = _native.MULTITRACK
+    ingested = True
 
     def __init__(self, bridge: Bridge):
+        super().__init__()
         self.bridge = bridge
 
-    # ---- a gesture, as edits ----
+    def request(self, structure, tag: str, values) -> dict:
+        """The report, the piece it is over, and the axis a beat lands on.
 
-    def payloads(self, structure, tag: str, values) -> list:
-        if tag == "clips":
-            return _native.multitrack_read(self.state(structure),
-                                           self._placed(values))
-        if tag == "lanes":
-            return self._strips(structure, values)
-        if tag == "points":
-            state = self.state(structure)
-            return _native.multitrack_read_points(
-                state, self._curved(values,
-                                    _bases(_native.multitrack_picture(state))))
-        return []
-
-    def payload(self, structure, tag: str, values) -> "dict | None":
-        """The singular door, for the one-edit case. `payloads` is what a
-        multitrack actually goes through: a report is the piece, so one message
-        is however many edits it takes."""
-        found = self.payloads(structure, tag, values)
-        return found[0] if len(found) == 1 else None
-
-    def _placed(self, values) -> list:
-        """The flat ``clips`` payload as the crate's boxes: names as they came,
-        positions in beats, the window's own numbers in seconds."""
-        out = []
-        for group in _groups(values, SEPTUPLE):
-            name, lane, at, dur, start, _label, source = group
-            try:
-                row = int(str(lane))
-            except ValueError:
-                # A row is named by its track's id and never renamed, so a name
-                # that is not one names no row this piece has.
-                continue
-            at, dur = float(at), float(dur)
-            position = self.bridge.beat_at(at)
-            length = self.bridge.beat_at(at + dur) - position
-            out.append({
-                "name": str(name),
-                "row": row,
-                "position": position,
-                "length": length,
-                "start": float(start) / (self.bridge.rate or 1.0),
-                # How much a **new** box shows: the stretch it occupies,
-                # crossed to the wall clock the only way a length may be.
-                "content": self.bridge.tempo.span_secs(position,
-                                                       position + length),
-                "source": self.bridge.sources.source(int(source)),
-            })
-        return out
-
-    def _curved(self, values, bases: dict) -> list:
-        """The flat ``points`` payload as the crate's curves: one entry per
-        curve named, its break-points back on the musical axis.
-
-        The widget reports **every** curve there is, in one list, so they are
-        gathered by name here — the crate reads the difference and says nothing
-        about the ones that did not move.
+        A report of the boxes, the rows or the break-points is the **whole**
+        structure rather than the gesture, so the piece has to be in hand for
+        the reading to say what the difference is. The rate and the source table
+        are the same two the picture is drawn with, which is what keeps a box
+        from going out on one axis and coming back on another.
         """
-        found: dict = {}
-        for group in _groups(values, POINT_QUINTUPLE):
-            name, at, value, shape, amount = group
-            # **Against the same base the picture was drawn from**: a layer's
-            # time is its box's own, so a break-point inside one comes back as
-            # a beat from that box's start.
-            base = float(bases.get(str(name), 0.0))
-            found.setdefault(str(name), []).append(
-                {"at": self.bridge.beat_in(base, float(at)),
-                 "value": float(value),
-                 # **What a shape is stays the client's**: the crate carries a
-                 # point's data and never reads it, which is what keeps an undo
-                 # from putting a bent curve back straight.
-                 "data": {"shape": int(float(shape)),
-                          "curve": float(amount)}})
-        return [{"name": name, "points": points}
-                for name, points in found.items()]
-
-    def _strips(self, structure, values) -> list:
-        """The rows' payload as the crate reads it: what a report of every row
-        *means*, in the piece's one verb over its tracks.
-
-        The whole list travels because the piece has no verb for one track — a
-        report is the piece here as it is for the boxes — so the difference is
-        what comes out, and it is one ``settracks`` whatever changed: a level
-        moved, a track added, a track gone with its boxes.
-
-        **The rule is the crate's**, like the boxes' and the curves': a client
-        that read this payload itself would be writing the mapping a second
-        time in its own language, which is how one client comes to add a track
-        the other cannot.
-        """
-        return _native.multitrack_read_rows(self.state(structure), _rows(values))
+        return {"values": list(values), "state": self.state(structure),
+                "rate": float(self.bridge.rate),
+                "defaultBpm": float(self.bridge.bpm),
+                "sources": {str(k): v
+                            for k, v in self.bridge.sources.table().items()}}
 
     # ---- the state, and writing one back ----
 
@@ -362,18 +277,6 @@ class MultitrackDomain(Domain):
         # A tempo that moved changes where every box is drawn.
         self.bridge.refresh(structure)
         return True
-
-    #: What an undo menu calls each of the piece's verbs.
-    LABELS = {"placeregion": "move a clip",
-              "trimregion": "trim a clip",
-              "setlane": "edit the clips",
-              "settracks": "mix a track",
-              "splitregion": "split a clip",
-              "joinregions": "join the clips",
-              "setautomation": "draw a curve"}
-
-    def label(self, payload: dict) -> str:
-        return self.LABELS.get(str(payload.get("intent", "")), "edit the piece")
 
 
 class MultitrackView(View):
@@ -524,22 +427,6 @@ class MultitrackView(View):
         return props
 
 
-def _rows(values) -> list:
-    """The flat ``lanes`` payload as the crate's strips.
-
-    The label and the height are dropped rather than sent: a row's label is the
-    track's name where it has one and a made-up one where it has not, and its
-    height is this window's. Neither is a fact about the piece, so neither is
-    reported into it.
-    """
-    out = []
-    for group in _groups(values, SEXTUPLE):
-        name, _label, _h, mute, solo, gain = group
-        out.append({"name": str(name), "mute": bool(int(mute)),
-                    "solo": bool(int(solo)), "gain": float(gain)})
-    return out
-
-
 def _cursor(editor) -> float:
     """The position cursor in timeline samples: where the editor last saw it
     placed, and the top of the piece until a hand places one."""
@@ -558,34 +445,6 @@ def _meters(editor) -> list:
     for track, (bus, channels) in playback.meters.items():
         out += [str(track), int(bus.index), int(bus.index) + channels, channels]
     return out
-
-
-
-
-
-def _bases(picture) -> dict:
-    """**What each curve's time is measured from**, by curve name.
-
-    A track automation runs the timeline, so it is measured from the origin; a
-    clip envelope is drawn inside its box and is measured from where that box
-    starts. It is the one thing that differs between the two on the wire, and
-    the reason it is worked out here is that the beat→frame crossing is the
-    client's.
-    """
-    where = {str(box["region"]): float(box["position"])
-             for box in picture.get("boxes", [])}
-    bases = {str(c["automation"]): 0.0 for c in picture.get("curves", [])}
-    for curve in picture.get("layers", []):
-        bases[str(curve["automation"])] = where.get(str(curve["owner"]), 0.0)
-    return bases
-
-
-
-
-def _groups(values, n: int) -> list:
-    """A flat payload as groups of ``n``; a trailing partial group is dropped
-    rather than half-read, the rule every flat payload here follows."""
-    return [values[i:i + n] for i in range(0, len(values) - len(values) % n, n)]
 
 
 class MultitrackEditor(Editor):

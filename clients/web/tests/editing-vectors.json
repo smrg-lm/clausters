@@ -235,11 +235,19 @@
                       "points": [
                         {
                           "at": 0.0,
-                          "value": 1.0
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         },
                         {
                           "at": 1.0,
-                          "value": 0.0
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         }
                       ]
                     }
@@ -259,7 +267,11 @@
               "points": [
                 {
                   "at": 0.0,
-                  "value": 0.0
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
                 },
                 {
                   "at": 2.0,
@@ -378,11 +390,19 @@
                       "points": [
                         {
                           "at": 0.0,
-                          "value": 1.0
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         },
                         {
                           "at": 1.0,
-                          "value": 0.0
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         }
                       ]
                     }
@@ -402,7 +422,11 @@
               "points": [
                 {
                   "at": 0.0,
-                  "value": 0.0
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
                 },
                 {
                   "at": 2.0,
@@ -516,11 +540,19 @@
                       "points": [
                         {
                           "at": 0.0,
-                          "value": 1.0
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         },
                         {
                           "at": 1.0,
-                          "value": 0.0
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
                         }
                       ]
                     }
@@ -540,7 +572,11 @@
               "points": [
                 {
                   "at": 0.0,
-                  "value": 0.0
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
                 },
                 {
                   "at": 2.0,
@@ -632,6 +668,1017 @@
         1.0,
         0.0
       ]
+    }
+  },
+  {
+    "name": "a curve drawn back",
+    "kind": "intake",
+    "domain": "points",
+    "tag": "points",
+    "request": {
+      "values": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        2.0,
+        1.0,
+        5.0,
+        -3.5
+      ]
+    },
+    "intake": {
+      "label": "draw the curve",
+      "payloads": [
+        {
+          "intent": "setpoints",
+          "points": [
+            {
+              "at": 0.0,
+              "data": {
+                "curve": 0.0,
+                "shape": 1
+              },
+              "value": 0.0
+            },
+            {
+              "at": 2.0,
+              "data": {
+                "curve": -3.5,
+                "shape": 5
+              },
+              "value": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a tag no curve answers for",
+    "kind": "intake",
+    "domain": "points",
+    "tag": "clips",
+    "request": {
+      "values": [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "intake": {
+      "label": "",
+      "payloads": []
+    }
+  },
+  {
+    "name": "a stroke over samples, with the run it replaced",
+    "kind": "intake",
+    "domain": "samples",
+    "tag": "draw",
+    "request": {
+      "values": [
+        0,
+        4,
+        [
+          0.5,
+          0.25
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "intake": {
+      "inverse": {
+        "channel": 0,
+        "intent": "write",
+        "start": 4,
+        "values": [
+          0.0,
+          0.0
+        ]
+      },
+      "label": "draw the samples",
+      "payloads": [
+        {
+          "channel": 0,
+          "intent": "write",
+          "start": 4,
+          "values": [
+            0.5,
+            0.25
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "an inverse that does not cover the write",
+    "kind": "intake",
+    "domain": "samples",
+    "tag": "draw",
+    "request": {
+      "values": [
+        0,
+        4,
+        [
+          0.5,
+          0.25
+        ],
+        [
+          0.0
+        ]
+      ]
+    },
+    "intake": {
+      "label": "draw the samples",
+      "payloads": [
+        {
+          "channel": 0,
+          "intent": "write",
+          "start": 4,
+          "values": [
+            0.5,
+            0.25
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a note moved, keeping what the roll cannot draw",
+    "kind": "intake",
+    "domain": "events",
+    "tag": "notes",
+    "request": {
+      "values": [
+        960.0,
+        480.0,
+        64,
+        100,
+        0
+      ],
+      "state": [
+        {
+          "at": 0.0,
+          "data": {
+            "midinote": 60,
+            "instrument": "bell"
+          }
+        },
+        {
+          "at": 1.0,
+          "data": {
+            "osc": "/cue",
+            "args": [
+              1
+            ]
+          }
+        }
+      ],
+      "unitsPerBeat": 480.0,
+      "editable": true
+    },
+    "intake": {
+      "label": "edit the notes",
+      "payloads": [
+        {
+          "events": [
+            {
+              "at": 2.0,
+              "data": {
+                "instrument": "bell",
+                "midinote": 64,
+                "sustain": 1.0
+              }
+            },
+            {
+              "at": 1.0,
+              "data": {
+                "args": [
+                  1
+                ],
+                "osc": "/cue"
+              }
+            }
+          ],
+          "intent": "setevents"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a marker dragged, matched by its label",
+    "kind": "intake",
+    "domain": "events",
+    "tag": "osc",
+    "request": {
+      "values": [
+        1440.0,
+        "/cue"
+      ],
+      "state": [
+        {
+          "at": 0.0,
+          "data": {
+            "midinote": 60,
+            "instrument": "bell"
+          }
+        },
+        {
+          "at": 1.0,
+          "data": {
+            "osc": "/cue",
+            "args": [
+              1
+            ]
+          }
+        }
+      ],
+      "unitsPerBeat": 480.0,
+      "editable": true
+    },
+    "intake": {
+      "label": "edit the markers",
+      "payloads": [
+        {
+          "events": [
+            {
+              "at": 0.0,
+              "data": {
+                "instrument": "bell",
+                "midinote": 60
+              }
+            },
+            {
+              "at": 3.0,
+              "data": {
+                "args": [
+                  1
+                ],
+                "osc": "/cue"
+              }
+            }
+          ],
+          "intent": "setevents"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a marker the roll invented, refused out loud",
+    "kind": "intake",
+    "domain": "events",
+    "tag": "osc",
+    "request": {
+      "values": [
+        1440.0,
+        "/cue",
+        1920.0,
+        ""
+      ],
+      "state": [
+        {
+          "at": 0.0,
+          "data": {
+            "midinote": 60,
+            "instrument": "bell"
+          }
+        },
+        {
+          "at": 1.0,
+          "data": {
+            "osc": "/cue",
+            "args": [
+              1
+            ]
+          }
+        }
+      ],
+      "unitsPerBeat": 480.0,
+      "editable": true
+    },
+    "intake": {
+      "label": "",
+      "payloads": [],
+      "refusal": "a marker is the message it sends, and a roll cannot say which: add it to the timeline with its address, then drag it here"
+    }
+  },
+  {
+    "name": "a box dragged four beats along",
+    "kind": "intake",
+    "domain": "multitrack",
+    "tag": "clips",
+    "request": {
+      "values": [
+        "3",
+        "1",
+        384000.0,
+        192000.0,
+        24000.0,
+        "region 3",
+        12
+      ],
+      "state": {
+        "version": 1,
+        "tracks": [
+          {
+            "id": 1,
+            "name": "drums",
+            "level": 0.5,
+            "muted": true,
+            "lanes": [
+              {
+                "id": 2,
+                "regions": [
+                  {
+                    "id": 3,
+                    "position": 4.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "source": {
+                          "source": 77,
+                          "lifetime": "session"
+                        },
+                        "start": 0.5,
+                        "duration": 4.0
+                      }
+                    },
+                    "automation": [
+                      {
+                        "id": 5,
+                        "points": [
+                          {
+                            "at": 0.0,
+                            "value": 1.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          },
+                          {
+                            "at": 1.0,
+                            "value": 0.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "automation": [
+              {
+                "id": 4,
+                "visible": true,
+                "target": {
+                  "min": -1.0,
+                  "max": 1.0
+                },
+                "points": [
+                  {
+                    "at": 0.0,
+                    "value": 0.0,
+                    "data": {
+                      "shape": 1,
+                      "curve": 0.0
+                    }
+                  },
+                  {
+                    "at": 2.0,
+                    "value": 1.0,
+                    "data": {
+                      "shape": 5,
+                      "curve": -3.5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "rate": 48000.0,
+      "defaultBpm": 60.0,
+      "sources": {
+        "77": {
+          "buffer": 12,
+          "channels": 1
+        }
+      }
+    },
+    "intake": {
+      "label": "move a clip",
+      "payloads": [
+        {
+          "intent": "placeregion",
+          "lane": 2,
+          "layer": 0,
+          "position": 8.0,
+          "region": 3,
+          "track": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "a fader moved",
+    "kind": "intake",
+    "domain": "multitrack",
+    "tag": "lanes",
+    "request": {
+      "values": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.25
+      ],
+      "state": {
+        "version": 1,
+        "tracks": [
+          {
+            "id": 1,
+            "name": "drums",
+            "level": 0.5,
+            "muted": true,
+            "lanes": [
+              {
+                "id": 2,
+                "regions": [
+                  {
+                    "id": 3,
+                    "position": 4.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "source": {
+                          "source": 77,
+                          "lifetime": "session"
+                        },
+                        "start": 0.5,
+                        "duration": 4.0
+                      }
+                    },
+                    "automation": [
+                      {
+                        "id": 5,
+                        "points": [
+                          {
+                            "at": 0.0,
+                            "value": 1.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          },
+                          {
+                            "at": 1.0,
+                            "value": 0.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "automation": [
+              {
+                "id": 4,
+                "visible": true,
+                "target": {
+                  "min": -1.0,
+                  "max": 1.0
+                },
+                "points": [
+                  {
+                    "at": 0.0,
+                    "value": 0.0,
+                    "data": {
+                      "shape": 1,
+                      "curve": 0.0
+                    }
+                  },
+                  {
+                    "at": 2.0,
+                    "value": 1.0,
+                    "data": {
+                      "shape": 5,
+                      "curve": -3.5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "rate": 48000.0,
+      "defaultBpm": 60.0,
+      "sources": {
+        "77": {
+          "buffer": 12,
+          "channels": 1
+        }
+      }
+    },
+    "intake": {
+      "label": "mix a track",
+      "payloads": [
+        {
+          "intent": "settracks",
+          "tracks": [
+            {
+              "automation": [
+                {
+                  "id": 4,
+                  "points": [
+                    {
+                      "at": 0.0,
+                      "data": {
+                        "curve": 0.0,
+                        "shape": 1
+                      },
+                      "value": 0.0
+                    },
+                    {
+                      "at": 2.0,
+                      "data": {
+                        "curve": -3.5,
+                        "shape": 5
+                      },
+                      "value": 1.0
+                    }
+                  ],
+                  "target": {
+                    "max": 1.0,
+                    "min": -1.0
+                  },
+                  "visible": true
+                }
+              ],
+              "id": 1,
+              "lanes": [
+                {
+                  "id": 2,
+                  "regions": [
+                    {
+                      "automation": [
+                        {
+                          "id": 5,
+                          "points": [
+                            {
+                              "at": 0.0,
+                              "data": {
+                                "curve": 0.0,
+                                "shape": 1
+                              },
+                              "value": 1.0
+                            },
+                            {
+                              "at": 1.0,
+                              "data": {
+                                "curve": 0.0,
+                                "shape": 1
+                              },
+                              "value": 0.0
+                            }
+                          ]
+                        }
+                      ],
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 77
+                          },
+                          "start": 0.5
+                        }
+                      },
+                      "id": 3,
+                      "length": 4.0,
+                      "position": 4.0
+                    }
+                  ]
+                }
+              ],
+              "level": 0.25,
+              "muted": true,
+              "name": "drums"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a layer's break-point, on its box's own axis",
+    "kind": "intake",
+    "domain": "multitrack",
+    "tag": "points",
+    "request": {
+      "values": [
+        "4",
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        "4",
+        96000.0,
+        1.0,
+        5.0,
+        -3.5,
+        "5",
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        "5",
+        48000.0,
+        0.75,
+        1.0,
+        0.0
+      ],
+      "state": {
+        "version": 1,
+        "tracks": [
+          {
+            "id": 1,
+            "name": "drums",
+            "level": 0.5,
+            "muted": true,
+            "lanes": [
+              {
+                "id": 2,
+                "regions": [
+                  {
+                    "id": 3,
+                    "position": 4.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "source": {
+                          "source": 77,
+                          "lifetime": "session"
+                        },
+                        "start": 0.5,
+                        "duration": 4.0
+                      }
+                    },
+                    "automation": [
+                      {
+                        "id": 5,
+                        "points": [
+                          {
+                            "at": 0.0,
+                            "value": 1.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          },
+                          {
+                            "at": 1.0,
+                            "value": 0.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "automation": [
+              {
+                "id": 4,
+                "visible": true,
+                "target": {
+                  "min": -1.0,
+                  "max": 1.0
+                },
+                "points": [
+                  {
+                    "at": 0.0,
+                    "value": 0.0,
+                    "data": {
+                      "shape": 1,
+                      "curve": 0.0
+                    }
+                  },
+                  {
+                    "at": 2.0,
+                    "value": 1.0,
+                    "data": {
+                      "shape": 5,
+                      "curve": -3.5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "rate": 48000.0,
+      "defaultBpm": 60.0,
+      "sources": {
+        "77": {
+          "buffer": 12,
+          "channels": 1
+        }
+      }
+    },
+    "intake": {
+      "label": "draw a curve",
+      "payloads": [
+        {
+          "automation": 5,
+          "intent": "setautomation",
+          "points": [
+            {
+              "at": 0.0,
+              "data": {
+                "curve": 0.0,
+                "shape": 1
+              },
+              "value": 1.0
+            },
+            {
+              "at": 1.0,
+              "data": {
+                "curve": 0.0,
+                "shape": 1
+              },
+              "value": 0.75
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "and every curve reported back is no edit",
+    "kind": "intake",
+    "domain": "multitrack",
+    "tag": "points",
+    "request": {
+      "values": [
+        "4",
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        "4",
+        96000.0,
+        1.0,
+        5.0,
+        -3.5,
+        "5",
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        "5",
+        48000.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "state": {
+        "version": 1,
+        "tracks": [
+          {
+            "id": 1,
+            "name": "drums",
+            "level": 0.5,
+            "muted": true,
+            "lanes": [
+              {
+                "id": 2,
+                "regions": [
+                  {
+                    "id": 3,
+                    "position": 4.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "source": {
+                          "source": 77,
+                          "lifetime": "session"
+                        },
+                        "start": 0.5,
+                        "duration": 4.0
+                      }
+                    },
+                    "automation": [
+                      {
+                        "id": 5,
+                        "points": [
+                          {
+                            "at": 0.0,
+                            "value": 1.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          },
+                          {
+                            "at": 1.0,
+                            "value": 0.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "automation": [
+              {
+                "id": 4,
+                "visible": true,
+                "target": {
+                  "min": -1.0,
+                  "max": 1.0
+                },
+                "points": [
+                  {
+                    "at": 0.0,
+                    "value": 0.0,
+                    "data": {
+                      "shape": 1,
+                      "curve": 0.0
+                    }
+                  },
+                  {
+                    "at": 2.0,
+                    "value": 1.0,
+                    "data": {
+                      "shape": 5,
+                      "curve": -3.5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "rate": 48000.0,
+      "defaultBpm": 60.0,
+      "sources": {
+        "77": {
+          "buffer": 12,
+          "channels": 1
+        }
+      }
+    },
+    "intake": {
+      "label": "edit the piece",
+      "payloads": []
+    }
+  },
+  {
+    "name": "a piece reported back unchanged is no edit",
+    "kind": "intake",
+    "domain": "multitrack",
+    "tag": "clips",
+    "request": {
+      "values": [
+        "3",
+        "1",
+        192000.0,
+        192000.0,
+        24000.0,
+        "region 3",
+        12
+      ],
+      "state": {
+        "version": 1,
+        "tracks": [
+          {
+            "id": 1,
+            "name": "drums",
+            "level": 0.5,
+            "muted": true,
+            "lanes": [
+              {
+                "id": 2,
+                "regions": [
+                  {
+                    "id": 3,
+                    "position": 4.0,
+                    "length": 4.0,
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "source": {
+                          "source": 77,
+                          "lifetime": "session"
+                        },
+                        "start": 0.5,
+                        "duration": 4.0
+                      }
+                    },
+                    "automation": [
+                      {
+                        "id": 5,
+                        "points": [
+                          {
+                            "at": 0.0,
+                            "value": 1.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          },
+                          {
+                            "at": 1.0,
+                            "value": 0.0,
+                            "data": {
+                              "shape": 1,
+                              "curve": 0.0
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "automation": [
+              {
+                "id": 4,
+                "visible": true,
+                "target": {
+                  "min": -1.0,
+                  "max": 1.0
+                },
+                "points": [
+                  {
+                    "at": 0.0,
+                    "value": 0.0,
+                    "data": {
+                      "shape": 1,
+                      "curve": 0.0
+                    }
+                  },
+                  {
+                    "at": 2.0,
+                    "value": 1.0,
+                    "data": {
+                      "shape": 5,
+                      "curve": -3.5
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "rate": 48000.0,
+      "defaultBpm": 60.0,
+      "sources": {
+        "77": {
+          "buffer": 12,
+          "channels": 1
+        }
+      }
+    },
+    "intake": {
+      "label": "edit the piece",
+      "payloads": []
     }
   }
 ]

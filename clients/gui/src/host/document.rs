@@ -458,11 +458,8 @@ impl Owner {
     /// vocabulary rather than reading it.
     pub fn read_piece_events(&self, args: &[OscType]) -> Vec<(MultitrackIntent, &'static str)> {
         match args.first() {
-            Some(OscType::String(tag)) if tag == "clips" => {
-                piece::read_clips(&self.piece, &args[1..], &self.piece_look())
-            }
-            Some(OscType::String(tag)) if tag == "lanes" => {
-                piece::read_lanes(&self.piece, &args[1..])
+            Some(OscType::String(tag)) => {
+                piece::read(&self.piece, tag, &args[1..], &self.piece_look())
             }
             _ => Vec::new(),
         }

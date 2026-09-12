@@ -341,7 +341,9 @@ test("a marker added in the roll is refused and says why", async () => {
     assert.equal([...timeline].length, 1);
     const [seq, corrections, reason] = host.acks[host.acks.length - 1];
     assert.equal(seq, 1);
-    assert.ok(String(reason).includes("OscItem"));
+    // The sentence is the crate's and names no language: it is one string
+    // now, so a page cannot be told to type a script's spelling of `add`.
+    assert.ok(String(reason).includes("a marker is the message it sends"));
     assert.deepEqual(corrections[0][1].osc, [0.0, "/a"]);
 });
 

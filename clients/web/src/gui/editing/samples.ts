@@ -100,18 +100,7 @@ function floats(blob: unknown): number[] {
  */
 export class SamplesDomain extends Domain<Buffer> {
     override readonly name = SAMPLES;
-
-    /**
-     * The inverse of the gesture being routed, taken off the wire.
-     *
-     * It is held for the length of one gesture rather than derived, because the
-     * crate's vocabulary has no field for "what this replaced" — an edit states
-     * the resulting value, and the payload stating the previous one *is* the
-     * inverse. The host sends both in the same event, so this is where the
-     * second one waits between `payload` and `current`, which an editor calls
-     * back to back.
-     */
-    #previous: Write | null = null;
+    override readonly ingested = true;
 
     /**
      * The writes in flight, chained.
@@ -123,43 +112,40 @@ export class SamplesDomain extends Domain<Buffer> {
      */
     #writes: Promise<void> = Promise.resolve();
 
-    payload(_structure: Buffer, tag: string, values: readonly unknown[]): unknown {
-        let channel: number;
-        let start: number;
-        let wrote: number[];
-        let previous: number[];
-        if (tag === "draw" && values.length >= 4) {
-            channel = Math.trunc(Number(values[0]));
-            start = Math.trunc(Number(values[1]));
-            wrote = floats(values[2]);
-            previous = floats(values[3]);
-        } else if (tag === "sample" && values.length >= 4) {
-            channel = Math.trunc(Number(values[0]));
-            start = Math.trunc(Number(values[1]));
-            wrote = [Number(values[2])];
-            previous = [Number(values[3])];
-        } else {
-            return null;
+    /**
+     * The report, with the two runs decoded.
+     *
+     * **The wire's own framing is this page's.** A `draw` carries its run as a
+     * little-endian `f32` blob, which is an `ArrayBuffer` here and a
+     * `memoryview` in the Python client and cannot be either in a JSON request —
+     * so the blob is read into numbers and the crate reads the numbers.
+     */
+    override request(
+        _structure: Buffer,
+        tag: string,
+        values: readonly unknown[],
+    ): Record<string, unknown> {
+        const out = [...values];
+        if (tag === "draw" && out.length >= 4) {
+            out[2] = floats(out[2]);
+            out[3] = floats(out[3]);
         }
-        if (wrote.length === 0) return null;
-        this.#previous = { intent: "write", channel, start, values: previous };
-        return { intent: "write", channel, start, values: wrote } satisfies Write;
+        return { values: out };
     }
 
     /**
      * What the stroke replaced, as the write that puts it back.
      *
-     * `null` when the run is not the same length as what it replaced — an
-     * inverse that does not cover the span it undoes would leave part of the
-     * edit standing, and an entry the pile cannot invert is better recorded as
-     * one than pretended.
+     * **The one vocabulary whose inverse arrives with the gesture**: the payload
+     * states the run written and has no field for the run it replaced, and the
+     * host sends both in the same event. So there is nothing to read off the
+     * structure — by the time this is asked the answer is already in the
+     * reading, and it is `null` when the two runs did not cover the same span,
+     * which is an entry the pile cannot invert and is better recorded as one
+     * than pretended.
      */
-    current(_structure: Buffer, payload: unknown): unknown {
-        const previous = this.#previous;
-        this.#previous = null;
-        if (previous === null) return null;
-        const values = (payload as Write).values ?? [];
-        return previous.values.length === values.length ? previous : null;
+    current(_structure: Buffer, _payload: unknown): unknown {
+        return this.taken.inverse ?? null;
     }
 
     project(structure: Buffer, payload: unknown): boolean {
@@ -198,10 +184,6 @@ export class SamplesDomain extends Domain<Buffer> {
                 throw error;
             });
         });
-    }
-
-    override label(): string {
-        return "draw the samples";
     }
 }
 

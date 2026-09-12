@@ -41,23 +41,37 @@ def quads(flat) -> list:
             for i in range(0, len(values) - len(values) % QUAD, QUAD)]
 
 
+def flat(points) -> list:
+    """The crate's points back as the flat quads the view and the `Env` both
+    speak — the other half of the `Env` seam `PointsDomain.state` opens.
+
+    A point that says nothing about its segment is linear, which is what a curve
+    drawn somewhere that has no shapes means.
+    """
+    out: list = []
+    for point in points:
+        data = point.get("data") or {}
+        out += [float(point.get("at", 0.0)), float(point.get("value", 0.0)),
+                int(data.get("shape", 1)), float(data.get("curve", 0.0))]
+    return out
+
+
 class PointsDomain(Domain):
     """A curve's vocabulary: the crate's ``points``, with the shape of each
     segment carried in the point's own ``data``."""
 
     name = _native.POINTS
-
-    def payload(self, structure, tag: str, values) -> "dict | None":
-        if tag != "points" or not values:
-            return None
-        return {"intent": "setpoints",
-                "points": [{"at": t, "value": v, "data": {"shape": shape,
-                                                          "curve": curve}}
-                           for t, v, shape, curve in quads(values)]}
+    ingested = True
 
     def state(self, structure) -> list:
         """The curve as the crate holds it — the state `current` is read
-        against and `project` writes back."""
+        against and `project` writes back.
+
+        **The `Env` seam, not a gesture.** It is here rather than in the crate
+        for the reason `project` is: what this crosses is the object *this
+        client* holds, and the vocabulary on the other side is already the
+        crate's.
+        """
         return [{"at": t, "value": v, "data": {"shape": shape, "curve": curve}}
                 for t, v, shape, curve in quads(structure.to_points())]
 
@@ -69,26 +83,11 @@ class PointsDomain(Domain):
         edited = _native.domain_edit(self.name, self.state(structure), payload)
         if edited is None or not edited.get("applied"):
             return False
-        structure.env = points_to_env(self.flat(edited["state"]))
+        structure.env = points_to_env(flat(edited["state"]))
         # One door: the envelope the script holds and the control buffer the
         # lane synth reads cannot disagree about which of the two happened.
         structure.refill()
         return True
-
-    @staticmethod
-    def flat(points) -> list:
-        """The crate's points back as the flat quads the view and the `Env`
-        both speak. A point that says nothing about its segment is linear,
-        which is what a curve drawn somewhere that has no shapes means."""
-        out: list = []
-        for point in points:
-            data = point.get("data") or {}
-            out += [float(point.get("at", 0.0)), float(point.get("value", 0.0)),
-                    int(data.get("shape", 1)), float(data.get("curve", 0.0))]
-        return out
-
-    def label(self, payload: dict) -> str:
-        return "draw the curve"
 
 
 class PointsView(View):

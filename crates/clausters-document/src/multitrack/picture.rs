@@ -35,6 +35,7 @@
 //! exactly how a new box is told from a moved one.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::multitrack::edit::MultitrackIntent;
 use crate::multitrack::{Automation, Content, Lane, Multitrack, Region, Track};
@@ -251,12 +252,44 @@ pub fn read_points(piece: &Multitrack, reported: &[Curved]) -> Vec<MultitrackInt
         .filter_map(|curve| {
             let id = curve.name.parse::<u64>().ok().map(NodeId)?;
             let held = piece.automation(id)?;
-            (held.points != curve.points).then(|| MultitrackIntent::SetAutomation {
+            (!same_points(&held.points, &curve.points)).then(|| MultitrackIntent::SetAutomation {
                 automation: id,
                 points: curve.points.clone(),
             })
         })
         .collect()
+}
+
+/// Whether two runs of break-points say the same thing.
+///
+/// **A JSON number compares by value and not by spelling**, which derived
+/// equality on [`Opaque`] cannot do. A point's `data` is opaque and travels
+/// through whichever serializer the endpoint has, and JavaScript writes `0.0`
+/// as `0` — so a curve reported back exactly as it was drawn came out as an
+/// *edit* in the page and as nothing in a script, which is one report meaning
+/// two things. Everything else compares as it always did.
+fn same_points(held: &[Point], reported: &[Point]) -> bool {
+    held.len() == reported.len()
+        && held
+            .iter()
+            .zip(reported)
+            .all(|(a, b)| a.at == b.at && a.value == b.value && same_json(&a.data.0, &b.data.0))
+}
+
+/// Two opaque values, compared with numbers read as numbers.
+fn same_json(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(x, y)| same_json(x, y))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(key, x)| y.get(key).is_some_and(|y| same_json(x, y)))
+        }
+        _ => a == b,
+    }
 }
 
 /// A row as a hand left it — what [`read_rows`] is given, and the same shape
@@ -945,5 +978,42 @@ mod tests {
             }],
         }];
         assert!(read_points(&piece, &stray).is_empty());
+    }
+
+    /// **A number compares by value, not by spelling.** A page writes `0.0` as
+    /// `0` and a script writes it as `0.0`; a curve reported back exactly as it
+    /// was drawn is no edit in either.
+    #[test]
+    fn a_point_s_data_compares_by_what_it_says() {
+        let mut piece = Multitrack::default();
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        let mut curve = Automation::new(NodeId(4), Opaque::none());
+        curve.points = vec![Point {
+            at: 0.0,
+            value: 0.0,
+            data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.0 })),
+        }];
+        track.automation.push(curve);
+        piece.tracks.push(track);
+
+        let spelled = vec![Curved {
+            name: "4".into(),
+            points: vec![Point {
+                at: 0.0,
+                value: 0.0,
+                data: Opaque(serde_json::json!({ "shape": 1.0, "curve": 0 })),
+            }],
+        }];
+        assert!(read_points(&piece, &spelled).is_empty());
+
+        let moved = vec![Curved {
+            name: "4".into(),
+            points: vec![Point {
+                at: 0.0,
+                value: 0.0,
+                data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.5 })),
+            }],
+        }];
+        assert_eq!(read_points(&piece, &moved).len(), 1);
     }
 }

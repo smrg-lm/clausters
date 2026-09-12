@@ -898,6 +898,23 @@ export function domainCoalesceKey(domain: string, payload: string): string;
 export function domainEdit(domain: string, state: string, payload: string): string;
 
 /**
+ * JS face: **what a gesture means, in a structure's own vocabulary** — the
+ * edit ingestion, as a JSON string.
+ *
+ * A host reports a gesture as a tag and a flat list of values, and this is what
+ * turns one into the payloads a structure's own vocabulary states. `domain` is
+ * `"points"`, `"samples"`, `"events"` or `"multitrack"`; `request` is the one
+ * JSON object `clausters_editing::intake_json` documents, carrying the report
+ * and whatever that domain needs beside it.
+ *
+ * The answer is `{"payloads": [...], "label": "...."}`, with `inverse` where
+ * the gesture carried one and `refusal` where the gesture is this domain's and
+ * cannot be written. A domain or a tag nobody answers for comes back with no
+ * payloads and no refusal, which is "nothing to say" rather than a failure.
+ */
+export function editingIntake(domain: string, tag: string, request: string): string;
+
+/**
  * The engraver's options for one page, as the JSON object it is configured
  * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
  * systems at) and an optional JSON object merged over them.
@@ -1371,6 +1388,7 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

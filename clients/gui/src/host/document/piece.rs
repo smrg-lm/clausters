@@ -37,10 +37,10 @@
 //! wall-clock fact.
 
 use clausters_core::tempomap::TempoMap;
+use clausters_document::SourceId;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::picture;
-use clausters_document::{Beat, NodeId, SourceId};
 use clausters_editing::multitrack as projection;
 
 use super::sources::Takes;
@@ -173,147 +173,78 @@ impl projection::Buffers for Look<'_> {
             .and_then(|takes| takes.get(source))
             .map_or(-1, |take| i64::from(take.bufnum))
     }
+
+    /// The reverse of the lookup that drew it: a picture names a server buffer
+    /// and the document names a source, and the table that resolved one is the
+    /// only thing that reads it back.
+    fn source(&self, bufnum: i64) -> Option<SourceId> {
+        self.takes?.source_of(i32::try_from(bufnum).ok()?)
+    }
 }
 
-/// **The piece's clips, as they now stand** — the one payload every placement
-/// gesture leaves.
+/// **What a report of the piece means**, in the piece's own vocabulary.
 ///
-/// The flat wire form crossed into the crate's own
-/// [`Placed`](picture::Placed), which is where beats meet frames and a buffer
-/// number meets a source. What the list *means* is
-/// [`picture::read`]'s and is written once.
-pub fn read_clips(
+/// One reading for every tag a multitrack widget reports under — the boxes, the
+/// rows, the break-points — because a host reports every gesture the same way
+/// and the difference between them is the *piece's*, not the host's. It is
+/// [`clausters_editing::multitrack::intake`]'s, which is the same reading both
+/// clients go through: this crate held its own copy of it until the projections
+/// moved, and a standalone host that read a septuple its own way would be
+/// exactly the divergence the shared crate exists to end.
+pub fn read(
     piece: &Multitrack,
+    tag: &str,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    let rows = picture::rows(piece);
-    let mut placed = Vec::new();
-    for clip in args.as_chunks::<7>().0 {
-        let (Some(name), Some(lane)) = (string_at(clip, 0), string_at(clip, 1)) else {
-            continue;
-        };
-        // The row's name **is** an id, always: the drawing writes it and a hand
-        // never renames a row.
-        let Some(row) = lane.parse::<u64>().ok().map(NodeId) else {
-            continue;
-        };
-        if !rows.iter().any(|r| r.track == row) {
-            continue;
-        }
-        let at = float_at(clip, 2);
-        let position = Beat(look.beat_at(at));
-        let length = Beat(look.beat_at(at + float_at(clip, 3)) - position.0);
-        placed.push(picture::Placed {
-            name: name.to_string(),
-            row,
-            position,
-            length,
-            start: float_at(clip, 4) / look.rate.max(f64::MIN_POSITIVE),
-            // How much a **new** box shows: the stretch it occupies, crossed to
-            // the wall clock the only way a length may be.
-            content: look.tempo.span_secs(position.0, position.0 + length.0),
-            source: source_of(int_at(clip, 6), look),
-        });
-    }
-    picture::read(piece, &placed, picture::fresh_id(piece))
+    let values: Vec<serde_json::Value> = args.iter().map(atom).collect();
+    projection::read(piece, tag, &values, &look.projection())
         .into_iter()
         .map(|intent| {
-            let label = match &intent {
-                MultitrackIntent::TrimRegion { .. } => "trim a clip",
-                MultitrackIntent::PlaceRegion { .. } => "move a clip",
-                _ => "edit the clips",
-            };
+            let label = projection::label(&intent);
             (intent, label)
         })
         .collect()
 }
 
-/// The **source** a buffer number came from, which is the reverse of the lookup
-/// that drew it: a picture names a server buffer and the document names a
-/// source, and the table that resolved one is the only thing that reads it back.
-fn source_of(bufnum: i64, look: &Look<'_>) -> Option<SourceId> {
-    look.takes?.source_of(i32::try_from(bufnum).ok()?)
+/// An OSC atom as the JSON the reading takes.
+///
+/// The wire's framing is the host's and the reading is the crate's, so this is
+/// where the one becomes the other — the same line each client draws for its own
+/// transport.
+fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
+    use clausters_core::osc::OscType;
+    match value {
+        OscType::String(s) => serde_json::Value::String(s.clone()),
+        OscType::Float(v) => serde_json::json!(f64::from(*v)),
+        OscType::Double(v) => serde_json::json!(*v),
+        OscType::Int(v) => serde_json::json!(*v),
+        OscType::Long(v) => serde_json::json!(*v),
+        OscType::Bool(v) => serde_json::json!(*v),
+        _ => serde_json::Value::Null,
+    }
 }
 
-/// **The piece's strips, as they now stand** — the mixer's payload.
+/// [`read`] over a report of the boxes — every placement gesture's payload.
+pub fn read_clips(
+    piece: &Multitrack,
+    args: &[clausters_core::osc::OscType],
+    look: &Look<'_>,
+) -> Vec<(MultitrackIntent, &'static str)> {
+    read(piece, "clips", args, look)
+}
+
+/// [`read`] over a report of the rows — the mixer's payload.
 ///
-/// Mute and solo are the track's own fields and the fader is a key in its
-/// table, so all three travel in one [`MultitrackIntent::SetTracks`]: the
-/// piece's only verb over a track is the whole list, which is what makes
-/// adding, removing and reordering one verb and costs the inverse a copy of the
-/// tracks.
-///
-/// A strip saying what the track already says is not an edit, which is what
-/// keeps one fader drag from rewriting every track.
+/// Mute, solo and the fader are one [`MultitrackIntent::SetTracks`] because the
+/// piece's only verb over a track is the whole list, which is what makes adding,
+/// removing and reordering one verb and costs the inverse a copy of the tracks.
 pub fn read_lanes(
     piece: &Multitrack,
     args: &[clausters_core::osc::OscType],
+    look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    let mut tracks = piece.tracks.clone();
-    let mut changed = false;
-    for lane in args.as_chunks::<6>().0 {
-        let Some(name) = string_at(lane, 0) else {
-            continue;
-        };
-        let Some(id) = name.parse::<u64>().ok().map(NodeId) else {
-            continue;
-        };
-        let Some(track) = tracks.iter_mut().find(|t| t.id == id) else {
-            continue;
-        };
-        let (muted, soloed) = (truthy_at(lane, 3), truthy_at(lane, 4));
-        let level = f64::from(float_at(lane, 5) as f32);
-        let held = picture::level_of(track);
-        if track.muted == muted && track.soloed == soloed && held == level {
-            continue;
-        }
-        track.muted = muted;
-        track.soloed = soloed;
-        track.level = level;
-        // What an older piece carried in the opaque table is the field's now,
-        // and leaving both would be two answers to one question.
-        if let Some(table) = track.config.0.as_object_mut() {
-            table.remove(picture::LEVEL);
-        }
-        changed = true;
-    }
-    if !changed {
-        return Vec::new();
-    }
-    vec![(MultitrackIntent::SetTracks { tracks }, "mix a track")]
-}
-
-fn string_at(args: &[clausters_core::osc::OscType], n: usize) -> Option<&str> {
-    match args.get(n) {
-        Some(clausters_core::osc::OscType::String(s)) => Some(s.as_str()),
-        _ => None,
-    }
-}
-
-fn float_at(args: &[clausters_core::osc::OscType], n: usize) -> f64 {
-    match args.get(n) {
-        Some(clausters_core::osc::OscType::Float(v)) => f64::from(*v),
-        Some(clausters_core::osc::OscType::Double(v)) => *v,
-        Some(clausters_core::osc::OscType::Int(v)) => f64::from(*v),
-        Some(clausters_core::osc::OscType::Long(v)) => *v as f64,
-        _ => 0.0,
-    }
-}
-
-/// An OSC integer, however it was written.
-fn int_at(args: &[clausters_core::osc::OscType], n: usize) -> i64 {
-    match args.get(n) {
-        Some(clausters_core::osc::OscType::Int(v)) => i64::from(*v),
-        Some(clausters_core::osc::OscType::Long(v)) => *v,
-        Some(clausters_core::osc::OscType::Float(v)) => *v as i64,
-        Some(clausters_core::osc::OscType::Double(v)) => *v as i64,
-        _ => -1,
-    }
-}
-
-fn truthy_at(args: &[clausters_core::osc::OscType], n: usize) -> bool {
-    super::truthy_at(args, n)
+    read(piece, "lanes", args, look)
 }
 
 #[cfg(test)]
@@ -322,7 +253,9 @@ mod tests {
     use crate::host::document::sources::Takes;
     use clausters_core::osc::OscType;
     use clausters_document::multitrack::{Content, Region, Track};
-    use clausters_document::{Against, Opaque, Rules, SegmentRef, SegmentSource, SourceId};
+    use clausters_document::{
+        Against, Beat, NodeId, Opaque, Rules, SegmentRef, SegmentSource, SourceId,
+    };
     use clausters_document::{Lifetime, SourceRef};
 
     fn window(source: u64, start: f64) -> Content {
@@ -715,10 +648,19 @@ mod tests {
             args
         };
         assert!(
-            read_lanes(&piece, &lanes(&[("10", false, 1.0), ("20", false, 1.0)])).is_empty(),
+            read_lanes(
+                &piece,
+                &lanes(&[("10", false, 1.0), ("20", false, 1.0)]),
+                &look()
+            )
+            .is_empty(),
             "the strips as they were drawn are not an edit"
         );
-        let edits = read_lanes(&piece, &lanes(&[("10", false, 1.0), ("20", true, 0.5)]));
+        let edits = read_lanes(
+            &piece,
+            &lanes(&[("10", false, 1.0), ("20", true, 0.5)]),
+            &look(),
+        );
         let [(MultitrackIntent::SetTracks { tracks }, _)] = edits.as_slice() else {
             panic!("the tracks, whole: {edits:?}");
         };

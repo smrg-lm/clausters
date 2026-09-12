@@ -341,6 +341,7 @@ sits over it.
 
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
 |---|---|---|
+| `clausters_editing_intake` | `editing_intake` | `idiom` — **what a gesture means**, in a structure's own vocabulary: a tag and a flat list of values become the payloads an edit is. One door over all four domains (`points`, `samples`, `events`, `multitrack`), because a host reports every gesture the same way — and because a fifth vocabulary then has nowhere to grow. Both take the domain, the tag and one JSON request; C sizes and fills a buffer where wasm returns the string |
 | `clausters_editing_multitrack_props` | `multitrack_props` | `idiom` — a piece as the props the multitrack widget is drawn with: the rows, the boxes, the automations over both, their break-points, which are hidden and which boxes loop. Both take the piece and the source table as JSON; C sizes and fills a buffer where wasm returns the string. It takes **the same source table the instance plan does** rather than a second one shaped for drawing — what a box is drawn from and what it is played from are the same samples |
 | `clausters_editing_points_props` | `points_props` | `idiom` — the props a break-point curve is drawn with. C sizes and fills a JSON buffer and takes the kept axis as a flag plus two `f64`s; wasm returns the JSON string and takes the kept axis as optional arguments — the same split `clausters_core_curve_axis` makes, and for the same reason |
 

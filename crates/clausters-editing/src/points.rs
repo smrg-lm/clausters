@@ -24,6 +24,8 @@ use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::curve_axis;
 
+use crate::intake::Intake;
+
 /// What the `bpf` widget sends and takes: flat `t v shape curve` quads.
 pub const QUAD: usize = 4;
 
@@ -72,6 +74,46 @@ pub fn props(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> Map<String,
 /// [`props`] as a JSON object, which is what the two doors carry.
 pub fn props_json(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> String {
     Value::Object(props(points, kept, held)).to_string()
+}
+
+/// The curve as the `points` vocabulary holds it, out of the flat `t v shape
+/// curve` quads the widget and an `Env` both speak.
+///
+/// **What a shape is stays the client's.** The crate carries a point's `data`
+/// and never reads it, which is what keeps an undo from putting a bent curve
+/// back straight; this only says where on the point it rides.
+///
+/// The other direction — the vocabulary's points back as quads — is a client's,
+/// because what it crosses into is that client's own envelope object.
+pub fn state(points: &[f64]) -> Vec<Value> {
+    points
+        .as_chunks::<QUAD>()
+        .0
+        .iter()
+        .map(|quad| {
+            json!({
+                "at": quad[0],
+                "value": quad[1],
+                "data": { "shape": quad[2] as i64, "curve": quad[3] },
+            })
+        })
+        .collect()
+}
+
+/// **What a gesture over a curve means.**
+///
+/// One tag and one verb: a `bpf` reports the whole curve, so the edit is the
+/// curve it now is. An empty report is not an edit — a widget that has drawn
+/// nothing yet says nothing about the structure behind it, and writing an empty
+/// curve over a full one is not what a hand that has not moved did.
+pub fn intake(tag: &str, values: &[f64]) -> Intake {
+    if tag != "points" || values.is_empty() {
+        return Intake::nothing();
+    }
+    Intake::edit(
+        json!({ "intent": "setpoints", "points": state(values) }),
+        "draw the curve",
+    )
 }
 
 #[cfg(test)]

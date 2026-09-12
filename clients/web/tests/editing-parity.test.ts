@@ -19,12 +19,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { multitrackProps, pointsProps } from "../src/core/clausters_core_web.js";
+import { editingIntake, multitrackProps, pointsProps } from "../src/core/clausters_core_web.js";
 
 type Vector = {
     name: string;
-    kind: "points_props" | "multitrack_props";
-    props: Record<string, unknown>;
+    kind: "points_props" | "multitrack_props" | "intake";
+    props?: Record<string, unknown>;
     // `points_props`
     points?: number[];
     kept?: [number, number] | null;
@@ -34,6 +34,11 @@ type Vector = {
     rate?: number;
     bpm?: number;
     sources?: Record<string, unknown>;
+    // `intake`
+    domain?: string;
+    tag?: string;
+    request?: Record<string, unknown>;
+    intake?: Record<string, unknown>;
 };
 
 const vectors = JSON.parse(
@@ -73,5 +78,17 @@ test("and a piece's props are the same props in both clients", async () => {
             ),
         ) as Record<string, unknown>;
         assert.deepEqual(got, v.props, v.name);
+    }
+});
+
+test("and a gesture means the same thing in both clients", async () => {
+    await loadCore();
+    const cases = of("intake");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    for (const v of cases) {
+        const got = JSON.parse(
+            editingIntake(v.domain ?? "", v.tag ?? "", JSON.stringify(v.request ?? {})),
+        ) as Record<string, unknown>;
+        assert.deepEqual(got, v.intake, v.name);
     }
 });

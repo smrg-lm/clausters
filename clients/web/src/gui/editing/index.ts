@@ -44,7 +44,7 @@ export type { Adopting } from "./context.ts";
 export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
-export { NotesDomain, NotesEditor, NotesView, quintuples } from "./events.ts";
+export { NotesDomain, NotesEditor, NotesView } from "./events.ts";
 export type { CrateEvent, NotesEditorOptions, Note } from "./events.ts";
 export {
     MultitrackDomain,

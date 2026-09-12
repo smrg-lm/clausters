@@ -78,48 +78,33 @@ class SamplesDomain(Domain):
     server holds."""
 
     name = _native.SAMPLES
+    ingested = True
 
-    def __init__(self):
-        #: The inverse of the gesture being routed, taken off the wire.
-        #:
-        #: It is held for the length of one gesture rather than derived,
-        #: because the crate's vocabulary has no field for "what this
-        #: replaced" — an edit states the resulting value, and the payload
-        #: stating the previous one *is* the inverse. The host sends both in
-        #: the same event, so this is where the second one waits between
-        #: `payload` and `current`, which an editor calls back to back.
-        self._previous: "dict | None" = None
+    def request(self, structure, tag: str, values) -> dict:
+        """The report, with the two runs decoded.
 
-    def payload(self, structure, tag: str, values) -> "dict | None":
+        **The wire's own framing is this client's.** A `draw` carries its run as
+        a little-endian ``f32`` blob, which is a `memoryview` here and an
+        `ArrayBuffer` in the page and cannot be either in a JSON request — so
+        the blob is read into numbers and the crate reads the numbers.
+        """
+        values = list(values)
         if tag == "draw" and len(values) >= 4:
-            channel, start = int(values[0]), int(values[1])
-            wrote, previous = _floats(values[2]), _floats(values[3])
-        elif tag == "sample" and len(values) >= 4:
-            channel, start = int(values[0]), int(values[1])
-            wrote, previous = [float(values[2])], [float(values[3])]
-        else:
-            return None
-        if not wrote:
-            return None
-        self._previous = {"intent": "write", "channel": channel,
-                          "start": start, "values": previous}
-        return {"intent": "write", "channel": channel, "start": start,
-                "values": wrote}
+            values[2], values[3] = _floats(values[2]), _floats(values[3])
+        return {"values": values}
 
     def current(self, structure, payload: dict) -> "dict | None":
         """What the stroke replaced, as the write that puts it back.
 
-        ``None`` when the run is not the same length as what it replaced — an
-        inverse that does not cover the span it undoes would leave part of the
-        edit standing, and an entry the pile cannot invert is better recorded as
-        one than pretended.
+        **The one vocabulary whose inverse arrives with the gesture**: the
+        payload states the run written and has no field for the run it
+        replaced, and the host sends both in the same event. So there is nothing
+        to read off the structure — by the time this is asked, the answer is
+        already in the reading, and it is ``None`` when the two runs did not
+        cover the same span, which is an entry the pile cannot invert and is
+        better recorded as one than pretended.
         """
-        previous, self._previous = self._previous, None
-        if previous is None:
-            return None
-        if len(previous["values"]) != len(payload.get("values") or ()):
-            return None
-        return previous
+        return self._taken.get("inverse")
 
     def project(self, structure, payload: dict) -> bool:
         channels = max(1, int(getattr(structure, "channels", 1) or 1))
@@ -142,9 +127,6 @@ class SamplesDomain(Domain):
             span[i * channels + channel] = value
         structure.set_samples(span, start=first)
         return True
-
-    def label(self, payload: dict) -> str:
-        return "draw the samples"
 
 
 #: **What a hand may do to the samples**, and it is three gestures rather than a

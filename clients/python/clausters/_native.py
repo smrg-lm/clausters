@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 51
+CORE_ABI_VERSION = 52
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -237,6 +237,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_props.restype = ctypes.c_size_t
+    lib.clausters_editing_intake.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_intake.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1259,6 +1264,40 @@ def multitrack_props(piece: dict, rate: float, default_bpm: float,
     raw = size_then_fill(_lib.clausters_editing_multitrack_props,
                          as_u8(body), len(body), float(rate), float(default_bpm),
                          as_u8(table), len(table))
+    return json.loads(raw) if raw else {}
+
+
+def editing_intake(domain: str, tag: str, **request) -> dict:
+    """**What a gesture means**, in a structure's own vocabulary.
+
+    A host reports a gesture as a tag and a flat list of values, and this is
+    what turns one into the payloads `domain_edit` will apply
+    (`clausters_editing_intake`). One door over all four domains — ``points``,
+    ``samples``, ``events``, ``multitrack`` — because a host reports every
+    gesture the same way, and because a fifth vocabulary then has nowhere to
+    grow.
+
+    Args:
+        domain: which vocabulary the answer comes back in.
+        tag: the ``/gui_event`` tag the report arrived under.
+        request: what that domain reads — ``values`` always; ``state`` for the
+            two that need the structure (the piece, the timeline);
+            ``unitsPerBeat`` and ``editable`` for a roll; ``rate``,
+            ``defaultBpm`` and ``sources`` for a piece.
+
+    Returns:
+        ``{"payloads": [...], "label": str}``, with ``inverse`` where the
+        gesture carried one and ``refusal`` where the gesture *is* this
+        domain's and cannot be written. No payloads and no refusal is "nothing
+        to say" — a tag this domain does not answer for — which is the ordinary
+        case rather than a failure.
+    """
+    _lib = lib()
+    name = domain.encode("utf-8")
+    verb = tag.encode("utf-8")
+    body = json.dumps(request).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_intake, as_u8(name), len(name),
+                         as_u8(verb), len(verb), as_u8(body), len(body))
     return json.loads(raw) if raw else {}
 
 

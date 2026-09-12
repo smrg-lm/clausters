@@ -348,7 +348,16 @@ pub use time::*;
 /// same picture with no client in the process, so `clients/gui` linked its own
 /// copy of the same sextuple, the same septuple and the same row height.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 51;
+/// **v52 a gesture is read once, for every domain there is.**
+/// `clausters_editing_intake` is the second projection: a tag and a flat list
+/// of values become payloads in a structure's own vocabulary -- a curve's
+/// points, a stroke over samples, a roll's two lanes, a piece's boxes, rows and
+/// break-points. There were sixteen small readers before this, eight per
+/// language, each able to disagree with its twin about what a septuple means;
+/// it is **one** door for all four because a host reports every gesture the
+/// same way, which is also what keeps a client from quietly growing a fifth
+/// vocabulary. **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 52;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

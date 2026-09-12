@@ -26,6 +26,7 @@ import {
     Document as CoreDocument,
     History as CoreHistory,
     domainCoalesceKey as coreDomainCoalesceKey,
+    editingIntake as coreEditingIntake,
     domainEdit as coreDomainEdit,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
@@ -469,6 +470,58 @@ export const SESSION_FORMAT = 1;
  */
 export function domainCoalesceKey(domain: string, payload: unknown): string {
     return coreDomainCoalesceKey(domain, JSON.stringify(payload));
+}
+
+/**
+ * What a reading of one gesture came to: the payloads, what an undo menu calls
+ * them, and — where there is one — the inverse the gesture carried or the reason
+ * it cannot be written.
+ */
+export interface Intake {
+    /**
+     * The edits, in the order they are applied. Empty for a tag this domain
+     * does not answer for, which is the ordinary case rather than a failure.
+     */
+    payloads: unknown[];
+    /** What an undo menu calls this gesture. */
+    label: string;
+    /**
+     * The inverse, where the **gesture** carried it rather than the structure —
+     * a stroke over samples, which arrives with the run it replaced.
+     */
+    inverse?: unknown;
+    /**
+     * Why a gesture this domain understands cannot be written, as the sentence
+     * the user is shown.
+     */
+    refusal?: string;
+}
+
+/**
+ * **What a gesture means**, in a structure's own vocabulary.
+ *
+ * A host reports a gesture as a tag and a flat list of values, and this is what
+ * turns one into the payloads {@link domainEdit} will apply. One door over all
+ * four domains — `"points"`, `"samples"`, `"events"`, `"multitrack"` — because
+ * a host reports every gesture the same way, and because a fifth vocabulary then
+ * has nowhere to grow.
+ *
+ * `request` carries what that domain reads: `values` always, `state` for the two
+ * that need the structure (the piece, the timeline), `unitsPerBeat` and
+ * `editable` for a roll, and `rate`, `defaultBpm` and `sources` for a piece.
+ *
+ * No payloads and no refusal is "nothing to say" — a tag this domain does not
+ * answer for — which is the ordinary answer rather than a failure.
+ */
+export function editingIntake(
+    domain: string,
+    tag: string,
+    request: Record<string, unknown>,
+): Intake {
+    const answer = coreEditingIntake(domain, tag, JSON.stringify(request));
+    if (!answer) return { payloads: [], label: "edit" };
+    const taken = JSON.parse(answer) as Partial<Intake>;
+    return { ...taken, payloads: taken.payloads ?? [], label: taken.label ?? "edit" };
 }
 
 /** What {@link domainEdit} answers: both directions of one edit. */

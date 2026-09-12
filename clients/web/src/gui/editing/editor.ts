@@ -676,19 +676,23 @@ export class Editor<S = unknown> implements Adopting {
         if (notAnEdit().includes(tag)) return this.observe(id, tag, rest);
         if (this.interface(id, tag, rest)) return false;
         if (this.domain === null) return false;
-        const payloads = this.domain.payloads(this.structure, tag, rest);
+        // **One reading of one gesture.** The payloads, what an undo menu calls
+        // them and why the gesture was refused all come off the same answer,
+        // because they are three things about *one* report and reading it three
+        // times is how they come to be three answers.
+        const taken = this.domain.read(this.structure, tag, rest);
+        const payloads = taken.payloads;
         if (payloads.length === 0) {
             // Nothing, or a refusal. A refusal says why and hands the widget
             // back what it should be drawing, so the picture stops agreeing with
             // the hand instead of with the structure.
-            const reason = this.domain.refusal(this.structure, tag, rest);
-            if (reason !== null) {
-                this.reason = reason;
+            if (taken.refusal !== undefined) {
+                this.reason = taken.refusal;
                 this.resync(id);
             }
             return false;
         }
-        const label = this.domain.label(payloads[0]);
+        const label = taken.label;
         if (payloads.length === 1) return this.edit(payloads[0], label);
         return this.editAll(payloads, label);
     }

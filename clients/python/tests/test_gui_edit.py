@@ -328,7 +328,9 @@ def test_a_marker_added_in_the_roll_is_refused_and_says_why():
         is False
     assert len(timeline) == 1
     seq, corrections, reason = host.acks[-1]
-    assert seq == 1 and "OscItem" in (reason or "")
+    # The sentence is the crate's and names no language: it is one string
+    # now, so a script cannot be told to type a page's spelling of `add`.
+    assert seq == 1 and "a marker is the message it sends" in (reason or "")
     assert corrections and corrections[0][1]["osc"] == [0.0, "/a"]
 
 

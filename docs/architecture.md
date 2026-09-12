@@ -817,6 +817,23 @@ curve is drawn against is `clausters_core::envshape::curve_axis`, and the
 projection is the step after it, assembling that answer into the payload an
 endpoint reads.
 
+**The edit ingestion is one door for every domain.** A host reports a gesture
+the same way whatever it is over — a tag and a flat list of values — so what
+reads one is one call, `clausters_editing_intake` / `editingIntake`, with the
+structure's vocabulary named as the `domain`. What comes back is the payloads
+the gesture is, what an undo menu calls it, and — where there is one — the
+inverse the gesture carried or the sentence saying why it cannot be written.
+Three things about one report, off one reading, because reading it three times is
+how they come to be three answers. A domain nobody answers for comes back empty:
+**a fifth vocabulary has nowhere to grow**, which is the point of the door being
+one.
+
+What a client still owns on this side is the wire's own framing — a stroke's
+little-endian blob is a `memoryview` in one and an `ArrayBuffer` in the other —
+and `project`, writing an applied payload back onto its own objects. Those are
+the two halves that are genuinely per-language; everything between them is the
+crate's.
+
 The line it does not cross is the one the whole layering rests on: **a
 projection is a function.** It keeps nothing. Where a picture's own state
 lives — the axis a view settled on, the zoom, the selection — is the endpoint's

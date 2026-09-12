@@ -4819,10 +4819,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the widget back, and the acknowledgement carries
 
       reason='a marker is the message it sends, and a roll cannot say which:
-              add it with timeline.add(beat, OscItem(addr, ...)) and drag it
-              here'
+              add it to the timeline with its address, then drag it here'
 
-  -- a sentence that names the verb to call instead. What reaches the person at
+  -- a sentence that names what to do instead. *(It named the Python call when
+  this was written; the sentence became the crate's with `O27` and had to stop
+  naming a language, since one string now reaches a page and a script alike.)* What reaches the person at
   the window is the correction springing the picture back: **a line that
   flickers on each click and nothing else**, which is how the user described it
   before being told what the wire had said. Both halves of the entry now have a

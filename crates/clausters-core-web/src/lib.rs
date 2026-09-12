@@ -1221,6 +1221,25 @@ pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources
     clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
 }
 
+/// JS face: **what a gesture means, in a structure's own vocabulary** — the
+/// edit ingestion, as a JSON string.
+///
+/// A host reports a gesture as a tag and a flat list of values, and this is what
+/// turns one into the payloads a structure's own vocabulary states. `domain` is
+/// `"points"`, `"samples"`, `"events"` or `"multitrack"`; `request` is the one
+/// JSON object `clausters_editing::intake_json` documents, carrying the report
+/// and whatever that domain needs beside it.
+///
+/// The answer is `{"payloads": [...], "label": "...."}`, with `inverse` where
+/// the gesture carried one and `refusal` where the gesture is this domain's and
+/// cannot be written. A domain or a tag nobody answers for comes back with no
+/// payloads and no refusal, which is "nothing to say" rather than a failure.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = editingIntake)]
+pub fn editing_intake(domain: &str, tag: &str, request: &str) -> String {
+    clausters_editing::intake_json(domain, tag, request)
+}
+
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
 /// mismatch, an empty pair, or a constant channel.
