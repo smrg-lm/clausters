@@ -887,7 +887,37 @@ impl Multitrack {
             // beside it ride, and the owner answers it by saying which curves
             // are visible -- which is where that fact lives.
             track::HeaderPart::Curves => {
-                self.lanes[lane].curves = !self.lanes[lane].curves;
+                let showing = !self.lanes[lane].curves;
+                self.lanes[lane].curves = showing;
+                // **And the rows go with it, here** *(found 2026-09-12 by the
+                // user: "la A sigue sin ocultar ni mostrar")*. What `stack`
+                // draws from is `hidden`, which is the owner's answer, and the
+                // owner answers with the picture only when a **name** changes.
+                // Hiding changes none -- the curve is still there, it is not
+                // shown -- so a press that only flipped this flag changed
+                // nothing anybody draws from, and the row stayed exactly where
+                // it was. The first press on a bare track looked like it worked
+                // because it *mints* a curve, and a new name is answered.
+                //
+                // So the flag and `hidden` are one fact, and the press states
+                // it in both: the picture moves under the hand the way a
+                // dragged clip does, and the owner's `hidden` confirms it on
+                // the next correction.
+                let named: Vec<String> = self
+                    .curves
+                    .iter()
+                    .filter(|c| c.owner == self.lanes[lane].name)
+                    .map(|c| c.name.clone())
+                    .collect();
+                if showing {
+                    self.hidden.retain(|h| !named.contains(h));
+                } else {
+                    for name in named {
+                        if !self.hidden.contains(&name) {
+                            self.hidden.push(name);
+                        }
+                    }
+                }
                 Claim::Take(Take {
                     events: self.lanes_event(),
                     ..Take::default()
@@ -3321,6 +3351,67 @@ mod tests {
     /// double click that makes the row, the correction that renames it from the
     /// word this minted to the id the piece gave it, the press on `A`, and the
     /// correction that carries the curve the owner made.
+    /// **The toggle hides and shows the row it is about** *(found 2026-09-12 by
+    /// the user: "la A sigue sin ocultar ni mostrar")*.
+    ///
+    /// The press flipped `curves`, which nothing draws from: the stack is built
+    /// from `hidden`, and the owner answers with the picture only when a
+    /// **name** changes. So hiding stated nothing anybody could see, and the
+    /// first press on a bare track looked like it worked only because it mints a
+    /// curve.
+    #[test]
+    fn the_toggle_hides_the_row_and_shows_it_again() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["10", "noise", 96, 0, 0, 1, 1],
+                "curves": ["100", "10", "gain", 0, 1, 40],
+                "hidden": ""}"#,
+        ));
+        let indent = mt.gutter(&m);
+        let inp = Input {
+            indent,
+            ..input(&m, rect, len)
+        };
+        let rows = |mt: &Multitrack| {
+            let stack = mt.stack();
+            (0..stack.len())
+                .filter_map(|i| stack.row(i))
+                .collect::<Vec<_>>()
+        };
+        let press = |mt: &mut Multitrack| {
+            let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent);
+            let cell = track::header_parts(band, &mt.header(&mt.lanes[0], indent), &m)
+                .curves
+                .expect("the toggle");
+            let at = (
+                f64::from(cell.x + cell.w / 2.0),
+                f64::from(cell.y + cell.h / 2.0),
+            );
+            let Claim::Take(take) = mt.press(at, &inp) else {
+                panic!("the header takes it")
+            };
+            take.events.into_messages()
+        };
+
+        assert_eq!(rows(&mt), vec![model::Row::Lane(0), model::Row::Curve(0)]);
+
+        let msgs = press(&mut mt);
+        assert_eq!(msgs[0][7], OscType::Int(0), "the row says it is hidden");
+        assert_eq!(
+            rows(&mt),
+            vec![model::Row::Lane(0)],
+            "and the row is gone from the stack, under the hand"
+        );
+
+        // **And the owner says nothing**, because no name changed -- which is
+        // exactly why the press has to state it here.
+        let msgs = press(&mut mt);
+        assert_eq!(msgs[0][7], OscType::Int(1));
+        assert_eq!(rows(&mt), vec![model::Row::Lane(0), model::Row::Curve(0)]);
+    }
+
     #[test]
     fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
         let m = Metrics::default();

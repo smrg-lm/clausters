@@ -4149,6 +4149,16 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   **Still open, and smaller than it looked**: `Ctrl`+`J` is not a binding -- the three verbs all guard on `!ctrl`, so the clipboard family keeps `Ctrl`+letter -- and a modifier that means nothing is swallowed by nothing and says nothing either. Which keys these are is the unsettled question already filed as "A shortcut is the application's, not the widget's".
 
+- ✅ **The automation toggle flipped a flag nothing draws from** *(found 2026-09-12 by the user, reported three times: "el boton A no funciona", "la A sigue sin ocultar ni mostrar", "al crear un track y activa A no hace nada, al crear otro track aparece la automatizacion del anterior")*.
+
+  The stack is built from `hidden`, which is the **owner's** answer about which curves are not shown. The press flipped the lane's own `curves` flag and emitted the `lanes` report, and the owner wrote `visible` onto the automations -- but the owner answers with the whole picture only when a **name** changes, and hiding a curve changes none. So a press that only hid or showed stated nothing anybody draws from, and the row stayed exactly where it was.
+
+  It read as three different bugs because of the one case that *does* change a name: the first press on a bare track **mints** a gain curve, which is answered, so that press appeared to work and every press after it appeared not to. And a press whose answer was withheld was carried back by the next gesture that did add a row, which is the "al crear otro track aparece la automatizacion del anterior" report -- the same silence, one gesture later.
+
+  Fixed by saying it in both places the press already touches: the flag and this lane's entries in `hidden` move together, so the picture changes under the hand the way a dragged clip does and the owner's next correction confirms it. `the_toggle_hides_the_row_and_shows_it_again` presses twice and reads the stack, which is the assertion the earlier tests were missing: they each proved one leg of the path -- the gesture emits, the crate creates, the element accepts the correction -- and the path they proved was never the one that failed.
+
+  **What this cost, and the lesson worth keeping**: it was diagnosed twice from reading and both readings were wrong, because every part read correctly on its own. What settled it was logging the actual wire of the running example -- the events out and the corrections back -- which showed in one pass that the press *was* emitting, the owner *was* applying it, and nothing was coming back. Instrument the seam before theorising about it; a seam whose halves are each correct is exactly the one that cannot be read.
+
 - ✅ **The `meters` prop was read once and never again** *(found 2026-09-11 by
   eye, a track made by double click showing no strip; fixed the same day)*.
   `Multitrack::set` had an arm for every list it draws except this one, so the
