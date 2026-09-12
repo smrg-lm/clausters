@@ -480,3 +480,37 @@ test("a catalogue view is described by the crate and not by this client", async 
     assert.deepEqual(roll.axes.y, { min: 56.0, max: 64.0 });
     assert.equal(viewProps("clip", "{}"), "", "a kind the crate does not draw");
 });
+
+test("two editors in one application keep their own floor", async () => {
+    // The echo is **one view's** end of the conversation, so a window set does
+    // not share one. The floor rises when the version moved and no event of
+    // *this* view moved it — with one echo per application the two windows
+    // would each answer for the other, and a gesture the left window made
+    // against a picture the right window had already changed would find
+    // `version === applied` and be accepted, which is the whole of what the
+    // floor is for.
+    //
+    // The Python twin is
+    // `test_gui_editing.py::test_two_editors_in_one_application_keep_their_own_floor`.
+    const curve = aCurve();
+    const left = await edit(curve, { sampleRate: SR, tempo: TEMPO, open: false });
+    const right = await edit(curve, {
+        sampleRate: SR, tempo: TEMPO, open: false, app: left.app,
+    });
+    assert.notEqual(left.echo, right.echo, "an echo is a view's, not a window set's");
+    assert.equal(left.app, right.app, "and the window set is still one");
+
+    const before = left.echo.state.applied;
+    const { wid } = await opened(right);
+    assert.equal(
+        right.apply("/gui_event", [wid, 1, 0, "points",
+            0.0, 300.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
+        true,
+    );
+    assert.ok(left.editing.version > before, "the neighbour moved the version");
+    assert.equal(
+        left.echo.state.applied,
+        before,
+        "the neighbour's edit answered for this window's conversation",
+    );
+});

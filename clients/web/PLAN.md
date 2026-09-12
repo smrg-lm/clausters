@@ -4277,13 +4277,17 @@ sound.
   than editing — it is `clausters.log` that has no port — so what lands first is
   the area mechanism, with editing as the first area on it.
 
-- ⬜ **The intents an edit projects are collected and nobody reads one**
-  *(found 2026-09-12; written in full in `clients/python/PLAN.md`, "The intents
-  an edit projects are collected and nobody reads one")*. The page carries the
-  same shape: `Editing.moved` fills `intents`, `turn` derives `whole`, and
-  `Editor.adopt` names both with a leading underscore because it reads neither.
-  The dead half is already gone from both clients; whether the seam stays is one
-  decision for the two of them.
+- ✅ **The intents an edit projects were collected and nobody read one**
+  *(found and collapsed 2026-09-12; written in full in
+  `clients/python/PLAN.md`)*. `moved` is `changed` and `adopt` takes nothing, in
+  both clients. The page's own evidence that the seam never fitted was the cast
+  it needed to use it: `this.editing.moved(moved as unknown as Intent)`.
+
+- ✅ **A box entered from a piece got its own `Application`** *(found and fixed
+  2026-09-12; written in full in `clients/python/PLAN.md`)*. What blocked sharing
+  was that the `Echo` sat on the `Application` while a conversation's floor is
+  **one view's**; it is the editor's now and `enter` passes `app`, so a piece and
+  its entered boxes are one window set with a floor each.
 
 - ✅ **The session format was restated in both clients, and it had already
   drifted** *(found and fixed 2026-09-12; written in full in

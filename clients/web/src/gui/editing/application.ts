@@ -12,7 +12,7 @@
  * So this is the other half of the split the subpackage already makes between
  * an editor and the {@link Editing} context. The context is what the **data**
  * owns — its history, its version, the views to tell. An application is what
- * the **screen** owns — the host, the id space, the echo. What is left in
+ * the **screen** owns — the host and the id space. What is left in
  * between is what an editor genuinely is: a structure bound to a {@link Domain}
  * and a {@link View}.
  *
@@ -38,8 +38,7 @@ import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
 import type { Adopting } from "./context.ts";
-import { Echo } from "./echo.ts";
-import type { Correction, Envelope, Turn } from "./echo.ts";
+import type { Echo } from "./echo.ts";
 
 /**
  * The base a host-less draw counts widget ids from. Above the hand-picked range
@@ -64,14 +63,15 @@ export interface Drawing extends Adopting {
     reflectStep(): void;
 }
 
-/** One window set: its host, its widget ids, its acknowledgement. */
+/** One window set: its host and its widget ids. */
 export class Application {
     /**
-     * The end of the acknowledgement protocol — the stamp, the floor, the
-     * corrections and the reason. **One per application, not one per editor**:
-     * it answers a host, and there is one host.
+     * The host this window set answers, or `null` before it is opened.
+     *
+     * The **acknowledgement is not here**: an {@link Echo} is one *view's* end
+     * of the conversation, and it is the editor's. See the module comment.
      */
-    readonly echo: Echo;
+    #host: GuiHost | null = null;
 
     /** The context when one was named; otherwise the editors' own. */
     #context: Editing | null;
@@ -117,7 +117,6 @@ export class Application {
         this.#context = context;
         this.#baseId = Math.trunc(baseId);
         this.#versionOf = version;
-        this.echo = new Echo(() => this.version);
     }
 
     // ---- who is in it ----
@@ -174,11 +173,15 @@ export class Application {
 
     /** The host this application answers, or `null` before it is opened. */
     get host(): GuiHost | null {
-        return this.echo.host;
+        return this.#host;
     }
 
     set host(host: GuiHost | null) {
-        this.echo.host = host;
+        this.#host = host;
+        for (const editor of this.#editors) {
+            const echo = (editor as { echo?: { host: GuiHost | null } }).echo;
+            if (echo !== undefined) echo.host = host;
+        }
     }
 
     /**
@@ -304,59 +307,6 @@ export class Application {
     retireIds(drawer?: object): number[] {
         const table = this.#ids(drawer);
         return table.retire(this.#owner(drawer, table));
-    }
-
-    // ---- the acknowledgement, which is the echo's ----
-
-    get corrections(): Correction[] {
-        return this.echo.corrections;
-    }
-
-    set corrections(value: Correction[]) {
-        this.echo.corrections = [...value];
-    }
-
-    get reason(): string | undefined {
-        return this.echo.reason;
-    }
-
-    set reason(value: string | undefined) {
-        this.echo.reason = value;
-    }
-
-    /** Tell the host which version it is drawing, before any edit. */
-    announce(): void {
-        this.echo.announce();
-    }
-
-        /** What one message from the host is ({@link Echo.read}). */
-    read(message: Envelope): Turn {
-        return this.echo.read(message);
-    }
-
-    /**
-     * The version the last answered event left behind.
-     *
-     * Read by the crate on the next message: when it differs from the version
-     * then, something moved that was not an event, and that is what raises the
-     * floor.
-     */
-    get applied(): number {
-        return this.echo.state.applied;
-    }
-
-    set applied(version: number) {
-        this.echo.state = { ...this.echo.state, applied: version };
-    }
-
-/** What the host should be drawing instead of what it drew. */
-    correct(widgetId: number, props: Record<string, PropValue>): void {
-        this.echo.correct(widgetId, props);
-    }
-
-    /** Answer the host for everything up to `seq`. */
-    acknowledge(seq: number, reason?: string): void {
-        this.echo.acknowledge(seq, reason);
     }
 
     // ---- the history walk ----

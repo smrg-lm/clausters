@@ -34,6 +34,7 @@ from ... import _native
 from ...base.time import TempoMap
 from .application import BASE_ID, Application, _resolve_host
 from .context import Editing
+from .echo import Echo
 from .trace import log
 
 _not_an_edit: tuple = ()
@@ -87,10 +88,11 @@ class Editor:
             return to the pool. Ignored when ``app`` is given, since the id space
             is the application's.
         app: the `clausters.gui.editing.Application` this editor draws in — the
-            window set it shares a host, an id space, an acknowledgement and a
-            socket drain with. ``None`` — the ordinary case — makes one for this
-            editor alone, which is what every editor was before there was a name
-            for it.
+            window set it shares a host, an id space, a socket drain and an undo
+            walk with. Its **acknowledgement stays its own** (`echo`), since a
+            conversation's floor is one view's. ``None`` — the ordinary case —
+            makes one for this editor alone, which is what every editor was
+            before there was a name for it.
     """
 
     def __init__(self, structure=None, *, sample_rate: float, tempo: float = 1.0,
@@ -169,14 +171,24 @@ class Editor:
         #: structure's own, asked for on each use.
         self._context = context
         #: The **application** this editor draws in: the host, the widget-id
-        #: space, the acknowledgement and the loop — everything true of a window
-        #: set rather than of this structure. Handed one, several editors share
-        #: a window set and an undo order; given none, this editor is an
-        #: application of one, which is what every editor was before there was a
-        #: name for it.
+        #: space and the loop — everything true of a window set rather than of
+        #: this structure. Handed one, several editors share a window set and an
+        #: undo order; given none, this editor is an application of one, which
+        #: is what every editor was before there was a name for it.
         self.app = (app if app is not None
                     else Application(context=context, base_id=base_id,
                                      version=lambda: self._version))
+        #: **This view's** end of the acknowledgement protocol — the stamp, the
+        #: floor, the corrections and the reason.
+        #:
+        #: One per editor and **not** one per application, which is where it
+        #: used to live: the crate calls a `clausters._native.conversation_read`
+        #: state "one view's end", and the floor rises when the version moved
+        #: and no event of *this* view moved it. Two windows over one structure
+        #: sharing a floor would each silence the other's staleness check, so a
+        #: gesture made against a picture the neighbouring window had already
+        #: changed would be accepted rather than refused.
+        self.echo = Echo(host=self.app.host, version=lambda: self._version)
         self.app.register(self)
         #: The identity this structure was registered in the history under,
         #: minted on the first edit — a structure you built has no id and is not
@@ -251,11 +263,11 @@ class Editor:
 
     # ---- what the application owns, reached from here ----
     #
-    # The host, the widget ids and the acknowledgement are the window set's and
-    # not this structure's, so they live in `clausters.gui.editing.Application`
-    # and these are the names an editor reads them by. They stay private and
-    # stay spelled as they were: what changed is where the state is, not what an
-    # editor is allowed to ask for.
+    # The host and the widget ids are the window set's and not this structure's,
+    # so they live in `clausters.gui.editing.Application` and these are the
+    # names an editor reads them by. The **acknowledgement is this view's** and
+    # lives in `echo` above. All of them stay private and stay spelled as they
+    # were: what changed is where the state is, not what an editor may ask for.
 
     def _new_id(self) -> int:
         """A **leased** widget id (`Application.new_id`): one for a widget
@@ -292,36 +304,38 @@ class Editor:
 
     @property
     def _corrections(self) -> list:
-        return self.app.corrections
+        return self.echo.corrections
 
     @_corrections.setter
     def _corrections(self, value):
-        self.app.corrections = value
+        self.echo.corrections = list(value)
 
     @property
     def _reason(self) -> "str | None":
-        return self.app.reason
+        return self.echo.reason
 
     @_reason.setter
     def _reason(self, value):
-        self.app.reason = value
+        self.echo.reason = value
 
     def _announce(self):
-        self.app.announce()
+        self.echo.announce()
 
     def _read(self, envelope: dict) -> dict:
-        return self.app.read(envelope)
+        return self.echo.read(envelope)
 
     def _applied(self, version: int):
-        """The version this editor's last answered event left behind
-        (`Application.applied`)."""
-        self.app.applied = int(version)
+        """The version this editor's last answered event left behind — read by
+        the crate on the next message: when it differs from the version then,
+        something moved that was not an event of this view, and that is what
+        raises the floor."""
+        self.echo.state = dict(self.echo.state, applied=int(version))
 
     def _correct(self, widget_id: int, **props):
-        self.app.correct(widget_id, **props)
+        self.echo.correct(widget_id, **props)
 
     def _acknowledge(self, seq: int, reason: "str | None" = None):
-        self.app.acknowledge(seq, reason)
+        self.echo.acknowledge(seq, reason)
 
     # ---- the history: the data's, not this editor's ----
 
@@ -665,7 +679,7 @@ class Editor:
                 label=label, coalesce=coalesce)
         self._version += 1
         self.dirty = True
-        self._editing.moved({"structure": self._registered(), "payload": payload})
+        self._editing.changed()
         return True
 
     def _edit_all(self, payloads: list, label: str) -> bool:
@@ -691,8 +705,7 @@ class Editor:
                              "forward": {"edit": payload},
                              "backward": before,
                              "key": self.domain.coalesce_key(payload)})
-            self._editing.moved({"structure": self._registered(),
-                                 "payload": payload})
+            self._editing.changed()
         if not moved:
             return False
         log.debug("record [%s] %d leg(s)", label, len(legs))
@@ -729,15 +742,15 @@ class Editor:
         if self.on_change is not None:
             self.on_change()
 
-    def adopt(self, intents: list, whole: bool) -> None:
+    def adopt(self) -> None:
         """Another view of this structure edited it: bring this window in step,
-        by **redrawing every widget this editor holds**.
+        by correcting **every widget this editor holds**.
 
-        Neither argument is read. They are the seam for a view that could answer
-        an intent as a prop instead — which is what a redraw cost back when a
-        definition meant *free this and build that*; it no longer does, since the
-        host reconciles (`clausters.gui.editing.Application.publish`) and keeps
-        the screen state a redefine used to drop.
+        It takes nothing, and it used to take the turn's intents so a view could
+        adopt a placement or a length as a prop instead of redrawing. What this
+        does is already props — one `_resync` per widget and one acknowledgement,
+        never a redefine — so the intents would only have narrowed which widgets,
+        and no view ever read one.
 
         A window that is not open has nothing to bring in step, and says so by
         doing nothing.

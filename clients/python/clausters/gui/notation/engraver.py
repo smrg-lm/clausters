@@ -158,13 +158,9 @@ class Score:
                     moved |= self.load(mei)
         return moved
 
-    def adopt(self, intents: list, whole: bool) -> None:
+    def adopt(self) -> None:
         """Another window in this context edited. Nothing here: a score is data
-        and draws nothing of its own — whoever engraved the page redraws it.
-
-        Neither argument is read, the way no `clausters.gui.editing.Editor`
-        reads one either.
-        """
+        and draws nothing of its own — whoever engraved the page redraws it."""
 
     def load(self, mei: str) -> bool:
         """Replace the document with ``mei`` — **a state, not a step**.

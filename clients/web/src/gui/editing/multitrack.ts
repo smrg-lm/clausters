@@ -947,6 +947,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * is open even if its window is closed — which the context already does,
      * since it holds what it registered.
      *
+     * **And one window set**, which is the piece's {@link Application}: a box
+     * entered out of a piece is part of looking at the piece, so it draws on the
+     * same host, names widgets in the same id space and walks the same order
+     * without resolving anything of its own. Its **acknowledgement stays its
+     * own** — an {@link Echo} is one view's end of the conversation, and a box
+     * sharing the piece's floor would silence the piece's staleness check every
+     * time a hand edited inside the box.
+     *
      * The object comes from {@link Sources}, which is where the one fact about
      * a piece that is not in the piece already lives: the document names a
      * source and only whoever loaded it holds the structure.
@@ -962,6 +970,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const opened = await edit(held, {
             sampleRate: this.bridge.rate,
             context: this.editing,
+            app: this.app,
             host: this.host ?? undefined,
             title: String(region.name ?? name),
             // **On the host the piece is on, or on no screen at all.** A piece

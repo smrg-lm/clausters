@@ -726,7 +726,9 @@ class _AdoptingHost:
 def _wired(ed) -> _AdoptingHost:
     """An editor answering a host, without opening a window."""
     host = _AdoptingHost()
-    ed.app.echo.host = host
+    # Through the application, which is what an `open` would do: it is the
+    # window set that adopts a host, and it hands it to each editor's echo.
+    ed._host = host
     ed._window = 1
     ed.draw()
     return host

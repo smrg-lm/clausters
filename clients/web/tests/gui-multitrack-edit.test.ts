@@ -211,10 +211,12 @@ class AdoptingHost {
 function wired(ed: MultitrackEditor): AdoptingHost {
     const host = new AdoptingHost();
     const inner = ed as unknown as {
-        app: { echo: { host: unknown } };
+        app: { host: unknown };
         windowId: number | null;
     };
-    inner.app.echo.host = host;
+    // Through the application, which is what an `open` would do: it is the
+    // window set that adopts a host, and it hands it to each editor's echo.
+    inner.app.host = host;
     inner.windowId = 1;
     ed.draw();
     return host;

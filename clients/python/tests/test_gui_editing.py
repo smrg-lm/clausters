@@ -566,3 +566,31 @@ def test_a_domain_takes_its_coalesce_key_from_the_crate():
     domain = DialDomain()
     payload = domain.payload(Dial(), "dial", [1.0])
     assert domain.coalesce_key(payload) == "points"
+
+
+def test_two_editors_in_one_application_keep_their_own_floor():
+    """The echo is **one view's** end of the conversation, so a window set does
+    not share one.
+
+    The floor rises when the version moved and no event of *this* view moved it.
+    With one echo per application the two windows would each answer for the
+    other: a gesture the left window made against a picture the right window had
+    already changed would find `version == applied` and be accepted, which is
+    the whole of what the floor is for.
+    """
+    left = an_editor()
+    right = an_editor(structure=left.structure, app=left.app)
+    assert left.echo is not right.echo, "an echo is a view's, not a window set's"
+    assert left.app is right.app, "and the window set is still one"
+
+    # The right window edits; the left one's conversation has not answered
+    # anything since, so its `applied` stays where it was.
+    before = left.echo.state["applied"]
+    host = FakeHost()
+    right.open(host)
+    wid = host.tree["children"][0]["id"]
+    assert right.apply("/gui_event", [wid, 1, 0, "dial", 0.75]) is True
+    assert left._editing.version > before, "the neighbour moved the version"
+    assert left.echo.state["applied"] == before, (
+        "the neighbour's edit answered for this window's conversation"
+    )

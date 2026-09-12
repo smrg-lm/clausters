@@ -42,6 +42,7 @@ import { Editing, FIRST_VERSION } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
+import { Echo } from "./echo.ts";
 import type { View } from "./view.ts";
 
 let notAnEditHeld: readonly string[] = [];
@@ -117,6 +118,12 @@ export interface GenericEditorOptions<S> {
      * acknowledgement. Given none, the editor makes one of its own and is an
      * application of one; handed one, several editors share a window set and an
      * undo order.
+     */
+    /**
+     * The {@link Application} this editor draws in — the window set it shares a
+     * host, an id space and an undo walk with. Its **acknowledgement stays its
+     * own** ({@link Editor.echo}), since a conversation's floor is one view's.
+     * Absent: one for this editor alone.
      */
     app?: Application | null;
 }
@@ -194,13 +201,26 @@ export class Editor<S = unknown> implements Adopting {
     dirty = false;
 
     /**
-     * The **application** this editor draws in: the host, the widget-id space,
-     * the acknowledgement and the publish — everything true of a window set
-     * rather than of this structure. Handed one, several editors share a window
-     * set and an undo order; given none, this editor is an application of one,
-     * which is what every editor was before there was a name for it.
+     * The **application** this editor draws in: the host, the widget-id space
+     * and the publish — everything true of a window set rather than of this
+     * structure. Handed one, several editors share a window set and an undo
+     * order; given none, this editor is an application of one, which is what
+     * every editor was before there was a name for it.
      */
     readonly app: Application;
+    /**
+     * **This view's** end of the acknowledgement protocol — the stamp, the
+     * floor, the corrections and the reason.
+     *
+     * One per editor and **not** one per application, which is where it used to
+     * live: the crate calls a conversation's state "one view's end", and the
+     * floor rises when the version moved and no event of *this* view moved it.
+     * Two windows over one structure sharing a floor would each silence the
+     * other's staleness check, so a gesture made against a picture the
+     * neighbouring window had already changed would be accepted rather than
+     * refused.
+     */
+    readonly echo: Echo;
     /**
      * The version this editor's last answered event left behind.
      *
@@ -209,11 +229,11 @@ export class Editor<S = unknown> implements Adopting {
      * floor.
      */
     protected get applied(): number {
-        return this.app.applied;
+        return this.echo.state.applied;
     }
 
     protected set applied(version: number) {
-        this.app.applied = version;
+        this.echo.state = { ...this.echo.state, applied: version };
     }
     protected windowId: number | null = null;
     /** The host subscription this editor is fed through, while it has one. */
@@ -261,6 +281,7 @@ export class Editor<S = unknown> implements Adopting {
         this.app =
             app ??
             new Application({ context, baseId, version: () => this.version });
+        this.echo = new Echo(() => this.version, this.app.host);
         this.app.register(this);
     }
 
@@ -371,31 +392,31 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     protected get corrections(): [number, Record<string, PropValue>][] {
-        return this.app.corrections;
+        return this.echo.corrections;
     }
 
     protected set corrections(value: [number, Record<string, PropValue>][]) {
-        this.app.corrections = value;
+        this.echo.corrections = [...value];
     }
 
     protected get reason(): string | undefined {
-        return this.app.reason;
+        return this.echo.reason;
     }
 
     protected set reason(value: string | undefined) {
-        this.app.reason = value;
+        this.echo.reason = value;
     }
 
     protected announce(): void {
-        this.app.announce();
+        this.echo.announce();
     }
 
     protected correct(widgetId: number, props: Record<string, PropValue>): void {
-        this.app.correct(widgetId, props);
+        this.echo.correct(widgetId, props);
     }
 
     protected acknowledge(seq: number, reason?: string): void {
-        this.app.acknowledge(seq, reason);
+        this.echo.acknowledge(seq, reason);
     }
 
     // ---- the history: the data's, not this editor's ----
@@ -584,7 +605,7 @@ export class Editor<S = unknown> implements Adopting {
         // crosses for it — what a report *means* is the domain's, and it crosses
         // once, there.
         const id = Math.trunc(Number(rawArgs[0] ?? 0));
-        const turn = this.app.read({
+        const turn = this.echo.read({
             addr,
             argc: rawArgs.length,
             widget: id,
@@ -805,7 +826,7 @@ export class Editor<S = unknown> implements Adopting {
         this.version += 1;
         this.dirty = true;
         const moved = { structure: this.registered(), payload };
-        this.editing.moved(moved as unknown as Intent);
+        this.editing.changed();
         return true;
     }
 
@@ -835,7 +856,7 @@ export class Editor<S = unknown> implements Adopting {
                     key: this.domain.coalesceKey(payload),
                 } as RecordedLeg);
             }
-            this.editing.moved({ structure: this.registered(), payload } as unknown as Intent);
+            this.editing.changed();
         }
         if (!moved) return false;
         if (legs.length > 0) this.editing.history.record(legs, { label });
@@ -908,17 +929,17 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * Another view of this structure edited it: bring this window in step, by
-     * **redrawing every widget this editor holds**.
+     * correcting **every widget this editor holds**.
      *
-     * Neither argument is read. They are the seam for a view that could answer
-     * an intent as a prop instead — which is what a redraw cost back when a
-     * definition meant *free this and build that*; it no longer does, since the
-     * host reconciles ({@link Application.publish}) and keeps the screen state a
-     * redefine used to drop.
+     * It takes nothing, and it used to take the turn's intents so a view could
+     * adopt a placement or a length as a prop instead of redrawing. What this
+     * does is already props — one resync per widget and one acknowledgement,
+     * never a redefine — so the intents would only have narrowed which widgets,
+     * and no view ever read one.
      *
      * A window that is not open has nothing to bring in step.
      */
-    adopt(_intents: readonly Intent[], _whole: boolean): void {
+    adopt(): void {
         if (this.host === null || this.windowId === null) return;
         this.corrections = [];
         for (const wid of [...(this.view?.widgets.keys() ?? [])]) this.resync(wid);

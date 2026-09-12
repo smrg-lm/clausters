@@ -3891,39 +3891,41 @@ than being ticked here.
   arrangement keep two histories" (Found by use) — a note with no id is also a
   note a history cannot name.
 
-- ⬜ **The intents an edit projects are collected and nobody reads one**
-  *(found 2026-09-12, reviewing `gui/editing/application.py` and `context.py`
-  against the multitrack editor)*. `Editing.moved` appends an intent per edit
-  and `Editing.turn` works out a `whole` bit from the list, and both are handed
-  to `adopt` — which every implementation ignores: `Editor.adopt` resyncs every
-  widget it holds and the `Score`'s does nothing. The seam was for adopting a
-  placement or a length as a **prop** so a foreign edit would not cost a
-  redefine, and it stopped being needed when `Application.publish` stopped
-  sending differences: the host reconciles a whole tree and keeps the screen
-  state a redefine used to drop.
+- ✅ **The intents an edit projects were collected and nobody read one**
+  *(found 2026-09-12; collapsed the same day)*. `Editing.moved` appended an
+  intent per edit and `turn` worked out a `whole` bit from the list, and both
+  went to `adopt` — which every implementation ignored. The seam was for
+  adopting a placement or a length as a **prop** so a foreign edit would not
+  cost a redefine, and the reason it died is not only that `publish` stopped
+  sending differences: **what `adopt` does is already props**, one `_resync`
+  per widget and one acknowledgement, never a redefine. The intents would only
+  have narrowed *which* widgets — a micro-optimization with nothing asking for
+  it. So `moved` is `changed`, `adopt` takes nothing, and the page's `moved` cast
+  (`moved as unknown as Intent`) went with it — a cast that was there because
+  the type never fitted, which is its own evidence.
 
-  What shipped is the removal of the dead half — `Editing.restructured` (no
-  caller in either client), `Editing.register` (`identity` is the door) and
-  `Application.id_of` are gone, and the doc comments on `moved`, `turn` and
-  `adopt` now say what the code does instead of describing the optimization.
-  **What is open is whether the seam stays at all**: `moved` is now `changed`
-  with a payload nothing reads, and the honest end of this is either a view
-  that answers an intent without redrawing, or `moved`/`intents`/`whole`
-  collapsing into `changed`. Both clients carry the same shape, so it lands in
-  both.
+- ✅ **A box entered from a piece got its own `Application`, and the reason it
+  could not share one was a defect** *(found 2026-09-12; fixed the same day)*.
+  `MultitrackEditor.enter` passed `context=` and not `app=`, so every entered box
+  built a window set of its own.
 
-- ⬜ **A box entered from a piece gets its own `Application`** *(found
-  2026-09-12, same review)*. `MultitrackEditor.enter` passes `context=` so the
-  undo order is the piece's, but not `app=`, so every entered box builds an
-  application of its own. It works — the id space is the host's once there is a
-  host, and `Editor.open` subscribes `apply` to the host directly — but it is
-  the case `application.py`'s own module docstring gives as the reason the class
-  exists ("several editors can share one ... the only thing shaped like one was
-  the multitrack"). A piece and the boxes opened out of it are one window set
-  and should be one application; what has to be checked first is what `Echo`
-  being one per application means for a box answering its own gestures, since
-  today each box has its own stamp and its own floor. The web client's
-  `enter` does the same thing and changes with it.
+  **What blocked sharing was the `Echo`, and it was on the wrong object.** It
+  lived on the `Application` — "one per application, not one per editor: it
+  answers a host, and there is one host" — which confuses *who you talk to* with
+  *what state the conversation has*. The crate is explicit that a `Conversation`
+  is **one view's** end: the floor rises when the version moved and no event of
+  *this* view moved it. Two editors sharing one echo therefore each answer for
+  the other, and a gesture made against a picture the neighbouring window had
+  already changed finds `version == applied` and is **accepted** — the floor
+  silenced, which is the whole of what it is for. Nothing in the product shared
+  an application yet, so it had never bitten; entering a box would have been the
+  first time.
+
+  The echo is the editor's now, in both clients; the application keeps the host
+  and hands it to each editor's echo as it adopts one. `enter` passes `app=`, so
+  a piece and the boxes entered out of it are one window set — one host, one id
+  space, one undo walk — with a floor each. Held by a test in both clients that
+  was checked by making the echo shared again and watching it fail.
 
 - ✅ **The session format was restated in both clients, and it had already
   drifted** *(found and fixed 2026-09-12)*. `O31` moved the crate's

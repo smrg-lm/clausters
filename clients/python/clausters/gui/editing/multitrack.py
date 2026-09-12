@@ -727,6 +727,15 @@ class MultitrackEditor(Editor):
         context while the piece is open even if its window is closed — which
         the context already does, since it holds what it registered.
 
+        **And one window set**, which is the piece's
+        `clausters.gui.editing.Application`: a box entered out of a piece is
+        part of looking at the piece, so it draws on the same host, names
+        widgets in the same id space and walks the same order without resolving
+        anything of its own. Its **acknowledgement stays its own** — an
+        `clausters.gui.editing.Echo` is one view's end of the conversation, and
+        a box sharing the piece's floor would silence the piece's staleness
+        check every time a hand edited inside the box.
+
         The object comes from `Sources`, which is where the one fact about a
         piece that is not in the piece already lives: the document names a
         source and only whoever loaded it holds the structure.
@@ -743,7 +752,7 @@ class MultitrackEditor(Editor):
         if held is None:
             return None
         opened = edit(held, sample_rate=self.bridge.rate,
-                      context=self._editing, host=self._host,
+                      context=self._editing, app=self.app, host=self._host,
                       title=str(region.name or name),
                       # **On the host the piece is on, or on no screen at
                       # all.** A piece that was never opened has no window to

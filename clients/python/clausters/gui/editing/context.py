@@ -79,11 +79,6 @@ class Editing:
         #: its own `undo`, which changes the data on its own — and the other
         #: windows want *one* redraw, not two.
         self._depth = 0
-        #: The intents the turn being run projected onto the data. Carried to
-        #: `adopt` for a view that can answer one as a **prop**; no view does
-        #: today, and what they are still read for is the one bit `adopt` acts
-        #: on — a turn that projected none is one nothing here can describe.
-        self._intents: list = []
         self._changed = False
 
     @classmethod
@@ -177,24 +172,6 @@ class Editing:
         rather than one per leg of it."""
         self._changed = True
 
-    def moved(self, intent: dict):
-        """One intent this turn wrote onto the data — a `changed` that says
-        *what* changed.
-
-        **No view answers one as a prop today**, and the docstring used to claim
-        otherwise: adopting the placement or the length instead of redrawing is
-        what this was collected for, and it stopped being needed when
-        `clausters.gui.editing.Application.publish` stopped sending differences
-        — the host reconciles a whole tree now and keeps the screen state that a
-        redefine used to drop, so there is nothing left for a prop to save.
-
-        What the list is still read for is its length, in `turn`: a turn that
-        changed something and projected no intent is one nothing here can
-        describe.
-        """
-        self._intents.append(intent)
-        self._changed = True
-
     @contextmanager
     def turn(self, source):
         """One gesture, from whichever view made it.
@@ -205,9 +182,13 @@ class Editing:
         drawing something that had changed under it. Nested turns collapse into
         one, because a gesture that reaches here twice is still one gesture.
 
-        What each of them is told is `adopt`, and **every view answers it by
-        redrawing what it holds**: the intents and the `whole` bit ride along
-        for a view that could answer one more cheaply, and none does.
+        What each of them is told is `adopt`, and it carries nothing: a view
+        answers it by correcting every widget it holds. It used to carry the
+        turn's intents, so that a view could adopt a placement or a length as a
+        **prop** instead of redrawing — but what `adopt` does is already props
+        (`_resync` per widget, then one acknowledgement), never a redefine, so
+        the intents would only have narrowed *which* widgets. They were passed
+        for months and read by nobody.
         """
         self._depth += 1
         try:
@@ -215,17 +196,11 @@ class Editing:
         finally:
             self._depth -= 1
             if self._depth == 0:
-                intents, changed = self._intents, self._changed
-                self._intents, self._changed = [], False
+                changed, self._changed = self._changed, False
                 if changed:
-                    # A turn that changed something and projected no intent is
-                    # one nothing here can describe -- a trim, a patch cord, a
-                    # gesture applied to the objects directly -- so the honest
-                    # answer for the other windows is the whole picture.
-                    whole = not intents
                     for view in self.views():
                         if view is not source:
-                            view.adopt(intents, whole)
+                            view.adopt()
                     # ...and **every** view is told the data changed, the one
                     # that made the gesture included. That is a different
                     # question from bringing a window in step: a script driving

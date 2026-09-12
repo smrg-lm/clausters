@@ -31,7 +31,6 @@
  */
 
 import { History } from "../../document.ts";
-import type { Intent } from "../../document.ts";
 
 /**
  * The version an unedited context is at. One rather than zero, because zero is
@@ -52,11 +51,13 @@ export interface Adopting {
     /**
      * Another view of this composition edited it: bring this window in step.
      *
-     * Neither argument is read by anything that implements this. They are the
-     * seam for a view that could answer an intent as a prop instead of redrawing
-     * — see {@link Editing.moved} for why nothing needs to.
+     * It carries nothing. It used to carry the turn's intents so a view could
+     * adopt a placement or a length as a prop instead of redrawing — but what
+     * {@link Editor.adopt} does is already props, one correction per widget and
+     * never a redefine, so the intents would only have narrowed *which* widgets.
+     * They were passed for months and read by nobody.
      */
-    adopt(intents: readonly Intent[], whole: boolean): void;
+    adopt(): void;
     /**
      * The data changed in a turn — this view's own gesture, another's, or a
      * step of the history.
@@ -117,13 +118,6 @@ export class Editing {
      * own — and the other windows want *one* redraw, not two.
      */
     protected depth = 0;
-    /**
-     * The intents the turn being run projected onto the composition. Carried to
-     * {@link Adopting.adopt} for a view that can answer one as a **prop**; no
-     * view does today, and what they are still read for is the one bit `adopt`
-     * acts on — a turn that projected none is one nothing here can describe.
-     */
-    protected intents: Intent[] = [];
     protected changedInTurn = false;
 
     constructor() {
@@ -238,26 +232,6 @@ export class Editing {
     }
 
     /**
-     * One intent this turn wrote onto the data — a {@link Editing.changed} that
-     * says *what* changed.
-     *
-     * **No view answers one as a prop today**, and the doc comment used to
-     * claim otherwise: adopting the placement or the length instead of redrawing
-     * is what this was collected for, and it stopped being needed when
-     * {@link Application.publish} stopped sending differences — the host
-     * reconciles a whole tree now and keeps the screen state that a redefine
-     * used to drop, so there is nothing left for a prop to save.
-     *
-     * What the list is still read for is its length, in {@link Editing.turn}: a
-     * turn that changed something and projected no intent is one nothing here
-     * can describe.
-     */
-    moved(intent: Intent): void {
-        this.intents.push(intent);
-        this.changedInTurn = true;
-    }
-
-    /**
      * One gesture, from whichever view made it.
      *
      * On the way out, every **other** view of this data is told what it is
@@ -273,19 +247,13 @@ export class Editing {
         } finally {
             this.depth -= 1;
             if (this.depth === 0) {
-                const { intents, changedInTurn: changed } = this;
-                this.intents = [];
+                const changed = this.changedInTurn;
                 this.changedInTurn = false;
                 if (changed) {
-                    // A turn that changed something and projected no intent is
-                    // one nothing here can describe — a trim, a patch cord, a
-                    // gesture applied to the objects directly — so the honest
-                    // answer for the other windows is the whole picture.
-                    const whole = intents.length === 0;
                     for (const held of [...this.attached]) {
                         const view = held.deref();
                         if (view === undefined) this.attached.delete(held);
-                        else if (view !== source) view.adopt(intents, whole);
+                        else if (view !== source) view.adopt();
                     }
                     // ...and **every** view is told the data changed, the one
                     // that made the gesture included. See

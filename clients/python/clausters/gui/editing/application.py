@@ -11,18 +11,30 @@ one wants to share a window set.
 So this is the other half of the split the subpackage already makes between an
 editor and the `clausters.gui.editing.Editing` context. The context is what the
 **data** owns — its history, its version, the views to tell. An application is
-what the **screen** owns — the host, the id space, the echo, the loop. What is
-left in between is what an editor genuinely is: a structure bound to a
-`clausters.gui.editing.Domain` and a `clausters.gui.editing.View`.
+what the **screen** owns — the host, the id space, the loop. What is left in
+between is what an editor genuinely is: a structure bound to a
+`clausters.gui.editing.Domain` and a `clausters.gui.editing.View`, with its own
+end of the conversation.
+
+**The acknowledgement is not here, and that was a defect for a while.** An
+`clausters.gui.editing.Echo` held the floor and the stamp on the application,
+on the reasoning that it answers a host and there is one host — which confuses
+*who you talk to* with *what state the conversation has*. The crate is explicit
+that a `Conversation` is **one view's** end: the floor rises when the version
+moved and no event of **this view** moved it, so two windows over one structure
+sharing a floor would each silence the other's staleness check, and a gesture
+made against a picture a neighbouring window had already changed would be
+accepted instead of refused. The echo is the editor's; what is shared here is
+the host it answers to.
 
 Two consequences worth stating, because they are why this exists rather than
 being a tidier arrangement of the same code:
 
 - **Several editors can share one.** One host, one id space, one socket drain
-  and one undo order across a bundle of subviews over structures that have
-  nothing composed behind them. That is an application in the ordinary sense,
-  and until now the only thing shaped like one was the multitrack — which got
-  there by being a subclass of the editor rather than a peer of it.
+  and one undo order across a bundle of subviews. That is an application in the
+  ordinary sense, and the multitrack is the one shaped like it: a piece plus the
+  boxes a hand entered out of it are one window set, and
+  `clausters.gui.editing.MultitrackEditor.enter` hands each of them this.
 - **An editor with no window is not a special case.** An application with no
   host resolves nothing, hands out ids from its own counter and answers the
   acknowledgement by doing nothing, which is exactly what inspecting `draw()`
@@ -36,7 +48,6 @@ import weakref
 
 from ..ids import CAPACITY, GuiIdAllocator
 from .context import FIRST_VERSION, Editing
-from .echo import Echo
 from .trace import log
 
 #: The base a host-less draw counts widget ids from. Above the hand-picked range
@@ -112,10 +123,11 @@ class Application:
         #: Held strongly, the way the host holds an open editor: an application
         #: is what a script keeps, and its editors go when it does.
         self._editors: list = []
-        #: The end of the acknowledgement protocol — the stamp, the floor, the
-        #: corrections and the reason. **One per application, not one per
-        #: editor**: it answers a host, and there is one host.
-        self.echo = Echo(host=None, version=self._version)
+        #: The host this window set answers, or ``None`` before it is opened.
+        #: The **acknowledgement is not here**: an `clausters.gui.editing.Echo`
+        #: is one *view's* end of the conversation, and it is the editor's. See
+        #: the module docstring.
+        self._host = None
 
     # ---- who is in it ----
 
@@ -173,11 +185,15 @@ class Application:
     def host(self):
         """The host this application answers, or ``None`` before it is
         opened."""
-        return self.echo.host
+        return self._host
 
     @host.setter
     def host(self, host) -> None:
-        self.echo.host = host
+        self._host = host
+        for editor in self._editors:
+            echo = getattr(editor, "echo", None)
+            if echo is not None:
+                echo.host = host
 
     def resolve(self, host=None):
         """Adopt a host: the one named, else the ambient one. Answers the host
@@ -281,54 +297,6 @@ class Application:
         nothing."""
         table = self._ids(drawer)
         return table.retire(self._owner(drawer, table))
-
-    # ---- the acknowledgement, which is the echo's ----
-
-    @property
-    def corrections(self) -> list:
-        return self.echo.corrections
-
-    @corrections.setter
-    def corrections(self, value) -> None:
-        self.echo.corrections = list(value)
-
-    @property
-    def reason(self) -> "str | None":
-        return self.echo.reason
-
-    @reason.setter
-    def reason(self, value) -> None:
-        self.echo.reason = value
-
-    def announce(self) -> None:
-        """Tell the host which version it is drawing, before any edit."""
-        self.echo.announce()
-
-    def read(self, message: dict) -> dict:
-        """What one message from the host is (`Echo.read`)."""
-        return self.echo.read(message)
-
-    @property
-    def applied(self) -> int:
-        """The version the last answered event left behind.
-
-        Read by the crate on the next message: when it differs from the version
-        then, something moved that was not an event, and that is what raises the
-        floor.
-        """
-        return int(self.echo.state.get("applied", 0))
-
-    @applied.setter
-    def applied(self, version: int) -> None:
-        self.echo.state = dict(self.echo.state, applied=int(version))
-
-    def correct(self, widget_id: int, **props) -> None:
-        """What the host should be drawing instead of what it drew."""
-        self.echo.correct(widget_id, **props)
-
-    def acknowledge(self, seq: int, reason: "str | None" = None) -> None:
-        """Answer the host for everything up to ``seq``."""
-        self.echo.acknowledge(seq, reason)
 
     # ---- the history walk ----
 

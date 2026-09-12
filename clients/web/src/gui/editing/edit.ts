@@ -24,6 +24,7 @@
  * @module
  */
 
+import type { Application } from "./application.ts";
 import type { Editing } from "./context.ts";
 import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
@@ -53,6 +54,12 @@ export interface EditOptions {
      * one order.
      */
     context?: Editing | null;
+    /**
+     * An {@link Application} the caller already has, for an editor that joins a
+     * window set — one host, one widget-id space, one undo walk. Its own
+     * {@link Echo} stays its own, since a conversation's floor is one view's.
+     */
+    app?: Application | null;
     /** The host to open on. Absent: the ambient one, booted if it has to be. */
     host?: GuiHost;
     /** The element the window's canvas takes the box of. Absent: one of its own. */
