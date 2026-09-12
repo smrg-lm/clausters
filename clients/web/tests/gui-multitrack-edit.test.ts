@@ -17,9 +17,8 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { multitrackPlan } from "../src/core/clausters_core_web.js";
 import {
-    MultitrackEditor, MultitrackView, edit,
+    MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
-import type { Plan } from "../src/gui/editing/index.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
@@ -770,6 +769,41 @@ test("a layer's points are its box's own time", () => {
  * **crossing** — that this client hands it the piece, the axis and the source
  * table it actually holds, which is the half a client can get wrong on its own.
  */
+/**
+ * The plan's shape, as much of it as these tests read.
+ *
+ * Local rather than imported: the plan is the crate's and the Python client
+ * reads it as plain data, so a type mirroring it in the package surface was one
+ * client restating what the other does not.
+ */
+interface Plan {
+    graph: string;
+    channels: number;
+    widths: [number, number][];
+    tracks: {
+        track: number;
+        channels: number;
+        gain: number;
+        mute: number;
+        clips: {
+            region: number;
+            slot: string;
+            gain: number;
+            mute: number;
+            readers: {
+                channel: number;
+                buffer: number;
+                at: number;
+                span: number;
+                start: number;
+                looping: boolean;
+            }[];
+            curves: { id: number; port: string; at: number; step: number; table: number[] }[];
+        }[];
+        curves: { id: number; port: string; at: number; step: number; table: number[] }[];
+    }[];
+}
+
 function plan(ed: MultitrackEditor): Plan {
     return JSON.parse(
         multitrackPlan(
@@ -856,4 +890,56 @@ test("a metered track names the buses the host reads", () => {
         meters: new Map([[10, [{ index: 40 }, 2]]]),
     };
     assert.deepEqual(props(ed).meters, ["10", 40, 42, 2]);
+});
+
+test("the playback carries out what the reconciler says", async () => {
+    // **What is left in a client is a socket, an allocator and a table.**
+    //
+    // What a difference *is* — which node stays, which is made again, which
+    // port the hand may write — is the crate's (`Instance`), and its rules are
+    // tested there because they are one implementation for both clients. This
+    // is the other half: an operation names what it acts on by a **handle**,
+    // and turning a handle into the node, bus or buffer this page made is what
+    // a language owns.
+    const sent: unknown[][] = [];
+    const server = { sendMsg: (...args: unknown[]) => sent.push(args) };
+    const freed: string[] = [];
+    const node = (id: number, name: string) => ({ id, free: () => freed.push(name) });
+    const bus = { index: 7, free: () => freed.push("bus") };
+
+    const playback = Object.create(Playback.prototype) as Playback;
+    const held = playback as unknown as {
+        server: unknown;
+        nodes: Map<string, unknown>;
+        buses: Map<string, unknown>;
+        buffers: Map<string, unknown>;
+    };
+    held.server = server;
+    held.nodes = new Map([
+        ["clip:3", node(2, "clip")],
+        ["reader:3:0", node(3, "reader")],
+    ]);
+    held.buses = new Map([["curvebus:5", bus]]);
+    held.buffers = new Map();
+
+    // A port that names a resource is resolved out of the same table.
+    assert.equal(playback.value(3.0), 3.0);
+    assert.equal(playback.value({ bus: "curvebus:5" }), 7.0);
+    assert.equal(playback.value({ bus: "curvebus:5", offset: 2 }), 9.0);
+
+    await playback.apply([
+        { op: "map", handle: "clip:3", port: "gain", bus: "curvebus:5" },
+        { op: "unmap", handle: "clip:3", port: "mute" },
+        { op: "free", handle: "clip:3", forget: ["reader:3:0"] },
+        { op: "freeBus", handle: "curvebus:5" },
+    ]);
+    assert.deepEqual(sent, [
+        ["/graph_map", 2, "gain", 7],
+        ["/graph_map", 2, "mute", -1],
+    ]);
+    assert.deepEqual(freed, ["clip", "bus"]);
+    // Freeing a group frees what is inside it, so the reader only leaves the
+    // table — a second free would name a node that is already gone.
+    assert.equal(held.nodes.size, 0);
+    assert.equal(held.buses.size, 0);
 });

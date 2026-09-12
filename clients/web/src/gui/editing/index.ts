@@ -57,9 +57,9 @@ export {
 // client's does — `MultitrackEditor` makes it.
 export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
 export { Playback } from "./playback.ts";
-export type {
-    Plan, PlannedClip, PlannedCurve, PlannedReader, PlannedTrack, Ports,
-} from "./playback.ts";
+// The plan's own shapes are the crate's and were only ever restated here to
+// read it; what a page sees now is the reconciler's answer.
+export type { Op, Ports, PortValue } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView, quads } from "./points.ts";
 export type { CratePoint } from "./points.ts";
 export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";

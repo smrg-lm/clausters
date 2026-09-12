@@ -15,5 +15,8 @@ clausters-core = { path = "../clausters-core" }
 # back.
 clausters-document = { path = "../clausters-document" }
 # Flat data at the boundary: a projection's answer is JSON, because that is what
-# a prop payload and an OSC argument already are.
+# a prop payload and an OSC argument already are. The instance projection has
+# state that crosses too -- the operations a client applies, and what it made of
+# the last ones -- so it derives rather than hand-writing that shape.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"

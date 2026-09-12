@@ -810,43 +810,6 @@ def test_a_track_made_in_the_host_is_a_track_in_the_plan():
     assert planned[2]["clips"] == [], "and it is planned empty rather than left out"
 
 
-def test_the_hand_does_not_write_the_port_a_curve_drives():
-    """A curve owns the port it names, and the fader's value is not sent for it.
-
-    A mapped control is taken back by a plain ``/node_set`` -- the protocol's
-    own rule, and the one that gives the fader back when a curve is deleted.
-    The other side of it is that a piece re-syncs on **every** edit, so a track
-    whose gain was re-sent each time lost its automation the moment a box was
-    added: the set landed after the map and the curve went on writing a bus
-    nobody read any more.
-    """
-    from clausters.gui.editing.playback import hand_ports
-
-    ports = {"gain": 0.7, "mute": 0.0}
-    assert hand_ports(ports, []) == ports, "with no curve the hand writes both"
-    assert hand_ports(ports, [{"port": "gain"}]) == {"mute": 0.0}, \
-        "a curve on the gain leaves the mute to the hand"
-    assert hand_ports(ports, [{"port": "gain"}, {"port": "mute"}]) == {}
-
-
-def test_a_clip_that_changed_track_is_made_again_and_not_set():
-    """A clip is a slot inside a track's group, so a box dragged to another
-    track cannot be moved with a ``set``: there is no track id on the node to
-    change.
-
-    Left as a set, it goes on sounding through the track it came from -- that
-    fader, that mute, that automation -- while the picture draws it on the new
-    one. From the outside that reads as the mute travelling with the box, and
-    the box is simply still there.
-    """
-    from clausters.gui.editing.playback import stays_put
-
-    held = ("group", "clips.1", {"gain": 1.0}, 10)
-    assert stays_put(held, "clips.1", 10), "same track, same width: a set"
-    assert not stays_put(held, "clips.1", 12), "another track: made again"
-    assert not stays_put(held, "clips.2", 10), "another width: made again"
-
-
 def test_a_metered_track_names_the_buses_the_host_reads():
     """The meters are the playback's and the strip is the host's, so what the
     widget carries is *where to look*: a lane, the level run and the mark run,
@@ -867,15 +830,15 @@ def test_a_metered_track_names_the_buses_the_host_reads():
     assert props(ed)["meters"] == ["10", 40, 42, 2]
 
 
-def test_a_curve_follows_its_port_when_the_clip_is_made_again():
-    """**The map belongs to the node, not to the curve.**
+def test_the_playback_carries_out_what_the_reconciler_says():
+    """**What is left in a client is a socket, an allocator and a table.**
 
-    A clip that changed track is a new node -- a clip is a slot inside its
-    track's group -- so the port that was mapped went away with the old one.
-    Left unmapped, the curve went on writing a bus nobody reads, and since the
-    hand does not send that port either (a curve owns the port it names), the
-    box came back at the def's own default: a box dragged to another track
-    lost its envelope and played flat out.
+    What a difference *is* -- which node stays, which is made again, which port
+    the hand may write -- is the crate's (`clausters._native.Instance`), and its
+    rules are tested there because they are one implementation for both clients.
+    This is the other half: an operation names what it acts on by a **handle**,
+    and turning a handle into the node, bus or buffer this client made is what a
+    language owns.
     """
     from clausters.gui.editing.playback import Playback
 
@@ -884,26 +847,43 @@ def test_a_curve_follows_its_port_when_the_clip_is_made_again():
             self.append(args)
 
     class Node:
-        def set(self, ports):
-            pass
-
-    class Owner:
         def __init__(self, id):
             self.id = id
+            self.freed = False
+
+        def free(self):
+            self.freed = True
 
     class Bus:
         index = 7
 
+        def __init__(self):
+            self.freed = False
+
+        def free(self):
+            self.freed = True
+
     playback = object.__new__(Playback)
     playback.server = Server()
-    held, table = Owner(1), [0.0, 1.0]
-    playback.curves = {5: (Node(), "buffer", Bus(), held, "gain", table)}
-    planned = [{"id": 5, "port": "gain", "table": table, "at": 0.0, "step": 64.0}]
+    clip, bus = Node(2), Bus()
+    playback._nodes = {"clip:3": clip, "reader:3:0": Node(3)}
+    playback._buses = {"curvebus:5": bus}
+    playback._buffers = {}
 
-    playback._sync_curves(held, planned)
-    assert playback.server == [], "the node that kept its port keeps its map"
+    # A port that names a resource is resolved out of the same table.
+    assert playback._value(3.0) == 3.0
+    assert playback._value({"bus": "curvebus:5"}) == 7.0
+    assert playback._value({"bus": "curvebus:5", "offset": 2}) == 9.0
 
-    fresh = Owner(2)
-    playback._sync_curves(fresh, planned)
-    assert playback.server == [("/graph_map", 2, "gain", 7)]
-    assert playback.curves[5][3] is fresh, "and the curve knows whose port it is"
+    playback.apply([
+        {"op": "map", "handle": "clip:3", "port": "gain", "bus": "curvebus:5"},
+        {"op": "unmap", "handle": "clip:3", "port": "mute"},
+        {"op": "free", "handle": "clip:3", "forget": ["reader:3:0"]},
+        {"op": "freeBus", "handle": "curvebus:5"},
+    ])
+    assert playback.server == [("/graph_map", 2, "gain", 7),
+                               ("/graph_map", 2, "mute", -1)]
+    assert clip.freed and bus.freed
+    # Freeing a group frees what is inside it, so the reader only leaves the
+    # table -- a second free would name a node that is already gone.
+    assert playback._nodes == {} and playback._buses == {}

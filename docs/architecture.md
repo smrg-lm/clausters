@@ -834,8 +834,27 @@ and `project`, writing an applied payload back onto its own objects. Those are
 the two halves that are genuinely per-language; everything between them is the
 crate's.
 
-The line it does not cross is the one the whole layering rests on: **a
-projection is a function.** It keeps nothing. Where a picture's own state
+**The instance projection is the one with memory, and it is a reconciler.** The
+other two are functions of a structure alone; this one is a function of the
+structure *and* of what a server already holds, because a piece plays itself
+from the transport and the nodes have to stay. `Instance` holds what was made of
+the last plan and answers the **difference** as a list of operations — send this
+def, add this slot, set these ports, free that node. It opens no socket, awaits
+nothing and allocates nothing, which is what makes it testable with no server in
+the room, identical under NRT, and usable by a standalone host.
+
+An operation names what it acts on by a **handle** — a string minted from the
+document's own ids — and never by a node id, a bus index or a buffer number:
+those are a running session's facts, and allocating them is the client's. That
+is React's host config with the names changed, and it leaves a client with
+exactly three things: a socket, an allocator, and one table from handle to
+whatever it made.
+
+The line it does not cross is the one the whole layering rests on, and the
+instance projection bends it exactly once: **a projection is a function.** The
+first two keep nothing. The third keeps what a server holds, which is not view
+state and not the model — it is the third endpoint's own, and there is nowhere
+else for it to live. It keeps nothing. Where a picture's own state
 lives — the axis a view settled on, the zoom, the selection — is the endpoint's
 question, and the answer is that the host owns view state; a projection holding
 it would be a fourth place for it to live. The track that fills the crate out is

@@ -34,6 +34,7 @@
 //! projection that kept it would be a fourth place for it to live.
 
 pub mod events;
+pub mod instance;
 pub mod intake;
 pub mod multitrack;
 pub mod points;

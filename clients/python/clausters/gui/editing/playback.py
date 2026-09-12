@@ -6,12 +6,11 @@ gesture makes of it; this says what it is heard as.
 
 **It decides nothing.** What a track and a clip *are* on the server is the
 shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
-strip under all of them), and which of them a given piece needs is the document
-crate's -- `clausters._native.multitrack_plan` answers it, wired to which
-buffer, at which frame, with which level. So this module is a **diff**: it
-compares the plan against what is already sounding and sends the difference.
-Both clients run the same two calls, which is why one piece sounds the same in
-both of them.
+strip under all of them); which of them a given piece needs is the document
+crate's; and the **difference** between that and what is already sounding is
+`clausters._native.Instance`, in the shared crate. So what is left here is three
+things a language genuinely owns: a socket, an allocator, and one table from the
+crate's handles to the objects this client made.
 
 # Why a diff and not a rebuild
 
@@ -20,9 +19,16 @@ position, so a locate is no message at all and moving a box is one `set`. That
 only holds if the nodes **stay**: rebuilding the tree on every edit would
 restart everything that is sounding, and a hand dragging a box would hear its
 own gesture as a stutter. So a track, a clip and a reader are each added once
-and set thereafter, and only the one thing a set cannot express -- a clip whose
-source changed *width*, which is a different wiring -- is torn down and made
-again.
+and set thereafter, and only what a set cannot express is torn down and made
+again -- which is the reconciler's rule and is written down there.
+
+# Handles: the crate names what it cannot make
+
+An operation never carries a node id, a bus index or a buffer number, because
+the crate allocates none of them. It carries a **handle** -- a string it mints
+from the document's own ids -- and `Playback` keeps the one table from handle to
+whatever it made. A port that has to name a resource names it the same way, and
+`_value` is where that is resolved.
 """
 
 import json
@@ -34,48 +40,6 @@ from ...defs.node import AddAction, Group, Synth
 from ..transport import Transport
 
 __all__ = ["Playback"]
-
-
-def hand_ports(ports: dict, curves: list) -> dict:
-    """The ports the **hand** writes: everything a curve is not driving.
-
-    A mapped control is taken back by a plain ``/node_set`` -- that is the
-    protocol's own rule, and the right one, since it is what gives the fader
-    back when a curve is deleted. It also means that anything sending a value
-    for a port a curve drives **silences that curve**, and a piece re-syncs on
-    every edit, so adding a box to a track was enough to stop its automation
-    from being heard: the set arrived after the map and the curve went on
-    writing a bus nobody read.
-
-    So the two stop competing. A curve owns the port it names and the hand's
-    value is not sent for it, which is also what a mixer means by an automation
-    in read: touching the fader under a curve does nothing until the curve is
-    gone. Writing *through* a curve -- touch, latch -- is a mode nothing has
-    yet, and it would be this function's answer changing rather than a set
-    slipping past.
-    """
-    driven = {curve["port"] for curve in curves}
-    return {port: value for port, value in ports.items() if port not in driven}
-
-
-def stays_put(held, slot: str, track) -> bool:
-    """Whether a clip that is already sounding can be **set** into its new
-    shape, or has to be made again.
-
-    Two things it cannot be set into. A source of another **width** is another
-    clip def -- a mono take is panned into the track and a stereo one is
-    balanced -- and that is the wiring, not a control.
-
-    And a clip that changed **track**: a clip is a slot *inside* a track's
-    group, so the node carries no track id to update. Setting it would leave it
-    sounding through the track it came from -- that track's fader, that track's
-    mute, that track's automation -- while the picture drew it on the new one.
-    A box dragged onto a muted track stayed audible and one dragged off it
-    stayed silent, which reads as the mute travelling with the box: it is the
-    box that never left.
-    """
-    _group, held_slot, _ports, held_track = held
-    return held_slot == slot and held_track == track
 
 
 class Playback:
@@ -100,40 +64,16 @@ class Playback:
         self.editor = editor
         self.server = server
         self.gain = float(gain)
-        #: The def names already sent. A piece asks for the widths it uses, and
-        #: a take of another width arriving later asks for more.
-        self._sent: set = set()
-        #: The `mt.piece` instance: one group, and everything else a slot in it.
-        self.piece = None
-        #: track id -> its slot group.
-        self.tracks: dict = {}
-        #: track id -> ``(bus, channels)``: the control buses that track's
-        #: meters write, a run of ``2 * channels`` -- the level first and the
-        #: mark that waits after it. What the host reads every frame, and the
-        #: reason a level that moves every block costs no message.
-        self.meters: dict = {}
-        #: How long a meter's mark waits, in seconds, as the core says.
-        self._meter_hold = 0.0
-        #: region id -> ``(group, slot, ports last sent, track id)``. The slot
-        #: is kept because a source of another width is another clip def, which
-        #: is the one change a `set` cannot express; the track is kept so a
-        #: track that went away takes its clips out of the table with it.
-        self.clips: dict = {}
-        #: ``(region id, channel)`` -> ``(group, ports last sent)``.
-        self.readers: dict = {}
-        #: automation id -> ``(synth, buffer, bus, owner group, port, table)``.
-        #: A curve is a node of this client's own rather than a member of the
-        #: piece's graph: it writes a control bus and the port is **mapped** to
-        #: it, which is what lets one curve drive a control three levels down
-        #: without anybody learning the node behind it.
-        self.curves: dict = {}
-        #: The group the curve nodes live in, before the piece so a value is
-        #: written in the block it is read.
-        self.curve_group = None
-        #: The name of the curve def, as the core gives it. Sent with all the
-        #: others -- it is in the same list, because it is one of the defs a
-        #: piece is played by.
-        self._curve_def = ""
+        #: What is sounding, as the crate holds it. It answers the difference
+        #: between that and the piece; nothing here decides what a difference
+        #: is.
+        self._instance = _native.Instance()
+        #: handle -> the node this client made for it.
+        self._nodes: dict = {}
+        #: handle -> the control bus.
+        self._buses: dict = {}
+        #: handle -> the buffer.
+        self._buffers: dict = {}
         bridge = editor.bridge
         #: The piece's transport. ``head_clock="piece"`` says it once: the verbs
         #: become the server's and the host draws the line from the engine's own
@@ -166,13 +106,23 @@ class Playback:
 
     # ---- the instance ----
 
-    def plan(self) -> dict:
-        """What the piece is, as instances: the crate's answer, not this
-        module's opinion of it."""
-        bridge = self.editor.bridge
-        return _native.multitrack_plan(
-            self.editor.structure.write(), bridge.rate, bridge.bpm,
-            self.editor.bridge.sources.table())
+    @property
+    def meters(self) -> dict:
+        """track id -> ``(bus, channels)``: the control buses that track's
+        meters write, a run of ``2 * channels`` -- the level first and the mark
+        that waits after it.
+
+        What the host reads every frame, and the reason a level that moves every
+        block costs no message. The crate says which run belongs to which track;
+        the buses are this client's, because it is this client that allocates
+        them.
+        """
+        out = {}
+        for row in self._instance.meters():
+            bus = self._buses.get(row["bus"])
+            if bus is not None:
+                out[row["track"]] = (bus, int(row["channels"]))
+        return out
 
     def sync(self) -> None:
         """Make what sounds be what is drawn.
@@ -181,229 +131,107 @@ class Playback:
         that is already right is left alone, which is what lets a hand drag a
         box without hearing the rest of the piece restart.
         """
-        plan = self.plan()
-        if not plan:
-            return
-        self._send_defs(plan)
-        if self.piece is None:
-            self.piece = Group.graph(plan["graph"], {"gain": self.gain},
-                                     server=self.server)
-            # **The piece's group is the transport's**: from here the engine
-            # freezes that subtree on a stop and thaws it on a play, and every
-            # reader's position is the engine's own rather than a number kept
-            # in step here.
-            self.server.transport_group(self.piece)
-        if self.curve_group is None:
-            # Before the piece: a control bus written after it is read is a
-            # block late, every block, which on a fade is an audible lag.
-            self.curve_group = Group(target=self.piece,
-                                     action=AddAction.BEFORE,
-                                     server=self.server)
-        self._sync_tracks(plan["tracks"])
-        self._reap_curves(plan)
+        bridge = self.editor.bridge
+        self.apply(self._instance.reconcile(
+            self.editor.structure.write(), bridge.rate, bridge.bpm,
+            bridge.sources.table(), self.gain))
 
-    def _send_defs(self, plan: dict) -> None:
-        """Send the defs this piece's widths need, and only the ones not sent.
+    def apply(self, ops: list) -> None:
+        """Do what the reconciler says, in order.
 
-        In the order the core gives them: a graph never names one that has not
-        been sent, and getting that wrong fails in another process at
-        instantiation with nothing to point at.
+        **The order is the answer.** A def before the graph that names it, a
+        buffer before the reader pointed at it, a node freed before the one that
+        replaces it is made -- all of that is decided in the crate and this only
+        carries it out, which is why a second client cannot carry it out
+        differently.
         """
-        defs = _native.mixer_defs(
-            [tuple(pair) for pair in plan.get("widths", [])], plan["channels"])
-        self._curve_def = defs.get("curve", "")
-        self._meter_hold = float(defs.get("meterHold", 0.0))
-        sent = False
-        for family, specs in (("synth", defs.get("synth", [])),
-                              ("graph", defs.get("graph", []))):
-            for spec in specs:
-                if spec["name"] in self._sent:
-                    continue
-                self.server.send_msg("/def_send", family, json.dumps(spec))
-                self._sent.add(spec["name"])
-                sent = True
-        if sent:
-            # **The batch is closed before anything else is sent.** A def send
-            # is asynchronous and answers `/done`, so a `/done` left in flight
-            # is a `/done` the next command that waits for one takes as its
-            # own -- and a buffer alloc that returns before it ran is written
-            # into before it exists. One barrier for the whole batch, and only
-            # when something was actually sent.
-            self.server.sync()
+        for op in ops:
+            getattr(self, "_op_" + str(op["op"]).lower())(op)
 
-    def _sync_tracks(self, planned: list) -> None:
-        seen = set()
-        for track in planned:
-            seen.add(track["track"])
-            group = self.tracks.get(track["track"])
-            if group is None:
-                group = self.piece.add_slot("tracks")
-                self.tracks[track["track"]] = group
-                self._meter(track["track"], group, track["channels"])
-            group.set(hand_ports({"gain": track["gain"], "mute": track["mute"]},
-                                 track["curves"]))
-            self._sync_curves(group, track["curves"])
-            self._sync_clips(track["track"], group, track["clips"])
-        for id in [id for id in self.tracks if id not in seen]:
-            self._free_track(id)
+    def _value(self, port):
+        """One port's value: a number as itself, and a **handle** resolved out
+        of the table this filled when it made the thing."""
+        if isinstance(port, dict):
+            if "bus" in port:
+                return float(self._buses[port["bus"]].index
+                             + int(port.get("offset", 0)))
+            return float(self._buffers[port["buffer"]].bufnum)
+        return float(port)
 
-    def _meter(self, id, track, channels: int) -> None:
-        """Put this track's meters on it, and remember where they write.
+    def _ports(self, op) -> dict:
+        return {name: self._value(value)
+                for name, value in (op.get("ports") or {}).items()}
 
-        **Two of them**, which is one def twice: with no hold it is the level,
-        with the core's hold it is the mark that stays up long enough to be
-        read. Both are slot instances, so a piece nobody meters holds none -- and
-        the buses are allocated here because it is this client that allocates
-        buses, and told to the meter as a port because it is the host that reads
-        them.
-        """
-        channels = max(1, int(channels))
-        bus = Bus.control(2 * channels, server=self.server)
-        for run, hold in ((0, 0.0), (channels, self._meter_hold)):
-            ports = {"meter/out0": float(bus.index + run), "meter/hold": hold}
-            if channels > 1:
-                ports["meter/out1"] = float(bus.index + run + 1)
-            track.add_slot("meters", ports)
-        self.meters[id] = (bus, channels)
+    # ---- one method per operation ----
 
-    def _sync_clips(self, id, track, planned: list) -> None:
-        seen = set()
-        for clip in planned:
-            seen.add(clip["region"])
-            ports = hand_ports({"gain": clip["gain"], "mute": clip["mute"]},
-                               clip["curves"])
-            held = self.clips.get(clip["region"])
-            if held is not None and not stays_put(held, clip["slot"], id):
-                self._free_clip(clip["region"])
-                held = None
-            if held is None:
-                group = track.add_slot(clip["slot"], ports)
-            else:
-                group, _slot, sent, _track = held
-                moved = {k: v for k, v in ports.items() if v != sent.get(k)}
-                if moved:
-                    group.set(moved)
-            self.clips[clip["region"]] = (group, clip["slot"], ports, id)
-            self._sync_curves(group, clip["curves"])
-            self._sync_readers(clip["region"], group, clip["readers"])
-        mine = [r for r, held in self.clips.items() if held[3] == id]
-        for region in [r for r in mine if r not in seen]:
-            self._free_clip(region)
+    def _op_def(self, op) -> None:
+        self.server.send_msg("/def_send", op["family"], json.dumps(op["spec"]))
 
-    def _sync_readers(self, region, clip, planned: list) -> None:
-        seen = set()
-        for reader in planned:
-            key = (region, reader["channel"])
-            seen.add(key)
-            ports = {"buf": float(reader["buffer"]),
-                     "chan": float(reader["channel"]),
-                     "at": reader["at"],
-                     "span": reader["span"],
-                     "start": reader["start"],
-                     "loop": 1.0 if reader["looping"] else 0.0}
-            held = self.readers.get(key)
-            if held is None:
-                self.readers[key] = (clip.add_slot("source", ports), ports)
-                continue
-            group, sent = held
-            # Every one of these is an ordinary control, `buf` included, so a
-            # box that was re-cut over a different buffer keeps sounding.
-            moved = {k: v for k, v in ports.items() if v != sent.get(k)}
-            if moved:
-                group.set(moved)
-            self.readers[key] = (group, ports)
-        for key in [k for k in self.readers if k[0] == region and k not in seen]:
-            self.readers.pop(key)[0].free()
+    def _op_barrier(self, op) -> None:
+        # **The batch is closed before anything else is sent.** A def send is
+        # asynchronous and answers `/done`, so a `/done` left in flight is one
+        # the next command that waits for one takes as its own -- and a buffer
+        # alloc that returns before it ran is written into before it exists.
+        self.server.sync()
 
-    # ---- the curves ----
+    def _op_graph(self, op) -> None:
+        self._nodes[op["handle"]] = Group.graph(op["graph"], self._ports(op),
+                                                server=self.server)
 
-    def _sync_curves(self, owner, planned: list) -> None:
-        """Put each curve's table on the server and map the port to it.
+    def _op_transport(self, op) -> None:
+        self.server.transport_group(self._nodes[op["handle"]])
 
-        A curve is **not** a member of the piece's graph, and that is the point:
-        it writes a control bus, the port is mapped to that bus, and the port's
-        own member ids stay private. The table is read at the transport's own
-        position, so a locate costs no message at all -- which is the whole
-        reason a curve is a table and not a stream of sets.
-        """
-        if not planned:
-            return
-        for curve in planned:
-            held = self.curves.get(curve["id"])
-            table = curve["table"]
-            if held is None:
-                buffer = Buffer.from_samples(table, server=self.server)
-                bus = Bus.control(1, server=self.server)
-                node = Synth(self._curve_def,
-                             {"out": float(bus.index), "buf": float(buffer.bufnum),
-                              "at": curve["at"], "step": curve["step"]},
-                             target=self.curve_group, server=self.server)
-                self.server.send_msg("/graph_map", owner.id, curve["port"],
-                                     int(bus.index))
-                self.curves[curve["id"]] = (node, buffer, bus, owner,
-                                            curve["port"], table)
-                continue
-            node, buffer, bus, held_owner, port, sent = held
-            if held_owner.id != owner.id:
-                # **The map belongs to the node, not to the curve.** A clip
-                # that changed track is a new node -- a clip is a slot inside
-                # its track's group -- and the port that was mapped went away
-                # with the old one, while the curve went on writing a bus
-                # nobody reads. The hand does not send that port either
-                # (`hand_ports` leaves it to the curve), so the box came back
-                # at the def's own default: a clip dragged to another track
-                # lost its envelope and played flat out.
-                self.server.send_msg("/graph_map", owner.id, curve["port"],
-                                     int(bus.index))
-            if table != sent:
-                # A curve whose points moved is a new table, and a table is
-                # replaced rather than written into -- its length changes with
-                # its first and last point. `buf` is an ordinary control, so
-                # the reader follows without stopping.
-                fresh = Buffer.from_samples(table, server=self.server)
-                node.set({"buf": float(fresh.bufnum), "at": curve["at"],
-                          "step": curve["step"]})
-                buffer.free()
-                buffer = fresh
-            else:
-                node.set({"at": curve["at"], "step": curve["step"]})
-            self.curves[curve["id"]] = (node, buffer, bus, owner, port, table)
+    def _op_group(self, op) -> None:
+        self._nodes[op["handle"]] = Group(target=self._nodes[op["before"]],
+                                          action=AddAction.BEFORE,
+                                          server=self.server)
 
-    def _reap_curves(self, plan: dict) -> None:
-        """Free the curves the piece no longer has, and give their ports back.
+    def _op_slot(self, op) -> None:
+        target = self._nodes[op["target"]]
+        self._nodes[op["handle"]] = target.add_slot(op["slot"], self._ports(op))
 
-        **Unmapping is not optional**: a port left mapped to a bus nobody writes
-        holds whatever was in it, so a curve that was deleted would go on
-        driving the control it drove, at the last value it happened to say.
-        """
-        alive = {c["id"] for track in plan["tracks"]
-                 for c in track["curves"]}
-        alive |= {c["id"] for track in plan["tracks"]
-                  for clip in track["clips"] for c in clip["curves"]}
-        for id in [id for id in self.curves if id not in alive]:
-            node, buffer, bus, owner, port, _table = self.curves.pop(id)
-            self.server.send_msg("/graph_map", owner.id, port, -1)
+    def _op_synth(self, op) -> None:
+        self._nodes[op["handle"]] = Synth(op["def"], self._ports(op),
+                                          target=self._nodes[op["target"]],
+                                          server=self.server)
+
+    def _op_bus(self, op) -> None:
+        self._buses[op["handle"]] = Bus.control(int(op["channels"]),
+                                                server=self.server)
+
+    def _op_buffer(self, op) -> None:
+        self._buffers[op["handle"]] = Buffer.from_samples(op["samples"],
+                                                          server=self.server)
+
+    def _op_set(self, op) -> None:
+        self._nodes[op["handle"]].set(self._ports(op))
+
+    def _op_map(self, op) -> None:
+        self.server.send_msg("/graph_map", self._nodes[op["handle"]].id,
+                             op["port"], int(self._buses[op["bus"]].index))
+
+    def _op_unmap(self, op) -> None:
+        self.server.send_msg("/graph_map", self._nodes[op["handle"]].id,
+                             op["port"], -1)
+
+    def _op_free(self, op) -> None:
+        node = self._nodes.pop(op["handle"], None)
+        if node is not None:
             node.free()
-            buffer.free()
+        # Freeing a group frees what is inside it, so these only leave the
+        # table: a second free would name a node that is already gone.
+        for handle in op.get("forget") or ():
+            self._nodes.pop(handle, None)
+
+    def _op_freebus(self, op) -> None:
+        bus = self._buses.pop(op["handle"], None)
+        if bus is not None:
             bus.free()
 
-    def _free_clip(self, region, *, freeing: bool = True) -> None:
-        for key in [k for k in self.readers if k[0] == region]:
-            self.readers.pop(key)
-        group = self.clips.pop(region)[0]
-        if freeing:
-            group.free()
-
-    def _free_track(self, id) -> None:
-        # Freeing the group frees everything inside it, so the clips and the
-        # meters only have to leave the table -- which is what the track id in
-        # them is for. The buses are not the group's, so they are given back.
-        for region in [r for r, held in self.clips.items() if held[3] == id]:
-            self._free_clip(region, freeing=False)
-        held = self.meters.pop(id, None)
-        if held is not None:
-            held[0].free()
-        self.tracks.pop(id).free()
+    def _op_freebuffer(self, op) -> None:
+        buffer = self._buffers.pop(op["handle"], None)
+        if buffer is not None:
+            buffer.free()
 
     # ---- the transport ----
 
@@ -479,19 +307,4 @@ class Playback:
     def close(self):
         """Free the piece's instance. The piece itself is untouched: what a
         playback holds is nodes, and nodes are not the composition."""
-        for _node, buffer, bus, *_rest in self.curves.values():
-            buffer.free()
-            bus.free()
-        self.curves.clear()
-        if self.curve_group is not None:
-            self.curve_group.free()
-            self.curve_group = None
-        for bus, _channels in self.meters.values():
-            bus.free()
-        self.meters.clear()
-        self.readers.clear()
-        self.clips.clear()
-        self.tracks.clear()
-        if self.piece is not None:
-            self.piece.free()
-            self.piece = None
+        self.apply(self._instance.teardown())

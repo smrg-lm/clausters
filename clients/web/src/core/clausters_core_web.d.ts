@@ -244,6 +244,48 @@ export class History {
 }
 
 /**
+ * JS face: **what is sounding of a piece**, held across edits.
+ *
+ * The instance projection's state. The other two projections are functions of
+ * a structure alone and this one is a function of a structure *and* of what a
+ * server already holds: a piece plays itself from the transport, so the nodes
+ * have to stay, and what this answers is the **difference**.
+ */
+export class Instance {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * **Which control bus run each track's meters write**, by track:
+     * `[{"track": id, "bus": handle, "channels": n}]`, a run of
+     * `2 * channels` — the level first and the mark that waits after it.
+     */
+    meters(): string;
+    /**
+     * A new instance: nothing of the piece is sounding yet.
+     */
+    constructor();
+    /**
+     * **The difference between what is sounding and what the piece says**, as
+     * the JSON list of operations a client applies.
+     *
+     * The same four arguments `multitrackPlan` takes — the piece, the rate,
+     * the tempo a piece that states none is read at, and the source table —
+     * plus the master's own level, which is the caller's and not the piece's.
+     *
+     * An operation names what it acts on by a **handle**, never by a node id,
+     * a bus index or a buffer number: this allocates none of those, and the
+     * client keeps the one table from handle to whatever it made.
+     */
+    reconcile(piece: string, sample_rate: number, default_bpm: number, sources: string, gain: number): string;
+    /**
+     * **Everything this made, given back** — the operations that stop the
+     * piece. The piece itself is untouched: what an instance holds is nodes,
+     * and nodes are not the composition.
+     */
+    teardown(): string;
+}
+
+/**
  * A built min/max peak pyramid, the JS face of
  * [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
  * drawn from, so the drawing costs the width of the window rather than the
@@ -1359,6 +1401,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
+    readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -1410,6 +1453,10 @@ export interface InitOutput {
     readonly history_walk: (a: number, b: number, c: number) => [number, number, number, number];
     readonly hz_to_bark: (a: number) => number;
     readonly hz_to_mel: (a: number) => number;
+    readonly instance_meters: (a: number) => [number, number];
+    readonly instance_new: () => number;
+    readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+    readonly instance_teardown: (a: number) => [number, number];
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];

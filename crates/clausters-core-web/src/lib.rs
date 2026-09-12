@@ -1240,6 +1240,68 @@ pub fn editing_intake(domain: &str, tag: &str, request: &str) -> String {
     clausters_editing::intake_json(domain, tag, request)
 }
 
+/// JS face: **what is sounding of a piece**, held across edits.
+///
+/// The instance projection's state. The other two projections are functions of
+/// a structure alone and this one is a function of a structure *and* of what a
+/// server already holds: a piece plays itself from the transport, so the nodes
+/// have to stay, and what this answers is the **difference**.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = Instance)]
+pub struct JsInstance(clausters_editing::instance::Instance);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Instance)]
+impl JsInstance {
+    /// A new instance: nothing of the piece is sounding yet.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> JsInstance {
+        JsInstance(clausters_editing::instance::Instance::new())
+    }
+
+    /// **The difference between what is sounding and what the piece says**, as
+    /// the JSON list of operations a client applies.
+    ///
+    /// The same four arguments `multitrackPlan` takes — the piece, the rate,
+    /// the tempo a piece that states none is read at, and the source table —
+    /// plus the master's own level, which is the caller's and not the piece's.
+    ///
+    /// An operation names what it acts on by a **handle**, never by a node id,
+    /// a bus index or a buffer number: this allocates none of those, and the
+    /// client keeps the one table from handle to whatever it made.
+    pub fn reconcile(
+        &mut self,
+        piece: &str,
+        sample_rate: f64,
+        default_bpm: f64,
+        sources: &str,
+        gain: f32,
+    ) -> String {
+        clausters_editing::instance::reconcile_json(
+            &mut self.0,
+            piece,
+            sample_rate,
+            default_bpm,
+            sources,
+            gain,
+        )
+    }
+
+    /// **Everything this made, given back** — the operations that stop the
+    /// piece. The piece itself is untouched: what an instance holds is nodes,
+    /// and nodes are not the composition.
+    pub fn teardown(&mut self) -> String {
+        self.0.teardown_json()
+    }
+
+    /// **Which control bus run each track's meters write**, by track:
+    /// `[{"track": id, "bus": handle, "channels": n}]`, a run of
+    /// `2 * channels` — the level first and the mark that waits after it.
+    pub fn meters(&self) -> String {
+        self.0.meters_json()
+    }
+}
+
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
 /// mismatch, an empty pair, or a constant channel.

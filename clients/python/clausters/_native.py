@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 52
+CORE_ABI_VERSION = 53
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -242,6 +242,22 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_intake.restype = ctypes.c_size_t
+    lib.clausters_editing_instance_new.restype = ctypes.c_void_p
+    lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_instance_reconcile.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
+        ctypes.c_double, u8p_early, ctypes.c_size_t, ctypes.c_float,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_instance_reconcile.restype = ctypes.c_size_t
+    lib.clausters_editing_instance_teardown.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_instance_teardown.restype = ctypes.c_size_t
+    lib.clausters_editing_instance_meters.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1299,6 +1315,83 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
     raw = size_then_fill(_lib.clausters_editing_intake, as_u8(name), len(name),
                          as_u8(verb), len(verb), as_u8(body), len(body))
     return json.loads(raw) if raw else {}
+
+
+class Instance:
+    """**What is sounding of one piece**, held across edits.
+
+    The instance projection's state (`clausters_editing_instance_*`). The other
+    two projections are functions of a structure alone and this one is a
+    function of a structure *and* of what a server already holds: a piece plays
+    itself from the transport, so the nodes have to **stay**, and what this
+    answers is the **difference**.
+
+    An operation names what it acts on by a **handle** — a string the crate
+    mints from the document's own ids — and never by a node id, a bus index or
+    a buffer number: the crate allocates none of those, and the caller keeps
+    the one table from handle to whatever it made.
+    """
+
+    def __init__(self):
+        self._handle = lib().clausters_editing_instance_new()
+
+    def __del__(self):
+        self.close()
+
+    def close(self) -> None:
+        """Free the bookkeeping.
+
+        **Not the nodes**: what a server holds is the server's, so a caller
+        that means to stop the sound calls `teardown` first and applies what it
+        answers.
+        """
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_editing_instance_free(ctypes.c_void_p(handle))
+
+    def reconcile(self, piece: dict, sample_rate: float, default_bpm: float,
+                  sources: dict, gain: float) -> list:
+        """The difference between what is sounding and what ``piece`` says.
+
+        The same four arguments `multitrack_plan` takes, plus the master's own
+        level, which is the caller's and not the piece's. Everything already
+        right is left alone, which is what lets a hand drag a box without
+        hearing the rest of the piece restart.
+        """
+        if not self._handle:
+            return []
+        body = json.dumps(piece).encode("utf-8")
+        table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_editing_instance_reconcile,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
+                             float(sample_rate), float(default_bpm),
+                             as_u8(table), len(table), ctypes.c_float(gain))
+        return json.loads(raw) if raw else []
+
+    def teardown(self) -> list:
+        """The operations that give back everything this made.
+
+        The piece itself is untouched: what an instance holds is nodes, and
+        nodes are not the composition.
+        """
+        if not self._handle:
+            return []
+        raw = size_then_fill(lib().clausters_editing_instance_teardown,
+                             ctypes.c_void_p(self._handle))
+        return json.loads(raw) if raw else []
+
+    def meters(self) -> list:
+        """Which control bus run each track's meters write, by track —
+        ``[{"track": id, "bus": handle, "channels": n}]``.
+
+        A run of ``2 * channels``: the level first and the mark that waits
+        after it.
+        """
+        if not self._handle:
+            return []
+        raw = size_then_fill(lib().clausters_editing_instance_meters,
+                             ctypes.c_void_p(self._handle))
+        return json.loads(raw) if raw else []
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

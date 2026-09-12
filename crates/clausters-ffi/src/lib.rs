@@ -357,7 +357,18 @@ pub use time::*;
 /// it is **one** door for all four because a host reports every gesture the
 /// same way, which is also what keeps a client from quietly growing a fifth
 /// vocabulary. **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 52;
+/// **v53 what is sounding is one reconciler.** `clausters_editing_instance_*`
+/// is the third projection and the one with state: it holds what was made of
+/// the last plan and answers the **difference** as a list of operations --
+/// send this def, add this slot, set these ports, free that node. It opens no
+/// socket, awaits nothing and allocates nothing, which is what makes it
+/// testable with no server in the room and identical under NRT; an operation
+/// names what it acts on by a handle rather than by a node id, a bus index or a
+/// buffer number, because those are a running session's facts and the client's
+/// to allocate. A handle rather than a function, for the same reason
+/// `clausters_history_*` is one. **Additive**, and the counter moves for v31's
+/// reason.
+pub const CORE_ABI_VERSION: u32 = 53;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
