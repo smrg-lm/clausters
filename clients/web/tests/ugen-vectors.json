@@ -1348,6 +1348,24 @@
       ]
     },
     {
+      "name": "Meter",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "decay",
+          "default": 20.0
+        },
+        {
+          "name": "hold",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "MidSide",
       "arity": 3,
       "inputs": [

@@ -1185,6 +1185,19 @@
  },
  {
   "builder": "multitrack",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "multitrack",
+   "axes": {
+    "x": {
+     "cursor": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "multitrack",
   "option": "playhead_loop_start",
   "value": 3.5,
   "tree": {
@@ -1618,6 +1631,19 @@
    "axes": {
     "x": {
      "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "cursor": 3.5
     }
    }
   }
@@ -2379,6 +2405,19 @@
    "axes": {
     "x": {
      "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "cursor": 3.5
     }
    }
   }
@@ -3977,6 +4016,20 @@
  },
  {
   "builder": "spectrogram",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "cursor": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
   "option": "playhead_loop_start",
   "value": 3.5,
   "tree": {
@@ -4423,6 +4476,20 @@
  },
  {
   "builder": "timeruler",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "cursor": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
   "option": "ruler",
   "value": "beats",
   "tree": {
@@ -4431,6 +4498,20 @@
    "axes": {
     "x": {
      "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "dir",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "dir": "q"
     }
    }
   }
@@ -5049,6 +5130,20 @@
    "axes": {
     "x": {
      "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "cursor",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "cursor": 3.5
     }
    }
   }
