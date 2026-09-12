@@ -28,9 +28,9 @@ fn window(boxes: &str) -> String {
     format!(
         r#"{{"type":"window","title":"w","children":[
              {{"id":10,"type":"multitrack","label":"one",
-               "lanes":["a","",96.0,0,0,1.0],"clips":["c","a",0.0,4.0,0.0,"",-1]}},
+               "lanes":["a","",96.0,0,0,1.0,1],"clips":["c","a",0.0,4.0,0.0,"",-1]}},
              {{"id":20,"type":"multitrack","label":"two",
-               "lanes":["b","",96.0,0,0,1.0]{boxes}}}]}}"#
+               "lanes":["b","",96.0,0,0,1.0,1]{boxes}}}]}}"#
     )
 }
 
@@ -184,7 +184,7 @@ fn a_subtree_spliced_in_place_reconciles_against_what_was_there() {
                 OscType::Int(20),
                 OscType::String(
                     r#"{"type":"multitrack","label":"two",
-                         "lanes":["b","",96.0,0,0,1.0],
+                         "lanes":["b","",96.0,0,0,1.0,1],
                          "clips":["d","b",8.0,4.0,0.0,"",-1]}"#
                         .into(),
                 ),

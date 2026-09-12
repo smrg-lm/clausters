@@ -154,9 +154,16 @@ pub fn plan(session: &Session, beside: &Path, first_bufnum: i32) -> Load {
                     ],
                 });
             }
-            Err(why) => load.unresolved.push((id, why)),
+            Err(why) => {
+                // A join is not missing, it is not installed yet: it waits for
+                // the pass that has its parts.
+                if !matches!(source.location, Location::Segments { .. }) {
+                    load.unresolved.push((id, why));
+                }
+            }
         }
     }
+    stitch(session, &mut load, &mut next);
     load
 }
 
@@ -181,6 +188,112 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
         // allowed to save without it -- that is the format's decision, so that
         // a save is never blocked -- and opening one is where the cost is paid.
         Location::Volatile => Err("the samples were never written down (volatile)".to_string()),
+        // A join has no file to find: its samples are spans of the sources
+        // beside it, so it is installed once those are there. `stitch` is that
+        // pass, and this one leaves it alone.
+        Location::Segments { .. } => Err("a join is installed from its parts".to_string()),
+    }
+}
+
+/// **Installs every join, once the sources it is over are there.**
+///
+/// A [`Location::Segments`] source owns no samples — it is spans of other
+/// sources — so it cannot be read from a path and cannot be planned in the same
+/// pass as the files. This is the second pass, and it repeats: a join may be
+/// over a join (the server allows four levels), so a round that installs
+/// something makes the next round able to install more, and a round that
+/// installs nothing is the end of what is reachable.
+///
+/// What is left over is **named rather than dropped**: a join over a take that
+/// did not load is a box that will draw empty, and the reader deserves the
+/// reason.
+fn stitch(session: &Session, load: &mut Load, next: &mut i32) {
+    let mut waiting: Vec<SourceId> = referenced(session)
+        .into_iter()
+        .filter(|id| {
+            session
+                .source(*id)
+                .is_some_and(|s| matches!(s.location, Location::Segments { .. }))
+        })
+        .collect();
+    loop {
+        let mut installed = false;
+        waiting.retain(|id| {
+            let Some(source) = session.source(*id) else {
+                return false;
+            };
+            let Location::Segments { parts } = &source.location else {
+                return false;
+            };
+            // Every part has to have landed somewhere; one that has not is what
+            // the next round is for.
+            let takes: Option<Vec<Take>> = parts
+                .iter()
+                .map(|part| load.takes.get(part.source.source))
+                .collect();
+            let Some(takes) = takes else {
+                return true;
+            };
+            let channels = source
+                .channels
+                .map(|c| c.max(1) as usize)
+                .unwrap_or_else(|| {
+                    takes.iter().filter_map(|t| t.channels).max().unwrap_or(1) as usize
+                });
+            let bufnum = *next;
+            *next += 1;
+            let mut args = vec![
+                OscType::Int(bufnum),
+                OscType::Int(channels as i32),
+                OscType::Float(source.sample_rate.unwrap_or(0.0) as f32),
+            ];
+            let mut frames = 0u64;
+            for (part, take) in parts.iter().zip(&takes) {
+                let (start, span) = match &part.source.range {
+                    Some(range) => (range.start, range.len()),
+                    None => (0, take.frames.unwrap_or(0)),
+                };
+                frames += span;
+                args.push(OscType::Int(take.bufnum));
+                args.push(OscType::Int(start as i32));
+                args.push(OscType::Int(span as i32));
+                args.push(OscType::Int(part.fade_in as i32));
+                args.push(OscType::Int(part.fade_out as i32));
+                // **Every part spells its whole map**, which is what makes the
+                // group fixed width. Absent, it is the identity — and a part
+                // narrower than the join repeats, so a mono take in a stereo
+                // join is heard on both sides rather than on one.
+                let width = take.channels.unwrap_or(1).max(1) as usize;
+                for channel in 0..channels {
+                    let picked = match &part.channels {
+                        Some(map) => map.get(channel).copied().unwrap_or(-1),
+                        None => (channel % width) as i32,
+                    };
+                    args.push(OscType::Int(picked));
+                }
+            }
+            load.takes.insert(
+                *id,
+                Take {
+                    bufnum,
+                    channels: Some(channels as u32),
+                    frames: Some(frames),
+                },
+            );
+            load.messages.push(OscMessage {
+                addr: "/buffer_stitch".into(),
+                args,
+            });
+            installed = true;
+            false
+        });
+        if !installed || waiting.is_empty() {
+            break;
+        }
+    }
+    for id in waiting {
+        load.unresolved
+            .push((id, "a join over samples that did not load".into()));
     }
 }
 

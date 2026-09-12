@@ -28,6 +28,7 @@ under a ritardando.
 
 from ... import _native
 from ...base import TempoMap
+from ...defs import Buffer, Part
 from ...multitrack import Multitrack
 from .domain import Domain
 from .editor import Editor
@@ -147,6 +148,17 @@ class Sources:
                                 "channels": max(1, int(channels or 1))}
         return out
 
+    def width(self, source) -> int:
+        """How many channels a source has, ``1`` for one that does not say.
+
+        What a **join** needs and the buffer number alone cannot answer: how
+        wide the assembled thing is follows from the takes it is over.
+        """
+        if source is None:
+            return 1
+        held = self.buffers.get(int(source))
+        return max(1, int(getattr(held, "channels", 1) or 1))
+
     def source(self, bufnum: int):
         """The source a buffer number came from, or ``None``."""
         for source, held in self.buffers.items():
@@ -165,9 +177,13 @@ class Bridge:
     """
 
     def __init__(self, piece: Multitrack, *, sample_rate: float,
-                 sources: "Sources | None" = None):
+                 sources: "Sources | None" = None, server=None):
         self.rate = float(sample_rate)
         self.sources = sources or Sources()
+        #: The server the takes are on, for the one thing an edit needs one
+        #: for: **a source an edit makes**. A join owns no samples, so what
+        #: reaches the server is the list of spans and never the audio.
+        self.server = server
         self.tempo = tempo_map(piece)
         #: The tempo, in beats per minute, a piece that states none is read at.
         #: The reader's own: a piece that never said a tempo did not say one,
@@ -253,6 +269,13 @@ class MultitrackDomain(Domain):
         return None if edited is None else edited.get("current")
 
     def project(self, structure, payload: dict) -> bool:
+        # **A source the edit makes is made before the edit lands.** A join over
+        # fragments mints the source its box is a window onto, and a box over a
+        # source nothing answers for is left out of the plan -- so realizing it
+        # after the piece already names it would be one pass of silence. It runs
+        # again on a redo, which is right: the source is gone the moment nothing
+        # windows it.
+        self._mint(payload.get("source"))
         edited = _native.domain_edit(self.name, self.state(structure), payload)
         if edited is None or not edited.get("applied"):
             return False
@@ -269,6 +292,53 @@ class MultitrackDomain(Domain):
         # A tempo that moved changes where every box is drawn.
         self.bridge.refresh(structure)
         return True
+
+    def _mint(self, minted) -> None:
+        """Install a source an edit made, and put it in the table.
+
+        The one place a client answers a document's statement with a server
+        command. A join owns no samples -- it is spans of the takes the table
+        already holds -- so this costs the list of parts and not the audio, and
+        freeing a take something is stitched over does not silence it.
+
+        A part whose source nobody loaded leaves the join unmade rather than
+        half made: a box over it draws empty and does not play, which is what a
+        source nobody answered for has always meant here.
+        """
+        if not isinstance(minted, dict):
+            return
+        source = minted.get("id")
+        parts = (minted.get("location") or {}).get("parts")
+        if source is None or not parts:
+            return
+        # **Written over rather than skipped.** The document has just said what
+        # this source is; a table entry under that id is either the same join
+        # being redone or something the id was reused for, and in both cases
+        # what the piece now names is this.
+        made = []
+        for part in parts:
+            ref = part.get("source") or {}
+            bufnum = self.bridge.sources.bufnum(ref.get("source"))
+            if bufnum < 0:
+                return
+            span = ref.get("range") or {}
+            start = int(span.get("start", 0))
+            made.append(Part(bufnum, start=start,
+                             frames=int(span.get("end", start)) - start,
+                             fade_in=int(part.get("fade_in", 0)),
+                             fade_out=int(part.get("fade_out", 0)),
+                             channels=part.get("channels")))
+        width = minted.get("channels") or max(
+            (self.bridge.sources.width(p.get("source", {}).get("source"))
+             for p in parts), default=1)
+        # **Sent rather than waited on.** This runs inside the answer to a
+        # gesture, and a join owns no samples: there is nothing to copy and
+        # nothing to load, so the buffer number is known the moment it is
+        # handed out and blocking on the `/done` would only stall the hand.
+        self.bridge.sources.buffers[int(source)] = Buffer.stitch(
+            made, channels=int(width),
+            sample_rate=float(minted.get("sample_rate") or 0.0),
+            wait=False, server=self.bridge.server)
 
 
 class MultitrackView(View):
@@ -299,7 +369,7 @@ class MultitrackView(View):
         #: playhead is drawn on, so whoever moves the line does not have to
         #: guess which of the two ids is the picture.
         self.piece: int | None = None
-        #: The row names the host was last told, by id — see `props`.
+        #: The row, box and curve names the host was last told — see `props`.
         self.told: "tuple | None" = None
         #: Whether the window carries the transport row. It is the *view's* and
         #: not a script's ``extra``: a piece that can be heard is played from the
@@ -406,16 +476,19 @@ class MultitrackView(View):
             "cursor": _cursor(editor),
         }
         props["link"] = self.group(widget_id)
-        #: **What the host was last told things are called.** The rows and the
-        #: boxes, by name. A row or a box the *host* made carries a word it
-        #: minted (``track 1``, ``white 2``); the id is the document's and is
-        #: minted when the report is read, so until the picture goes back the
-        #: two are naming the same thing differently -- and every later report
-        #: about it names something the piece does not have, which mints it
-        #: **again**. `MultitrackEditor.data_changed` compares this with what
-        #: the piece now holds and answers with the picture when they differ.
+        #: **What the host was last told things are called.** The rows, the
+        #: boxes and the curves, by name. A row or a box the *host* made carries
+        #: a word it minted (``track 1``, ``white 2``); the id is the document's
+        #: and is minted when the report is read, so until the picture goes back
+        #: the two are naming the same thing differently -- and every later
+        #: report about it names something the piece does not have, which mints
+        #: it **again**. A **curve** is the other half of the same fact: one the
+        #: owner made is one the host cannot have drawn, because it did not make
+        #: it. `MultitrackEditor.data_changed` compares this with what the piece
+        #: now holds and answers with the picture when they differ.
         named = _native.multitrack_names(editor.structure.write())
-        self.told = (frozenset(named["rows"]), frozenset(named["boxes"]))
+        self.told = (frozenset(named["rows"]), frozenset(named["boxes"]),
+                     frozenset(named["curves"]))
         return props
 
 
@@ -453,7 +526,7 @@ class MultitrackEditor(Editor):
     def __init__(self, piece: Multitrack, *, sample_rate: float,
                  sources=None, link=None, server=None,
                  title: str = "Multitrack", **options):
-        bridge = Bridge(piece, sample_rate=sample_rate,
+        bridge = Bridge(piece, sample_rate=sample_rate, server=server,
                         sources=Sources(sources) if not isinstance(sources, Sources)
                         else sources)
         #: The axis and the buffer table this window crosses to — the two things
@@ -621,7 +694,8 @@ class MultitrackEditor(Editor):
         # not a fact to restate at a call site, and which boxes a piece has is
         # not this client's arithmetic either.
         named = _native.multitrack_names(self.structure.write())
-        if told == (frozenset(named["rows"]), frozenset(named["boxes"])):
+        if told == (frozenset(named["rows"]), frozenset(named["boxes"]),
+                    frozenset(named["curves"])):
             return
         self._corrections = []
         self._resync(piece)

@@ -103,7 +103,7 @@ const near = (a: number, b: number, why?: string) =>
 test("a row per track and a box per region", () => {
     const ed = editor(piece());
     const lanes = props(ed).lanes as unknown[];
-    assert.deepEqual([lanes[0], lanes[6]], ["10", "20"], "named by their track ids");
+    assert.deepEqual([lanes[0], lanes[7]], ["10", "20"], "named by their track ids");
     assert.equal(lanes[1], "one");
     const boxes = clips(ed);
     assert.deepEqual(boxes.map((b) => b[0]), ["12", "13", "22"]);
@@ -119,7 +119,7 @@ test("the widget is told the flat rows and not one row per number", () => {
     // The props are already the wire's, so the node is made from them rather
     // than through the `multitrack` builder — whose `lanes`/`clips` are the
     // *tuples* a page types, and which flattened an already-flat list a second
-    // time: six rows named `10`, `one`, `96`, `false`, `false`, `1`.
+    // time: seven rows named `10`, `one`, `96`, `false`, `false`, `1`, `false`.
     //
     // Found 2026-09-09 reading the two clients against each other, which is the
     // only place it was visible: every test read `view.props` and none read the
@@ -127,7 +127,7 @@ test("the widget is told the flat rows and not one row per number", () => {
     const ed = editor(piece());
     const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] })
         .children.find((c) => c.type === "multitrack")!;
-    assert.equal((drawn.lanes as unknown[]).length, 2 * 6, "two tracks, six numbers each");
+    assert.equal((drawn.lanes as unknown[]).length, 2 * 7, "two tracks, seven numbers each");
     assert.deepEqual((drawn.lanes as unknown[]).slice(0, 3), ["10", "one", 96.0]);
     assert.equal((drawn.clips as unknown[]).length, 3 * 7, "three regions, seven numbers each");
     assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
@@ -201,7 +201,7 @@ class AdoptingHost {
             const clips = props.clips as unknown[] | undefined;
             const lanes = props.lanes as unknown[] | undefined;
             if (clips) this.names = clips.filter((_v, i) => i % 7 === 0).map(String);
-            if (lanes) this.rows = lanes.filter((_v, i) => i % 6 === 0).map(String);
+            if (lanes) this.rows = lanes.filter((_v, i) => i % 7 === 0).map(String);
         }
     }
     ack(): void {}
@@ -272,7 +272,7 @@ test("a name the host minted is answered with the one the piece kept", () => {
     assert.deepEqual(ids(), split, "nothing was minted a second time");
 
     // And a track made in the host: the same rule.
-    const rows = [...(props(ed).lanes as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0];
+    const rows = [...(props(ed).lanes as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0, 0];
     apply(3, "lanes", rows);
     assert.deepEqual(host.rows, held.tracks.map((t) => String(t.id)));
     assert.equal(held.tracks.length, 3);
@@ -405,8 +405,8 @@ test("the strip is the piece's and undoes", () => {
     assert.ok(
         (ed as unknown as { route(args: unknown[]): boolean }).route([
             wid, "lanes",
-            "10", "", 96.0, 0, 0, 1.0,
-            "20", "", 96.0, 1, 0, 0.5,
+            "10", "", 96.0, 0, 0, 1.0, 0,
+            "20", "", 96.0, 1, 0, 0.5, 0,
         ]),
     );
     assert.equal(held.track(20)!.muted, true);

@@ -204,15 +204,26 @@ class Playback:
                                                           server=self.server)
 
     def _op_set(self, op) -> None:
-        self._nodes[op["handle"]].set(self._ports(op))
+        node = self._nodes.get(op["handle"])
+        if node is not None:
+            node.set(self._ports(op))
 
     def _op_map(self, op) -> None:
-        self.server.send_msg("/graph_map", self._nodes[op["handle"]].id,
-                             op["port"], int(self._buses[op["bus"]].index))
+        node, bus = self._nodes.get(op["handle"]), self._buses.get(op["bus"])
+        if node is not None and bus is not None:
+            self.server.send_msg("/graph_map", node.id, op["port"],
+                                 int(bus.index))
 
     def _op_unmap(self, op) -> None:
-        self.server.send_msg("/graph_map", self._nodes[op["handle"]].id,
-                             op["port"], -1)
+        # **A handle with nothing behind it is a node that is already gone**,
+        # and a message naming one would reach whatever holds that id next. The
+        # reconciler does not emit these -- freeing a node takes its map with
+        # it, and there is a crate test saying so -- and this is the second
+        # half of that: the two clients answer an impossible handle the same
+        # way, instead of one raising and the other addressing node 0.
+        node = self._nodes.get(op["handle"])
+        if node is not None:
+            self.server.send_msg("/graph_map", node.id, op["port"], -1)
 
     def _op_free(self, op) -> None:
         node = self._nodes.pop(op["handle"], None)

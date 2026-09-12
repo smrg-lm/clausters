@@ -624,7 +624,7 @@ impl Owner {
     /// a drag on one fader from logging every other lane.
     fn read_lanes(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         let mut out = Vec::new();
-        for lane in args.as_chunks::<6>().0 {
+        for lane in args.as_chunks::<7>().0 {
             let Some(OscType::String(name)) = lane.first() else {
                 continue;
             };
@@ -1459,6 +1459,7 @@ mod window_verb_tests {
                 OscType::Int(i32::from(*mute)),
                 OscType::Int(i32::from(*solo)),
                 OscType::Float(*gain),
+                OscType::Int(1),
             ]);
         }
         args
@@ -1527,7 +1528,7 @@ mod window_verb_tests {
     }
 
     fn drawn_lanes(host: &Host, def_id: i32, widget: i32) -> Vec<Vec<Value>> {
-        drawn_prop(host, def_id, widget, "lanes", 6)
+        drawn_prop(host, def_id, widget, "lanes", 7)
     }
 
     /// Undo and redo reach the **owner** where there is one, which is what

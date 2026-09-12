@@ -2112,6 +2112,71 @@ fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<Ge
 /// cursor is placed on the ruler and nowhere else, so dropping the focus there
 /// would take the piece's keys away with every mark a reader puts down — point
 /// at a box, place the cursor, split. A ruler takes no focus of its own (it is
+/// **`A` in a track's header, through the whole machine** *(found 2026-09-12 by
+/// the user: "el boton A no funciona")*.
+///
+/// The element's own test presses it at the indent the *element* asks for. What
+/// a window actually hands it is the **navigation group's** gutter, and that is
+/// the number the drawing and the hit test both have to be laid out at — so a
+/// fourth cell that fits one and not the other is a button drawn where nothing
+/// answers. This presses the pixels a person presses.
+#[test]
+fn the_headers_automation_toggle_answers_where_it_is_drawn() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","children":[
+            {"id":70,"type":"multitrack","link":9,"snap":0,"h":300,
+             "sample_rate":48000,
+             "lanes":["10", "bass", 120, 0, 0, 1.0, 0],
+             "meters":["10", 0, 2, 2],
+             "clips":["a","10",0,1000,0,"",-1]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 900, 400);
+    let rect = placed_rect(&host, &ctx, 70);
+    let indent = interact::hit(
+        &host,
+        1,
+        900,
+        400,
+        f64::from(rect.x) + 5.0,
+        f64::from(rect.y) + 5.0,
+        &|_, _| 1,
+    )
+    .map(|h| h.indent)
+    .expect("the header band is the widget's");
+    let band = crate::host::timeline::gutter_band(Rect::new(rect.x, rect.y, rect.w, 120.0), indent);
+    let header = crate::host::graphics::track::Header {
+        w: (indent > 0.0).then_some(indent),
+        mute: Some(false),
+        solo: Some(false),
+        level: Some(1.0),
+        curves: Some(false),
+        meters: vec![(0.0, 0.0); 2],
+    };
+    let parts = crate::host::graphics::track::header_parts(band, &header, host.metrics_for(1));
+    let cell = parts.curves.expect("the cell the `A` is drawn in");
+    let at = (
+        f64::from(cell.x + cell.w / 2.0),
+        f64::from(cell.y + cell.h / 2.0),
+    );
+    let effects = g.press(&mut host, &ctx, at.0, at.1);
+    let args = effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. } => Some(args.clone()),
+            _ => None,
+        })
+        .find(|args| args.first() == Some(&OscType::String("lanes".into())))
+        .expect("the press reports the lanes");
+    assert_eq!(args[0], OscType::String("lanes".into()));
+    assert_eq!(
+        args[7],
+        OscType::Int(1),
+        "and the row now asks for its automation: {args:?}"
+    );
+}
+
 /// chrome, not a sink) and it takes none away from what it rules.
 #[test]
 fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
@@ -2120,7 +2185,7 @@ fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
             {"id":60,"type":"field","link":9,"h":20},
             {"id":70,"type":"multitrack","link":9,"snap":0,"h":200,
              "sample_rate":48000,
-             "lanes":["one","",120,0,0,1.0],
+             "lanes":["one", "", 120, 0, 0, 1.0, 1],
              "clips":["a","one",0,1000,0,"",-1]}]}"#,
     );
     host.sync_track_totals();
@@ -3439,7 +3504,7 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
         r#"{"type":"window","status":0,"margin":0,"layout":"col","children":[
             {"id":70,"type":"multitrack","link":"a","ruler":"samples",
              "sample_rate":48000,
-             "lanes":["one","",120,0,0,1.0],
+             "lanes":["one", "", 120, 0, 0, 1.0, 1],
              "clips":["a","one",0,1000,0,"",-1, "b","one",9000,1000,0,"",-1]}]}"#,
     );
     host.sync_track_totals();

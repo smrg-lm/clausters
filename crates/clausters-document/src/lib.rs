@@ -221,7 +221,7 @@ impl Range {
 /// cannot express, and a placement edit changes the document while every source
 /// is untouched, which a source counter cannot. With the pair, a reader
 /// invalidates only what actually moved.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRef {
     /// The samples this points at.
     pub source: SourceId,

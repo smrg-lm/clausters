@@ -57,6 +57,10 @@ pub struct Header {
     pub solo: Option<bool>,
     /// The level knob's value over `[0, 1]`, when the lane offers one.
     pub level: Option<f32>,
+    /// **Whether this track's automation rows are shown**, when the lane offers
+    /// the toggle. `None` on a lane with no automation to show or hide — a
+    /// button for rows that do not exist is a button that does nothing.
+    pub curves: Option<bool>,
     /// **What the track is producing**, one entry per channel: the level and
     /// the mark that waits, both linear amplitudes as the server's ballistics
     /// left them ([`clausters_core::measure::Ballistics`]).
@@ -72,7 +76,7 @@ pub struct Header {
 impl Header {
     /// Whether the header carries anything below its name row.
     fn has_controls(&self) -> bool {
-        self.mute.is_some() || self.solo.is_some() || self.level.is_some()
+        self.mute.is_some() || self.solo.is_some() || self.level.is_some() || self.curves.is_some()
     }
 
     /// What the meter strip takes off the right edge of the band, in the
@@ -96,7 +100,7 @@ impl Header {
         if !self.has_controls() {
             return m.header_w;
         }
-        let toggles = [self.mute, self.solo]
+        let toggles = [self.mute, self.solo, self.curves]
             .iter()
             .filter(|t| t.is_some())
             .count();
@@ -117,6 +121,8 @@ pub struct HeaderParts {
     pub mute: Option<Rect>,
     pub solo: Option<Rect>,
     pub level: Option<Rect>,
+    /// The automation toggle, when the lane offers it.
+    pub curves: Option<Rect>,
     /// The meter strip along the right edge, when the lane is metered. Not a
     /// [`HeaderPart`]: it is the one thing in the band a hand cannot press, so
     /// a press over it falls through to the band itself.
@@ -129,6 +135,13 @@ pub enum HeaderPart {
     Mute,
     Solo,
     Level,
+    /// **The automation toggle**: show or hide the rows under this track.
+    ///
+    /// A facility rather than a design — which rows a piece shows is the
+    /// piece's, and reaching every one of them from a track's header is the
+    /// shortest thing that makes an arrangement with automation readable while
+    /// the rules that replace it are worked out.
+    Curves,
     /// **The bottom edge of the band**, where a drag resizes the row — the
     /// vertical zoom of one track, which is what a hand reaches for when one
     /// take needs to be read closely and the rest do not.
@@ -179,6 +192,7 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         mute: None,
         solo: None,
         level: None,
+        curves: None,
         meters,
     };
     // The control row needs a row of its own under the name; a lane too short
@@ -211,6 +225,9 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
         // toggles beside it.
         parts.level = square(&mut x);
     }
+    if header.curves.is_some() {
+        parts.curves = square(&mut x);
+    }
     let _ = right;
     parts
 }
@@ -230,6 +247,8 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
         Some(HeaderPart::Solo)
     } else if over(parts.level) {
         Some(HeaderPart::Level)
+    } else if over(parts.curves) {
+        Some(HeaderPart::Curves)
     } else if band.contains(x, y) {
         Some(HeaderPart::Body)
     } else {
@@ -283,6 +302,10 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
         };
     toggle(parts.mute, header.mute == Some(true), "M", theme.warn);
     toggle(parts.solo, header.solo == Some(true), "S", theme.hilite);
+    // **`A` for the automation under this track**, lit when its rows are shown
+    // — the toggle reads as on when there is something to see, the way the two
+    // beside it read as on when they are doing something.
+    toggle(parts.curves, header.curves == Some(true), "A", theme.accent);
     if let (Some(r), Some(level)) = (parts.level, header.level) {
         // The same dial a `knob` widget draws, and deliberately: a control that
         // read one way here and another way there would be two controls.

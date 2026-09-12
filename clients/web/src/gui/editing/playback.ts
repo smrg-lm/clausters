@@ -269,22 +269,34 @@ export class Playback {
                 case "set":
                     this.node(op.handle)?.set(this.ports(op));
                     break;
-                case "map":
-                    this.server.sendMsg(
-                        "/graph_map",
-                        this.node(op.handle)?.id ?? 0,
-                        String(op.port),
-                        Math.trunc(this.buses.get(String(op.bus))?.index ?? -1),
-                    );
+                case "map": {
+                    const node = this.node(op.handle);
+                    const bus = this.buses.get(String(op.bus));
+                    if (node !== undefined && bus !== undefined) {
+                        this.server.sendMsg(
+                            "/graph_map",
+                            node.id,
+                            String(op.port),
+                            Math.trunc(bus.index),
+                        );
+                    }
                     break;
-                case "unmap":
-                    this.server.sendMsg(
-                        "/graph_map",
-                        this.node(op.handle)?.id ?? 0,
-                        String(op.port),
-                        -1,
-                    );
+                }
+                case "unmap": {
+                    // **A handle with nothing behind it is a node that is
+                    // already gone**, and a message naming one would reach
+                    // whatever holds that id next. The reconciler does not emit
+                    // these — freeing a node takes its map with it, and there
+                    // is a crate test saying so — and this is the second half
+                    // of that: the two clients answer an impossible handle the
+                    // same way, instead of one raising and the other
+                    // addressing node 0.
+                    const node = this.node(op.handle);
+                    if (node !== undefined) {
+                        this.server.sendMsg("/graph_map", node.id, String(op.port), -1);
+                    }
                     break;
+                }
                 case "free": {
                     this.nodes.get(String(op.handle))?.free();
                     this.nodes.delete(String(op.handle));

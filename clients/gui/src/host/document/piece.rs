@@ -643,6 +643,11 @@ mod tests {
                     OscType::Int(i32::from(*muted)),
                     OscType::Int(0),
                     OscType::Float(*level),
+                    // **What a track with no automation is drawn with.** The
+                    // toggle asks for one where there is none, so a fixture
+                    // saying "shown" would be asking this piece for two curves
+                    // it never had.
+                    OscType::Int(0),
                 ]);
             }
             args

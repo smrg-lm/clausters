@@ -235,7 +235,7 @@ pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
     }
     let mut lanes = Vec::with_capacity(built.len());
     let mut clips = Vec::new();
-    let mut lanes_prop = Vec::with_capacity(built.len() * 6);
+    let mut lanes_prop = Vec::with_capacity(built.len() * 7);
     let mut clips_prop = Vec::new();
     for lane in built {
         lanes.push(LaneRow {
@@ -250,6 +250,10 @@ pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
             json!(lane.mute),
             json!(lane.solo),
             json!(lane.gain),
+            // **A tree's lane has no automation rows under it**, so the toggle
+            // is not offered at all and what this says is never drawn. Shown is
+            // the default a row carries when nothing hid it.
+            json!(true),
         ]);
         for clip in lane.clips {
             clips.push(ClipRow {
@@ -820,7 +824,7 @@ mod tests {
     }
 
     fn lanes(def: &Value) -> Vec<Vec<Value>> {
-        groups(&view(def)["lanes"], 6)
+        groups(&view(def)["lanes"], 7)
     }
 
     fn clips(def: &Value) -> Vec<Vec<Value>> {

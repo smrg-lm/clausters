@@ -35,11 +35,14 @@
 //! exactly how a new box is told from a moved one.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
-use crate::multitrack::edit::MultitrackIntent;
+use crate::multitrack::edit::{MintedSource, MultitrackIntent};
 use crate::multitrack::{Automation, Content, Lane, Multitrack, Region, Track};
-use crate::{Beat, NodeId, Opaque, Point, SourceId};
+use crate::session::{Location, Part, Source};
+use crate::{
+    Beat, Lifetime, NodeId, Opaque, Point, Range, SegmentRef, SegmentSource, SourceId, SourceRef,
+};
 
 /// One row of the view: a track, and the strip that is drawn beside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +61,9 @@ pub struct Row {
     /// The fader, read out of the track's own table — the document holds no
     /// mixer, so a level is a key a client wrote and this only carries it.
     pub gain: f64,
+    /// **Whether this track's automation rows are shown**: true when any of its
+    /// curves is visible, which is what one toggle over the set means.
+    pub curves: bool,
 }
 
 /// One box: a region, where it sits and what it is a window onto.
@@ -118,6 +124,11 @@ pub fn rows(piece: &Multitrack) -> Vec<Row> {
                 mute: track.muted,
                 solo: track.soloed,
                 gain: level_of(track),
+                // **Shown when any of them is.** A track's automations are one
+                // toggle in a header, and the piece records visibility per
+                // curve -- so the row says what the header would draw, and the
+                // header says what the whole set becomes.
+                curves: track.automation.iter().any(|a| a.visible),
             })
         })
         .collect()
@@ -310,6 +321,17 @@ pub struct Strip {
     /// The fader, in the client's own key of the track's table.
     #[serde(default = "unity")]
     pub gain: f64,
+    /// **Whether this track's automation rows are shown.**
+    ///
+    /// One statement for however many curves the track has, because it is one
+    /// toggle: what a header offers is *show me this track's automation*, and
+    /// spelling it per curve would be a report of a control nobody drew.
+    #[serde(default = "yes")]
+    pub curves: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn unity() -> f64 {
@@ -346,6 +368,16 @@ fn unity() -> f64 {
 /// wire has no gesture for it yet.
 pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent> {
     let mut next = fresh_id(piece);
+    // **How far the piece reaches**, for a curve that has to span it. A piece
+    // with nothing on it has no extent, and a flat line over nothing would be a
+    // row with one point in the corner.
+    let span = piece
+        .tracks
+        .iter()
+        .flat_map(|track| track.lanes.iter())
+        .flat_map(|lane| lane.regions.iter())
+        .map(|region| region.end().0)
+        .fold(0.0f64, f64::max);
     let mut tracks: Vec<Track> = Vec::with_capacity(reported.len());
     for strip in reported {
         let held = strip
@@ -364,11 +396,58 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
         };
         track.muted = strip.mute;
         track.soloed = strip.solo;
-        // **Only when it moved.** A track that never named a level sits at
-        // unity, so writing one unconditionally would make a piece that
+        // **Only when the toggle actually moved.** A row reports its automation
+        // as shown when *any* of its curves is, so writing every curve on every
+        // report would flatten a track that shows one and hides another the
+        // first time somebody moved its fader -- and would make a piece that
         // changed nothing look edited.
+        if track.automation.iter().any(|a| a.visible) != strip.curves {
+            // **Asking to see what is not there makes it.** A track with no
+            // automation has nothing to show, and the toggle is how one is
+            // added -- the same way a double click on a header adds a track
+            // rather than opening a dialogue about one. It is the *gain*
+            // curve, flat at unity across the piece, because that is the one
+            // every track has a port for and the one a hand reaches for first.
+            //
+            // Provisional, and the shape rather than the design: what a track
+            // may automate is its own question (a port list, a plugin's
+            // parameters) and this is the smallest thing that makes an
+            // arrangement with automation editable while that is worked out.
+            if track.automation.is_empty() && strip.curves {
+                let mut made = Automation::new(NodeId(next), Opaque(json!({"port": "gain"})));
+                next += 1;
+                made.name = Some("gain".into());
+                made.points = vec![
+                    Point {
+                        at: 0.0,
+                        value: 1.0,
+                        data: Opaque::none(),
+                    },
+                    Point {
+                        at: span.max(1.0),
+                        value: 1.0,
+                        data: Opaque::none(),
+                    },
+                ];
+                track.automation.push(made);
+            }
+            for curve in &mut track.automation {
+                curve.visible = strip.curves;
+            }
+        }
+        // **Only when it moved, and moved is measured at the width the wire
+        // carries** *(found 2026-09-12 by use: a window that had just opened
+        // recorded an edit per track before a hand touched it)*. A fader is an
+        // `f32` on the way out and an `f64` in the document, so a level of
+        // `0.7` comes back as `0.699999988` — which is a different number by
+        // `f64::EPSILON` and the same number to everything that will ever read
+        // it. Compared at `f64` the report of an untouched header was an edit,
+        // the answer rewrote the level, and the next report differed again.
+        // A track that never named a level sits at unity, so writing one
+        // unconditionally would make a piece that changed nothing look edited —
+        // which is the same rule, at the precision it has to be read at.
         let gain = strip.gain.max(0.0);
-        if (gain - level_of(&track)).abs() > f64::EPSILON {
+        if gain as f32 != level_of(&track) as f32 {
             track.level = gain;
             // What an older piece carried in the table is now the field's, and
             // leaving it would be two answers to one question.
@@ -512,6 +591,230 @@ pub fn fresh_id(piece: &Multitrack) -> u64 {
         .max()
         .unwrap_or(0)
         + 1
+}
+
+/// The seam between two spans that do not continue each other, in seconds.
+///
+/// A step is a click however well the frames are read, so a cut gets the few
+/// milliseconds an editor puts on one. It is here rather than in a client
+/// because it is part of what the join *is*: two clients that chose their own
+/// would make the same edit sound different, which is the whole reason the
+/// arithmetic lives in this crate.
+///
+/// Only at a seam that is one — two parts that *do* read on from each other are
+/// left alone, where a fade would be audible damage to material that was
+/// continuous.
+pub const SEAM: f64 = 0.010;
+
+/// A source id nothing is using — neither this piece **nor whoever holds the
+/// samples**.
+///
+/// Minted the way a region's id is: from what is there, so the same piece
+/// answers the same way twice and a test can say what a join will be called.
+///
+/// **`taken` is not an optimization and leaving it out was a defect** *(found
+/// 2026-09-12 by the user: a second join left an empty box)*. A source stops
+/// being named by the piece the moment nothing windows it — an undo, a box
+/// deleted — while the client still holds the buffer it made for it. Minted off
+/// the piece alone, the next join hands back an id that already has samples
+/// behind it, and the box is then a window onto **the previous join**: the
+/// client sees an id it knows, makes nothing, and the box draws and plays
+/// whatever that was. The piece cannot see the table, so the table says.
+pub fn fresh_source(piece: &Multitrack, taken: &[SourceId]) -> SourceId {
+    let used = piece
+        .tracks
+        .iter()
+        .flat_map(|track| track.lanes.iter())
+        .flat_map(|lane| lane.regions.iter())
+        .filter_map(|region| window_of(region).0)
+        .chain(taken.iter().copied())
+        .map(|id| id.0)
+        .max()
+        .unwrap_or(0);
+    SourceId(used + 1)
+}
+
+/// **What a `"join"` report means**: these boxes become one.
+///
+/// The one verb of the multitrack that cannot be read out of the picture it
+/// leaves. A move, a trim, a split and a delete are all differences — the
+/// report is the piece and [`read`] says what changed — but a join and a
+/// "delete one, lengthen the other" leave a lane holding exactly the same
+/// thing, and a box in the report names **one** source and one start. So a join
+/// is stated, and this is the statement.
+///
+/// Two answers, and which one it is depends on the material rather than on the
+/// gesture:
+///
+/// - The boxes read **one run of one source, in order** — the halves of a cut
+///   put back — so the join is a plain window over the whole of it, which is
+///   what it always was. Nothing is minted: a source made of one span of one
+///   take is a pseudobuffer that says nothing the take does not.
+/// - They do not, which is the case a region **cannot state**: a region is one
+///   window onto one source, so fragments in an order their source does not
+///   have have no region that describes them. What is missing is the source, so
+///   the join makes one ([`Location::Segments`]) and the box is then a plain
+///   window onto it, from its zero, for the whole of it.
+///
+/// `rate` is frames per second on the shared axis: the parts of a join are
+/// **frames**, which is what the server takes them in and what
+/// [`SourceRef::range`] speaks, while a box's window is seconds.
+///
+/// The refusals are the three cases a join is not, and they are returned rather
+/// than dropped: a verb that does nothing and says nothing is indistinguishable
+/// from one that does not work.
+pub fn read_join(
+    piece: &Multitrack,
+    names: &[String],
+    rate: f64,
+    taken: &[SourceId],
+) -> Result<Vec<MultitrackIntent>, &'static str> {
+    let mut held: Vec<(NodeId, NodeId, &Region)> = Vec::new();
+    for name in names {
+        // **A box the hand is holding and the piece does not have is refused,
+        // not dropped.** Joining the rest would leave that one where it is,
+        // under the box that now spans over it -- and a verb that quietly acts
+        // on less than it was given is the shape of every bug this seam has
+        // produced.
+        let found = name
+            .parse::<u64>()
+            .ok()
+            .map(NodeId)
+            .and_then(|id| lane_of_region(piece, id).map(|(lane, region)| (id, lane, region)));
+        let Some(found) = found else {
+            return Err("one of these boxes is not one the piece has");
+        };
+        held.push(found);
+    }
+    if held.len() < 2 {
+        return Err("a join needs two boxes or more in hand");
+    }
+    if held.iter().any(|(_, lane, _)| *lane != held[0].1) {
+        return Err("a join is a lane's, and these boxes are on two");
+    }
+    held.sort_by(|a, b| {
+        a.2.position
+            .partial_cmp(&b.2.position)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // **What each box reads**, beside where it sits. A box that is not a window
+    // onto samples has nothing a part could name.
+    let mut spans = Vec::new();
+    for (_, _, region) in &held {
+        let (Some(source), start, duration, looping) = window_of(region) else {
+            return Err("one of these boxes is not a window onto samples");
+        };
+        if looping {
+            return Err("a box that wraps cannot be one span of a join");
+        }
+        if duration <= 0.0 {
+            return Err("one of these boxes reads nothing");
+        }
+        spans.push((source, start, duration, *region));
+    }
+    for pair in held.windows(2) {
+        let (gap, over) = (
+            pair[1].2.position - pair[0].2.end(),
+            pair[0].2.end() - pair[1].2.position,
+        );
+        if gap.0 > f64::EPSILON {
+            return Err("there is a gap between these boxes, and a join cannot state silence yet");
+        }
+        if over.0 > f64::EPSILON {
+            return Err("these boxes overlap, and a join cannot state a mix yet");
+        }
+    }
+    let regions: Vec<NodeId> = held.iter().map(|(id, ..)| *id).collect();
+    let into = regions[0];
+    // **One run of one source, in order**: the join it always was.
+    let frame = if rate > 0.0 { 0.5 / rate } else { f64::EPSILON };
+    let one_run = spans.windows(2).all(|pair| {
+        let (a, b) = (&pair[0], &pair[1]);
+        a.0 == b.0 && (b.1 - (a.1 + a.2)).abs() <= frame
+    });
+    if one_run {
+        return Ok(vec![MultitrackIntent::JoinRegions {
+            regions,
+            into,
+            content: None,
+            source: None,
+        }]);
+    }
+    let id = fresh_source(piece, taken);
+    let frames = |secs: f64| (secs * rate).round().max(0.0) as u64;
+    let seam = frames(SEAM);
+    let mut parts = Vec::new();
+    for (i, (source, start, duration, _)) in spans.iter().enumerate() {
+        // A seam is a seam only where the material is cut. Two parts that read
+        // on from each other are the same recording and are left alone.
+        let cut_before = i > 0 && {
+            let before = &spans[i - 1];
+            before.0 != *source || (*start - (before.1 + before.2)).abs() > frame
+        };
+        let cut_after = i + 1 < spans.len() && {
+            let after = &spans[i + 1];
+            after.0 != *source || (after.1 - (start + duration)).abs() > frame
+        };
+        parts.push(Part {
+            source: SourceRef {
+                source: *source,
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: Some(Range {
+                    start: frames(*start),
+                    end: frames(start + duration),
+                }),
+            },
+            fade_in: if cut_before { seam } else { 0 },
+            fade_out: if cut_after { seam } else { 0 },
+            channels: None,
+        });
+    }
+    let total: f64 = spans.iter().map(|(_, _, duration, _)| duration).sum();
+    Ok(vec![MultitrackIntent::JoinRegions {
+        regions,
+        into,
+        content: Some(Content::window(SegmentRef {
+            source: SegmentSource::Samples(SourceRef {
+                source: id,
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: total,
+        })),
+        source: Some(MintedSource {
+            id,
+            source: Source {
+                location: Location::Segments { parts },
+                lifetime: Lifetime::Session,
+                generation: 0,
+                // **Left unstated, and that is the honest answer.** How wide a
+                // join is depends on the takes it is over, and this crate holds
+                // source ids rather than sources: whoever has the samples fills
+                // it in when it realizes the join.
+                channels: None,
+                frames: Some(frames(total)),
+                sample_rate: Some(rate),
+                provenance: None,
+                editing: None,
+                extra: Default::default(),
+            },
+        }),
+    }])
+}
+
+/// The lane a region is on, and the region.
+fn lane_of_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
+    piece.tracks.iter().find_map(|track| {
+        track.lanes.iter().find_map(|lane| {
+            lane.regions
+                .iter()
+                .find(|r| r.id == region)
+                .map(|found| (lane.id, found))
+        })
+    })
 }
 
 /// **What each lane now holds**, for the two changes a placement cannot state:
@@ -888,6 +1191,36 @@ mod tests {
         assert_eq!(fresh_id(&piece), 6);
     }
 
+    /// **A header nobody touched is not an edit** *(found 2026-09-12 by use: a
+    /// window that had just opened recorded one edit per track before a hand
+    /// reached it, and the answer to each made the next one differ again)*.
+    ///
+    /// A fader crosses the wire as an `f32` and lives in the document as an
+    /// `f64`, so `0.7` comes back `0.699999988`: a different number by
+    /// `f64::EPSILON` and the same number to everything that will ever read it.
+    /// The comparison is at the width the wire carries, which is the only width
+    /// the answer can be trusted to.
+    #[test]
+    fn a_level_that_only_crossed_an_f32_is_not_a_fader_that_moved() {
+        let mut piece = piece();
+        piece.tracks[0].level = 0.7;
+        let held = Strip {
+            name: "1".into(),
+            mute: false,
+            solo: false,
+            gain: f64::from(0.7f32),
+            curves: false,
+        };
+        assert!(
+            read_rows(&piece, std::slice::from_ref(&held)).is_empty(),
+            "the same level, through the width it was drawn at"
+        );
+        // And a fader that did move is still an edit, at the width a hand can
+        // put it at.
+        let moved = Strip { gain: 0.5, ..held };
+        assert_eq!(read_rows(&piece, &[moved]).len(), 1);
+    }
+
     /// **A rows report is the tracks, whole.** A name that is an id is that
     /// track; one that is not is a track a hand made; a track the report does
     /// not name is gone, and its boxes with it. All of it is one `SetTracks`,
@@ -900,6 +1233,8 @@ mod tests {
             mute: false,
             solo: false,
             gain: 1.0,
+            // What this piece's own row reports: its curve is not visible.
+            curves: false,
         };
         // What is already true is no edit at all.
         assert!(read_rows(&piece, std::slice::from_ref(&held)).is_empty());
@@ -959,6 +1294,7 @@ mod tests {
                 mute: false,
                 solo: false,
                 gain: 1.0,
+                curves: false,
             }],
         );
         assert!(out.is_empty(), "the picture's own label is not a change");

@@ -2150,6 +2150,32 @@ where it came from).
   thread**, so it could only ever be an editing *mode*, a session's tolerance
   for a stall not being a live server's.
 
+  **And a join has to be able to name a file, which is the half this entry was
+  missing** *(the user, 2026-09-12, reading the document's `O31`: "los editores
+  multipista leen de archivos, aca ademas leemos de buffers en el servidor")*.
+  `/buffer_stitch` takes `srcBufnum` for every part, so a join is a join over
+  **pool buffers** and nothing else -- which is the same 110 MB per take this
+  entry opens with, now arriving through the one feature built to avoid copying
+  anything. A multitrack's ordinary source is a file on disk; a buffer is the
+  case *this* server adds. So the part needs the other spelling: a path, a start
+  frame and a count, read by a stream rather than out of the pool, with the same
+  fades and the same channel map. The document's half is already written that
+  way and does not move -- a part names a **source and a frame range**, and
+  which of the two a source turns out to be is the session table's answer
+  (`crates/clausters-document/PLAN.md`, `O31`).
+
+  **Prebuffering is what makes it playable, and it is the reason this is one
+  entry and not two.** A positioned `DiskIn` still fills its ring from a
+  background thread, so a seam between two file parts is a refill at a known
+  frame, not an underrun to be survived: the reader knows where every part
+  begins before it gets there, so the next part's head can be read **ahead** of
+  the seam rather than requested at it. That is the whole difference between a
+  join over files that plays and one that clicks, and it is also what makes a
+  start offset worth having on its own -- a transport that starts at bar 40
+  seeks once, into a ring that is already full, instead of beginning to read
+  when the playhead is already moving. The ring's size and how far ahead of a
+  seam a refill starts are the two numbers the work has to pick and state.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

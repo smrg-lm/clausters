@@ -71,7 +71,7 @@ def report(ed: MultitrackEditor, boxes) -> bool:
 def test_a_row_per_track_and_a_box_per_region():
     ed = editor(piece())
     lanes = props(ed)["lanes"]
-    assert [lanes[0], lanes[6]] == ["10", "20"], "named by their track ids"
+    assert [lanes[0], lanes[7]] == ["10", "20"], "named by their track ids"
     assert lanes[1] == "one"
     boxes = clips(ed)
     assert [b[0] for b in boxes] == ["12", "13", "22"]
@@ -87,7 +87,8 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     """The props are already the wire's, so the node is made from them rather
     than through the `multitrack` builder — whose `lanes`/`clips` are the
     *tuples* a script types, and which flattened an already-flat list a second
-    time: six rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`.
+    time: seven rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`,
+    `False`.
 
     Found 2026-09-09 reading the two clients against each other, which is the
     only place it was visible: every test here read `view.props` and none read
@@ -95,7 +96,7 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     """
     ed = editor(piece())
     drawn = next(c for c in ed.draw()["children"] if c["type"] == "multitrack")
-    assert len(drawn["lanes"]) == 2 * 6, "two tracks, six numbers each"
+    assert len(drawn["lanes"]) == 2 * 7, "two tracks, seven numbers each"
     assert drawn["lanes"][:3] == ["10", "one", 96.0]
     assert len(drawn["clips"]) == 3 * 7, "three regions, seven numbers each"
     assert drawn["clips"][:2] == ["12", "10"]
@@ -258,8 +259,8 @@ def test_the_strip_is_the_pieces_and_undoes():
     ed.draw()
     wid = next(iter(ed.view.widgets))
     assert ed._route([wid, "lanes",
-                      "10", "", 96.0, 0, 0, 1.0,
-                      "20", "", 96.0, 1, 0, 0.5])
+                      "10", "", 96.0, 0, 0, 1.0, 0,
+                      "20", "", 96.0, 1, 0, 0.5, 0])
     assert held.track(20).muted
     assert held.track(20).level == pytest.approx(0.5)
     assert not held.track(10).muted, "the one nobody touched is untouched"
@@ -713,7 +714,7 @@ class _AdoptingHost:
             if "clips" in props:
                 self.names = list(props["clips"][::7])
             if "lanes" in props:
-                self.rows = list(props["lanes"][::6])
+                self.rows = list(props["lanes"][::7])
 
     def ack(self, seq, doc_version=0, reason=None):
         pass
@@ -784,7 +785,7 @@ def test_a_name_the_host_minted_is_answered_with_the_one_the_piece_kept():
 
     # And a track made in the host: the same rule, and the `meters` prop rides
     # with it -- a track that reached the server has buses to read.
-    rows = list(props(ed)["lanes"]) + ["track 1", "three", 96.0, 0, 0, 1.0]
+    rows = list(props(ed)["lanes"]) + ["track 1", "three", 96.0, 0, 0, 1.0, 0]
     ed.apply("/gui_event", [wid, 3, ed._version, "lanes", *rows])
     assert host.rows == [str(t.id) for t in held.tracks]
     assert len(held.tracks) == 3
@@ -803,7 +804,7 @@ def test_a_track_made_in_the_host_is_a_track_in_the_plan():
     ed = editor(piece())
     ed.draw()
     wid = next(iter(ed.view.widgets))
-    rows = list(props(ed)["lanes"]) + ["0", "three", 96.0, 0, 0, 1.0]
+    rows = list(props(ed)["lanes"]) + ["0", "three", 96.0, 0, 0, 1.0, 0]
     assert ed._route([wid, "lanes", *rows])
     planned = _plan(ed)["tracks"]
     assert [t["track"] for t in planned] == [10, 20, 23]

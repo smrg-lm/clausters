@@ -1408,7 +1408,8 @@ export function multitrackProps(
 }
 
 /**
- * **What a piece calls its rows and its boxes**, by the names the wire carries
+ * **What a piece calls its rows, its boxes and its curves**, by the names the
+ * wire carries
  * them under.
  *
  * The minting correction's half that is a fact about the piece: a host that
@@ -1419,10 +1420,14 @@ export function multitrackProps(
  */
 export function multitrackNames(
     piece: Multitrack | unknown,
-): { rows: string[]; boxes: string[] } {
+): { rows: string[]; boxes: string[]; curves: string[] } {
     const body = piece instanceof Multitrack ? piece.write() : piece;
     const answer = coreNames(JSON.stringify(body));
-    if (!answer) return { rows: [], boxes: [] };
-    return JSON.parse(answer) as { rows: string[]; boxes: string[] };
+    if (!answer) return { rows: [], boxes: [], curves: [] };
+    return JSON.parse(answer) as {
+        rows: string[];
+        boxes: string[];
+        curves: string[];
+    };
 }
 

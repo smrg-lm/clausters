@@ -39,6 +39,7 @@ import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { Server } from "../../defs/server/index.ts";
+import { Buffer, type Part } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
@@ -177,6 +178,22 @@ export class Sources {
         return out;
     }
 
+    /**
+     * How many channels a source has, `1` for one that does not say.
+     *
+     * What a **join** needs and the buffer number alone cannot answer: how wide
+     * the assembled thing is follows from the takes it is over.
+     */
+    width(source: number | undefined): number {
+        if (source === undefined) return 1;
+        const held = this.buffers.get(Math.trunc(source));
+        const channels =
+            typeof held === "object" && held !== null
+                ? Number((held as { channels?: unknown }).channels ?? 1)
+                : 1;
+        return Math.max(1, Math.trunc(channels || 1));
+    }
+
     /** The source a buffer number came from, or `undefined`. */
     source(bufnum: number): number | undefined {
         for (const [source, held] of this.buffers) {
@@ -202,17 +219,29 @@ export class Bridge {
     sources: Sources;
     tempo: TempoMap;
     /**
+     * The server the takes are on, for the one thing an edit needs one for: **a
+     * source an edit makes**. A join owns no samples, so what reaches the server
+     * is the list of spans and never the audio.
+     */
+    server?: Server;
+    /**
      * The tempo, in beats per minute, a piece that states none is read at. The
      * reader's own: a piece that never said a tempo did not say one, and a
      * document that invented 120 would be deciding a musical question.
      */
     bpm: number;
 
-    constructor(piece: Multitrack, sampleRate: number, sources?: Sources) {
+    constructor(
+        piece: Multitrack,
+        sampleRate: number,
+        sources?: Sources,
+        server?: Server,
+    ) {
         this.rate = Number(sampleRate);
         this.sources = sources ?? new Sources();
         this.tempo = tempoMap(piece);
         this.bpm = DEFAULT_TEMPO * 60.0;
+        this.server = server;
     }
 
     /** Re-read the tempo map, for an edit that moved one. */
@@ -316,6 +345,13 @@ export class MultitrackDomain extends Domain<Multitrack> {
     }
 
     project(piece: Multitrack, payload: unknown): boolean {
+        // **A source the edit makes is made before the edit lands.** A join
+        // over fragments mints the source its box is a window onto, and a box
+        // over a source nothing answers for is left out of the plan — so
+        // realizing it after the piece already names it would be one pass of
+        // silence. It runs again on a redo, which is right: the source is gone
+        // the moment nothing windows it.
+        this.mint((payload as { source?: unknown })?.source);
         const edited = domainEdit(this.name, this.state(piece), payload);
         if (edited === undefined || !edited.applied) return false;
         const written = Multitrack.read(edited.state as Record<string, unknown>);
@@ -331,6 +367,81 @@ export class MultitrackDomain extends Domain<Multitrack> {
         // A tempo that moved changes where every box is drawn.
         this.bridge.refresh(piece);
         return true;
+    }
+
+    /**
+     * Install a source an edit made, and put it in the table.
+     *
+     * The one place a client answers a document's statement with a server
+     * command. A join owns no samples — it is spans of the takes the table
+     * already holds — so this costs the list of parts and not the audio, and
+     * freeing a take something is stitched over does not silence it.
+     *
+     * A part whose source nobody loaded leaves the join unmade rather than half
+     * made: a box over it draws empty and does not play, which is what a source
+     * nobody answered for has always meant here.
+     *
+     * **Where the two clients differ, and it is the platform's line**: the same
+     * call in the same place, but a page cannot block, so the table is written
+     * when the promise settles rather than on the line that sends. The command
+     * goes out either way at the same point in the same order — `wait: false`,
+     * because a join has nothing to copy and nothing to load, so there is
+     * nothing to wait for but the round trip itself.
+     */
+    private mint(minted: unknown): void {
+        const server = this.bridge.server;
+        if (server === undefined || minted === null || typeof minted !== "object")
+            return;
+        const held = minted as {
+            id?: number;
+            channels?: number;
+            sample_rate?: number;
+            location?: { parts?: unknown[] };
+        };
+        const parts = held.location?.parts;
+        const id = held.id;
+        if (id === undefined || !Array.isArray(parts) || parts.length === 0) return;
+        // **Written over rather than skipped.** The document has just said what
+        // this source is; a table entry under that id is either the same join
+        // being redone or something the id was reused for, and in both cases
+        // what the piece now names is this.
+        const made: Part[] = [];
+        for (const entry of parts) {
+            const part = entry as {
+                source?: { source?: number; range?: { start?: number; end?: number } };
+                fade_in?: number;
+                fade_out?: number;
+                channels?: number[];
+            };
+            const bufnum = this.bridge.sources.bufnum(part.source?.source);
+            if (bufnum < 0) return;
+            const start = Math.trunc(part.source?.range?.start ?? 0);
+            made.push({
+                source: bufnum,
+                start,
+                frames: Math.trunc(part.source?.range?.end ?? start) - start,
+                fadeIn: Math.trunc(part.fade_in ?? 0),
+                fadeOut: Math.trunc(part.fade_out ?? 0),
+                channels: part.channels,
+            });
+        }
+        const width =
+            held.channels ??
+            Math.max(
+                ...parts.map((entry) =>
+                    this.bridge.sources.width(
+                        (entry as { source?: { source?: number } }).source?.source,
+                    ),
+                ),
+            );
+        void Buffer.stitch(made, {
+            channels: Math.trunc(width),
+            sampleRate: Number(held.sample_rate ?? 0.0),
+            wait: false,
+            server,
+        }).then((buffer) => {
+            this.bridge.sources.buffers.set(Math.trunc(id), buffer);
+        });
     }
 }
 /**
@@ -408,7 +519,9 @@ export class MultitrackView extends View<Multitrack> {
      * **What the host was last told things are called** — the rows and the
      * boxes, by name. See {@link props}.
      */
-    told: readonly [ReadonlySet<string>, ReadonlySet<string>] | null = null;
+    told:
+        | readonly [ReadonlySet<string>, ReadonlySet<string>, ReadonlySet<string>]
+        | null = null;
     /**
      * Whether the window carries the transport row. It is the *view's* and not a
      * page's `extra`: a piece that can be heard is played from the window it is
@@ -536,16 +649,22 @@ export class MultitrackView extends View<Multitrack> {
             cursor: cursorOf(editor),
         };
         props.link = this.group(widgetId);
-        // **What the host was last told things are called.** A row or a box the
+        // **What the host was last told things are called.** The rows, the
+        // boxes and the curves. A row or a box the
         // *host* made carries a word it minted (`track 1`, `white 2`); the id is
         // the document's and is minted when the report is read, so until the
         // picture goes back the two are naming the same thing differently — and
         // every later report about it names something the piece does not have,
         // which mints it **again**. `MultitrackEditor.dataChanged` compares this
         // with what the piece now holds and answers with the picture when they
-        // differ.
+        // differ. A **curve** is the other half of the same fact: one the owner
+        // made is one the host cannot have drawn, because it did not make it.
         const named = names(editor.structure);
-        this.told = [new Set(named.rows), new Set(named.boxes)];
+        this.told = [
+            new Set(named.rows),
+            new Set(named.boxes),
+            new Set(named.curves),
+        ];
         return props;
     }
 }
@@ -608,6 +727,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
             piece,
             Number(options.sampleRate),
             sources instanceof Sources ? sources : new Sources(sources),
+            server,
         );
         super(piece, {
             ...rest,
@@ -784,7 +904,12 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const named = names(this.structure);
         const same = (a: ReadonlySet<string>, b: readonly string[]) =>
             a.size === b.length && b.every((name) => a.has(name));
-        if (same(told[0], named.rows) && same(told[1], named.boxes)) return;
+        if (
+            same(told[0], named.rows) &&
+            same(told[1], named.boxes) &&
+            same(told[2], named.curves)
+        )
+            return;
         this.corrections = [];
         this.resync(piece);
         this.acknowledge(0);

@@ -12,10 +12,25 @@ What to do in the window:
 
 - **Move a box**, drag its edge to trim it, drag it onto another lane, sweep a
   block and move it as one. **Click** a box to select it, **e** to split it at
-  the position cursor, **j** to join a touching run, **q** to quantize.
+  the position cursor, **j** to join a touching run, **q** to quantize. A
+  **run** is two boxes or more on one lane that touch *and read on from each
+  other*, so two halves put back in the other order do not join — and the
+  **status bar** along the bottom says which of those it was, for every verb
+  that finds nothing to do.
 - **Click the ruler** — or the slack between boxes — to place the **position
   cursor**, which is where the next play starts. The playhead is never placed:
   stopped, it stands on the mark.
+- **Reach a tall piece**: `Shift`+wheel **scrolls the stack**, so a track that
+  fell off the bottom comes back; `Ctrl`+wheel **zooms the row under the
+  pointer** — a track or one of the automation rows, each on its own. A track
+  is also zoomed by dragging its header's **bottom edge**; a curve row has no
+  edge to pull, which is what the wheel is for. A plain wheel is still the time
+  axis'.
+- **`A` in a track's header** shows and hides that track's **automation rows** —
+  and on a track that has none, the first press **makes** one: a `gain` curve,
+  flat at unity across the piece, heard like any other. The same shape the
+  double click that adds a track has, the verb making the thing rather than
+  asking about it. Try it on **bass**, which this file gives no automation.
 - **rewind**, **play/pause** and **stop** are the window's own row. A pause
   freezes the readers where they stand, so playing again continues rather than
   starting over; stop goes back to the mark rather than to the top; and rewind

@@ -80,6 +80,16 @@ const MAX_LANE_H: f32 = 8.0 * LANE_H;
 /// lane, because what it draws is one line and not a stack of boxes.
 const CURVE_H: f32 = 40.0;
 
+/// **How short an automation row may be pulled.** Lower than a lane's floor,
+/// which has to hold a header's two rows: a curve row draws one line and a
+/// label, and what it must not become is a row nobody can put a point on.
+const MIN_CURVE_H: f32 = 16.0;
+
+/// How far one wheel notch moves the stack, in logical pixels. A fraction of a
+/// row rather than a row: a stack scrolls under the hand, and a wheel that
+/// jumped a whole track would make a tall one unreachable in the middle.
+const WHEEL_ROWS: f32 = 48.0;
+
 /// The narrowest a clip's box is drawn at, so one nobody can see never becomes
 /// one nobody can grab.
 const MIN_CLIP_W: f32 = 3.0;
@@ -180,6 +190,15 @@ pub struct Multitrack {
     /// because the wire has always carried one, and a reader who zoomed a track
     /// in must not lose it to the next fader move.
     zoom: HashMap<String, f32>,
+    /// **How tall each automation row is drawn**, by curve name — the same
+    /// screen state [`Multitrack::zoom`] is, for the other kind of row.
+    ///
+    /// A table of its own rather than one keyed by "whatever the row is called"
+    /// because the two names come out of one id space: a lane is named by its
+    /// track's id and a curve by its automation's, and nothing stops a piece
+    /// from having both. One table would make zooming a row silently resize an
+    /// unrelated one, which is the kind of defect nobody finds by reading.
+    curve_zoom: HashMap<String, f32>,
     /// **Where each metered track's level is read from**, by lane name.
     ///
     /// A meter is a *bus*, not a value: the host reads it every frame, straight
@@ -299,6 +318,7 @@ impl Default for Multitrack {
             loops: Vec::new(),
             meters: HashMap::new(),
             zoom: HashMap::new(),
+            curve_zoom: HashMap::new(),
             selected: Vec::new(),
             track: None,
             scroll: 0.0,
@@ -363,6 +383,7 @@ fn from_props(props: &Map<String, Value>) -> Multitrack {
         loops: parse_names(props, "loops"),
         meters: parse_meters(props),
         zoom: HashMap::new(),
+        curve_zoom: HashMap::new(),
         holding: None,
         selected: Vec::new(),
         scroll: 0.0,
@@ -397,7 +418,7 @@ fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
         return Vec::new();
     };
     items
-        .as_chunks::<6>()
+        .as_chunks::<7>()
         .0
         .iter()
         .filter_map(|c| {
@@ -408,6 +429,7 @@ fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
                 mute: truthy(&c[3]).unwrap_or(false),
                 solo: truthy(&c[4]).unwrap_or(false),
                 gain: c[5].as_f64().unwrap_or(1.0) as f32,
+                curves: truthy(&c[6]).unwrap_or(true),
             })
         })
         .collect()
@@ -694,7 +716,9 @@ impl Multitrack {
     /// the order they are drawn. Built per ask rather than kept, because it is
     /// derived from two lists a `/gui_set` replaces whole.
     fn stack(&self) -> model::Stack {
-        model::Stack::new(&self.lanes, &self.curves, self.gap)
+        model::Stack::shown(&self.lanes, &self.curves, self.gap, |c| {
+            !self.is_hidden(&c.name)
+        })
     }
 
     /// Where each **lane** lands, by lane index.
@@ -858,6 +882,17 @@ impl Multitrack {
                     ..Take::default()
                 })
             }
+            // **Show or hide this track's automation rows.** A statement about
+            // the track, so it rides the `lanes` report the mute and the solo
+            // beside it ride, and the owner answers it by saying which curves
+            // are visible -- which is where that fact lives.
+            track::HeaderPart::Curves => {
+                self.lanes[lane].curves = !self.lanes[lane].curves;
+                Claim::Take(Take {
+                    events: self.lanes_event(),
+                    ..Take::default()
+                })
+            }
             track::HeaderPart::Level => {
                 let Some(cell) = parts.level else {
                     return Claim::Decline;
@@ -914,8 +949,17 @@ impl Multitrack {
     fn add_lane(&mut self, at: usize) -> Claim {
         let at = at.min(self.lanes.len());
         let height = self.lanes.first().map_or(LANE_H, |l| l.height);
-        self.lanes
-            .insert(at, Lane::new(self.fresh_lane_name(), height));
+        let mut made = Lane::new(self.fresh_lane_name(), height);
+        // **A track a hand makes asks for no automation** *(found 2026-09-12 by
+        // the user: "todas las pistas agregadas aparecen con automatizacion de
+        // gain visible")*. A lane is shown-by-default because a row a *piece*
+        // drew is a row it meant to be seen -- and a row nobody has drawn yet
+        // has nothing to show, so the default said "show me this track's
+        // automation" and the owner, reading that as the verb it is, made one.
+        // Adding a track and adding a curve are two gestures, and the second
+        // one is the `A` beside it.
+        made.curves = false;
+        self.lanes.insert(at, made);
         // The hand keeps hold of what it asked for, and the boxes it was
         // holding are on rows that may have moved under them.
         self.track = Some(at);
@@ -993,10 +1037,29 @@ impl Multitrack {
                 lane.height = *h;
             }
         }
-        // A lane that is gone takes its height with it, the way every other
+        for curve in &mut self.curves {
+            if let Some(h) = self.curve_zoom.get(&curve.name) {
+                curve.height = *h;
+            }
+        }
+        // A row that is gone takes its height with it, the way every other
         // table here is pruned by what the piece now holds.
         self.zoom
             .retain(|name, _| self.lanes.iter().any(|l| &l.name == name));
+        self.curve_zoom
+            .retain(|name, _| self.curves.iter().any(|c| &c.name == name));
+    }
+
+    /// **A scroll that cannot lose the stack**: clamped to what there is below
+    /// the window, and pinned at the top when the whole thing fits.
+    ///
+    /// The floor is zero and the ceiling is how much of the stack is off the
+    /// bottom, so the last row can always be brought into view and never past
+    /// it. A stack shorter than its window has a ceiling of zero, which is the
+    /// same statement: there is nothing to scroll to.
+    fn clamped_scroll(&self, rect: Rect, want: f32) -> f32 {
+        let over = (self.stack().content_height() - rect.h).max(0.0);
+        want.clamp(0.0, over)
     }
 
     /// **What kind of row a y is on** — a lane, an automation row, or nothing
@@ -1152,57 +1215,42 @@ impl Multitrack {
         true
     }
 
-    /// **Join the held clips that touch and read on from each other, on one
-    /// lane** — a pitch is what makes two notes one voice, and a **lane** is
-    /// what makes two clips joinable.
+    /// **Ask for the held boxes to be joined.**
     ///
-    /// A run is read over what is there, so an overlap joins as readily as a
-    /// juxtaposition: two boxes sharing pixels are not two boxes to a reader.
+    /// A join is the one verb here that is *asked for* rather than performed.
+    /// Every other one edits the picture and reports it, and what it meant is
+    /// read back out of the difference — but a join and a "delete one, lengthen
+    /// the other" leave a lane holding exactly the same thing, and a box in a
+    /// `clips` report names **one** source and one start, so fragments joined
+    /// into one box have no report that describes them.
     ///
-    /// **Touching is not enough.** A join states one window over the whole
-    /// span, reading the source from where the earlier box read, so two boxes
-    /// that read different runs of it — fragments put back in another order, a
-    /// piece whose edge was pulled to show more — cannot be said that way:
-    /// joined anyway, the box played straight through material the pieces
-    /// skipped and ran into silence past the end of what it read. So a pair
-    /// that does not continue is left alone ([`placement::continues`]), and
-    /// joining such a run is the cut the server stitches rather than a
-    /// placement — see `clients/gui/PLAN.md`, "Join over fragments".
-    fn join_held(&mut self) -> bool {
-        let mut held = self.selected.clone();
-        held.sort_by(|a, b| {
-            let (x, y) = (&self.clips[*a], &self.clips[*b]);
-            (x.lane.as_str(), x.place.offset)
-                .partial_cmp(&(y.lane.as_str(), y.place.offset))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let mut drop: Vec<usize> = Vec::new();
-        let mut i = 0;
-        while i < held.len() {
-            let head = held[i];
-            let mut j = i + 1;
-            while j < held.len()
-                && self.clips[held[j]].lane == self.clips[head].lane
-                && self.clips[held[j]].source == self.clips[head].source
-                && placement::adjacent(self.clips[head].place, self.clips[held[j]].place, 1.0)
-                && placement::continues(self.clips[head].place, self.clips[held[j]].place, 1.0)
-            {
-                self.clips[head].place =
-                    placement::merge(self.clips[head].place, self.clips[held[j]].place);
-                drop.push(held[j]);
-                j += 1;
-            }
-            i = j;
-        }
-        if drop.is_empty() {
-            return false;
-        }
-        drop.sort_unstable();
-        for i in drop.into_iter().rev() {
-            self.clips.remove(i);
-        }
-        self.selected.clear();
-        true
+    /// What is missing when they do not read on from each other is the
+    /// **source** they would be a window onto, and making one is the document's
+    /// (`clausters_document::multitrack::picture::read_join`): it knows what
+    /// each box reads, this only knows what each box is called. So the widget
+    /// says which boxes, and the answer comes back as the picture that now
+    /// holds — including the refusals, which are about the material rather than
+    /// about the picture and which this could not have made.
+    fn join_event(&self) -> Events {
+        let mut args = vec![OscType::String("join".into())];
+        args.extend(
+            self.selected
+                .iter()
+                .filter_map(|i| self.clips.get(*i))
+                .map(|clip| OscType::String(clip.name.clone())),
+        );
+        Events::message(args)
+    }
+
+    /// A refusal to emit: the host's own `"refused" <verb> <why>`, which the
+    /// status bar reads as a refused line and an owner reads as an ordinary
+    /// event it may ignore.
+    fn refused(verb: &str, why: &str) -> Events {
+        Events::message(vec![
+            OscType::String("refused".into()),
+            OscType::String(verb.into()),
+            OscType::String(why.into()),
+        ])
     }
 
     /// **Where each box is on screen, and the slice of its own span it shows** —
@@ -1514,6 +1562,20 @@ impl Multitrack {
             mute: Some(lane.mute),
             solo: Some(lane.solo),
             level: Some(lane.gain),
+            // **Offered on every track, including the ones with nothing to
+            // show** *(asked for by the user 2026-09-12)*. The first press on a
+            // bare track is what **adds** its gain automation, the way a double
+            // click on a header adds a track: the owner reads "show me this
+            // track's automation" and makes one where there is none. So the
+            // button is not a view of something that exists, it is the verb
+            // that brings it into being and then hides and shows it.
+            //
+            // **A facility, and it says so**: what a track may automate is its
+            // own question, and this is the smallest thing that makes a piece
+            // with automation editable while that is worked out. See
+            // `clients/gui/PLAN.md`, "The whole interaction vocabulary is
+            // provisional".
+            curves: Some(lane.curves),
             // **Silent, and the right length**: the strip's width follows the
             // channel count and nothing else, so a hit test lays the header out
             // exactly where the drawing did without reading a bus.
@@ -1593,27 +1655,62 @@ impl Element for Multitrack {
             "clips" => {
                 // **A correction does not empty the hand.** The list is
                 // replaced whole, so the indices the selection holds mean
-                // nothing afterwards -- but the *names* do, and the boxes are
-                // the same boxes. Dropping it made a split unjoinable: the
-                // client answers a minted name with the whole picture, that
-                // picture arrives between the cut and the `j`, and the two
-                // halves the hand was still holding were let go on the way.
-                let held: Vec<String> = self
+                // nothing afterwards -- but the boxes are the same boxes. This
+                // is how they are found again, and it takes two passes because
+                // a name is not always enough.
+                //
+                // **The name, and then where it is.** A box the *host* made --
+                // the tail of a split, a paste -- carries a word this widget
+                // minted, and the correction that comes back carries the
+                // document's id instead: that is the whole point of the
+                // correction. So the half the hand was still holding vanishes
+                // from a lookup by name, and `j` found one box where the hand
+                // held two -- and a join that joins nothing says nothing, so
+                // the key looked dead. It is the same box in the same place on
+                // the same lane, because the piece placed it exactly where this
+                // said, and that is what the second pass matches on.
+                let held: Vec<(String, String, f64)> = self
                     .selected
                     .iter()
-                    .filter_map(|i| self.clips.get(*i).map(|c| c.name.clone()))
+                    .filter_map(|i| self.clips.get(*i))
+                    .map(|c| (c.name.clone(), c.lane.clone(), c.place.offset))
                     .collect();
                 self.clips = parse_clips(&parse::as_array_props("clips", v));
-                self.selected = held
-                    .iter()
-                    .filter_map(|name| self.clips.iter().position(|c| &c.name == name))
-                    .collect();
+                let mut taken: Vec<usize> = Vec::new();
+                for (name, lane, offset) in &held {
+                    let found = self
+                        .clips
+                        .iter()
+                        .position(|c| &c.name == name)
+                        .filter(|i| !taken.contains(i))
+                        .or_else(|| {
+                            self.clips.iter().enumerate().find_map(|(i, c)| {
+                                (!taken.contains(&i)
+                                    && &c.lane == lane
+                                    // **A frame, not an epsilon.** An offset
+                                    // goes out in frames, crosses to beats and
+                                    // comes back, so it drifts; two boxes on one
+                                    // lane cannot be a frame apart and both be
+                                    // the hand's.
+                                    && (c.place.offset - offset).abs() < 1.0)
+                                    .then_some(i)
+                            })
+                        });
+                    if let Some(i) = found {
+                        taken.push(i);
+                    }
+                }
+                self.selected = taken;
                 true
             }
             // **The track automations**: rows of their own under the lanes
             // they name, replaced whole like every other list here.
             "curves" => {
                 self.curves = parse_curves(&parse::as_array_props("curves", v));
+                // A curve payload states a height on every row for the reason a
+                // lane payload does, so a reader who zoomed one must not lose it
+                // to the next point somebody drags.
+                self.zoom_rows();
                 self.bodies = self.rebuilt(&self.curves, &self.layers);
                 true
             }
@@ -1715,6 +1812,7 @@ impl Element for Multitrack {
                         mute: None,
                         solo: None,
                         level: None,
+                        curves: None,
                         meters: Vec::new(),
                     },
                     false,
@@ -2071,6 +2169,67 @@ impl Element for Multitrack {
         self.clips_event()
     }
 
+    /// **The stack's own vertical gestures**: scroll it, and zoom one row.
+    ///
+    /// The plain wheel stays the **time axis'**, which is what it is over every
+    /// timeline view here and what a hand reaching for a wheel over an
+    /// arrangement means most of the time. The two this adds are the ones the
+    /// stack has and the axis does not:
+    ///
+    /// - `Shift` **scrolls the stack**, so a track that fell off the bottom is
+    ///   reachable. The scroll is clamped to what there is to see — a stack
+    ///   that fits does not move at all, and one that does not cannot be pushed
+    ///   past its last row, which is the difference between a scroll and a
+    ///   surface that can be lost.
+    /// - `Ctrl` **zooms the row under the cursor**, a lane or an automation row
+    ///   alike and each on its own. The bottom-edge drag already zooms a lane
+    ///   and is the better gesture for one; this is the one that reaches a
+    ///   curve row, which has no edge to pull, and it is how one row is read
+    ///   closely while the rest stay where they are.
+    ///
+    /// **A facility, and it says so.** These are here because the example needs
+    /// to reach a stack taller than its window, and which keys they are is not
+    /// settled — see `clients/gui/PLAN.md`, "The whole interaction vocabulary is
+    /// provisional" and "A shortcut is the application's, not the widget's".
+    fn wheel(&mut self, at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+        let steps = if delta.1 != 0.0 { delta.1 } else { delta.0 };
+        if steps == 0.0 {
+            return None;
+        }
+        if input.mods.ctrl {
+            let row = self.row_kind(input, at.1)?;
+            // Up zooms in, which is the direction every other zoom here takes.
+            let factor = 1.1f32.powf(steps as f32);
+            match row {
+                model::Row::Lane(i) => {
+                    let lane = self.lanes.get_mut(i)?;
+                    lane.height = (lane.height * factor).clamp(MIN_LANE_H, MAX_LANE_H);
+                    self.zoom.insert(lane.name.clone(), lane.height);
+                }
+                model::Row::Curve(n) => {
+                    let curve = self.curves.get_mut(n)?;
+                    curve.height = (curve.height * factor).clamp(MIN_CURVE_H, MAX_LANE_H);
+                    self.curve_zoom.insert(curve.name.clone(), curve.height);
+                }
+            }
+            return Some(Events::none());
+        }
+        if input.mods.shift {
+            // **Taken whether it moves or not** *(found 2026-09-12 by the user:
+            // "cuando llega al limite pasa a hacer zoom temporal")*. Passing an
+            // unusable wheel on is the right rule for a *surface* under the
+            // pointer, which is why the scroll plane behind this one keeps it —
+            // and it is the wrong one for a **modifier**, which is an address
+            // rather than a place. Shift said *the stack*, so a stack already
+            // at its end answers by doing nothing: reaching the last track and
+            // having the piece zoom under the hand is the gesture turning into
+            // a different gesture at the moment the hand leans on it.
+            self.scroll = self.clamped_scroll(input.rect, self.scroll - steps as f32 * WHEEL_ROWS);
+            return Some(Events::none());
+        }
+        None
+    }
+
     fn accepts_focus(&self) -> bool {
         true
     }
@@ -2084,6 +2243,13 @@ impl Element for Multitrack {
     /// host-wide clipboard. All of them act on **the held set**, across the
     /// stack, and all of them report the clips as they now stand: there is one
     /// payload here and a verb does not get to invent a second.
+    ///
+    /// **A verb that finds nothing to act on says so**, out loud, in the same
+    /// `"refused" <verb> <why>` an unwritable body already answers a press
+    /// with. A hand holding one box, two halves put back in the other order, a
+    /// selection already on the grid: all of them were correct and silent, and
+    /// a correct refusal nobody is told about is indistinguishable from a key
+    /// that does not work.
     ///
     /// **The letters are the ones a clip already answered to on a lane.** Which
     /// keys they are is not settled — see `clients/gui/PLAN.md`, "A shortcut is
@@ -2106,17 +2272,23 @@ impl Element for Multitrack {
         match key {
             Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
                 let held = self.selected.clone();
-                placement::quantize(self, &held, self.snap).then(|| self.clips_event())
+                Some(if placement::quantize(self, &held, self.snap) {
+                    self.clips_event()
+                } else {
+                    Self::refused("quantize", "these boxes are already on the grid")
+                })
             }
             // **At the window's cursor**: a key gesture has no pointer to read a
             // position from, and the window has one cursor for exactly that.
             Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
                 let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
-                self.split_held(at).then(|| self.clips_event())
+                Some(if self.split_held(at) {
+                    self.clips_event()
+                } else {
+                    Self::refused("split", "the cursor is not inside a held box")
+                })
             }
-            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => {
-                self.join_held().then(|| self.clips_event())
-            }
+            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => Some(self.join_event()),
             Key::Delete | Key::Backspace => {
                 let mut held = self.selected.clone();
                 held.sort_unstable();
@@ -2309,6 +2481,7 @@ impl Element for Multitrack {
             mute: Some(false),
             solo: Some(false),
             level: Some(1.0),
+            curves: Some(true),
             meters: vec![(0.0, 0.0); widest],
         };
         header.width(m)
@@ -2434,7 +2607,7 @@ mod tests {
     /// piece on `noise`, `b` over the second on `tone`.
     fn piece() -> Multitrack {
         from_props(&props(
-            r#"{"lanes": ["noise", "", 100, 0, 0, 1, "tone", "", 100, 0, 0, 1],
+            r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0]}"#,
         ))
     }
@@ -2455,7 +2628,7 @@ mod tests {
     }
 
     const TWO: &str = r#"{
-        "lanes": ["noise", "", 100, 0, 0, 0.8, "tone", "Lead", 60, 1, 0, 0.5],
+        "lanes": ["noise", "", 100, 0, 0, 0.8, 1, "tone", "Lead", 60, 1, 0, 0.5, 1],
         "clips": ["a", "noise", 0, 48000, 0, "", 0,
                   "b", "tone", 96000, 48000, 0, "take 2", 0]
     }"#;
@@ -2482,7 +2655,7 @@ mod tests {
         }
 
         let mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1.0, "two", "", 100, 0, 0, 1.0],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1, "two", "", 100, 0, 0, 1.0, 1],
                 "meters": ["one", 10, 12, 2]}"#,
         ));
         assert_eq!(
@@ -2538,10 +2711,10 @@ mod tests {
     #[test]
     fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
         let mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1.0], "meters": ["one", 10, 12, 2]}"#,
+            r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1], "meters": ["one", 10, 12, 2]}"#,
         ));
         let m = crate::host::metrics::Metrics::default();
-        let plain = from_props(&props(r#"{"lanes": ["one", "", 100, 0, 0, 1.0]}"#));
+        let plain = from_props(&props(r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1]}"#));
         assert!(
             mt.gutter(&m) > plain.gutter(&m),
             "the band holds the strip beside the name rather than over it"
@@ -2574,7 +2747,7 @@ mod tests {
     fn a_box_of_notes_is_a_roll_and_a_box_of_samples_is_a_take() {
         let mt = from_props(&props(
             r#"{
-            "lanes": ["one", "", 100, 0, 0, 1.0],
+            "lanes": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["a", "one", 0, 48000, 0, "", 0,
                       "b", "one", 96000, 48000, 0, "", -1],
             "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0,
@@ -2598,7 +2771,7 @@ mod tests {
         use crate::host::widget::element::SlotKey;
         let mut mt = from_props(&props(
             r#"{"view": "spectrogram",
-                "lanes": ["one", "", 100, 0, 0, 1.0],
+                "lanes": ["one", "", 100, 0, 0, 1.0, 1],
                 "clips": ["a", "one", 0, 48000, 0, "", 3]}"#,
         ));
         let world = crate::host::world::World::default();
@@ -2680,7 +2853,7 @@ mod tests {
         assert_eq!(mt.lanes.len(), 1, "the second group is short");
         assert!(mt.clips.is_empty(), "so is the only clip");
 
-        let unnamed = from_props(&props(r#"{"lanes": [7, "", 100, 0, 0, 1]}"#));
+        let unnamed = from_props(&props(r#"{"lanes": [7, "", 100, 0, 0, 1, 1]}"#));
         assert!(unnamed.lanes.is_empty(), "a lane with no name is not one");
     }
 
@@ -2711,7 +2884,7 @@ mod tests {
     #[test]
     fn a_clip_on_a_lane_that_is_gone_is_kept_and_not_placed() {
         let mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 10, 0, "", 0, "b", "vanished", 0, 10, 0, "", 0]}"#,
         ));
         assert_eq!(mt.clips.len(), 2);
@@ -2848,7 +3021,7 @@ mod tests {
     /// an envelope inside the box `a`.
     fn curved() -> Multitrack {
         from_props(&props(
-            r#"{"lanes": ["noise", "", 100, 0, 0, 1, "tone", "", 100, 0, 0, 1],
+            r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0],
                 "curves": ["gain", "noise", "Gain", 0, 1, 40],
                 "layers": ["env", "a", "", 0, 1],
@@ -3036,7 +3209,7 @@ mod tests {
         // the height a hand set is still the height.
         assert!(mt.set(
             "lanes",
-            &serde_json::json!(["noise", "", 100, 0, 0, 0.5, "tone", "", 100, 0, 0, 1]),
+            &serde_json::json!(["noise", "", 100, 0, 0, 0.5, 1, "tone", "", 100, 0, 0, 1, 1]),
         ));
         assert_eq!(
             mt.lanes[0].height,
@@ -3046,8 +3219,280 @@ mod tests {
         assert_eq!(mt.lanes[0].gain, 0.5, "and the payload landed");
 
         // A row that is gone takes its height with it.
-        assert!(mt.set("lanes", &serde_json::json!(["tone", "", 100, 0, 0, 1])));
+        assert!(mt.set("lanes", &serde_json::json!(["tone", "", 100, 0, 0, 1, 1])));
         assert!(mt.zoom.is_empty());
+    }
+
+    /// **The stack has vertical gestures of its own** *(asked for by the user
+    /// 2026-09-12, to make the example a multitrack editor worth trying)*: the
+    /// wheel scrolls it and zooms one row.
+    ///
+    /// The plain wheel is left to the time axis, which is what it is over every
+    /// timeline view here — so this element declines it, and the machine behind
+    /// it goes on to the axis.
+    #[test]
+    fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
+        let m = Metrics::default();
+        // Short on purpose: three rows of a hundred-odd pixels do not fit, so
+        // there is something below to scroll to.
+        let rect = Rect::new(0.0, 0.0, 600.0, 150.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        mt.curves = vec![model::Curve {
+            name: "c".into(),
+            owner: "noise".into(),
+            label: String::new(),
+            min: 0.0,
+            max: 1.0,
+            height: CURVE_H,
+        }];
+        let inp = input(&m, rect, len);
+        let plain = |mods: Mods| Input { mods, ..inp };
+        let on_lane = (10.0, f64::from(mt.lane_rects(rect)[0].y) + 5.0);
+
+        // The plain wheel is the axis', so nothing here answers it.
+        assert!(
+            mt.wheel(on_lane, (0.0, 1.0), &plain(Mods::default()))
+                .is_none()
+        );
+        assert_eq!(mt.scroll, 0.0);
+
+        // Shift scrolls, and only as far as there is stack below.
+        let shift = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        assert!(mt.wheel(on_lane, (0.0, -1.0), &plain(shift)).is_some());
+        assert!(mt.scroll > 0.0, "it moved down: {}", mt.scroll);
+        let over = mt.stack().content_height() - rect.h;
+        for _ in 0..50 {
+            mt.wheel(on_lane, (0.0, -1.0), &plain(shift));
+        }
+        assert_eq!(mt.scroll, over, "and stops at the last row");
+        assert!(
+            mt.wheel(on_lane, (0.0, -1.0), &plain(shift)).is_some(),
+            "and is still taken there: a stack at its end does nothing, rather \
+             than letting the piece zoom under the hand"
+        );
+        assert_eq!(mt.scroll, over, "and nothing moved");
+        for _ in 0..60 {
+            mt.wheel(on_lane, (0.0, 1.0), &plain(shift));
+        }
+        assert_eq!(mt.scroll, 0.0, "and back at the top, never above it");
+
+        // Ctrl zooms the row the pointer is on, a lane and a curve alike.
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let was = mt.lanes[0].height;
+        assert!(mt.wheel(on_lane, (0.0, 1.0), &plain(ctrl)).is_some());
+        assert!(mt.lanes[0].height > was, "the lane grew");
+        assert_eq!(mt.lanes[1].height, was, "and only that row");
+
+        let row = mt.stack().rects(rect, mt.scroll)[1];
+        let on_curve = (10.0, f64::from(row.y) + 5.0);
+        assert!(matches!(
+            mt.row_kind(&inp, on_curve.1),
+            Some(model::Row::Curve(0))
+        ));
+        let was = mt.curves[0].height;
+        assert!(mt.wheel(on_curve, (0.0, 1.0), &plain(ctrl)).is_some());
+        assert!(mt.curves[0].height > was, "a curve row has no edge to pull");
+
+        // And both survive the payload that redraws them, the way a lane's
+        // height set by a header drag does.
+        let tall = (mt.lanes[0].height, mt.curves[0].height);
+        assert!(mt.set(
+            "lanes",
+            &serde_json::json!(["noise", "", 100, 0, 0, 0.5, 1, "tone", "", 100, 0, 0, 1, 1]),
+        ));
+        assert!(mt.set("curves", &Value::from(r#"["c", "noise", "", 0, 1, 40]"#)));
+        assert_eq!((mt.lanes[0].height, mt.curves[0].height), tall);
+    }
+
+    /// **The user's own sequence**: make a track, press its `A`, and the row
+    /// has to be there *(found 2026-09-12: "al crear un track y activar A no
+    /// hace nada, al crear otro track aparece la automatizacion del
+    /// anterior")*.
+    ///
+    /// Every step of it passed on its own and the path did not, which is the
+    /// third time this seam has done that — so this walks the whole thing: the
+    /// double click that makes the row, the correction that renames it from the
+    /// word this minted to the id the piece gave it, the press on `A`, and the
+    /// correction that carries the curve the owner made.
+    #[test]
+    fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = from_props(&props(
+            r#"{"lanes": ["10", "noise", 96, 0, 0, 1, 0], "clips": []}"#,
+        ));
+        let indent = mt.gutter(&m);
+        let inp = Input {
+            indent,
+            ..input(&m, rect, len)
+        };
+
+        // The double click under the last header: a track, at the end.
+        let under = (
+            f64::from(rect.x) + 5.0,
+            f64::from(mt.lane_rects(rect)[0].y + mt.lanes[0].height) + 20.0,
+        );
+        let twice = Input { clicks: 2, ..inp };
+        let Claim::Take(_) = mt.press(under, &twice) else {
+            panic!("the band under the last header makes one")
+        };
+        assert_eq!(mt.lanes.len(), 2);
+        assert_eq!(mt.lanes[1].name, "track 1", "a word this minted");
+        assert!(!mt.lanes[1].curves, "and it asks for no automation");
+
+        // The owner made the track and named it by its id.
+        assert!(mt.set(
+            "lanes",
+            &Value::from(r#"["10", "noise", 96, 0, 0, 1, 0, "101", "track 101", 96, 0, 0, 1, 0]"#)
+        ));
+
+        // `A` on the new row.
+        let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[1], indent);
+        let cell = track::header_parts(band, &mt.header(&mt.lanes[1], indent), &m)
+            .curves
+            .expect("the toggle");
+        let Claim::Take(take) = mt.press(
+            (
+                f64::from(cell.x + cell.w / 2.0),
+                f64::from(cell.y + cell.h / 2.0),
+            ),
+            &inp,
+        ) else {
+            panic!("the header takes it")
+        };
+        let msgs = take.events.into_messages();
+        assert_eq!(msgs[0][14], OscType::Int(1), "the row asks: {:?}", msgs[0]);
+
+        // The owner made the curve and answers with the whole picture.
+        assert!(mt.set(
+            "lanes",
+            &Value::from(r#"["10", "noise", 96, 0, 0, 1, 0, "101", "track 101", 96, 0, 0, 1, 1]"#)
+        ));
+        assert!(mt.set(
+            "curves",
+            &Value::from(r#"["103", "101", "gain", 0, 1, 40]"#)
+        ));
+        assert!(mt.set("hidden", &Value::from("")));
+
+        // And the row is in the stack, under the track it belongs to.
+        let stack = mt.stack();
+        let rows: Vec<model::Row> = (0..stack.len()).filter_map(|i| stack.row(i)).collect();
+        assert_eq!(
+            rows,
+            vec![
+                model::Row::Lane(0),
+                model::Row::Lane(1),
+                model::Row::Curve(0)
+            ],
+            "the curve row is there, under its track"
+        );
+    }
+
+    /// **A hidden curve is a row that is not there** *(found 2026-09-12 by the
+    /// user, pressing the header's toggle: "la A sigue sin ocultar ni
+    /// mostrar")*.
+    ///
+    /// The stack reserved a band for every curve and the drawing skipped the
+    /// hidden ones, which is a hole exactly where the row was: the picture did
+    /// not change when a hand hid one and did not change when it showed one
+    /// either — the same gap, with or without a line in it. The toggle was
+    /// working the whole way down and there was nothing to see at the end of
+    /// it, which is the most expensive kind of correct.
+    #[test]
+    fn a_hidden_curve_gives_its_row_back() {
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let mut mt = piece();
+        mt.curves = vec![model::Curve {
+            name: "c".into(),
+            owner: "noise".into(),
+            label: String::new(),
+            min: 0.0,
+            max: 1.0,
+            height: CURVE_H,
+        }];
+        let with_row = mt.stack().content_height();
+        let rows = mt.stack().len();
+
+        assert!(mt.set("hidden", &Value::from("c")));
+        assert_eq!(mt.stack().len(), rows - 1, "the row is gone, not blank");
+        assert_eq!(
+            mt.stack().content_height(),
+            with_row - (CURVE_H + mt.gap),
+            "and the stack is shorter by exactly that row"
+        );
+        // The lane under it moves up, which is the whole of what a hand sees.
+        let after = mt.lane_rects(rect)[1].y;
+        assert!(mt.set("hidden", &Value::from("")));
+        assert!(
+            mt.lane_rects(rect)[1].y > after,
+            "and showing it puts the row back"
+        );
+        assert_eq!(mt.stack().len(), rows);
+    }
+
+    /// **`A` in a track's header shows and hides its automation rows** *(asked
+    /// for by the user 2026-09-12, as a facility for trying the example)*.
+    ///
+    /// It rides the `lanes` report the mute and the solo beside it ride, and
+    /// the owner answers by saying which curves are visible — a row a piece
+    /// shows is the piece's, and this is a control over that rather than a
+    /// second place for it to be recorded.
+    #[test]
+    fn the_headers_automation_toggle_reports_the_lanes() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let len = 1000.0;
+        let mut mt = piece();
+        // **The band the widget asks for**, which is what holds the controls:
+        // a fourth cell is part of what the gutter has to be wide enough for,
+        // and taking a number out of the air here would test a header nobody
+        // lays out.
+        let indent = mt.gutter(&m);
+        let inp = Input {
+            indent,
+            ..input(&m, rect, len)
+        };
+
+        // **Offered on a bare track too**: the first press is what asks for the
+        // automation, so a button only on tracks that have one would be a
+        // button nobody could reach to make the first.
+        assert!(
+            track::header_parts(
+                crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent),
+                &mt.header(&mt.lanes[0], indent),
+                &m,
+            )
+            .curves
+            .is_some(),
+            "a track with nothing to show still offers the verb"
+        );
+        let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent);
+        let cell = track::header_parts(band, &mt.header(&mt.lanes[0], indent), &m)
+            .curves
+            .expect("the track has automation, so it has the toggle");
+        let at = (
+            f64::from(cell.x + cell.w / 2.0),
+            f64::from(cell.y + cell.h / 2.0),
+        );
+        let Claim::Take(take) = mt.press(at, &inp) else {
+            panic!("the header takes it")
+        };
+        assert!(!mt.lanes[0].curves, "it flipped");
+        let msgs = take.events.into_messages();
+        assert_eq!(msgs[0][0], OscType::String("lanes".into()));
+        assert_eq!(
+            msgs[0][7],
+            OscType::Int(0),
+            "and the row says its automation is hidden"
+        );
     }
 
     /// **A paste needs two coordinates, and the second is the selected track.**
@@ -3183,7 +3628,7 @@ mod tests {
         // The two halves of a cut: `b` reads on from where `a` stops, which is
         // the other half of what a join needs.
         let mut mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 500, 200, 200, "", 0]}"#,
         ));
         let inp = input(&m, rect, len);
@@ -3209,80 +3654,31 @@ mod tests {
         );
         mt.release(over, true, &inp);
 
-        // Meeting is what `j` needs: with the two touching, one box comes out.
+        // Meeting is what `j` needs: with the two touching, it asks for them.
         mt.clips[1].place.offset = 200.0;
         mt.selected = vec![0, 1];
         let mut clipboard = crate::host::clipboard::Clip::default();
-        let joined = mt
-            .key(
-                &Key::Char('j'),
-                &mut KeyInput {
-                    mods: Mods::default(),
-                    clipboard: &mut clipboard,
-                    cursor: None,
-                },
-            )
-            .expect("two boxes that touch join");
         assert_eq!(
-            joined.into_messages()[0][0],
-            OscType::String("clips".into())
-        );
-        assert_eq!(mt.clips.len(), 1);
-        assert_eq!(mt.clips[0].place.offset, 0.0);
-        assert_eq!(mt.clips[0].place.dur, 400.0, "the two spans, whole");
-    }
-
-    /// **Touching is not enough**: two boxes that read *different* runs of a
-    /// source cannot be said in one window, so `j` leaves them alone.
-    ///
-    /// A join states one window over the whole span, reading the source from
-    /// where the earlier box read. Joined anyway, fragments put back in another
-    /// order played straight through material they skipped and ran into silence
-    /// past the end of what they read -- audio nobody asked for, in place of
-    /// audio somebody cut.
-    #[test]
-    fn boxes_that_do_not_read_on_from_each_other_do_not_join() {
-        let mut mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
-                "clips": ["a", "one", 0, 200, 400, "", 0, "b", "one", 200, 200, 0, "", 0]}"#,
-        ));
-        mt.selected = vec![0, 1];
-        let mut clipboard = crate::host::clipboard::Clip::default();
-        assert!(
-            mt.key(
+            joined(mt.key(
                 &Key::Char('j'),
                 &mut KeyInput {
                     mods: Mods::default(),
                     clipboard: &mut clipboard,
                     cursor: None,
                 },
-            )
-            .is_none(),
-            "the second reads the source's head where the first left off at 600"
+            )),
+            vec!["a".to_string(), "b".to_string()],
+            "it names the boxes in hand and leaves what they become to the owner"
         );
-        assert_eq!(mt.clips.len(), 2, "and both boxes are still there");
-
-        // Two over **different sources** are the same case: a box is a window
-        // onto one of them.
-        let mut mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
-                "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 200, 200, 200, "", 1]}"#,
-        ));
-        mt.selected = vec![0, 1];
-        assert!(
-            mt.key(
-                &Key::Char('j'),
-                &mut KeyInput {
-                    mods: Mods::default(),
-                    clipboard: &mut clipboard,
-                    cursor: None,
-                },
-            )
-            .is_none(),
-            "one window names one source"
-        );
-        assert_eq!(mt.clips.len(), 2);
+        assert_eq!(mt.clips.len(), 2, "and edits nothing itself");
     }
+
+    // **What a join may be over is the material's question, and it moved.**
+    // Two boxes that read different runs of a source, two on two lanes, a hand
+    // holding one: the answers are
+    // `clausters_document::multitrack::picture::read_join`'s, which is the only
+    // place that knows what each box *reads* rather than what it is called. The
+    // tests that stood here asserted a second copy of them.
 
     /// **A box is a window onto a source, and an edge stops where the source
     /// does** -- unless the piece says the box wraps, where past the end is the
@@ -3292,7 +3688,7 @@ mod tests {
     #[test]
     fn a_box_that_loops_may_be_pulled_past_its_source_and_one_that_does_not_may_not() {
         let mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 500, 0, "", 0, "b", "one", 500, 500, 0, "", 0],
                 "loops": "a"}"#,
         ));
@@ -3383,7 +3779,7 @@ mod tests {
         let msgs = take.events.into_messages();
         let args = msgs.first().expect("the rows as they now stand");
         assert_eq!(args[0], OscType::String("lanes".into()));
-        assert_eq!(args.len(), 1 + 3 * 6, "three rows, six numbers each");
+        assert_eq!(args.len(), 1 + 3 * 7, "three rows, seven fields each");
         assert_eq!(mt.lanes.len(), 3);
         assert_eq!(mt.lanes[1].name, "track 1", "a word, never an id");
         assert_eq!(mt.track, Some(1), "and the hand holds what it asked for");
@@ -3599,8 +3995,8 @@ mod tests {
         assert!(mt.lanes[0].mute, "and it flipped");
         assert_eq!(
             msgs[0].len(),
-            1 + 6 * 2,
-            "the tag, then a sextuple per lane"
+            1 + 7 * 2,
+            "the tag, then seven fields per lane"
         );
     }
 
@@ -3643,10 +4039,11 @@ mod tests {
         // With nothing held, the keys are not this widget's.
         assert!(mt.key(&Key::Char('q'), &mut ki(&mut clipboard)).is_none());
     }
-    /// **`e` cuts at the window's cursor and `j` joins a touching run.** The
+    /// **`e` cuts at the window's cursor and `j` asks for the two back.** The
     /// window over the contents moves with the cut, so the second half reads on
-    /// from where the first stopped — and a join is stated over what is there,
-    /// so it puts the two back.
+    /// from where the first stopped — which is what makes the pair joinable,
+    /// and a fact about the *material*, so what they become is the document's
+    /// and this only names them.
     #[test]
     fn a_clip_splits_at_the_cursor_and_joins_back() {
         let mut mt = piece();
@@ -3678,17 +4075,13 @@ mod tests {
         );
         assert_eq!(tail.lane, "noise", "and it stayed on its lane");
 
-        // Both halves are in the hand, so `j` puts them back.
-        let joined = mt
-            .key(&Key::Char('j'), &mut ki(&mut clipboard, None))
-            .expect("it joined");
+        // Both halves are in the hand, so `j` names both -- the one the client
+        // said and the one this minted.
         assert_eq!(
-            joined.into_messages()[0][0],
-            OscType::String("clips".into())
+            joined(mt.key(&Key::Char('j'), &mut ki(&mut clipboard, None))),
+            vec!["a".to_string(), "a 2".to_string()]
         );
-        assert_eq!(mt.clips.len(), 2);
-        assert_eq!(mt.clips[0].place.dur, 500.0);
-        assert_eq!(mt.clips[0].place.offset, 0.0);
+        assert_eq!(mt.clips.len(), 3, "and the picture waits for the answer");
     }
 
     /// **A correction does not empty the hand.** The client answers a name the
@@ -3716,6 +4109,103 @@ mod tests {
         // And a box the picture no longer has is simply not held any more.
         assert!(mt.set("clips", &Value::from(r#"["a", "noise", 0, 500, 0, "", 0]"#)));
         assert_eq!(mt.selected, vec![0]);
+    }
+
+    /// **A split, the correction it draws, and then the join** *(found
+    /// 2026-09-12 by the user: "j para join no hace nada")*.
+    ///
+    /// The whole round trip, which the two halves of it passed separately and
+    /// failed together. The host mints the tail's word (`a 2`) and the document
+    /// mints its id, so the correction that comes back calls the same box
+    /// something else -- and a hand re-found by **name** alone let exactly that
+    /// box go. One box held is nothing to join, and a join that joins nothing
+    /// said nothing, so the key looked dead.
+    #[test]
+    fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
+        let mut mt = piece();
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        mt.selected = vec![0];
+        mt.key(
+            &Key::Char('e'),
+            &mut KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clipboard,
+                cursor: Some(200.0),
+            },
+        )
+        .expect("it cut");
+        assert_eq!(mt.selected.len(), 2, "both halves stay in the hand");
+
+        // The client applied the split, the piece minted an id for the half,
+        // and the whole picture comes back with that id in place of `a 2`.
+        assert!(mt.set(
+            "clips",
+            &Value::from(
+                r#"["a", "noise", 0, 200, 0, "", 0, "20", "noise", 200, 300, 200, "", 0,
+                    "b", "tone", 500, 500, 0, "", 0]"#
+            )
+        ));
+        assert_eq!(mt.selected.len(), 2, "and the hand still holds both");
+        assert!(
+            mt.selected.iter().any(|i| mt.clips[*i].name == "20"),
+            "the half is held under the name the piece kept"
+        );
+
+        // So `j` names both -- the head under the name it kept and the half
+        // under the one the piece gave it, which is the whole point: a hand
+        // re-found by name alone would have asked for a join of one box.
+        let mut named = joined(mt.key(
+            &Key::Char('j'),
+            &mut KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clipboard,
+                cursor: None,
+            },
+        ));
+        named.sort();
+        assert_eq!(named, vec!["20".to_string(), "a".to_string()]);
+    }
+
+    /// **A verb that acts on nothing says why** *(found 2026-09-12 by the user,
+    /// the second report of the same silence: "toco ctrl-j pero no hace nada.
+    /// Siguen separados")*.
+    ///
+    /// A verb that finds nothing to do used to return `false`, and `false`
+    /// reaches nobody: the key looked dead, which is how a correct refusal
+    /// teaches "it sometimes does not work". `q` and `e` are the two whose
+    /// answer is the *picture's* and so is decided here; `j`'s is the
+    /// material's, and it refuses through the document with the same word
+    /// (`clausters_document::multitrack::picture::read_join`).
+    #[test]
+    fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut press = |mt: &mut Multitrack, k: char| {
+            refusal(mt.key(
+                &Key::Char(k),
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: Some(200.0),
+                },
+            ))
+        };
+
+        let mut mt = piece();
+        mt.selected = vec![0];
+        assert_eq!(
+            press(&mut mt, 'q'),
+            Some("these boxes are already on the grid".to_string()),
+        );
+        assert_eq!(
+            press(&mut mt, 'e'),
+            None,
+            "the cursor is inside the held box, so this one cuts"
+        );
+        assert_eq!(
+            press(&mut mt, 'e'),
+            Some("the cursor is not inside a held box".to_string()),
+            "and cutting at the seam again has nothing to cut"
+        );
     }
 
     /// **A cut half is a clip like any other, and it changes lanes.** The old
@@ -3757,24 +4247,33 @@ mod tests {
         assert_eq!(half.place.offset, 200.0, "and it did not move in time");
     }
 
-    /// A join is **a lane's**: a pitch is what makes two notes one voice, and a
-    /// lane is what makes two clips joinable.
-    #[test]
-    fn two_clips_on_two_lanes_do_not_join() {
-        let mut mt = piece();
-        let mut clipboard = crate::host::clipboard::Clip::default();
-        mt.clips[1].place.offset = 500.0; // it already ends where `a` does
-        mt.selected = vec![0, 1];
-        let joined = mt.key(
-            &Key::Char('j'),
-            &mut KeyInput {
-                mods: Mods::default(),
-                clipboard: &mut clipboard,
-                cursor: None,
-            },
-        );
-        assert!(joined.is_none(), "they touch in time and not on a lane");
-        assert_eq!(mt.clips.len(), 2);
+    /// The boxes a `join` report names, in the order it names them.
+    fn joined(events: Option<Events>) -> Vec<String> {
+        events
+            .map(Events::into_messages)
+            .and_then(|m| m.into_iter().next())
+            .filter(|msg| msg.first() == Some(&OscType::String("join".into())))
+            .map(|msg| {
+                msg.into_iter()
+                    .skip(1)
+                    .filter_map(|arg| match arg {
+                        OscType::String(s) => Some(s),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The reason a verb gave for refusing, or `None` when it did the thing.
+    /// A refusal is an ordinary event -- `"refused" <verb> <why>` -- so this is
+    /// how a test reads what the status bar will draw.
+    fn refusal(events: Option<Events>) -> Option<String> {
+        let msg = events?.into_messages().into_iter().next()?;
+        (msg.first() == Some(&OscType::String("refused".into()))).then(|| match msg.get(2) {
+            Some(OscType::String(s)) => s.clone(),
+            _ => String::new(),
+        })
     }
 
     /// **A block travels through the clipboard keeping its own shape**: the
@@ -3845,8 +4344,7 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 600.0, 420.0);
         let len = 1000.0;
         let mut mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1, "two", "", 100, 0, 0, 1,
-                          "three", "", 100, 0, 0, 1],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1, "three", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 500, 0, "", 0]}"#,
         ));
         mt.gap = 8.0;
@@ -3977,7 +4475,7 @@ mod tests {
     #[test]
     fn a_clip_over_buffer_zero_has_a_source() {
         let mt = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1],
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 10, 0, "", 0,
                           "b", "one", 20, 10, 0, "", -1]}"#,
         ));
@@ -3988,7 +4486,7 @@ mod tests {
         // A clip written with no source at all is a window onto nothing, not
         // onto buffer 0.
         let bare = from_props(&props(
-            r#"{"lanes": ["one", "", 100, 0, 0, 1], "clips": ["a", "one", 0, 10, 0, ""]}"#,
+            r#"{"lanes": ["one", "", 100, 0, 0, 1, 1], "clips": ["a", "one", 0, 10, 0, ""]}"#,
         ));
         assert!(bare.clips.is_empty(), "six fields is a partial septuple");
     }

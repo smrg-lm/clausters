@@ -1453,19 +1453,22 @@ def conversation_answer(seq: int, doc_version: int, reason: "str | None",
 
 
 def multitrack_names(piece: dict) -> dict:
-    """**What a piece calls its rows and its boxes**, by the names the wire
-    carries them under (`clausters_editing_multitrack_names`).
+    """**What a piece calls its rows, its boxes and its curves**, by the names
+    the wire carries them under (`clausters_editing_multitrack_names`).
 
     The minting correction's half that is a fact about the piece: a host that
     made a track or split a box minted the *word* while the document minted the
     *id*, so a view keeps what it was last told and answers with the picture
     when the two stop agreeing.
+
+    The **curves** are the other half of the same fact: an automation the owner
+    made is one the host cannot have drawn, because it did not make it.
     """
     _lib = lib()
     body = json.dumps(piece).encode("utf-8")
     raw = size_then_fill(_lib.clausters_editing_multitrack_names,
                          as_u8(body), len(body))
-    return json.loads(raw) if raw else {"rows": [], "boxes": []}
+    return json.loads(raw) if raw else {"rows": [], "boxes": [], "curves": []}
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

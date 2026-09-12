@@ -83,6 +83,20 @@ pub trait Buffers {
     /// The buffer `source` was read into, or `-1` for a source nobody read.
     fn bufnum(&self, source: SourceId) -> i64;
 
+    /// **Every source this holds samples for**, in no particular order.
+    ///
+    /// What minting a source needs and a piece cannot answer: a source stops
+    /// being named by the piece the moment nothing windows it, while whoever
+    /// loaded it still holds the buffer. An id handed out off the piece alone
+    /// can therefore already have samples behind it, and a box over it is then
+    /// a window onto whatever that was.
+    ///
+    /// Defaulted to nothing so a caller that has no table is still a
+    /// `Buffers` — it means *I hold none*, which is the honest answer for one.
+    fn taken(&self) -> Vec<SourceId> {
+        Vec::new()
+    }
+
     /// **The other direction**: the source a buffer number came from, or `None`
     /// for a buffer this piece knows nothing about.
     ///
@@ -96,6 +110,10 @@ pub trait Buffers {
 impl Buffers for HashMap<SourceId, i64> {
     fn bufnum(&self, source: SourceId) -> i64 {
         self.get(&source).copied().unwrap_or(-1)
+    }
+
+    fn taken(&self) -> Vec<SourceId> {
+        self.keys().copied().collect()
     }
 
     fn source(&self, bufnum: i64) -> Option<SourceId> {
@@ -187,6 +205,7 @@ pub fn lanes(piece: &Multitrack) -> Vec<Value> {
             json!(row.mute),
             json!(row.solo),
             json!(row.gain),
+            json!(row.curves),
         ]);
     }
     out
@@ -343,13 +362,29 @@ pub fn names(piece: &Multitrack) -> Value {
             .iter()
             .map(|box_| box_.region.0.to_string())
             .collect::<Vec<_>>(),
+        // **And the curves** *(found 2026-09-12 by the user: "al crear un track
+        // y activar A no hace nada, al crear otro track aparece la
+        // automatizacion del anterior")*. A curve the owner made is the same
+        // fact a box the owner made is: the host cannot have drawn it, because
+        // it did not make it. Left out, the toggle that asks a track for its
+        // gain automation worked the whole way down and changed nothing on
+        // screen — until the next gesture that added a *row* fired the
+        // correction, which then carried the previous track's curve with it.
+        // That is why the two lists were never enough: they are not "what the
+        // piece is called", they are "what the host was told", and the host is
+        // told about rows, boxes **and** curves.
+        "curves": picture::curves(piece)
+            .iter()
+            .chain(&picture::layers(piece))
+            .map(|curve| curve.automation.0.to_string())
+            .collect::<Vec<_>>(),
     })
 }
 
 /// [`names`] against a piece given as JSON.
 pub fn names_json(piece: &str) -> String {
     let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
-        return r#"{"rows":[],"boxes":[]}"#.into();
+        return r#"{"rows":[],"boxes":[],"curves":[]}"#.into();
     };
     names(&piece).to_string()
 }
@@ -413,8 +448,9 @@ pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
 }
 
 /// What the `lanes` prop takes and reports: flat `name label height mute solo
-/// gain` sextuples.
-pub const SEXTUPLE: usize = 6;
+/// gain curves` septuples — the same width the `clips` prop happens to be, and
+/// a different seven fields.
+pub const LANE_FIELDS: usize = 7;
 
 /// What the `clips` prop takes and reports: flat `name lane at duration start
 /// label source` septuples.
@@ -524,12 +560,13 @@ fn curved(piece: &Multitrack, values: &[Value], look: &Look<'_>) -> Vec<picture:
 /// is the track's name where it has one and a made-up one where it has not, and
 /// its height is this window's. Neither is a fact about the piece.
 fn strips(values: &[Value]) -> Vec<picture::Strip> {
-    groups(values, SEXTUPLE)
+    groups(values, LANE_FIELDS)
         .map(|group| picture::Strip {
             name: text(&group[0]),
             mute: number(&group[3]) != 0.0,
             solo: number(&group[4]) != 0.0,
             gain: number(&group[5]),
+            curves: number(&group[6]) != 0.0,
         })
         .collect()
 }
@@ -573,8 +610,22 @@ pub fn read(
         "clips" => picture::read(piece, &placed(values, look), picture::fresh_id(piece)),
         "lanes" => picture::read_rows(piece, &strips(values)),
         "points" => picture::read_points(piece, &curved(piece, values, look)),
+        // **The one verb that is stated rather than differenced.** A join and a
+        // "delete one, lengthen the other" leave a lane holding the same thing,
+        // and a box in a `clips` report names one source and one start -- so
+        // fragments joined into one box have no report that describes them.
+        // Its refusals are the tag's own and reach an endpoint through
+        // [`intake`].
+        "join" => picture::read_join(piece, &held(values), look.rate, &look.sources.taken())
+            .unwrap_or_default(),
         _ => Vec::new(),
     }
+}
+
+/// The flat `join` report: the boxes to join, by the names the picture gave
+/// them.
+fn held(values: &[Value]) -> Vec<String> {
+    values.iter().map(text).collect()
 }
 
 /// [`read`] as the payloads and the label an endpoint carries.
@@ -582,10 +633,21 @@ pub fn read(
 /// The label is the **first** intent's, because the intents of one report are
 /// one thing a hand did and go into the pile as one entry.
 pub fn intake(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Intake {
-    if !matches!(tag, "clips" | "lanes" | "points") {
+    if !matches!(tag, "clips" | "lanes" | "points" | "join") {
         return Intake::nothing();
     }
-    let intents = read(piece, tag, values, look);
+    // **A join answers with its reason.** It is the one tag here that can be
+    // refused on the material rather than on the picture -- a gap it cannot
+    // state as silence, an overlap it cannot state as a mix -- and a refusal
+    // that reaches nobody is indistinguishable from a key that does not work.
+    let intents = if tag == "join" {
+        match picture::read_join(piece, &held(values), look.rate, &look.sources.taken()) {
+            Ok(intents) => intents,
+            Err(why) => return Intake::refused(why),
+        }
+    } else {
+        read(piece, tag, values, look)
+    };
     let named = intents
         .first()
         .map_or("edit the piece", |first| label(first));
@@ -641,6 +703,7 @@ mod tests {
     use super::*;
     use clausters_document::multitrack::{Automation, Content, Region, Track};
     use clausters_document::points::Point;
+    use clausters_document::session::Location;
     use clausters_document::{
         Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
     };
@@ -699,21 +762,26 @@ mod tests {
         }
     }
 
-    /// The two flat payloads, in the shapes the widget takes: a row is six
-    /// values and a box seven.
+    /// The two flat payloads, in the shapes the widget takes: a row is seven
+    /// values and a box seven, and they are not the same seven.
     #[test]
-    fn a_row_is_six_values_and_a_box_is_seven() {
+    fn a_row_is_seven_values_and_a_box_is_seven() {
         let piece = piece();
         let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
         let look = look(&tempo, &table);
 
         let lanes = lanes(&piece);
-        assert_eq!(lanes.len(), 6);
+        assert_eq!(lanes.len(), LANE_FIELDS);
         assert_eq!(lanes[0], json!("1"), "a row is named by its track's id");
         assert_eq!(lanes[1], json!("drums"));
         assert_eq!(lanes[2], json!(ROW_H));
         assert_eq!(lanes[5], json!(0.5));
+        assert_eq!(
+            lanes[6],
+            json!(false),
+            "and says whether its automation is shown -- this curve is not"
+        );
 
         let clips = clips(&piece, &look);
         assert_eq!(clips.len(), 7);
@@ -891,14 +959,344 @@ mod tests {
     }
 
     /// The names a view keeps to tell a minted word from the piece's own id.
+    ///
+    /// **The curves are in it** *(found 2026-09-12 by the user)*: an automation
+    /// the owner made is one the host cannot have drawn, so a view that
+    /// compared only the rows and the boxes never answered with the picture
+    /// when a curve appeared — and the toggle that asks a track for its gain
+    /// automation changed nothing on screen until some later gesture added a
+    /// row and carried the curve back with it.
     #[test]
-    fn a_piece_says_what_it_calls_its_rows_and_boxes() {
+    fn a_piece_says_what_it_calls_its_rows_boxes_and_curves() {
         let named = names(&piece());
         assert_eq!(named["rows"], json!(["1"]));
         assert_eq!(named["boxes"], json!(["3"]));
         assert_eq!(
+            named["curves"],
+            json!(["4", "5"]),
+            "the track's row and the box's layer, which are one question"
+        );
+        assert_eq!(
             serde_json::from_str::<Value>(&names_json("not a piece")).expect("JSON"),
-            json!({ "rows": [], "boxes": [] })
+            json!({ "rows": [], "boxes": [], "curves": [] })
+        );
+    }
+
+    /// A piece with one take cut in two on one lane: the head reads the take's
+    /// first second, the tail its second, laid out in that order.
+    fn halves() -> Multitrack {
+        let mut piece = Multitrack::default();
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        for (id, at, start) in [(NodeId(10), 0.0, 0.0), (NodeId(11), 1.0, 1.0)] {
+            let mut region = Region::new(id, Beat(at), Beat(1.0), Content::Unknown(Value::Null));
+            region.content = Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source: SourceId(7),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start,
+                duration: 1.0,
+            });
+            track.lanes[0].regions.push(region);
+        }
+        piece.tracks.push(track);
+        piece
+    }
+
+    /// **The halves of a cut put back in order are the join they always were**:
+    /// one window over one run, and nothing minted. A source made of one span of
+    /// one take says nothing the take does not.
+    #[test]
+    fn halves_that_read_on_from_each_other_join_without_minting_anything() {
+        let piece = halves();
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        let intents = read(
+            &piece,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&tempo, &sources),
+        );
+        assert!(matches!(
+            intents.as_slice(),
+            [MultitrackIntent::JoinRegions {
+                content: None,
+                source: None,
+                ..
+            }]
+        ));
+    }
+
+    /// The two halves with the tail moved in front of the head: the gesture
+    /// the user reported, and the shape every join test below is over.
+    fn swapped() -> Multitrack {
+        let mut piece = halves();
+        let regions = &mut piece.tracks[0].lanes[0].regions;
+        regions[0].position = Beat(1.0);
+        regions[1].position = Beat(0.0);
+        piece
+    }
+
+    /// **The gesture the user reported twice** *(2026-09-11 and 2026-09-12)*:
+    /// the same two halves with the tail moved in front of the head.
+    ///
+    /// They touch exactly and they read one take, and there is still no region
+    /// that describes them -- a region is one window onto one source, and these
+    /// are its seconds in an order the take does not have. So the join makes the
+    /// source: two spans, in the order the boxes show them, with a seam where
+    /// the material is cut and none where it is not.
+    #[test]
+    fn halves_put_back_in_the_other_order_mint_the_source_they_are_a_window_onto() {
+        // The tail at the front, the head behind it: what a hand does with a
+        // drag and the proximity snap.
+        let piece = swapped();
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        let intents = read(
+            &piece,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&tempo, &sources),
+        );
+        let [
+            MultitrackIntent::JoinRegions {
+                regions,
+                into,
+                content: Some(content),
+                source: Some(minted),
+            },
+        ] = intents.as_slice()
+        else {
+            panic!("a join that mints its source: {intents:?}");
+        };
+        // **In the order they are shown**, which is the whole of what the join
+        // says: the tail first.
+        assert_eq!(regions, &[NodeId(11), NodeId(10)]);
+        assert_eq!(*into, NodeId(11), "the box in front keeps its identity");
+
+        // The box is a plain window onto the new source, from its zero.
+        let window = content.as_window().expect("a window");
+        assert_eq!(
+            window.source.samples().map(|s| s.source),
+            Some(minted.id),
+            "onto the source the join made"
+        );
+        assert_eq!((window.start, window.duration), (0.0, 2.0));
+        assert_eq!(
+            minted.id,
+            SourceId(8),
+            "minted clear of the take it is over"
+        );
+
+        // And the source is the two spans, in frames, with one seam.
+        let Location::Segments { parts } = &minted.source.location else {
+            panic!("a join is segments: {:?}", minted.source.location);
+        };
+        let seam = (picture::SEAM * 48_000.0) as u64;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(
+            parts[0].source.range,
+            Some(clausters_document::Range {
+                start: 48_000,
+                end: 96_000
+            }),
+            "the take's second second is read first"
+        );
+        assert_eq!(
+            parts[1].source.range,
+            Some(clausters_document::Range {
+                start: 0,
+                end: 48_000
+            })
+        );
+        assert_eq!((parts[0].fade_in, parts[0].fade_out), (0, seam));
+        assert_eq!((parts[1].fade_in, parts[1].fade_out), (seam, 0));
+        assert_eq!(minted.source.frames, Some(96_000));
+    }
+
+    /// **The header's toggle makes the automation it is asked to show** *(asked
+    /// for by the user 2026-09-12: "lo que te estoy pidiendo es que agregue/cree
+    /// una automatizacion de gain para cualquier pista y que se pueda ocultar
+    /// con toggle")*.
+    ///
+    /// The same shape a double click on a header has: the verb makes the thing
+    /// rather than opening a question about it. A track with no curve reports
+    /// its automation as not shown, so asking to see it is asking for one —
+    /// and the second press hides what the first made rather than making a
+    /// second.
+    #[test]
+    fn asking_a_bare_track_to_show_its_automation_makes_one() {
+        let mut piece = Multitrack::default();
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        track.lanes[0].regions.push(Region::new(
+            NodeId(3),
+            Beat(0.0),
+            Beat(4.0),
+            Content::Unknown(Value::Null),
+        ));
+        piece.tracks.push(track);
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        let look = look(&tempo, &sources);
+
+        // As drawn: no automation, so the toggle reads as off.
+        let drawn = lanes(&piece);
+        assert_eq!(drawn[6], json!(false));
+        assert!(
+            read(&piece, "lanes", &drawn, &look).is_empty(),
+            "the rows as they were drawn are not an edit"
+        );
+
+        // The toggle goes on, and the piece gains the curve.
+        let mut asked = drawn.clone();
+        asked[6] = json!(true);
+        let edits = read(&piece, "lanes", &asked, &look);
+        let [MultitrackIntent::SetTracks { tracks }] = edits.as_slice() else {
+            panic!("one settracks");
+        };
+        let made = &tracks[0].automation;
+        assert_eq!(made.len(), 1, "one curve, made here");
+        assert_eq!(made[0].name.as_deref(), Some("gain"));
+        assert_eq!(made[0].target.0["port"], json!("gain"));
+        assert!(made[0].visible && made[0].enabled);
+        // **Flat at unity across the piece**, so there is a line to grab and
+        // nothing is heard differently for having asked.
+        assert_eq!(
+            made[0]
+                .points
+                .iter()
+                .map(|p| (p.at, p.value))
+                .collect::<Vec<_>>(),
+            vec![(0.0, 1.0), (4.0, 1.0)]
+        );
+        assert_ne!(made[0].id, NodeId(3), "and an id nothing else is using");
+
+        // It is **heard**: a curve with a port and points reaches the plan,
+        // which is what makes the toggle a document edit rather than a view's.
+        let mut piece = piece.clone();
+        piece.tracks = tracks.clone();
+        let plan =
+            clausters_document::multitrack::nodes::plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        assert_eq!(plan.tracks[0].curves.len(), 1, "the server gets the curve");
+        assert_eq!(plan.tracks[0].curves[0].port, "gain");
+
+        // And the second press hides it rather than making a second.
+        let drawn = lanes(&piece);
+        assert_eq!(drawn[6], json!(true), "shown now");
+        let mut asked = drawn.clone();
+        asked[6] = json!(false);
+        let edits = read(&piece, "lanes", &asked, &look);
+        let [MultitrackIntent::SetTracks { tracks }] = edits.as_slice() else {
+            panic!("one settracks");
+        };
+        assert_eq!(tracks[0].automation.len(), 1, "the same one");
+        assert!(!tracks[0].automation[0].visible);
+        // Hidden is a view's word: it still sounds.
+        let mut hidden = piece.clone();
+        hidden.tracks = tracks.clone();
+        let plan =
+            clausters_document::multitrack::nodes::plan(&hidden, 48_000.0, 60.0, &HashMap::new());
+        assert_eq!(
+            plan.tracks[0].curves.len(),
+            1,
+            "a curve nobody is looking at is a curve that is still applied"
+        );
+    }
+
+    /// **A source the piece stopped naming is still a source** *(found
+    /// 2026-09-12 by the user: a second join left an empty box)*.
+    ///
+    /// A join's id was minted off the piece alone, and the piece stops naming a
+    /// source the moment nothing windows it — an undo, a box deleted, a joined
+    /// box cut back up. The client still holds the buffer it made, so the next
+    /// join was handed an id that already had samples behind it: the client saw
+    /// an id it knew, made nothing, and the box became a window onto **the
+    /// previous join**. So the table says what it holds, and the mint clears
+    /// both.
+    #[test]
+    fn a_join_never_mints_a_source_whoever_holds_the_samples_is_already_using() {
+        let piece = swapped();
+        let tempo = TempoMap::new(1.0);
+        let held = [json!("10"), json!("11")];
+
+        // Nobody holding anything: clear of the piece, which names 7.
+        let none: HashMap<SourceId, i64> = HashMap::new();
+        assert_eq!(minted(&piece, &held, &look(&tempo, &none)), SourceId(8));
+
+        // The client holds 8 already -- the join it made a moment ago, which
+        // this piece no longer names because the box was undone.
+        let mut sources: HashMap<SourceId, i64> = HashMap::new();
+        sources.insert(SourceId(8), 1);
+        assert_eq!(minted(&piece, &held, &look(&tempo, &sources)), SourceId(9));
+    }
+
+    /// The source one `join` report mints.
+    fn minted(piece: &Multitrack, values: &[Value], look: &Look<'_>) -> SourceId {
+        let intents = read(piece, "join", values, look);
+        match intents.as_slice() {
+            [
+                MultitrackIntent::JoinRegions {
+                    source: Some(minted),
+                    ..
+                },
+            ] => minted.id,
+            other => panic!("a join that mints its source: {other:?}"),
+        }
+    }
+
+    /// **A box the hand holds and the piece does not have is refused.**
+    ///
+    /// Joining the rest would leave that one where it is, under the box that
+    /// now spans over it. Every bug this seam has produced has had this shape:
+    /// a verb quietly acting on less than it was given.
+    #[test]
+    fn a_join_over_a_box_the_piece_does_not_have_is_refused_rather_than_partial() {
+        let piece = swapped();
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        assert_eq!(
+            intake(
+                &piece,
+                "join",
+                &[json!("10"), json!("11"), json!("a 2")],
+                &look(&tempo, &sources)
+            )
+            .to_json()["refusal"],
+            json!("one of these boxes is not one the piece has")
+        );
+    }
+
+    /// **What a join is not, said out loud.** A gap and an overlap are the two
+    /// cases `/buffer_stitch` cannot state, so they are refused rather than
+    /// joined into something that plays material nobody placed -- and the
+    /// refusal travels, which is the difference between a verb that is right
+    /// and a key that looks dead.
+    #[test]
+    fn a_join_that_cannot_be_stated_says_which_of_the_cases_it_is() {
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        let held = [json!("10"), json!("11")];
+
+        let mut piece = halves();
+        piece.tracks[0].lanes[0].regions[1].position = Beat(2.0);
+        assert_eq!(
+            intake(&piece, "join", &held, &look(&tempo, &sources)).to_json()["refusal"],
+            json!("there is a gap between these boxes, and a join cannot state silence yet")
+        );
+
+        let mut piece = halves();
+        piece.tracks[0].lanes[0].regions[1].position = Beat(0.5);
+        assert_eq!(
+            intake(&piece, "join", &held, &look(&tempo, &sources)).to_json()["refusal"],
+            json!("these boxes overlap, and a join cannot state a mix yet")
+        );
+
+        let piece = halves();
+        assert_eq!(
+            intake(&piece, "join", &[json!("10")], &look(&tempo, &sources)).to_json()["refusal"],
+            json!("a join needs two boxes or more in hand")
         );
     }
 }

@@ -47,8 +47,9 @@ use serde::{Deserialize, Serialize};
 use super::{Content, Fade, Marker, Meter, Multitrack, Region, Span, Tempo, Track};
 use crate::history::{Applied, Editable};
 use crate::intent::{Against, Outcome, Rules};
+use crate::session::Source;
 use crate::timebase::Beat;
-use crate::{NodeId, Opaque, Point};
+use crate::{NodeId, Opaque, Point, SourceId};
 
 /// The domain name the piece's structure is registered under. See
 /// [`crate::domain`].
@@ -67,6 +68,25 @@ pub enum SpanKind {
     Loop,
     /// Where recording punches in and out.
     Punch,
+}
+
+/// **A source an edit makes**, and everything a client needs to have it: the
+/// id the document will name it by, and the entry a session's source table
+/// would hold for it.
+///
+/// One shape for the two arrivals. A join minting a source has to tell a
+/// client that is **already open** — the source table is the session's, not
+/// the piece's, so nothing about it is in the document the edit writes — and it
+/// has to say the same thing to a client that opens the saved file later. So
+/// the statement is the format's own [`Source`], carried on the intent, rather
+/// than a second vocabulary for the same fact.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MintedSource {
+    /// What the document calls it.
+    pub id: SourceId,
+    /// What it is, in the terms a session table holds.
+    #[serde(flatten)]
+    pub source: Source,
 }
 
 /// An edit to the piece, in the owner's terms and stating the value it results
@@ -184,6 +204,28 @@ pub enum MultitrackIntent {
         /// What it reads, when the caller knows.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content: Option<Content>,
+        /// **The source this join makes**, when the fragments do not read on
+        /// from each other and so cannot be one window onto anything that
+        /// already exists.
+        ///
+        /// A region is a window onto one source, so fragments in an order
+        /// their source does not have have no region that describes them —
+        /// what is missing is the source, and this is it: spans of whatever
+        /// the fragments read, in the order they are shown
+        /// ([`crate::session::Location::Segments`]).
+        ///
+        /// It rides on the intent because a source table is the **session's**
+        /// and a piece is not: the edit happens while the thing is open, so
+        /// the sentence has to reach a client the same way a split's minted
+        /// name does — by being told, not by being derived. A client applying
+        /// this learns *there is a source N made of these spans*, realizes it,
+        /// and writes it into its table; a client that opens the saved session
+        /// reads the same statement out of the file.
+        ///
+        /// An undo leaves it unreferenced rather than dropping it, because a
+        /// **redo replays this same intent** and names the same id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<MintedSource>,
     },
     /// A region's fades, both stated.
     ///
@@ -381,7 +423,8 @@ fn edit(
             regions,
             into,
             content,
-        } => join_regions(piece, regions, *into, content.as_ref()),
+            source,
+        } => join_regions(piece, regions, *into, content.as_ref(), source.as_ref()),
         MultitrackIntent::FadeRegion {
             region,
             fade_in,
@@ -728,11 +771,13 @@ fn join_regions(
     regions: &[NodeId],
     into: NodeId,
     content: Option<&Content>,
+    source: Option<&MintedSource>,
 ) -> Outcome<MultitrackIntent> {
     let stated = MultitrackIntent::JoinRegions {
         regions: regions.to_vec(),
         into,
         content: content.cloned(),
+        source: source.cloned(),
     };
     if regions.len() < 2 {
         return Outcome::refused(stated, "a join needs two regions or more");

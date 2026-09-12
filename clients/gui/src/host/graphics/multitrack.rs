@@ -50,6 +50,13 @@ pub struct Lane {
     pub solo: bool,
     /// The fader, over `[0, 1]`.
     pub gain: f32,
+    /// **Whether this track's automation rows are shown.**
+    ///
+    /// Carried, never interpreted: which rows there are is the `curves` prop's
+    /// and what a hidden one means is the `hidden` set's. This is the one
+    /// statement a *track* makes about them — the header's toggle — and it is a
+    /// field of the lane because that is the row the toggle is drawn on.
+    pub curves: bool,
 }
 
 impl Lane {
@@ -62,6 +69,10 @@ impl Lane {
             mute: false,
             solo: false,
             gain: 1.0,
+            // **Shown unless something says otherwise.** A row a piece drew is
+            // a row a piece meant to be seen, and whether a *curve* is drawn is
+            // the `hidden` set's answer, not this one's.
+            curves: true,
         }
     }
 
@@ -228,12 +239,35 @@ pub struct Stack {
 
 impl Stack {
     /// The rows the lanes and the curves make, in the order they are drawn.
+    ///
+    /// **Every curve in the list takes a row**; a caller that hides some says
+    /// so with [`Stack::shown`].
     pub fn new(lanes: &[Lane], curves: &[Curve], gap: f32) -> Stack {
+        Self::shown(lanes, curves, gap, |_| true)
+    }
+
+    /// The rows, with the curves `shown` answers `false` for **left out
+    /// altogether** *(found 2026-09-12 by the user: "la A sigue sin ocultar ni
+    /// mostrar")*.
+    ///
+    /// A hidden curve is not a curve drawn as nothing — it is a row that is not
+    /// there. Reserving its band and skipping the drawing leaves a hole exactly
+    /// where the row was, which is a picture that does not change when a hand
+    /// hides one and does not change when it shows one either: the same gap,
+    /// with or without a line in it. The indices `Row::Curve` carries are still
+    /// **into the whole list**, so a caller looks a row up the way it always
+    /// did.
+    pub fn shown(
+        lanes: &[Lane],
+        curves: &[Curve],
+        gap: f32,
+        shown: impl Fn(&Curve) -> bool,
+    ) -> Stack {
         let mut entries = Vec::with_capacity(lanes.len() + curves.len());
         for (i, lane) in lanes.iter().enumerate() {
             entries.push((Row::Lane(i), lane.height));
             for (n, curve) in curves.iter().enumerate() {
-                if curve.owner == lane.name {
+                if curve.owner == lane.name && shown(curve) {
                     entries.push((Row::Curve(n), curve.height));
                 }
             }
@@ -387,7 +421,7 @@ pub fn layers_json(layers: &[Curve]) -> Value {
 /// The inverse of the prop's parse, so what a `/gui_query` reports is what a
 /// `/gui_set` would take — the contract every non-scalar on this wire keeps.
 pub fn lanes_json(lanes: &[Lane]) -> Value {
-    let mut out = Vec::with_capacity(lanes.len() * 6);
+    let mut out = Vec::with_capacity(lanes.len() * 7);
     for l in lanes {
         out.push(Value::from(l.name.clone()));
         out.push(Value::from(l.label.clone()));
@@ -395,6 +429,7 @@ pub fn lanes_json(lanes: &[Lane]) -> Value {
         out.push(Value::from(i64::from(l.mute)));
         out.push(Value::from(i64::from(l.solo)));
         out.push(Value::from(l.gain));
+        out.push(Value::from(i64::from(l.curves)));
     }
     Value::Array(out)
 }
@@ -546,7 +581,7 @@ mod tests {
         let Value::Array(written) = lanes_json(&lanes) else {
             panic!("an array");
         };
-        assert_eq!(written.len(), 12, "six per lane");
+        assert_eq!(written.len(), 14, "seven per lane");
         assert_eq!(written[0], Value::from("noise"));
         assert_eq!(written[3], Value::from(1), "muted");
         assert_eq!(written[5], Value::from(0.5));

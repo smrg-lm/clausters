@@ -314,6 +314,11 @@ struct ClipState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct CurveState {
     owner: Handle,
+    /// Whether that owner is a box rather than a track — which table to look
+    /// in to find out whether it is still there.
+    owner_is_clip: bool,
+    /// The owner's own id, so the lookup needs no handle to be parsed back.
+    owner_id: u64,
     /// Which making of that owner the port was mapped on. See
     /// [`ClipState::generation`].
     owner_generation: u32,
@@ -593,7 +598,7 @@ impl Instance {
                     );
                 }
             }
-            self.curves(&track_handle(id), 0, &track.curves, ops);
+            self.curves(&track_handle(id), false, id, 0, &track.curves, ops);
             self.clips(id, &track.clips, ops);
         }
         let gone: Vec<u64> = self
@@ -698,7 +703,7 @@ impl Instance {
                     track,
                 },
             );
-            self.curves(&clip_handle(id), generation, &clip.curves, ops);
+            self.curves(&clip_handle(id), true, id, generation, &clip.curves, ops);
             self.readers(id, clip, ops);
         }
         let gone: Vec<u64> = self
@@ -776,6 +781,8 @@ impl Instance {
     fn curves(
         &mut self,
         owner: &str,
+        owner_is_clip: bool,
+        owner_id: u64,
         generation: u32,
         planned: &[PlannedCurve],
         ops: &mut Vec<Op>,
@@ -825,6 +832,8 @@ impl Instance {
                         id,
                         CurveState {
                             owner: owner.to_string(),
+                            owner_is_clip,
+                            owner_id,
                             owner_generation: generation,
                             port: curve.port.clone(),
                             table: curve.table.clone(),
@@ -887,6 +896,8 @@ impl Instance {
                         id,
                         CurveState {
                             owner: owner.to_string(),
+                            owner_is_clip,
+                            owner_id,
                             owner_generation: generation,
                             port: curve.port.clone(),
                             table: curve.table.clone(),
@@ -915,10 +926,23 @@ impl Instance {
             .collect();
         for id in gone {
             let curve = self.curves.remove(&id).expect("just listed");
-            ops.push(Op::Unmap {
-                handle: curve.owner,
-                port: curve.port,
-            });
+            // **A node that is gone has nothing to give back.** Freeing it took
+            // its map with it, so an unmap naming it is a message about a node
+            // the server no longer has -- and in a client it is a handle whose
+            // table entry went with the free, which is a lookup that has no
+            // answer. The curve's own node, buffer and bus still go: those are
+            // this instance's and outlive whatever the port belonged to.
+            let owner_here = if curve.owner_is_clip {
+                self.clips.contains_key(&curve.owner_id)
+            } else {
+                self.tracks.contains_key(&curve.owner_id)
+            };
+            if owner_here {
+                ops.push(Op::Unmap {
+                    handle: curve.owner,
+                    port: curve.port,
+                });
+            }
             ops.push(Op::Free {
                 handle: curve_handle(id),
                 forget: Vec::new(),
@@ -1490,5 +1514,55 @@ mod tests {
             json!({ "bus": "meterbus:1", "offset": 1 })
         );
         assert_eq!(slot["ports"]["meter/hold"], json!(0.0));
+    }
+
+    /// **A box that went takes its envelope's map with it** *(found 2026-09-12
+    /// by the user, deleting a box in `edit_multitrack`)*. The curve's own
+    /// node, buffer and bus still go back — those are the instance's and
+    /// outlive whatever port they drove — but the unmap named a node that had
+    /// just been freed, which is a handle whose table entry went with it.
+    #[test]
+    fn a_curve_whose_owner_is_gone_is_not_unmapped() {
+        let mut piece = piece();
+        piece.tracks[0].lanes[0].regions[0]
+            .automation
+            .push(gain_curve(5, 1.0));
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&piece), 0.5);
+
+        let mut gone = piece.clone();
+        gone.tracks[0].lanes[0].regions.clear();
+        let ops = instance.reconcile(&planned(&gone), 0.5);
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, Op::Free { handle, .. } if handle == "clip:3")),
+            "the box goes"
+        );
+        assert!(
+            !ops.iter().any(|op| matches!(op, Op::Unmap { .. })),
+            "and nothing names it afterwards: {ops:?}"
+        );
+        // What the curve itself holds is still given back.
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, Op::Free { handle, .. } if handle == "curve:5"))
+        );
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, Op::FreeBus { handle } if handle == "curvebus:5"))
+        );
+
+        // And a track that goes is the same case.
+        let mut piece = super::tests::piece();
+        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&piece), 0.5);
+        let mut gone = piece.clone();
+        gone.tracks.remove(0);
+        let ops = instance.reconcile(&planned(&gone), 0.5);
+        assert!(
+            !ops.iter().any(|op| matches!(op, Op::Unmap { .. })),
+            "{ops:?}"
+        );
     }
 }

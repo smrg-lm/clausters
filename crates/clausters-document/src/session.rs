@@ -47,14 +47,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::multitrack::{Extra, Multitrack};
 use crate::view::View;
-use crate::{Document, Lifetime, Opaque, SourceId};
+use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 
 /// The format this file was written in.
 ///
 /// It moves when a reader that does not know the new shape would read the file
 /// *wrongly* — never for an added field, which an older reader ignores and a
-/// newer one defaults. So far there has been one.
-pub const FORMAT: u32 = 1;
+/// newer one defaults. So far there have been two.
+///
+/// **2** added [`Location::Segments`]: a source whose samples are spans of
+/// other sources. [`Location`] is tagged and has no untagged arm, so a reader
+/// that does not know the variant *fails* rather than reading it as something
+/// else — which is the case the counter exists for, and the reason an added
+/// `Location` moves it where an added field would not.
+pub const FORMAT: u32 = 2;
 
 /// Where samples actually is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +73,33 @@ pub enum Location {
         /// The path as written.
         path: String,
     },
+    /// **Spans of other sources, read back to back as one thing** — what a
+    /// join over fragments makes, and what the user named a *pseudobuffer*
+    /// when the segments were designed: something a reader reads like a
+    /// recording, which owns no samples.
+    ///
+    /// It is in the source table rather than in the piece because that is what
+    /// the table is: the document says what plays when and deliberately not
+    /// where a source's samples are, since inside a running system a source is
+    /// a server buffer, a mapped file or a rendered result. A source whose
+    /// samples *are* spans of other sources is that same sentence one level
+    /// in — and it keeps every reader downstream reading one shape, since a
+    /// region over a join is a plain window onto a plain source.
+    ///
+    /// **The parts are arbitrary**: the same source or several, any valid
+    /// range of each, in any order. Order is the reading order, which is the
+    /// whole point — fragments put back in an order their source does not have
+    /// is exactly what cannot be said as a window.
+    ///
+    /// A realized join is [`crate::multitrack::picture`]'s source like any
+    /// other; what realizes it is the caller's (`/buffer_stitch` over pool
+    /// buffers today, a prebuffered stream once a part may name a file — root
+    /// `PLAN.md`). **This statement does not change when that does**, which is
+    /// why the recipe is here and not in a call a client remembers making.
+    Segments {
+        /// The spans, in reading order.
+        parts: Vec<Part>,
+    },
     /// Samples that exist only in the running system — a server buffer never
     /// exported, a result never written down.
     ///
@@ -75,6 +108,43 @@ pub enum Location {
     /// that element unresolved rather than pretending. [`Session::volatile`]
     /// is what a save consults before promising the file is complete.
     Volatile,
+}
+
+/// One span of a [`Location::Segments`]: which source, which frames of it, and
+/// the fade at each end.
+///
+/// **Frames, not seconds**, unlike [`crate::SegmentRef`]: a part of a join is a
+/// statement about samples — the unit `/buffer_stitch` takes it in and the unit
+/// [`crate::SourceRef::range`] already speaks. A `SegmentRef` measures a
+/// *window a piece places*, which is the musical side of the same fact and is
+/// where seconds belong.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Part {
+    /// The source and the frames of it this part contributes, in its `range`.
+    /// A part with no range contributes the whole of it.
+    pub source: SourceRef,
+    /// Frames of linear fade in at this part's head.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_in: u64,
+    /// Frames of linear fade out at its tail.
+    ///
+    /// The two are what an editor puts on a cut: a seam between spans that do
+    /// not continue each other is a step, and a step is a click however well
+    /// the frames are read.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_out: u64,
+    /// Which channel of the source each channel of the join reads, or the
+    /// identity mapping when absent — which is the ordinary case and the reason
+    /// it is an option rather than a list every part spells.
+    ///
+    /// A negative entry is silence, as on the wire. Stated when the parts are
+    /// not all the same width, which "any source, any range" allows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Vec<i32>>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// A destructive edit session over one source, and whether it has been

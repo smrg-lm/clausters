@@ -3623,6 +3623,52 @@ Following the project rule: code + tests, a clear commit message (the record of 
   document's half: a box that reads several runs needs a content the format can
   state, or the cut is gone the moment the piece is saved and reopened.
 
+  **Asked for a second time, in the smallest case there is** *(2026-09-12, the
+  user: "hice exactamente los pasos que te describi, se deberia poder, haciendo
+  zoom veo que no hay ninguna superposicion")*. Not a shuffled take this time
+  but **one cut, two halves, swapped** -- which is the same feature at its
+  minimum and settles that this is not an edge case somebody wandered into. It
+  also shows what the refusal costs while the feature is missing: the two boxes
+  touch exactly, read one source, and show a picture with nothing wrong in it,
+  so "these are not consecutive pieces of their source" reads as a quibble
+  about the picture rather than a statement about what a box *is*. A region is
+  **one window onto one source**; two fragments in an order the source does not
+  have cannot be said that way, however they sit on the lane. That is why this
+  is a source question and not a placement one.
+
+  The document's half may be less missing than the entry assumed: `SegmentSource`
+  and `SegmentRef` already exist and are what the example's `comp` take is
+  (`Buffer.stitch`, read as one reader). So the shape to think through is
+  whether a join over fragments **mints a source** -- a new `SegmentSource` over
+  the spans the boxes show, in the order they show them, the region then being
+  one plain window onto it -- which would make the joined box save, reopen and
+  play with nothing new in the format. The gap and the overlap cases follow from
+  it (a span of silence; a span the server mixes), and so does the crossfade at
+  every seam.
+
+  **Taken as a milestone** *(2026-09-12, the user: "hacelo y anotalo como
+  milestone hecho porque es lo que habia que hacer cuando hicimos los
+  segmentos")*: `crates/clausters-document/PLAN.md`, `O31` -- a join over
+  fragments mints a source, and the source is segments, recorded in the
+  session's source table as a `Location`. The server's half, which the same
+  message named and this entry had lost, is the root `PLAN.md` entry "A long
+  take is played out of the pool, and `DiskIn` cannot be positioned": a part of
+  a join must be able to name a **file** span and not only a pool buffer, read
+  by a prebuffered stream, because a multitrack's ordinary source is a file and
+  the buffer is what *this* server adds.
+
+- ⬜ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "estas reglas que te estoy pidiendo pueden cambiar despues. Luego, cuando hayamos hecho las otras aplicaciones vamos a tener que refactorizar y definir muchas cosas de la interaccion, cosas que no estan decididas")*.
+
+  **This is the frame every entry below sits in**, and it is written here once so no individual gesture has to argue for itself. The multitrack is the first of the three applications over one document; the audio editor and the score editor are not built. What a hand does — which key, which modifier, which button, what a double click means, what a verb makes rather than asks about — is being settled **by use, in one application**, and a vocabulary settled in one application is a vocabulary that has been tested against one third of the problem. So these rules are the current answer and not the design, and the refactor that replaces them is expected work rather than a failure of this one.
+
+  What that means concretely while it lasts:
+
+  - **A gesture is written where it can be changed, and written down where it can be found.** In the host, in the element that performs it, with the reason in its doc comment and the rule in `docs/gui-protocol.md` — never spread across a client, never a convention two clients each implement.
+  - **A facility says it is one.** A verb that exists because the example needed something to try (the `A` toggle making a gain curve, the wheel's two modifiers, the double click that adds a track) carries that sentence in its own documentation, so the next reader does not mistake a scaffold for a norm.
+  - **What is deliberately not decided yet**, and what the other two applications are expected to move: which keys the verbs are bound to and who owns the binding (the entry below); what a modifier addresses — a place under the pointer, or a thing — which this year already produced one defect in each direction; what a track may automate, and how one is chosen, where today one button makes the one curve every track has a port for; how a fade *inside* a box is drawn, which the join's seam and the gap and overlap cases all wait on (`crates/clausters-document/PLAN.md`, "A join's crossfade"); and how much of any of it is the **application's** rather than the widget's, which is the question the other two applications exist to answer.
+
+  It does not open as a milestone: there is nothing to build until there is a second application to disagree with the first. It opens the day the audio editor or the score editor wants a gesture this one already spends.
+
 - ⬜ **A shortcut is the application's, not the widget's** *(raised 2026-09-08
   by the user, closing `G34`'s host logic: "los shortcut documentalos cuando
   hagas la documentacion del elemento, luego se deberian poder cambiar pero eso
@@ -4090,6 +4136,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   geometric tie-break.
 
 ## Found by use: the running list of fixes
+
+- ✅ **A join did nothing, and said nothing, because the correction renamed the half the hand was holding** *(found 2026-09-12 by the user: "j para join no hace nada, no loguea en la barra de estado, nada")*. The third time this seam broke, and the first time from *this* side. The host mints the tail of a split (`a 2`) and the document mints its id, so the correction that answers a minted name calls the same box something else -- which is the whole point of the correction. The `clips` arm re-found the hand **by name**, so exactly that box was let go; `join_held` then had one box where the hand held two, and a join that joins nothing emits nothing, so the key looked dead.
+
+  Fixed by a second pass: name first, then **where it is** -- same lane, same offset within a frame, each box claimed once. The piece placed the half exactly where this widget said, so the place is an identity the rename cannot touch. `a_split_survives_the_correction_that_renames_its_half_and_joins` walks the whole round trip (cut, correction, join) rather than the halves separately, which is why the two earlier fixes each passed and the path still failed.
+
+- ✅ **And a verb that acted on nothing still said nothing** *(found 2026-09-12 by the user, reporting the same key a second time: "toco ctrl-j pero no hace nada. Siguen separados")*. The report that closed the entry above named this as still open, and the second report is what settles that a correct refusal nobody is told about cannot be left as one: it is indistinguishable from a key that does not work, and the person at the window has no way to tell the two apart -- so the same key gets reported again, correctly.
+
+  The gesture in the report is the **refused case by design**: two halves of a cut, the tail moved in front of the head and snapped there. They touch and they read one source, but they do not read on from each other, and one window over both would play the source straight through material the boxes skip ("Join over fragments" is the other half of this). The verb was right to refuse; the silence was the defect.
+
+  There was never a protocol question here, which is what the earlier note got wrong: the host already refuses out loud, by emitting `"refused" <verb> <why>` as an ordinary event -- `status::Line::of_event` reads that shape, and an unwritable body and a Ctrl press on the markers lane both already answer with it. What was missing was that the three key verbs returned `bool`. So `join_held` answers with the **reason** instead, `why_not_joined` names which of a join's four conditions the pair failed, and `q` and `e` say theirs. A client sees a tag its intake does not know and answers `Intake::nothing`, which is the same path every other host refusal already takes. Held by `a_verb_that_acts_on_nothing_says_why_rather_than_nothing`; the two tests that asserted the old silence now assert the sentence, which is the better assertion.
+
+  **Still open, and smaller than it looked**: `Ctrl`+`J` is not a binding -- the three verbs all guard on `!ctrl`, so the clipboard family keeps `Ctrl`+letter -- and a modifier that means nothing is swallowed by nothing and says nothing either. Which keys these are is the unsettled question already filed as "A shortcut is the application's, not the widget's".
 
 - ✅ **The `meters` prop was read once and never again** *(found 2026-09-11 by
   eye, a track made by double click showing no strip; fixed the same day)*.

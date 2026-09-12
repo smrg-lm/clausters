@@ -300,6 +300,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
             regions: vec![NodeId(102), NodeId(100)],
             into: NodeId(120),
             content: None,
+            source: None,
         },
     );
     assert!(outcome.applied);
@@ -313,6 +314,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
             regions: vec![NodeId(120), NodeId(101)],
             into: NodeId(121),
             content: None,
+            source: None,
         },
     );
     assert!(!across.applied);
@@ -331,6 +333,7 @@ fn a_join_of_one_region_is_not_a_join() {
             regions: vec![NodeId(100)],
             into: NodeId(120),
             content: None,
+            source: None,
         },
     );
     assert!(!outcome.applied);
@@ -763,6 +766,7 @@ fn vocabulary() -> Vec<MultitrackIntent> {
             regions: vec![NodeId(100), NodeId(101)],
             into: NodeId(120),
             content: None,
+            source: None,
         },
         MultitrackIntent::FadeRegion {
             region: NodeId(100),
