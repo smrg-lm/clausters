@@ -63,10 +63,17 @@ from ._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
 #: acknowledgement uses.
 FIRST_VERSION = 1
 
-#: The session format this build writes. It moves when a reader that does not
-#: know the new shape would read a file **wrongly**, never for an added field,
-#: which an older reader ignores and a newer one defaults.
-SESSION_FORMAT = 1
+#: The session format this build writes — the crate's ``session::FORMAT``. It
+#: moves when a reader that does not know the new shape would read a file
+#: **wrongly**, never for an added field, which an older reader ignores and a
+#: newer one defaults. **2** added a source whose samples are spans of other
+#: sources, which is a tagged variant an older reader must fail on rather than
+#: read as something else.
+#:
+#: It is restated here rather than bound, and that is why it drifted: the crate
+#: moved to 2 and this said 1 until somebody read the two side by side. See
+#: `clients/python/PLAN.md`, "The session format is restated in both clients".
+SESSION_FORMAT = 2
 from ._native import document_apply as apply_intent
 from ._native import document_resolve as resolve_selection
 

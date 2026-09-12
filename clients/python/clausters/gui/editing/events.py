@@ -194,10 +194,9 @@ def _osc(editor) -> list:
     """
     out = []
     for beat, item in editor.structure:
-        if isinstance(item, OscItem):
-            out.append((editor.beats_to_units(float(beat)), str(item.addr)))
-        elif isinstance(item, MidiItem):
-            out.append((editor.beats_to_units(float(beat)), "midi"))
+        label = _label_of(item)
+        if label is not None:
+            out.append((editor.beats_to_units(float(beat)), label))
     return out
 
 

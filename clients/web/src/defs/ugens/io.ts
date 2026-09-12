@@ -91,6 +91,27 @@ export function outCtl(
 // roots of the `SynthDef` (nothing else would reach them).
 
 /**
+ * A **level with the ballistics a person can read**: instantaneous attack, a
+ * fall of `decay` decibels per second, and a peak held `hold` seconds before it
+ * starts falling.
+ *
+ * One block is one measurement — the block's own peak in, the whole block out
+ * at what the meter now reads — which is what a meter is and what a control bus
+ * carries, so a finer answer would be samples nothing can read. The rules are
+ * the shared crate's (`measure::Ballistics`), so every meter drawn anywhere
+ * falls at the same rate.
+ *
+ * It **emits** the value rather than writing it anywhere, so what to do with it
+ * stays yours: a control bus per channel, a {@link sendReply}, or a signal that
+ * drives something.
+ */
+export const meter = (
+    signal: Channel,
+    decay: Channel = 20.0,
+    hold: Channel = 0.0,
+): Ugen => new Ugen("Meter", [signal, decay, hold]);
+
+/**
  * On each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify`
  * clients. Output is silence; pass it as a `SynthDef` root.
  */

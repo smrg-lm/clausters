@@ -57,7 +57,7 @@ Usage::
 
 from dataclasses import dataclass, field
 
-from .document import FIRST_VERSION
+from .document import FIRST_VERSION, SESSION_FORMAT
 
 __all__ = [
     "Multitrack",
@@ -1069,8 +1069,12 @@ class Session:
     that same tree, placed.
     """
 
-    #: The format version. See the crate's `session::FORMAT`.
-    format: int = 1
+    #: The format version this session was read at, or the one this build
+    #: writes for a session built here — `clausters.document.SESSION_FORMAT`,
+    #: which is the crate's `session::FORMAT`. A session **read** keeps the
+    #: number it was written with, so round-tripping an old file does not
+    #: silently promote it.
+    format: int = SESSION_FORMAT
     #: The piece. Always present, possibly empty — which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
     multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())

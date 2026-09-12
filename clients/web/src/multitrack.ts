@@ -59,7 +59,7 @@ import {
     multitrackNames as coreNames,
     multitrackProps as coreProps,
 } from "./core/clausters_core_web.js";
-import { FIRST_VERSION } from "./document.ts";
+import { FIRST_VERSION, SESSION_FORMAT } from "./document.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
@@ -1229,8 +1229,13 @@ export class View {
  * nouns, two modules; this one is a **file**.
  */
 export class Session {
-    /** The format version. */
-    format = 1;
+    /**
+     * The format version this session was read at, or the one this build
+     * writes for a session built here — {@link SESSION_FORMAT}, the crate's
+     * `session::FORMAT`. A session **read** keeps the number it was written
+     * with, so round-tripping an old file does not silently promote it.
+     */
+    format = SESSION_FORMAT;
     /**
      * The piece. Always present, possibly empty — which mirrors the crate,
      * where an absent arrangement reads as an empty one rather than as nothing.

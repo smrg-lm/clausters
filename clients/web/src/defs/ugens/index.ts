@@ -159,6 +159,7 @@ export {
     in_,
     localIn,
     localOut,
+    meter,
     out,
     outCtl,
     poll,

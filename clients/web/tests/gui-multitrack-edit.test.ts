@@ -3,7 +3,7 @@
 // `MultitrackEditor` is the multitrack as one of the fundamental structures —
 // which is what gives it the undo every other editor has. What is checked here
 // is the seam rather than the mapping: the mapping is the crate's
-// (`multitrackPicture`/`multitrackRead`, the same one the standalone host draws
+// (`multitrackProps`/`editingIntake`, the same one the standalone host draws
 // and reads with), so what could still be wrong is this client's half — the axis
 // a box crosses to, which buffer a source was read into, and whether a report
 // that means several edits lands as **one** entry.

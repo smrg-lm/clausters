@@ -22,7 +22,7 @@ multitrack is an application rather than an editor over a structure — but what
 made that true was that the picture and the reading of a gesture were written
 per client, so a piece opened here would have been a second implementation of
 both. They are the crate's now
-(`clausters._native.multitrack_picture`/`multitrack_read`), so a piece is a
+(`clausters._native.multitrack_props`/`editing_intake`), so a piece is a
 structure with a vocabulary, a picture and an inverse like any other, and
 opening it here is what gives it the history every other editor has.
 

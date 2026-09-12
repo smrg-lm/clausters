@@ -358,6 +358,7 @@ gd["mix"]                   # a surface port, plus the targets it drives inside
 | | `tduty(dur, reset=0.0, level=1.0, done_action=0, gap_first=0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
+| Measure | `meter(signal, decay=20.0, hold=0.0)` | a level with a **meter's ballistics**: instantaneous attack, a fall of `decay` decibels per second, a new peak held `hold` seconds before it starts falling. One number a block, which is what a control bus carries — pair it with `out_ctl` for a meter a host reads as a bus |
 | Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/node_trigger nodeID id value`; output is silence |
 | | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
 | | `poll(trig, signal, trig_id=-1, *, label="poll")` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |

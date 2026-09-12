@@ -244,11 +244,8 @@ export interface NotesEditorOptions extends GenericEditorOptions<Timeline> {
 function markers(editor: Editor<Timeline>): [number, string][] {
     const out: [number, string][] = [];
     for (const [beat, item] of editor.structure) {
-        if (item instanceof OscItem) {
-            out.push([editor.beatsToUnits(Number(beat)), String(item.addr)]);
-        } else if (item instanceof MidiItem) {
-            out.push([editor.beatsToUnits(Number(beat)), "midi"]);
-        }
+        const label = labelOf(item);
+        if (label !== null) out.push([editor.beatsToUnits(Number(beat)), label]);
     }
     return out;
 }

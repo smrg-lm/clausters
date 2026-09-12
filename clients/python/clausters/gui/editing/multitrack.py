@@ -8,8 +8,8 @@ widget, and an editor that is `clausters.gui.editing.Editor` with those two in
 it and nothing else.
 
 **Nothing here derives the picture, and nothing here reads a gesture.** Both are
-the crate's (`clausters._native.multitrack_picture` and
-`multitrack_read`), which is what makes this client, the web client and the
+the crate's (`clausters._native.multitrack_props` and
+`editing_intake`), which is what makes this client, the web client and the
 standalone host draw the same piece and read the same report: what a row and a
 box *are*, and what a list of boxes *means*, are one rule each and not one per
 language. What this adds is the two things only a client knows — the axis its
@@ -230,7 +230,7 @@ class MultitrackDomain(Domain):
     """A piece's vocabulary: the crate's `MultitrackIntent`, both ways.
 
     It reads nothing itself. A report of the boxes goes to
-    `clausters._native.multitrack_read`, which is the same reader the standalone
+    `clausters._native.editing_intake`, which is the same reader the standalone
     host uses, and an edit is applied through
     `clausters._native.domain_edit`, which is where the inverse comes from.
     """

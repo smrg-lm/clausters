@@ -70,6 +70,24 @@ def replace_out(bus, signal) -> SynthExpr:
 # fires on a crossing from ``<= 0`` up to ``> 0``.
 
 
+def meter(signal, decay=20.0, hold=0.0) -> Ugen:
+    """A **level with the ballistics a person can read**: instantaneous attack,
+    a fall of ``decay`` decibels per second, and a peak held ``hold`` seconds
+    before it starts falling.
+
+    One block is one measurement — the block's own peak in, the whole block out
+    at what the meter now reads — which is what a meter is and what a control
+    bus carries, so a finer answer would be samples nothing can read. The rules
+    are the shared crate's (`measure::Ballistics`), so every meter drawn
+    anywhere falls at the same rate.
+
+    It **emits** the value rather than writing it anywhere, so what to do with
+    it stays yours: a control bus per channel, a `send_reply`, or a signal that
+    drives something.
+    """
+    return Ugen("Meter", [signal, decay, hold])
+
+
 def send_trig(trig, id=0, value=0.0) -> Ugen:
     """On each trigger of ``trig``, sends ``/node_trigger nodeID id value`` to ``/server_notify``
     clients. Output is silence; pass it as a `SynthDef` root."""

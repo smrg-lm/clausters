@@ -3924,3 +3924,52 @@ than being ticked here.
   being one per application means for a box answering its own gestures, since
   today each box has its own stamp and its own floor. The web client's
   `enter` does the same thing and changes with it.
+
+- ⬜ **The session format is restated in both clients, and it had already
+  drifted** *(found 2026-09-12, sweeping the clients for what the projections
+  track left behind)*. `O31` moved the crate's `session::FORMAT` from 1 to 2 —
+  `Location::Segments` is a tagged variant an older reader must fail on rather
+  than misread, which is the one thing the counter is for — and neither client
+  moved. `clausters.document.SESSION_FORMAT` said 1, `Session.format` defaulted
+  to 1, and a session built and written here was stamped 1 while the crate
+  stamps 2, so a file carrying a joined source would have told an older build it
+  was safe to read.
+
+  Both now say 2, and a session **read** keeps the number it was written with,
+  so an old file round-trips unpromoted. **What is open is that the number is
+  restated at all.** `session.rs`'s own module header states the rule this
+  breaks — "it has two writers in two languages ... so the shape lives once,
+  beside the tree it carries" — and there are three writers of the number today:
+  the crate, this client and the page. The fix is a door (`session_format`, or
+  the format riding in something a client already asks for) so a client carries
+  it rather than knowing it; that is a new C ABI symbol and a `CORE_ABI_VERSION`
+  bump, which is why it is written down rather than done in the sweep that found
+  it. Related: the same is true of `FIRST_VERSION`, which is restated in three
+  places and has never moved.
+
+- ⬜ **Four readers the crate exports and nobody calls** *(found 2026-09-12,
+  same sweep)*. `clausters_multitrack_picture`, `_read`, `_read_points` and
+  `_read_rows` were the doors before `O26` and `O27`; the view is
+  `clausters_editing_multitrack_props` now and the reading is
+  `clausters_editing_intake`. `O29` deleted the page's wrappers; this client's
+  four went the same way in the sweep, and the prose in three files and one test
+  that still named them as where the picture and the reading come from is
+  corrected. **What is open is the C ABI itself**: those four symbols are called
+  by neither client, and the standalone host links the crate in Rust rather than
+  through them, so they may reach nobody at all. Removing them is a
+  `CORE_ABI_VERSION` bump and wants a check that no host path uses them; leaving
+  them is a door that invites the wrong call, since `picture` is half of what
+  `props` answers. `docs/bindings.md` describes all four as live and says nothing
+  about being superseded, which is the part that is wrong either way.
+
+- ⬜ **Nothing on this side checks the builders against the server's catalog**
+  *(found 2026-09-12, when a refreshed parity vector failed the page's check)*.
+  `clients/web/tests/ugen-catalog.test.ts` compares every kind the server
+  declares against the TypeScript builders and fails on one that has neither a
+  builder nor a line saying it is built another way. This client has the machinery
+  it would need — `ugen_input_names` already maps kind to builder signature — and
+  no test over it, so `Meter` reached the server (the meter strip) and neither
+  client could write it: the page's check was reading a vector that had gone
+  stale, and nothing here was reading anything. `meter` is a builder in both
+  clients now; what is open is the check, which has to be this side's, since a
+  vector generated here cannot catch what is missing here.
