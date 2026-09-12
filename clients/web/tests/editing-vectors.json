@@ -198,5 +198,440 @@
       "min": -1.0,
       "points": []
     }
+  },
+  {
+    "name": "a piece at one beat a second",
+    "kind": "multitrack_props",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "rate": 48000.0,
+    "bpm": 60.0,
+    "sources": {
+      "77": {
+        "buffer": 12,
+        "channels": 1
+      }
+    },
+    "props": {
+      "clips": [
+        "3",
+        "1",
+        192000.0,
+        192000.0,
+        24000.0,
+        "region 3",
+        12
+      ],
+      "curves": [
+        "4",
+        "1",
+        "automation 4",
+        -1.0,
+        1.0,
+        40.0
+      ],
+      "hidden": "5",
+      "lanes": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5
+      ],
+      "layers": [
+        "5",
+        "3",
+        "automation 5",
+        0.0,
+        1.0
+      ],
+      "loops": "",
+      "points": [
+        "4",
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        "4",
+        96000.0,
+        1.0,
+        5.0,
+        -3.5,
+        "5",
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        "5",
+        48000.0,
+        0.0,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "the same piece over a source nobody read",
+    "kind": "multitrack_props",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "rate": 48000.0,
+    "bpm": 60.0,
+    "sources": {},
+    "props": {
+      "clips": [
+        "3",
+        "1",
+        192000.0,
+        192000.0,
+        24000.0,
+        "region 3",
+        -1
+      ],
+      "curves": [
+        "4",
+        "1",
+        "automation 4",
+        -1.0,
+        1.0,
+        40.0
+      ],
+      "hidden": "5",
+      "lanes": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5
+      ],
+      "layers": [
+        "5",
+        "3",
+        "automation 5",
+        0.0,
+        1.0
+      ],
+      "loops": "",
+      "points": [
+        "4",
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        "4",
+        96000.0,
+        1.0,
+        5.0,
+        -3.5,
+        "5",
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        "5",
+        48000.0,
+        0.0,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  {
+    "name": "and over a tempo that moves, where a length is not a ratio",
+    "kind": "multitrack_props",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "tempo": [
+        {
+          "at": 0.0,
+          "bpm": 60.0
+        },
+        {
+          "at": 4.0,
+          "bpm": 120.0,
+          "ramp": true
+        }
+      ]
+    },
+    "rate": 48000.0,
+    "bpm": 60.0,
+    "sources": {
+      "77": {
+        "buffer": 12,
+        "channels": 1
+      }
+    },
+    "props": {
+      "clips": [
+        "3",
+        "1",
+        192000.0,
+        96000.0,
+        24000.0,
+        "region 3",
+        12
+      ],
+      "curves": [
+        "4",
+        "1",
+        "automation 4",
+        -1.0,
+        1.0,
+        40.0
+      ],
+      "hidden": "5",
+      "lanes": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5
+      ],
+      "layers": [
+        "5",
+        "3",
+        "automation 5",
+        0.0,
+        1.0
+      ],
+      "loops": "",
+      "points": [
+        "4",
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        "4",
+        96000.0,
+        1.0,
+        5.0,
+        -3.5,
+        "5",
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        "5",
+        24000.0,
+        0.0,
+        1.0,
+        0.0
+      ]
+    }
   }
 ]

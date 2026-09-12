@@ -55,6 +55,44 @@ def curves():
     ]
 
 
+def pieces():
+    """The pieces, and the table of what their sources were read into.
+
+    One track with a box on it, an automation over the timeline and an envelope
+    inside the box -- the smallest piece that exercises both curve kinds, the
+    two time bases they are measured from, and a box over a source that was
+    read against one that was not.
+    """
+    # `visible` is off unless the piece says otherwise, so one of the two is
+    # open and the other folded away: `hidden` names exactly the second.
+    curve = {"id": 4, "visible": True, "target": {"min": -1.0, "max": 1.0},
+             "points": [{"at": 0.0, "value": 0.0},
+                        {"at": 2.0, "value": 1.0,
+                         "data": {"shape": 5, "curve": -3.5}}]}
+    layer = {"id": 5, "points": [{"at": 0.0, "value": 1.0},
+                                 {"at": 1.0, "value": 0.0}]}
+    region = {
+        "id": 3, "position": 4.0, "length": 4.0,
+        "content": {"fill": "window",
+                    "window": {"source": {"source": 77, "lifetime": "session"},
+                               "start": 0.5, "duration": 4.0}},
+        "automation": [layer],
+    }
+    track = {"id": 1, "name": "drums", "level": 0.5, "muted": True,
+             "lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
+    piece = {"version": 1, "tracks": [track]}
+    ramped = json.loads(json.dumps(piece))
+    ramped["tempo"] = [{"at": 0.0, "bpm": 60.0},
+                       {"at": 4.0, "bpm": 120.0, "ramp": True}]
+    return [
+        ("a piece at one beat a second", piece,
+         {"77": {"buffer": 12, "channels": 1}}),
+        ("the same piece over a source nobody read", piece, {}),
+        ("and over a tempo that moves, where a length is not a ratio",
+         ramped, {"77": {"buffer": 12, "channels": 1}}),
+    ]
+
+
 def main() -> None:
     vectors = []
     for name, points, kept, held in curves():
@@ -65,6 +103,17 @@ def main() -> None:
             "kept": list(kept) if kept is not None else None,
             "held": held,
             "props": _native.points_props(points, kept, held),
+        })
+    for name, piece, sources in pieces():
+        vectors.append({
+            "name": name,
+            "kind": "multitrack_props",
+            "piece": piece,
+            "rate": 48000.0,
+            "bpm": 60.0,
+            "sources": sources,
+            "props": _native.multitrack_props(piece, 48000.0, 60.0,
+                                              {int(k): v for k, v in sources.items()}),
         })
     out = pathlib.Path(__file__).with_name("editing-vectors.json")
     out.write_text(json.dumps(vectors, indent=2) + "\n")

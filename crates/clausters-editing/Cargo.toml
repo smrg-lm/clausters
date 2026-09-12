@@ -9,6 +9,11 @@ description = "The projections an editable structure owes its three endpoints: t
 # The drawing and numeric rules a projection is built out of -- a curve's axis,
 # the mixer's defs, the tempo map.
 clausters-core = { path = "../clausters-core" }
+# The model every projection is a projection *of*: the piece, its picture and
+# what an edit means. The rule this crate exists for is that the document
+# describes and does not encode -- so the dependency runs this way and never
+# back.
+clausters-document = { path = "../clausters-document" }
 # Flat data at the boundary: a projection's answer is JSON, because that is what
 # a prop payload and an OSC argument already are.
 serde_json = "1"

@@ -1046,6 +1046,18 @@ export function multitrackPicture(piece: string): string;
 export function multitrackPlan(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
 
 /**
+ * JS face: **a piece as the props the multitrack widget is drawn with**, as a
+ * JSON string.
+ *
+ * The rows, the boxes, the automations over both, their break-points, which
+ * are hidden and which boxes loop — everything a piece has from the document
+ * alone. `sources` is the same table `multitrack_plan` takes, source id to
+ * `{"buffer", "channels"}`, because what a box is drawn from and what it is
+ * played from are the same samples.
+ */
+export function multitrackProps(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
+
+/**
  * **What a report of a multitrack's boxes means** — `{"intents": [...]}`, in
  * the piece's own vocabulary, or an empty string for input that will not
  * parse.
@@ -1391,6 +1403,7 @@ export interface InitOutput {
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackPicture: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackReadPoints: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackReadRows: (a: number, b: number, c: number, d: number) => [number, number];

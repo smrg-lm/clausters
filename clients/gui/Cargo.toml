@@ -84,6 +84,10 @@ clausters-core = { path = "../../crates/clausters-core" }
 # building the same JSON by hand in the host would be the second definition of a
 # format whose whole point is that one definition crosses everything.
 clausters-document = { path = "../../crates/clausters-document" }
+# The projections: the props a structure is drawn with. The host links the same
+# one every client binds, which is what makes a standalone editor this host
+# driven by itself rather than a fourth implementation of the picture.
+clausters-editing = { path = "../../crates/clausters-editing" }
 # The full server crate, linked ONLY under the `standalone` feature for the
 # in-process embedded server (`host::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so

@@ -46,6 +46,45 @@ pub unsafe extern "C" fn clausters_editing_points_props(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **A piece as the props the multitrack widget is drawn with**, as JSON.
+///
+/// The rows, the boxes, the automations over both, their break-points, which
+/// are hidden and which boxes loop — everything a piece has from the document
+/// alone. What a caller adds is what is a function of something else: the
+/// position cursor, the meter buses, the widget's own chrome.
+///
+/// `sources` is the same table [`crate::document`]'s instance plan takes,
+/// source id to `{"buffer", "channels"}`. Sizes with a null `out` and fills
+/// with a second call.
+///
+/// # Safety
+/// `piece` and `sources` must be null or readable for their lengths, and `out`
+/// null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_multitrack_props(
+    piece: *const u8,
+    piece_len: usize,
+    rate: f64,
+    default_bpm: f64,
+    sources: *const u8,
+    sources_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(piece), Some(sources)) =
+        (unsafe { crate::document::text(piece, piece_len) }, unsafe {
+            crate::document::text(sources, sources_len)
+        })
+    else {
+        return 0;
+    };
+    let answer = clausters_editing::multitrack::props_json(&piece, rate, default_bpm, &sources);
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

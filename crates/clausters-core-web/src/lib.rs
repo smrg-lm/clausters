@@ -1207,6 +1207,20 @@ pub fn points_props(
     clausters_editing::points::props_json(points, kept, held.unwrap_or(0.0))
 }
 
+/// JS face: **a piece as the props the multitrack widget is drawn with**, as a
+/// JSON string.
+///
+/// The rows, the boxes, the automations over both, their break-points, which
+/// are hidden and which boxes loop — everything a piece has from the document
+/// alone. `sources` is the same table `multitrack_plan` takes, source id to
+/// `{"buffer", "channels"}`, because what a box is drawn from and what it is
+/// played from are the same samples.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackProps)]
+pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources: &str) -> String {
+    clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
+}
+
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
 /// mismatch, an empty pair, or a constant channel.

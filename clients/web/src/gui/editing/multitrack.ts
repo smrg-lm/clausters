@@ -32,7 +32,8 @@ import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit } from "../../document.ts";
 import type { Curve, Curved } from "../../multitrack.ts";
 import {
-    Multitrack, multitrackPicture, multitrackRead, multitrackReadPoints, multitrackReadRows,
+    Multitrack, multitrackPicture, multitrackProps, multitrackRead, multitrackReadPoints,
+    multitrackReadRows,
 } from "../../multitrack.ts";
 import type { Box, Placed, Region, Row, Strip } from "../../multitrack.ts";
 import { button, label, layout, node, timeruler, window as guiWindow } from "../guidef.ts";
@@ -768,34 +769,20 @@ export class MultitrackView extends View<Multitrack> {
             // piece's payloads are the piece widget's.
             return { cursor: cursorOf(editor) };
         }
-        const picture = multitrackPicture(editor.structure.write());
         const props: Record<string, PropValue> = {
-            lanes: laneProps(picture.rows) as PropValue,
-            clips: clipProps(picture.boxes, this.bridge) as PropValue,
-            curves: curveProps(picture.curves) as PropValue,
-            layers: layerProps(picture.layers) as PropValue,
-            points: pointProps(
-                [...picture.curves, ...picture.layers],
-                this.bridge,
-                basesOf(picture),
-            ) as PropValue,
-            // **What is drawn is what the piece says was open.** Which curves a
-            // person had showing is part of reopening the piece as they left
-            // it, so it is read out of the document rather than kept here.
-            hidden: [...picture.curves, ...picture.layers]
-                .filter((c) => !c.visible)
-                .map((c) => String(c.automation))
-                .join(" "),
-            // **Which boxes wrap**, by name — a name set like `hidden`, and read
-            // out of the piece for the same reason: whether a box loops is what
-            // it *reads* past the end of its source, so it is the piece's and
-            // not this window's. It says what an edge drag may do (a box that
-            // loops has always more; one that does not stops at the last frame)
-            // and how the samples draw under a box longer than they are.
-            loops: picture.boxes
-                .filter((b) => b.looping)
-                .map((b) => String(b.region))
-                .join(" "),
+            // **The piece's own props are the projection's**: the rows, the
+            // boxes, the automations over both, their break-points, which of
+            // them are hidden and which boxes loop. All of it is a function of
+            // the piece and of where a beat lands, so all of it is written once
+            // and every client and the standalone host ask the same question.
+            ...(JSON.parse(
+                multitrackProps(
+                    JSON.stringify(editor.structure.write()),
+                    this.bridge.rate,
+                    this.bridge.bpm,
+                    JSON.stringify(this.bridge.sources.table()),
+                ),
+            ) as Record<string, PropValue>),
             // **Where each track's level is read from**: the control buses its
             // meters write, which the host reads every frame straight out of
             // the shared segment. A piece with no playback names none, and a

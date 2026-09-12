@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 50
+CORE_ABI_VERSION = 51
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -231,6 +231,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
     ]
     lib.clausters_editing_points_props.restype = ctypes.c_size_t
+    u8p_early = ctypes.POINTER(ctypes.c_ubyte)
+    lib.clausters_editing_multitrack_props.argtypes = [
+        u8p_early, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_multitrack_props.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1230,6 +1236,29 @@ def points_props(points, kept=None, held: float = 0.0) -> dict:
     lo, hi = (float(kept[0]), float(kept[1])) if kept is not None else (0.0, 0.0)
     raw = size_then_fill(_lib.clausters_editing_points_props, buf, n,
                          1 if kept is not None else 0, lo, hi, float(held))
+    return json.loads(raw) if raw else {}
+
+
+def multitrack_props(piece: dict, rate: float, default_bpm: float,
+                     sources: dict) -> dict:
+    """A piece as **the props the multitrack widget is drawn with**.
+
+    The rows, the boxes, the automations over both, their break-points, which
+    of them are hidden and which boxes loop — everything a piece has from the
+    document alone, in the flat shapes the wire carries
+    (`clausters_editing_multitrack_props`). What a caller adds is what is a
+    function of something *else*: the position cursor, the meter buses, the
+    widget's own chrome.
+
+    ``sources`` is the same table `multitrack_plan` takes, because what a box is
+    drawn from and what it is played from are the same samples.
+    """
+    _lib = lib()
+    body = json.dumps(piece).encode("utf-8")
+    table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_multitrack_props,
+                         as_u8(body), len(body), float(rate), float(default_bpm),
+                         as_u8(table), len(table))
     return json.loads(raw) if raw else {}
 
 

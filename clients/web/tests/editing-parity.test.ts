@@ -19,32 +19,57 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { pointsProps } from "../src/core/clausters_core_web.js";
+import { multitrackProps, pointsProps } from "../src/core/clausters_core_web.js";
 
 type Vector = {
     name: string;
-    kind: string;
-    points: number[];
-    kept: [number, number] | null;
-    held: number;
+    kind: "points_props" | "multitrack_props";
     props: Record<string, unknown>;
+    // `points_props`
+    points?: number[];
+    kept?: [number, number] | null;
+    held?: number;
+    // `multitrack_props`
+    piece?: unknown;
+    rate?: number;
+    bpm?: number;
+    sources?: Record<string, unknown>;
 };
 
 const vectors = JSON.parse(
     await readFile(new URL("./editing-vectors.json", import.meta.url), "utf8"),
 ) as Vector[];
 
+const of = (kind: Vector["kind"]) => vectors.filter((v) => v.kind === kind);
+
 test("a curve's props are the same props in both clients", async () => {
     await loadCore();
-    assert.ok(vectors.length > 0, "the vectors were generated");
-    for (const v of vectors) {
-        assert.equal(v.kind, "points_props");
+    const cases = of("points_props");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    for (const v of cases) {
         const got = JSON.parse(
             pointsProps(
-                Float64Array.from(v.points),
+                Float64Array.from(v.points ?? []),
                 v.kept?.[0],
                 v.kept?.[1],
                 v.held,
+            ),
+        ) as Record<string, unknown>;
+        assert.deepEqual(got, v.props, v.name);
+    }
+});
+
+test("and a piece's props are the same props in both clients", async () => {
+    await loadCore();
+    const cases = of("multitrack_props");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    for (const v of cases) {
+        const got = JSON.parse(
+            multitrackProps(
+                JSON.stringify(v.piece),
+                v.rate ?? 0,
+                v.bpm ?? 0,
+                JSON.stringify(v.sources ?? {}),
             ),
         ) as Record<string, unknown>;
         assert.deepEqual(got, v.props, v.name);

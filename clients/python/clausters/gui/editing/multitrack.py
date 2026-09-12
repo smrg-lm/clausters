@@ -44,13 +44,6 @@ SEXTUPLE = 6
 #: source`` septuples.
 SEPTUPLE = 7
 
-#: The thickness a row is drawn at, in logical pixels.
-ROW_H = 96.0
-
-#: The thickness an automation row is drawn at — shorter than a track's row,
-#: because what it draws is one line and not a stack of boxes.
-CURVE_H = 40.0
-
 #: What the widget's ``curves`` prop takes: flat ``name lane label min max
 #: height`` sextuples. Its ``layers`` prop takes the same without the height,
 #: since a layer is as tall as the box it is drawn on.
@@ -482,29 +475,16 @@ class MultitrackView(View):
             # The strip's own state, which is the axis' and nothing else: the
             # piece's payloads are the piece widget's.
             return {"cursor": _cursor(editor)}
-        picture = _native.multitrack_picture(editor.structure.write())
-        curves = picture.get("curves", [])
-        layers = picture.get("layers", [])
+        # **The piece's own props are the projection's**: the rows, the boxes,
+        # the automations over both, their break-points, which of them are
+        # hidden and which boxes loop. All of it is a function of the piece and
+        # of where a beat lands, so all of it is written once and every client
+        # and the standalone host ask the same question
+        # (`clausters._native.multitrack_props`).
         props = {
-            "lanes": _lanes(picture.get("rows", [])),
-            "clips": _clips(picture.get("boxes", []), self.bridge),
-            "curves": _curves(curves),
-            "layers": _layers(layers),
-            "points": _points(curves + layers, self.bridge,
-                              _bases(picture)),
-            # **What is drawn is what the piece says was open.** Which curves a
-            # person had showing is part of reopening the piece as they left
-            # it, so it is read out of the document rather than kept here.
-            "hidden": " ".join(str(c["automation"]) for c in curves + layers
-                               if not c.get("visible", True)),
-            # **Which boxes wrap**, by name — a name set like ``hidden``, and
-            # read out of the piece for the same reason: whether a box loops is
-            # what it *reads* past the end of its source, so it is the piece's
-            # and not this window's. It says what an edge drag may do (a box
-            # that loops has always more; one that does not stops at the last
-            # frame) and how the samples draw under a box longer than they are.
-            "loops": " ".join(str(b["region"]) for b in picture.get("boxes", [])
-                              if b.get("looping")),
+            **_native.multitrack_props(editor.structure.write(), self.bridge.rate,
+                                       self.bridge.bpm,
+                                       self.bridge.sources.table()),
             # **Where each track's level is read from**: the control buses its
             # meters write, which the host reads every frame straight out of the
             # shared segment. A piece with no playback names none, and a header
@@ -566,15 +546,6 @@ def _cursor(editor) -> float:
     return editor.beats_to_units(editor.cursor if editor.cursor is not None else 0.0)
 
 
-def _lanes(rows) -> list:
-    """The crate's rows as the widget's flat sextuples."""
-    out = []
-    for row in rows:
-        out += [str(row["track"]), str(row.get("label", "")), ROW_H,
-                bool(row.get("mute")), bool(row.get("solo")),
-                float(row.get("gain", 1.0))]
-    return out
-
 
 def _meters(editor) -> list:
     """The playback's meter buses as the widget's flat quadruples: ``lane``,
@@ -589,42 +560,7 @@ def _meters(editor) -> list:
     return out
 
 
-def _curves(curves) -> list:
-    """The crate's **track automations** as the widget's flat sextuples: a row
-    of its own under the track it names."""
-    out = []
-    for curve in curves:
-        lo, hi = _domain(curve)
-        out += [str(curve["automation"]), str(curve["owner"]),
-                str(curve.get("label", "")), lo, hi, CURVE_H]
-    return out
 
-
-def _layers(layers) -> list:
-    """The crate's **region automations** as the widget's flat quintuples: a
-    layer inside the box it names, and no height, because it is as tall as
-    that box."""
-    out = []
-    for curve in layers:
-        lo, hi = _domain(curve)
-        out += [str(curve["automation"]), str(curve["owner"]),
-                str(curve.get("label", "")), lo, hi]
-    return out
-
-
-def _domain(curve) -> tuple:
-    """The value range a curve is drawn over.
-
-    **The client's, and read out of the target.** The document says what a
-    curve automates and never reads it; which range that parameter has — a gain
-    over one, a pan over another — is a fact about the parameter, so it is
-    stated where the parameter is. Unity is the default, which is what an
-    unlabelled level means.
-    """
-    target = curve.get("target") or {}
-    if not isinstance(target, dict):
-        return 0.0, 1.0
-    return float(target.get("min", 0.0)), float(target.get("max", 1.0))
 
 
 def _bases(picture) -> dict:
@@ -644,33 +580,6 @@ def _bases(picture) -> dict:
     return bases
 
 
-def _points(curves, bridge: Bridge, bases: dict) -> list:
-    """Every curve's break-points as the widget's flat quintuples, each naming
-    the curve it is on — one list for the rows and the layers alike."""
-    out = []
-    for curve in curves:
-        name = str(curve["automation"])
-        base = float(bases.get(name, 0.0))
-        for point in curve.get("points", []):
-            data = point.get("data") or {}
-            out += [name, bridge.frame_in(base, float(point.get("at", 0.0))),
-                    float(point.get("value", 0.0)),
-                    float(data.get("shape", 1)), float(data.get("curve", 0.0))]
-    return out
-
-
-def _clips(boxes, bridge: Bridge) -> list:
-    """The crate's boxes as the widget's flat septuples, on this axis."""
-    out = []
-    for box in boxes:
-        position, length = float(box["position"]), float(box["length"])
-        out += [str(box["region"]), str(box["row"]),
-                bridge.frame_at(position),
-                bridge.frames_over(position, length),
-                float(box.get("start", 0.0)) * bridge.rate,
-                str(box.get("label", "")),
-                bridge.sources.bufnum(box.get("source"))]
-    return out
 
 
 def _groups(values, n: int) -> list:

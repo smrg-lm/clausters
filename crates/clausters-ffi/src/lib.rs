@@ -340,7 +340,15 @@ pub use time::*;
 /// client is one no compiler and no test reads against its twin, and that is
 /// where a page and a script come to draw one curve two ways. **Additive**, and
 /// the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 50;
+/// **v51 a piece's props are one answer.** `clausters_editing_multitrack_props`
+/// hands back the rows, the boxes, the automations over both, their
+/// break-points, which are hidden and which boxes loop -- everything a piece
+/// has from the document alone. It was written three times before it was
+/// written here, and the third was already in Rust: a standalone host draws the
+/// same picture with no client in the process, so `clients/gui` linked its own
+/// copy of the same sextuple, the same septuple and the same row height.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 51;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

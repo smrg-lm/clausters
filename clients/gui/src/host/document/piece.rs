@@ -36,18 +36,15 @@
 //! through the rate and never through the tempo: a recording's length is a
 //! wall-clock fact.
 
-use clausters_core::tempomap::{TempoChange, TempoMap};
+use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::picture;
 use clausters_document::{Beat, NodeId, SourceId};
-use serde_json::{Value, json};
+use clausters_editing::multitrack as projection;
 
 use super::sources::Takes;
 use super::tree::{ClipRow, LaneRow, Piece};
-
-/// The lane height a row is drawn at, in logical pixels.
-const LANE_H: f64 = 96.0;
 
 /// The tempo a piece that never said one is read at, in beats per second —
 /// one, so a beat is a second and a piece with no tempo behaves exactly as it
@@ -97,6 +94,20 @@ impl Look<'_> {
         self.frame_at(from + len) - self.frame_at(from)
     }
 
+    /// This same look, as the shared projection asks for it.
+    ///
+    /// The two are the same three facts — a tempo map, a rate, and which server
+    /// buffer a source was read into — and the only difference is that the
+    /// projection asks the third as a question ([`projection::Buffers`]) rather
+    /// than as a table, because its three callers hold it three ways.
+    pub fn projection(&self) -> projection::Look<'_> {
+        projection::Look {
+            tempo: &self.tempo,
+            rate: self.rate,
+            sources: self,
+        }
+    }
+
     /// The beat a frame falls on: the inverse, and the way an edit comes back.
     pub fn beat_at(&self, frame: f64) -> f64 {
         self.tempo
@@ -111,18 +122,7 @@ impl Look<'_> {
 /// before the first, an empty list being the default alone — are
 /// [`TempoMap::from_changes`]'s, in the crate that models tempo.
 pub fn tempo_map(piece: &Multitrack) -> TempoMap {
-    let changes: Vec<TempoChange> = piece
-        .tempo
-        .iter()
-        .map(|t| TempoChange {
-            beats: t.at.0,
-            // The document writes beats per **minute**, as a score does; every
-            // tempo in the map is per second.
-            tempo: t.bpm / 60.0,
-            ramp: t.ramp,
-        })
-        .collect();
-    TempoMap::from_changes(&changes, DEFAULT_TEMPO).unwrap_or_else(|_| TempoMap::new(DEFAULT_TEMPO))
+    projection::tempo_map(piece, DEFAULT_TEMPO * 60.0)
 }
 
 /// The piece as the `multitrack` widget takes it, and as an edit-back is
@@ -133,58 +133,46 @@ pub fn tempo_map(piece: &Multitrack) -> TempoMap {
 /// the format's business and is written once for every client; turning beats
 /// into frames on the shared axis is the tempo map's, which is what this adds.
 pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
+    // **The props are the projection's**, and they are the same props the two
+    // clients send: one list of rows and one of boxes, in one shape, so a piece
+    // opened here and a piece opened from a script are the same picture rather
+    // than two pictures that agree. What is left here is the *binding* -- which
+    // node each row and box stands for -- which is this host's own, since it is
+    // what an edit-back is resolved against.
+    let projected = projection::props(piece, &look.projection());
     let rows = picture::rows(piece);
     let boxes = picture::boxes(piece);
-    let mut lanes = Vec::with_capacity(rows.len());
-    let mut lanes_prop = Vec::with_capacity(rows.len() * 6);
-    for row in &rows {
-        lanes.push(LaneRow {
-            node: row.track,
-            holder: row.lane,
-            // A track has no offset: the piece's timeline is one, and a region
-            // states where it is on it.
-            base: 0.0,
-        });
-        lanes_prop.extend([
-            json!(row.track.0.to_string()),
-            json!(row.label.clone()),
-            json!(LANE_H),
-            json!(row.mute),
-            json!(row.solo),
-            json!(row.gain),
-        ]);
-    }
-    let mut clips = Vec::with_capacity(boxes.len());
-    let mut clips_prop = Vec::with_capacity(boxes.len() * 7);
-    for box_ in &boxes {
-        clips.push(ClipRow {
-            node: box_.region,
-            lane: box_.row,
-        });
-        clips_prop.extend([
-            json!(box_.region.0.to_string()),
-            json!(box_.row.0.to_string()),
-            json!(look.frame_at(box_.position.0)),
-            json!(look.frames_over(box_.position.0, box_.length.0)),
-            json!(box_.start * look.rate),
-            json!(box_.label.clone()),
-            json!(bufnum_of(box_.source, look)),
-        ]);
-    }
     Piece {
-        lanes,
-        clips,
-        lanes_prop: Value::Array(lanes_prop),
-        clips_prop: Value::Array(clips_prop),
+        lanes: rows
+            .iter()
+            .map(|row| LaneRow {
+                node: row.track,
+                holder: row.lane,
+                // A track has no offset: the piece's timeline is one, and a
+                // region states where it is on it.
+                base: 0.0,
+            })
+            .collect(),
+        clips: boxes
+            .iter()
+            .map(|box_| ClipRow {
+                node: box_.region,
+                lane: box_.row,
+            })
+            .collect(),
+        lanes_prop: projected["lanes"].clone(),
+        clips_prop: projected["clips"].clone(),
     }
 }
 
 /// The **server buffer** a source was read into, or `-1` for a box over
 /// nothing: a window onto notes, a composite, or samples nobody read in yet.
-fn bufnum_of(source: Option<SourceId>, look: &Look<'_>) -> i32 {
-    source
-        .and_then(|source| look.takes?.get(source))
-        .map_or(-1, |take| take.bufnum)
+impl projection::Buffers for Look<'_> {
+    fn bufnum(&self, source: SourceId) -> i64 {
+        self.takes
+            .and_then(|takes| takes.get(source))
+            .map_or(-1, |take| i64::from(take.bufnum))
+    }
 }
 
 /// **The piece's clips, as they now stand** — the one payload every placement

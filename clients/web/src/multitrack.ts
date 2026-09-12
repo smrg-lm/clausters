@@ -57,6 +57,7 @@
 
 import {
     multitrackPicture as corePicture,
+    multitrackProps as coreProps,
     multitrackRead as coreRead,
     multitrackReadPoints as coreReadPoints,
     multitrackReadRows as coreReadRows,
@@ -1479,6 +1480,27 @@ export function multitrackPicture(
     if (!answer) return empty;
     const read = JSON.parse(answer) as Partial<ReturnType<typeof multitrackPicture>>;
     return { ...empty, ...read };
+}
+
+/**
+ * **A piece as the props the multitrack widget is drawn with.**
+ *
+ * The rows, the boxes, the automations over both, their break-points, which of
+ * them are hidden and which boxes loop — everything a piece has from the
+ * document alone, in the flat shapes the wire carries. What a caller adds is
+ * what is a function of something *else*: the position cursor, the meter buses,
+ * the widget's own chrome.
+ *
+ * `sources` is the same table the instance plan takes, because what a box
+ * is drawn from and what it is played from are the same samples.
+ */
+export function multitrackProps(
+    piece: string,
+    rate: number,
+    defaultBpm: number,
+    sources: string,
+): string {
+    return coreProps(piece, rate, defaultBpm, sources);
 }
 
 /**
