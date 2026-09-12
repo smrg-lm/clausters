@@ -33,7 +33,7 @@ sounds; it has no piece to move over.
 from ... import _native
 from ...base.time import TempoMap
 from .application import BASE_ID, Application, _resolve_host
-from .context import FIRST_VERSION, Editing
+from .context import Editing
 from .trace import log
 
 _not_an_edit: tuple = ()
@@ -164,9 +164,6 @@ class Editor:
         #: own would not be an anchor. Screen state like the selection, never
         #: logged and never part of what is edited.
         self.cursor: float | None = None
-        #: The version this editor was at when it last answered a host event --
-        #: what turns "the version moved" into "it moved *by someone else*".
-        self._applied: int = FIRST_VERSION
         self._window = None
         #: The context to register in when the caller named one; otherwise the
         #: structure's own, asked for on each use.
@@ -312,11 +309,13 @@ class Editor:
     def _announce(self):
         self.app.announce()
 
-    def _raise_floor(self):
-        self.app.raise_floor()
+    def _read(self, envelope: dict) -> dict:
+        return self.app.read(envelope)
 
-    def _stale(self, against: int) -> bool:
-        return self.app.stale(against)
+    def _applied(self, version: int):
+        """The version this editor's last answered event left behind
+        (`Application.applied`)."""
+        self.app.applied = int(version)
 
     def _correct(self, widget_id: int, **props):
         self.app.correct(widget_id, **props)
@@ -429,42 +428,54 @@ class Editor:
 
     def _deliver(self, addr: str, args) -> bool:
         """`apply`, without the turn around it: what the message actually
-        does."""
-        if addr == "/gui_closed":
-            # **Only this editor's window.** One host carries several, and an
-            # editor with none of its own -- a multitrack that opened only a
-            # composed view -- would otherwise read every close as its own and
-            # take itself out of the context that is still drawing.
-            if self._window is not None and (not args or int(args[0]) == self._window):
-                self._window = None
-                # Closing a *view* is not an event of the history, so the
-                # context stays exactly as it is -- what goes is this window's
-                # place in the list of who to tell, and this editor's place in
-                # what the host delivers to. The second is also this editor's
-                # **lifetime**: the host holds an open editor so a script need
-                # not, and this is where it stops.
-                self._editing.detach(self)
-                self.app.forget(self)
-                if self._host is not None:
-                    self._host.unsubscribe(self.apply)
-            return False
-        if addr != "/gui_event" or len(args) < 3:
-            return False
+        does.
+
+        **What kind of turn a message is, is the crate's**
+        (`clausters._native.conversation_read`): a close, a walk through the
+        history, an edit made against a picture that is gone, or an edit to
+        route. What is here is what each of those *does* in this client — a
+        window to forget, a history to step, a socket to answer.
+        """
         # ``<id> <seq> <version> <tag> <payload…>``: the stamp and the version
         # the gesture was made against are the second and third arguments of
-        # every event. The stamp is what an acknowledgement names, so it is read
-        # here and answered below -- an owner that applies an edit and says
-        # nothing leaves the host drawing what the hand did.
-        seq, against = int(args[1]), int(args[2]) if len(args) > 2 else 0
-        args = (args[0], *args[3:])
+        # every event, and the envelope is all the decision reads. The payload
+        # never crosses for it -- what a report *means* is the domain's, and it
+        # crosses once, there.
+        wid = int(args[0]) if args else 0
+        envelope = {
+            "addr": str(addr),
+            "argc": len(args),
+            "widget": wid,
+            "seq": int(args[1]) if len(args) > 1 else 0,
+            "against": int(args[2]) if len(args) > 2 else 0,
+            "tag": str(args[3]) if len(args) > 3 else "",
+            "version": self._version,
+            # The two the client answers for, because it is the client that
+            # holds the window and the view's widget table.
+            "isWindow": self._window is not None and (not args or wid == self._window),
+            "owns": self._owns(wid),
+        }
+        turn = self._read(envelope)
+        kind = turn.get("turn")
+        if kind == "closed":
+            self._window = None
+            # Closing a *view* is not an event of the history, so the context
+            # stays exactly as it is -- what goes is this window's place in the
+            # list of who to tell, and this editor's place in what the host
+            # delivers to. The second is also this editor's **lifetime**: the
+            # host holds an open editor so a script need not, and this is where
+            # it stops.
+            self._editing.detach(self)
+            self.app.forget(self)
+            if self._host is not None:
+                self._host.unsubscribe(self.apply)
+            return False
+        if kind == "nothing":
+            return False
+        seq = int(turn.get("seq", 0))
         self._corrections = []
         self._reason = None
-        # The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
-        # addresses to the **window** rather than to a widget: undo is not
-        # aimed at anything under the cursor. They are answered here rather
-        # than routed, because a history step is not an edit to the data -- it
-        # is a walk through the one the crate keeps.
-        if args[1] in ("undo", "redo") and int(args[0]) == self._window:
+        if kind == "step":
             # **What it answers is whether anything moved**, not whether the
             # keystroke was understood. A history at its end is the ordinary
             # case -- a person holds Ctrl+Z until it stops -- and reporting a
@@ -472,7 +483,7 @@ class Editor:
             # edit that never happened, which is a redraw for nothing. The
             # acknowledgement still goes out: the host asked, and the answer is
             # the state that holds.
-            stepped = (self.redo if args[1] == "redo" else self.undo)()
+            stepped = (self.redo if turn.get("redo") else self.undo)()
             # **A refusal says why.** A step nobody could apply is the one case
             # where nothing happening is not "the pile is at its end": the entry
             # belongs to a structure whose window is closed, and it is still
@@ -483,35 +494,18 @@ class Editor:
                                 "window that is not open")
             self._acknowledge(seq, reason=self._reason)
             return stepped
-        # Only what this editor draws is this editor's to answer. A poll loop
-        # may be shared with a second editor, and answering for its window would
-        # retire a pending edit nobody applied -- the host would adopt a picture
-        # the real owner never saw.
-        if not self._owns(int(args[0])):
-            return False
-        # **The answers lag, and that is not a conflict.** A host stamps every
-        # event with the version it was last told, and it is told only when an
-        # acknowledgement reaches it -- a round trip a hand outruns, so an edit
-        # naming a version this editor has already moved past is the ordinary
-        # case, not a collision: a drag reporting as it goes, or a second
-        # gesture begun inside one round trip. Refusing those refuses the hand,
-        # and answers each with a resync that snaps the picture back. So only a
-        # route the host knows nothing about raises the floor: the version moved
-        # since the last event was answered, and no event is what moved it.
-        if self._version != self._applied:
-            self._raise_floor()
-        if self._stale(against):
+        if kind == "stale":
             # The data moved under the gesture, by a route no gesture produced.
             # The edit is not applied and not merged: an edit-back payload is
             # absolute *and* whole (a roll's notes are the list, not a diff), so
             # applying one made against an older picture would silently drop
             # whatever arrived in between. What goes back is the state as it
             # stands, which the host adopts exactly as it adopts a snap.
-            self._resync(int(args[0]))
-            self._acknowledge(seq, reason="the composition changed since this edit")
+            self._resync(int(turn.get("widget", wid)))
+            self._acknowledge(seq, reason=turn.get("reason"))
             return False
-        changed = self._route(args)
-        self._applied = self._version
+        changed = self._route((args[0], *args[3:]))
+        self._applied(self._version)
         # Answered whatever happened, and answered with a *value*. There is no
         # success flag: the state this editor decided rides as the corrections
         # `_route` collected, and a refusal is simply the previous value among

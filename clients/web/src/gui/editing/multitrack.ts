@@ -30,11 +30,10 @@
 
 import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit } from "../../document.ts";
-import type { Curve, Curved } from "../../multitrack.ts";
 import {
-    Multitrack, multitrackProps,
+    Multitrack, multitrackNames as names, multitrackProps,
 } from "../../multitrack.ts";
-import type { Box, Placed, Region, Row, Strip } from "../../multitrack.ts";
+import type { Region } from "../../multitrack.ts";
 import { button, label, layout, node, timeruler, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
@@ -45,27 +44,6 @@ import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
-
-/**
- * What the widget's `lanes` prop takes: flat `name label height mute solo gain`
- * sextuples.
- */
-const SEXTUPLE = 6;
-
-/**
- * What its `clips` prop takes: flat `name lane offset dur start label source`
- * septuples.
- */
-const SEPTUPLE = 7;
-
-/** The thickness a row is drawn at, in logical pixels. */
-const ROW_H = 96.0;
-
-/**
- * The thickness an automation row is drawn at — shorter than a track's row,
- * because what it draws is one line and not a stack of boxes.
- */
-const CURVE_H = 40.0;
 
 /**
  * The tempo a piece that never said one is read at, in beats per second — one,
@@ -363,15 +341,6 @@ function cursorOf(editor: Editor<Multitrack>): number {
     return editor.beatsToUnits(editor.cursor ?? 0.0);
 }
 
-function laneProps(rows: readonly Row[]): unknown[] {
-    const out: unknown[] = [];
-    for (const row of rows) {
-        out.push(String(row.track), String(row.label ?? ""), ROW_H,
-                 Boolean(row.mute), Boolean(row.solo), Number(row.gain ?? 1.0));
-    }
-    return out;
-}
-
 /**
  * The playback's meter buses as the widget's flat quadruples: the lane, the
  * first bus of the level run, the first of the mark run, and how many channels
@@ -384,91 +353,6 @@ function meterBuses(editor: Editor<Multitrack>): unknown[] {
     const out: unknown[] = [];
     for (const [track, [bus, channels]] of playback.meters) {
         out.push(String(track), bus.index, bus.index + channels, channels);
-    }
-    return out;
-}
-
-/**
- * The crate's **track automations** as the widget's flat sextuples: a row of
- * its own under the track it names.
- */
-function curveProps(curves: readonly Curve[]): unknown[] {
-    const out: unknown[] = [];
-    for (const curve of curves) {
-        const [lo, hi] = domainOf(curve);
-        out.push(String(curve.automation), String(curve.owner),
-                 String(curve.label ?? ""), lo, hi, CURVE_H);
-    }
-    return out;
-}
-
-/**
- * The crate's **region automations** as the widget's flat quintuples: a layer
- * inside the box it names, and no height, because it is as tall as that box.
- */
-function layerProps(layers: readonly Curve[]): unknown[] {
-    const out: unknown[] = [];
-    for (const curve of layers) {
-        const [lo, hi] = domainOf(curve);
-        out.push(String(curve.automation), String(curve.owner),
-                 String(curve.label ?? ""), lo, hi);
-    }
-    return out;
-}
-
-/**
- * The value range a curve is drawn over.
- *
- * **The page's, and read out of the target.** The document says what a curve
- * automates and never reads it; which range that parameter has — a gain over
- * one, a pan over another — is a fact about the parameter, so it is stated
- * where the parameter is. Unity is the default, which is what an unlabelled
- * level means.
- */
-function domainOf(curve: Curve): [number, number] {
-    const target = curve.target as Record<string, unknown> | undefined;
-    if (!target || typeof target !== "object") return [0.0, 1.0];
-    return [Number(target.min ?? 0.0), Number(target.max ?? 1.0)];
-}
-
-/**
- * Every curve's break-points as the widget's flat quintuples, each naming the
- * curve it is on — one list for the rows and the layers alike.
- */
-function pointProps(
-    curves: readonly Curve[],
-    bridge: Bridge,
-    bases: Map<string, number>,
-): unknown[] {
-    const out: unknown[] = [];
-    for (const curve of curves) {
-        const name = String(curve.automation);
-        const base = bases.get(name) ?? 0;
-        for (const point of curve.points ?? []) {
-            const data = (point.data ?? {}) as Record<string, unknown>;
-            out.push(name, bridge.frameIn(base, Number(point.at ?? 0)),
-                     Number(point.value ?? 0),
-                     Number(data.shape ?? 1), Number(data.curve ?? 0));
-        }
-    }
-    return out;
-}
-
-/** The crate's boxes as the widget's flat septuples, on this axis. */
-function clipProps(boxes: readonly Box[], bridge: Bridge): unknown[] {
-    const out: unknown[] = [];
-    for (const box of boxes) {
-        const position = Number(box.position);
-        const length = Number(box.length);
-        out.push(
-            String(box.region),
-            String(box.row),
-            bridge.frameAt(position),
-            bridge.framesOver(position, length),
-            Number(box.start ?? 0.0) * bridge.rate,
-            String(box.label ?? ""),
-            bridge.sources.bufnum(box.source),
-        );
     }
     return out;
 }
@@ -660,12 +544,8 @@ export class MultitrackView extends View<Multitrack> {
         // which mints it **again**. `MultitrackEditor.dataChanged` compares this
         // with what the piece now holds and answers with the picture when they
         // differ.
-        this.told = [
-            new Set((props.lanes as unknown[]).filter((_v, i) => i % SEXTUPLE === 0)
-                .map(String)),
-            new Set((props.clips as unknown[]).filter((_v, i) => i % SEPTUPLE === 0)
-                .map(String)),
-        ];
+        const named = names(editor.structure);
+        this.told = [new Set(named.rows), new Set(named.boxes)];
         return props;
     }
 }
@@ -898,14 +778,13 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (this.host === null || this.windowId === null || piece === null) return;
         const told = view?.told ?? null;
         if (told === null) return;
-        const rows = new Set(this.structure.tracks.map((track) => String(track.id)));
-        const boxes = new Set(
-            this.structure.tracks.flatMap((track) =>
-                track.lanes.flatMap((lane) => lane.regions.map((r) => String(r.id)))),
-        );
-        const same = (a: ReadonlySet<string>, b: ReadonlySet<string>) =>
-            a.size === b.size && [...a].every((name) => b.has(name));
-        if (same(told[0], rows) && same(told[1], boxes)) return;
+        // **What the piece calls them is the crate's** — a flat prop's shape is
+        // not a fact to restate at a call site, and which boxes a piece has is
+        // not this page's arithmetic either.
+        const named = names(this.structure);
+        const same = (a: ReadonlySet<string>, b: readonly string[]) =>
+            a.size === b.length && b.every((name) => a.has(name));
+        if (same(told[0], named.rows) && same(told[1], named.boxes)) return;
         this.corrections = [];
         this.resync(piece);
         this.acknowledge(0);

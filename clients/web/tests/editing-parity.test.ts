@@ -19,11 +19,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { editingIntake, multitrackProps, pointsProps } from "../src/core/clausters_core_web.js";
+import {
+    conversationAnswer,
+    conversationRead,
+    editingIntake,
+    multitrackNames,
+    multitrackProps,
+    pointsProps,
+} from "../src/core/clausters_core_web.js";
 
 type Vector = {
     name: string;
-    kind: "points_props" | "multitrack_props" | "intake";
+    kind: "points_props" | "multitrack_props" | "intake" | "conversation" | "answer" | "names";
     props?: Record<string, unknown>;
     // `points_props`
     points?: number[];
@@ -39,6 +46,19 @@ type Vector = {
     tag?: string;
     request?: Record<string, unknown>;
     intake?: Record<string, unknown>;
+    // `conversation`
+    message?: Record<string, unknown>;
+    turn?: Record<string, unknown>;
+    applied?: number | null;
+    after?: { floor: number; applied: number };
+    // `answer`
+    seq?: number;
+    docVersion?: number;
+    reason?: string | null;
+    corrections?: unknown[];
+    answer?: Record<string, unknown>;
+    // `names`
+    names?: Record<string, unknown>;
 };
 
 const vectors = JSON.parse(
@@ -90,5 +110,56 @@ test("and a gesture means the same thing in both clients", async () => {
             editingIntake(v.domain ?? "", v.tag ?? "", JSON.stringify(v.request ?? {})),
         ) as Record<string, unknown>;
         assert.deepEqual(got, v.intake, v.name);
+    }
+});
+
+test("and a recorded exchange comes to the same turns in both clients", async () => {
+    // The acceptance of the conversation milestone, stated as data: **the host
+    // cannot tell which client it is talking to from the message sequence.** The
+    // exchange is replayed as a fold, `applied` and all — that field is part of
+    // the protocol, not bookkeeping, since it is what turns "the version moved"
+    // into "it moved by someone *else*".
+    await loadCore();
+    const cases = of("conversation");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    let state = { floor: 1, applied: 1 };
+    for (const v of cases) {
+        const answered = JSON.parse(
+            conversationRead(JSON.stringify(state), JSON.stringify(v.message ?? {})),
+        ) as { turn: Record<string, unknown>; state: { floor: number; applied: number } };
+        assert.deepEqual(answered.turn, v.turn, v.name);
+        state = answered.state;
+        if (v.applied !== null && v.applied !== undefined) {
+            state = { ...state, applied: v.applied };
+        }
+        assert.deepEqual(state, v.after, v.name);
+    }
+});
+
+test("and an answer is the same message in both clients", async () => {
+    await loadCore();
+    const cases = of("answer");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    for (const v of cases) {
+        const got = JSON.parse(conversationAnswer(JSON.stringify({
+            seq: v.seq,
+            docVersion: v.docVersion,
+            reason: v.reason ?? null,
+            corrections: v.corrections ?? [],
+        }))) as Record<string, unknown>;
+        assert.deepEqual(got, v.answer, v.name);
+    }
+});
+
+test("and a piece calls its rows and boxes the same in both clients", async () => {
+    await loadCore();
+    const cases = of("names");
+    assert.ok(cases.length > 0, "the vectors were generated");
+    for (const v of cases) {
+        const got = JSON.parse(multitrackNames(JSON.stringify(v.piece))) as Record<
+            string,
+            unknown
+        >;
+        assert.deepEqual(got, v.names, v.name);
     }
 });

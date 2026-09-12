@@ -33,6 +33,7 @@
 //! endpoint's question, and the answer is that the *host* owns view state. A
 //! projection that kept it would be a fourth place for it to live.
 
+pub mod conversation;
 pub mod events;
 pub mod instance;
 pub mod intake;

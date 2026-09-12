@@ -1680,5 +1680,652 @@
       "label": "edit the piece",
       "payloads": []
     }
+  },
+  {
+    "name": "the opening edit, against the version it was told",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 7,
+      "seq": 1,
+      "against": 1,
+      "tag": "clips",
+      "version": 1,
+      "isWindow": false,
+      "owns": true
+    },
+    "turn": {
+      "seq": 1,
+      "turn": "route",
+      "widget": 7
+    },
+    "applied": 2,
+    "after": {
+      "applied": 2,
+      "floor": 1
+    }
+  },
+  {
+    "name": "a second gesture inside one round trip still names the old version",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 7,
+      "seq": 2,
+      "against": 1,
+      "tag": "clips",
+      "version": 2,
+      "isWindow": false,
+      "owns": true
+    },
+    "turn": {
+      "seq": 2,
+      "turn": "route",
+      "widget": 7
+    },
+    "applied": 3,
+    "after": {
+      "applied": 3,
+      "floor": 1
+    }
+  },
+  {
+    "name": "a script edited the piece: the version moved and no event moved it",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 7,
+      "seq": 3,
+      "against": 2,
+      "tag": "clips",
+      "version": 9,
+      "isWindow": false,
+      "owns": true
+    },
+    "turn": {
+      "reason": "the composition changed since this edit",
+      "seq": 3,
+      "turn": "stale",
+      "widget": 7
+    },
+    "applied": null,
+    "after": {
+      "applied": 3,
+      "floor": 9
+    }
+  },
+  {
+    "name": "and a later gesture against the picture that is gone is refused too",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 7,
+      "seq": 4,
+      "against": 8,
+      "tag": "clips",
+      "version": 9,
+      "isWindow": false,
+      "owns": true
+    },
+    "turn": {
+      "reason": "the composition changed since this edit",
+      "seq": 4,
+      "turn": "stale",
+      "widget": 7
+    },
+    "applied": null,
+    "after": {
+      "applied": 3,
+      "floor": 9
+    }
+  },
+  {
+    "name": "an unstated version applies unchecked",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 7,
+      "seq": 5,
+      "against": 0,
+      "tag": "clips",
+      "version": 9,
+      "isWindow": false,
+      "owns": true
+    },
+    "turn": {
+      "seq": 5,
+      "turn": "route",
+      "widget": 7
+    },
+    "applied": 9,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "an undo is addressed to the window, not to a widget",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 3,
+      "seq": 6,
+      "against": 9,
+      "tag": "undo",
+      "version": 9,
+      "isWindow": true,
+      "owns": false
+    },
+    "turn": {
+      "redo": false,
+      "seq": 6,
+      "turn": "step"
+    },
+    "applied": null,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "a widget this editor never drew says nothing",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 5,
+      "widget": 8,
+      "seq": 7,
+      "against": 9,
+      "tag": "clips",
+      "version": 9,
+      "isWindow": false,
+      "owns": false
+    },
+    "turn": {
+      "turn": "nothing"
+    },
+    "applied": null,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "a malformed event is nothing rather than an error",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_event",
+      "argc": 2
+    },
+    "turn": {
+      "turn": "nothing"
+    },
+    "applied": null,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "somebody else's window closing is not this editor's",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_closed",
+      "argc": 1,
+      "isWindow": false
+    },
+    "turn": {
+      "turn": "nothing"
+    },
+    "applied": null,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "and this editor's is",
+    "kind": "conversation",
+    "message": {
+      "addr": "/gui_closed",
+      "argc": 1,
+      "isWindow": true
+    },
+    "turn": {
+      "turn": "closed"
+    },
+    "applied": null,
+    "after": {
+      "applied": 9,
+      "floor": 9
+    }
+  },
+  {
+    "name": "an unasked push with nothing to say is not sent",
+    "kind": "answer",
+    "seq": 0,
+    "docVersion": 3,
+    "reason": null,
+    "corrections": [],
+    "answer": {
+      "answer": "silent"
+    }
+  },
+  {
+    "name": "an answered gesture is an ack",
+    "kind": "answer",
+    "seq": 2,
+    "docVersion": 3,
+    "reason": null,
+    "corrections": [],
+    "answer": {
+      "answer": "ack",
+      "seq": 2,
+      "docVersion": 3
+    }
+  },
+  {
+    "name": "a refusal rides with it",
+    "kind": "answer",
+    "seq": 2,
+    "docVersion": 3,
+    "reason": "the composition changed since this edit",
+    "corrections": [],
+    "answer": {
+      "answer": "ack",
+      "seq": 2,
+      "docVersion": 3,
+      "reason": "the composition changed since this edit"
+    }
+  },
+  {
+    "name": "corrections make it a push",
+    "kind": "answer",
+    "seq": 2,
+    "docVersion": 3,
+    "reason": null,
+    "corrections": [
+      {
+        "widget": 7,
+        "props": {
+          "points": [
+            0.0,
+            0.5,
+            1.0,
+            0.0
+          ]
+        }
+      }
+    ],
+    "answer": {
+      "answer": "push",
+      "seq": 2,
+      "docVersion": 3,
+      "corrections": [
+        {
+          "widget": 7,
+          "props": {
+            "points": [
+              0.0,
+              0.5,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "and an unasked push carries them with a stamp of zero",
+    "kind": "answer",
+    "seq": 0,
+    "docVersion": 3,
+    "reason": null,
+    "corrections": [
+      {
+        "widget": 7,
+        "props": {
+          "clips": [
+            "a",
+            "0",
+            0.0,
+            1.0,
+            0.0,
+            "a",
+            -1
+          ]
+        }
+      }
+    ],
+    "answer": {
+      "answer": "push",
+      "seq": 0,
+      "docVersion": 3,
+      "corrections": [
+        {
+          "widget": 7,
+          "props": {
+            "clips": [
+              "a",
+              "0",
+              0.0,
+              1.0,
+              0.0,
+              "a",
+              -1
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "the names of a piece at one beat a second",
+    "kind": "names",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "names": {
+      "boxes": [
+        "3"
+      ],
+      "rows": [
+        "1"
+      ]
+    }
+  },
+  {
+    "name": "the names of the same piece over a source nobody read",
+    "kind": "names",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "names": {
+      "boxes": [
+        "3"
+      ],
+      "rows": [
+        "1"
+      ]
+    }
+  },
+  {
+    "name": "the names of and over a tempo that moves, where a length is not a ratio",
+    "kind": "names",
+    "piece": {
+      "version": 1,
+      "tracks": [
+        {
+          "id": 1,
+          "name": "drums",
+          "level": 0.5,
+          "muted": true,
+          "lanes": [
+            {
+              "id": 2,
+              "regions": [
+                {
+                  "id": 3,
+                  "position": 4.0,
+                  "length": 4.0,
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "source": {
+                        "source": 77,
+                        "lifetime": "session"
+                      },
+                      "start": 0.5,
+                      "duration": 4.0
+                    }
+                  },
+                  "automation": [
+                    {
+                      "id": 5,
+                      "points": [
+                        {
+                          "at": 0.0,
+                          "value": 1.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        },
+                        {
+                          "at": 1.0,
+                          "value": 0.0,
+                          "data": {
+                            "shape": 1,
+                            "curve": 0.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automation": [
+            {
+              "id": 4,
+              "visible": true,
+              "target": {
+                "min": -1.0,
+                "max": 1.0
+              },
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.0,
+                  "data": {
+                    "shape": 1,
+                    "curve": 0.0
+                  }
+                },
+                {
+                  "at": 2.0,
+                  "value": 1.0,
+                  "data": {
+                    "shape": 5,
+                    "curve": -3.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "tempo": [
+        {
+          "at": 0.0,
+          "bpm": 60.0
+        },
+        {
+          "at": 4.0,
+          "bpm": 120.0,
+          "ramp": true
+        }
+      ]
+    },
+    "names": {
+      "boxes": [
+        "3"
+      ],
+      "rows": [
+        "1"
+      ]
+    }
   }
 ]

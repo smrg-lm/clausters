@@ -881,6 +881,31 @@ export function bundle_validate(request: string): void;
 export function channel_stats(samples: Float32Array, channels: number, channel: number): Float32Array;
 
 /**
+ * JS face: **what to answer the host with** — the conversation's second
+ * decision.
+ *
+ * `request` is `{"seq", "docVersion", "reason", "corrections"}` and the answer
+ * is one of `silent`, `ack` or `push`. Applied, transformed and refused are
+ * one message: there is no success flag in it, and a refusal is simply the
+ * previous value among the corrections.
+ */
+export function conversationAnswer(request: string): string;
+
+/**
+ * JS face: **what one message from the host is** — the conversation's first
+ * decision.
+ *
+ * `state` is the conversation's two integers (`{"floor", "applied"}`) and
+ * `message` the event's *envelope* — the address, the stamp, the version it
+ * was made against, the tag, and whether this editor owns the widget and the
+ * window. The payload is deliberately not here: what a report means is
+ * `editingIntake`'s and already crosses once.
+ *
+ * The answer is `{"turn": {...}, "state": {...}}`.
+ */
+export function conversationRead(state: string, message: string): string;
+
+/**
  * JS face: the stereo **correlation** (Pearson's r) of two equal-length
  * channels, in `[-1, 1]`. `undefined` when it is undefined — a length
  * mismatch, an empty pair, or a constant channel.
@@ -1071,6 +1096,17 @@ export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number):
  * sound different in two places.
  */
 export function mixerDefs(widths: string, master: number): string;
+
+/**
+ * JS face: **what a piece calls its rows and its boxes** — `{"rows": [...],
+ * "boxes": [...]}`, by the names the wire carries them under.
+ *
+ * The minting correction's half that is a fact about the piece: a host that
+ * made a track or split a box minted the *word* while the document minted the
+ * *id*, so a view keeps what it was last told and answers with the picture
+ * when the two stop agreeing.
+ */
+export function multitrackNames(piece: string): string;
 
 /**
  * **The rows and boxes a piece draws as** — `{"rows": [...], "boxes": [...]}`,
@@ -1419,6 +1455,8 @@ export interface InitOutput {
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
     readonly bundle_validate: (a: number, b: number) => [number, number];
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly conversationAnswer: (a: number, b: number) => [number, number];
+    readonly conversationRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly curveAxis: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
@@ -1466,6 +1504,7 @@ export interface InitOutput {
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
+    readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPicture: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

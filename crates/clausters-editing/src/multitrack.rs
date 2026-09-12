@@ -312,6 +312,48 @@ pub fn loops(piece: &Multitrack) -> String {
         .join(" ")
 }
 
+/// **What the piece calls its rows and its boxes**, by the names the wire
+/// carries them under.
+///
+/// The minting correction's half that is a fact about the piece. A gesture is
+/// normally answered with an acknowledgement and nothing else, because the
+/// report described the result: the host drew what it sent and the piece
+/// agreed. The cases where it does not are the ones where the host **makes**
+/// something — a track from a double click, a box from a split or a paste.
+/// There the host mints the word (`track 1`, `white 2`) and the document mints
+/// the id, so until the picture goes back the two are naming the same thing
+/// differently.
+///
+/// And a name the piece does not know is not ignored: it is read as something
+/// *new*. So the next report about that row or that box mints it again, and
+/// again after that — a split box took a fresh id on every drag, losing
+/// whatever was hung on it, and a box dropped on a new track landed on a track
+/// nobody had.
+///
+/// So a view keeps what it was last told and compares. It is here rather than
+/// read off the props by striding them because a stride is a flat array's
+/// shape restated at the call site, and the shape is this module's.
+pub fn names(piece: &Multitrack) -> Value {
+    json!({
+        "rows": picture::rows(piece)
+            .iter()
+            .map(|row| row.track.0.to_string())
+            .collect::<Vec<_>>(),
+        "boxes": picture::boxes(piece)
+            .iter()
+            .map(|box_| box_.region.0.to_string())
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// [`names`] against a piece given as JSON.
+pub fn names_json(piece: &str) -> String {
+    let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
+        return r#"{"rows":[],"boxes":[]}"#.into();
+    };
+    names(&piece).to_string()
+}
+
 /// Every prop a piece has **from the document alone**, in one object.
 ///
 /// What a caller adds is what is a function of something other than the piece:
@@ -845,6 +887,18 @@ mod tests {
             taken.payloads[0]["intent"],
             json!("setlane"),
             "the piece lost the box it had and gained none"
+        );
+    }
+
+    /// The names a view keeps to tell a minted word from the piece's own id.
+    #[test]
+    fn a_piece_says_what_it_calls_its_rows_and_boxes() {
+        let named = names(&piece());
+        assert_eq!(named["rows"], json!(["1"]));
+        assert_eq!(named["boxes"], json!(["3"]));
+        assert_eq!(
+            serde_json::from_str::<Value>(&names_json("not a piece")).expect("JSON"),
+            json!({ "rows": [], "boxes": [] })
         );
     }
 }

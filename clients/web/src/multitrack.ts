@@ -56,11 +56,8 @@
  */
 
 import {
-    multitrackPicture as corePicture,
+    multitrackNames as coreNames,
     multitrackProps as coreProps,
-    multitrackRead as coreRead,
-    multitrackReadPoints as coreReadPoints,
-    multitrackReadRows as coreReadRows,
 } from "./core/clausters_core_web.js";
 import { FIRST_VERSION } from "./document.ts";
 
@@ -1365,41 +1362,6 @@ export class Session {
     }
 }
 
-/** One row of a multitrack view: a track, and the strip drawn beside it. */
-export interface Row {
-    /** The track it draws — its identity, and its name on the wire. */
-    track: number;
-    /** The lane of that track whose regions it shows. */
-    lane: number;
-    label: string;
-    mute: boolean;
-    solo: boolean;
-    gain: number;
-}
-
-/** One box of a multitrack view: a region, on the row that plays it. */
-export interface Box {
-    region: number;
-    row: number;
-    /** In **beats**. */
-    position: number;
-    /** In **beats**, and it is the difference of two positions. */
-    length: number;
-    /** Where in the source it starts, in **seconds**. */
-    start: number;
-    /** How much there is to show, in **seconds**. */
-    content: number;
-    source?: number;
-    label: string;
-    muted: boolean;
-    /**
-     * Whether the window **wraps**: past the end of the source it begins again.
-     * What a box longer than what it reads means, and the piece's own answer to
-     * it rather than a view's.
-     */
-    looping: boolean;
-}
-
 /**
  * One **curve** of a multitrack view: an automation, and where it hangs.
  *
@@ -1424,64 +1386,6 @@ export interface Curve {
     enabled: boolean;
 }
 
-/** A curve as a hand left it, for {@link multitrackReadPoints}. */
-export interface Curved {
-    /** The automation's id. */
-    name: string;
-    points: { at: number; value: number; data?: unknown }[];
-}
-
-/** A row as a hand left it, for {@link multitrackReadRows}. */
-export interface Strip {
-    /** The track's id, or a name no track has — which is how a **track a hand
-     * made** is told from one that was already there. */
-    name: string;
-    mute: boolean;
-    solo: boolean;
-    /** The fader, in the client's own key of the track's table. */
-    gain: number;
-}
-
-/** A box as a hand left it, for {@link multitrackRead} to make sense of. */
-export interface Placed {
-    /** The region's id, or a name no region has — which is how a **new** box is
-     * told from a moved one, since a split names its halves after the box they
-     * came from. */
-    name: string;
-    row: number;
-    position: number;
-    length: number;
-    start: number;
-    content: number;
-    source?: number;
-}
-
-/**
- * **The rows, boxes and curves a piece draws as** — the multitrack view's own mapping,
- * and there is one of it (`clausters_document::multitrack::picture`), so a page,
- * the Python client and the standalone host draw the same picture of the same
- * piece rather than each deriving one.
- *
- * **In beats and seconds.** A timeline axis counts sample frames and the crate
- * has no tempo function; a page crosses to its own axis with the tempo-map calls
- * it already binds, and a *length* is the difference of two positions there.
- * `source` is the document's source id and not a server buffer: which buffer a
- * source was read into is the page's own table.
- *
- * The curves come in two lists because they are drawn in two places: `curves`
- * are the track automations, each a row of its own, and `layers` the region
- * ones, each inside its box.
- */
-export function multitrackPicture(
-    piece: unknown,
-): { rows: Row[]; boxes: Box[]; curves: Curve[]; layers: Curve[] } {
-    const answer = corePicture(JSON.stringify(piece));
-    const empty = { rows: [], boxes: [], curves: [], layers: [] };
-    if (!answer) return empty;
-    const read = JSON.parse(answer) as Partial<ReturnType<typeof multitrackPicture>>;
-    return { ...empty, ...read };
-}
-
 /**
  * **A piece as the props the multitrack widget is drawn with.**
  *
@@ -1504,65 +1408,21 @@ export function multitrackProps(
 }
 
 /**
- * **What a report of a multitrack's boxes means**, in the piece's own
- * vocabulary.
+ * **What a piece calls its rows and its boxes**, by the names the wire carries
+ * them under.
  *
- * The reader every multitrack view needs and none should write: the report is
- * the *piece* rather than the gesture, so a move, a block drag, a trim, a split,
- * a delete and a paste all arrive as one list, and telling them apart is one
- * rule written once.
+ * The minting correction's half that is a fact about the piece: a host that
+ * made a track or split a box minted the *word* while the document minted the
+ * *id*, so a view keeps what it was last told and answers with the picture when
+ * the two stop agreeing. Reading it here rather than striding the props is what
+ * keeps a flat array's shape out of a call site.
  */
-export function multitrackRead(piece: unknown, placed: readonly Placed[]): unknown[] {
-    const answer = coreRead(JSON.stringify(piece), JSON.stringify(placed));
-    if (!answer) return [];
-    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
+export function multitrackNames(
+    piece: Multitrack | unknown,
+): { rows: string[]; boxes: string[] } {
+    const body = piece instanceof Multitrack ? piece.write() : piece;
+    const answer = coreNames(JSON.stringify(body));
+    if (!answer) return { rows: [], boxes: [] };
+    return JSON.parse(answer) as { rows: string[]; boxes: string[] };
 }
 
-/**
- * **What a report of a multitrack's curves means**, in the piece's own
- * vocabulary.
- *
- * The twin of {@link multitrackRead} for the light views. A multitrack reports
- * every curve there is — the rows a track's automations draw as and the layers
- * inside the boxes — for the same reason it reports every box, so what comes
- * out is the difference: one `setautomation` per curve whose break-points
- * actually moved, and nothing at all for a hand that looked without editing.
- *
- * A name that is no automation's id is dropped rather than minted: a curve is
- * declared by whoever holds the piece, and a hand that dragged a break-point
- * made no new one.
- */
-export function multitrackReadPoints(piece: unknown, reported: readonly Curved[]): unknown[] {
-    const answer = coreReadPoints(JSON.stringify(piece), JSON.stringify(reported));
-    if (!answer) return [];
-    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
-}
-
-/**
- * **What a report of a multitrack's rows means**, in the piece's own
- * vocabulary.
- *
- * The third reader, beside {@link multitrackRead} for the boxes and
- * {@link multitrackReadPoints} for the curves, and the one that makes the stack
- * of tracks editable rather than only readable. The report is every row, in the
- * order they are shown, so what comes out is the difference — and it is **one**
- * `settracks` whatever changed, because the tracks are one list and a hand did
- * one thing to it:
- *
- * - a name that is a track's id is **that track**, with the strip's mute, solo
- *   and level written onto it;
- * - a name that is no track's id is a **track a hand made**, minted with one
- *   empty lane since a track that could hold nothing is not one;
- * - a track the report does not name is **gone**, and its boxes with it;
- * - the order is the report's, so the rows are the tracks.
- *
- * The label is drawn and never written back: a row's label is the track's name
- * where it has one and a made-up `track N` where it has not, so believing the
- * report would put that string into the document the first time anything else
- * on the row moved.
- */
-export function multitrackReadRows(piece: unknown, reported: readonly Strip[]): unknown[] {
-    const answer = coreReadRows(JSON.stringify(piece), JSON.stringify(reported));
-    if (!answer) return [];
-    return ((JSON.parse(answer) as { intents?: unknown[] }).intents ?? []);
-}

@@ -39,7 +39,7 @@ import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import { Echo } from "./echo.ts";
-import type { Correction } from "./echo.ts";
+import type { Correction, Envelope, Turn } from "./echo.ts";
 
 /**
  * The base a host-less draw counts widget ids from. Above the hand-picked range
@@ -337,17 +337,27 @@ export class Application {
         this.echo.announce();
     }
 
-    /** The composition moved by a route no gesture took. */
-    raiseFloor(): void {
-        this.echo.raiseFloor();
+        /** What one message from the host is ({@link Echo.read}). */
+    read(message: Envelope): Turn {
+        return this.echo.read(message);
     }
 
-    /** Whether an edit made against version `against` has been overtaken. */
-    stale(against: number): boolean {
-        return this.echo.stale(against);
+    /**
+     * The version the last answered event left behind.
+     *
+     * Read by the crate on the next message: when it differs from the version
+     * then, something moved that was not an event, and that is what raises the
+     * floor.
+     */
+    get applied(): number {
+        return this.echo.state.applied;
     }
 
-    /** What the host should be drawing instead of what it drew. */
+    set applied(version: number) {
+        this.echo.state = { ...this.echo.state, applied: version };
+    }
+
+/** What the host should be drawing instead of what it drew. */
     correct(widgetId: number, props: Record<string, PropValue>): void {
         this.echo.correct(widgetId, props);
     }

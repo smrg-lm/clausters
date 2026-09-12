@@ -8,6 +8,12 @@
  * when one is owed. That triple is the whole of this module, and it knows
  * nothing about what was edited: a stamp, a floor and a list of props.
  *
+ * **The rules are the shared crate's** (`conversationRead`,
+ * `conversationAnswer`): what makes an edit stale, what moves the floor, and
+ * whether an answer is an ack, a push or nothing at all. What is here is the
+ * half a language owns — holding the two integers between messages and putting
+ * the answer on this page's socket.
+ *
  * It is separate because it is the one part of an editor with no data behind it.
  * {@link Echo} is exercised by a test that never builds a structure, which is
  * what a protocol should cost to check.
@@ -15,10 +21,39 @@
  * @module
  */
 
+import { conversationAnswer, conversationRead } from "../../core/clausters_core_web.js";
 import type { GuiHost, PropValue } from "../host.ts";
 
 /** One correction: the widget, and what it should be drawing. */
 export type Correction = [number, Record<string, PropValue>];
+
+/**
+ * One message from the host, as much of it as the decision needs — the
+ * *envelope*, never the payload.
+ *
+ * What a report means is the domain's and crosses once, there; this is what
+ * kind of turn the message is.
+ */
+export interface Envelope {
+    addr: string;
+    argc: number;
+    widget: number;
+    seq: number;
+    against: number;
+    tag: string;
+    version: number;
+    isWindow: boolean;
+    owns: boolean;
+}
+
+/** What one message turns out to be. */
+export interface Turn {
+    turn: "nothing" | "closed" | "step" | "stale" | "route";
+    seq?: number;
+    redo?: boolean;
+    widget?: number;
+    reason?: string;
+}
 
 /** One view's end of the acknowledgement protocol. */
 export class Echo {
@@ -28,11 +63,12 @@ export class Echo {
      */
     host: GuiHost | null = null;
     /**
-     * The **oldest version an incoming edit may name**: raised whenever the
-     * composition moves by a route that is not a host event, and by nothing
-     * else. See {@link Echo.stale}, the only thing that reads it.
+     * The conversation's whole state, as the crate holds it: the **floor** (the
+     * oldest version an incoming edit may name) and the version the last
+     * answered event left behind. Two integers, kept here because something has
+     * to keep them between messages, and handed back to the crate on every one.
      */
-    floor: number;
+    state: { floor: number; applied: number };
     /**
      * What the host should be drawing instead of what it drew, collected while
      * one event is routed and sent with its acknowledgement.
@@ -57,7 +93,32 @@ export class Echo {
     constructor(version: () => number, host: GuiHost | null = null) {
         this.#version = version;
         this.host = host;
-        this.floor = version();
+        this.state = { floor: version(), applied: version() };
+    }
+
+    /**
+     * The **oldest version an incoming edit may name**, raised whenever the
+     * composition moves by a route that is not a host event and by nothing
+     * else — which is what makes staleness a monotone test rather than a race.
+     */
+    get floor(): number {
+        return this.state.floor;
+    }
+
+    /**
+     * **What one message from the host is**, and the two integers as they now
+     * stand.
+     *
+     * A close, a history step, an edit made against a picture that is gone, or
+     * an edit to route. The rules are the crate's, so a page and a script
+     * cannot disagree about which gestures are refused.
+     */
+    read(message: Envelope): Turn {
+        const answered = JSON.parse(
+            conversationRead(JSON.stringify(this.state), JSON.stringify(message)),
+        ) as { turn?: Turn; state?: { floor: number; applied: number } };
+        if (answered.state !== undefined) this.state = answered.state;
+        return answered.turn ?? { turn: "nothing" };
     }
 
     /** The version an acknowledgement carries — the context's, read now. */
@@ -76,40 +137,6 @@ export class Echo {
      */
     announce(): void {
         this.host?.ack(0, this.version);
-    }
-
-    /**
-     * Whether an edit made against version `against` has been overtaken.
-     *
-     * Zero is *unstated* rather than a version — an older host, or one no owner
-     * has reported a version to — and unstated applies unchecked, which is the
-     * behaviour there was before there were versions at all.
-     *
-     * Overtaken means *by a route the host never saw*. Every version an editor
-     * makes while answering the host's own events is one the host is either
-     * about to be told or has been told already, so an edit naming one of them
-     * is an answer that had not arrived yet — a drag's later frames, a second
-     * gesture begun inside one round trip. What raises the floor is a script's
-     * edit, a second editor's, a redefine, an undo: the cases where the picture
-     * the gesture was made against is gone.
-     */
-    stale(against: number): boolean {
-        return against !== 0 && against < this.floor;
-    }
-
-    /**
-     * The composition moved by a route no gesture took, so what is in flight was
-     * made against a picture that is gone.
-     *
-     * **The only way the floor moves**, which is what makes {@link stale} a
-     * monotone test rather than a race. It is a verb and not an assignment for
-     * the same reason: writing the floor by hand means reading the version and
-     * writing it somewhere else, and the two halves of that can disagree — the
-     * floor was once *lowered* by a path that meant to reset it, which is not a
-     * floor at all.
-     */
-    raiseFloor(): void {
-        this.floor = this.version;
     }
 
     /**
@@ -141,14 +168,29 @@ export class Echo {
      */
     acknowledge(seq: number, reason?: string): void {
         if (this.host === null) return;
-        if (!seq && this.corrections.length === 0) return;
-        // A stamp of zero retires nothing, which is exactly what an **unasked**
-        // push needs: an undo answers no gesture, so it carries values and a
-        // version and takes no pending edit with it.
-        if (this.corrections.length > 0) {
-            this.host.push(seq, this.corrections, this.version, [], reason);
+        // **What to send is the crate's decision**, including that an unasked
+        // push with nothing to say is one message the wire does not carry.
+        const answered = JSON.parse(conversationAnswer(JSON.stringify({
+            seq,
+            docVersion: this.version,
+            reason: reason ?? null,
+            corrections: this.corrections.map(([widget, props]) => ({ widget, props })),
+        }))) as {
+            answer: string;
+            seq?: number;
+            docVersion?: number;
+            reason?: string;
+            corrections?: { widget: number; props: Record<string, PropValue> }[];
+        };
+        if (answered.answer === "silent") return;
+        const version = answered.docVersion ?? this.version;
+        if (answered.answer === "push") {
+            const corrections: Correction[] = (answered.corrections ?? []).map(
+                (c) => [c.widget, c.props],
+            );
+            this.host.push(seq, corrections, version, [], answered.reason);
         } else {
-            this.host.ack(seq, this.version, [], reason);
+            this.host.ack(seq, version, [], answered.reason);
         }
     }
 }

@@ -297,6 +297,104 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **What one message from the host is** — the conversation's first decision.
+///
+/// `state` is the conversation's two integers (`{"floor", "applied"}`) and
+/// `message` the event's *envelope* — the address, the stamp, the version it
+/// was made against, the tag, and whether this editor owns the widget and the
+/// window. The payload is deliberately not here: what a report means is
+/// [`clausters_editing_intake`]'s and already crosses once, so a drag reporting
+/// a thousand boxes costs this nothing.
+///
+/// The answer is `{"turn": {...}, "state": {...}}`: what to do, and the two
+/// integers as they now stand.
+///
+/// Sizes with a null `out` and fills with a second call.
+///
+/// # Safety
+/// `state` and `message` must be null or readable for their lengths, and `out`
+/// null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_conversation_read(
+    state: *const u8,
+    state_len: usize,
+    message: *const u8,
+    message_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(state), Some(message)) =
+        (unsafe { crate::document::text(state, state_len) }, unsafe {
+            crate::document::text(message, message_len)
+        })
+    else {
+        return 0;
+    };
+    let answer = clausters_editing::conversation::read_json(&state, &message);
+    // SAFETY: forwarded from this function's own contract. The conversation's
+    // state comes back in the answer rather than being kept here, so this is a
+    // pure read and a sizing pass changes nothing.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **What to answer the host with** — the conversation's second decision.
+///
+/// `request` is `{"seq", "docVersion", "reason", "corrections"}`, and the
+/// answer is one of `silent`, `ack` or `push`. It runs after the routing
+/// because what an answer carries is collected while routing: the corrections
+/// the gesture did not survive intact, and the reason when one is owed.
+///
+/// There is no success flag in it: applied, transformed and refused are **one
+/// message**, and a refusal is simply the previous value among the corrections.
+///
+/// # Safety
+/// `request` must be null or readable for `request_len` bytes, and `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_conversation_answer(
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+        return 0;
+    };
+    let answer = clausters_editing::conversation::answer_json(&request);
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
+/// **What a piece calls its rows and its boxes** — `{"rows": [...], "boxes":
+/// [...]}`, by the names the wire carries them under.
+///
+/// The minting correction's half that is a fact about the piece: a host that
+/// made a track or split a box minted the *word* while the document minted the
+/// *id*, so a view keeps what it was last told and answers with the picture
+/// when the two stop agreeing. Reading it here rather than striding the props
+/// is what keeps a flat array's shape out of a call site.
+///
+/// # Safety
+/// `piece` must be null or readable for `piece_len` bytes, and `out` null or
+/// writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_multitrack_names(
+    piece: *const u8,
+    piece_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(piece) = (unsafe { crate::document::text(piece, piece_len) }) else {
+        return 0;
+    };
+    let answer = clausters_editing::multitrack::names_json(&piece);
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

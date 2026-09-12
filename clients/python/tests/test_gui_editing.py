@@ -516,15 +516,21 @@ def test_the_echo_is_the_protocol_and_needs_no_structure():
     echo.announce()
     assert host.acks[-1] == (0, 3, None), "the host is told what it is drawing"
 
-    # Unstated applies unchecked; anything under the floor is overtaken. The
-    # floor moves by the one verb that moves it, which is also the road an
-    # editor takes -- a test that assigned it would check an act nobody
-    # performs.
+    # **What a message is, is the crate's** -- and so is what raises the floor.
+    # The version moved by a route no event took, so the next gesture made
+    # against the picture that is gone is refused and the one naming nothing at
+    # all still applies.
     version = 5
-    echo.raise_floor()
-    assert echo.stale(0) is False
-    assert echo.stale(4) is True
-    assert echo.stale(9) is False
+
+    def event(against):
+        return {"addr": "/gui_event", "argc": 5, "widget": 7, "seq": 1,
+                "against": against, "tag": "points", "version": version,
+                "isWindow": False, "owns": True}
+
+    assert echo.read(event(4))["turn"] == "stale"
+    assert echo.floor == 5, "and the floor is where the version was"
+    assert echo.read(event(0))["turn"] == "route", "unstated applies unchecked"
+    assert echo.read(event(9))["turn"] == "route"
     #: Back to 3 for the half below: an acknowledgement carries the version the
     #: context is at *now*, and the floor is a separate number that stays where
     #: the verb left it.

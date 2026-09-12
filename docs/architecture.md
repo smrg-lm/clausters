@@ -850,6 +850,28 @@ is React's host config with the names changed, and it leaves a client with
 exactly three things: a socket, an allocator, and one table from handle to
 whatever it made.
 
+**The conversation is the fourth, and it is not a projection of a structure at
+all.** It is the *protocol* every editor speaks, whatever it edits: a host draws
+what a hand did and reports it, the owner reads the report, checks it against
+the version it was made on, applies it, and answers. `conversation_read` says
+what kind of turn a message is — a close, a history step, an edit made against a
+picture that is gone, or an edit to route — and `conversation_answer` says what
+to send back. Two pure functions, because the whole state this protocol has is
+**two integers**: the floor, and the version the last answered event left
+behind.
+
+The floor is the whole of the staleness rule. A host stamps every event with the
+version it was last told, and it is told only when an acknowledgement reaches
+it — a round trip a hand outruns — so an edit naming a version the owner has
+already moved past is *the ordinary case*, not a collision. What is not ordinary
+is the data moving by a route the host never saw, and the floor is what records
+that: it rises when the version moved without an event moving it, and nothing
+else moves it.
+
+What crosses is the **envelope and never the payload**: what a report means is
+the edit ingestion's and already crosses once, so a drag reporting a thousand
+boxes costs the decision nothing.
+
 The line it does not cross is the one the whole layering rests on, and the
 instance projection bends it exactly once: **a projection is a function.** The
 first two keep nothing. The third keeps what a server holds, which is not view

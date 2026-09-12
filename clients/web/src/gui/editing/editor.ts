@@ -202,10 +202,19 @@ export class Editor<S = unknown> implements Adopting {
      */
     readonly app: Application;
     /**
-     * The version this editor was at when it last answered a host event — what
-     * turns "the version moved" into "it moved *by someone else*".
+     * The version this editor's last answered event left behind.
+     *
+     * Read by the crate on the next message: when it differs from the version
+     * then, something moved that was not an event, and that is what raises the
+     * floor.
      */
-    protected applied: number = FIRST_VERSION;
+    protected get applied(): number {
+        return this.app.applied;
+    }
+
+    protected set applied(version: number) {
+        this.app.applied = version;
+    }
     protected windowId: number | null = null;
     /** The host subscription this editor is fed through, while it has one. */
     protected unlisten: (() => void) | null = null;
@@ -379,14 +388,6 @@ export class Editor<S = unknown> implements Adopting {
 
     protected announce(): void {
         this.app.announce();
-    }
-
-    protected raiseFloor(): void {
-        this.app.raiseFloor();
-    }
-
-    protected stale(against: number): boolean {
-        return this.app.stale(against);
     }
 
     protected correct(widgetId: number, props: Record<string, PropValue>): void {
@@ -577,46 +578,47 @@ export class Editor<S = unknown> implements Adopting {
 
     /** `apply`, without the turn around it: what the message actually does. */
     protected deliver(addr: string, rawArgs: readonly unknown[]): boolean {
-        if (addr === "/gui_closed") {
-            // **Only this editor's window.** One host carries several, and an
-            // editor with none of its own -- a multitrack that opened only a
-            // composed view -- would otherwise read every close as its own and
-            // take itself out of the context that is still drawing.
-            if (
-                this.windowId !== null &&
-                (rawArgs.length === 0 || Math.trunc(Number(rawArgs[0])) === this.windowId)
-            ) {
-                this.windowId = null;
-                this.windowHandle = null;
-                // Closing a *view* is not an event of the history, so the
-                // context stays exactly as it is -- what goes is this window's
-                // place in the list of who to tell.
-                this.editing.detach(this);
-                this.onWindowGone();
-            }
-            return false;
-        }
-        if (addr !== "/gui_event" || rawArgs.length < 3) return false;
         // `<id> <seq> <version> <tag> <payload…>`: the stamp and the version the
         // gesture was made against are the second and third arguments of every
-        // event. The stamp is what an acknowledgement names.
-        const seq = Math.trunc(Number(rawArgs[1]));
-        const against = Math.trunc(Number(rawArgs[2] ?? 0));
-        const args = [rawArgs[0], ...rawArgs.slice(3)];
+        // event, and the envelope is all the decision reads. The payload never
+        // crosses for it — what a report *means* is the domain's, and it crosses
+        // once, there.
+        const id = Math.trunc(Number(rawArgs[0] ?? 0));
+        const turn = this.app.read({
+            addr,
+            argc: rawArgs.length,
+            widget: id,
+            seq: Math.trunc(Number(rawArgs[1] ?? 0)),
+            against: Math.trunc(Number(rawArgs[2] ?? 0)),
+            tag: rawArgs.length > 3 ? String(rawArgs[3]) : "",
+            version: this.version,
+            // The two the page answers for, because it is the page that holds
+            // the window and the view's widget table.
+            isWindow: this.windowId !== null &&
+                (rawArgs.length === 0 || id === this.windowId),
+            owns: this.owns(id),
+        });
+        if (turn.turn === "closed") {
+            this.windowId = null;
+            this.windowHandle = null;
+            // Closing a *view* is not an event of the history, so the context
+            // stays exactly as it is -- what goes is this window's place in the
+            // list of who to tell.
+            this.editing.detach(this);
+            this.onWindowGone();
+            return false;
+        }
+        if (turn.turn === "nothing") return false;
+        const seq = turn.seq ?? 0;
         this.corrections = [];
         // Why an edit did not do what it asked, when there is something to say.
         this.reason = undefined;
-        const id = Math.trunc(Number(args[0]));
-        // The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
-        // addresses to the **window** rather than to a widget: undo is not aimed
-        // at anything under the cursor. They are answered here rather than
-        // routed, because a history step is not an edit to the data.
-        if ((args[1] === "undo" || args[1] === "redo") && id === this.windowId) {
+        if (turn.turn === "step") {
             // **What it answers is whether anything moved**, not whether the
             // keystroke was understood. A history at its end is the ordinary
             // case, and reporting a change there told every other view to bring
             // itself in step with an edit that never happened.
-            const stepped = args[1] === "redo" ? this.redo() : this.undo();
+            const stepped = turn.redo === true ? this.redo() : this.undo();
             // **A refusal says why.** A step nobody could apply is the one case
             // where nothing happening is not "the pile is at its end": the entry
             // belongs to a structure whose window is closed, and it is still
@@ -629,24 +631,16 @@ export class Editor<S = unknown> implements Adopting {
             this.acknowledge(seq, this.reason ?? undefined);
             return stepped;
         }
-        // Only what this editor draws is this editor's to answer.
-        if (!this.owns(id)) return false;
-        // **The answers lag, and that is not a conflict.** A host stamps every
-        // event with the version it was last told, and it is told only when an
-        // acknowledgement reaches it — a round trip a hand outruns. What the
-        // check is for is the data moving by a route the host knows nothing
-        // about, so only *that* raises the floor.
-        if (this.version !== this.applied) this.raiseFloor();
-        if (this.stale(against)) {
+        if (turn.turn === "stale") {
             // The data moved under the gesture, by a route no gesture produced.
             // The edit is not applied and not merged: an edit-back payload is
             // absolute *and* whole, so applying one made against an older
             // picture would silently drop whatever arrived in between.
-            this.resync(id);
-            this.acknowledge(seq, "the composition changed since this edit");
+            this.resync(turn.widget ?? id);
+            this.acknowledge(seq, turn.reason);
             return false;
         }
-        const changed = this.route(args);
+        const changed = this.route([rawArgs[0], ...rawArgs.slice(3)]);
         this.applied = this.version;
         // Answered whatever happened, and answered with a *value*: applied,
         // transformed and refused are one message.

@@ -1302,6 +1302,48 @@ impl JsInstance {
     }
 }
 
+/// JS face: **what one message from the host is** — the conversation's first
+/// decision.
+///
+/// `state` is the conversation's two integers (`{"floor", "applied"}`) and
+/// `message` the event's *envelope* — the address, the stamp, the version it
+/// was made against, the tag, and whether this editor owns the widget and the
+/// window. The payload is deliberately not here: what a report means is
+/// `editingIntake`'s and already crosses once.
+///
+/// The answer is `{"turn": {...}, "state": {...}}`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = conversationRead)]
+pub fn conversation_read(state: &str, message: &str) -> String {
+    clausters_editing::conversation::read_json(state, message)
+}
+
+/// JS face: **what to answer the host with** — the conversation's second
+/// decision.
+///
+/// `request` is `{"seq", "docVersion", "reason", "corrections"}` and the answer
+/// is one of `silent`, `ack` or `push`. Applied, transformed and refused are
+/// one message: there is no success flag in it, and a refusal is simply the
+/// previous value among the corrections.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = conversationAnswer)]
+pub fn conversation_answer(request: &str) -> String {
+    clausters_editing::conversation::answer_json(request)
+}
+
+/// JS face: **what a piece calls its rows and its boxes** — `{"rows": [...],
+/// "boxes": [...]}`, by the names the wire carries them under.
+///
+/// The minting correction's half that is a fact about the piece: a host that
+/// made a track or split a box minted the *word* while the document minted the
+/// *id*, so a view keeps what it was last told and answers with the picture
+/// when the two stop agreeing.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = multitrackNames)]
+pub fn multitrack_names(piece: &str) -> String {
+    clausters_editing::multitrack::names_json(piece)
+}
+
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
 /// mismatch, an empty pair, or a constant channel.

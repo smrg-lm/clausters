@@ -36,14 +36,6 @@ from .view import View
 __all__ = ["MultitrackDomain", "MultitrackEditor", "MultitrackView", "Sources",
            "is_piece", "tempo_map"]
 
-#: What the widget's ``lanes`` prop takes: flat ``name label height mute solo
-#: gain`` sextuples.
-SEXTUPLE = 6
-
-#: What its ``clips`` prop takes: flat ``name lane offset dur start label
-#: source`` septuples.
-SEPTUPLE = 7
-
 #: The names the transport row's three widgets carry. A name and not an id,
 #: because these are the widgets a **hand** addresses and a handler is hung on a
 #: name — and they are the piece's own, so a script's ``extra`` may carry
@@ -422,8 +414,8 @@ class MultitrackView(View):
         #: about it names something the piece does not have, which mints it
         #: **again**. `MultitrackEditor.data_changed` compares this with what
         #: the piece now holds and answers with the picture when they differ.
-        self.told = (frozenset(props["lanes"][::SEXTUPLE]),
-                     frozenset(props["clips"][::SEPTUPLE]))
+        named = _native.multitrack_names(editor.structure.write())
+        self.told = (frozenset(named["rows"]), frozenset(named["boxes"]))
         return props
 
 
@@ -625,10 +617,11 @@ class MultitrackEditor(Editor):
         told = getattr(view, "told", None)
         if told is None:
             return
-        rows = frozenset(str(track.id) for track in self.structure.tracks)
-        boxes = frozenset(str(region.id) for track in self.structure.tracks
-                          for lane in track.lanes for region in lane.regions)
-        if told == (rows, boxes):
+        # **What the piece calls them is the crate's** — a flat prop's shape is
+        # not a fact to restate at a call site, and which boxes a piece has is
+        # not this client's arithmetic either.
+        named = _native.multitrack_names(self.structure.write())
+        if told == (frozenset(named["rows"]), frozenset(named["boxes"])):
             return
         self._corrections = []
         self._resync(piece)

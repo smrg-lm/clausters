@@ -7,12 +7,19 @@ the same three things: the **version** the composition is at, the
 one is owed. That triple is the whole of this module, and it knows nothing
 about what was edited: a stamp, a floor and a list of props.
 
+**The rules are the shared crate's** (`clausters._native.conversation_read`,
+`clausters._native.conversation_answer`): what makes an edit stale, what moves
+the floor, and whether an answer is an ack, a push or nothing at all. What is
+here is the half a language owns — holding the two integers between messages
+and putting the answer on this client's socket.
+
 It is separate because it is the one part of an editor with no data behind it.
 `Echo` is exercised by a test that never builds a structure, which is what a
 protocol should cost to check.
 """
 
 
+from ... import _native
 from .trace import log
 
 
@@ -33,10 +40,13 @@ class Echo:
     def __init__(self, host=None, version=None):
         self.host = host
         self._version = version if version is not None else (lambda: 0)
-        #: The **oldest version an incoming edit may name**: raised whenever the
-        #: composition moves by a route that is not a host event, and by nothing
-        #: else. See `stale`, the only thing that reads it.
-        self.floor = int(self._version())
+        #: The conversation's whole state, as the crate holds it: the **floor**
+        #: (the oldest version an incoming edit may name) and the version the
+        #: last answered event left behind. Two integers, kept here because
+        #: something has to keep them between messages and handed back to the
+        #: crate on every one.
+        self.state = {"floor": int(self._version()),
+                      "applied": int(self._version())}
         #: What the host should be drawing instead of what it drew, collected
         #: while one event is routed and sent with its acknowledgement.
         self.corrections: list = []
@@ -61,34 +71,27 @@ class Echo:
         if self.host is not None:
             self.host.ack(0, doc_version=self.version)
 
-    def stale(self, against: int) -> bool:
-        """Whether an edit made against version ``against`` has been overtaken.
+    @property
+    def floor(self) -> int:
+        """The **oldest version an incoming edit may name**.
 
-        Zero is *unstated* rather than a version -- an older host, or one no
-        owner has reported a version to -- and unstated applies unchecked, which
-        is the behavior there was before there were versions at all.
-
-        Overtaken means *by a route the host never saw*. Every version an editor
-        makes while answering the host's own events is one the host is either
-        about to be told or has been told already, so an edit naming one of them
-        is an answer that had not arrived yet -- a drag's later frames, a second
-        gesture begun inside one round trip. What raises the floor is a script's
-        edit, a second editor's, a redefine, an undo: the cases where the picture
-        the gesture was made against is gone."""
-        return against != 0 and against < self.floor
-
-    def raise_floor(self):
-        """The composition moved by a route no gesture took, so what is in
-        flight was made against a picture that is gone.
-
-        **The only way the floor moves**, which is what makes `stale` a monotone
-        test rather than a race. It is a verb and not an assignment for the same
-        reason: writing the floor by hand means reading the version and writing
-        it somewhere else, and the two halves of that can disagree -- the floor
-        was once *lowered* by a path that meant to reset it, which is not a
-        floor at all.
+        Raised whenever the composition moves by a route that is not a host
+        event, and by nothing else -- which is what makes staleness a monotone
+        test rather than a race.
         """
-        self.floor = self.version
+        return int(self.state.get("floor", 0))
+
+    def read(self, message: dict) -> dict:
+        """**What one message from the host is**, and the two integers as they
+        now stand (`clausters._native.conversation_read`).
+
+        A close, a history step, an edit made against a picture that is gone, or
+        an edit to route. The rules are the crate's, so a page and a script
+        cannot disagree about which gestures are refused.
+        """
+        answer = _native.conversation_read(self.state, message)
+        self.state = answer.get("state") or self.state
+        return answer.get("turn") or {"turn": "nothing"}
 
     def correct(self, widget_id: int, **props):
         """What the host should be drawing instead of what it drew.
@@ -119,18 +122,23 @@ class Echo:
         of the staleness check, and it costs one integer."""
         if self.host is None:
             return
-        if not seq and not self.corrections:
+        # **What to send is the crate's decision**, including that an unasked
+        # push with nothing to say is one message the wire does not carry.
+        answer = _native.conversation_answer(seq, self.version, reason,
+                                             self.corrections)
+        kind = answer.get("answer")
+        if kind == "silent":
             return
         log.debug("ack    seq=%s version=%s%s%s", seq, self.version,
                   "" if not self.corrections else " correcting " + ", ".join(
                       f"{wid}({' '.join(sorted(props))})"
                       for wid, props in self.corrections),
                   "" if reason is None else f" reason={reason!r}")
-        # A stamp of zero retires nothing, which is exactly what an **unasked**
-        # push needs: an undo answers no gesture, so it carries values and a
-        # version and takes no pending edit with it.
-        if self.corrections:
-            self.host.push(seq, *self.corrections, doc_version=self.version,
-                           reason=reason)
+        version = int(answer.get("docVersion", self.version))
+        why = answer.get("reason")
+        if kind == "push":
+            corrections = [(int(c["widget"]), c["props"])
+                           for c in answer.get("corrections") or ()]
+            self.host.push(seq, *corrections, doc_version=version, reason=why)
         else:
-            self.host.ack(seq, doc_version=self.version, reason=reason)
+            self.host.ack(seq, doc_version=version, reason=why)

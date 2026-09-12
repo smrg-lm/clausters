@@ -149,6 +149,63 @@ def gestures(piece, sources):
     ]
 
 
+def exchange():
+    """**A recorded exchange between a host and an owner**, replayed as a fold.
+
+    The acceptance of the conversation milestone stated as data: the host
+    cannot tell which client it is talking to from the message sequence, so the
+    sequence is recorded once and the turns it comes to are frozen. Every case
+    the protocol has is in it -- an opening edit, a second gesture inside one
+    round trip (the answers lag, and that is not a conflict), a script's edit
+    that raises the floor, the refusal that follows, an undo addressed to the
+    window, a widget this editor never drew, and a close.
+    """
+    def event(tag, widget, seq, against, version, *, owns=True, window=False):
+        return {"addr": "/gui_event", "argc": 5, "widget": widget, "seq": seq,
+                "against": against, "tag": tag, "version": version,
+                "isWindow": window, "owns": owns}
+
+    # The third of each triple is what the editor sets ``applied`` to after
+    # routing -- the version the edit left behind. It is part of the exchange
+    # and not bookkeeping: it is what turns "the version moved" into "it moved
+    # by someone *else*".
+    return [
+        ("the opening edit, against the version it was told",
+         event("clips", 7, 1, 1, 1), 2),
+        ("a second gesture inside one round trip still names the old version",
+         event("clips", 7, 2, 1, 2), 3),
+        ("a script edited the piece: the version moved and no event moved it",
+         event("clips", 7, 3, 2, 9), None),
+        ("and a later gesture against the picture that is gone is refused too",
+         event("clips", 7, 4, 8, 9), None),
+        ("an unstated version applies unchecked",
+         event("clips", 7, 5, 0, 9), 9),
+        ("an undo is addressed to the window, not to a widget",
+         event("undo", 3, 6, 9, 9, owns=False, window=True), None),
+        ("a widget this editor never drew says nothing",
+         event("clips", 8, 7, 9, 9, owns=False), None),
+        ("a malformed event is nothing rather than an error",
+         {"addr": "/gui_event", "argc": 2}, None),
+        ("somebody else's window closing is not this editor's",
+         {"addr": "/gui_closed", "argc": 1, "isWindow": False}, None),
+        ("and this editor's is",
+         {"addr": "/gui_closed", "argc": 1, "isWindow": True}, None),
+    ]
+
+
+def answers():
+    """What to send back, in every shape there is."""
+    return [
+        ("an unasked push with nothing to say is not sent", 0, 3, None, []),
+        ("an answered gesture is an ack", 2, 3, None, []),
+        ("a refusal rides with it", 2, 3, "the composition changed since this edit", []),
+        ("corrections make it a push", 2, 3, None,
+         [(7, {"points": [0.0, 0.5, 1.0, 0.0]})]),
+        ("and an unasked push carries them with a stamp of zero", 0, 3, None,
+         [(7, {"clips": ["a", "0", 0.0, 1.0, 0.0, "a", -1]})]),
+    ]
+
+
 def main() -> None:
     vectors = []
     for name, points, kept, held in curves():
@@ -180,6 +237,37 @@ def main() -> None:
             "tag": tag,
             "request": request,
             "intake": _native.editing_intake(domain, tag, **request),
+        })
+    state = {"floor": 1, "applied": 1}
+    for name, message, applied in exchange():
+        answer = _native.conversation_read(state, message)
+        state = answer["state"]
+        if applied is not None:
+            state = dict(state, applied=applied)
+        vectors.append({
+            "name": name,
+            "kind": "conversation",
+            "message": message,
+            "turn": answer["turn"],
+            "applied": applied,
+            "after": state,
+        })
+    for name, seq, version, reason, corrections in answers():
+        vectors.append({
+            "name": name,
+            "kind": "answer",
+            "seq": seq,
+            "docVersion": version,
+            "reason": reason,
+            "corrections": [{"widget": w, "props": p} for w, p in corrections],
+            "answer": _native.conversation_answer(seq, version, reason, corrections),
+        })
+    for name, piece, _sources in pieces():
+        vectors.append({
+            "name": f"the names of {name}",
+            "kind": "names",
+            "piece": piece,
+            "names": _native.multitrack_names(piece),
         })
     out = pathlib.Path(__file__).with_name("editing-vectors.json")
     out.write_text(json.dumps(vectors, indent=2) + "\n")

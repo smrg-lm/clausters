@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 53
+CORE_ABI_VERSION = 54
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -258,6 +258,19 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
+    lib.clausters_editing_conversation_read.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_conversation_read.restype = ctypes.c_size_t
+    lib.clausters_editing_conversation_answer.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_conversation_answer.restype = ctypes.c_size_t
+    lib.clausters_editing_multitrack_names.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_multitrack_names.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -1392,6 +1405,67 @@ class Instance:
         raw = size_then_fill(lib().clausters_editing_instance_meters,
                              ctypes.c_void_p(self._handle))
         return json.loads(raw) if raw else []
+
+
+def conversation_read(state: dict, message: dict) -> dict:
+    """**What one message from the host is** — the conversation's first
+    decision (`clausters_editing_conversation_read`).
+
+    A close, a history step, an edit made against a picture that is gone, or an
+    edit to route. ``state`` is the conversation's two integers (``floor`` and
+    ``applied``) and ``message`` the event's **envelope**: the address, the
+    stamp, the version it was made against, the tag, and whether this editor
+    owns the widget and the window. The payload is deliberately not in it —
+    what a report means is `editing_intake`'s and already crosses once, so a
+    drag reporting a thousand boxes costs this nothing.
+
+    Returns ``{"turn": {...}, "state": {...}}``: what to do, and the two
+    integers as they now stand.
+    """
+    _lib = lib()
+    held = json.dumps(state).encode("utf-8")
+    body = json.dumps(message).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_conversation_read,
+                         as_u8(held), len(held), as_u8(body), len(body))
+    return json.loads(raw) if raw else {"turn": {"turn": "nothing"}, "state": state}
+
+
+def conversation_answer(seq: int, doc_version: int, reason: "str | None",
+                        corrections: list) -> dict:
+    """**What to answer the host with** — the conversation's second decision
+    (`clausters_editing_conversation_answer`).
+
+    ``silent``, ``ack`` or ``push``. It runs after the routing because what an
+    answer carries is collected while routing: the corrections the gesture did
+    not survive intact, and the reason when one is owed. There is no success
+    flag in it — applied, transformed and refused are **one message**, and a
+    refusal is simply the previous value among the corrections.
+    """
+    _lib = lib()
+    body = json.dumps({"seq": int(seq), "docVersion": int(doc_version),
+                       "reason": reason,
+                       "corrections": [{"widget": int(wid), "props": props}
+                                       for wid, props in corrections]})
+    body = body.encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_conversation_answer,
+                         as_u8(body), len(body))
+    return json.loads(raw) if raw else {"answer": "silent"}
+
+
+def multitrack_names(piece: dict) -> dict:
+    """**What a piece calls its rows and its boxes**, by the names the wire
+    carries them under (`clausters_editing_multitrack_names`).
+
+    The minting correction's half that is a fact about the piece: a host that
+    made a track or split a box minted the *word* while the document minted the
+    *id*, so a view keeps what it was last told and answers with the picture
+    when the two stop agreeing.
+    """
+    _lib = lib()
+    body = json.dumps(piece).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_multitrack_names,
+                         as_u8(body), len(body))
+    return json.loads(raw) if raw else {"rows": [], "boxes": []}
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

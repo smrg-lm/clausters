@@ -311,14 +311,23 @@ class Application:
         """Tell the host which version it is drawing, before any edit."""
         self.echo.announce()
 
-    def raise_floor(self) -> None:
-        """The composition moved by a route no gesture took."""
-        self.echo.raise_floor()
+    def read(self, message: dict) -> dict:
+        """What one message from the host is (`Echo.read`)."""
+        return self.echo.read(message)
 
-    def stale(self, against: int) -> bool:
-        """Whether an edit made against version ``against`` has been
-        overtaken."""
-        return self.echo.stale(against)
+    @property
+    def applied(self) -> int:
+        """The version the last answered event left behind.
+
+        Read by the crate on the next message: when it differs from the version
+        then, something moved that was not an event, and that is what raises the
+        floor.
+        """
+        return int(self.echo.state.get("applied", 0))
+
+    @applied.setter
+    def applied(self, version: int) -> None:
+        self.echo.state = dict(self.echo.state, applied=int(version))
 
     def correct(self, widget_id: int, **props) -> None:
         """What the host should be drawing instead of what it drew."""

@@ -368,7 +368,18 @@ pub use time::*;
 /// to allocate. A handle rather than a function, for the same reason
 /// `clausters_history_*` is one. **Additive**, and the counter moves for v31's
 /// reason.
-pub const CORE_ABI_VERSION: u32 = 53;
+/// **v54 the conversation is one algorithm.** `clausters_editing_conversation_*`
+/// is the protocol every editor speaks whatever it edits: what a message from
+/// the host *is* (a close, a history step, an edit made against a picture that
+/// is gone, or an edit to route), and what to answer it with. The floor and the
+/// staleness rule are in it, which is where the version defects were, and the
+/// envelope crosses rather than the payload -- what a report means already
+/// crosses once through `clausters_editing_intake`. Pure, both of them: the
+/// conversation's whole state is two integers, so a client keeps the pair and
+/// hands it back. `clausters_editing_multitrack_names` goes with them, the
+/// minting correction's half that is a fact about the piece. **Additive**, and
+/// the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 54;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
