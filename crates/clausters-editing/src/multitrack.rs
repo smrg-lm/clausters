@@ -667,7 +667,13 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
         // refusals, and they are the reason this function answers with more
         // than a list.
         "join" => {
-            match picture::read_join(piece, &held(values), look.rate, &look.sources.taken()) {
+            match picture::read_join(
+                piece,
+                &held(values),
+                look.rate,
+                look.tempo,
+                &look.sources.taken(),
+            ) {
                 Ok(intents) => Reading::of(intents),
                 Err(why) => Reading::refused(why),
             }
@@ -1174,6 +1180,73 @@ mod tests {
         assert_eq!((parts[0].fade_in, parts[0].fade_out), (0, seam));
         assert_eq!((parts[1].fade_in, parts[1].fade_out), (seam, 0));
         assert_eq!(minted.source.frames, Some(96_000));
+    }
+
+    /// **A join reads what each box shows, not what its window claims**
+    /// *(found 2026-09-13, in a standalone host's log: `part 0: buffer 1 has
+    /// 96000 frames and the part asks for 134434`, and a joined box that was
+    /// neither seen nor heard)*. A left-hand trim slides a window's start and
+    /// leaves its duration, so a trimmed box's window claims more of its take
+    /// than the box plays; built from that claim a part ran past the end of the
+    /// take, and the server refused the whole stitch.
+    #[test]
+    fn a_trimmed_box_joins_as_what_it_shows() {
+        let mut piece = swapped();
+        // The box in front, its left edge pulled in by half a second: it plays
+        // from 1.5 s to the end of the take, while its window still says one
+        // second from 1.5 s -- up to 2.5 s of a take that is two.
+        let front = piece.tracks[0].lanes[0]
+            .regions
+            .iter_mut()
+            .find(|r| r.id == NodeId(11))
+            .expect("the tail, in front");
+        front.position = Beat(0.5);
+        front.length = Beat(0.5);
+        if let Content::Window { window, .. } = &mut front.content {
+            window.start = 1.5;
+        }
+        let tempo = TempoMap::new(1.0);
+        let sources = HashMap::new();
+        let intents = read(
+            &piece,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&tempo, &sources),
+        );
+        let [
+            MultitrackIntent::JoinRegions {
+                content: Some(content),
+                source: Some(minted),
+                ..
+            },
+        ] = intents.as_slice()
+        else {
+            panic!("a join that mints its source: {intents:?}");
+        };
+        let Location::Segments { parts } = &minted.source.location else {
+            panic!("a join is segments: {:?}", minted.source.location);
+        };
+        assert_eq!(
+            parts[0].source.range,
+            Some(clausters_document::Range {
+                start: 72_000,
+                end: 96_000
+            }),
+            "the half second the trimmed box plays, and nothing past the take"
+        );
+        assert_eq!(
+            parts[1].source.range,
+            Some(clausters_document::Range {
+                start: 0,
+                end: 48_000
+            })
+        );
+        assert_eq!(
+            minted.source.frames,
+            Some(72_000),
+            "as long as what the boxes show"
+        );
+        assert_eq!(content.as_window().map(|w| w.duration), Some(1.5));
     }
 
     /// **The header's toggle makes the automation it is asked to show** *(asked

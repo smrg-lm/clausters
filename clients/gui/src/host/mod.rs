@@ -2295,9 +2295,18 @@ impl Host {
         if outcome.changed
             && let Some(owner) = self.owner.as_mut()
         {
-            let (version, piece) = (owner.conversed, owner.piece.clone());
+            // **The table as it is now**, a minted source included: the turn
+            // handed the editor the table it had before `mint_sources` put the
+            // join's buffer in it, and a settle projected from that one drew
+            // the joined box over no buffer (found 2026-09-13, by measuring the
+            // clip's props: `source=-1` until the box was moved to another
+            // track, whose turn starts by handing the table over again). A
+            // client's editor is handed it before every call (`_sync_core`).
+            let (version, piece, table) =
+                (owner.conversed, owner.piece.clone(), owner.buffer_table());
             let settled = owner.editor.as_mut().map(|editor| {
                 editor.set_piece(piece);
+                editor.set_sources(table);
                 editor.settle(version)
             });
             if let Some(settled) = settled {
@@ -2324,9 +2333,10 @@ impl Host {
         if moved {
             owner.conversed += 1;
         }
-        let (version, piece) = (owner.conversed, owner.piece.clone());
+        let (version, piece, table) = (owner.conversed, owner.piece.clone(), owner.buffer_table());
         let answers = owner.editor.as_mut().map(|editor| {
             editor.set_piece(piece);
+            editor.set_sources(table);
             let resync = moved.then(|| editor.resync_all(version));
             (resync, editor.acknowledge(seq, version, None))
         });

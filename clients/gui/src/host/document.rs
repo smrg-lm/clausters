@@ -1778,6 +1778,107 @@ mod window_verb_tests {
         }
     }
 
+    /// **A join's box is drawn over the buffer the host made for it**, after
+    /// the whole turn and its settle (found 2026-09-13, measured in a
+    /// standalone host: a joined box that sounded right drew empty until it was
+    /// moved to another track, because the settle projected the piece with the
+    /// editor's table from before the join's source was minted).
+    #[test]
+    fn a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in() {
+        use crate::host::document::sources::{Take, Takes};
+        use clausters_document::multitrack::{Content, Multitrack, Region, Track};
+        use clausters_document::{Beat, Lifetime, SegmentRef, SegmentSource, SourceId, SourceRef};
+
+        // One take cut in two, the halves swapped: a join that mints.
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        for (id, at, start) in [(10, 1.0, 0.0), (11, 0.0, 1.0)] {
+            let mut region = Region::new(
+                NodeId(id),
+                Beat(at),
+                Beat(1.0),
+                Content::Unknown(Value::Null),
+            );
+            region.content = Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source: SourceId(7),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start,
+                duration: 1.0,
+            });
+            track.lanes[0].regions.push(region);
+        }
+        let def_id = 1;
+        let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
+            .with_units_per_second(48_000.0);
+        owner.piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let mut takes = Takes::default();
+        takes.insert(
+            SourceId(7),
+            Take {
+                bufnum: 3,
+                channels: Some(1),
+                frames: Some(96_000),
+            },
+        );
+        let mut owner = owner.with_takes(takes);
+        let def = owner.open_editor(def_id, "t", (1000, 640));
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+        let view = def_id + 1;
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &[
+                OscType::String("join".into()),
+                OscType::String("10".into()),
+                OscType::String("11".into()),
+            ],
+        ));
+        let owner = host.owner.as_ref().unwrap();
+        let joined = &owner.piece.tracks[0].lanes[0].regions;
+        assert_eq!(joined.len(), 1, "one box");
+        let minted = match &joined[0].content {
+            Content::Window { window, .. } => window.source.samples().map(|s| s.source),
+            _ => None,
+        }
+        .expect("a window onto the minted source");
+        let bufnum = owner
+            .buffer_table()
+            .get(&minted)
+            .copied()
+            .expect("the host made the join a buffer");
+        let clips = host.registry().get(view).expect("the piece").props["clips"].clone();
+        let clips = clips.as_array().expect("the boxes");
+        let drawn = clips
+            .chunks(7)
+            .find(|b| b[0].as_str().and_then(|s| s.parse::<u64>().ok()) == Some(joined[0].id.0))
+            .expect("the joined box is drawn");
+        assert_eq!(
+            drawn[6],
+            Value::from(bufnum),
+            "over the buffer its source was made in, not over none"
+        );
+    }
+
     /// **A session host opens the editor a script opens**: the ruler above the
     /// piece and the transport row under it, every widget of it registered —
     /// a composition of the host's own had neither.

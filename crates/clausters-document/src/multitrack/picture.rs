@@ -667,6 +667,7 @@ pub fn read_join(
     piece: &Multitrack,
     names: &[String],
     rate: f64,
+    tempo: &clausters_core::tempomap::TempoMap,
     taken: &[SourceId],
 ) -> Result<Vec<MultitrackIntent>, &'static str> {
     let mut held: Vec<(NodeId, NodeId, &Region)> = Vec::new();
@@ -701,16 +702,25 @@ pub fn read_join(
     // onto samples has nothing a part could name.
     let mut spans = Vec::new();
     for (_, _, region) in &held {
-        let (Some(source), start, duration, looping) = window_of(region) else {
+        let (Some(source), start, _, looping) = window_of(region) else {
             return Err("one of these boxes is not a window onto samples");
         };
         if looping {
             return Err("a box that wraps cannot be one span of a join");
         }
-        if duration <= 0.0 {
+        // **What the box shows, not what its window claims.** A trim slides the
+        // window's start and leaves its duration as the piece had it (`read`),
+        // so after a left-hand trim or a split a window claims more of its
+        // source than the box plays -- and a part built from that claim asked
+        // the server for samples the take does not have, which refused the
+        // whole stitch and left the joined box empty (found 2026-09-13). What
+        // is heard is the box's length from its start, so that is the span,
+        // crossed to seconds through the piece's own tempo map.
+        let shown = tempo.span_secs(region.position.get(), region.end().get());
+        if shown <= 0.0 {
             return Err("one of these boxes reads nothing");
         }
-        spans.push((source, start, duration, *region));
+        spans.push((source, start, shown, *region));
     }
     for pair in held.windows(2) {
         let (gap, over) = (
