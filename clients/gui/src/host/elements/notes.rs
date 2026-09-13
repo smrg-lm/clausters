@@ -28,12 +28,13 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::graphics::pianoroll::{self, OscMark};
-use crate::host::graphics::track::Note;
+use crate::host::graphics::pianoroll;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::placement::{self, Bounds};
+use crate::host::structures::boxes::{self, Bounds};
+use crate::host::structures::notes::OscMark;
+use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Swept, Take,
     TimeSpace,
@@ -54,8 +55,8 @@ const MIN_DUR: f64 = 1.0;
 /// the gestures and the MIDI leg build them and no `/gui_set` writes them.
 #[derive(Debug, Clone)]
 pub struct Notes {
-    notes: Vec<pianoroll::Note>,
-    osc: Vec<pianoroll::OscMark>,
+    notes: Vec<notes::Note>,
+    osc: Vec<notes::OscMark>,
     /// The multi-note selection (note indices). It clears when a script
     /// replaces `notes`, since the indices would dangle over the new list.
     selected: Vec<usize>,
@@ -92,7 +93,7 @@ enum Drag {
     /// One note moving in time and pitch, or one of its edges resizing it.
     Note {
         index: usize,
-        part: placement::Part,
+        part: boxes::Part,
         press_time: f64,
         orig_start: f64,
         orig_dur: f64,
@@ -250,7 +251,7 @@ impl Notes {
                 nearest(r.velocity, &nav, self.notes.iter().map(|n| n.start), fx).map(|index| {
                     pianoroll::NoteHit {
                         index,
-                        part: placement::Part::Body,
+                        part: boxes::Part::Body,
                     }
                 });
             return Hit {
@@ -286,8 +287,8 @@ impl Notes {
     /// there.
     /// Inserts a note at `start`/`pitch` for the live-MIDI leg and the Ctrl+add
     /// gesture, returning its index.
-    fn insert(&mut self, note: pianoroll::Note) -> usize {
-        pianoroll::insert_note(&mut self.notes, note)
+    fn insert(&mut self, note: notes::Note) -> usize {
+        notes::insert_note(&mut self.notes, note)
     }
 
     /// The length a note is painted with when nothing said otherwise: the note
@@ -418,11 +419,11 @@ impl Element for Notes {
         vec![
             (
                 "notes".into(),
-                Value::from(pianoroll::notes_json(&self.notes).to_string()),
+                Value::from(notes::notes_json(&self.notes).to_string()),
             ),
             (
                 "osc".into(),
-                Value::from(pianoroll::osc_json(&self.osc).to_string()),
+                Value::from(notes::osc_json(&self.osc).to_string()),
             ),
         ]
     }
@@ -548,7 +549,7 @@ impl Element for Notes {
         );
         let p0 = pianoroll::y_to_pitch(from.1 as f32, h.lo, h.hi, h.grid);
         let p1 = pianoroll::y_to_pitch(to.1 as f32, h.lo, h.hi, h.grid);
-        self.selected = pianoroll::notes_in_rect(&self.notes, t0, t1, p0, p1);
+        self.selected = notes::notes_in_rect(&self.notes, t0, t1, p0, p1);
         let (a, b) = (p0.min(p1).ceil(), p0.max(p1).floor());
         // A rectangle that never left its row restricts nothing -- the click it
         // still is vertically. The ceil/floor pair says so on its own for a
@@ -632,7 +633,7 @@ impl Element for Notes {
             }) => {
                 let bounds = self.edit_bounds(input);
                 match part {
-                    placement::Part::Body => {
+                    boxes::Part::Body => {
                         let start = orig_start + (time - press_time);
                         let pitch = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
                         // The duration is asserted **first**: the clamp against
@@ -642,9 +643,9 @@ impl Element for Notes {
                         if let Some(n) = self.notes.get_mut(index) {
                             n.dur = orig_dur;
                         }
-                        pianoroll::move_note(&mut self.notes, index, start, pitch, lo, hi, bounds);
+                        notes::move_note(&mut self.notes, index, start, pitch, lo, hi, bounds);
                     }
-                    other => pianoroll::resize_note(&mut self.notes, index, other, time, bounds),
+                    other => notes::resize_note(&mut self.notes, index, other, time, bounds),
                 }
                 Events::none()
             }
@@ -661,11 +662,11 @@ impl Element for Notes {
                     None => 0.0,
                 };
                 let dp = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid) - press_pitch;
-                pianoroll::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
+                notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
                 Events::none()
             }
             Some(Drag::Velocity { index }) => {
-                pianoroll::set_velocity(
+                notes::set_velocity(
                     &mut self.notes,
                     index,
                     pianoroll::velocity_at(r.velocity, at.1),
@@ -677,7 +678,7 @@ impl Element for Notes {
                 orig,
             }) => {
                 let dv = pianoroll::velocity_at(r.velocity, at.1) - press_velocity;
-                pianoroll::nudge_velocities_from(&mut self.notes, &orig, dv);
+                notes::nudge_velocities_from(&mut self.notes, &orig, dv);
                 Events::none()
             }
             None => Events::none(),
@@ -706,7 +707,7 @@ impl Element for Notes {
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid — the same grid a drag snaps to.
             Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => Some(
-                if pianoroll::quantize_notes(&mut self.notes, &self.selected, self.snap) {
+                if notes::quantize_notes(&mut self.notes, &self.selected, self.snap) {
                     self.notes_event()
                 } else {
                     Events::refused("quantize", "these notes are already on the grid")
@@ -731,7 +732,7 @@ impl Element for Notes {
             // the roll is not something anyone asks for by leaning on a letter.
             Key::Char('e') | Key::Char('E') if !input.mods.ctrl && !self.selected.is_empty() => {
                 let at = snap_to(self.anchor(input), self.snap).max(0.0);
-                let cut = pianoroll::split_notes(&mut self.notes, &self.selected, at);
+                let cut = notes::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
                     return Some(Events::refused(
                         "split",
@@ -743,7 +744,7 @@ impl Element for Notes {
             }
             Key::Char('j') | Key::Char('J') if !input.mods.ctrl && !self.selected.is_empty() => {
                 let before = self.notes.len();
-                self.selected = pianoroll::join_notes(&mut self.notes, &self.selected);
+                self.selected = notes::join_notes(&mut self.notes, &self.selected);
                 Some(if self.notes.len() == before {
                     // The roll's own four conditions, said as one sentence: a
                     // join is a **pitch's**, and what joins is what touches.
@@ -757,7 +758,7 @@ impl Element for Notes {
             }
             Key::Delete | Key::Backspace if !self.selected.is_empty() => {
                 let held = std::mem::take(&mut self.selected);
-                placement::discard(&mut self.notes, &held).then(|| self.notes_event())
+                boxes::discard(&mut self.notes, &held).then(|| self.notes_event())
             }
             // The clipboard is the host's one string, so a block travels
             // between rolls and windows — and rides it in the same JSON form a
@@ -766,20 +767,20 @@ impl Element for Notes {
             Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
                 if input.mods.ctrl =>
             {
-                let block = pianoroll::copy_notes(&self.notes, &self.selected);
+                let block = notes::copy_notes(&self.notes, &self.selected);
                 if block.is_empty() {
                     return None;
                 }
                 input
                     .clipboard
-                    .set_text(&pianoroll::notes_json(&block).to_string());
+                    .set_text(&notes::notes_json(&block).to_string());
                 let cut = matches!(key, Key::Char('x') | Key::Char('X'));
                 if !cut {
                     // A copy changed nothing, so it reports nothing — but it
                     // consumed the key.
                     return Some(Events::none());
                 }
-                pianoroll::remove_notes(&mut self.notes, &self.selected);
+                notes::remove_notes(&mut self.notes, &self.selected);
                 self.selected.clear();
                 Some(self.notes_event())
             }
@@ -789,7 +790,7 @@ impl Element for Notes {
                 // cursor is, playing or not -- a paste has no pointer, and the
                 // cursor is the one position the window keeps.
                 let at = snap_to(self.anchor(input), self.snap).max(0.0);
-                self.selected = pianoroll::paste_notes(&mut self.notes, &block, at);
+                self.selected = notes::paste_notes(&mut self.notes, &block, at);
                 Some(self.notes_event())
             }
             _ => None,
@@ -807,7 +808,7 @@ impl Element for Notes {
                 Some(p) => snap_to(p, self.snap).max(0.0),
                 None => self.step,
             };
-            let index = self.insert(pianoroll::Note {
+            let index = self.insert(notes::Note {
                 start,
                 dur,
                 pitch: note.pitch as f32,
@@ -878,7 +879,7 @@ impl Notes {
         input.indent > 0.0
     }
 
-    /// The far edge this placement's edits stop at (see [`pianoroll::Limit`]).
+    /// The far edge this placement's edits stop at (see [`notes::Limit`]).
     ///
     /// **A clip's body has one and the roll's own view has none**, and the
     /// difference is what the two placements can do about a note past the end.
@@ -890,7 +891,7 @@ impl Notes {
     /// resizing the clip by hand. So the body stops at the clip's `dur`, and the
     /// clip's length stays what its own edge says it is — content does not
     /// silently lengthen the thing containing it.
-    fn edit_limit(&self, input: &Input) -> pianoroll::Limit {
+    fn edit_limit(&self, input: &Input) -> notes::Limit {
         match input.time {
             Some(t) if !self.navigable_placement(input) => Some(t.span),
             _ => None,
@@ -998,7 +999,7 @@ impl Notes {
             let Some(nh) = h.note else {
                 return Claim::Decline;
             };
-            pianoroll::toggle_selected(&mut self.selected, nh.index);
+            notes::toggle_selected(&mut self.selected, nh.index);
             return Claim::take();
         }
         if input.mods.ctrl {
@@ -1006,8 +1007,8 @@ impl Notes {
                 // Ctrl on a note removes it; the selection's indices shift down
                 // past it.
                 Some(nh) => {
-                    pianoroll::remove_note(&mut self.notes, nh.index);
-                    self.selected = pianoroll::selection_after_removal(&self.selected, nh.index);
+                    notes::remove_note(&mut self.notes, nh.index);
+                    self.selected = notes::selection_after_removal(&self.selected, nh.index);
                 }
                 // Ctrl on empty grid adds one there, then drags its end to set
                 // the length until release.
@@ -1017,10 +1018,10 @@ impl Notes {
                         .round()
                         .clamp(h.lo, h.hi);
                     let dur = self.default_dur(&h.nav);
-                    let index = self.insert(pianoroll::Note::new(time, dur, pitch));
+                    let index = self.insert(notes::Note::new(time, dur, pitch));
                     self.drag = Some(Drag::Note {
                         index,
-                        part: placement::Part::End,
+                        part: boxes::Part::End,
                         press_time: time,
                         orig_start: time,
                         orig_dur: dur,
@@ -1041,7 +1042,7 @@ impl Notes {
             return Claim::Decline;
         };
         let press_time = self.time_at(h.grid, &h.nav, at.0);
-        if nh.part == placement::Part::Body {
+        if nh.part == boxes::Part::Body {
             // Grabbing a **selected** note moves the whole selection; grabbing
             // an unselected one drops the selection and moves singly.
             if self.selected.contains(&nh.index) {
@@ -1148,18 +1149,18 @@ impl Notes {
 }
 
 /// Snaps `t` to the `grid`, the one rounding every note edit shares — and it
-/// is [`placement::snap`], the same one a clip's edge lands on. This used to be
+/// is [`boxes::snap`], the same one a clip's edge lands on. This used to be
 /// a second spelling of it whose no-grid arm returned the raw value while its
 /// own doc said whole units; the axis' unit is the sample, so "no grid" is the
 /// finest grid there is.
 fn snap_to(t: f64, grid: f64) -> f64 {
-    placement::snap(t, grid)
+    boxes::snap(t, grid)
 }
 
 /// The notes on the host-wide clipboard, when what is on it is a note block —
 /// the same flat quintuple JSON a `/gui_set notes` takes, so a block copied out
 /// of one roll pastes into another and a field's text pastes into neither.
-fn clipboard_notes(text: &str) -> Option<Vec<pianoroll::Note>> {
+fn clipboard_notes(text: &str) -> Option<Vec<notes::Note>> {
     let value: Value = serde_json::from_str(text).ok()?;
     let notes = parse_notes(&parse::as_array_props("notes", &value));
     (!notes.is_empty()).then_some(notes)
@@ -1477,7 +1478,7 @@ mod tests {
         assert!(matches!(
             r.drag,
             Some(Drag::Note {
-                part: placement::Part::End,
+                part: boxes::Part::End,
                 ..
             })
         ));
@@ -1549,7 +1550,7 @@ mod tests {
         assert_eq!(r.selected, vec![1], "the pasted block is selected");
         // A roll on no axis keeps step entry's own position as the anchor,
         // which is where this one still stands.
-        pianoroll::remove_notes(&mut r.notes, &[1]);
+        notes::remove_notes(&mut r.notes, &[1]);
         r.selected.clear();
         assert!(
             r.key(&Key::Char('v'), &mut ki(&mut clipboard, true))
@@ -1744,14 +1745,14 @@ mod tests {
     /// **The cut is the box arithmetic's, and the identity is the roll's.**
     ///
     /// A note's second half keeps the pitch, the velocity and the channel of
-    /// the one it came from, which is what `Boxes::duplicate` answers for here;
+    /// the one it came from, which is what `Holder::duplicate` answers for here;
     /// everything else about the cut is what a clip's `e` does, through the
     /// same function.
     #[test]
     fn a_cut_note_leaves_two_halves_that_are_still_the_same_note() {
         let mut r = roll(r#"{"notes":[0.0,200.0,64.0,90,3]}"#);
         r.selected = vec![0];
-        let cut = pianoroll::split_notes(&mut r.notes, &r.selected, 50.0);
+        let cut = notes::split_notes(&mut r.notes, &r.selected, 50.0);
         assert_eq!(cut, vec![0, 1], "the head it was, and the tail it made");
         assert_eq!((r.notes[0].start, r.notes[0].dur), (0.0, 50.0));
         assert_eq!((r.notes[1].start, r.notes[1].dur), (50.0, 150.0));

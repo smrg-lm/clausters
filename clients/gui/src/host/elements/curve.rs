@@ -18,10 +18,11 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::graphics::bpf::{self, Axes, BpfPoint};
+use crate::host::graphics::bpf::{self, Axes};
 use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
+use crate::host::structures::points::{self, BpfPoint};
 use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take, TimeSpace};
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, Ruler, RulerY};
@@ -84,7 +85,7 @@ enum Grab {
     Point(usize),
     /// A segment bent by a vertical drag, measured **from the press**: the y it
     /// started at and the curvature it had. Absolute, not incremental — see
-    /// [`bpf::bend_curve`] for what the incremental form got wrong.
+    /// [`points::bend_curve`] for what the incremental form got wrong.
     Segment {
         index: usize,
         press_y: f64,
@@ -123,9 +124,9 @@ fn from_props(props: &Map<String, Value>) -> Curve {
     Curve {
         points: props
             .get("points")
-            .and_then(|v| bpf::parse_points(v, lo, hi))
+            .and_then(|v| points::parse_points(v, lo, hi))
             .filter(|p| !p.is_empty())
-            .unwrap_or_else(|| bpf::default_points(lo)),
+            .unwrap_or_else(|| points::default_points(lo)),
         min: lo,
         max: hi,
         duration: number_f64(props, "duration", 0.0),
@@ -182,7 +183,7 @@ impl Curve {
             },
             None => Axes::spanning(
                 field,
-                bpf::domain(&self.points, self.duration),
+                points::domain(&self.points, self.duration),
                 self.min,
                 self.max,
                 self.exp,
@@ -227,7 +228,7 @@ impl Curve {
         match time {
             Some(t) => t.view,
             None => {
-                let dom = bpf::domain(&self.points, self.duration);
+                let dom = points::domain(&self.points, self.duration);
                 View {
                     start: 0.0,
                     len: dom.max(1e-9),
@@ -302,7 +303,7 @@ impl Curve {
 
     fn points_event(&self) -> Events {
         let mut args = vec![OscType::String("points".into())];
-        args.extend(bpf::points_args(&self.points));
+        args.extend(points::points_args(&self.points));
         Events::message(args)
     }
 }
@@ -318,7 +319,7 @@ impl Element for Curve {
             // The full breakpoint list replaces in one set — the flat
             // `[t, v, shape, curve, …]` array, or that array as a JSON string
             // (the `/gui_set` scalar carrier).
-            "points" => match bpf::parse_points(v, self.min, self.max) {
+            "points" => match points::parse_points(v, self.min, self.max) {
                 Some(p) if !p.is_empty() => {
                     self.points = p;
                     true
@@ -387,7 +388,7 @@ impl Element for Curve {
         // query gives back exactly what a set would take.
         vec![(
             "points".into(),
-            Value::from(bpf::points_json(&self.points).to_string()),
+            Value::from(points::points_json(&self.points).to_string()),
         )]
     }
 
@@ -404,7 +405,7 @@ impl Element for Curve {
     /// **shared**: without it a window holding only a curve has no extent at
     /// all, and a `timeruler` over it would label one sample.
     fn content_span(&self) -> Option<f64> {
-        Some(bpf::domain(&self.points, self.duration))
+        Some(points::domain(&self.points, self.duration))
     }
 
     /// The wish, from the props alone: the ruler role's own width. What the
@@ -494,7 +495,7 @@ impl Element for Curve {
         // (which then drags until release).
         if input.mods.ctrl {
             match hit {
-                Some(i) if bpf::remove_point(&mut self.points, i) => {}
+                Some(i) if points::remove_point(&mut self.points, i) => {}
                 Some(_) => return Claim::Decline,
                 None => self.grab = Some(Grab::Point(ax.add_point(&mut self.points, at.0, at.1))),
             }
@@ -546,7 +547,7 @@ impl Element for Curve {
                 from,
             }) => {
                 let dy_frac = (*press_y - at.1) / ax.body.h.max(1.0) as f64;
-                bpf::bend_curve(&mut self.points, *index, dy_frac, *from);
+                points::bend_curve(&mut self.points, *index, dy_frac, *from);
             }
             None => return Events::none(),
         }
@@ -743,9 +744,9 @@ mod tests {
             Claim::Take(_)
         ));
         assert!(matches!(c.grab, Some(Grab::Segment { index: 0, .. })));
-        let before = bpf::value_at(&c.points, 50.0);
+        let before = points::value_at(&c.points, 50.0);
         c.drag((x, field.y as f64), &input(&m, rect, None));
-        assert!(bpf::value_at(&c.points, 50.0) > before, "bent upward");
+        assert!(points::value_at(&c.points, 50.0) > before, "bent upward");
     }
 
     /// **A bend is where the pointer is, not where it has been.** The

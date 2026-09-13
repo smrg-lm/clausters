@@ -1058,7 +1058,7 @@ pub struct VoiceSpec {
 /// **The arguments a refusal is**: `"refused" <verb> <why>`.
 ///
 /// The one place the three strings are put in order. A gesture that refuses
-/// emits them ([`super::super::gestures::effects::refuse`]), an element that
+/// emits them (`gestures::effects::refuse`, private to that module), an element that
 /// refuses reports them ([`Events::refused`]), and the status bar recognizes a
 /// refusal by reading exactly this shape back
 /// ([`status::Line::of_event`](super::super::status::Line::of_event)) -- three

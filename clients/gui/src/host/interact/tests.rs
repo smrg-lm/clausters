@@ -9,7 +9,7 @@ use super::super::widget::WidgetKind;
 use super::super::{ClientId, GUI_DEF, Host};
 use super::*;
 use crate::host::graphics::pianoroll;
-use crate::host::placement::snap;
+use crate::host::structures::boxes::snap;
 
 fn from() -> ClientId {
     ClientId::Udp(std::net::SocketAddr::from((

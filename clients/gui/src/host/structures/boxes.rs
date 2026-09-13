@@ -29,7 +29,7 @@
 //! cut them at the cursor, drop them, put a block down somewhere else. Those
 //! were written once per holder — a clip's `e` and a note's `e` doing the same
 //! thing in two files — and they had already drifted, one of them refusing out
-//! loud and the other returning silence. So they are here too, over [`Boxes`],
+//! loud and the other returning silence. So they are here too, over [`Holder`],
 //! which is [`Placements`] plus the two questions a verb asks and a drag never
 //! does: make another one, and take these away. What is *not* general stays
 //! with the holder, and the split is where the identity of a new box comes
@@ -45,7 +45,7 @@
 /// ([`part_at`]) — and that is a drawing question, answered where the drawing
 /// is.
 ///
-/// [`track::clip_grips`]: super::graphics::track::clip_grips
+/// [`track::clip_grips`]: crate::host::graphics::track::clip_grips
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Part {
     Body,
@@ -486,6 +486,10 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
 
 /// **What a verb needs of whoever holds the boxes**, beside where each one is.
 ///
+/// Named for the holder rather than for the boxes because that is what an
+/// implementor is: a roll's list of notes, a multitrack, the next structure
+/// with a time axis under it.
+///
 /// [`Placements`] answers *where a box is* and is enough for everything that
 /// moves one: a drag, a marquee, a rigid block, a quantize. A **verb over a
 /// selection** — cut these, drop those — needs the two questions that one does
@@ -495,10 +499,10 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
 /// They are two methods and not four because the rest of what a new box needs
 /// is the holder's own and nothing general can state it: a clip is minted with
 /// a name nothing else answers to, a note carries the pitch and velocity of the
-/// one it came from. So [`duplicate`](Boxes::duplicate) is *"another one of
+/// one it came from. So [`duplicate`](Holder::duplicate) is *"another one of
 /// that"* and the caller then writes where it goes, which is the only part a
 /// verb knows.
-pub trait Boxes: Placements {
+pub trait Holder: Placements {
     /// **Another box like `i`**, appended, with whatever identity a new box
     /// gets here — and `None` where there is nothing at `i` to copy.
     ///
@@ -515,7 +519,7 @@ pub trait Boxes: Placements {
 /// The indices given as a set: sorted, deduplicated, and with whatever is not
 /// there dropped. What every verb starts from, because a selection is a hand's
 /// and may hold the same box twice or a box that has since gone.
-fn targets<P: Boxes + ?Sized>(p: &P, indices: &[usize]) -> Vec<usize> {
+fn targets<P: Holder + ?Sized>(p: &P, indices: &[usize]) -> Vec<usize> {
     let mut t: Vec<usize> = indices.iter().copied().filter(|&i| i < p.len()).collect();
     t.sort_unstable();
     t.dedup();
@@ -534,7 +538,7 @@ fn targets<P: Boxes + ?Sized>(p: &P, indices: &[usize]) -> Vec<usize> {
 /// A box the cut falls outside of is not an error and not a refusal on its own
 /// — a selection may hold boxes the cursor is nowhere near, and the ones it is
 /// inside are still cut.
-pub fn split<P: Boxes + ?Sized>(p: &mut P, held: &[usize], at: f64) -> Vec<usize> {
+pub fn split<P: Holder + ?Sized>(p: &mut P, held: &[usize], at: f64) -> Vec<usize> {
     let mut out = Vec::new();
     for i in targets(p, held) {
         let Some((head, tail)) = split_at(p.placement(i), at) else {
@@ -556,7 +560,7 @@ pub fn split<P: Boxes + ?Sized>(p: &mut P, held: &[usize], at: f64) -> Vec<usize
 /// The whole of what Delete is over a stack of boxes, and the reason it is here
 /// rather than written per holder: the two that had it disagreed about nothing
 /// except which list they walked backwards.
-pub fn discard<P: Boxes + ?Sized>(p: &mut P, held: &[usize]) -> bool {
+pub fn discard<P: Holder + ?Sized>(p: &mut P, held: &[usize]) -> bool {
     let held = targets(p, held);
     if held.is_empty() {
         return false;
@@ -611,7 +615,7 @@ mod tests {
     use super::*;
 
     /// A holder that is neither a roll nor a multitrack: the verbs are written
-    /// against [`Boxes`] and nothing else, and this is what says so — if one of
+    /// against [`Holder`] and nothing else, and this is what says so — if one of
     /// them ever reaches for something a clip or a note happens to have, it
     /// stops compiling here first.
     #[derive(Default)]
@@ -637,7 +641,7 @@ mod tests {
         }
     }
 
-    impl Boxes for Stack {
+    impl Holder for Stack {
         fn duplicate(&mut self, i: usize) -> Option<usize> {
             let it = *self.boxes.get(i)?;
             self.boxes.push(it);

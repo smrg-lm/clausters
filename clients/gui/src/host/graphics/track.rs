@@ -31,7 +31,7 @@ use crate::viewport::View;
 /// owns the note model and the drawing/hit-test primitives — a clip's roll and
 /// the dedicated `pianoroll` view share the one type so they never disagree on
 /// geometry.
-pub use super::pianoroll::Note;
+pub use crate::host::structures::notes::Note;
 
 /// What a lane reserves **left of its axis**, and what it carries there.
 ///

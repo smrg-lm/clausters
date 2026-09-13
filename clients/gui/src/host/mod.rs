@@ -72,7 +72,6 @@ pub mod layers;
 // One geometry for every box that lives on a time axis: a note in a roll and a
 // clip on a lane are the same object with respect to editing and positioning,
 // and the arithmetic is written here once.
-pub mod placement;
 pub mod play;
 pub mod registry;
 pub mod voices;
@@ -81,6 +80,11 @@ pub mod widget;
 // The models: what a visual thing is shaped like, how it is drawn and where a
 // click on that drawing lands. Read by the elements, never the reverse.
 pub mod graphics;
+// The structures a hand edits and the verbs over them, apart from what draws
+// them: a box on a time axis, a note, a clip and a break-point. `graphics`
+// beside it holds only what puts pixels down, and the three applications over
+// the document share the structures rather than the pictures.
+pub mod structures;
 
 // The drawing vocabulary every widget and every pass names things in: one mesh
 // primitive, one face, and the two role tables (no paint site names an RGBA, no

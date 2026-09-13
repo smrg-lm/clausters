@@ -30,12 +30,13 @@ use serde_json::{Map, Value};
 use crate::host::elements::notes::Notes;
 use crate::host::elements::signal::{Presentation, SignalElement};
 use crate::host::font;
-use crate::host::graphics::multitrack::{self as model, Clip, Lane};
+use crate::host::graphics::multitrack as stack;
 use crate::host::graphics::track;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::placement::{self, Bounds, Contents, Part, Placement, Placements};
+use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
+use crate::host::structures::clips::{self as model, Clip, Lane};
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, SlotFill, SlotKey, Swept,
     Take, TextureBody, TimeSpace,
@@ -64,7 +65,7 @@ const LANE_H: f32 = 96.0;
 /// **How far a drag reaches for a neighbour's edge**, in device pixels.
 ///
 /// The same order as the grab margin a box's own edges have
-/// ([`placement::EDGE_PX`]) and for the same reason: it is what a hand's aim is
+/// ([`boxes::EDGE_PX`]) and for the same reason: it is what a hand's aim is
 /// worth on screen. Wider and a box could not be placed near another without
 /// being pulled onto it; narrower and two boxes could not be made to meet
 /// without zooming to the sample.
@@ -145,7 +146,7 @@ struct Fading {
 }
 
 /// The block a hand took, as `(index, offset, row)` per clip — the snapshot
-/// `placement::move_block` clamps against, so a block stopped at an edge does
+/// `boxes::move_block` clamps against, so a block stopped at an edge does
 /// not fold against it.
 type Block = Vec<(usize, f64, f32)>;
 
@@ -715,8 +716,8 @@ impl Multitrack {
     /// **The vertical axis**: the lanes and the automation rows under them, in
     /// the order they are drawn. Built per ask rather than kept, because it is
     /// derived from two lists a `/gui_set` replaces whole.
-    fn stack(&self) -> model::Stack {
-        model::Stack::shown(&self.lanes, &self.curves, self.gap, |c| {
+    fn stack(&self) -> stack::Stack {
+        stack::Stack::shown(&self.lanes, &self.curves, self.gap, |c| {
             !self.is_hidden(&c.name)
         })
     }
@@ -753,7 +754,7 @@ impl Multitrack {
             .rev()
             .filter(|(_, c)| c.lane == self.lanes[i].name)
             .find_map(|(n, c)| {
-                let (x0, x1) = model::clip_x(c, body, &nav, MIN_CLIP_W)?;
+                let (x0, x1) = stack::clip_x(c, body, &nav, MIN_CLIP_W)?;
                 let cr = track::clip_rect(body, x0, x1);
                 // **A grip is hit on the pixels it was drawn on.** The same
                 // call the drawing made, so the handle and its hit area cannot
@@ -1094,7 +1095,7 @@ impl Multitrack {
 
     /// **What kind of row a y is on** — a lane, an automation row, or nothing
     /// at all past either end of the stack.
-    fn row_kind(&self, input: &Input, y: f64) -> Option<model::Row> {
+    fn row_kind(&self, input: &Input, y: f64) -> Option<stack::Row> {
         let stack = self.stack();
         stack.row(stack.row_at(input.rect, self.scroll, y)?)
     }
@@ -1215,13 +1216,13 @@ impl Multitrack {
 
     /// **Cut every held clip at `at`**, keeping the halves in the hand.
     ///
-    /// The window over the contents moves with the cut — `placement::split_at`
+    /// The window over the contents moves with the cut — `boxes::split_at`
     /// is the arithmetic, the same one a note's split uses — so the second half
     /// reads on from where the first stopped rather than from the source's
     /// start.
     fn split_held(&mut self, at: f64) -> bool {
         let held = self.selected.clone();
-        let cut = placement::split(self, &held, at);
+        let cut = boxes::split(self, &held, at);
         if cut.is_empty() {
             return false;
         }
@@ -1284,7 +1285,7 @@ impl Multitrack {
             if body.w <= 0.0 || body.h <= 0.0 {
                 continue;
             }
-            let Some((x0, x1)) = model::clip_x(clip, body, &nav, MIN_CLIP_W) else {
+            let Some((x0, x1)) = stack::clip_x(clip, body, &nav, MIN_CLIP_W) else {
                 continue;
             };
             let cr = track::clip_rect(body, x0, x1);
@@ -1322,7 +1323,7 @@ impl Multitrack {
         let span = model::extent(&self.clips).max(nav.start + nav.len);
         let mut out = Vec::new();
         for (i, row) in rows.iter().enumerate() {
-            let Some(model::Row::Curve(n)) = stack.row(i) else {
+            let Some(stack::Row::Curve(n)) = stack.row(i) else {
                 continue;
             };
             let Some(curve) = self.curves.get(n).filter(|c| !self.is_hidden(&c.name)) else {
@@ -1458,7 +1459,7 @@ impl Multitrack {
     fn points_of(&self, name: &str) -> Value {
         self.bodies
             .get(name)
-            .map(|b| crate::host::graphics::bpf::points_json(b.points()))
+            .map(|b| crate::host::structures::points::points_json(b.points()))
             .unwrap_or(Value::Null)
     }
 
@@ -1655,7 +1656,7 @@ impl Placements for Multitrack {
 /// rule and it is the whole of what is specific here — the cut itself, the
 /// halves' spans and the window each keeps onto its source are the arithmetic
 /// every box on a time axis shares.
-impl placement::Boxes for Multitrack {
+impl boxes::Holder for Multitrack {
     fn duplicate(&mut self, i: usize) -> Option<usize> {
         let mut copy = self.clips.get(i)?.clone();
         copy.name = self.fresh_name(&copy.name);
@@ -1829,7 +1830,7 @@ impl Element for Multitrack {
         // track does, so it is a row and not a layer.
         let stack = self.stack();
         for (i, row) in stack.rects(ctx.rect, self.scroll).iter().enumerate() {
-            let Some(model::Row::Curve(n)) = stack.row(i) else {
+            let Some(stack::Row::Curve(n)) = stack.row(i) else {
                 continue;
             };
             let Some(curve) = self.curves.get(n) else {
@@ -1981,7 +1982,7 @@ impl Element for Multitrack {
             // press there addresses no track: it selects none, lets go of none
             // and asks for none. The press is consumed rather than declined,
             // because the header band is this widget's whatever is drawn in it.
-            if matches!(self.row_kind(input, at.1), Some(model::Row::Curve(_))) {
+            if matches!(self.row_kind(input, at.1), Some(stack::Row::Curve(_))) {
                 return Claim::take();
             }
             // **The band under the last header**, where there is no track to
@@ -2020,7 +2021,7 @@ impl Element for Multitrack {
         // roll's selection. A plain click selects it alone, and that is decided
         // on release (see [`Element::release`]): a press is not yet a gesture.
         if input.mods.alt {
-            placement::toggle_selected(&mut self.selected, clip);
+            boxes::toggle_selected(&mut self.selected, clip);
             return Claim::take();
         }
         let Some(lane) = self.lane_of(&self.clips[clip]) else {
@@ -2066,7 +2067,7 @@ impl Element for Multitrack {
         // an end still means the sweep passed through those lanes.
         let r0 = self.lane_toward(input.rect, from.1) as f32;
         let r1 = self.lane_toward(input.rect, to.1) as f32;
-        self.selected = placement::in_rect(self, t0, t1, r0, r1);
+        self.selected = boxes::in_rect(self, t0, t1, r0, r1);
         Swept {
             changed: before != self.selected.len() || !self.selected.is_empty(),
             // **No band.** A multitrack's second axis is the stack of lanes,
@@ -2114,7 +2115,7 @@ impl Element for Multitrack {
             // deltas are clamped as one, so a block stopped at an edge does not
             // fold against it, and no clip is resized.
             Part::Body => {
-                let dt = placement::snap(now - grab.grabbed_at, self.snap);
+                let dt = boxes::snap(now - grab.grabbed_at, self.snap);
                 let dr = self.lane_toward(input.rect, at.1) as f32 - grab.lane as f32;
                 // **The grabbed box's own two edges look for a neighbour.** The
                 // box under the hand is what the hand is aiming with, so it is
@@ -2130,7 +2131,7 @@ impl Element for Multitrack {
                     );
                 let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
                 let block = std::mem::take(&mut self.block);
-                placement::move_block(self, &block, dt, dr, rows, None);
+                boxes::move_block(self, &block, dt, dr, rows, None);
                 self.block = block;
             }
             // **An edge is one clip's**, and it trims: the placement and the
@@ -2141,7 +2142,7 @@ impl Element for Multitrack {
                 let now = now + self.pull_to_edge(input, self.row(grab.clip), &[grab.clip], &[now]);
                 let contents = self.contents_of(grab.clip);
                 self.clips[grab.clip].place =
-                    placement::drag(part, now, grab.orig, contents, self.bounds());
+                    boxes::drag(part, now, grab.orig, contents, self.bounds());
             }
         }
         Events::none()
@@ -2234,12 +2235,12 @@ impl Element for Multitrack {
             // Up zooms in, which is the direction every other zoom here takes.
             let factor = 1.1f32.powf(steps as f32);
             match row {
-                model::Row::Lane(i) => {
+                stack::Row::Lane(i) => {
                     let lane = self.lanes.get_mut(i)?;
                     lane.height = (lane.height * factor).clamp(MIN_LANE_H, MAX_LANE_H);
                     self.zoom.insert(lane.name.clone(), lane.height);
                 }
-                model::Row::Curve(n) => {
+                stack::Row::Curve(n) => {
                     let curve = self.curves.get_mut(n)?;
                     curve.height = (curve.height * factor).clamp(MIN_CURVE_H, MAX_LANE_H);
                     self.curve_zoom.insert(curve.name.clone(), curve.height);
@@ -2305,7 +2306,7 @@ impl Element for Multitrack {
         match key {
             Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
                 let held = self.selected.clone();
-                Some(if placement::quantize(self, &held, self.snap) {
+                Some(if boxes::quantize(self, &held, self.snap) {
                     self.clips_event()
                 } else {
                     Events::refused("quantize", "these boxes are already on the grid")
@@ -2314,7 +2315,7 @@ impl Element for Multitrack {
             // **At the window's cursor**: a key gesture has no pointer to read a
             // position from, and the window has one cursor for exactly that.
             Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
-                let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
                 Some(if self.split_held(at) {
                     self.clips_event()
                 } else {
@@ -2324,7 +2325,7 @@ impl Element for Multitrack {
             Key::Char('j') | Key::Char('J') if !input.mods.ctrl => Some(self.join_event()),
             Key::Delete | Key::Backspace => {
                 let held = std::mem::take(&mut self.selected);
-                placement::discard(self, &held).then(|| self.clips_event())
+                boxes::discard(self, &held).then(|| self.clips_event())
             }
             // The clipboard is the host's one string, so a block travels between
             // multitracks and windows — and rides it in the same JSON form a
@@ -2350,7 +2351,7 @@ impl Element for Multitrack {
                     return Some(Events::none());
                 }
                 let held = std::mem::take(&mut self.selected);
-                placement::discard(self, &held);
+                boxes::discard(self, &held);
                 Some(self.clips_event())
             }
             Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
@@ -2366,9 +2367,9 @@ impl Element for Multitrack {
                 // **At the cursor**, and keeping the block's own shape: the
                 // earliest pasted clip lands there and the rest keep their
                 // distances, which is what makes a pasted block the same block.
-                let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
                 let offsets: Vec<f64> = block.iter().map(|c| c.place.offset).collect();
-                let placed = placement::rebased(&offsets, at)?;
+                let placed = boxes::rebased(&offsets, at)?;
                 let first = offsets.iter().copied().fold(f64::INFINITY, f64::min);
                 // **A paste needs two coordinates**, and the second is the
                 // selected track: the position cursor says *when* and the
@@ -3065,7 +3066,7 @@ mod tests {
         // The row is under `noise`, and the second lane sits below it.
         let stack = mt.stack();
         assert_eq!(stack.len(), 3);
-        assert_eq!(stack.row(1), Some(model::Row::Curve(0)));
+        assert_eq!(stack.row(1), Some(stack::Row::Curve(0)));
         assert_eq!(mt.lane_rects(rect)[1].y, 100.0 + 40.0 + 2.0 * GAP);
 
         let drawn = mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0));
@@ -3315,7 +3316,7 @@ mod tests {
         let on_curve = (10.0, f64::from(row.y) + 5.0);
         assert!(matches!(
             mt.row_kind(&inp, on_curve.1),
-            Some(model::Row::Curve(0))
+            Some(stack::Row::Curve(0))
         ));
         let was = mt.curves[0].height;
         assert!(mt.wheel(on_curve, (0.0, 1.0), &plain(ctrl)).is_some());
@@ -3386,13 +3387,13 @@ mod tests {
             take.events.into_messages()
         };
 
-        assert_eq!(rows(&mt), vec![model::Row::Lane(0), model::Row::Curve(0)]);
+        assert_eq!(rows(&mt), vec![stack::Row::Lane(0), stack::Row::Curve(0)]);
 
         let msgs = press(&mut mt);
         assert_eq!(msgs[0][7], OscType::Int(0), "the row says it is hidden");
         assert_eq!(
             rows(&mt),
-            vec![model::Row::Lane(0)],
+            vec![stack::Row::Lane(0)],
             "and the row is gone from the stack, under the hand"
         );
 
@@ -3400,7 +3401,7 @@ mod tests {
         // exactly why the press has to state it here.
         let msgs = press(&mut mt);
         assert_eq!(msgs[0][7], OscType::Int(1));
-        assert_eq!(rows(&mt), vec![model::Row::Lane(0), model::Row::Curve(0)]);
+        assert_eq!(rows(&mt), vec![stack::Row::Lane(0), stack::Row::Curve(0)]);
     }
 
     #[test]
@@ -3466,13 +3467,13 @@ mod tests {
 
         // And the row is in the stack, under the track it belongs to.
         let stack = mt.stack();
-        let rows: Vec<model::Row> = (0..stack.len()).filter_map(|i| stack.row(i)).collect();
+        let rows: Vec<stack::Row> = (0..stack.len()).filter_map(|i| stack.row(i)).collect();
         assert_eq!(
             rows,
             vec![
-                model::Row::Lane(0),
-                model::Row::Lane(1),
-                model::Row::Curve(0)
+                stack::Row::Lane(0),
+                stack::Row::Lane(1),
+                stack::Row::Curve(0)
             ],
             "the curve row is there, under its track"
         );
@@ -4519,7 +4520,7 @@ mod tests {
 
         let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
         let nav = View { start: 0.0, len };
-        let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
+        let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
         let cr = track::clip_rect(body, x0, x1);
         let local = track::clip_local_view(
             body,
@@ -4608,7 +4609,7 @@ mod tests {
 
         let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
         let nav = View { start: 0.0, len };
-        let (x0, x1) = model::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
+        let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
         let cr = track::clip_rect(body, x0, x1);
         let (_, right) = {
             let local = track::clip_local_view(
