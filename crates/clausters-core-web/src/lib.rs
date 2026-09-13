@@ -393,6 +393,16 @@ impl JsIdSpaces {
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Takes share `index` of `of` of every space, keeping what is allocated;
+    /// throws, changing nothing, when something held lies outside the slice.
+    pub fn narrow(&mut self, index: u32, of: u32) -> Result<(), JsError> {
+        let share = clausters_core::ids::IdShare::new(index, of)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        self.0
+            .narrow(share)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// A node the server reports gone, taken back if it was this client's.
     #[wasm_bindgen(js_name = nodeEnded)]
     pub fn node_ended(&mut self, node: f64) -> bool {

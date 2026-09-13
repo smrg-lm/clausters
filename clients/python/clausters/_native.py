@@ -663,6 +663,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ids_contains.argtypes = [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int64]
     lib.clausters_ids_in_use.restype = ctypes.c_uint64
     lib.clausters_ids_in_use.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+    lib.clausters_ids_narrow.restype = ctypes.c_int32
+    lib.clausters_ids_narrow.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32]
     lib.clausters_ids_share_of.restype = ctypes.c_int32
     lib.clausters_ids_share_of.argtypes = [
         ctypes.c_int64, ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
@@ -2934,6 +2936,13 @@ class IdSpaces:
     def in_use(self, space: int) -> int:
         """How many ids of ``space`` are allocated now."""
         return int(self._lib.clausters_ids_in_use(self._handle, int(space)))
+
+    def narrow(self, index: int, of: int) -> None:
+        """Takes share ``index`` of ``of`` of every space, keeping what is
+        allocated. Raises ``ValueError``, changing nothing, when the share is
+        not one or something held lies outside the new slice."""
+        if self._lib.clausters_ids_narrow(self._handle, int(index), int(of)) != 0:
+            raise ValueError(f"cannot narrow the ids to share {index} of {of}")
 
     def close(self) -> None:
         if getattr(self, "_handle", None):

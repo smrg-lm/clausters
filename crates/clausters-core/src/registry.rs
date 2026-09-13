@@ -251,6 +251,39 @@ impl Registry {
         }
     }
 
+    /// **Marks a specific run allocated**, answering whether it could: every id
+    /// of `[first, first + width)` inside the space and free. Refused whole —
+    /// nothing is marked — otherwise. `width` 0 counts as 1.
+    ///
+    /// What moving live allocations into a narrower space takes: the ids a
+    /// client already holds are claimed in the new map at the numbers they
+    /// already have, since the server already knows them by those numbers.
+    pub fn claim(&mut self, first: i64, width: usize) -> bool {
+        let w = width.max(1);
+        match &mut self.space {
+            Space::Bounded { used, in_use, .. } => {
+                if first < self.base || first + w as i64 > self.base + used.len() as i64 {
+                    return false;
+                }
+                let start = (first - self.base) as usize;
+                if used[start..start + w].iter().any(|&b| b) {
+                    return false;
+                }
+                used[start..start + w].iter_mut().for_each(|b| *b = true);
+                *in_use += w;
+                true
+            }
+            Space::Unbounded { next, live } => {
+                if first < self.base {
+                    return false;
+                }
+                *next = (*next).max(first + w as i64);
+                *live += w;
+                true
+            }
+        }
+    }
+
     /// Releases everything (a client reset / `/group_freeAll`-scale event).
     pub fn clear(&mut self) {
         match &mut self.space {

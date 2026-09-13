@@ -302,6 +302,20 @@ pub unsafe extern "C" fn clausters_ids_in_use(h: *mut FfiIdSpaces, space: i32) -
     with_ids(h, 0, |ids| ids.in_use(space) as u64)
 }
 
+/// **Takes share `index` of `of` of every space, keeping what is allocated**:
+/// 0 on success, -1 when the share is not one or something held lies outside
+/// the new slice (nothing changes then).
+///
+/// # Safety
+/// `h` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_ids_narrow(h: *mut FfiIdSpaces, index: u32, of: u32) -> i32 {
+    let Ok(share) = IdShare::new(index, of) else {
+        return -1;
+    };
+    with_ids(h, -1, |ids| if ids.narrow(share).is_ok() { 0 } else { -1 })
+}
+
 /// **The `(base, span)` of share `index` of `of`** within `span` ids at `base`,
 /// written into `out[0..2]`: 0 on success, -1 for a share that is not one.
 ///

@@ -158,6 +158,8 @@ pub struct ServerShape {
 
 /// **The four spaces one client allocates from.**
 pub struct IdSpaces {
+    shape: ServerShape,
+    score: bool,
     nodes: Registry,
     audio: Option<Registry>,
     control: Option<Registry>,
@@ -171,6 +173,8 @@ impl IdSpaces {
         let part = NodeIdPartition::from_max_nodes(shape.max_nodes);
         let (base, span) = share_of(part.client_base, part.client_capacity, share);
         IdSpaces {
+            shape,
+            score: false,
             nodes: Registry::new(base, span),
             audio: bus_space(
                 shape.audio_buses,
@@ -196,6 +200,7 @@ impl IdSpaces {
     /// from and one author by construction. The other three are the live ones.
     pub fn score(shape: ServerShape) -> IdSpaces {
         let mut spaces = IdSpaces::new(shape, IdShare::WHOLE);
+        spaces.score = true;
         spaces.nodes =
             Registry::unbounded(NodeIdPartition::from_max_nodes(shape.max_nodes).client_base);
         spaces
@@ -250,6 +255,57 @@ impl IdSpaces {
     /// error here: it is ignored, and the answer says whether it was ours.
     pub fn node_ended(&mut self, node: i64) -> bool {
         self.nodes.is_allocated(node) && self.nodes.release(node, 1).is_ok()
+    }
+
+    /// **Takes a narrower share of every space, keeping what is allocated.**
+    ///
+    /// What a client does when a second client arrives on its server after it
+    /// has already allocated — a script that opens a GUI host once its takes
+    /// are loaded. Every id it holds keeps its number, because the server
+    /// already knows it by that number; what changes is where the next one may
+    /// come from.
+    ///
+    /// Refused whole, leaving the spaces as they were, when something allocated
+    /// lies outside the new slice: an id the other client may now be handed is
+    /// a collision, and one that is reported is one that can be avoided. A
+    /// score's node space stays unbounded, since a score has one author.
+    pub fn narrow(&mut self, share: IdShare) -> Result<(), IdError> {
+        let mut next = IdSpaces::new(self.shape, share);
+        next.score = self.score;
+        let bounded: &[Space] = if self.score {
+            &[Space::AudioBuses, Space::ControlBuses, Space::Buffers]
+        } else {
+            &[
+                Space::Nodes,
+                Space::AudioBuses,
+                Space::ControlBuses,
+                Space::Buffers,
+            ]
+        };
+        for &space in bounded {
+            let Some(old) = self.registry_ref(space) else {
+                continue;
+            };
+            let Some(capacity) = old.capacity() else {
+                continue;
+            };
+            let held: Vec<i64> = (old.base()..old.base() + capacity as i64)
+                .filter(|&id| old.is_allocated(id))
+                .collect();
+            for id in held {
+                let claimed = next.registry(space).is_some_and(|new| new.claim(id, 1));
+                if !claimed {
+                    return Err(IdError::NotAllocated(space));
+                }
+            }
+        }
+        // A score's node space has one author and no share: it moves over whole,
+        // its next id still past everything it handed out.
+        if self.score {
+            next.nodes = std::mem::replace(&mut self.nodes, Registry::unbounded(0));
+        }
+        *self = next;
+        Ok(())
     }
 
     /// Whether `id` falls inside this client's slice of `space`.
@@ -365,6 +421,51 @@ mod tests {
         assert!(spaces.node_ended(node), "ours, taken back");
         assert!(!spaces.node_ended(node), "already back: ignored");
         assert!(!spaces.node_ended(5), "the server's own: ignored");
+    }
+
+    /// **A share narrowed after allocating keeps what is held.** A script that
+    /// opens a GUI host with its takes already loaded keeps their numbers, and
+    /// the next id comes from its half.
+    #[test]
+    fn narrowing_keeps_every_id_already_held() {
+        let mut spaces = IdSpaces::new(shape(), IdShare::WHOLE);
+        let node = spaces.alloc(Space::Nodes, 1).unwrap();
+        let bus = spaces.alloc(Space::ControlBuses, 4).unwrap();
+        let buf = spaces.alloc(Space::Buffers, 1).unwrap();
+        spaces.narrow(IdShare::new(0, 2).unwrap()).unwrap();
+        assert_eq!(spaces.in_use(Space::Nodes), 1);
+        assert_eq!(spaces.in_use(Space::ControlBuses), 4);
+        assert!(spaces.release(Space::Buffers, buf, 1).is_ok(), "still ours");
+        assert!(spaces.node_ended(node));
+        assert!(spaces.release(Space::ControlBuses, bus, 4).is_ok());
+        // ...and the second client's half is out of reach.
+        let other = IdSpaces::new(shape(), IdShare::new(1, 2).unwrap());
+        assert!(!spaces.contains(
+            Space::Nodes,
+            other.registry_ref(Space::Nodes).unwrap().base()
+        ));
+    }
+
+    /// Narrowing is refused, and nothing changes, when something held would
+    /// land in the other client's half.
+    #[test]
+    fn narrowing_refuses_when_a_held_id_is_in_the_other_half() {
+        let mut spaces = IdSpaces::new(
+            ServerShape {
+                buffers: 4,
+                ..shape()
+            },
+            IdShare::WHOLE,
+        );
+        for _ in 0..3 {
+            spaces.alloc(Space::Buffers, 1).unwrap(); // 0, 1, 2
+        }
+        assert_eq!(
+            spaces.narrow(IdShare::new(0, 2).unwrap()),
+            Err(IdError::NotAllocated(Space::Buffers)),
+            "buffer 2 is in the upper half"
+        );
+        assert_eq!(spaces.in_use(Space::Buffers), 3, "untouched");
     }
 
     /// A score's node space never runs out; the rest are the live spaces.

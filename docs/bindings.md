@@ -167,6 +167,7 @@ position. One implementation, every client bound to it.
 | `clausters_ids_free` | — | `idiom` — wasm frees by `Drop` |
 | `clausters_ids_alloc` | `JsIdSpaces.alloc` | `idiom` — the space is a small integer in C and its name in wasm; exhaustion is `-1` in C and a thrown error in wasm |
 | `clausters_ids_release` | `JsIdSpaces.release` | `idiom` — a double free is `-1` in C and a thrown error in wasm |
+| `clausters_ids_narrow` | `JsIdSpaces.narrow` | `idiom` — **a narrower share, keeping what is held**: what a client does when a second client arrives on its server after it has allocated (a script opening a GUI host once its takes are loaded). Refused whole when a held id lies in the other half; `-1` in C, a thrown error in wasm |
 | `clausters_ids_node_ended` | `JsIdSpaces.node_ended` | a node the server reports gone, taken back if it was this client's |
 | `clausters_ids_contains` | `JsIdSpaces.contains` | `idiom` — as `alloc` for the space |
 | `clausters_ids_in_use` | `JsIdSpaces.in_use` | `idiom` — as `alloc` for the space |
