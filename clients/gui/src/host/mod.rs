@@ -660,6 +660,10 @@ pub struct Host {
     /// embedded server; [`forward`](Self::forward) sends bound-widget values
     /// through it.
     server: Option<ServerLink>,
+    /// The joins a host with two servers made in the session and has not yet
+    /// pointed the player at, by buffer number: each waits for its
+    /// `/buffer_stitch` to be done before the player is told to attach it.
+    pub(crate) stitching: Vec<i32>,
     /// The server that **makes sound**, when it is not the one that holds the
     /// samples.
     ///
@@ -824,6 +828,7 @@ impl Host {
             watched_buses: Vec::new(),
             buffer_stream: (Vec::new(), 0),
             server: None,
+            stitching: Vec::new(),
             player: None,
             #[cfg(unix)]
             shared_buffers: None,

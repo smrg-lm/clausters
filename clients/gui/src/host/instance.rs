@@ -206,10 +206,28 @@ impl Host {
                     frames: Some(stitch.frames),
                 },
             );
-            messages.push(document::sources::stitch_message(bufnum, &stitch));
+            messages.push((bufnum, document::sources::stitch_message(bufnum, &stitch)));
         }
-        for message in messages {
-            self.send_to_player(message);
+        // **Where the samples are, and then where the piece sounds.** A host
+        // with two servers makes the join in the session, which owns the takes
+        // and is what the picture reads, and points the player at it once it is
+        // there (`Host::on_server_reply`) -- the order a session's open follows.
+        // Sent to the player instead, the join sounded and the picture read a
+        // buffer the session never had: an empty box. With one server the two
+        // are the same place.
+        let split = self.player.is_some() && self.server.is_some();
+        for (bufnum, message) in messages {
+            if !split {
+                self.send_to_player(message);
+                continue;
+            }
+            let Some(session) = self.server.as_ref() else {
+                continue;
+            };
+            match session.send(message) {
+                Ok(()) => self.stitching.push(bufnum),
+                Err(e) => diag::warn!("cannot make the join in the session: {e}"),
+            }
         }
     }
 

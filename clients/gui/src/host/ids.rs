@@ -106,6 +106,20 @@ impl Host {
                     self.ids.node_ended(i64::from(*node));
                 }
             }
+            // A join the session finished making: the player is pointed at it
+            // now, and not before, or it would map a buffer that is not there.
+            "/done" => {
+                if let [OscType::String(command), OscType::Int(bufnum), ..] = msg.args.as_slice()
+                    && command == "/buffer_stitch"
+                    && let Some(at) = self.stitching.iter().position(|b| b == bufnum)
+                {
+                    let bufnum = self.stitching.remove(at);
+                    self.send_to_player(OscMessage {
+                        addr: "/buffer_attach".into(),
+                        args: vec![OscType::Int(bufnum)],
+                    });
+                }
+            }
             "/server_query.reply" => {
                 if let Some(shape) = shape_of(&msg.args) {
                     let share = self.ids.share();
@@ -189,6 +203,24 @@ mod tests {
         assert_eq!(host.ids().in_use(Space::Nodes), 1);
         host.on_server_reply(&end(node));
         assert_eq!(host.ids().in_use(Space::Nodes), 0);
+    }
+
+    /// **A join the session made is attached once, when its stitch is done** —
+    /// and a `/done` for a buffer nobody is waiting on attaches nothing.
+    #[test]
+    fn a_stitch_done_in_the_session_is_attached_once() {
+        let mut host = Host::new();
+        host.stitching.push(9);
+        let done = |command: &str, bufnum: i32| OscMessage {
+            addr: "/done".into(),
+            args: vec![OscType::String(command.into()), OscType::Int(bufnum)],
+        };
+        host.on_server_reply(&done("/buffer_allocRead", 9));
+        assert_eq!(host.stitching, [9], "another command's done");
+        host.on_server_reply(&done("/buffer_stitch", 4));
+        assert_eq!(host.stitching, [9], "another buffer's stitch");
+        host.on_server_reply(&done("/buffer_stitch", 9));
+        assert!(host.stitching.is_empty(), "its own stitch releases it");
     }
 
     /// The governed group is allocated once, like any node, and bound once.
