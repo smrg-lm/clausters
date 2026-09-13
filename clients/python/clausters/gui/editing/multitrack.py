@@ -718,15 +718,18 @@ class MultitrackEditor(Editor):
         found = self.entered.get(name)
         if found is not None:
             return found
-        region = _region(self.structure, name)
-        if region is None:
+        # **What the box is, is the piece's** (the core's `box`): the source its
+        # region windows and what a window over it is called.
+        self._sync_core()
+        contents = self._core.call("box", name=str(name))
+        if not contents:
             return None
-        held = self.bridge.sources.structure(_source_of(region))
+        held = self.bridge.sources.structure(contents.get("source"))
         if held is None:
             return None
         opened = edit(held, sample_rate=self.bridge.rate,
                       context=self._editing, app=self.app, host=self._host,
-                      title=str(region.name or name),
+                      title=str(contents.get("title") or name),
                       # **On the host the piece is on, or on no screen at
                       # all.** A piece that was never opened has no window to
                       # enter one *from*, and resolving an ambient host there
@@ -762,37 +765,6 @@ class MultitrackEditor(Editor):
         # were never on screen to clear.
         self.entered.clear()
         super().close()
-
-
-def _region(piece: Multitrack, name: str):
-    """The region of this name, wherever it is, and ``None`` for a box the
-    piece has none of.
-
-    A box is named by its region's id, so the name is the address — the same
-    thing that makes a report readable with no map on the side.
-    """
-    try:
-        wanted = int(name)
-    except ValueError:
-        return None
-    for track in piece.tracks:
-        for lane in track.lanes:
-            for region in lane.regions:
-                if int(region.id) == wanted:
-                    return region
-    return None
-
-
-def _source_of(region):
-    """The source a region is a window onto, or ``None`` for a box that is a
-    window onto something else."""
-    window = (region.content.write() if hasattr(region.content, "write")
-              else region.content)
-    if not isinstance(window, dict):
-        return None
-    onto = window.get("window") or {}
-    source = (onto.get("source") or {}).get("source")
-    return None if source is None else int(source)
 
 
 def is_piece(structure) -> bool:

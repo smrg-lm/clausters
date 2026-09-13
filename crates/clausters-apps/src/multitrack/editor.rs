@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use clausters_core::tempoclock::samples_to_secs;
-use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MULTITRACK;
+use clausters_document::multitrack::{Content, Multitrack};
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Opaque, SourceId, domain};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
@@ -344,6 +344,32 @@ impl MultitrackEditor {
             transport: Some(self.stopped()),
             ..Outcome::default()
         }
+    }
+
+    /// **What a box opens as**: the source its region is a window onto, and the
+    /// title a window over it carries. `None` for a name no region has; a
+    /// region that is a window onto nothing loaded answers with no source.
+    ///
+    /// The multitrack places and a box is entered to edit. What opens is
+    /// another application's — an editor for what the box holds — so this
+    /// answers what to open and not how.
+    pub fn box_contents(&self, name: &str) -> Option<BoxContents> {
+        let id = name.trim().parse::<u64>().ok()?;
+        let region = self
+            .piece
+            .tracks
+            .iter()
+            .flat_map(|track| &track.lanes)
+            .flat_map(|lane| &lane.regions)
+            .find(|region| region.id.0 == id)?;
+        let source = match &region.content {
+            Content::Window { window, .. } => window.source.samples().map(|s| s.source.0),
+            _ => None,
+        };
+        Some(BoxContents {
+            source,
+            title: region.name.clone().unwrap_or_else(|| name.to_string()),
+        })
     }
 
     /// **What the clock reads** with the piece at `position` beats.
@@ -723,6 +749,15 @@ impl MultitrackEditor {
     }
 }
 
+/// What a box a hand entered opens as.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct BoxContents {
+    /// The source the region is a window onto, when it is one.
+    pub source: Option<u64>,
+    /// What a window over it is called: the region's name, or the box's.
+    pub title: String,
+}
+
 /// The tag the host's space bar reaches a window with.
 pub const PLAY_KEY: &str = "play";
 
@@ -814,6 +849,8 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
 /// - `rewind`, `toggle`, `stop` — `version`: the transport row's verbs, as a
 ///   script calls them, each an [`Outcome`].
 /// - `clock` — `position` (beats): `{"text"}`, what the clock reads.
+/// - `box` — `name`: `{"source", "title"}`, what the box of that name opens
+///   as, or `null` for a name no region has.
 /// - `window` — `widget`, `ruler`: the window, as a GuiDef.
 /// - `setWindow` — `window` (an id or `null`).
 /// - `props` — `widget`.
@@ -855,6 +892,10 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
                 editor.set_controls(serde_json::from_value(get("controls")).ok());
             }
             "{}".into()
+        }
+        "box" => {
+            serde_json::to_string(&editor.box_contents(get("name").as_str().unwrap_or_default()))
+                .unwrap_or_else(|_| "null".into())
         }
         "rewind" => outcome(&editor.rewind(version)),
         "toggle" => outcome(&editor.toggle(version)),
@@ -1175,6 +1216,22 @@ mod tests {
         let out = ed.event(&event(39, 2, 1, PLAY_KEY, vec![]), 1);
         assert_eq!(out.transport, Some(TransportVerb::Toggle));
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
+    }
+
+    /// **A box opens as the source its region windows**, under the region's
+    /// name; a name no region has opens nothing.
+    #[test]
+    fn a_box_opens_as_the_source_it_windows() {
+        let ed = editor();
+        assert_eq!(
+            ed.box_contents("12"),
+            Some(BoxContents {
+                source: Some(1),
+                title: "12".into()
+            })
+        );
+        assert_eq!(ed.box_contents("nowhere"), None);
+        assert_eq!(ed.box_contents("99"), None);
     }
 
     /// The clock reads the position and the piece's end, in the piece's beats.

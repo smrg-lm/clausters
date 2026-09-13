@@ -32,7 +32,6 @@ import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, editingStitch } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import { Multitrack } from "../../multitrack.ts";
-import type { Region } from "../../multitrack.ts";
 import type { Answer } from "./echo.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
@@ -990,16 +989,21 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const { edit } = await import("./edit.ts");
         const found = this.entered.get(name);
         if (found !== undefined) return found;
-        const region = regionNamed(this.structure, name);
-        if (region === null) return null;
-        const held = this.bridge.sources.structure(sourceOf(region));
+        // **What the box is, is the piece's** (the core's `box`): the source its
+        // region windows and what a window over it is called.
+        this.syncCore();
+        const contents = this.coreCall("box", { name }) as
+            | { source: number | null; title: string }
+            | null;
+        if (contents === null) return null;
+        const held = this.bridge.sources.structure(contents.source ?? undefined);
         if (held === undefined) return null;
         const opened = await edit(held, {
             sampleRate: this.bridge.rate,
             context: this.editing,
             app: this.app,
             host: this.host ?? undefined,
-            title: String(region.name ?? name),
+            title: String(contents.title || name),
             // **On the host the piece is on, or on no screen at all.** A piece
             // that was never opened has no window to enter one *from*, and
             // resolving an ambient host there would put a box on screen while
@@ -1036,40 +1040,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
         this.entered.clear();
         return super.close();
     }
-}
-
-/**
- * The region of this name, wherever it is, and `null` for a box the piece has
- * none of.
- *
- * A box is named by its region's id, so the name is the address — the same
- * thing that makes a report readable with no map on the side.
- */
-function regionNamed(piece: Multitrack, name: string): Region | null {
-    const wanted = Number(name);
-    if (!Number.isFinite(wanted)) return null;
-    for (const track of piece.tracks) {
-        for (const lane of track.lanes) {
-            for (const region of lane.regions) {
-                if (Number(region.id) === Math.trunc(wanted)) return region;
-            }
-        }
-    }
-    return null;
-}
-
-/**
- * The source a region is a window onto, or `undefined` for a box that is a
- * window onto something else.
- */
-function sourceOf(region: Region): number | undefined {
-    const content = region.content as unknown as { write?(): unknown };
-    const written = (typeof content?.write === "function" ? content.write() : content) as
-        | Record<string, unknown>
-        | undefined;
-    const onto = (written?.window ?? {}) as Record<string, unknown>;
-    const source = ((onto.source ?? {}) as Record<string, unknown>).source;
-    return source === undefined || source === null ? undefined : Number(source);
 }
 
 /** Whether {@link edit} should open this as a multitrack. */

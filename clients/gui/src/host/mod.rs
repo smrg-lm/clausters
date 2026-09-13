@@ -2212,6 +2212,14 @@ impl Host {
         if let Some(beat) = outcome.locate {
             self.cue_piece(beat);
         }
+        // **A box entered here opens nothing yet.** What it opens is an editor
+        // for what the box holds -- the audio editor, another application --
+        // and this host has none to open; a client opens its own.
+        if let Some(name) = &outcome.enter {
+            diag::info!(
+                "box {name}: entering a box needs the audio editor, which this host does not have yet"
+            );
+        }
         match outcome.transport {
             Some(TransportVerb::Toggle) => {
                 self.roll_piece();

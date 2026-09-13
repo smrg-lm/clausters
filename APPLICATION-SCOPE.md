@@ -1007,6 +1007,32 @@ this milestone stops being "prove it against the one thing we have". Whether it
 is still a milestone of its own or is absorbed by `O24`'s audio editor is
 decided there.
 
+**Decided 2026-09-13 with the user: the second application is the audio
+editor, and it is written in `crates/clausters-apps` as an application of its
+own** — its own module, beside `multitrack` and never inside it, one per
+application. It is what the multitrack's `O32` stopped short of on purpose
+(`crates/clausters-document/PLAN.md`, `O32` step 5): a box entered out of a
+piece opens an editor for what it holds, and today that editor is each
+client's `SamplesEditor` — a window over one take, a stroke read with the
+inverse it carries, a correction that reloads the picture — written twice and
+absent from the standalone host. Porting it from the Python client, the way the
+multitrack was, gives three things at once:
+
+- **the standalone host can enter a box**, which today it logs and does not do,
+  because it has no audio editor to open;
+- **the undo order can move into the crate.** A piece shares one history with
+  the boxes entered out of it, and while those editors were the clients' the
+  multitrack editor had to hand its entries back to whoever kept them. With both
+  applications in the crate the history can be the crate's, and the clients'
+  `Editing` and `Application` shrink to what a language owns;
+- **the abstraction gets its second consumer**, which is what this milestone was
+  written for.
+
+The acceptance above stands, read for the audio editor: written with the
+supported surface, one program in two languages, and an undo that walks a
+stroke drawn inside a box and a box dragged on the piece as one order — now
+from the standalone host too.
+
 ### AP8 - The pass over the packages, and the plans keep what is worth keeping
 
 The milestone that makes deleting this file legal.
