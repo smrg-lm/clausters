@@ -982,6 +982,16 @@ export function domainEdit(domain: string, state: string, payload: string): stri
 export function editingIntake(domain: string, tag: string, request: string): string;
 
 /**
+ * JS face: **what a source made of spans comes to** — the buffer a join is,
+ * resolved against the caller's table.
+ *
+ * `source` is a source-table entry as JSON and `held` the table, source id to
+ * `{"buffer", "channels", "frames"}`; the answer is the join's width, rate,
+ * length and parts, or `null` where there is nothing to make.
+ */
+export function editingStitch(source: string, held: string): string;
+
+/**
  * The engraver's options for one page, as the JSON object it is configured
  * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
  * systems at) and an optional JSON object merged over them.
@@ -1415,6 +1425,7 @@ export interface InitOutput {
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

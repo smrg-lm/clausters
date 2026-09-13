@@ -27,6 +27,7 @@ import {
     History as CoreHistory,
     domainCoalesceKey as coreDomainCoalesceKey,
     editingIntake as coreEditingIntake,
+    editingStitch as coreEditingStitch,
     domainEdit as coreDomainEdit,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
@@ -531,6 +532,53 @@ export function editingIntake(
     if (!answer) return { payloads: [], label: "edit" };
     const taken = JSON.parse(answer) as Partial<Intake>;
     return { ...taken, payloads: taken.payloads ?? [], label: taken.label ?? "edit" };
+}
+
+/** One part of a resolved join: a run of one buffer, and its channel map. */
+export interface StitchPart {
+    /** The buffer this span is read from. */
+    buffer: number;
+    /** Its first frame. */
+    start: number;
+    /** How many frames it contributes. */
+    frames: number;
+    /** Frames of linear fade at its head. */
+    fadeIn: number;
+    /** Frames of linear fade at its tail. */
+    fadeOut: number;
+    /** One entry per channel of the join: the part's channel, or `-1`. */
+    channels: number[];
+}
+
+/** What {@link editingStitch} answers: the buffer a join is. */
+export interface Stitch {
+    /** How wide the join is. */
+    channels: number;
+    /** Its rate, or `0` for the server's. */
+    rate: number;
+    /** How many frames it comes to. */
+    frames: number;
+    /** The parts, in the order they play. */
+    parts: StitchPart[];
+}
+
+/**
+ * **What a source made of spans comes to** — the buffer a join is, resolved
+ * against the caller's table.
+ *
+ * One reading for every endpoint that realizes a minted join, so the width, the
+ * spans and the channel map a narrow part fills the join with are the crate's
+ * and not this client's. `held` is source id → `{ buffer, channels, frames }`.
+ * `undefined` where there is nothing to make: not a join, or a part over a
+ * source nobody loaded.
+ */
+export function editingStitch(
+    source: Record<string, unknown>,
+    held: Record<string, { buffer: number; channels: number; frames: number }>,
+): Stitch | undefined {
+    const answer = coreEditingStitch(JSON.stringify(source), JSON.stringify(held));
+    if (!answer || answer === "null") return undefined;
+    return JSON.parse(answer) as Stitch;
 }
 
 /** What {@link domainEdit} answers: both directions of one edit. */

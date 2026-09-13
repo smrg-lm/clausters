@@ -127,6 +127,22 @@ class Sources:
         found = self.buffers.get(int(source))
         return None if isinstance(found, (int, float)) else found
 
+    def held(self) -> dict:
+        """The table as a **join** reads it: source id -> ``{"buffer",
+        "channels", "frames"}``.
+
+        `table` plus the length, which a join needs and a plan does not: a part
+        that names no range contributes the whole of its source, and only
+        whoever loaded it knows how much that is.
+        """
+        out: dict = {}
+        for source, entry in self.table().items():
+            held = self.buffers[source]
+            entry = dict(entry)
+            entry["frames"] = max(0, int(getattr(held, "frames", 0) or 0))
+            out[source] = entry
+        return out
+
     def table(self) -> dict:
         """The whole table as the instance plan reads it: source id ->
         ``{"buffer": n, "channels": n}``.
@@ -301,45 +317,34 @@ class MultitrackDomain(Domain):
         already holds -- so this costs the list of parts and not the audio, and
         freeing a take something is stitched over does not silence it.
 
+        **What the join is comes from the crate** (`_native.editing_stitch`):
+        its width, its spans and the channel map a narrow part fills it with,
+        read once for every endpoint that realizes one. What is left here is
+        the command and the table.
+
         A part whose source nobody loaded leaves the join unmade rather than
         half made: a box over it draws empty and does not play, which is what a
         source nobody answered for has always meant here.
         """
-        if not isinstance(minted, dict):
+        if not isinstance(minted, dict) or minted.get("id") is None:
             return
-        source = minted.get("id")
-        parts = (minted.get("location") or {}).get("parts")
-        if source is None or not parts:
+        made = _native.editing_stitch(minted, self.bridge.sources.held())
+        if not made:
             return
-        # **Written over rather than skipped.** The document has just said what
-        # this source is; a table entry under that id is either the same join
-        # being redone or something the id was reused for, and in both cases
-        # what the piece now names is this.
-        made = []
-        for part in parts:
-            ref = part.get("source") or {}
-            bufnum = self.bridge.sources.bufnum(ref.get("source"))
-            if bufnum < 0:
-                return
-            span = ref.get("range") or {}
-            start = int(span.get("start", 0))
-            made.append(Part(bufnum, start=start,
-                             frames=int(span.get("end", start)) - start,
-                             fade_in=int(part.get("fade_in", 0)),
-                             fade_out=int(part.get("fade_out", 0)),
-                             channels=part.get("channels")))
-        width = minted.get("channels") or max(
-            (self.bridge.sources.width(p.get("source", {}).get("source"))
-             for p in parts), default=1)
+        parts = [Part(int(p["buffer"]), start=int(p["start"]),
+                      frames=int(p["frames"]), fade_in=int(p["fadeIn"]),
+                      fade_out=int(p["fadeOut"]), channels=list(p["channels"]))
+                 for p in made["parts"]]
         # **Sent rather than waited on.** This runs inside the answer to a
         # gesture, and a join owns no samples: there is nothing to copy and
         # nothing to load, so the buffer number is known the moment it is
         # handed out and blocking on the `/done` would only stall the hand.
-        self.bridge.sources.buffers[int(source)] = Buffer.stitch(
-            made, channels=int(width),
-            sample_rate=float(minted.get("sample_rate") or 0.0),
-            wait=False, server=self.bridge.server)
-
+        # **Written over rather than skipped**: the document has just said
+        # what this source is.
+        self.bridge.sources.buffers[int(minted["id"])] = Buffer.stitch(
+            parts, channels=int(made["channels"]),
+            sample_rate=float(made["rate"]), wait=False,
+            server=self.bridge.server)
 
 class MultitrackView(View):
     """One `clausters.gui.guidef.multitrack`: the whole piece, in one widget.

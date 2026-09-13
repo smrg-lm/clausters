@@ -129,6 +129,41 @@ pub unsafe extern "C" fn clausters_editing_intake(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **What a source made of spans comes to**: the buffer a join is, resolved.
+///
+/// `source` is a source-table entry as JSON (a minted source as an intent
+/// carries it reads the same) and `held` the caller's table, source id to
+/// `{"buffer", "channels", "frames"}`. The answer is
+/// `clausters_editing::sources::stitch_json`'s: the join's width, rate, length
+/// and parts with their full channel maps, or `null` where there is nothing to
+/// make.
+///
+/// Sizes with a null `out` and fills with a second call.
+///
+/// # Safety
+/// `source` and `held` must be null or readable for their lengths, and `out`
+/// null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_stitch(
+    source: *const u8,
+    source_len: usize,
+    held: *const u8,
+    held_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(source), Some(held)) = (
+        unsafe { crate::document::text(source, source_len) },
+        unsafe { crate::document::text(held, held_len) },
+    ) else {
+        return 0;
+    };
+    let answer = clausters_editing::sources::stitch_json(&source, &held);
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 /// **What is sounding of a piece**, held across edits.
 ///
 /// The instance projection's state: an opaque handle, because it is the one

@@ -1240,6 +1240,18 @@ pub fn editing_intake(domain: &str, tag: &str, request: &str) -> String {
     clausters_editing::intake_json(domain, tag, request)
 }
 
+/// JS face: **what a source made of spans comes to** — the buffer a join is,
+/// resolved against the caller's table.
+///
+/// `source` is a source-table entry as JSON and `held` the table, source id to
+/// `{"buffer", "channels", "frames"}`; the answer is the join's width, rate,
+/// length and parts, or `null` where there is nothing to make.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = editingStitch)]
+pub fn editing_stitch(source: &str, held: &str) -> String {
+    clausters_editing::sources::stitch_json(source, held)
+}
+
 /// JS face: **what is sounding of a piece**, held across edits.
 ///
 /// The instance projection's state. The other two projections are functions of

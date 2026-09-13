@@ -242,6 +242,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_intake.restype = ctypes.c_size_t
+    lib.clausters_editing_stitch.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_stitch.restype = ctypes.c_size_t
     lib.clausters_editing_instance_new.restype = ctypes.c_void_p
     lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_instance_reconcile.argtypes = [
@@ -1313,6 +1318,31 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
     raw = size_then_fill(_lib.clausters_editing_intake, as_u8(name), len(name),
                          as_u8(verb), len(verb), as_u8(body), len(body))
     return json.loads(raw) if raw else {}
+
+
+def editing_stitch(source: dict, held: dict) -> "dict | None":
+    """**What a source made of spans comes to** — the buffer a join is,
+    resolved against the caller's table (`clausters_editing_stitch`).
+
+    One reading for every endpoint that realizes a minted join, so the width,
+    the spans and the channel map a narrow part fills the join with are the
+    crate's and not this client's.
+
+    Args:
+        source: a source-table entry, as a minted source rides on an intent.
+        held: source id -> ``{"buffer", "channels", "frames"}``.
+
+    Returns:
+        ``{"channels", "rate", "frames", "parts": [{"buffer", "start",
+        "frames", "fadeIn", "fadeOut", "channels"}]}``, or ``None`` where there
+        is nothing to make: not a join, or a part over a source nobody loaded.
+    """
+    _lib = lib()
+    body = json.dumps(source).encode("utf-8")
+    table = json.dumps({str(k): v for k, v in held.items()}).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_editing_stitch, as_u8(body), len(body),
+                         as_u8(table), len(table))
+    return json.loads(raw) if raw else None
 
 
 class Instance:

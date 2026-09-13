@@ -29,7 +29,7 @@
  */
 
 import { TempoMap } from "../../base/time.ts";
-import { MULTITRACK, domainEdit } from "../../document.ts";
+import { MULTITRACK, domainEdit, editingStitch } from "../../document.ts";
 import {
     Multitrack, multitrackNames as names, multitrackProps,
 } from "../../multitrack.ts";
@@ -174,6 +174,26 @@ export class Sources {
                 buffer: bufnum,
                 channels: Math.max(1, Math.trunc(channels || 1)),
             };
+        }
+        return out;
+    }
+
+    /**
+     * The table as a **join** reads it: source id → `{ buffer, channels, frames }`.
+     *
+     * {@link Sources.table} plus the length, which a join needs and a plan does
+     * not: a part that names no range contributes the whole of its source, and
+     * only whoever loaded it knows how much that is.
+     */
+    held(): Record<string, { buffer: number; channels: number; frames: number }> {
+        const out: Record<string, { buffer: number; channels: number; frames: number }> = {};
+        for (const [source, entry] of Object.entries(this.table())) {
+            const held = this.buffers.get(Number(source));
+            const frames =
+                typeof held === "object" && held !== null
+                    ? Number((held as { frames?: unknown }).frames ?? 0)
+                    : 0;
+            out[source] = { ...entry, frames: Math.max(0, Math.trunc(frames || 0)) };
         }
         return out;
     }
@@ -390,53 +410,26 @@ export class MultitrackDomain extends Domain<Multitrack> {
      */
     private mint(minted: unknown): void {
         const server = this.bridge.server;
-        if (server === undefined || minted === null || typeof minted !== "object")
-            return;
-        const held = minted as {
-            id?: number;
-            channels?: number;
-            sample_rate?: number;
-            location?: { parts?: unknown[] };
-        };
-        const parts = held.location?.parts;
-        const id = held.id;
-        if (id === undefined || !Array.isArray(parts) || parts.length === 0) return;
-        // **Written over rather than skipped.** The document has just said what
-        // this source is; a table entry under that id is either the same join
-        // being redone or something the id was reused for, and in both cases
-        // what the piece now names is this.
-        const made: Part[] = [];
-        for (const entry of parts) {
-            const part = entry as {
-                source?: { source?: number; range?: { start?: number; end?: number } };
-                fade_in?: number;
-                fade_out?: number;
-                channels?: number[];
-            };
-            const bufnum = this.bridge.sources.bufnum(part.source?.source);
-            if (bufnum < 0) return;
-            const start = Math.trunc(part.source?.range?.start ?? 0);
-            made.push({
-                source: bufnum,
-                start,
-                frames: Math.trunc(part.source?.range?.end ?? start) - start,
-                fadeIn: Math.trunc(part.fade_in ?? 0),
-                fadeOut: Math.trunc(part.fade_out ?? 0),
-                channels: part.channels,
-            });
-        }
-        const width =
-            held.channels ??
-            Math.max(
-                ...parts.map((entry) =>
-                    this.bridge.sources.width(
-                        (entry as { source?: { source?: number } }).source?.source,
-                    ),
-                ),
-            );
-        void Buffer.stitch(made, {
-            channels: Math.trunc(width),
-            sampleRate: Number(held.sample_rate ?? 0.0),
+        if (server === undefined || minted === null || typeof minted !== "object") return;
+        const id = (minted as { id?: number }).id;
+        if (id === undefined) return;
+        // **What the join is comes from the crate** (`editingStitch`): its
+        // width, its spans and the channel map a narrow part fills it with, read
+        // once for every endpoint that realizes one. What is left here is the
+        // command and the table.
+        const made = editingStitch(minted as Record<string, unknown>, this.bridge.sources.held());
+        if (made === undefined) return;
+        const parts: Part[] = made.parts.map((part) => ({
+            source: part.buffer,
+            start: part.start,
+            frames: part.frames,
+            fadeIn: part.fadeIn,
+            fadeOut: part.fadeOut,
+            channels: part.channels,
+        }));
+        void Buffer.stitch(parts, {
+            channels: made.channels,
+            sampleRate: made.rate,
             wait: false,
             server,
         }).then((buffer) => {

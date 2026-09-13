@@ -178,3 +178,28 @@ def test_declared_arity_matches_the_signature(surfaces):
         if len(fn.argtypes) != arity:
             wrong.append(f"{name}: binding declares {len(fn.argtypes)}, crate takes {arity}")
     assert not wrong, "argtypes disagree with the Rust signature:\n" + "\n".join(wrong)
+
+
+def test_a_join_is_read_by_the_crate_and_a_narrow_part_fills_it():
+    """`editing_stitch` is the one reading of a segmented source: the width,
+    the spans, and a mono take in a stereo join heard on both sides."""
+    from clausters import _native
+
+    def part(source, end):
+        return {"source": {"source": source, "lifetime": "session",
+                           "range": {"start": 0, "end": end}}}
+
+    minted = {
+        "id": 9,
+        "location": {"at": "segments", "parts": [part(1, 100), part(2, 50)]},
+        "lifetime": "session",
+    }
+    held = {1: {"buffer": 7, "channels": 2, "frames": 96000},
+            2: {"buffer": 8, "channels": 1, "frames": 50}}
+    made = _native.editing_stitch(minted, held)
+    assert made is not None
+    assert made["channels"] == 2
+    assert made["frames"] == 150
+    assert made["parts"][1]["channels"] == [0, 0]
+    # A part over a source nobody loaded leaves the join unmade.
+    assert _native.editing_stitch(minted, {1: held[1]}) is None

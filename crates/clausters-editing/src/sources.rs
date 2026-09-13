@@ -23,6 +23,9 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
 use clausters_document::SourceId;
 use clausters_document::session::{Location, Part, Source};
 
@@ -33,7 +36,7 @@ use clausters_document::session::{Location, Part, Source};
 /// answers the first two, which is all a *plan* needs; a join needs the third,
 /// because a part that names no range contributes the whole of its source and
 /// only the caller knows how much that is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub struct Held {
     /// The server buffer holding the samples.
     pub buffer: i32,
@@ -45,7 +48,8 @@ pub struct Held {
 
 /// One part of a join, resolved: a run of one buffer, and which of its channels
 /// feeds each channel of the join.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StitchPart {
     /// The buffer this span is read from.
     pub buffer: i32,
@@ -68,7 +72,7 @@ pub struct StitchPart {
 }
 
 /// A join, resolved: what to allocate and what to fill it with.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Stitch {
     /// How wide the join is.
     pub channels: usize,
@@ -137,6 +141,31 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
     })
 }
 
+/// [`stitch`] as the JSON both client doors carry.
+///
+/// `source` is a source-table entry as the document writes one — a minted
+/// source as an intent carries it reads the same, its `id` beside the rest —
+/// and `held` is the caller's table: source id to `{"buffer", "channels",
+/// "frames"}`. The answer is the [`Stitch`] with its parts' fades as
+/// `fadeIn`/`fadeOut`, or `null` where there is nothing to make: not a join, no
+/// parts, or a part over a source the caller has not resolved.
+pub fn stitch_json(source: &str, held: &str) -> String {
+    let Ok(source) = serde_json::from_str::<Source>(source) else {
+        return "null".into();
+    };
+    let held: HashMap<SourceId, Held> = serde_json::from_str::<HashMap<String, Held>>(held)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(id, entry)| id.parse::<u64>().ok().map(|id| (SourceId(id), entry)))
+        .collect();
+    match stitch(&source, &held) {
+        Some(made) => serde_json::to_value(made)
+            .unwrap_or(Value::Null)
+            .to_string(),
+        None => "null".into(),
+    }
+}
+
 /// The frames a part contributes: its range, or the whole of its source.
 fn span_of(part: &Part, take: &Held) -> (u64, u64) {
     match &part.source.range {
@@ -202,6 +231,28 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// **The JSON door is the same reading**: a minted source as an intent
+    /// carries it, `id` and all, and the caller's table keyed by string.
+    #[test]
+    fn the_json_door_reads_a_minted_source_and_answers_null_for_nothing() {
+        // A minted source as an intent carries it: the table entry, with its id
+        // flattened beside the rest.
+        let mut part = part(1, Some((10, 20)));
+        part.fade_in = 3;
+        let mut minted = serde_json::to_value(join(vec![part], None)).unwrap();
+        minted["id"] = serde_json::json!(5);
+        let held = r#"{"1": {"buffer": 7, "channels": 1, "frames": 100}}"#;
+        let answer: Value = serde_json::from_str(&stitch_json(&minted.to_string(), held)).unwrap();
+        assert_eq!(answer["frames"], 10);
+        assert_eq!(answer["parts"][0]["buffer"], 7);
+        assert_eq!(answer["parts"][0]["fadeIn"], 3);
+        assert_eq!(
+            stitch_json(&minted.to_string(), "{}"),
+            "null",
+            "a part nobody loaded"
+        );
     }
 
     /// The ordinary join: two spans of one take, back to back.
