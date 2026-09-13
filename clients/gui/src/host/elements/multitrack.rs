@@ -38,8 +38,8 @@ use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, Lane};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, Samples, SlotFill, SlotKey,
-    Swept, Take, TextureBody, TimeSpace,
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
+    SlotKey, Slotted, Swept, Take, TextureBody, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -283,7 +283,7 @@ pub struct Multitrack {
     /// body door with no keyboard, no strips and no chrome.
     rolls: HashMap<String, Notes>,
     /// **The samples a spectral box owes its slot**, by buffer — kept when they
-    /// land and transformed by the next [`Element::fills`], which takes them.
+    /// land and transformed by the next [`Slotted::fills`], which takes them.
     ///
     /// A time-frequency picture is a texture, and a texture is uploaded rather
     /// than drawn. The samples are kept rather than the analysis because the
@@ -2445,99 +2445,6 @@ impl Element for Multitrack {
         Natural::default()
     }
 
-    fn editor(&self) -> Option<&EditorProps> {
-        Some(&self.editor)
-    }
-
-    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
-        Some(&mut self.editor)
-    }
-
-    fn navigates_time(&self) -> bool {
-        true
-    }
-
-    /// **The empty bars after the last clip are ordinary time.** A view of a
-    /// signal stops at its last sample; a piece is composed into the space
-    /// after what it already holds, so the axis is not bounded by the boxes on
-    /// it — which is also where its authoring headroom comes from.
-    fn unbounded_axis(&self) -> bool {
-        true
-    }
-
-    /// **The spectral boxes**, each over its own take's texture: a
-    /// time-frequency picture samples one, so it is drawn in the GPU pass and
-    /// not into the mesh — and this element holds several, one per buffer its
-    /// boxes are windows onto, which is why they are named by a key.
-    ///
-    /// Empty unless the widget's `view` asks for one, and empty for a box whose
-    /// take has not arrived: a picture of nothing is the frame around it.
-    fn texture_bodies(&self, ctx: &Ctx) -> Vec<TextureBody> {
-        self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
-            .into_iter()
-            .filter_map(|(n, rect, local)| {
-                let clip = self.clips.get(n)?;
-                let look = self.takes.get(&clip.source)?.texture_body()?;
-                Some(TextureBody {
-                    key: SlotKey(i64::from(clip.source)),
-                    rect,
-                    local,
-                    look,
-                })
-            })
-            .collect()
-    }
-
-    /// **What each take body has for its slot**, under the buffer it draws.
-    ///
-    /// One entry per source rather than per box: the analysis is the take's, so
-    /// six boxes over one recording are one upload — the same rule that makes
-    /// them one download.
-    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
-        let pending: Vec<(i32, (Vec<f32>, usize))> = self.pending.drain().collect();
-        pending
-            .into_iter()
-            .filter_map(|(bufnum, (samples, channels))| {
-                let body = self.takes.get(&bufnum)?;
-                let stfts = crate::host::frame::stft_channels(
-                    crate::host::frame::deinterleave(&samples, channels),
-                    body.spectral.fft_size,
-                    body.spectral.hop,
-                    body.editor.sample_rate,
-                );
-                Some((SlotKey(i64::from(bufnum)), SlotFill::Texture(stfts)))
-            })
-            .collect()
-    }
-
-    /// **The takes its clips are windows onto**, by server buffer number.
-    ///
-    /// The plural of the one source a picture asks for: this element holds
-    /// boxes, and every one of them is a window onto samples the server has.
-    /// Named once each, because the fetch is keyed by buffer and two clips over
-    /// one recording are one download.
-    /// **What a lane's header asks for, left of the axis.**
-    ///
-    /// It is the group's answer and not this widget's: the layout stamps the
-    /// widest wish any member of the navigation group made, so a ruler stacked
-    /// with these lanes starts its ticks over the same sample. Without it there
-    /// is no band, and a lane draws no name and no controls at all.
-    fn gutter(&self, m: &Metrics) -> f32 {
-        // The strip is part of the band, so the widest metered track is part of
-        // what the group's indent has to hold -- otherwise the meters would be
-        // drawn over the names rather than beside them.
-        let widest = self.meters.values().map(|m| m.channels).max().unwrap_or(0);
-        let header = track::Header {
-            w: None,
-            mute: Some(false),
-            solo: Some(false),
-            level: Some(1.0),
-            curves: Some(true),
-            meters: vec![(0.0, 0.0); widest],
-        };
-        header.width(m)
-    }
-
     fn needs(&self) -> Needs {
         let mut takes: Vec<i32> = self
             .clips
@@ -2589,12 +2496,6 @@ impl Element for Multitrack {
         ))
     }
 
-    /// How far the piece reaches on the axis — what an autofit and a scroll
-    /// size themselves against.
-    fn content_span(&self) -> Option<f64> {
-        Some(model::extent(&self.clips))
-    }
-
     /// What `/gui_query` overlays: the two structures, each as the string its
     /// own `/gui_set` would take.
     fn info(&self) -> Vec<(String, Value)> {
@@ -2613,6 +2514,125 @@ impl Element for Multitrack {
 
     fn samples_mut(&mut self) -> Option<&mut dyn Samples> {
         Some(self)
+    }
+
+    fn on_axis(&self) -> Option<&dyn OnAxis> {
+        Some(self)
+    }
+
+    fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
+        Some(self)
+    }
+
+    fn slotted(&self) -> Option<&dyn Slotted> {
+        Some(self)
+    }
+
+    fn slotted_mut(&mut self) -> Option<&mut dyn Slotted> {
+        Some(self)
+    }
+}
+
+impl OnAxis for Multitrack {
+    fn editor(&self) -> Option<&EditorProps> {
+        Some(&self.editor)
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        Some(&mut self.editor)
+    }
+
+    fn navigates_time(&self) -> bool {
+        true
+    }
+
+    /// **The empty bars after the last clip are ordinary time.** A view of a
+    /// signal stops at its last sample; a piece is composed into the space
+    /// after what it already holds, so the axis is not bounded by the boxes on
+    /// it — which is also where its authoring headroom comes from.
+    fn unbounded_axis(&self) -> bool {
+        true
+    }
+
+    /// **The takes its clips are windows onto**, by server buffer number.
+    ///
+    /// The plural of the one source a picture asks for: this element holds
+    /// boxes, and every one of them is a window onto samples the server has.
+    /// Named once each, because the fetch is keyed by buffer and two clips over
+    /// one recording are one download.
+    /// **What a lane's header asks for, left of the axis.**
+    ///
+    /// It is the group's answer and not this widget's: the layout stamps the
+    /// widest wish any member of the navigation group made, so a ruler stacked
+    /// with these lanes starts its ticks over the same sample. Without it there
+    /// is no band, and a lane draws no name and no controls at all.
+    fn gutter(&self, m: &Metrics) -> f32 {
+        // The strip is part of the band, so the widest metered track is part of
+        // what the group's indent has to hold -- otherwise the meters would be
+        // drawn over the names rather than beside them.
+        let widest = self.meters.values().map(|m| m.channels).max().unwrap_or(0);
+        let header = track::Header {
+            w: None,
+            mute: Some(false),
+            solo: Some(false),
+            level: Some(1.0),
+            curves: Some(true),
+            meters: vec![(0.0, 0.0); widest],
+        };
+        header.width(m)
+    }
+
+    /// How far the piece reaches on the axis — what an autofit and a scroll
+    /// size themselves against.
+    fn content_span(&self) -> Option<f64> {
+        Some(model::extent(&self.clips))
+    }
+}
+
+impl Slotted for Multitrack {
+    /// **The spectral boxes**, each over its own take's texture: a
+    /// time-frequency picture samples one, so it is drawn in the GPU pass and
+    /// not into the mesh — and this element holds several, one per buffer its
+    /// boxes are windows onto, which is why they are named by a key.
+    ///
+    /// Empty unless the widget's `view` asks for one, and empty for a box whose
+    /// take has not arrived: a picture of nothing is the frame around it.
+    fn texture_bodies(&self, ctx: &Ctx) -> Vec<TextureBody> {
+        self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
+            .into_iter()
+            .filter_map(|(n, rect, local)| {
+                let clip = self.clips.get(n)?;
+                let look = self.takes.get(&clip.source)?.texture_body()?;
+                Some(TextureBody {
+                    key: SlotKey(i64::from(clip.source)),
+                    rect,
+                    local,
+                    look,
+                })
+            })
+            .collect()
+    }
+
+    /// **What each take body has for its slot**, under the buffer it draws.
+    ///
+    /// One entry per source rather than per box: the analysis is the take's, so
+    /// six boxes over one recording are one upload — the same rule that makes
+    /// them one download.
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        let pending: Vec<(i32, (Vec<f32>, usize))> = self.pending.drain().collect();
+        pending
+            .into_iter()
+            .filter_map(|(bufnum, (samples, channels))| {
+                let body = self.takes.get(&bufnum)?;
+                let stfts = crate::host::frame::stft_channels(
+                    crate::host::frame::deinterleave(&samples, channels),
+                    body.spectral.fft_size,
+                    body.spectral.hop,
+                    body.editor.sample_rate,
+                );
+                Some((SlotKey(i64::from(bufnum)), SlotFill::Texture(stfts)))
+            })
+            .collect()
     }
 }
 

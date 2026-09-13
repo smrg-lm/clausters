@@ -23,7 +23,7 @@ use crate::canvas::{DEFAULT_SHADER, PARAM_COUNT};
 use crate::host::font;
 use crate::host::graphics::controls;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKey, SlotKind};
+use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKey, SlotKind, Slotted};
 use crate::host::widget::parse;
 
 /// A shader view. `params` are the four floats fed to the shader; a `buses`
@@ -121,6 +121,20 @@ impl Element for Canvas {
         }
     }
 
+    fn clone_box(&self) -> Box<dyn Element> {
+        Box::new(self.clone())
+    }
+
+    fn slotted(&self) -> Option<&dyn Slotted> {
+        Some(self)
+    }
+
+    fn slotted_mut(&mut self) -> Option<&mut dyn Slotted> {
+        Some(self)
+    }
+}
+
+impl Slotted for Canvas {
     fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
         vec![(
             SlotKey::SELF,
@@ -130,10 +144,6 @@ impl Element for Canvas {
                 params: self.resolved(ctx),
             },
         )]
-    }
-
-    fn clone_box(&self) -> Box<dyn Element> {
-        Box::new(self.clone())
     }
 }
 

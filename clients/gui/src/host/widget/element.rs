@@ -16,34 +16,45 @@
 //! | [`apply`](super::apply) | [`Element::set`] |
 //! | [`size`](super::size) | [`Element::natural`] |
 //! | the frame's flat draw | [`Element::draw`] |
-//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], drawn by [`Element::slots`] and fed by [`Element::fills`] |
+//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], drawn by [`Slotted::slots`] and fed by [`Slotted::fills`] |
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
 //! | the tree collectors | [`Element::needs`], with [`Samples::tap_frames`] sizing a page's tap subscription |
-//! | a clip's body draw | [`Element::draw_body`], or [`Element::texture_body`] for the one the frame must route to the GPU |
-//! | the shared time axis' chrome | [`Element::gutter`] / [`Element::measured_gutter`] |
+//! | a clip's body draw | [`Element::draw_body`], or [`Slotted::texture_body`] for the one the frame must route to the GPU |
+//! | the shared time axis' chrome | [`OnAxis::gutter`] / [`OnAxis::measured_gutter`] |
 //! | the default drag table | [`Element::gesture_map`] |
-//! | the gesture machine's reads | [`Element::rows`] / [`Element::centres_y_zoom`], and [`Measured::freq_axis`] & co. for an element that measures its own x |
+//! | the gesture machine's reads | [`OnAxis::rows`] / [`OnAxis::centres_y_zoom`], and [`Measured::freq_axis`] & co. for an element that measures its own x |
 //!
 //! # The facets: a capability is stated, not declined
 //!
 //! Not everything a pass asks is a question every element can be asked. A
 //! picture of **samples** owes nineteen answers nothing else in the catalog has
 //! — what shape they are, which buffer they came from, what a span of them is
-//! worth, how a write lands on them, what the view is asking for next — and an
-//! element with a **measured axis of its own** owes four more. As methods of
-//! [`Element`] those were twenty-three defaults every leaf inherited and
-//! declined, and the family the audio editor grows would have added to
-//! everyone's interface.
+//! worth, how a write lands on them, what the view is asking for next. An
+//! element on a **shared time axis** owes eleven more — how far its content
+//! reaches, what it reserves beside the axis, how many rows it stacks, the
+//! navigation chrome it carries. One with a **measured axis of its own** owes
+//! four, and one whose picture is a **texture** five. As methods of [`Element`]
+//! those were thirty-nine defaults every leaf inherited and declined, and the
+//! families the other two applications grow would have added to everyone's
+//! interface.
 //!
-//! So they are traits of their own — [`Samples`] and [`Measured`] — reached
-//! through [`Element::samples`] and [`Element::measured`], which answer `None`
-//! by default. A pass asks the node for the facet it needs
+//! So they are traits of their own — [`Samples`], [`OnAxis`], [`Measured`],
+//! [`Slotted`] — reached through [`Element::samples`], [`Element::on_axis`],
+//! [`Element::measured`] and [`Element::slotted`], which answer `None` by
+//! default. A pass asks the node for the facet it needs
 //! ([`WidgetKind::as_samples`](super::WidgetKind::as_samples) and its kin) and
 //! gets nothing from everything else, which is what it got method by method
 //! before; what changed is that an element now implements the facets it **is**,
 //! and a new question about samples reaches the elements that have them.
+//!
+//! **What stayed on [`Element`] is what a control is.** The hand — press,
+//! drag, release, the keys, the focus — reads like a candidate and is not one:
+//! the median element in this catalog *is* a control, so a gesture facet would
+//! be a second impl block on thirteen of nineteen elements to spare four of
+//! them a few `None`s. A facet is worth its accessor where the capability is
+//! the exception, and interaction is the rule.
 //!
 //! It is a facet and not a downcast for the same reason [`Element`] is a trait
 //! and not an enum: the caller is a pass, and *which element is this* is never
@@ -113,7 +124,7 @@ pub struct Ctx<'a> {
     pub rect: Rect,
     /// Where this element's **shared axis** begins inside its rect: the widest
     /// gutter any member of its navigation group asked for
-    /// ([`Element::gutter`]), stamped on the placement by the layout. `0.0`
+    /// ([`OnAxis::gutter`]), stamped on the placement by the layout. `0.0`
     /// for an element on no shared axis, which is most of them.
     ///
     /// It is here and not derived because it is the *group's* answer: an
@@ -155,7 +166,7 @@ pub struct Ctx<'a> {
 /// body carries none), so it cannot go through the ordinary slot path — the
 /// frame has to route it to the texture pass itself. This is the whole of what
 /// it needs to know to do that, and an element that draws its body into the
-/// mesh instead answers `None` ([`Element::texture_body`]).
+/// mesh instead answers `None` ([`Slotted::texture_body`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextureLook {
     pub db_floor: f32,
@@ -820,7 +831,7 @@ pub enum SlotFrame {
 /// The two are separate because they run on different rhythms and in different
 /// directions. A [`SlotFrame`] is produced per repaint out of a borrowed
 /// element, and carries the frame's own reading of the world; a `SlotFill` is
-/// **taken** from the element ([`Element::fills`]) at the front's tick, and is
+/// **taken** from the element ([`Slotted::fills`]) at the front's tick, and is
 /// the data itself. An element with nothing new hands back `None`, which is
 /// what keeps a still picture at zero uploads.
 ///
@@ -1480,31 +1491,6 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
-    /// **The editor chrome this element carries**, or `None` (the default) for
-    /// one that carries none.
-    ///
-    /// [`EditorProps`](super::EditorProps) is what a member of a navigation
-    /// group is made of — its ruler units, its own vertical window, its link,
-    /// its offset on the shared axis — and it is read *and written* from
-    /// outside: a gesture pans the group and writes the member's window, a
-    /// `/gui_set` of `view_y` lands here. So the door is a borrow of the props
-    /// rather than a copy of them.
-    fn editor(&self) -> Option<&super::EditorProps> {
-        None
-    }
-
-    /// [`editor`](Element::editor), mutably — the door a navigation gesture and
-    /// a `/gui_set` of the chrome write through.
-    fn editor_mut(&mut self) -> Option<&mut super::EditorProps> {
-        None
-    }
-
-    /// Whether this element navigates the window's **shared time axis**, and so
-    /// joins a navigation group. `false` by default.
-    fn navigates_time(&self) -> bool {
-        false
-    }
-
     /// Whether this element draws an overlay that **follows the pointer** — a
     /// cursor readout over stored data. `false` by default.
     ///
@@ -1557,26 +1543,6 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// This element's [`ValueAxis`] inside the rect it was placed in, or `None`
-    /// for one whose vertical measures nothing a selection could name.
-    ///
-    /// Asked for the same reason [`Measured::freq_axis`] is: the region split is
-    /// the element's own, and a marquee that restricts a selection in value has
-    /// to read the axis the picture was drawn through. `rows` is what the
-    /// front found in the element's slot, resolved by
-    /// [`Element::rows`] as everywhere else — the element states the domain and
-    /// the window, never how many channels reached the card. `indent` is where
-    /// the shared axis starts inside the rect, as everywhere else.
-    fn value_axis(
-        &self,
-        _rect: Rect,
-        _indent: f32,
-        _m: &Metrics,
-        _channels: usize,
-    ) -> Option<ValueAxis> {
-        None
-    }
-
     /// **The drag table this element wants** when the wire declares none, or
     /// `None` (the default) to take the generic one — the press goes to the
     /// element and every modifier with it.
@@ -1587,33 +1553,6 @@ pub trait Element: fmt::Debug {
     /// axis's and not the picture's.
     fn gesture_map(&self) -> Option<GestureMap> {
         None
-    }
-
-    /// **The look of a body whose picture is a texture**, or `None` (the
-    /// default) for one that draws into the shared mesh
-    /// ([`draw_body`](Element::draw_body)).
-    ///
-    /// The one body the frame cannot let draw itself: a time-frequency picture
-    /// samples an uploaded texture, so it goes to the GPU pass with the clip's
-    /// own axis and the clip's id — the key its slot was filled under.
-    fn texture_body(&self) -> Option<TextureLook> {
-        None
-    }
-
-    /// **The time-frequency pictures this element wants drawn inside itself**,
-    /// each in its own rectangle and against its own local axis — empty for
-    /// every element but the one that holds boxes.
-    ///
-    /// A spectral picture samples a texture, so it is drawn in the GPU pass and
-    /// not into the shared mesh: an element that draws one of its own says so
-    /// through [`slots`](Element::slots), and an element that holds *several*
-    /// — a multitrack's boxes over several takes — says so here, because each
-    /// is a window onto a different texture at a different place.
-    ///
-    /// The key names which of this element's slots the picture comes from, so
-    /// the pair `(widget id, key)` addresses it exactly as a slot is addressed.
-    fn texture_bodies(&self, _ctx: &Ctx) -> Vec<TextureBody> {
-        Vec::new()
     }
 
     /// **What this element draws as a clip's body**, into the clip's rectangle
@@ -1627,55 +1566,11 @@ pub trait Element: fmt::Debug {
     /// pictures of the same data. The default draws nothing.
     fn draw_body(&self, _d: &mut Draw, _rect: Rect, _time: &TimeSpace) {}
 
-    /// **Where the shared time axis lies inside this element's rect**, and
-    /// whether it offers a vertical gesture surface beside it — or `None` (the
-    /// default) to take the generic timeline body, which is what every
-    /// element on that axis but one wants.
-    ///
-    /// It is a door because the roll is the one leaf whose picture is *not* the
-    /// rectangle minus its chrome: strips are stacked under its grid (a
-    /// velocity lane, an OSC lane) that read the same time and are not part
-    /// of the body a sample maps into, and its keyboard gutter is a vertical
-    /// surface whatever `ruler_y` says. The hit-test has to place the axis
-    /// exactly where the drawing did, so it asks.
-    fn axis_body(&self, _rect: Rect, _indent: f32, _m: &Metrics) -> Option<(Rect, bool)> {
-        None
-    }
-
-    /// **The axis length this element's own content occupies**, or `None` (the
-    /// default) for an element whose extent is registered from outside — a
-    /// loaded take, a streamed history.
-    ///
-    /// A navigation group's timeline is the longest of its members' extents, so
-    /// a surface that is *authored* rather than loaded — a roll being written
-    /// note by note — has to say how far its content now reaches, or the axis
-    /// stays the length it was defined with and everything painted past it
-    /// lands outside the window.
-    fn content_span(&self) -> Option<f64> {
-        None
-    }
-
-    /// Whether this element's time axis is **not bounded by what it holds** —
-    /// `false` by default, and `true` for the one view whose empty time is
-    /// ordinary time.
-    ///
-    /// A view of a signal stops at its last sample because there is nothing
-    /// after it to select, play or cut. A multitrack's extent is only where its
-    /// clips happen to end: the empty bars after them are addressable time — a
-    /// span to paste into, a region to loop over while writing — so a rectangle
-    /// drawn across them is a rectangle, and stopping it at the last clip would
-    /// be the axis answering a question about its contents. It is also what
-    /// gives such a view its authoring headroom, since a window that could not
-    /// scroll past the end could not compose past it either.
-    fn unbounded_axis(&self) -> bool {
-        false
-    }
-
     /// **The content extent this element drives**, in the plane's own units, or
     /// `None` for the element that drives none — which is every one but a
     /// patcher, whose graph the host lays out.
     ///
-    /// It is the two-dimensional twin of [`content_span`](Element::content_span)
+    /// It is the two-dimensional twin of [`content_span`](OnAxis::content_span)
     /// and the deliberate opposite of [`natural`](Element::natural): a natural
     /// size is pure over the metrics and the presentation props and must never
     /// follow the data, because it resolves on the layout's main axis; this
@@ -1684,61 +1579,6 @@ pub trait Element: fmt::Debug {
     /// it does not interpret.
     fn content_size(&self) -> Option<(f32, f32)> {
         None
-    }
-
-    /// **What this element reserves left of its body** for chrome of its own —
-    /// a value ruler — when it sits on a shared time axis. `0.0` by default.
-    ///
-    /// It is a *wish*, not a placement: the indent every member of a navigation
-    /// group draws at is the widest wish on that axis, because the axis is
-    /// shared and the same sample must sit at the same pixel in all of them.
-    /// Answered from the props alone, so the layout knows it before a single
-    /// rectangle exists.
-    fn gutter(&self, _m: &Metrics) -> f32 {
-        0.0
-    }
-
-    /// The gutter this element wants once it has been **placed**, or `None`
-    /// (the default) when its wish did not depend on the placement after all.
-    ///
-    /// A ruler's width can be a property of the *data* rather than of the
-    /// props: an amplitude axis zoomed onto a narrow range formats `-0.0625`
-    /// where the same axis unzoomed formats `-1.0`, and the step it labels at
-    /// depends on how tall the element ended up. That is one pass later than
-    /// [`gutter`](Element::gutter), so it is a second question and not the same
-    /// one — and an element answers `None` unless the measure would actually
-    /// widen the band, since a second layout pass is only taken when one is
-    /// owed.
-    fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
-        None
-    }
-
-    /// **How many rows this element stacks on screen**, given the `uploaded`
-    /// count the front found in its GPU slot — the divisor for every
-    /// row-relative y gesture.
-    ///
-    /// The front knows how many channels are actually on the card and nothing
-    /// about how they are arranged, which is why the two halves meet here: an
-    /// element that *overlays* its channels draws one row however many it was
-    /// given, and one that stacks them draws as many as there are. The default
-    /// stacks.
-    fn rows(&self, uploaded: usize) -> usize {
-        uploaded.max(1)
-    }
-
-    /// Whether a y zoom over this element anchors at the **centre** of a row
-    /// rather than under the pointer. `false` by default: the pointer is where
-    /// a reader expects a zoom to hold still.
-    ///
-    /// It is a property of what the axis *measures*, because one vertical
-    /// window is shared by every row. An axis of **values** — frequency,
-    /// pitch — says the same thing in each of them, so the value under the
-    /// cursor is meaningful and holding it still is what the reader wants. An
-    /// **amplitude** axis does not: zero sits at the centre of every row, an
-    /// anchor taken from the pointer's height means nothing in the other rows,
-    /// and any off-centre window pushes the trace out of its row and clips it.
-    fn centres_y_zoom(&self) -> bool {
-        false
     }
 
     /// The [`BodyRole`] this element fills when a container holds it as one of
@@ -1753,51 +1593,6 @@ pub trait Element: fmt::Debug {
     fn body_role(&self) -> Option<BodyRole> {
         None
     }
-
-    /// What the GPU slots this element claimed draw this frame, each under the
-    /// [`SlotKey`] that addresses it **within the element**. Empty for an
-    /// element that claimed none, which is the default. An element that claims
-    /// one usually still [`draw`](Element::draw)s — a label, a frame — into the
-    /// shared mesh around it.
-    ///
-    /// **Plural because a view may hold several pictures.** A signal is one
-    /// picture and answers with one entry under [`SlotKey::SELF`]; a multitrack
-    /// is a stack of boxes over several takes, and a time-frequency box samples
-    /// a texture of its own — so the key is what tells them apart, and it is the
-    /// element's own word for the picture (a server buffer number, there)
-    /// rather than anything the front invents.
-    fn slots(&self, _ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
-        Vec::new()
-    }
-
-    /// **What the claimed slots are fed**, empty (the default) when the element
-    /// has nothing new for them — which is every element that claimed none, and
-    /// every frame of one whose picture did not move.
-    ///
-    /// It is a *taking*: the element hands the content over and marks itself
-    /// clean, so the front's walk uploads once per change rather than once per
-    /// tick. That is why it is separate from [`slots`](Element::slots), which
-    /// describes a draw and borrows.
-    ///
-    /// Only the element knows when its picture moved and what shape the upload
-    /// has — a pyramid at its own bucket, an analysis at its own window and
-    /// hop, the columns a rolling transform just produced — so the front's walk
-    /// asks every widget the same question and learns nothing about any of
-    /// them.
-    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
-        Vec::new()
-    }
-
-    /// **The slot's contents are gone**: the window's GPU resources were
-    /// rebuilt (a fresh device, a page's canvas re-attached), so whatever this
-    /// element handed over is no longer on the card and the next
-    /// [`fills`](Element::fills) has to hand it over again.
-    ///
-    /// It is the one thing a filling element cannot work out for itself — the
-    /// device is the front's — and it is why a fill can be a taking at all: an
-    /// element marks itself clean because the frame kept what it gave, and this
-    /// is how it is told that it did not.
-    fn slot_dropped(&mut self) {}
 
     /// Whether the wheel **falls through** this element to whatever is behind
     /// it. True for something that only puts marks on its rect and has no
@@ -2043,6 +1838,281 @@ pub trait Element: fmt::Debug {
     fn measured_mut(&mut self) -> Option<&mut dyn Measured> {
         None
     }
+
+    /// **What this element is on a shared time axis**, or `None` (the default)
+    /// for one that is on none — a knob, a label, a menu, every control there
+    /// is.
+    ///
+    /// The third facet, and the one the editor views are made of: how far the
+    /// content reaches, which band it reserves left of the axis, how many rows
+    /// it stacks, the navigation chrome it carries and is written through. It
+    /// is eleven questions that mean nothing at all to a widget that is not
+    /// placed on an axis, which is most of the catalog.
+    fn on_axis(&self) -> Option<&dyn OnAxis> {
+        None
+    }
+
+    /// [`on_axis`](Element::on_axis), mutably — a navigation gesture pans the
+    /// group and writes the member's window through here.
+    fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
+        None
+    }
+
+    /// **What the frame's GPU pass has to do for this element**, or `None`
+    /// (the default) for one whose picture is triangles in the shared mesh.
+    ///
+    /// The fourth facet. A slot is a texture the frame uploads and samples, and
+    /// an element that has one has to say what it wants, hand over what it has
+    /// and be told when the card let go of it. Every other element draws
+    /// through [`draw`](Element::draw) and answers none of this.
+    fn slotted(&self) -> Option<&dyn Slotted> {
+        None
+    }
+
+    /// [`slotted`](Element::slotted), mutably — handing over a fill and being
+    /// told a slot was dropped are both writes.
+    fn slotted_mut(&mut self) -> Option<&mut dyn Slotted> {
+        None
+    }
+}
+
+/// **What an element placed on a shared time axis owes.**
+///
+/// A facet of [`Element`], reached through [`Element::on_axis`]. The editor
+/// views are made of these: a waveform, a piano roll, a curve and a multitrack
+/// are all *members of a navigation group*, and what a group has to ask of a
+/// member is the same list whichever of them it is — how far its content
+/// reaches, what it reserves beside the axis, how many rows it stacks, where
+/// the axis lies inside its rectangle, and the chrome it carries (the window,
+/// the selection, the playhead) which a gesture writes back through.
+///
+/// Nothing here means anything to a control. That is the whole reason it is a
+/// facet: a knob declined eleven questions about an axis it is not on.
+pub trait OnAxis {
+    /// **The editor chrome this element carries**, or `None` (the default) for
+    /// one that carries none.
+    ///
+    /// [`EditorProps`](super::EditorProps) is what a member of a navigation
+    /// group is made of — its ruler units, its own vertical window, its link,
+    /// its offset on the shared axis — and it is read *and written* from
+    /// outside: a gesture pans the group and writes the member's window, a
+    /// `/gui_set` of `view_y` lands here. So the door is a borrow of the props
+    /// rather than a copy of them.
+    fn editor(&self) -> Option<&super::EditorProps> {
+        None
+    }
+
+    /// [`editor`](OnAxis::editor), mutably — the door a navigation gesture and
+    /// a `/gui_set` of the chrome write through.
+    fn editor_mut(&mut self) -> Option<&mut super::EditorProps> {
+        None
+    }
+
+    /// Whether this element navigates the window's **shared time axis**, and so
+    /// joins a navigation group. `false` by default.
+    fn navigates_time(&self) -> bool {
+        false
+    }
+
+    /// This element's [`ValueAxis`] inside the rect it was placed in, or `None`
+    /// for one whose vertical measures nothing a selection could name.
+    ///
+    /// Asked for the same reason [`Measured::freq_axis`] is: the region split is
+    /// the element's own, and a marquee that restricts a selection in value has
+    /// to read the axis the picture was drawn through. `rows` is what the
+    /// front found in the element's slot, resolved by
+    /// [`OnAxis::rows`] as everywhere else — the element states the domain and
+    /// the window, never how many channels reached the card. `indent` is where
+    /// the shared axis starts inside the rect, as everywhere else.
+    fn value_axis(
+        &self,
+        _rect: Rect,
+        _indent: f32,
+        _m: &Metrics,
+        _channels: usize,
+    ) -> Option<ValueAxis> {
+        None
+    }
+
+    /// **Where the shared time axis lies inside this element's rect**, and
+    /// whether it offers a vertical gesture surface beside it — or `None` (the
+    /// default) to take the generic timeline body, which is what every
+    /// element on that axis but one wants.
+    ///
+    /// It is a door because the roll is the one leaf whose picture is *not* the
+    /// rectangle minus its chrome: strips are stacked under its grid (a
+    /// velocity lane, an OSC lane) that read the same time and are not part
+    /// of the body a sample maps into, and its keyboard gutter is a vertical
+    /// surface whatever `ruler_y` says. The hit-test has to place the axis
+    /// exactly where the drawing did, so it asks.
+    fn axis_body(&self, _rect: Rect, _indent: f32, _m: &Metrics) -> Option<(Rect, bool)> {
+        None
+    }
+
+    /// **The axis length this element's own content occupies**, or `None` (the
+    /// default) for an element whose extent is registered from outside — a
+    /// loaded take, a streamed history.
+    ///
+    /// A navigation group's timeline is the longest of its members' extents, so
+    /// a surface that is *authored* rather than loaded — a roll being written
+    /// note by note — has to say how far its content now reaches, or the axis
+    /// stays the length it was defined with and everything painted past it
+    /// lands outside the window.
+    fn content_span(&self) -> Option<f64> {
+        None
+    }
+
+    /// Whether this element's time axis is **not bounded by what it holds** —
+    /// `false` by default, and `true` for the one view whose empty time is
+    /// ordinary time.
+    ///
+    /// A view of a signal stops at its last sample because there is nothing
+    /// after it to select, play or cut. A multitrack's extent is only where its
+    /// clips happen to end: the empty bars after them are addressable time — a
+    /// span to paste into, a region to loop over while writing — so a rectangle
+    /// drawn across them is a rectangle, and stopping it at the last clip would
+    /// be the axis answering a question about its contents. It is also what
+    /// gives such a view its authoring headroom, since a window that could not
+    /// scroll past the end could not compose past it either.
+    fn unbounded_axis(&self) -> bool {
+        false
+    }
+
+    /// **What this element reserves left of its body** for chrome of its own —
+    /// a value ruler — when it sits on a shared time axis. `0.0` by default.
+    ///
+    /// It is a *wish*, not a placement: the indent every member of a navigation
+    /// group draws at is the widest wish on that axis, because the axis is
+    /// shared and the same sample must sit at the same pixel in all of them.
+    /// Answered from the props alone, so the layout knows it before a single
+    /// rectangle exists.
+    fn gutter(&self, _m: &Metrics) -> f32 {
+        0.0
+    }
+
+    /// The gutter this element wants once it has been **placed**, or `None`
+    /// (the default) when its wish did not depend on the placement after all.
+    ///
+    /// A ruler's width can be a property of the *data* rather than of the
+    /// props: an amplitude axis zoomed onto a narrow range formats `-0.0625`
+    /// where the same axis unzoomed formats `-1.0`, and the step it labels at
+    /// depends on how tall the element ended up. That is one pass later than
+    /// [`gutter`](OnAxis::gutter), so it is a second question and not the same
+    /// one — and an element answers `None` unless the measure would actually
+    /// widen the band, since a second layout pass is only taken when one is
+    /// owed.
+    fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
+        None
+    }
+
+    /// **How many rows this element stacks on screen**, given the `uploaded`
+    /// count the front found in its GPU slot — the divisor for every
+    /// row-relative y gesture.
+    ///
+    /// The front knows how many channels are actually on the card and nothing
+    /// about how they are arranged, which is why the two halves meet here: an
+    /// element that *overlays* its channels draws one row however many it was
+    /// given, and one that stacks them draws as many as there are. The default
+    /// stacks.
+    fn rows(&self, uploaded: usize) -> usize {
+        uploaded.max(1)
+    }
+
+    /// Whether a y zoom over this element anchors at the **centre** of a row
+    /// rather than under the pointer. `false` by default: the pointer is where
+    /// a reader expects a zoom to hold still.
+    ///
+    /// It is a property of what the axis *measures*, because one vertical
+    /// window is shared by every row. An axis of **values** — frequency,
+    /// pitch — says the same thing in each of them, so the value under the
+    /// cursor is meaningful and holding it still is what the reader wants. An
+    /// **amplitude** axis does not: zero sits at the centre of every row, an
+    /// anchor taken from the pointer's height means nothing in the other rows,
+    /// and any off-centre window pushes the trace out of its row and clips it.
+    fn centres_y_zoom(&self) -> bool {
+        false
+    }
+}
+
+/// **What an element whose picture is a texture owes the frame's GPU pass.**
+///
+/// A facet of [`Element`], reached through [`Element::slotted`]. Most elements
+/// draw triangles into the one mesh and answer none of this; the few whose
+/// picture is *sampled* — a spectrogram, a canvas, a multitrack's spectral
+/// boxes — declare what they want, hand over what they have, and are told when
+/// the card let go of it.
+pub trait Slotted {
+    /// **The look of a body whose picture is a texture**, or `None` (the
+    /// default) for one that draws into the shared mesh
+    /// ([`draw_body`](Element::draw_body)).
+    ///
+    /// The one body the frame cannot let draw itself: a time-frequency picture
+    /// samples an uploaded texture, so it goes to the GPU pass with the clip's
+    /// own axis and the clip's id — the key its slot was filled under.
+    fn texture_body(&self) -> Option<TextureLook> {
+        None
+    }
+
+    /// **The time-frequency pictures this element wants drawn inside itself**,
+    /// each in its own rectangle and against its own local axis — empty for
+    /// every element but the one that holds boxes.
+    ///
+    /// A spectral picture samples a texture, so it is drawn in the GPU pass and
+    /// not into the shared mesh: an element that draws one of its own says so
+    /// through [`slots`](Slotted::slots), and an element that holds *several*
+    /// — a multitrack's boxes over several takes — says so here, because each
+    /// is a window onto a different texture at a different place.
+    ///
+    /// The key names which of this element's slots the picture comes from, so
+    /// the pair `(widget id, key)` addresses it exactly as a slot is addressed.
+    fn texture_bodies(&self, _ctx: &Ctx) -> Vec<TextureBody> {
+        Vec::new()
+    }
+
+    /// What the GPU slots this element claimed draw this frame, each under the
+    /// [`SlotKey`] that addresses it **within the element**. Empty for an
+    /// element that claimed none, which is the default. An element that claims
+    /// one usually still [`draw`](Element::draw)s — a label, a frame — into the
+    /// shared mesh around it.
+    ///
+    /// **Plural because a view may hold several pictures.** A signal is one
+    /// picture and answers with one entry under [`SlotKey::SELF`]; a multitrack
+    /// is a stack of boxes over several takes, and a time-frequency box samples
+    /// a texture of its own — so the key is what tells them apart, and it is the
+    /// element's own word for the picture (a server buffer number, there)
+    /// rather than anything the front invents.
+    fn slots(&self, _ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        Vec::new()
+    }
+
+    /// **What the claimed slots are fed**, empty (the default) when the element
+    /// has nothing new for them — which is every element that claimed none, and
+    /// every frame of one whose picture did not move.
+    ///
+    /// It is a *taking*: the element hands the content over and marks itself
+    /// clean, so the front's walk uploads once per change rather than once per
+    /// tick. That is why it is separate from [`slots`](Slotted::slots), which
+    /// describes a draw and borrows.
+    ///
+    /// Only the element knows when its picture moved and what shape the upload
+    /// has — a pyramid at its own bucket, an analysis at its own window and
+    /// hop, the columns a rolling transform just produced — so the front's walk
+    /// asks every widget the same question and learns nothing about any of
+    /// them.
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        Vec::new()
+    }
+
+    /// **The slot's contents are gone**: the window's GPU resources were
+    /// rebuilt (a fresh device, a page's canvas re-attached), so whatever this
+    /// element handed over is no longer on the card and the next
+    /// [`fills`](Slotted::fills) has to hand it over again.
+    ///
+    /// It is the one thing a filling element cannot work out for itself — the
+    /// device is the front's — and it is why a fill can be a taking at all: an
+    /// element marks itself clean because the frame kept what it gave, and this
+    /// is how it is told that it did not.
+    fn slot_dropped(&mut self) {}
 }
 
 /// **What a picture of samples owes**, beside what every element owes.
@@ -2283,7 +2353,7 @@ pub trait Samples {
     /// nothing.
     ///
     /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
-    /// the reason [`fills`](Element::fills) is: **asking clears the ask**, so one
+    /// the reason [`fills`](Slotted::fills) is: **asking clears the ask**, so one
     /// `reload` produces one load. A front's per-repaint walk can call it every
     /// frame and it answers once, which is what a fetch in flight needs — an
     /// element with no body yet is indistinguishable from one that has not
@@ -2473,11 +2543,6 @@ mod tests {
             }
         }
 
-        fn gutter(&self, m: &Metrics) -> f32 {
-            // A band of its own left of the body, like a value ruler's.
-            m.ruler_w
-        }
-
         fn gesture_map(&self) -> Option<GestureMap> {
             // Placed on somebody's axis: a plain drag is the axis' selection,
             // Shift its pan -- the table a navigable view wants.
@@ -2517,6 +2582,17 @@ mod tests {
         fn samples(&self) -> Option<&dyn Samples> {
             Some(self)
         }
+
+        fn on_axis(&self) -> Option<&dyn OnAxis> {
+            Some(self)
+        }
+    }
+
+    impl OnAxis for Counter {
+        fn gutter(&self, m: &Metrics) -> f32 {
+            // A band of its own left of the body, like a value ruler's.
+            m.ruler_w
+        }
     }
 
     impl Samples for Counter {
@@ -2554,6 +2630,9 @@ mod tests {
         assert!(el.measured().is_none(), "and measures no axis of its own");
         assert!(label.kind.as_samples().is_none(), "the door agrees");
 
+        assert!(label.kind.as_element().unwrap().on_axis().is_none());
+        assert!(label.kind.as_element().unwrap().slotted().is_none());
+
         let signal = tree(r#"{"id":2,"type":"signal","view":"spectrum","bus":0}"#);
         let el = signal.kind.as_element().expect("so is a signal view");
         assert!(el.samples().is_some(), "a signal view holds samples");
@@ -2561,6 +2640,18 @@ mod tests {
             el.measured().is_some(),
             "and a spectrum measures its own x axis"
         );
+        // **A facet says what an element *can* be asked, not what it is doing.**
+        // A signal view answers the axis questions whichever view it is; which
+        // axis it is actually on is one of those answers
+        // ([`OnAxis::navigates_time`]), and a spectrum's is not the shared one.
+        let axis = el.on_axis().expect("a signal view is an editor view");
+        assert!(!axis.navigates_time(), "a spectrum is on no shared time");
+
+        let canvas = tree(r#"{"id":3,"type":"canvas","w":16,"h":16}"#);
+        let el = canvas.kind.as_element().expect("a canvas is an element");
+        assert!(el.slotted().is_some(), "its picture is a texture");
+        assert!(el.on_axis().is_none(), "and it is on no axis");
+        assert!(el.samples().is_none(), "and holds no samples");
     }
 
     /// The whole promise in one test: a name nothing built in answers to

@@ -545,7 +545,7 @@ impl Host {
     }
 
     /// Whether group `key` holds a view whose axis is **not bounded by what it
-    /// holds** ([`Element::unbounded_axis`](super::widget::Element::unbounded_axis))
+    /// holds** ([`OnAxis::unbounded_axis`](super::widget::Element::unbounded_axis))
     /// — a multitrack, which is composed into the space after its last clip.
     fn group_has_lane(&self, key: GroupKey) -> bool {
         self.window_defs.values().any(|tree| {
@@ -706,7 +706,7 @@ impl Host {
     fn sync_track_totals_inner(&mut self, refit: bool) {
         /// A surface's own extent in samples: an element that holds its own
         /// content says how far it reaches
-        /// ([`Element::content_span`](super::widget::Element::content_span)).
+        /// ([`OnAxis::content_span`](super::widget::Element::content_span)).
         fn extent(widget: &Widget) -> Option<(i32, usize)> {
             let span = widget.kind.content_span()?;
             Some((widget.id?, span.ceil().max(0.0) as usize))

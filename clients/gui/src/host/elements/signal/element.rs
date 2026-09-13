@@ -13,7 +13,7 @@
 //!
 //! **What is drawn here and what is not.** The four presentations that go into
 //! the window's one mesh draw in [`Element::draw`]; the two that cannot claim a
-//! slot and describe their frame in [`Element::slots`], because a trace
+//! slot and describe their frame in [`Slotted::slots`], because a trace
 //! decimated per pixel and a texture sampled per texel are pipelines the window
 //! owns. The chrome *around* a heavy view — the rulers, the playhead, the
 //! selection, the readout — stays the frame's: it is shared with the lane, the
@@ -32,8 +32,8 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
-    Ctx, Element, FreqAxis, Input, Live, Loaded, Measured, Needs, SampleBlock, Samples, SlotFill,
-    SlotFrame, SlotKey, TextureLook, TimeSpace, ValueAxis,
+    Ctx, Element, FreqAxis, Input, Live, Loaded, Measured, Needs, OnAxis, SampleBlock, Samples,
+    SlotFill, SlotFrame, SlotKey, Slotted, TextureLook, TimeSpace, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
@@ -176,46 +176,6 @@ impl Element for SignalElement {
         SignalElement::tick(self, live);
     }
 
-    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
-        SignalElement::fill(self)
-            .map(|fill| (SlotKey::SELF, fill))
-            .into_iter()
-            .collect()
-    }
-
-    fn slot_dropped(&mut self) {
-        self.slot_dirty = true;
-    }
-
-    /// What a claimed slot draws this frame. The horizontal window is not here:
-    /// it is the **navigation group's**, which is addressed by an id this
-    /// element does not carry, and the lane count is the slot's own.
-    fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
-        self.one_slot(ctx)
-            .map(|frame| (SlotKey::SELF, frame))
-            .into_iter()
-            .collect()
-    }
-
-    /// Where the axis lies inside the rect, and whether a vertical surface sits
-    /// beside it. A signal view answers for itself rather than taking the
-    /// generic body, because the **label strip is the element's**: nothing
-    /// outside it knows whether this widget carries one, so a hit test that
-    /// took the generic answer would map a pointer onto a body the picture is
-    /// not drawn in.
-    fn axis_body(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<(Rect, bool)> {
-        Some((
-            crate::host::frame::timeline_body(
-                rect,
-                &self.editor,
-                self.display.label.is_some(),
-                indent,
-                m,
-            ),
-            self.editor.ruler_y != crate::host::widget::RulerY::Off,
-        ))
-    }
-
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Take)
     }
@@ -238,40 +198,8 @@ impl Element for SignalElement {
         SignalElement::draw_body(self, d, rect, time);
     }
 
-    fn texture_body(&self) -> Option<TextureLook> {
-        SignalElement::texture_body(self)
-    }
-
-    fn editor(&self) -> Option<&EditorProps> {
-        Some(&self.editor)
-    }
-
-    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
-        Some(&mut self.editor)
-    }
-
-    fn navigates_time(&self) -> bool {
-        SignalElement::navigates_time(self)
-    }
-
     fn hover_readout(&self) -> bool {
         !self.is_live()
-    }
-
-    fn gutter(&self, m: &Metrics) -> f32 {
-        SignalElement::gutter(self, m)
-    }
-
-    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        SignalElement::measured_gutter(self, rect, m)
-    }
-
-    fn rows(&self, uploaded: usize) -> usize {
-        SignalElement::rows(self, uploaded)
-    }
-
-    fn centres_y_zoom(&self) -> bool {
-        SignalElement::centres_y_zoom(self)
     }
 
     fn pending_edit(&self) -> Option<&crate::host::widget::element::PendingEdit> {
@@ -290,16 +218,6 @@ impl Element for SignalElement {
         }
         self.pending = pending;
         true
-    }
-
-    fn value_axis(
-        &self,
-        rect: Rect,
-        indent: f32,
-        m: &Metrics,
-        channels: usize,
-    ) -> Option<ValueAxis> {
-        SignalElement::value_axis(self, rect, indent, m, channels)
     }
 
     fn gesture_map(&self) -> Option<GestureMap> {
@@ -328,6 +246,108 @@ impl Element for SignalElement {
 
     fn measured_mut(&mut self) -> Option<&mut dyn Measured> {
         Some(self)
+    }
+
+    fn on_axis(&self) -> Option<&dyn OnAxis> {
+        Some(self)
+    }
+
+    fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
+        Some(self)
+    }
+
+    fn slotted(&self) -> Option<&dyn Slotted> {
+        Some(self)
+    }
+
+    fn slotted_mut(&mut self) -> Option<&mut dyn Slotted> {
+        Some(self)
+    }
+}
+
+impl OnAxis for SignalElement {
+    /// Where the axis lies inside the rect, and whether a vertical surface sits
+    /// beside it. A signal view answers for itself rather than taking the
+    /// generic body, because the **label strip is the element's**: nothing
+    /// outside it knows whether this widget carries one, so a hit test that
+    /// took the generic answer would map a pointer onto a body the picture is
+    /// not drawn in.
+    fn axis_body(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<(Rect, bool)> {
+        Some((
+            crate::host::frame::timeline_body(
+                rect,
+                &self.editor,
+                self.display.label.is_some(),
+                indent,
+                m,
+            ),
+            self.editor.ruler_y != crate::host::widget::RulerY::Off,
+        ))
+    }
+
+    fn editor(&self) -> Option<&EditorProps> {
+        Some(&self.editor)
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        Some(&mut self.editor)
+    }
+
+    fn navigates_time(&self) -> bool {
+        SignalElement::navigates_time(self)
+    }
+
+    fn gutter(&self, m: &Metrics) -> f32 {
+        SignalElement::gutter(self, m)
+    }
+
+    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
+        SignalElement::measured_gutter(self, rect, m)
+    }
+
+    fn rows(&self, uploaded: usize) -> usize {
+        SignalElement::rows(self, uploaded)
+    }
+
+    fn centres_y_zoom(&self) -> bool {
+        SignalElement::centres_y_zoom(self)
+    }
+
+    fn value_axis(
+        &self,
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        channels: usize,
+    ) -> Option<ValueAxis> {
+        SignalElement::value_axis(self, rect, indent, m, channels)
+    }
+}
+
+impl Slotted for SignalElement {
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        SignalElement::fill(self)
+            .map(|fill| (SlotKey::SELF, fill))
+            .into_iter()
+            .collect()
+    }
+
+    fn slot_dropped(&mut self) {
+        self.slot_dirty = true;
+    }
+
+    /// What a claimed slot draws this frame. The horizontal window is not here:
+    /// it is the **navigation group's**, which is addressed by an id this
+    /// element does not carry, and the lane count is the slot's own.
+    fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        self.one_slot(ctx)
+            .map(|frame| (SlotKey::SELF, frame))
+            .into_iter()
+            .collect()
+    }
+
+    fn texture_body(&self) -> Option<TextureLook> {
+        SignalElement::texture_body(self)
     }
 }
 

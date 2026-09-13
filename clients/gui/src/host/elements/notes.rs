@@ -36,8 +36,8 @@ use crate::host::structures::boxes::{self, Bounds};
 use crate::host::structures::notes::OscMark;
 use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
-    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Swept, Take,
-    TimeSpace,
+    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, OnAxis, Swept,
+    Take, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_f, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
@@ -443,43 +443,12 @@ impl Element for Notes {
         }
     }
 
-    fn navigates_time(&self) -> bool {
-        true
-    }
-
     fn hover_readout(&self) -> bool {
         true
     }
 
-    fn editor(&self) -> Option<&EditorProps> {
-        Some(&self.editor)
-    }
-
-    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
-        Some(&mut self.editor)
-    }
-
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Notes)
-    }
-
-    /// The keyboard gutter, which is the roll's own structural geometry. What
-    /// it actually gets is its group's shared indent — this when it is alone on
-    /// its axis, wider when it shares one with a lane.
-    fn gutter(&self, _m: &Metrics) -> f32 {
-        pianoroll::KEYBOARD_W
-    }
-
-    /// The grid is the body a sample maps into — not the rect minus its chrome,
-    /// because the velocity and event strips are stacked *under* the grid and
-    /// read the same axis. The keyboard gutter is always a vertical surface, so
-    /// a wheel over it navigates the pitch window whatever `ruler_y` says.
-    fn axis_body(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<(Rect, bool)> {
-        Some((self.regions(rect, indent, m).grid, true))
-    }
-
-    fn content_span(&self) -> Option<f64> {
-        Some(self.span())
     }
 
     /// A clip's body: the same notes over the clip's own axis, with no keyboard,
@@ -842,6 +811,47 @@ impl Element for Notes {
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
+    }
+
+    fn on_axis(&self) -> Option<&dyn OnAxis> {
+        Some(self)
+    }
+
+    fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
+        Some(self)
+    }
+}
+
+impl OnAxis for Notes {
+    fn navigates_time(&self) -> bool {
+        true
+    }
+
+    fn editor(&self) -> Option<&EditorProps> {
+        Some(&self.editor)
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        Some(&mut self.editor)
+    }
+
+    /// The keyboard gutter, which is the roll's own structural geometry. What
+    /// it actually gets is its group's shared indent — this when it is alone on
+    /// its axis, wider when it shares one with a lane.
+    fn gutter(&self, _m: &Metrics) -> f32 {
+        pianoroll::KEYBOARD_W
+    }
+
+    /// The grid is the body a sample maps into — not the rect minus its chrome,
+    /// because the velocity and event strips are stacked *under* the grid and
+    /// read the same axis. The keyboard gutter is always a vertical surface, so
+    /// a wheel over it navigates the pitch window whatever `ruler_y` says.
+    fn axis_body(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<(Rect, bool)> {
+        Some((self.regions(rect, indent, m).grid, true))
+    }
+
+    fn content_span(&self) -> Option<f64> {
+        Some(self.span())
     }
 }
 

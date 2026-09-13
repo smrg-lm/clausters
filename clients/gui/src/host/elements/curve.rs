@@ -23,7 +23,9 @@ use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 use crate::host::structures::points::{self, BpfPoint};
-use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take, TimeSpace};
+use crate::host::widget::element::{
+    BodyRole, Claim, Ctx, Element, Events, Input, OnAxis, Take, TimeSpace,
+};
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, Ruler, RulerY};
 use crate::host::{font, metrics::Metrics, ruler};
@@ -392,47 +394,6 @@ impl Element for Curve {
         )]
     }
 
-    fn editor(&self) -> Option<&EditorProps> {
-        Some(&self.editor)
-    }
-
-    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
-        Some(&mut self.editor)
-    }
-
-    /// How far this curve's own content reaches, so a ruler stacked with it
-    /// rules the span the picture actually covers. It is what makes the axis
-    /// **shared**: without it a window holding only a curve has no extent at
-    /// all, and a `timeruler` over it would label one sample.
-    fn content_span(&self) -> Option<f64> {
-        Some(points::domain(&self.points, self.duration))
-    }
-
-    /// The wish, from the props alone: the ruler role's own width. What the
-    /// band actually needs depends on the labels, which depend on how tall the
-    /// curve ended up -- that is [`Element::measured_gutter`], one pass later.
-    fn gutter(&self, m: &Metrics) -> f32 {
-        if self.editor.ruler_y == RulerY::Off {
-            0.0
-        } else {
-            m.ruler_w
-        }
-    }
-
-    /// The value strip measured against its **own** labels, once the placement
-    /// is known: a BPM axis over `[30, 90]` formats three characters where an
-    /// amplitude axis formats six, and the step it labels at follows the
-    /// height. `None` while the role-sized wish already covers it, so the
-    /// second layout pass is taken only when one is owed.
-    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        if self.editor.ruler_y == RulerY::Off {
-            return None;
-        }
-        let field = self.regions(rect, 0.0, m).field;
-        let want = ruler::value_strip_w(self.min as f64, self.max as f64, field.h, m);
-        (want > m.ruler_w).then_some(want)
-    }
-
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Curve)
     }
@@ -566,6 +527,57 @@ impl Element for Curve {
 
     fn clone_box(&self) -> Box<dyn Element> {
         Box::new(self.clone())
+    }
+
+    fn on_axis(&self) -> Option<&dyn OnAxis> {
+        Some(self)
+    }
+
+    fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
+        Some(self)
+    }
+}
+
+impl OnAxis for Curve {
+    fn editor(&self) -> Option<&EditorProps> {
+        Some(&self.editor)
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        Some(&mut self.editor)
+    }
+
+    /// How far this curve's own content reaches, so a ruler stacked with it
+    /// rules the span the picture actually covers. It is what makes the axis
+    /// **shared**: without it a window holding only a curve has no extent at
+    /// all, and a `timeruler` over it would label one sample.
+    fn content_span(&self) -> Option<f64> {
+        Some(points::domain(&self.points, self.duration))
+    }
+
+    /// The wish, from the props alone: the ruler role's own width. What the
+    /// band actually needs depends on the labels, which depend on how tall the
+    /// curve ended up -- that is [`OnAxis::measured_gutter`], one pass later.
+    fn gutter(&self, m: &Metrics) -> f32 {
+        if self.editor.ruler_y == RulerY::Off {
+            0.0
+        } else {
+            m.ruler_w
+        }
+    }
+
+    /// The value strip measured against its **own** labels, once the placement
+    /// is known: a BPM axis over `[30, 90]` formats three characters where an
+    /// amplitude axis formats six, and the step it labels at follows the
+    /// height. `None` while the role-sized wish already covers it, so the
+    /// second layout pass is taken only when one is owed.
+    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
+        if self.editor.ruler_y == RulerY::Off {
+            return None;
+        }
+        let field = self.regions(rect, 0.0, m).field;
+        let want = ruler::value_strip_w(self.min as f64, self.max as f64, field.h, m);
+        (want > m.ruler_w).then_some(want)
     }
 }
 

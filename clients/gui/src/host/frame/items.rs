@@ -199,8 +199,10 @@ pub(super) fn collect_widgets(
                 // itself, each over its own box: they sample a texture, so they
                 // go to the GPU pass rather than into the mesh, keyed by the
                 // slot they come from.
-                if let Some(id) = p.widget.id {
-                    for body in el.texture_bodies(&ctx) {
+                if let Some(id) = p.widget.id
+                    && let Some(slotted) = el.slotted()
+                {
+                    for body in slotted.texture_bodies(&ctx) {
                         spectral_bodies.push(SpectralBodyItem {
                             id,
                             key: body.key,
@@ -215,7 +217,9 @@ pub(super) fn collect_widgets(
                     }
                 }
                 for (key, slot) in p.widget.id.into_iter().flat_map(|id| {
-                    el.slots(&ctx)
+                    el.slotted()
+                        .map(|s| s.slots(&ctx))
+                        .unwrap_or_default()
                         .into_iter()
                         .map(move |(key, s)| ((id, key), s))
                 }) {

@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use super::super::elements::signal::SignalElement;
 use super::element::BodyRole;
-use super::element::{Element, Measured, Samples};
+use super::element::{Element, Measured, OnAxis, Samples, Slotted};
 use super::{EditorProps, GestureMap, Widget, WidgetKind};
 
 impl Widget {
@@ -51,7 +51,7 @@ impl Widget {
     }
 
     /// Whether this widget navigates the window's shared time axis: an element
-    /// that says it does ([`Element::navigates_time`]),
+    /// that says it does ([`OnAxis::navigates_time`]),
     /// or one of the containers placed on that axis.
     pub fn is_timeline(&self) -> bool {
         self.kind.navigates_time() || matches!(self.kind, WidgetKind::TimeRuler { .. })
@@ -182,7 +182,7 @@ impl WidgetKind {
     }
 
     /// The widget's **value axis** inside the rect it was placed in
-    /// ([`Element::value_axis`]) — the second measuring axis a marquee may
+    /// ([`OnAxis::value_axis`]) — the second measuring axis a marquee may
     /// restrict a selection on.
     pub fn value_axis(
         &self,
@@ -191,7 +191,9 @@ impl WidgetKind {
         m: &super::super::metrics::Metrics,
         lanes: usize,
     ) -> Option<super::element::ValueAxis> {
-        self.as_element()?.value_axis(rect, indent, m, lanes)
+        self.as_element()?
+            .on_axis()?
+            .value_axis(rect, indent, m, lanes)
     }
 
     /// What that axis would show for `want`, or shows now for `None` — the
@@ -278,9 +280,11 @@ impl WidgetKind {
 
     /// **The look of a body whose picture is a texture** — the one body the
     /// frame routes to the GPU pass itself, keyed by the clip that holds it
-    /// ([`Element::texture_body`]).
+    /// ([`Slotted::texture_body`]).
     pub fn texture_body(&self) -> Option<super::element::TextureLook> {
-        self.as_element().and_then(Element::texture_body)
+        self.as_element()
+            .and_then(Element::slotted)
+            .and_then(Slotted::texture_body)
     }
 
     /// **What this widget reserves left of its body** on a shared time axis: a
@@ -289,15 +293,15 @@ impl WidgetKind {
     /// axis it follows.
     ///
     /// A container answers from its variant, an element for itself
-    /// ([`Element::gutter`]).
+    /// ([`OnAxis::gutter`]).
     pub fn gutter(&self, m: &super::super::metrics::Metrics) -> f32 {
         match self {
-            WidgetKind::Custom(el) => el.gutter(m),
+            WidgetKind::Custom(el) => el.on_axis().map_or(0.0, |a| a.gutter(m)),
             _ => 0.0,
         }
     }
 
-    /// [`axis_body`](super::Element::axis_body) of an element, or `None` for a
+    /// [`axis_body`](super::element::OnAxis::axis_body) of an element, or `None` for a
     /// container (whose body is the container's own geometry).
     pub fn axis_body(
         &self,
@@ -305,24 +309,30 @@ impl WidgetKind {
         indent: f32,
         m: &super::super::metrics::Metrics,
     ) -> Option<(super::super::layout::Rect, bool)> {
-        self.as_element()?.axis_body(rect, indent, m)
+        self.as_element()?.on_axis()?.axis_body(rect, indent, m)
     }
 
-    /// [`content_span`](super::Element::content_span) of an element.
+    /// [`content_span`](super::element::OnAxis::content_span) of an element.
     pub fn content_span(&self) -> Option<f64> {
-        self.as_element().and_then(Element::content_span)
+        self.as_element()
+            .and_then(Element::on_axis)
+            .and_then(OnAxis::content_span)
     }
 
     /// Whether this widget navigates the window's shared time axis
-    /// ([`Element::navigates_time`]).
+    /// ([`OnAxis::navigates_time`]).
     pub fn navigates_time(&self) -> bool {
-        self.as_element().is_some_and(Element::navigates_time)
+        self.as_element()
+            .and_then(Element::on_axis)
+            .is_some_and(OnAxis::navigates_time)
     }
 
     /// Whether this widget's time axis is not bounded by what it holds
-    /// ([`Element::unbounded_axis`]).
+    /// ([`OnAxis::unbounded_axis`]).
     pub fn unbounded_axis(&self) -> bool {
-        self.as_element().is_some_and(Element::unbounded_axis)
+        self.as_element()
+            .and_then(Element::on_axis)
+            .is_some_and(OnAxis::unbounded_axis)
     }
 
     /// [`gutter`](Self::gutter) asked again of a widget that has been
@@ -334,7 +344,7 @@ impl WidgetKind {
         rect: super::super::layout::Rect,
         m: &super::super::metrics::Metrics,
     ) -> Option<f32> {
-        self.as_element()?.measured_gutter(rect, m)
+        self.as_element()?.on_axis()?.measured_gutter(rect, m)
     }
 
     /// **How many rows this widget stacks**, out of the `uploaded` channel
@@ -342,10 +352,11 @@ impl WidgetKind {
     /// y gesture. A widget with no slot was given nothing and is one lane.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::rows`]).
+    /// ([`OnAxis::rows`]).
     pub fn rows(&self, uploaded: usize) -> usize {
         self.as_element()
-            .map_or_else(|| uploaded.max(1), |el| el.rows(uploaded))
+            .and_then(Element::on_axis)
+            .map_or_else(|| uploaded.max(1), |a| a.rows(uploaded))
     }
 
     /// Whether a y zoom over this widget anchors at the centre of a lane
@@ -353,9 +364,11 @@ impl WidgetKind {
     /// the centre of every lane.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::centres_y_zoom`]).
+    /// ([`OnAxis::centres_y_zoom`]).
     pub fn centres_y_zoom(&self) -> bool {
-        self.as_element().is_some_and(Element::centres_y_zoom)
+        self.as_element()
+            .and_then(Element::on_axis)
+            .is_some_and(OnAxis::centres_y_zoom)
     }
 
     /// **The window one read of this widget's taps has to bring**, in frames at
@@ -379,7 +392,7 @@ impl WidgetKind {
     /// chrome but navigates with the window's clip span.)
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
-            WidgetKind::Custom(el) => el.editor(),
+            WidgetKind::Custom(el) => el.on_axis()?.editor(),
             WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
@@ -389,7 +402,7 @@ impl WidgetKind {
     /// through here).
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
-            WidgetKind::Custom(el) => el.editor_mut(),
+            WidgetKind::Custom(el) => el.on_axis_mut()?.editor_mut(),
             WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
@@ -496,12 +509,12 @@ impl WidgetKind {
     /// new for it.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::fills`]) — the single door, so the front's upload walk asks
+    /// ([`Slotted::fills`]) — the single door, so the front's upload walk asks
     /// the tree what to upload instead of deriving it from what each kind
     /// happens to be.
     pub fn fills(&mut self) -> Vec<(super::element::SlotKey, super::element::SlotFill)> {
         match self.as_element_mut() {
-            Some(el) => el.fills(),
+            Some(el) => el.slotted_mut().map(Slotted::fills).unwrap_or_default(),
             None => Vec::new(),
         }
     }
@@ -516,8 +529,10 @@ impl WidgetKind {
     /// re-attached): whatever this widget handed over has to be handed over
     /// again.
     pub fn slot_dropped(&mut self) {
-        if let Some(el) = self.as_element_mut() {
-            el.slot_dropped();
+        if let Some(el) = self.as_element_mut()
+            && let Some(slotted) = el.slotted_mut()
+        {
+            slotted.slot_dropped();
         }
     }
 }
