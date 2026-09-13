@@ -40,6 +40,7 @@ pub mod intake;
 pub mod multitrack;
 pub mod points;
 pub mod samples;
+pub mod sources;
 
 use serde_json::Value;
 

@@ -32,7 +32,6 @@
 //! the reason the caller can adopt the outcome unconditionally.
 
 pub mod piece;
-pub mod sound;
 pub mod sources;
 pub mod tree;
 
@@ -1770,6 +1769,79 @@ mod window_verb_tests {
             .and_then(|o| o.piece.automation(NodeId(30)))
             .map(|a| a.points[1].value);
         assert_eq!(moved, Some(0.25), "and the curve is where the hand left it");
+    }
+
+    /// **A join makes the source it minted**, so the box that names it draws,
+    /// sounds and has a length its edges stop at.
+    ///
+    /// The defect this pins (found 2026-09-13 by the user, on a standalone
+    /// host): a join mints a source — spans of the takes the table already
+    /// holds — and the document says plainly that it does not build one:
+    /// *"whoever has the samples fills it in when it realizes the join"*. The
+    /// Python client realizes it at edit time; this host realized it only when
+    /// a session was **opened**, so a join made while one was open was built by
+    /// nobody. The box then named a source with no buffer, which is a box that
+    /// draws empty, plays nothing and — since an edge stops at the source's
+    /// length — pulls forever in both directions.
+    #[test]
+    fn a_join_made_by_a_hand_installs_the_source_it_minted() {
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        // Two boxes that touch on the lane and do **not** read on from each
+        // other: the second is the earlier half of the take, put back second.
+        // That is the case with no window over it, so the join has to mint.
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.name = Some("t10".into());
+        let mut first = region(12, 0.0, 2.0);
+        let mut second = region(13, 2.0, 2.0);
+        if let clausters_document::multitrack::Content::Window { window, .. } = &mut first.content {
+            window.start = 2.0;
+        }
+        if let clausters_document::multitrack::Content::Window { window, .. } = &mut second.content
+        {
+            window.start = 0.0;
+        }
+        track.lanes[0].regions = vec![first, second];
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, view) = with_piece(piece);
+        // The take the two boxes read, as a session's open would have resolved
+        // it: without this the join is over samples nobody loaded.
+        if let Some(owner) = host.owner.as_mut() {
+            owner.takes.insert(
+                clausters_document::SourceId(1),
+                super::sources::Take {
+                    bufnum: 7,
+                    channels: Some(2),
+                    frames: Some(96_000),
+                },
+            );
+        }
+
+        let args = vec![
+            OscType::String("join".into()),
+            OscType::String("12".into()),
+            OscType::String("13".into()),
+        ];
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(
+            host.answer_own(def_id, view, seq, &args),
+            "the piece's verb"
+        );
+
+        let owner = host.owner.as_ref().expect("an owner");
+        let minted: Vec<_> = owner
+            .takes
+            .iter()
+            .filter(|(id, _)| id.0 != 1)
+            .map(|(id, take)| (id.0, take.bufnum, take.frames))
+            .collect();
+        assert_eq!(minted.len(), 1, "the join's own source, in the table");
+        let (_, bufnum, frames) = minted[0];
+        assert_ne!(bufnum, 7, "and in a buffer of its own, not over the take");
+        assert!(frames.is_some_and(|f| f > 0), "as long as its parts");
     }
 
     /// **The picture a host pushes back is the whole picture**, not the two

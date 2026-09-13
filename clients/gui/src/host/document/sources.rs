@@ -33,12 +33,13 @@
 //! and that decision belongs with the open-edit machinery in the crate rather
 //! than with the loader.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::session::{Location, Session, Source};
 use clausters_document::{Body, SourceId};
+use clausters_editing::sources as projection;
 
 /// One source, as the host holds it once it has been given to the server.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,6 +89,13 @@ impl Takes {
         self.map.values().map(|take| take.bufnum).collect()
     }
 
+    /// **Every source and what it resolved to**, for a caller that needs the
+    /// table rather than one entry — the instance plan's, which is asked what
+    /// each source's buffer and width are before anything can play.
+    pub fn iter(&self) -> impl Iterator<Item = (&SourceId, &Take)> {
+        self.map.iter()
+    }
+
     /// How many sources were resolved.
     pub fn len(&self) -> usize {
         self.map.len()
@@ -112,6 +120,14 @@ pub struct Load {
     /// empty rectangle, and the reader deserves to know it is missing rather
     /// than empty.
     pub unresolved: Vec<(SourceId, String)>,
+    /// **Where the allocation stopped**: the first buffer number this load did
+    /// not take.
+    ///
+    /// Reported because this module is the buffer allocator for a session and
+    /// something else goes on allocating after it -- a curve's table, a join
+    /// made by a hand. Two allocators over one space would write a table over a
+    /// take, and the number is only knowable here.
+    pub next_bufnum: i32,
 }
 
 /// Plans the load of every source the document actually names.
@@ -164,6 +180,7 @@ pub fn plan(session: &Session, beside: &Path, first_bufnum: i32) -> Load {
         }
     }
     stitch(session, &mut load, &mut next);
+    load.next_bufnum = next;
     load
 }
 
@@ -222,68 +239,27 @@ fn stitch(session: &Session, load: &mut Load, next: &mut i32) {
             let Some(source) = session.source(*id) else {
                 return false;
             };
-            let Location::Segments { parts } = &source.location else {
-                return false;
+            // **What a join is** is the projection's
+            // ([`clausters_editing::sources::stitch`]), which every endpoint
+            // that realizes one asks -- the widths, the spans, the channel map
+            // a narrow part fills the join with. What is left here is the
+            // buffer number, which is this host's, and the wire.
+            let Some(made) = projection::stitch(source, &held_takes(&load.takes)) else {
+                // A part that has not landed yet is what the next round is for;
+                // anything else is not a join and never will be.
+                return matches!(source.location, Location::Segments { .. });
             };
-            // Every part has to have landed somewhere; one that has not is what
-            // the next round is for.
-            let takes: Option<Vec<Take>> = parts
-                .iter()
-                .map(|part| load.takes.get(part.source.source))
-                .collect();
-            let Some(takes) = takes else {
-                return true;
-            };
-            let channels = source
-                .channels
-                .map(|c| c.max(1) as usize)
-                .unwrap_or_else(|| {
-                    takes.iter().filter_map(|t| t.channels).max().unwrap_or(1) as usize
-                });
             let bufnum = *next;
             *next += 1;
-            let mut args = vec![
-                OscType::Int(bufnum),
-                OscType::Int(channels as i32),
-                OscType::Float(source.sample_rate.unwrap_or(0.0) as f32),
-            ];
-            let mut frames = 0u64;
-            for (part, take) in parts.iter().zip(&takes) {
-                let (start, span) = match &part.source.range {
-                    Some(range) => (range.start, range.len()),
-                    None => (0, take.frames.unwrap_or(0)),
-                };
-                frames += span;
-                args.push(OscType::Int(take.bufnum));
-                args.push(OscType::Int(start as i32));
-                args.push(OscType::Int(span as i32));
-                args.push(OscType::Int(part.fade_in as i32));
-                args.push(OscType::Int(part.fade_out as i32));
-                // **Every part spells its whole map**, which is what makes the
-                // group fixed width. Absent, it is the identity — and a part
-                // narrower than the join repeats, so a mono take in a stereo
-                // join is heard on both sides rather than on one.
-                let width = take.channels.unwrap_or(1).max(1) as usize;
-                for channel in 0..channels {
-                    let picked = match &part.channels {
-                        Some(map) => map.get(channel).copied().unwrap_or(-1),
-                        None => (channel % width) as i32,
-                    };
-                    args.push(OscType::Int(picked));
-                }
-            }
             load.takes.insert(
                 *id,
                 Take {
                     bufnum,
-                    channels: Some(channels as u32),
-                    frames: Some(frames),
+                    channels: Some(made.channels as u32),
+                    frames: Some(made.frames),
                 },
             );
-            load.messages.push(OscMessage {
-                addr: "/buffer_stitch".into(),
-                args,
-            });
+            load.messages.push(stitch_message(bufnum, &made));
             installed = true;
             false
         });
@@ -294,6 +270,52 @@ fn stitch(session: &Session, load: &mut Load, next: &mut i32) {
     for id in waiting {
         load.unresolved
             .push((id, "a join over samples that did not load".into()));
+    }
+}
+
+/// The table as the projection asks for it: what each source resolved to.
+pub fn held_takes(takes: &Takes) -> HashMap<SourceId, projection::Held> {
+    takes
+        .iter()
+        .map(|(id, take)| {
+            (
+                *id,
+                projection::Held {
+                    buffer: take.bufnum,
+                    channels: take.channels.unwrap_or(1).max(1) as usize,
+                    frames: take.frames.unwrap_or(0),
+                },
+            )
+        })
+        .collect()
+}
+
+/// **A join, as `/buffer_stitch` takes it**: the buffer to make, then one
+/// fixed-width group per part.
+///
+/// The one place this host turns a resolved join into the wire, so the open
+/// pass and an edit that mints one send the same message.
+pub fn stitch_message(bufnum: i32, made: &projection::Stitch) -> OscMessage {
+    let mut args = vec![
+        OscType::Int(bufnum),
+        OscType::Int(made.channels as i32),
+        OscType::Float(made.rate as f32),
+    ];
+    for part in &made.parts {
+        args.push(OscType::Int(part.buffer));
+        args.push(OscType::Int(part.start as i32));
+        args.push(OscType::Int(part.frames as i32));
+        args.push(OscType::Int(part.fade_in as i32));
+        args.push(OscType::Int(part.fade_out as i32));
+        // **Every part spells its whole map**, which is what makes the group
+        // fixed width.
+        for picked in &part.channels {
+            args.push(OscType::Int(*picked));
+        }
+    }
+    OscMessage {
+        addr: "/buffer_stitch".into(),
+        args,
     }
 }
 

@@ -73,6 +73,10 @@ pub mod layers;
 // clip on a lane are the same object with respect to editing and positioning,
 // and the arithmetic is written here once.
 pub mod play;
+// What the piece is playing through: the instance, the handle tables and the
+// allocators. Beside `play` and not under `document`, because what it holds is
+// the server's -- nodes, buses, buffers -- and nodes are not the composition.
+pub mod instance;
 pub mod registry;
 pub mod voices;
 pub mod widget;
@@ -701,15 +705,10 @@ pub struct Host {
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
-    /// The readers the **piece** is sounding through, by the region and channel
-    /// each plays, with what it was last set to.
-    ///
-    /// Held rather than re-derived because it is the server's state and not the
-    /// document's: what it answers is *which node is already playing this*, so
-    /// an edit is a set on a live node instead of a free and a new one.
-    sounding: HashMap<document::sound::Voice, (i32, document::sound::Reading)>,
-    /// The next node id a piece reader takes. See [`play::PIECE_NODE`].
-    next_piece_node: i32,
+    /// **What the piece is playing through** — the instance, the handle tables
+    /// and the allocators a standalone host keeps as any other endpoint does
+    /// ([`instance`]).
+    instance: instance::Playing,
     /// Whether the transport is rolling the piece. Held rather than asked of
     /// the server for the same reason the monitor's `rolling` is: the key that
     /// toggles it has to know which way it is about to go.
@@ -827,8 +826,7 @@ impl Host {
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
             playing: None,
-            sounding: HashMap::new(),
-            next_piece_node: play::PIECE_NODE,
+            instance: instance::Playing::default(),
             piece_rolling: false,
             owns_transport: false,
             voice_counter: 0,
@@ -2089,6 +2087,15 @@ impl Host {
                     .map(|intent| (intent, label))
                     .collect();
                 let applied = owner.apply_piece(&intents, &against);
+                // **A source an edit minted is made before the picture is
+                // redrawn.** A join owns no samples -- it is spans of the takes
+                // the table already holds -- and the document says so and stops
+                // there: *"whoever has the samples fills it in when it realizes
+                // the join"*. Realizing it is the endpoint's, here as in every
+                // client, and it has to happen first: a box naming a source
+                // with no buffer draws empty, sounds through nothing and has no
+                // length to stop an edge at.
+                self.mint_sources(&intents);
                 self.adopt(def_id, &applied);
                 // **A refusal the piece gave is said in the window that asked**,
                 // which is the same line a client's `/gui_ack` would have put

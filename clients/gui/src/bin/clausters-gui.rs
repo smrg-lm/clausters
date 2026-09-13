@@ -680,6 +680,12 @@ fn run_session(
 
     let mut host = Host::new();
     host.set_head_clock(head);
+    // **One buffer allocator over one space.** The session's sources took the
+    // numbers below this; a curve's table and anything a hand mints later take
+    // the numbers above it, and neither writes over the other. The control
+    // buses start at zero because in a host with no client attached nothing
+    // else allocates one.
+    host.play_piece_from(0, load.next_bufnum);
     #[cfg(feature = "standalone")]
     // The player is held, not used: it is a process this editor may own, and
     // dropping it is what stops it when the window closes.
