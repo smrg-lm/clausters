@@ -160,8 +160,10 @@ pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
                 lane: box_.row,
             })
             .collect(),
-        lanes_prop: projected["lanes"].clone(),
-        clips_prop: projected["clips"].clone(),
+        // **All of it.** Which keys a picture has is the projection's to say,
+        // and a host that named a couple of them drew a piece with its curves
+        // missing.
+        props: projected,
     }
 }
 
@@ -369,10 +371,10 @@ mod tests {
             vec![NodeId(11), NodeId(21)],
             "a row's clips are its active lane's, which is what a region joins"
         );
-        let lanes = shown.lanes_prop.as_array().expect("flat");
+        let lanes = shown.props["lanes"].as_array().expect("flat");
         assert_eq!(lanes[0], "10", "named by the track's id");
         assert_eq!(lanes[1], "t10", "and labelled by its name");
-        let clips = shown.clips_prop.as_array().expect("flat");
+        let clips = shown.props["clips"].as_array().expect("flat");
         assert_eq!(clips[0], "12");
         assert_eq!(clips[1], "10", "on the row of the track that holds it");
         assert_eq!(clips[2], 0.0, "beats, in timeline units");

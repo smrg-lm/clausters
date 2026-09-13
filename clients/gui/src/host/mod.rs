@@ -2396,17 +2396,23 @@ impl Host {
             return;
         };
         let shown = owner.shown();
+        // **The whole picture, and it used to be two props of it.** The
+        // projection produces every key the widget draws from -- the rows, the
+        // boxes, the curves, the layers, the break-points, which curves are
+        // hidden and which boxes loop -- and this named `lanes` and `clips`.
+        // So a piece that minted a curve (the header's `A`, whose entire job is
+        // to make one) applied the edit, kept it in the document, and pushed
+        // back nothing that draws it: the row never appeared, and the toggle
+        // read as a dead key in a host with no client to answer for it.
+        //
+        // It is a map from the projection rather than a list written here for
+        // the reason the vocabulary is asked and not restated: a key the
+        // picture grows arrives without anyone remembering to pass it along.
+        //
         // The effects are `Redraw`, and the front already repaints after an
         // answered gesture -- there is nothing here for a caller to carry.
         let mut fx = Vec::new();
-        self.set_props(
-            widget,
-            vec![
-                ("lanes".into(), shown.lanes_prop),
-                ("clips".into(), shown.clips_prop),
-            ],
-            &mut fx,
-        );
+        self.set_props(widget, shown.props.into_iter().collect(), &mut fx);
         // **And what sounds follows what is drawn**, by the same call and for
         // the same reason: the piece is a statement, so putting the readers
         // where it says is one verb whether it is the first time or the

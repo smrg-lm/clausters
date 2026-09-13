@@ -167,11 +167,18 @@ pub struct Piece {
     pub lanes: Vec<LaneRow>,
     /// The clips, in document order.
     pub clips: Vec<ClipRow>,
-    /// The `lanes` prop: flat `name label height mute solo gain` sextuples.
-    pub lanes_prop: Value,
-    /// The `clips` prop: flat `name lane offset dur start label source`
-    /// septuples.
-    pub clips_prop: Value,
+    /// **The picture, as props** — every key the widget draws from, exactly as
+    /// the projection wrote it.
+    ///
+    /// A map rather than the two fields this was, and the difference is the
+    /// whole of a defect: the projection produces **seven** props (`lanes`,
+    /// `clips`, `curves`, `layers`, `points`, `hidden`, `loops`) and the host
+    /// kept two, so in a host with no client attached a curve was never drawn
+    /// and a curve the piece *minted* -- the `A` toggle's whole purpose --
+    /// reached the widget as nothing at all. Whatever the projection says is
+    /// what gets drawn, and a key it grows arrives here without anyone
+    /// remembering to pass it along.
+    pub props: Map<String, Value>,
 }
 
 impl Piece {
@@ -271,11 +278,16 @@ pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
             ]);
         }
     }
+    // The tree's own description has rows and boxes and nothing else -- no
+    // automation hangs on it -- so its picture is the two props the piece's
+    // projection starts from.
+    let mut props = Map::new();
+    props.insert("lanes".into(), Value::Array(lanes_prop));
+    props.insert("clips".into(), Value::Array(clips_prop));
     Piece {
         lanes,
         clips,
-        lanes_prop: Value::Array(lanes_prop),
-        clips_prop: Value::Array(clips_prop),
+        props,
     }
 }
 
@@ -359,8 +371,12 @@ pub fn draw_ruled(
     // there is no line at all -- which is what a piece that plays with nothing
     // moving on screen looks like.
     props.insert("playhead_at".into(), json!(0.0));
-    props.insert("lanes".into(), piece.lanes_prop.clone());
-    props.insert("clips".into(), piece.clips_prop.clone());
+    // **Every prop the picture has**, not the two this used to name: a session
+    // with automation opened with no curve drawn at all, because the def was
+    // written from a hand-listed pair while the projection had five more.
+    for (key, value) in &piece.props {
+        props.insert(key.clone(), value.clone());
+    }
 
     let mut children = vec![Value::Object(props)];
     children.extend(take_editors(document, look, &mut ids, &mut bindings));

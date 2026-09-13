@@ -1711,6 +1711,57 @@ mod window_verb_tests {
         assert_eq!(moved, Some(0.25), "and the curve is where the hand left it");
     }
 
+    /// **The picture a host pushes back is the whole picture**, not the two
+    /// props somebody listed.
+    ///
+    /// The defect this pins (found 2026-09-12 by the user, on a standalone host
+    /// opened on a session: "no crea los lanes para las curvas al presionar A").
+    /// The header's `A` exists to **make** a track's gain curve, and the piece
+    /// made it: the edit applied, the document kept it, and what went back onto
+    /// the widget was `lanes` and `clips` — so nothing that draws a curve ever
+    /// arrived and the toggle read as a dead key. The projection had said
+    /// `curves`, `layers`, `points`, `hidden` and `loops` all along.
+    ///
+    /// A client answers with all of them, which is why this was only ever
+    /// visible with nobody attached — and why the fix is to push what the
+    /// projection produced rather than a list written at the call site.
+    #[test]
+    fn the_toggle_that_makes_a_curve_puts_the_row_on_the_widget() {
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.name = Some("t10".into());
+        track.lanes[0].regions = vec![region(12, 0.0, 4.0)];
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, view) = with_piece(piece);
+        assert!(
+            drawn_prop(&host, def_id, view, "curves", 6).is_empty(),
+            "the track starts with no automation"
+        );
+
+        // The `A` toggle's payload: the strips as they now stand, this one
+        // saying its automation is shown.
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &lanes(&[("10", false, false, 1.0)])));
+        assert!(
+            host.owner
+                .as_ref()
+                .is_some_and(|o| o.piece.automations().count() == 1),
+            "the piece minted the gain curve"
+        );
+        let curves = drawn_prop(&host, def_id, view, "curves", 6);
+        assert_eq!(curves.len(), 1, "and the widget was told about it");
+        assert_eq!(curves[0][1], serde_json::json!("10"), "under its track");
+        // Its break-points came with it, or the row would draw an empty box.
+        assert!(
+            !drawn_prop(&host, def_id, view, "points", 5).is_empty(),
+            "the curve's own points reached the widget too"
+        );
+    }
+
     /// **And a verb the piece refuses says why, in the window of the host that
     /// refused it** — the same sentence a client would have put there.
     ///

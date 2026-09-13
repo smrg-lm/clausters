@@ -4167,6 +4167,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **A host with no client answered its own edits and drew half of what it applied** *(found 2026-09-12 by the user, on a standalone host opened on a session: the `A` toggle made no automation row, `j` over two boxes with a gap between them logged `join 22 23` and nothing else, and `j` over two that touch did nothing either -- while **split worked**, which is the observation that splits the causes)*. Three symptoms, two defects, and split working is what tells them apart: a split reports `clips`, which was routed and whose answer is a prop the host pushed back.
+
+  **The vocabulary was written twice** (the entry in `crates/clausters-document/PLAN.md`, closed the same day): the dispatch knew `clips` and `lanes`, the projection answers for four, so `join` reached no reader at all -- the event went out on the wire, to nobody, which is exactly the line the user saw and the silence after it.
+
+  **And the answer back was written short.** `clausters_editing::multitrack::props` produces **seven** props -- the rows, the boxes, the curves, the layers, the break-points, which curves are hidden and which boxes loop -- and both the def that opened the window and the adopt that follows an edit named **two** of them. So a standalone host never drew a curve at all, and the `A` toggle, whose entire job is to *mint* one, applied the edit, kept it in the document and pushed back nothing that draws it. A client answers with all seven, which is why this was invisible until somebody opened a session with nobody attached.
+
+  `tree::Piece` carries the projection's map now instead of two named fields, and both sites push what is in it. The fix is the same shape as the other half's: **ask the projection, do not restate it** -- a key the picture grows arrives without anyone remembering to pass it along.
+
+  Held by `the_toggle_that_makes_a_curve_puts_the_row_on_the_widget`, which fails on the two-prop version at the assertion that the widget was told.
+
+  **The lesson worth keeping** *(and it cost this session a bad manual test)*: the standalone host is the configuration where every shortcut of this kind shows, and it is the one nobody runs. Both halves of this had been shipped for weeks behind a client that filled them in.
+
 - ✅ **A pasted block chose its track by which box was earliest in time** *(found 2026-09-12 by the user, on the multitrack example, and stated there as the rule it should follow: a paste runs from the selected track **downward**, always, and what it did instead looked like some other rule -- one that changed with which tracks the boxes had come from and which one they were pasted onto)*. A paste has two coordinates and the widget anchored the block at **one** box for both of them: the earliest onset. In time that is right — an axis runs one way, and "it starts here" means the first thing on it. In rows it is meaningless, and it produced exactly the report: which track a block landed on depended on the order its boxes happened to have been recorded in, so the same block pasted onto the same track went up or down according to that, and part of it landed **above** the track the hand had pointed at.
 
   The rows anchor at the **topmost** box instead. The selected track is where the block *begins*: everything lands on it or below it, keeping whatever gaps the block had, which is the user's own case — boxes from tracks 2, 4 and 1 pasted onto track 3 are tracks 4, 6 and 3. It is also what every editor with tracks does; where they differ is the overflow, and that is the second half of this.

@@ -29,11 +29,15 @@ What it shows, in the order the cells run:
   because mute is the composition's. A track's *height* is not: it says nothing
   about what the piece is, so no session carries it.
 
-**Not yet here: handing it to a host with no language attached.** This example
-used to run ``clausters-gui --session`` on what it wrote, and that half went
-with the client-side converter it was built on: the standalone host opens the
-general tree, and binding the arrangement is the next step in the crate's plan.
-It comes back with the host, and this example is where it lands.
+**Handing it to a host with no language attached** is the other half, and it
+does not need this script: what it writes is the format, so ::
+
+    clausters-gui --session examples/out/session.json
+
+opens the same piece in a window with no Python behind it -- the tracks, the
+boxes and their curves, edited and saved by the host itself. It is worth doing
+once after a change to the editing path, because it is the configuration where
+anything the client fills in for the host stops being filled in.
 
 The two files it writes go to ``examples/out/`` (``session.json`` and
 ``session-take.wav``), the git-ignored directory every generator in this tree
