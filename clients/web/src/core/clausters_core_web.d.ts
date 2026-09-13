@@ -368,9 +368,10 @@ export class PiecePlayback {
      */
     meters(): string;
     /**
-     * A playback making its nodes at the tail of `target`.
+     * A playback; `chunk` is how many samples one fill carries. Where the
+     * piece is made and how the transport is bound are the crate's.
      */
-    constructor(target: number, bind_transport: boolean, chunk: number);
+    constructor(chunk: number);
     /**
      * The steps that freeze the piece and zero its meters.
      */
@@ -1641,7 +1642,7 @@ export interface InitOutput {
     readonly pieceplayback_cue: (a: number, b: number) => [number, number];
     readonly pieceplayback_locate: (a: number, b: number) => [number, number];
     readonly pieceplayback_meters: (a: number) => [number, number];
-    readonly pieceplayback_new: (a: number, b: number, c: number) => number;
+    readonly pieceplayback_new: (a: number) => number;
     readonly pieceplayback_pause: (a: number) => [number, number];
     readonly pieceplayback_play: (a: number) => [number, number];
     readonly pieceplayback_rolling: (a: number) => number;

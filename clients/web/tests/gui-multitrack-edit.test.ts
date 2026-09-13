@@ -966,7 +966,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
         "the fill waits for the allocation",
     );
 
-    const piece = new PiecePlayback(0, true, 8192);
+    const piece = new PiecePlayback(8192);
     log.length = 0;
     await held.run(piece.locate(2.0));
     assert.equal(log.length, 1);

@@ -1454,13 +1454,12 @@ pub struct JsPiecePlayback(clausters_editing::playback::PiecePlayback);
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = PiecePlayback)]
 impl JsPiecePlayback {
-    /// A playback making its nodes at the tail of `target`.
+    /// A playback; `chunk` is how many samples one fill carries. Where the
+    /// piece is made and how the transport is bound are the crate's.
     #[wasm_bindgen(constructor)]
-    pub fn new(target: i32, bind_transport: bool, chunk: usize) -> JsPiecePlayback {
+    pub fn new(chunk: usize) -> JsPiecePlayback {
         JsPiecePlayback(clausters_editing::playback::PiecePlayback::new(
             clausters_editing::apply::Endpoint {
-                target,
-                bind_transport,
                 chunk: chunk.max(1),
             },
         ))

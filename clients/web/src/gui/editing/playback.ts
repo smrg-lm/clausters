@@ -104,7 +104,7 @@ export class Playback {
      * they can be waited for.
      */
     async prepare(): Promise<this> {
-        this.piece = new PiecePlayback(0, true, await this.server.bulkChunk());
+        this.piece = new PiecePlayback(await this.server.bulkChunk());
         this.runner = new StepRunner();
         // Node ids come back on their `/node_end`, which only a registered
         // client hears.

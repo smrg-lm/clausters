@@ -136,20 +136,28 @@ pub enum Op {
     /// def send answers `/done`, so a `/done` left in flight is one the next
     /// command that waits for one takes as its own.
     Barrier,
-    /// Instantiate a graph at the top: the piece itself.
+    /// Instantiate a graph at the tail of a group: the piece itself, inside the
+    /// transport's.
     #[serde(rename_all = "camelCase")]
     Graph {
         /// What to call it.
         handle: Handle,
+        /// The group it is made at the tail of.
+        parent: Handle,
         /// The graph's name.
         graph: String,
         /// Its ports.
         ports: Ports,
     },
-    /// Bind a node as the transport's group — the subtree the engine freezes on
-    /// a stop and thaws on a play.
+    /// **Make the transport's group** at the top and bind it — the subtree the
+    /// engine freezes on a stop and thaws on a play.
+    ///
+    /// Every endpoint makes the same one. A client used to bind the piece's own
+    /// graph and the GUI host a group of its own that its take monitor shared,
+    /// so one piece was governed two ways; what an endpoint needs beside the
+    /// piece now goes inside this group.
     Transport {
-        /// The node.
+        /// What to call it.
         handle: Handle,
     },
     /// A plain group, immediately **before** another node.
@@ -254,6 +262,11 @@ pub const PIECE: &str = "piece";
 /// The group the curve nodes live in, **before** the piece so a value is
 /// written in the block it is read.
 pub const CURVES: &str = "curves";
+
+/// **The transport's group**: made at the top by every endpoint alike, bound as
+/// the transport's, and the piece's graph is made inside it -- so what a stop
+/// freezes is the piece and whatever an endpoint puts beside it in there.
+pub const TRANSPORT: &str = "transport";
 
 fn track_handle(id: u64) -> Handle {
     format!("track:{id}")
@@ -450,19 +463,20 @@ impl Instance {
         let mut ops = Vec::new();
         self.defs(plan, &mut ops);
         if !self.piece {
+            // **The transport's group first, and the piece inside it**: from
+            // here the engine freezes that subtree on a stop and thaws it on a
+            // play, and every reader's position is the engine's own rather than
+            // a number kept in step by a client.
+            ops.push(Op::Transport {
+                handle: TRANSPORT.into(),
+            });
             ops.push(Op::Graph {
                 handle: PIECE.into(),
+                parent: TRANSPORT.into(),
                 graph: plan.graph.clone(),
                 ports: [("gain".to_string(), Port::from(gain))]
                     .into_iter()
                     .collect(),
-            });
-            // **The piece's group is the transport's**: from here the engine
-            // freezes that subtree on a stop and thaws it on a play, and every
-            // reader's position is the engine's own rather than a number kept
-            // in step by a client.
-            ops.push(Op::Transport {
-                handle: PIECE.into(),
             });
             self.piece = true;
         }
@@ -523,9 +537,12 @@ impl Instance {
         self.clips.clear();
         self.makings.clear();
         if std::mem::take(&mut self.piece) {
-            // One free: everything the piece holds is inside its group.
+            // One free: everything the piece holds is inside the transport's
+            // group, the piece's graph included.
+            let mut under = under;
+            under.push(PIECE.into());
             ops.push(Op::Free {
-                handle: PIECE.into(),
+                handle: TRANSPORT.into(),
                 forget: under,
             });
         }
@@ -1467,7 +1484,7 @@ mod tests {
         let ops = instance.teardown();
         assert!(
             ops.iter()
-                .any(|op| matches!(op, Op::Free { handle, .. } if handle == PIECE))
+                .any(|op| matches!(op, Op::Free { handle, .. } if handle == TRANSPORT))
         );
         assert!(
             ops.iter()

@@ -36,6 +36,7 @@ use crate::instance::{Handle, Op, Port, Ports};
 
 /// Where a node goes relative to its target — the server's add actions.
 const ADD_TAIL: i32 = 1;
+const ROOT: i32 = 0;
 const ADD_BEFORE: i32 = 2;
 
 /// **One thing an endpoint does to carry out the ops**, in order.
@@ -57,18 +58,14 @@ pub enum Step {
     Sync(i32),
 }
 
-/// What an endpoint arranges differently, and says so.
+/// **What an endpoint arranges differently**: how many samples one fill may
+/// carry, which is its carrier's bound.
+///
+/// Where the piece is made and how the transport is bound used to differ too --
+/// a client bound the piece's graph at the root, the GUI host a group of its
+/// own -- and they are the same everywhere now ([`Op::Transport`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Endpoint {
-    /// The group the piece's own graph is added to the tail of. The root (`0`)
-    /// for a client; the GUI host's governed group, which it shares with its
-    /// take monitor.
-    pub target: i32,
-    /// Whether a `Transport` op binds the transport to the piece's graph. A
-    /// client does; the GUI host does not, because its governed group already
-    /// holds the piece's graph and its take monitor, and there is one transport
-    /// per server.
-    pub bind_transport: bool,
     /// The most samples one `/buffer_setRange` carries — the endpoint's
     /// transport bound.
     pub chunk: usize,
@@ -76,11 +73,7 @@ pub struct Endpoint {
 
 impl Default for Endpoint {
     fn default() -> Self {
-        Endpoint {
-            target: 0,
-            bind_transport: true,
-            chunk: 8192,
-        }
+        Endpoint { chunk: 8192 }
     }
 }
 
@@ -150,30 +143,41 @@ impl Applier {
             Op::Barrier => steps.push(self.sync()),
             Op::Graph {
                 handle,
+                parent,
                 graph,
                 ports,
             } => {
+                let Some(target) = self.node(&parent) else {
+                    return Ok(());
+                };
                 let node = alloc_node(ids)?;
                 self.nodes.insert(handle, node);
                 let mut args = vec![
                     OscType::String(graph),
                     OscType::Int(node),
                     OscType::Int(ADD_TAIL),
-                    OscType::Int(self.endpoint.target),
+                    OscType::Int(target),
                 ];
                 args.extend(self.ports(&ports));
                 steps.push(send("/graph_new", args));
             }
+            // A group at the top, bound: `Group` and `Server.transport_group`.
             Op::Transport { handle } => {
-                if self.endpoint.bind_transport
-                    && let Some(node) = self.node(&handle)
-                {
-                    steps.push(send("/transport_group", vec![OscType::Int(node)]));
-                    steps.push(Step::AwaitDone {
-                        command: "/transport_group".into(),
-                        index: None,
-                    });
-                }
+                let node = alloc_node(ids)?;
+                self.nodes.insert(handle, node);
+                steps.push(send(
+                    "/group_new",
+                    vec![
+                        OscType::Int(node),
+                        OscType::Int(ADD_TAIL),
+                        OscType::Int(ROOT),
+                    ],
+                ));
+                steps.push(send("/transport_group", vec![OscType::Int(node)]));
+                steps.push(Step::AwaitDone {
+                    command: "/transport_group".into(),
+                    index: None,
+                });
             }
             Op::Group { handle, before } => {
                 let Some(target) = self.node(&before) else {
@@ -510,10 +514,7 @@ mod tests {
     /// table silenced the piece. The wait is part of the answer now.
     #[test]
     fn a_buffer_is_allocated_awaited_filled_and_closed() {
-        let mut applier = Applier::new(Endpoint {
-            chunk: 2,
-            ..Endpoint::default()
-        });
+        let mut applier = Applier::new(Endpoint { chunk: 2 });
         let steps = applier
             .apply(
                 vec![Op::Buffer {
@@ -537,9 +538,9 @@ mod tests {
         assert_eq!(applier.buffer("curvebuf"), Some(0));
     }
 
-    /// The messages are the reference client's: a graph at the tail of the
-    /// endpoint's target, a group before the node named, a slot inside its
-    /// instance, and node ids from the client's own space.
+    /// The messages are the reference client's: the transport's group at the
+    /// root and bound, the graph at its tail, a group before the node named, a
+    /// slot inside its instance, and node ids from the client's own space.
     #[test]
     fn nodes_are_placed_as_the_reference_client_places_them() {
         let mut applier = Applier::new(Endpoint::default());
@@ -547,13 +548,14 @@ mod tests {
         let steps = applier
             .apply(
                 vec![
+                    Op::Transport {
+                        handle: "transport".into(),
+                    },
                     Op::Graph {
                         handle: "piece".into(),
+                        parent: "transport".into(),
                         graph: "mt.piece".into(),
                         ports: Ports::new(),
-                    },
-                    Op::Transport {
-                        handle: "piece".into(),
                     },
                     Op::Group {
                         handle: "curves".into(),
@@ -569,54 +571,31 @@ mod tests {
                 &mut spaces,
             )
             .unwrap();
-        let Step::Send(graph) = &steps[0] else {
-            panic!("a graph first")
+        let Step::Send(group) = &steps[0] else {
+            panic!("the transport's group first")
         };
-        assert_eq!(graph.addr, "/graph_new");
-        assert_eq!(graph.args[1], OscType::Int(1000), "the client range");
-        assert_eq!(graph.args[2], OscType::Int(ADD_TAIL));
-        assert_eq!(graph.args[3], OscType::Int(0), "at the root");
+        assert_eq!(group.addr, "/group_new");
+        assert_eq!(group.args[0], OscType::Int(1000), "the client range");
+        assert_eq!(group.args[1], OscType::Int(ADD_TAIL));
+        assert_eq!(group.args[2], OscType::Int(ROOT), "at the root");
         assert_eq!(
             addrs(&steps)[1..],
             [
                 "/transport_group",
                 "await /transport_group",
+                "/graph_new",
                 "/group_new",
                 "/graph_addSlot"
             ]
         );
-    }
-
-    /// **The host's arrangement is a stated difference**, not a second applier:
-    /// its graph goes inside the group it governs, and no second transport group
-    /// is bound.
-    #[test]
-    fn an_endpoint_that_governs_its_own_group_binds_no_second_one() {
-        let mut applier = Applier::new(Endpoint {
-            target: 999,
-            bind_transport: false,
-            ..Endpoint::default()
-        });
-        let steps = applier
-            .apply(
-                vec![
-                    Op::Graph {
-                        handle: "piece".into(),
-                        graph: "mt.piece".into(),
-                        ports: Ports::new(),
-                    },
-                    Op::Transport {
-                        handle: "piece".into(),
-                    },
-                ],
-                &mut ids(),
-            )
-            .unwrap();
-        assert_eq!(addrs(&steps), ["/graph_new"]);
-        let Step::Send(graph) = &steps[0] else {
+        let Step::Send(graph) = &steps[3] else {
             unreachable!()
         };
-        assert_eq!(graph.args[3], OscType::Int(999));
+        assert_eq!(
+            graph.args[3],
+            OscType::Int(1000),
+            "the piece inside the transport's group"
+        );
     }
 
     /// A port resolves through the table; one naming nothing is left out.
@@ -631,8 +610,12 @@ mod tests {
                         handle: "meter".into(),
                         channels: 2,
                     },
+                    Op::Transport {
+                        handle: "transport".into(),
+                    },
                     Op::Graph {
                         handle: "piece".into(),
+                        parent: "transport".into(),
                         graph: "mt.piece".into(),
                         ports: [
                             ("gain".to_string(), Port::Number(0.5)),
@@ -698,8 +681,12 @@ mod tests {
                         handle: "t".into(),
                         samples: vec![],
                     },
+                    Op::Transport {
+                        handle: "transport".into(),
+                    },
                     Op::Graph {
                         handle: "piece".into(),
+                        parent: "transport".into(),
                         graph: "g".into(),
                         ports: Ports::new(),
                     },
@@ -723,7 +710,11 @@ mod tests {
         assert_eq!(addrs(&steps), ["/buffer_free", "/node_free"]);
         assert_eq!(spaces.in_use(Space::ControlBuses), 0);
         assert_eq!(spaces.in_use(Space::Buffers), 0);
-        assert_eq!(spaces.in_use(Space::Nodes), 1, "until its /node_end");
+        assert_eq!(
+            spaces.in_use(Space::Nodes),
+            2,
+            "the transport's group and the piece, until their /node_end"
+        );
     }
 
     /// The JSON a client walks: typed arguments, and a blob as its samples.

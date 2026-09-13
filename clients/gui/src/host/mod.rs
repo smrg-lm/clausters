@@ -707,8 +707,9 @@ pub struct Host {
     /// node, control bus and buffer it makes, by the one policy every client
     /// allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
-    /// The group the transport governs, when this host bound one
-    /// ([`Host::govern_transport`]).
+    /// The group the take monitor makes its readers in, once made: inside the
+    /// piece's transport group when a piece plays, or one this host bound when
+    /// none does ([`Host::monitor_group`]).
     governed: Option<i32>,
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
@@ -4534,6 +4535,21 @@ mod write_tests {
         (host, server)
     }
 
+    /// **A session of takes binds its monitor's group the first time it
+    /// plays**: nothing else binds the transport there. The two messages that
+    /// do, read off the fake server, answering the group they made.
+    fn bound_group(server: &UdpSocket) -> i32 {
+        let made = received(server).expect("the monitor's group is made");
+        assert_eq!(made.addr, "/group_new");
+        let bound = received(server).expect("and bound to the transport");
+        assert_eq!(bound.addr, "/transport_group");
+        assert_eq!(bound.args[0], made.args[0], "the group it just made");
+        let OscType::Int(group) = made.args[0] else {
+            panic!("a group id")
+        };
+        group
+    }
+
     /// The message the fake server received, or `None` if it sent nothing.
     fn received(server: &UdpSocket) -> Option<OscMessage> {
         let mut buf = [0u8; 4096];
@@ -4616,6 +4632,9 @@ mod write_tests {
             host.play_buffer(1, 50, 0, None),
             "a take with a buffer plays"
         );
+        let group = bound_group(&server);
+        assert_eq!(host.governed_group(), Some(group));
+        assert!(host.owns_transport(), "binding it is what owning it means");
         // The transport is placed before a reader exists, so the readers are
         // created standing where the piece is rather than racing from wherever
         // the last take left it.
@@ -4663,6 +4682,7 @@ mod write_tests {
     fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
         let (mut host, server) = take_host(1, 16);
         assert!(host.play_buffer(1, 50, 4, Some((4, 12))));
+        bound_group(&server);
 
         let msg = received(&server).expect("the loop went first");
         assert_eq!(msg.addr, "/transport_loop");
@@ -4692,6 +4712,7 @@ mod write_tests {
     fn pausing_keeps_the_readers_and_resuming_continues() {
         let (mut host, server) = take_host(1, 16);
         assert!(host.play_buffer(1, 50, 0, None));
+        bound_group(&server);
         for _ in 0..4 {
             received(&server); // the loop, the locate, the reader, the play
         }
@@ -4735,6 +4756,7 @@ mod write_tests {
     fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
         let (mut host, server) = take_host(2, 16);
         assert!(host.play_buffer(1, 50, 0, None));
+        bound_group(&server);
         received(&server).expect("/transport_loop");
         received(&server).expect("/transport_locateSample");
         for ch in 0..2 {

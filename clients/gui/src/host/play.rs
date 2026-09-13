@@ -214,11 +214,11 @@ impl Host {
         let Some(first) = self.alloc_nodes(channels) else {
             return false;
         };
-        let group = self.governed.unwrap_or(0);
+        let group = self.monitor_group().unwrap_or(0);
         self.set_loop(looping);
         self.locate(start);
         for ch in 0..channels {
-            self.send_to_player(OscMessage {
+            self.send_sound(OscMessage {
                 addr: "/synth_new".into(),
                 args: vec![
                     OscType::String(TAKE_DEF.into()),
@@ -234,7 +234,7 @@ impl Host {
                 ],
             });
         }
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: "/transport_play".into(),
             args: vec![],
         });
@@ -256,14 +256,14 @@ impl Host {
         let Some(monitor) = self.playing.take() else {
             return false;
         };
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: "/transport_stop".into(),
             args: vec![],
         });
         // One `/node_free` naming every reader: the ids are one contiguous run,
         // and freeing them together is what keeps a stereo take from
         // half-stopping.
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: "/node_free".into(),
             args: (0..monitor.channels)
                 .map(|ch| OscType::Int(monitor.first + ch as i32))
@@ -285,7 +285,7 @@ impl Host {
         let mut monitor = self.playing?;
         monitor.rolling = !monitor.rolling;
         self.playing = Some(monitor);
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: if monitor.rolling {
                 "/transport_play".into()
             } else {
@@ -300,7 +300,7 @@ impl Host {
     /// the reader's. Safe to call while stopped, which is what a click on the
     /// ruler does.
     pub fn locate(&mut self, frame: u64) {
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: "/transport_locateSample".into(),
             args: vec![OscType::Long(frame as i64)],
         });
@@ -310,7 +310,7 @@ impl Host {
     /// span is half-open, so a selection plays every frame it covers exactly
     /// once per pass.
     pub fn set_loop(&mut self, span: Option<(u64, u64)>) {
-        self.send_to_player(OscMessage {
+        self.send_sound(OscMessage {
             addr: "/transport_loop".into(),
             args: match span {
                 Some((start, end)) => vec![OscType::Long(start as i64), OscType::Long(end as i64)],

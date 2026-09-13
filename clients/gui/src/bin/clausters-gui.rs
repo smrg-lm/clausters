@@ -1033,11 +1033,10 @@ fn attach_player(
     }
     host.set_player_link(ServerLink::Udp(leg));
     host.on_link_attached();
-    // The group the transport governs, which the monitor's readers and the
-    // piece are made in: what `/transport_stop` freezes and `/transport_play`
-    // thaws. Created stopped, so a reader added to it stands still until a
-    // hand asks for sound.
-    host.govern_transport();
+    // No group is bound here. A piece makes the transport's group itself, as
+    // it does for every endpoint, and the take monitor's group goes inside it;
+    // a session of takes binds one the first time the monitor needs it
+    // (`Host::monitor_group`).
     Ok(owned)
 }
 

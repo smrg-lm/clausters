@@ -164,6 +164,13 @@ impl PiecePlayback {
         self.instance.is_sounding()
     }
 
+    /// **The transport's group**, once the piece has made it: where an
+    /// endpoint puts anything else that has to follow the transport, as the GUI
+    /// host's take monitor does.
+    pub fn group(&self) -> Option<i32> {
+        self.applier.node(crate::instance::TRANSPORT)
+    }
+
     /// How many nodes the piece holds.
     pub fn node_count(&self) -> usize {
         self.applier.node_count()

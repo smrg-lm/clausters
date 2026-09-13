@@ -411,21 +411,15 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
 /// [`clausters_editing_playback_free`].
 pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::PiecePlayback>);
 
-/// A new playback making its nodes at the tail of `target`; `bind_transport`
-/// nonzero binds the piece's graph to the transport, and `chunk` is how many
-/// samples one `/buffer_setRange` carries.
+/// A new playback; `chunk` is how many samples one `/buffer_setRange` carries.
+/// Where it makes the piece and how it binds the transport are the crate's, the
+/// same for every endpoint: a group at the top, bound, with the piece inside.
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_editing_playback_new(
-    target: i32,
-    bind_transport: i32,
-    chunk: usize,
-) -> *mut FfiPlayback {
+pub extern "C" fn clausters_editing_playback_new(chunk: usize) -> *mut FfiPlayback {
     use clausters_editing::apply::Endpoint;
     use clausters_editing::playback::PiecePlayback;
     Box::into_raw(Box::new(FfiPlayback(std::sync::Mutex::new(
         PiecePlayback::new(Endpoint {
-            target,
-            bind_transport: bind_transport != 0,
             chunk: chunk.max(1),
         }),
     ))))

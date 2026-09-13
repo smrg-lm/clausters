@@ -72,8 +72,10 @@ impl Host {
     }
 
     /// **Binds a group of this host's own to the server's transport** and
-    /// answers it: where the take monitor's readers and the piece's graph are
-    /// made, so one transport starts, stops and locates both.
+    /// answers it: where the take monitor's readers are made **when no piece
+    /// plays**. A piece makes the transport's group itself, the same as it does
+    /// for every endpoint, and the monitor's group then goes inside that one
+    /// instead ([`Host::monitor_group`]).
     ///
     /// Only a host that owns its server's transport does this — an editor with
     /// its own player. A host that is a guest on a script's server leaves the
@@ -84,7 +86,7 @@ impl Host {
         }
         let group = self.alloc_nodes(1)?;
         for message in play::take_group_messages(group) {
-            self.send_to_player(message);
+            self.send_sound(message);
         }
         self.governed = Some(group);
         self.owns_transport = true;

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 58
+CORE_ABI_VERSION = 59
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -266,9 +266,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_default_bpm.restype = ctypes.c_double
     lib.clausters_editing_default_bpm.argtypes = []
     lib.clausters_editing_playback_new.restype = ctypes.c_void_p
-    lib.clausters_editing_playback_new.argtypes = [
-        ctypes.c_int32, ctypes.c_int32, ctypes.c_size_t,
-    ]
+    lib.clausters_editing_playback_new.argtypes = [ctypes.c_size_t]
     lib.clausters_editing_runner_new.restype = ctypes.c_void_p
     lib.clausters_editing_runner_new.argtypes = []
     lib.clausters_editing_runner_free.argtypes = [ctypes.c_void_p]
@@ -1467,16 +1465,16 @@ class PiecePlayback:
     is played is decided by the caller: the default tempo, a locate's sample,
     what a stop and a pause send.
 
+    Where the piece is made and how the transport is bound are the crate's
+    too, the same for every endpoint: a group at the top, bound as the
+    transport's, with the piece inside it.
+
     Args:
-        target: the group every node is made at the tail of.
-        bind_transport: bind the piece's graph to the transport.
         chunk: how many samples one ``/buffer_setRange`` carries.
     """
 
-    def __init__(self, *, target: int = 0, bind_transport: bool = True,
-                 chunk: int = 8192):
-        self._handle = lib().clausters_editing_playback_new(
-            int(target), 1 if bind_transport else 0, max(1, int(chunk)))
+    def __init__(self, *, chunk: int = 8192):
+        self._handle = lib().clausters_editing_playback_new(max(1, int(chunk)))
 
     def __del__(self):
         self.free()

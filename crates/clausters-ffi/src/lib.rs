@@ -409,7 +409,13 @@ pub use time::*;
 /// the steps its own way and the standalone host had a third walk, which could
 /// not order a join's reads before its stitch. **Additive**, and the counter
 /// moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 58;
+/// **v59 one transport.** `clausters_editing_playback_new` takes only `chunk`:
+/// the playback makes the transport's group at the top, binds it and makes the
+/// piece inside it, the same for every endpoint. A client used to bind the
+/// piece's own graph and the GUI host a group of its own, and said which by
+/// passing `target` and `bind_transport`. **Breaking**: a caller of the
+/// three-argument door is a caller of a signature that no longer exists.
+pub const CORE_ABI_VERSION: u32 = 59;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

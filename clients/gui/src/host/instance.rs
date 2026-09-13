@@ -69,8 +69,8 @@ pub enum Leg {
 #[derive(Debug, Default)]
 pub struct Playing {
     /// The instance, the applier and the transport — the crate's, as every
-    /// endpoint holds it. Made on the first sync: its target is the governed
-    /// group, which is the host's once a player is attached.
+    /// endpoint holds it. Made on the first sync, and it makes the transport's
+    /// group itself.
     piece: Option<PiecePlayback>,
     /// The steps not carried out yet, across both servers — the crate's walk.
     run: Runner,
@@ -100,20 +100,16 @@ impl Playing {
         self.piece.as_ref().is_some_and(PiecePlayback::rolling)
     }
 
-    /// The playback, made at the tail of `target` the first time.
+    /// The playback, made the first time.
     ///
-    /// **No transport binding.** This host also plays a take monitor, and
-    /// there is one transport per server, so the governed group is the one the
-    /// host made when its player attached and the piece's graph goes inside
-    /// it. What the engine freezes is a subtree, so the intent holds exactly.
-    fn playback(&mut self, target: i32) -> &mut PiecePlayback {
-        self.piece.get_or_insert_with(|| {
-            PiecePlayback::new(Endpoint {
-                target,
-                bind_transport: false,
-                ..Endpoint::default()
-            })
-        })
+    /// **The transport is the crate's, as it is every endpoint's**: the
+    /// playback makes its group at the top, binds it and makes the piece inside
+    /// it. The take monitor's readers go inside that group too
+    /// ([`Host::monitor_group`]), so one transport starts, stops and locates
+    /// both.
+    fn playback(&mut self) -> &mut PiecePlayback {
+        self.piece
+            .get_or_insert_with(|| PiecePlayback::new(Endpoint::default()))
     }
 }
 
@@ -228,6 +224,43 @@ impl Host {
         self.send_piece();
     }
 
+    /// **Sends one message to the server that sounds, in order**: behind
+    /// whatever the piece's steps are still waiting on, so a reader made in a
+    /// group is never sent before the group is.
+    pub(crate) fn send_sound(&mut self, message: OscMessage) {
+        self.instance.run.push(Server::Sound, [Step::Send(message)]);
+        self.send_piece();
+    }
+
+    /// **The group the take monitor makes its readers in**, made the first
+    /// time it is asked for.
+    ///
+    /// With a piece playing it is a group of the monitor's own **inside the
+    /// transport's group the piece made**: the server governs one group, and
+    /// what it freezes is that subtree, so the monitor follows the transport
+    /// without sharing the piece's group. With no piece -- a session of takes
+    /// -- nothing else binds the transport, and this host binds a group of its
+    /// own ([`Host::govern_transport`]).
+    pub(crate) fn monitor_group(&mut self) -> Option<i32> {
+        if let Some(group) = self.governed {
+            return Some(group);
+        }
+        let Some(transport) = self.instance.piece.as_ref().and_then(PiecePlayback::group) else {
+            return self.govern_transport();
+        };
+        let monitor = self.alloc_nodes(1)?;
+        self.send_sound(OscMessage {
+            addr: "/group_new".into(),
+            args: vec![
+                OscType::Int(monitor),
+                OscType::Int(1),         // add to the tail…
+                OscType::Int(transport), // …of the transport's group
+            ],
+        });
+        self.governed = Some(monitor);
+        Some(monitor)
+    }
+
     /// Sends every step that may go out now, each to its server.
     fn send_piece(&mut self) {
         for (to, message) in self.instance.run.ready() {
@@ -274,16 +307,10 @@ impl Host {
                 )
             })
             .collect();
-        // Inside the governed group when there is one, so the transport the
-        // take monitor answers to is the piece's too; the root otherwise.
-        let target = self.governed.unwrap_or(0);
-        let synced = self.instance.playback(target).sync(
-            &owner.piece,
-            look.rate,
-            &sources,
-            1.0,
-            &mut self.ids,
-        );
+        let synced =
+            self.instance
+                .playback()
+                .sync(&owner.piece, look.rate, &sources, 1.0, &mut self.ids);
         match synced {
             Ok(steps) => self.instance.run.push(Server::Sound, steps),
             Err(e) => diag::warn!("the piece cannot be played: {e}"),
@@ -510,10 +537,10 @@ mod tests {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
     }
 
-    /// The piece synced into the runner, made at the tail of `target`.
-    fn sync(playing: &mut Playing, piece: &Multitrack, target: i32, ids: &mut IdSpaces) {
+    /// The piece synced into the runner.
+    fn sync(playing: &mut Playing, piece: &Multitrack, ids: &mut IdSpaces) {
         let steps = playing
-            .playback(target)
+            .playback()
             .sync(piece, 48_000.0, &sources(), 1.0, ids)
             .unwrap();
         playing.run.push(Server::Sound, steps);
@@ -557,12 +584,12 @@ mod tests {
     }
 
     /// **A piece becomes the messages that play it**, in the crate's order: the
-    /// defs, the barrier that closes them, the piece's graph inside the
-    /// governed group, and its slots.
+    /// defs, the barrier that closes them, the transport's group made and
+    /// bound, the piece's graph inside it, and its slots.
     #[test]
     fn a_piece_becomes_the_messages_that_play_it() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), 1234, &mut ids);
+        sync(&mut playing, &piece(), &mut ids);
         let first = ready(&mut playing);
         assert_eq!(
             addrs(&first).last(),
@@ -571,16 +598,26 @@ mod tests {
             addrs(&first)
         );
         let messages = drain(&mut playing);
+        let bound = messages
+            .iter()
+            .find(|m| m.addr == "/transport_group")
+            .expect("the transport's group is bound, as every endpoint binds it");
         let graph = messages
             .iter()
             .find(|m| m.addr == "/graph_new")
             .expect("the piece is a graph");
         assert_eq!(
-            graph.args[3],
-            OscType::Int(1234),
-            "inside the governed group"
+            graph.args[3], bound.args[0],
+            "the piece inside the transport's group"
         );
-        assert!(!addrs(&messages).contains(&"/transport_group"));
+        assert_eq!(
+            playing
+                .piece
+                .as_ref()
+                .and_then(PiecePlayback::group)
+                .map(OscType::Int),
+            Some(bound.args[0].clone())
+        );
         assert!(addrs(&messages).contains(&"/graph_addSlot"));
     }
 
@@ -589,7 +626,7 @@ mod tests {
     #[test]
     fn the_nodes_it_makes_are_the_host_s_spaces() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), 0, &mut ids);
+        sync(&mut playing, &piece(), &mut ids);
         assert!(playing.nodes() > 0);
         assert_eq!(ids.in_use(Space::Nodes), playing.nodes());
     }
@@ -600,16 +637,16 @@ mod tests {
     fn an_edit_sets_a_live_node_and_an_unchanged_piece_says_nothing() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         let mut piece = piece();
-        sync(&mut playing, &piece, 0, &mut ids);
+        sync(&mut playing, &piece, &mut ids);
         drain(&mut playing);
         let made = playing.nodes();
-        sync(&mut playing, &piece, 0, &mut ids);
+        sync(&mut playing, &piece, &mut ids);
         assert!(
             drain(&mut playing).is_empty(),
             "a piece that did not move costs nothing"
         );
         piece.tracks[0].lanes[0].regions[0].position = Beat(6.0);
-        sync(&mut playing, &piece, 0, &mut ids);
+        sync(&mut playing, &piece, &mut ids);
         let messages = drain(&mut playing);
         assert!(!messages.is_empty(), "the box moved");
         assert!(addrs(&messages).iter().all(|a| *a == "/node_set"));
@@ -621,8 +658,8 @@ mod tests {
     #[test]
     fn the_transport_waits_behind_the_piece() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), 0, &mut ids);
-        let steps = playing.playback(0).play();
+        sync(&mut playing, &piece(), &mut ids);
+        let steps = playing.playback().play();
         playing.run.push(Server::Sound, steps);
         let first = ready(&mut playing);
         assert!(
@@ -672,6 +709,41 @@ mod tests {
         assert_eq!(
             addrs(&ready(&mut playing)),
             ["/buffer_setRange", "/server_sync"]
+        );
+    }
+
+    /// **The take monitor goes inside the transport's group the piece made**,
+    /// once, behind the piece's own steps -- so it follows the one transport
+    /// without sharing the piece's group.
+    #[test]
+    fn the_take_monitor_goes_inside_the_pieces_transport_group() {
+        let mut host = Host::new();
+        let steps = host
+            .instance
+            .playback()
+            .sync(&piece(), 48_000.0, &sources(), 1.0, &mut host.ids)
+            .unwrap();
+        host.instance.run.push(Server::Sound, steps);
+        let transport = host
+            .instance
+            .piece
+            .as_ref()
+            .and_then(PiecePlayback::group)
+            .expect("the piece made its transport's group");
+        let monitor = host.monitor_group().expect("a group for the monitor");
+        assert_ne!(monitor, transport);
+        assert_eq!(host.monitor_group(), Some(monitor), "made once");
+        assert!(!host.owns_transport, "the piece bound it, not the host");
+        let sent = drain(&mut host.instance);
+        let made = sent.last().expect("the monitor's group, last");
+        assert_eq!(made.addr, "/group_new");
+        assert_eq!(
+            made.args,
+            [
+                OscType::Int(monitor),
+                OscType::Int(1),
+                OscType::Int(transport)
+            ]
         );
     }
 
