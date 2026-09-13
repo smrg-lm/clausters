@@ -457,11 +457,38 @@ impl Owner {
     /// list), and a reader that flattened them would be choosing for the
     /// vocabulary rather than reading it.
     pub fn read_piece_events(&self, args: &[OscType]) -> Vec<(MultitrackIntent, &'static str)> {
+        let reading = self.read_piece(args);
+        let label = reading.label();
+        reading
+            .intents
+            .into_iter()
+            .map(|intent| (intent, label))
+            .collect()
+    }
+
+    /// **Whether the piece answers for this payload's tag at all** — asked of
+    /// the projection, which is where the vocabulary is declared.
+    ///
+    /// The door a dispatch uses instead of naming the tags it happens to know:
+    /// a list of words is a domain's, and the host's own copy of it had two of
+    /// the four.
+    pub fn piece_answers(&self, args: &[OscType]) -> bool {
+        matches!(args.first(), Some(OscType::String(tag)) if piece::answers(tag))
+    }
+
+    /// The same reading, **keeping the reason** a verb can be refused with.
+    ///
+    /// [`read_piece_events`](Self::read_piece_events) answers with the edits and
+    /// their label, which is what applying them takes; this is what a *window*
+    /// needs, because "the hand changed nothing" and "the piece refused" are the
+    /// same empty list and opposite things to tell the person who pressed the
+    /// key.
+    pub fn read_piece(&self, args: &[OscType]) -> clausters_editing::multitrack::Reading {
         match args.first() {
             Some(OscType::String(tag)) => {
-                piece::read(&self.piece, tag, &args[1..], &self.piece_look())
+                piece::reading(&self.piece, tag, &args[1..], &self.piece_look())
             }
-            _ => Vec::new(),
+            _ => clausters_editing::multitrack::Reading::default(),
         }
     }
 
@@ -1475,6 +1502,68 @@ mod window_verb_tests {
     /// A session host over `doc`, drawn the way `--session` draws it: the
     /// window opened on the real tree, the owner bound to the multitrack. The
     /// widget id comes back, because everything a hand does arrives on it.
+    /// A host drawing a **piece** — the standalone shape: the session carries
+    /// tracks, the document is empty, and the window is the same one the
+    /// `--session` host opens.
+    fn with_piece(piece: clausters_document::multitrack::Multitrack) -> (Host, i32, i32) {
+        let def_id = 1;
+        let doc = Document::new(aggregate(1, Value::Null, Vec::new()));
+        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
+        owner.piece = piece;
+        let drawn = super::tree::draw_shown(
+            &owner.document,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat: 100.0,
+                ..super::tree::Look::default()
+            },
+            "t",
+            Some(owner.shown()),
+        );
+        owner.bind_multitrack(drawn.multitrack);
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+        (host, def_id, drawn.multitrack)
+    }
+
+    /// A box on a lane, a window onto source 1.
+    fn region(id: u64, position: f64, length: f64) -> clausters_document::multitrack::Region {
+        use clausters_document::multitrack::{Content, Region};
+        use clausters_document::{Beat, Lifetime, SegmentRef, SegmentSource, SourceId, SourceRef};
+        let mut region = Region::new(
+            NodeId(id),
+            Beat(position),
+            Beat(length),
+            Content::Window {
+                window: SegmentRef {
+                    source: SegmentSource::Samples(SourceRef {
+                        source: SourceId(1),
+                        lifetime: Lifetime::Session,
+                        generation: 0,
+                        range: None,
+                    }),
+                    start: 0.0,
+                    duration: length,
+                },
+                playrate: 1.0,
+                looping: false,
+                args: Default::default(),
+            },
+        );
+        region.name = Some(format!("r{id}"));
+        region
+    }
+
     fn opened(doc: Document, units_per_beat: f64) -> (Host, i32, i32) {
         let def_id = 1;
         let drawn = super::tree::draw(
@@ -1551,6 +1640,120 @@ mod window_verb_tests {
         let seq = host.outbox.borrow_mut().stamp(1, 1);
         assert!(host.answer_own(1, 1, seq, &[OscType::String("redo".into())]));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0, "and put back");
+    }
+
+    /// **A host that owns a piece answers for the piece's whole vocabulary**,
+    /// and not for the two tags this happened to route by name.
+    ///
+    /// The defect this pins (found 2026-09-12, auditing the owner): the
+    /// dispatch read `tag == "clips" || tag == "lanes"` while the crate that
+    /// *reads* a report answers for four — `points` and `join` as well. So a
+    /// standalone host drew curves it could not edit and had a `j` that reached
+    /// nobody: the payload fell through to the tree's reader, which has no arm
+    /// for either, and left on the wire to a client that is not there.
+    ///
+    /// A tag list written twice is the shape of it, which is why the fix is to
+    /// ask the domain rather than to add two words here.
+    #[test]
+    fn the_pieces_own_vocabulary_reaches_the_owner_whole() {
+        use clausters_document::multitrack::{Automation, Multitrack, Track};
+        use clausters_document::{Opaque, Point};
+
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.name = Some("t10".into());
+        track.automation.push(Automation {
+            points: vec![
+                Point {
+                    at: 0.0,
+                    value: 1.0,
+                    data: Opaque::default(),
+                },
+                Point {
+                    at: 4.0,
+                    value: 1.0,
+                    data: Opaque::default(),
+                },
+            ],
+            visible: true,
+            ..Automation::new(NodeId(30), Opaque::default())
+        });
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, view) = with_piece(piece);
+
+        // The payload a dragged break-point leaves: every curve there is, each
+        // point a quintuple, in the axis' own unit (100 units a beat here).
+        let args = vec![
+            OscType::String("points".into()),
+            OscType::String("30".into()),
+            OscType::Float(0.0),
+            OscType::Float(1.0),
+            OscType::Int(1),
+            OscType::Float(0.0),
+            OscType::String("30".into()),
+            OscType::Float(400.0),
+            OscType::Float(0.25),
+            OscType::Int(1),
+            OscType::Float(0.0),
+        ];
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(
+            host.answer_own(def_id, view, seq, &args),
+            "the piece owns `points`, so the host answers for it"
+        );
+        let moved = host
+            .owner
+            .as_ref()
+            .and_then(|o| o.piece.automation(NodeId(30)))
+            .map(|a| a.points[1].value);
+        assert_eq!(moved, Some(0.25), "and the curve is where the hand left it");
+    }
+
+    /// **And a verb the piece refuses says why, in the window of the host that
+    /// refused it** — the same sentence a client would have put there.
+    ///
+    /// A join is the one tag whose refusal is about the *material* rather than
+    /// about the picture, so it is the one that had a reason to lose: the host
+    /// read the intents and dropped the `Err`, which is a key that does nothing
+    /// and says nothing.
+    #[test]
+    fn a_piece_that_refuses_a_verb_says_so_on_the_bar() {
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.name = Some("t10".into());
+        track.lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, view) = with_piece(piece);
+
+        // Two boxes with a gap between them: they are on one lane and they do
+        // not touch, which the document refuses and the picture cannot say.
+        let args = vec![
+            OscType::String("join".into()),
+            OscType::String("12".into()),
+            OscType::String("13".into()),
+        ];
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(
+            host.answer_own(def_id, view, seq, &args),
+            "it is the piece's"
+        );
+        let statuses = host.statuses();
+        let line = statuses
+            .get(&def_id)
+            .and_then(|s| s.last())
+            .expect("a line");
+        assert_eq!(line.kind, crate::host::status::Kind::Refused);
+        assert!(
+            line.text.contains("gap"),
+            "the document's own reason, in the window: {}",
+            line.text
+        );
     }
 
     /// **An undo has to move the picture, not only the document.** A drag needs

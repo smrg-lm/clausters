@@ -589,37 +589,101 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
     }
 }
 
+/// **The words this domain answers for**, and the only place they are listed.
+///
+/// A tag is a domain's vocabulary, so *which* tags are the piece's is a fact
+/// about the piece and not about whoever is routing a report to it. It was
+/// written twice — here, and in the GUI host's own dispatch, which knew about
+/// `clips` and `lanes` and had never heard of the other two — and the second
+/// list was two tags short: a curve dragged in a host with no client attached
+/// reached nobody, and so did a `join`. A caller asks; nobody restates.
+pub fn answers(tag: &str) -> bool {
+    matches!(tag, "clips" | "lanes" | "points" | "join")
+}
+
+/// **What a report came to**: the edits, or the reason there are none.
+///
+/// The two are one answer because a caller has to tell them apart: no edits
+/// because the hand changed nothing, and no edits because the piece **refused**,
+/// are the same empty list and opposite things to say to the person who made the
+/// gesture. Everything that reads a report goes through here, so neither door
+/// can quietly drop the half the other keeps.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Reading {
+    /// The edits, in the piece's own vocabulary.
+    pub intents: Vec<MultitrackIntent>,
+    /// Why there are none, when the piece refused the verb rather than finding
+    /// nothing to do.
+    pub refusal: Option<&'static str>,
+}
+
+impl Reading {
+    /// A reading that came to these edits.
+    fn of(intents: Vec<MultitrackIntent>) -> Self {
+        Reading {
+            intents,
+            refusal: None,
+        }
+    }
+
+    /// A verb the piece refused, and why.
+    fn refused(why: &'static str) -> Self {
+        Reading {
+            intents: Vec::new(),
+            refusal: Some(why),
+        }
+    }
+
+    /// The label one entry in the pile takes: the **first** payload's, because
+    /// the payloads of one report are one thing a hand did.
+    pub fn label(&self) -> &'static str {
+        self.intents.first().map_or("edit the piece", label)
+    }
+}
+
 /// **What a gesture over a piece means**, in the piece's own vocabulary.
 ///
-/// Three tags, and each of them reports the **whole** structure rather than the
+/// Four tags, and three of them report the **whole** structure rather than the
 /// gesture: every box, every row, every break-point. So a move, a block drag, a
 /// trim, a split, a delete and a paste all arrive the same way and telling them
 /// apart is one rule, [`clausters_document::multitrack::picture`]'s, written
 /// once — and what comes back is the *difference*, which is why a hand that
 /// looked without editing produces nothing at all.
-///
-/// The label is the first payload's, because the payloads of one report are one
-/// thing a hand did and go into the pile as one entry.
+pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Reading {
+    match tag {
+        "clips" => Reading::of(picture::read(
+            piece,
+            &placed(values, look),
+            picture::fresh_id(piece),
+        )),
+        "lanes" => Reading::of(picture::read_rows(piece, &strips(values))),
+        "points" => Reading::of(picture::read_points(piece, &curved(piece, values, look))),
+        // **The one verb that is stated rather than differenced**, and the one
+        // that can be refused on the *material*: a join and a "delete one,
+        // lengthen the other" leave a lane holding the same thing, and a box in
+        // a `clips` report names one source and one start -- so fragments
+        // joined into one box have no report that describes them. A gap it
+        // cannot state as silence and an overlap it cannot state as a mix are
+        // refusals, and they are the reason this function answers with more
+        // than a list.
+        "join" => {
+            match picture::read_join(piece, &held(values), look.rate, &look.sources.taken()) {
+                Ok(intents) => Reading::of(intents),
+                Err(why) => Reading::refused(why),
+            }
+        }
+        _ => Reading::default(),
+    }
+}
+
+/// [`reading`]'s edits alone, for a caller with nothing to say about a refusal.
 pub fn read(
     piece: &Multitrack,
     tag: &str,
     values: &[Value],
     look: &Look<'_>,
 ) -> Vec<MultitrackIntent> {
-    match tag {
-        "clips" => picture::read(piece, &placed(values, look), picture::fresh_id(piece)),
-        "lanes" => picture::read_rows(piece, &strips(values)),
-        "points" => picture::read_points(piece, &curved(piece, values, look)),
-        // **The one verb that is stated rather than differenced.** A join and a
-        // "delete one, lengthen the other" leave a lane holding the same thing,
-        // and a box in a `clips` report names one source and one start -- so
-        // fragments joined into one box have no report that describes them.
-        // Its refusals are the tag's own and reach an endpoint through
-        // [`intake`].
-        "join" => picture::read_join(piece, &held(values), look.rate, &look.sources.taken())
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    }
+    reading(piece, tag, values, look).intents
 }
 
 /// The flat `join` report: the boxes to join, by the names the picture gave
@@ -633,25 +697,18 @@ fn held(values: &[Value]) -> Vec<String> {
 /// The label is the **first** intent's, because the intents of one report are
 /// one thing a hand did and go into the pile as one entry.
 pub fn intake(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Intake {
-    if !matches!(tag, "clips" | "lanes" | "points" | "join") {
+    if !answers(tag) {
         return Intake::nothing();
     }
-    // **A join answers with its reason.** It is the one tag here that can be
-    // refused on the material rather than on the picture -- a gap it cannot
-    // state as silence, an overlap it cannot state as a mix -- and a refusal
-    // that reaches nobody is indistinguishable from a key that does not work.
-    let intents = if tag == "join" {
-        match picture::read_join(piece, &held(values), look.rate, &look.sources.taken()) {
-            Ok(intents) => intents,
-            Err(why) => return Intake::refused(why),
-        }
-    } else {
-        read(piece, tag, values, look)
-    };
-    let named = intents
-        .first()
-        .map_or("edit the piece", |first| label(first));
-    let payloads = intents
+    let reading = reading(piece, tag, values, look);
+    // **A refusal that reaches nobody is indistinguishable from a key that does
+    // not work**, which is why the reading carries one and this passes it on.
+    if let Some(why) = reading.refusal {
+        return Intake::refused(why);
+    }
+    let named = reading.label();
+    let payloads = reading
+        .intents
         .iter()
         .map(|intent| serde_json::to_value(intent).unwrap_or(Value::Null))
         .collect();

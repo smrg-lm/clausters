@@ -2067,22 +2067,48 @@ impl Host {
                 self.locate(at.max(0.0) as u64);
                 return true;
             }
-            // **The piece stated whole**: one payload naming every clip or
-            // every strip, so what it means is however many intents it takes
-            // to make the document say that -- and they are one entry, because
-            // a block move is one thing a hand did.
+            // **The piece stated whole**: one payload naming every clip, every
+            // strip or every break-point, so what it means is however many
+            // intents it takes to make the document say that -- and they are
+            // one entry, because a block move is one thing a hand did.
+            //
+            // **Which payloads those are is the piece's own question**, asked
+            // rather than restated. This read `tag == "clips" || tag == "lanes"`
+            // while the projection that reads a report answers for four, so a
+            // curve dragged in a host with no client attached reported `points`
+            // to a reader that had no arm for it, and a `j` reported `join` the
+            // same way: both fell through to the tree's reader and left on the
+            // wire, to nobody.
+            Some(OscType::String(_)) if owner.draws_piece() && owner.piece_answers(args) => {
+                let against = clausters_document::Against::default();
+                let reading = owner.read_piece(args);
+                let label = reading.label();
+                let intents: Vec<_> = reading
+                    .intents
+                    .into_iter()
+                    .map(|intent| (intent, label))
+                    .collect();
+                let applied = owner.apply_piece(&intents, &against);
+                self.adopt(def_id, &applied);
+                // **A refusal the piece gave is said in the window that asked**,
+                // which is the same line a client's `/gui_ack` would have put
+                // there: a host that owns its own document is still answering
+                // an edit, and the reason is the answer's most useful half.
+                self.settle(ack::Acked {
+                    seq,
+                    doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                    reason: reading.refusal.map(str::to_string),
+                    ..Default::default()
+                });
+                return true;
+            }
+            // The **tree's** description of the same two payloads, for a
+            // document written before the piece existed: one vocabulary or the
+            // other, and either way the run is one entry in one history.
             Some(OscType::String(tag)) if tag == "clips" || tag == "lanes" => {
                 let against = clausters_document::Against::default();
-                // Two vocabularies, one payload shape: the owner reads the
-                // piece's when it is drawing a piece and the tree's otherwise,
-                // and either way the run is one entry in one history.
-                let applied = if owner.draws_piece() {
-                    let intents = owner.read_piece_events(args);
-                    owner.apply_piece(&intents, &against)
-                } else {
-                    let intents = owner.read_events(widget_id, args);
-                    owner.apply_all(&intents, &against)
-                };
+                let intents = owner.read_events(widget_id, args);
+                let applied = owner.apply_all(&intents, &against);
                 self.adopt(def_id, &applied);
                 self.settle(ack::Acked {
                     seq,
