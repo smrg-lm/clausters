@@ -597,14 +597,14 @@ test("a reopened box undoes its own edit and not the piece's", async () => {
     const take = new Take();
     const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
     ed.draw();
-    const wid = [...ed.view!.widgets][0];
+    const wid = [...ed.view!.widgets.keys()][0];
     const route = (e: unknown, args: unknown[]) =>
         (e as unknown as { route(args: unknown[]): boolean }).route(args);
     assert.ok(route(ed, [wid, "clips", "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7]));
 
     const box = (await ed.enter("12"))!;
     box.draw();
-    const bwid = [...box.view!.widgets][0];
+    const bwid = [...box.view!.widgets.keys()][0];
     assert.ok(route(box, [bwid, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]]));
     await settled();
     assert.deepEqual(take.frames.slice(2, 4), [1.0, 1.0]);
@@ -641,14 +641,14 @@ test("a box closed does not block the piece's undo", async () => {
     const held = piece();
     const ed = new MultitrackEditor(held, { sampleRate: SR, sources: { 1: take } });
     ed.draw();
-    const wid = [...ed.view!.widgets][0];
+    const wid = [...ed.view!.widgets.keys()][0];
     const route = (e: unknown, args: unknown[]) =>
         (e as unknown as { route(args: unknown[]): boolean }).route(args);
     assert.ok(route(ed, [wid, "clips", "12", "10", 1.0 * SR, 2.0 * SR, 0.0, "", 7]));
     const moved = regionAt(held, 12)!.position;
     const box = (await ed.enter("12"))!;
     box.draw();
-    const bwid = [...box.view!.widgets][0];
+    const bwid = [...box.view!.widgets.keys()][0];
     assert.ok(route(box, [bwid, "draw", 0, 2, [1.0, 1.0], [0.0, 0.0]]));
     await settled();
 

@@ -37,11 +37,12 @@ pub mod tree;
 
 use std::collections::HashMap;
 
+use clausters_apps::multitrack::editor::MultitrackEditor;
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
 use clausters_document::history::Direction;
 use clausters_document::multitrack::Multitrack;
-use clausters_document::multitrack::edit::{MULTITRACK, MultitrackIntent};
+use clausters_document::multitrack::edit::MULTITRACK;
 use clausters_document::{
     Against, Document, Intent, NodeId, Opaque, Outcome, Rules, Session, TimeUnit, apply_logged,
     log::Log,
@@ -159,6 +160,10 @@ pub struct Owner {
     /// without asking anything which widget it came from. What the id is for is
     /// the other direction — writing an applied edit back onto the picture.
     multitrack: Option<i32>,
+    /// **The multitrack editor** over the piece, once a window has been opened
+    /// for it ([`Owner::open_editor`]): the applications crate's, which reads
+    /// and answers every gesture on that window.
+    pub editor: Option<MultitrackEditor>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -207,6 +212,7 @@ impl Owner {
             nodes: HashMap::new(),
             headers: HashMap::new(),
             multitrack: None,
+            editor: None,
         }
     }
 
@@ -447,92 +453,79 @@ impl Owner {
         }
     }
 
-    /// The same door for a host drawing the **piece**: one payload naming every
-    /// box or every strip, read in the piece's own vocabulary.
+    /// **Opens the multitrack editor over the piece** — the one a script and a
+    /// page open — and answers its window, as the GuiDef to define as `window`.
     ///
-    /// Two readers rather than one over a common shape, because the two
-    /// vocabularies genuinely differ where it matters: the tree has one verb
-    /// for a placement and the piece has three (a move, a trim, a lane's whole
-    /// list), and a reader that flattened them would be choosing for the
-    /// vocabulary rather than reading it.
-    pub fn read_piece_events(&self, args: &[OscType]) -> Vec<(MultitrackIntent, &'static str)> {
-        let reading = self.read_piece(args);
-        let label = reading.label();
-        reading
-            .intents
-            .into_iter()
-            .map(|intent| (intent, label))
+    /// The piece is drawn at `window + 1` and ruled at `window + 2`, and the
+    /// transport row is numbered after them: a host composing a window for
+    /// itself has nobody to number it on the way out. From here on a gesture on
+    /// either widget is the editor's turn ([`super::Host::answer_own`]).
+    pub fn open_editor(&mut self, window: i32, title: &str, size: (i64, i64)) -> serde_json::Value {
+        use clausters_apps::multitrack::{Transport, TransportIds};
+
+        let mut editor = MultitrackEditor::new(
+            self.piece.clone(),
+            self.units_per_second,
+            clausters_editing::playback::DEFAULT_BPM,
+            self.piece.version as i64,
+        );
+        editor.chrome(
+            None,
+            Transport::Numbered(TransportIds {
+                row: window + 3,
+                rewind: window + 4,
+                play: window + 5,
+                stop: window + 6,
+                clock: window + 7,
+            }),
+            title,
+            size,
+        );
+        editor.set_sources(self.buffer_table());
+        let def = editor.window(window + 1, window + 2);
+        editor.set_window(Some(window));
+        self.editor = Some(editor);
+        self.bind_multitrack(window + 1);
+        def
+    }
+
+    /// Which server buffer each of the session's sources was read into.
+    pub fn buffer_table(&self) -> HashMap<clausters_document::SourceId, i64> {
+        self.takes
+            .iter()
+            .map(|(id, take)| (*id, i64::from(take.bufnum)))
             .collect()
     }
 
-    /// **Whether the piece answers for this payload's tag at all** — asked of
-    /// the projection, which is where the vocabulary is declared.
-    ///
-    /// The door a dispatch uses instead of naming the tags it happens to know:
-    /// a list of words is a domain's, and the host's own copy of it had two of
-    /// the four.
-    pub fn piece_answers(&self, args: &[OscType]) -> bool {
-        matches!(args.first(), Some(OscType::String(tag)) if piece::answers(tag))
-    }
+    /// **Records an editor's turn** in the one history the tree records into,
+    /// so a piece's edit and a tree's undo in the order they were made.
+    pub fn record_piece(&mut self, record: &clausters_apps::multitrack::editor::Record) {
+        use clausters_document::history::{Entry, Step};
 
-    /// The same reading, **keeping the reason** a verb can be refused with.
-    ///
-    /// [`read_piece_events`](Self::read_piece_events) answers with the edits and
-    /// their label, which is what applying them takes; this is what a *window*
-    /// needs, because "the hand changed nothing" and "the piece refused" are the
-    /// same empty list and opposite things to tell the person who pressed the
-    /// key.
-    pub fn read_piece(&self, args: &[OscType]) -> clausters_editing::multitrack::Reading {
-        match args.first() {
-            Some(OscType::String(tag)) => {
-                piece::reading(&self.piece, tag, &args[1..], &self.piece_look())
-            }
-            _ => clausters_editing::multitrack::Reading::default(),
-        }
-    }
-
-    /// Applies a run of the **piece's** edits as one entry in the same log the
-    /// tree records into, so an undo walks both in the order they were made.
-    pub fn apply_piece(
-        &mut self,
-        intents: &[(MultitrackIntent, &'static str)],
-        against: &Against,
-    ) -> Vec<Applied> {
-        use clausters_document::history::{Entry as PileEntry, Step as PileStep};
-        use clausters_document::multitrack::edit::{current, payload};
-
-        let mut entry: Option<PileEntry> = None;
-        let mut out = Vec::with_capacity(intents.len());
-        for (intent, what) in intents {
-            let backward = current(&self.piece, intent).map(|i| payload(&i));
-            let outcome = clausters_document::multitrack::edit::apply(
-                &mut self.piece,
-                intent,
-                against,
-                &self.rules,
-            );
-            if outcome.applied
-                && let Some(backward) = backward
-            {
-                let forward = PileStep::Edit(payload(&outcome.effective));
-                entry = Some(match entry.take() {
-                    Some(e) => e.and(self.piece_structure, forward, backward),
-                    None => PileEntry::new(*what, self.piece_structure, forward, backward),
-                });
-            }
-            out.push(Applied {
-                // Not an `Intent`: the piece has a vocabulary of its own, and
-                // the picture is redrawn from the owner rather than patched
-                // from what an edit said.
-                effective: None,
-                version: self.piece.version,
-                applied: outcome.applied,
+        let mut entry: Option<Entry> = None;
+        for leg in &record.legs {
+            let Ok(forward) = serde_json::from_value::<Step>(leg.forward.clone()) else {
+                continue;
+            };
+            let backward = Opaque(leg.backward.clone());
+            let next = match entry.take() {
+                Some(e) => e.and(self.piece_structure, forward, backward),
+                None => Entry::new(
+                    record.label.clone(),
+                    self.piece_structure,
+                    forward,
+                    backward,
+                ),
+            };
+            entry = Some(if leg.key.is_empty() {
+                next
+            } else {
+                next.keyed(leg.key.clone())
             });
         }
         if let Some(entry) = entry {
             self.log.history_mut().record(entry);
         }
-        out
     }
 
     /// **The piece's clips, as they now stand** — the one payload every
@@ -1570,8 +1563,7 @@ mod window_verb_tests {
         let doc = Document::new(aggregate(1, Value::Null, Vec::new()));
         let mut owner = Owner::new(doc).with_units_per_beat(100.0);
         owner.piece = piece;
-        let (def, view) = composed(&owner, def_id);
-        owner.bind_multitrack(view);
+        let (def, view) = composed(&mut owner, def_id);
         let mut host = Host::new();
         host.handle_packet(
             crate::host::OscPacket::Message(crate::host::OscMessage {
@@ -1590,29 +1582,8 @@ mod window_verb_tests {
     /// **The multitrack editor's own window** over the owner's piece, numbered
     /// from past `def_id` the way `--session` numbers it, and the id of the
     /// piece's widget in it.
-    fn composed(owner: &Owner, def_id: i32) -> (Value, i32) {
-        use clausters_apps::multitrack::{self as app, Transport, TransportIds};
-        let look = owner.piece_look();
-        let projection = look.projection();
-        let def = app::window(&app::Window {
-            piece: &owner.piece,
-            look: &projection,
-            widget: def_id + 1,
-            ruler: def_id + 2,
-            link: None,
-            cursor: None,
-            meters: &[],
-            transport: Transport::Numbered(TransportIds {
-                row: def_id + 3,
-                rewind: def_id + 4,
-                play: def_id + 5,
-                stop: def_id + 6,
-                clock: def_id + 7,
-            }),
-            title: "t",
-            size: (1000, 640),
-        });
-        (def, def_id + 1)
+    fn composed(owner: &mut Owner, def_id: i32) -> (Value, i32) {
+        (owner.open_editor(def_id, "t", (1000, 640)), def_id + 1)
     }
 
     /// **A session host opens the editor a script opens**: the ruler above the
@@ -2274,9 +2245,8 @@ mod window_verb_tests {
         assert!(owner.draws_piece(), "the file carries a piece and no tree");
 
         let def_id = 1;
-        let (def, view) = composed(&owner, def_id);
         let mut owner = owner;
-        owner.bind_multitrack(view);
+        let (def, view) = composed(&mut owner, def_id);
         let mut host = Host::new();
         host.handle_packet(
             crate::host::OscPacket::Message(crate::host::OscMessage {

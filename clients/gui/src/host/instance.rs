@@ -168,24 +168,8 @@ impl Host {
     /// what keeps a minted join from being written over a take.
     pub(crate) fn mint_sources(
         &mut self,
-        intents: &[(
-            clausters_document::multitrack::edit::MultitrackIntent,
-            &'static str,
-        )],
+        made: &[clausters_document::multitrack::edit::MintedSource],
     ) {
-        use clausters_document::multitrack::edit::MultitrackIntent;
-
-        let mut made = Vec::new();
-        for (intent, _) in intents {
-            let MultitrackIntent::JoinRegions {
-                source: Some(minted),
-                ..
-            } = intent
-            else {
-                continue;
-            };
-            made.push(minted.clone());
-        }
         if made.is_empty() {
             return;
         }
@@ -308,16 +292,14 @@ impl Host {
         self.send_piece();
     }
 
-    /// **The position cursor was placed at `units`** of the piece's axis: a
-    /// stopped transport is cued there and a rolling one is left alone. The
-    /// axis is samples of the piece, so the beat is read through the piece's
-    /// own tempo map — the one a script's editor reads it through.
-    pub fn cue_piece(&mut self, units: f64) {
+    /// **The position cursor was placed at `beat`**: a stopped transport is
+    /// cued there and a rolling one is left alone. The beat is the editor's,
+    /// read off the axis through the piece's own tempo map.
+    pub fn cue_piece(&mut self, beat: f64) {
         let Some(piece) = self.instance.piece.as_mut() else {
             return;
         };
-        let beat = piece.samples_to_beats(units.max(0.0).round() as i64);
-        let steps = piece.cue(beat);
+        let steps = piece.cue(beat.max(0.0));
         self.instance.queue.extend(steps);
         self.send_piece();
     }

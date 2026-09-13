@@ -321,6 +321,26 @@ export class Instance {
 }
 
 /**
+ * **A multitrack editor**: a piece, the window it is drawn in, and one view's
+ * end of the conversation with the host. Its verbs cross through `call`, as
+ * JSON.
+ */
+export class MultitrackEditorCore {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb, as `clausters_apps::multitrack::editor::call_json` documents.
+     */
+    call(request: string): string;
+    /**
+     * An editor over the piece `request` names — `piece`, `rate`, `defaultBpm`,
+     * `version`, `link`, `transport`, `title`, `w`, `h` — or an error for a
+     * request that names none.
+     */
+    constructor(request: string);
+}
+
+/**
  * **One piece, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
@@ -917,27 +937,6 @@ export class WidgetIds {
 }
 
 /**
- * JS face: **everything one widget of the multitrack editor's window should be
- * drawing**, for a correction — the ruler's cursor, or the piece's whole props.
- *
- * `request` is the one `appsMultitrackWindow` takes, with `for` naming the
- * widget.
- */
-export function appsMultitrackProps(request: string): string;
-
-/**
- * JS face: **the multitrack editor's window**, as a GuiDef rooted at a
- * `window` node, in a JSON string: the time ruler above the piece, the piece,
- * and the transport row.
- *
- * `request` is the JSON object `clausters_apps::multitrack::window_json`
- * documents — the projection's `piece`, `rate`, `defaultBpm` and `sources`,
- * and the window's ids, `link`, `cursor`, `meters`, `transport`, `title`, `w`
- * and `h`. `{}` for a request that names no piece.
- */
-export function appsMultitrackWindow(request: string): string;
-
-/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1528,6 +1527,7 @@ export interface InitOutput {
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
+    readonly __wbg_multitrackeditorcore_free: (a: number, b: number) => void;
     readonly __wbg_pieceplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
@@ -1537,8 +1537,6 @@ export interface InitOutput {
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
-    readonly appsMultitrackProps: (a: number, b: number) => [number, number];
-    readonly appsMultitrackWindow: (a: number, b: number) => [number, number];
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -1610,6 +1608,8 @@ export interface InitOutput {
     readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly multitrackeditorcore_call: (a: number, b: number, c: number) => [number, number];
+    readonly multitrackeditorcore_new: (a: number, b: number) => [number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1749,8 +1749,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

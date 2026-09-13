@@ -209,40 +209,12 @@ pub fn read(
         .collect()
 }
 
-/// **Whether `tag` is a word the piece answers for** — asked of the projection,
-/// which is where the vocabulary is declared
-/// ([`clausters_editing::multitrack::answers`]).
-///
-/// The host used to route by naming two of them, and the piece has four: a
-/// curve dragged in a host with no client attached reported `points` to nobody,
-/// and so did a `j`. A list of tags is a domain's, and a second copy of it is a
-/// copy that goes short.
-pub fn answers(tag: &str) -> bool {
-    projection::answers(tag)
-}
-
-/// [`read`], keeping the **refusal** a verb can come back with.
-///
-/// A join is the one tag whose answer can be *no*, about the material rather
-/// than about the picture, and the reason is the document's to give. A host
-/// that read the intents alone dropped it — which is a key that does nothing
-/// and says nothing, the defect this whole seam has been reported for twice.
-pub fn reading(
-    piece: &Multitrack,
-    tag: &str,
-    args: &[clausters_core::osc::OscType],
-    look: &Look<'_>,
-) -> projection::Reading {
-    let values: Vec<serde_json::Value> = args.iter().map(atom).collect();
-    projection::reading(piece, tag, &values, &look.projection())
-}
-
-/// An OSC atom as the JSON the reading takes.
+/// An OSC atom as the JSON a reading, or an editor's turn, takes.
 ///
 /// The wire's framing is the host's and the reading is the crate's, so this is
 /// where the one becomes the other — the same line each client draws for its own
 /// transport.
-fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
+pub(crate) fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
     use clausters_core::osc::OscType;
     match value {
         OscType::String(s) => serde_json::Value::String(s.clone()),

@@ -171,38 +171,53 @@ export class Echo {
         if (this.host === null) return;
         // **What to send is the crate's decision**, including that an unasked
         // push with nothing to say is one message the wire does not carry.
-        const answered = JSON.parse(conversationAnswer(JSON.stringify({
+        this.send(JSON.parse(conversationAnswer(JSON.stringify({
             seq,
             docVersion: this.version,
             reason: reason ?? null,
             corrections: this.corrections.map(([widget, props]) => ({ widget, props })),
-        }))) as {
-            answer: string;
-            seq?: number;
-            docVersion?: number;
-            reason?: string;
-            corrections?: { widget: number; props: Record<string, PropValue> }[];
-        };
-        if (answered.answer === "silent") return;
+        }))) as Answer);
+    }
+
+    /**
+     * Put an answer the crate decided on this page's socket: `ack`, `push`, or
+     * nothing for `silent`.
+     *
+     * The half of {@link Echo.acknowledge} a language owns, and the whole of
+     * what an editor whose turns are the crate's needs from this object.
+     */
+    send(answered: Answer | null | undefined): void {
+        if (this.host === null || answered === null || answered === undefined) return;
+        if (answered.answer !== "ack" && answered.answer !== "push") return;
+        const seq = answered.seq ?? 0;
+        const corrections: Correction[] = (answered.corrections ?? []).map(
+            (c) => [c.widget, c.props],
+        );
+        const version = answered.docVersion ?? this.version;
         log.debug(
             "ack    seq=%s version=%s%s%s",
             seq,
-            this.version,
-            this.corrections.length === 0
+            version,
+            corrections.length === 0
                 ? ""
-                : " correcting " + this.corrections
+                : " correcting " + corrections
                     .map(([wid, props]) => `${wid}(${Object.keys(props).sort().join(" ")})`)
                     .join(", "),
-            reason === undefined ? "" : ` reason=${JSON.stringify(reason)}`,
+            answered.reason === undefined ? "" : ` reason=${JSON.stringify(answered.reason)}`,
         );
-        const version = answered.docVersion ?? this.version;
         if (answered.answer === "push") {
-            const corrections: Correction[] = (answered.corrections ?? []).map(
-                (c) => [c.widget, c.props],
-            );
             this.host.push(seq, corrections, version, [], answered.reason);
         } else {
             this.host.ack(seq, version, [], answered.reason);
         }
     }
+}
+
+/** What the crate decided to answer the host with. */
+export interface Answer {
+    answer: string;
+    seq?: number;
+    docVersion?: number;
+    reason?: string;
+    corrections?: { widget: number; props: Record<string, PropValue> }[];
 }

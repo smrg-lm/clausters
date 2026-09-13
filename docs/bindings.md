@@ -386,8 +386,9 @@ host composed a third, so one editor looked three ways.
 
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
 |---|---|---|
-| `clausters_apps_multitrack_window` | `apps_multitrack_window` | `idiom` — **the multitrack editor's window**, as a GuiDef rooted at a `window` node: the time ruler above the piece, the piece, and the transport row. One JSON request carries the projection's piece, rate, default tempo and source table, and the window's ids, cursor, meters and transport; C sizes and fills a buffer where wasm returns the string. A script's own widgets are not in it: they are the client's objects, and a client appends them |
-| `clausters_apps_multitrack_props` | `apps_multitrack_props` | `idiom` — **everything one widget of that window should be drawing**, for a correction: the ruler's cursor, or the piece's whole props. The same request, with `for` naming the widget |
+| `clausters_apps_multitrack_editor_new` | `JsMultitrackEditor.new` | `idiom` — **a multitrack editor** over the piece a JSON request names, with its axis, the window's chrome and the version its history is at. C answers null for a request that names no piece where wasm throws |
+| `clausters_apps_multitrack_editor_free` | `n/a` | wasm frees by `Drop` |
+| `clausters_apps_multitrack_editor_call` | `JsMultitrackEditor.call` | `idiom` — **one verb of the editor**, as JSON: `sync` the state a client holds, compose the `window`, correct a widget (`props`), read and answer an `event`, `apply` a step of the history, `resync`, `settle`, `announce`, `acknowledge`. **One door rather than one per verb** because the verbs are the application's surface, and a door per verb would be each binding restating it. The history is not in the editor: a piece shares it with the boxes entered out of it, so a turn answers the entry to record and a step comes back through `apply`. C sizes and fills a buffer where wasm returns the string. A script's own widgets are not in the window: they are the client's objects, and a client appends them |
 
 ## OSC
 

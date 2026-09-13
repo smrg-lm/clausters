@@ -1,24 +1,18 @@
 """Editing a **piece**: its vocabulary, its picture and its editor.
 
 The multitrack, as one of the three fundamental structures gets: a
-`clausters.gui.editing.Domain` that turns the `multitrack` widget's ``clips``
-and ``lanes`` payloads into the crate's own vocabulary and back, a
-`clausters.gui.editing.View` that is one `clausters.gui.guidef.multitrack`
-widget, and an editor that is `clausters.gui.editing.Editor` with those two in
-it and nothing else.
+`clausters.gui.editing.Domain` that puts a step of the history back onto the
+piece, a `clausters.gui.editing.View` that is the editor's window, and an
+editor that is `clausters.gui.editing.Editor` with those two in it.
 
-**Nothing here derives the picture, and nothing here reads a gesture.** Both are
-the crate's (`clausters._native.multitrack_props` and
-`editing_intake`), which is what makes this client, the web client and the
-standalone host draw the same piece and read the same report: what a row and a
-box *are*, and what a list of boxes *means*, are one rule each and not one per
-language. What this adds is the two things only a client knows — the axis its
-window counts in, and which server buffer a source was read into.
-
-**A report is the piece, so a gesture is however many edits it takes.** A block
-drag says a move, a trim and a lane's new contents in one message; they go
-through `clausters.gui.editing.Domain.payloads` and land as **one** entry, since
-they are one thing a hand did.
+**Nothing here decides anything about a turn.** What a message from the host
+is, what a gesture means, how an edit inverts, what the window is and what the
+host is answered with are the shared crate's
+(`clausters._native.MultitrackEditorCore`), which the standalone host runs and
+the web client binds too. What this adds is what a language owns: the
+`clausters.multitrack.Multitrack` object a script holds and gets written back
+onto, which server buffer a source was read into, the history a piece shares
+with the boxes entered out of it, and the socket.
 
 **Beats meet frames through the piece's own tempo map**, never through a ratio:
 a position is the second it falls on times the rate, and a *length* is the
@@ -248,46 +242,27 @@ class Bridge:
 
 
 class MultitrackDomain(Domain):
-    """A piece's vocabulary: the crate's `MultitrackIntent`, both ways.
+    """A piece's vocabulary, as the **history** walks it.
 
-    It reads nothing itself. A report of the boxes goes to
-    `clausters._native.editing_intake`, which is the same reader the standalone
-    host uses, and an edit is applied through
-    `clausters._native.domain_edit`, which is where the inverse comes from.
+    It reads no gesture and decides no edit: a gesture is the editor's turn,
+    and the turn is the crate's (`clausters._native.MultitrackEditorCore`).
+    What is left is what the history registers a structure for — putting a step
+    back onto the piece — and that goes through the same editor, so an undo and
+    an edit apply by one rule.
     """
 
     name = _native.MULTITRACK
-    ingested = True
 
     def __init__(self, bridge: Bridge):
         super().__init__()
         self.bridge = bridge
-
-    def request(self, structure, tag: str, values) -> dict:
-        """The report, the piece it is over, and the axis a beat lands on.
-
-        A report of the boxes, the rows or the break-points is the **whole**
-        structure rather than the gesture, so the piece has to be in hand for
-        the reading to say what the difference is. The rate and the source table
-        are the same two the picture is drawn with, which is what keeps a box
-        from going out on one axis and coming back on another.
-        """
-        return {"values": list(values), "state": self.state(structure),
-                "rate": float(self.bridge.rate),
-                "defaultBpm": float(self.bridge.bpm),
-                "sources": {str(k): v
-                            for k, v in self.bridge.sources.table().items()}}
-
-    # ---- the state, and writing one back ----
+        #: The editor whose core applies a step, set by the editor this domain
+        #: was made for.
+        self.editor = None
 
     def state(self, structure) -> dict:
-        """The piece as the crate holds it — what `current` is read against and
-        what `project` writes back."""
+        """The piece as the crate holds it."""
         return structure.write()
-
-    def current(self, structure, payload: dict) -> "dict | None":
-        edited = _native.domain_edit(self.name, self.state(structure), payload)
-        return None if edited is None else edited.get("current")
 
     def project(self, structure, payload: dict) -> bool:
         # **A source the edit makes is made before the edit lands.** A join over
@@ -297,12 +272,19 @@ class MultitrackDomain(Domain):
         # again on a redo, which is right: the source is gone the moment nothing
         # windows it.
         self._mint(payload.get("source"))
-        edited = _native.domain_edit(self.name, self.state(structure), payload)
-        if edited is None or not edited.get("applied"):
+        if self.editor is None:
             return False
-        written = Multitrack.read(edited["state"])
-        # The object the script holds **is** the edited one: a piece handed
-        # back would be a second piece, and the caller's would go stale.
+        applied = self.editor._apply_step(payload)
+        if not applied.get("applied"):
+            return False
+        self.write_back(structure, applied["piece"])
+        return True
+
+    def write_back(self, structure, state: dict) -> None:
+        """Write a piece the crate answered onto **the object the script
+        holds**: a piece handed back would be a second piece, and the caller's
+        would go stale."""
+        written = Multitrack.read(state)
         structure.version = written.version
         structure.tracks = written.tracks
         structure.tempo = written.tempo
@@ -312,7 +294,6 @@ class MultitrackDomain(Domain):
         structure.punch = written.punch
         # A tempo that moved changes where every box is drawn.
         self.bridge.refresh(structure)
-        return True
 
     def _mint(self, minted) -> None:
         """Install a source an edit made, and put it in the table.
@@ -351,19 +332,16 @@ class MultitrackDomain(Domain):
             sample_rate=float(made["rate"]), wait=False,
             server=self.bridge.server)
 
+
 class MultitrackView(View):
-    """One `clausters.gui.guidef.multitrack`: the whole piece, in one widget.
+    """The multitrack editor's window: the piece, ruled from above, with the
+    transport row under it when the piece can be heard.
 
-    A row per track and a box per region — the crate's own mapping, crossed to
-    this window's axis. The widget draws its own headers and its own vertical
-    scroll, so there is no stack to compose and nothing per clip to register.
-
-    **The one thing it does not draw is the ruler**, and an editor is where a
-    position is read, so the view places a `clausters.gui.guidef.timeruler`
-    above it: a strip of its own, in the same navigation group as the piece, so
-    it labels exactly what the lanes show and its ticks stand over the samples
-    they name. It rules from above, so its marks hug its bottom edge
-    (``dir="down"``, the default there).
+    **The window is the application's**, composed in the shared crate
+    (`clausters._native.MultitrackEditorCore`), so this client, the web client
+    and the standalone host open the same one. What is left here is the two
+    widget ids a hand's gestures come back on, named like every widget of a
+    picture.
     """
 
     def __init__(self, bridge: Bridge, *, link=None, transport: bool = False):
@@ -372,15 +350,11 @@ class MultitrackView(View):
         #: The navigation group the view joins, so a ruler beside it rules it.
         self.link = link
         #: The id of the strip that rules the piece, once one has been built.
-        #: Kept so a correction addressed to it answers with the *ruler's* props
-        #: and not with the piece's.
         self.ruler: int | None = None
         #: The id of the piece's own widget, once one has been built — what a
         #: playhead is drawn on, so whoever moves the line does not have to
         #: guess which of the two ids is the picture.
         self.piece: int | None = None
-        #: The row, box and curve names the host was last told — see `props`.
-        self.told: "tuple | None" = None
         #: Whether the window carries the transport row. It is the *view's* and
         #: not a script's ``extra``: a piece that can be heard is played from the
         #: window it is drawn in, and every window over a piece has the same
@@ -388,11 +362,6 @@ class MultitrackView(View):
         self.transport = bool(transport)
 
     def build(self, editor) -> dict:
-        # **The window is the application's**, composed once in the shared
-        # crate (`clausters._native.apps_multitrack_window`): the ruler above
-        # the piece, the piece, and the transport row. What is left here is the
-        # two ids a hand's gestures come back on.
-        #
         # **The ruler is named like any other widget of this picture**, so what
         # a hand does on it comes back to this editor: the position cursor is
         # placed on the ruler and nowhere else, and an unnamed strip would put
@@ -401,75 +370,27 @@ class MultitrackView(View):
         rid = self.widget(editor, "ruler", editor.structure, "ruler")
         self.ruler = rid
         self.piece = wid
-        tree = _native.apps_multitrack_window(self._request(editor, wid))
-        self._remember_names(editor)
+        editor._sync_core()
+        tree = editor._core.call("window", widget=wid, ruler=rid)
         # **A script's own widgets are its objects**, and a widget built over a
         # live source keeps a binding no JSON carries -- so they are appended
         # here rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]
         return tree
 
-    def _request(self, editor, widget_id: int) -> dict:
-        """What the crate composes the window, or corrects a widget of it,
-        from: the piece and its axis, the two ids, and what a running
-        playback adds."""
-        playback = getattr(editor, "playback", None)
-        meters = [] if playback is None else [
-            {"track": int(track), "bus": int(bus), "channels": int(channels)}
-            for track, (bus, channels) in playback.meters.items()]
-        return {
-            "piece": editor.structure.write(),
-            "rate": float(self.bridge.rate),
-            "defaultBpm": float(self.bridge.bpm),
-            "sources": {str(k): v for k, v in self.bridge.sources.table().items()},
-            "widget": int(self.piece if self.piece is not None else widget_id),
-            "ruler": int(self.ruler if self.ruler is not None else -1),
-            "link": self.link,
-            # In the editor's own units, beats, and `None` until a hand places
-            # one: a piece opens with the reader at the top.
-            "cursor": editor.cursor,
-            "meters": meters,
-            "transport": self.transport,
-            "title": editor.title,
-            "w": int(editor.size[0]),
-            "h": int(editor.size[1]),
-            "for": int(widget_id),
-        }
-
-    def group(self, widget_id: int) -> int:
-        """**The navigation group the piece and its ruler share.**
-
-        A ruler rules by being on the same axis as what it is beside, and an
-        unlinked widget is a group of one keyed by itself — so the two would
-        pan and zoom apart. The piece's own widget id names the group when the
-        caller did not name one, which is the id nothing else can collide with.
-        """
-        return widget_id if self.link is None else self.link
-
     def props(self, editor, widget_id: int) -> dict:
-        # **What a widget of this window draws is the application's**
-        # (`clausters._native.apps_multitrack_props`): the ruler's cursor, or
-        # the piece's whole props -- the projection's rows, boxes and curves,
-        # and what the window adds to them.
-        props = _native.apps_multitrack_props(self._request(editor, widget_id))
-        if widget_id != self.ruler:
-            self._remember_names(editor)
-        return props
+        editor._sync_core()
+        return editor._core.call("props", widget=int(widget_id))
 
-    def _remember_names(self, editor) -> None:
-        #: **What the host was last told things are called.** The rows, the
-        #: boxes and the curves, by name. A row or a box the *host* made carries
-        #: a word it minted (``track 1``, ``white 2``); the id is the document's
-        #: and is minted when the report is read, so until the picture goes back
-        #: the two are naming the same thing differently -- and every later
-        #: report about it names something the piece does not have, which mints
-        #: it **again**. A **curve** is the other half of the same fact: one the
-        #: owner made is one the host cannot have drawn, because it did not make
-        #: it. `MultitrackEditor.data_changed` compares this with what the piece
-        #: now holds and answers with the picture when they differ.
-        named = _native.multitrack_names(editor.structure.write())
-        self.told = (frozenset(named["rows"]), frozenset(named["boxes"]),
-                     frozenset(named["curves"]))
+
+def _plain(value):
+    """An event's arguments as JSON carries them. A blob belongs to a widget
+    this editor did not draw, and it crosses as nothing."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return None
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
 
 
 class MultitrackEditor(Editor):
@@ -502,12 +423,21 @@ class MultitrackEditor(Editor):
         #: play still edits, which is why it is an argument and not a
         #: requirement.
         self.playback = None
+        domain = MultitrackDomain(bridge)
         super().__init__(piece, sample_rate=sample_rate,
                          tempo_map=bridge.tempo,
-                         domain=MultitrackDomain(bridge),
+                         domain=domain,
                          view=MultitrackView(bridge, link=link,
                                              transport=server is not None),
                          title=title, **options)
+        domain.editor = self
+        #: **The editor's turns, in the shared crate**: what a message is, what
+        #: a gesture does to the piece, the window, and the answer.
+        self._core = _native.MultitrackEditorCore({
+            "piece": piece.write(), "rate": float(sample_rate),
+            "defaultBpm": float(bridge.bpm), "version": int(self._version),
+            "link": link, "transport": server is not None, "title": title,
+            "w": int(self.size[0]), "h": int(self.size[1])})
         self._shown = None
         if server is not None:
             from .playback import Playback
@@ -519,6 +449,106 @@ class MultitrackEditor(Editor):
         """The id of the piece's own widget — what a playhead is drawn on.
         ``None`` before the picture has been drawn once."""
         return getattr(self.view, "piece", None)
+
+    # ---- the crate's turns ----
+
+    def _sync_core(self) -> None:
+        """Hand the core what this client holds: the piece a script may have
+        changed, the buffer table, the meters, the cursor and the window."""
+        playback = self.playback
+        meters = [] if playback is None else [
+            {"track": int(track), "bus": int(bus), "channels": int(channels)}
+            for track, (bus, channels) in playback.meters.items()]
+        self._core.call(
+            "sync", piece=self.structure.write(),
+            sources={str(k): v for k, v in self.bridge.sources.table().items()},
+            meters=meters, cursor=self.cursor, window=self._window)
+
+    def _apply_step(self, payload: dict) -> dict:
+        """One payload of a history step, applied by the core."""
+        self._sync_core()
+        return self._core.call("apply", payload=payload)
+
+    def _deliver(self, addr: str, args) -> bool:
+        self._sync_core()
+        outcome = self._core.call("event", addr=str(addr), args=_plain(list(args)),
+                                  version=int(self._version))
+        kind = outcome.get("turn")
+        if kind == "closed":
+            return self._closed()
+        if kind == "step":
+            # **What it answers is whether anything moved**, and a step nobody
+            # could apply says why: the entry named a structure nothing in this
+            # context can write to, and it is still there rather than stepped
+            # over.
+            stepped = (self.redo if outcome.get("redo") else self.undo)()
+            reason = None
+            if not stepped and self.app.unreachable is not None:
+                reason = (f"{self.app.unreachable}: nothing here can put "
+                          "that edit back")
+            self.echo.send(self._core.call(
+                "acknowledge", seq=int(outcome.get("seq", 0)),
+                version=int(self._version), reason=reason))
+            return stepped
+        return self._take(outcome)
+
+    def _route(self, args) -> bool:
+        """One ``/gui_event`` payload, with the stamp already taken off: the
+        same turn as a message, unstamped."""
+        self._sync_core()
+        wid, tag, values = args[0], args[1], list(args[2:])
+        return self._take(self._core.call(
+            "event", addr="/gui_event",
+            args=_plain([wid, 0, 0, tag, *values]), version=int(self._version)))
+
+    def _take(self, outcome: dict) -> bool:
+        """Carry out what a turn came to, and answer the host. Returns whether
+        the piece changed."""
+        if outcome.get("turn") in (None, "nothing"):
+            return False
+        for minted in outcome.get("minted") or ():
+            self.domain._mint(minted)
+        changed = bool(outcome.get("changed"))
+        if changed:
+            record = outcome.get("record")
+            if record:
+                self._editing.history.record(
+                    [{"structure": self._registered(), **leg}
+                     for leg in record["legs"]],
+                    label=record["label"])
+            self.domain.write_back(self.structure, outcome["piece"])
+            self._version = int(outcome["version"])
+            self.dirty = True
+            self._editing.changed()
+        if outcome.get("locate") is not None:
+            # **Whoever has the transport is told**: this editor, and the piece
+            # it is composed inside when it is one.
+            self.cursor = float(outcome["locate"])
+            self.locate(self.cursor)
+            if self.composed_in is not None:
+                self.composed_in.locate(self.cursor)
+            if callable(self.on_locate):
+                self.on_locate(self.cursor)
+        if outcome.get("selection") is not None:
+            self.selection = outcome["selection"]
+        if outcome.get("enter") is not None:
+            self.enter(str(outcome["enter"]))
+        self.echo.send(outcome.get("answer"))
+        return changed
+
+    def reflect_step(self) -> None:
+        """Draw what a history walk left behind: every widget corrected, and the
+        host told once."""
+        self.dirty = True
+        self._sync_core()
+        self.echo.send(self._core.call("resync", version=int(self._version)))
+
+    def adopt(self) -> None:
+        """Another view of this piece edited it: bring this window in step."""
+        if self._host is None or self._window is None:
+            return
+        self._sync_core()
+        self.echo.send(self._core.call("resync", version=int(self._version)))
 
     # ---- the piece, heard ----
 
@@ -624,51 +654,16 @@ class MultitrackEditor(Editor):
     def _answer_with_the_picture(self) -> None:
         """**A name the host minted is answered with the one the piece kept.**
 
-        A gesture is normally answered with an acknowledgement and nothing else,
-        because the report described the result: the host drew what it sent and
-        the piece agreed. The cases where it does not are the ones where the
-        host **makes** something -- a track from a double click, a box from a
-        split or a paste. There the host mints the word (``track 1``,
-        ``white 2``) and the document mints the id, so until the picture goes
-        back the two are naming the same thing differently.
-
-        And a name the piece does not know is not ignored: it is read as
-        something *new*. So the next report about that row or that box mints it
-        again, and again after that -- a split box took a fresh id on every
-        drag, losing whatever was hung on it, and a box dropped on a new track
-        landed on a track nobody had.
-
-        So when the names the host was last told differ from the ones the piece
-        now holds, the whole picture goes back as a correction. It carries the
-        `meters` prop with it, which is the other half of the same fact for a
-        track: one that reached the server has buses to read, and a host that
-        never heard of it draws no strip.
+        The host mints the word for a track it made or a box it split, and the
+        document mints the id; the crate compares what the host was last told
+        with what the piece now holds and answers with the picture when they
+        differ (`settle`). It runs after the readers are synced and a minted
+        source has its buffer, so the box that windows it draws.
         """
-        view, piece = self.view, self.piece_widget
-        if self._host is None or self._window is None or piece is None:
+        if self._host is None or self._window is None:
             return
-        told = getattr(view, "told", None)
-        if told is None:
-            return
-        # **What the piece calls them is the crate's** — a flat prop's shape is
-        # not a fact to restate at a call site, and which boxes a piece has is
-        # not this client's arithmetic either.
-        named = _native.multitrack_names(self.structure.write())
-        if told == (frozenset(named["rows"]), frozenset(named["boxes"]),
-                    frozenset(named["curves"])):
-            return
-        self._corrections = []
-        self._resync(piece)
-        self._acknowledge(0)
-        self._corrections = []
-
-    def interface(self, widget_id: int, tag: str, values) -> bool:
-        """**A box was entered** — the double click the multitrack reports as
-        ``"enter"``, with the box's name."""
-        if tag != "enter" or not values:
-            return False
-        self.enter(str(values[0]))
-        return True
+        self._sync_core()
+        self.echo.send(self._core.call("settle", version=int(self._version)))
 
     def enter(self, name: str):
         """Open the contents of the box called ``name`` in an editor of its

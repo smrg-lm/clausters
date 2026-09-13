@@ -2012,9 +2012,15 @@ impl Host {
             "answer_own: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
-        // Read before the owner is borrowed: whether the transport is rolling is
-        // the piece's playback's, and the locate arm below asks it.
-        let rolling = self.instance.rolling();
+        // **A gesture on the piece's own window is the editor's turn** — the
+        // same one a script and a page run: read, applied with its inverse, and
+        // answered. What is left below is the tree's, for a document written
+        // before the turn, and the window's own verbs.
+        if self.owner.as_ref().is_some_and(|o| {
+            o.draws_piece() && o.editor.as_ref().is_some_and(|e| e.owns(widget_id))
+        }) {
+            return self.answer_piece(def_id, widget_id, seq, args);
+        }
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -2056,70 +2062,6 @@ impl Host {
                     Ok(path) => diag::info!("session saved to {}", path.display()),
                     Err(e) => diag::warn!("save: {e}"),
                 }
-                return true;
-            }
-            // **A locate is not an edit; it says where the reader is.** The
-            // host owns where the position cursor *is* and a script owns what
-            // it means -- but a session host has no script, so what it means
-            // stops here: a **stopped** transport is cued to the cursor, which
-            // is what makes the next play start from the mark. A **rolling**
-            // one is left alone, because the cursor is not the playhead: moving
-            // the mark mid-pass must not move the music. Answered rather than
-            // emitted, so the outbox does not wait for an acknowledgement
-            // nobody will send.
-            Some(OscType::String(tag)) if tag == "locate" && owner.draws_piece() && !rolling => {
-                let at = match args.get(1) {
-                    Some(OscType::Float(v)) => f64::from(*v),
-                    Some(OscType::Double(v)) => *v,
-                    Some(OscType::Int(v)) => f64::from(*v),
-                    Some(OscType::Long(v)) => *v as f64,
-                    _ => return false,
-                };
-                self.cue_piece(at);
-                return true;
-            }
-            // **The piece stated whole**: one payload naming every clip, every
-            // strip or every break-point, so what it means is however many
-            // intents it takes to make the document say that -- and they are
-            // one entry, because a block move is one thing a hand did.
-            //
-            // **Which payloads those are is the piece's own question**, asked
-            // rather than restated. This read `tag == "clips" || tag == "lanes"`
-            // while the projection that reads a report answers for four, so a
-            // curve dragged in a host with no client attached reported `points`
-            // to a reader that had no arm for it, and a `j` reported `join` the
-            // same way: both fell through to the tree's reader and left on the
-            // wire, to nobody.
-            Some(OscType::String(_)) if owner.draws_piece() && owner.piece_answers(args) => {
-                let against = clausters_document::Against::default();
-                let reading = owner.read_piece(args);
-                let label = reading.label();
-                let intents: Vec<_> = reading
-                    .intents
-                    .into_iter()
-                    .map(|intent| (intent, label))
-                    .collect();
-                let applied = owner.apply_piece(&intents, &against);
-                // **A source an edit minted is made before the picture is
-                // redrawn.** A join owns no samples -- it is spans of the takes
-                // the table already holds -- and the document says so and stops
-                // there: *"whoever has the samples fills it in when it realizes
-                // the join"*. Realizing it is the endpoint's, here as in every
-                // client, and it has to happen first: a box naming a source
-                // with no buffer draws empty, sounds through nothing and has no
-                // length to stop an edge at.
-                self.mint_sources(&intents);
-                self.adopt(def_id, &applied);
-                // **A refusal the piece gave is said in the window that asked**,
-                // which is the same line a client's `/gui_ack` would have put
-                // there: a host that owns its own document is still answering
-                // an edit, and the reason is the answer's most useful half.
-                self.settle(ack::Acked {
-                    seq,
-                    doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
-                    reason: reading.refusal.map(str::to_string),
-                    ..Default::default()
-                });
                 return true;
             }
             // The **tree's** description of the same two payloads, for a
@@ -2189,6 +2131,95 @@ impl Host {
         self.settle(ack::Acked {
             seq,
             doc_version: version as i64,
+            ..Default::default()
+        });
+        true
+    }
+
+    /// **A gesture on the piece's window, answered by the multitrack editor.**
+    ///
+    /// The turn is the applications crate's; what is carried out here is what a
+    /// host holds: the entry recorded in the owner's history, the piece written
+    /// back, a minted source made before the picture is redrawn (a box naming a
+    /// source with no buffer draws empty and sounds through nothing), the picture
+    /// and the readers brought in step, a placed cursor cued, and the stamp
+    /// settled with the reason the turn gave — so a refusal is said in the
+    /// window that asked.
+    fn answer_piece(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+        use clausters_apps::multitrack::editor::{Event, Kind};
+        use clausters_editing::conversation::Answer;
+
+        let Some(owner) = self.owner.as_mut() else {
+            return false;
+        };
+        let version = owner.piece.version as i64;
+        let piece = owner.piece.clone();
+        let table = owner.buffer_table();
+        let Some(editor) = owner.editor.as_mut() else {
+            return false;
+        };
+        editor.set_piece(piece);
+        editor.set_sources(table);
+        // A host answering its own gesture states no version it was made
+        // against: nothing moves the piece between the hand and this call.
+        let mut event = vec![
+            serde_json::json!(widget_id),
+            serde_json::json!(seq),
+            serde_json::json!(0),
+        ];
+        event.extend(args.iter().map(document::piece::atom));
+        let outcome = editor.event(
+            &Event {
+                addr: "/gui_event".into(),
+                args: event,
+            },
+            version,
+        );
+        if outcome.turn == Kind::Nothing {
+            return false;
+        }
+        if outcome.changed {
+            owner.piece = editor.piece().clone();
+        }
+        if let Some(record) = &outcome.record {
+            owner.record_piece(record);
+        }
+        let minted: Vec<_> = outcome
+            .minted
+            .iter()
+            .filter_map(|m| serde_json::from_value(m.clone()).ok())
+            .collect();
+        self.mint_sources(&minted);
+        let applied = document::Applied {
+            effective: None,
+            version: self.owner.as_ref().map_or(0, |o| o.piece.version),
+            applied: outcome.changed,
+        };
+        self.adopt(def_id, &[applied]);
+        if let Some(beat) = outcome.locate {
+            self.cue_piece(beat);
+        }
+        let (reason, corrections) = match outcome.answer {
+            Some(Answer::Ack { reason, .. }) => (reason, Vec::new()),
+            Some(Answer::Push {
+                reason,
+                corrections,
+                ..
+            }) => (reason, corrections),
+            _ => (None, Vec::new()),
+        };
+        let mut fx = Vec::new();
+        for correction in corrections {
+            if let (Ok(id), Value::Object(props)) =
+                (i32::try_from(correction.widget), correction.props)
+            {
+                self.set_props(id, props.into_iter().collect(), &mut fx);
+            }
+        }
+        self.settle(ack::Acked {
+            seq,
+            doc_version: outcome.version,
+            reason,
             ..Default::default()
         });
         true

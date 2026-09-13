@@ -124,21 +124,31 @@ class Echo:
             return
         # **What to send is the crate's decision**, including that an unasked
         # push with nothing to say is one message the wire does not carry.
-        answer = _native.conversation_answer(seq, self.version, reason,
-                                             self.corrections)
-        kind = answer.get("answer")
-        if kind == "silent":
+        self.send(_native.conversation_answer(seq, self.version, reason,
+                                              self.corrections))
+
+    def send(self, answer: "dict | None"):
+        """Put an answer the crate decided on this client's socket: ``ack``,
+        ``push``, or nothing for ``silent``.
+
+        The half of `acknowledge` a language owns, and the whole of what an
+        editor whose turns are the crate's needs from this object."""
+        if self.host is None or not answer:
             return
-        log.debug("ack    seq=%s version=%s%s%s", seq, self.version,
-                  "" if not self.corrections else " correcting " + ", ".join(
-                      f"{wid}({' '.join(sorted(props))})"
-                      for wid, props in self.corrections),
-                  "" if reason is None else f" reason={reason!r}")
+        kind = answer.get("answer")
+        if kind not in ("ack", "push"):
+            return
+        seq = int(answer.get("seq", 0))
+        corrections = [(int(c["widget"]), c["props"])
+                       for c in answer.get("corrections") or ()]
         version = int(answer.get("docVersion", self.version))
         why = answer.get("reason")
+        log.debug("ack    seq=%s version=%s%s%s", seq, version,
+                  "" if not corrections else " correcting " + ", ".join(
+                      f"{wid}({' '.join(sorted(props))})"
+                      for wid, props in corrections),
+                  "" if why is None else f" reason={why!r}")
         if kind == "push":
-            corrections = [(int(c["widget"]), c["props"])
-                           for c in answer.get("corrections") or ()]
             self.host.push(seq, *corrections, doc_version=version, reason=why)
         else:
             self.host.ack(seq, doc_version=version, reason=why)

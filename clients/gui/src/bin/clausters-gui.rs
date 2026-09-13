@@ -737,32 +737,9 @@ fn run_session(
     // still draws through the tree's own walk, with a take editor per source
     // under the tracks.
     let (def, drawn_clips, drawn_lanes, editors) = if owner.draws_piece() {
-        use clausters_apps::multitrack::{self as app, Transport, TransportIds};
-        let piece = owner.piece_look();
-        let look = piece.projection();
-        let window = app::Window {
-            piece: &owner.piece,
-            look: &look,
-            widget: def_id + 1,
-            ruler: def_id + 2,
-            link: None,
-            cursor: None,
-            meters: &[],
-            transport: Transport::Numbered(TransportIds {
-                row: def_id + 3,
-                rewind: def_id + 4,
-                play: def_id + 5,
-                stop: def_id + 6,
-                clock: def_id + 7,
-            }),
-            title: &title,
-            size: (1000, 640),
-        };
-        let def = app::window(&window);
+        let def = owner.open_editor(def_id, &title, (1000, 640));
         let shown = owner.shown();
-        let counts = (shown.clips.len(), shown.lanes.len());
-        owner.bind_multitrack(def_id + 1);
-        (def, counts.0, counts.1, 0)
+        (def, shown.clips.len(), shown.lanes.len(), 0)
     } else {
         let drawn = tree::draw(
             &owner.document,

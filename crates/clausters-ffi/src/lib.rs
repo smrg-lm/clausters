@@ -396,7 +396,14 @@ pub use time::*;
 /// -- and the props any widget of it is corrected with. Each client composed it
 /// for itself and the standalone host composed a third, which had no ruler and
 /// no transport at all. **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 56;
+/// **v57 the editor is a handle.** `clausters_apps_multitrack_editor_*` holds
+/// the multitrack editor between messages -- the conversation's floor, the
+/// window's ids, the cursor -- and answers every turn: a gesture read and
+/// applied with its inverse, the entry to record, the acknowledgement and the
+/// corrections. Its verbs cross through one JSON door (`_call`), and it composes
+/// the window itself, so the two stateless v56 doors are **removed** --
+/// **breaking** for a caller of those two.
+pub const CORE_ABI_VERSION: u32 = 57;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

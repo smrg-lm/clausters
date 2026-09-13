@@ -74,7 +74,7 @@ export type { CratePoint } from "./points.ts";
 export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";
 export type { Measure, SamplesEditorOptions } from "./samples.ts";
 export { Echo } from "./echo.ts";
-export type { Correction, Envelope, Turn } from "./echo.ts";
+export type { Answer, Correction, Envelope, Turn } from "./echo.ts";
 export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";
 export type { GenericEditorOptions, Leg } from "./editor.ts";
 export { log, watch } from "./trace.ts";

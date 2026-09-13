@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 56
+CORE_ABI_VERSION = 57
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -309,14 +309,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_names.restype = ctypes.c_size_t
-    lib.clausters_apps_multitrack_window.argtypes = [
-        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    lib.clausters_apps_multitrack_editor_new.argtypes = [u8p_early, ctypes.c_size_t]
+    lib.clausters_apps_multitrack_editor_new.restype = ctypes.c_void_p
+    lib.clausters_apps_multitrack_editor_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_apps_multitrack_editor_free.restype = None
+    lib.clausters_apps_multitrack_editor_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
-    lib.clausters_apps_multitrack_window.restype = ctypes.c_size_t
-    lib.clausters_apps_multitrack_props.argtypes = [
-        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_apps_multitrack_props.restype = ctypes.c_size_t
+    lib.clausters_apps_multitrack_editor_call.restype = ctypes.c_size_t
     lib.clausters_session_format.restype = ctypes.c_uint32
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
@@ -1675,36 +1675,50 @@ def multitrack_names(piece: dict) -> dict:
     return json.loads(raw) if raw else {"rows": [], "boxes": [], "curves": []}
 
 
-def apps_multitrack_window(request: dict) -> dict:
-    """**The multitrack editor's window**, as a GuiDef rooted at a ``window``
-    node (`clausters_apps_multitrack_window`): the time ruler above the piece,
-    the piece, and the transport row when ``request["transport"]`` asks for it.
+class MultitrackEditorCore:
+    """**The multitrack editor's turns** (`clausters_apps_multitrack_editor_*`):
+    a piece, the window it is drawn in, and one view's end of the conversation
+    with the host.
 
-    ``request`` carries the projection's ``piece``, ``rate``, ``defaultBpm`` and
-    ``sources``, and the window's ``widget`` and ``ruler`` ids, ``link``,
-    ``cursor`` (in beats, or ``None``), ``meters`` (``{"track", "bus",
-    "channels"}`` rows), ``transport``, ``title``, ``w`` and ``h``.
+    Every verb crosses through `call`, as JSON: ``sync`` hands over what the
+    caller holds (the piece, the buffer table, the meters, the cursor, the
+    window), ``window`` composes the window, ``props`` corrects one widget,
+    ``event`` reads and answers one message from the host, ``apply`` puts a
+    step of the history back, and ``resync``, ``settle``, ``announce`` and
+    ``acknowledge`` answer the host.
+
+    Args:
+        request: ``piece``, ``rate``, ``defaultBpm``, ``version`` (the history's
+            counter), and the window's ``link``, ``transport``, ``title``,
+            ``w`` and ``h``.
+
+    Raises:
+        ValueError: the request names no piece.
     """
-    _lib = lib()
-    body = json.dumps(request).encode("utf-8")
-    raw = size_then_fill(_lib.clausters_apps_multitrack_window,
-                         as_u8(body), len(body))
-    return json.loads(raw) if raw else {}
 
+    def __init__(self, request: dict):
+        body = json.dumps(request).encode("utf-8")
+        self._handle = lib().clausters_apps_multitrack_editor_new(as_u8(body), len(body))
+        if not self._handle:
+            raise ValueError("the request names no piece")
 
-def apps_multitrack_props(request: dict) -> dict:
-    """**Everything one widget of the multitrack editor's window should be
-    drawing**, for a correction (`clausters_apps_multitrack_props`): the
-    ruler's cursor, or the piece's whole props.
+    def __del__(self):
+        self.free()
 
-    ``request`` is the one `apps_multitrack_window` takes, with ``for`` naming
-    the widget.
-    """
-    _lib = lib()
-    body = json.dumps(request).encode("utf-8")
-    raw = size_then_fill(_lib.clausters_apps_multitrack_props,
-                         as_u8(body), len(body))
-    return json.loads(raw) if raw else {}
+    def free(self) -> None:
+        """Free the editor."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_apps_multitrack_editor_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **args) -> dict:
+        """One verb, with its arguments; the answer, as a dict."""
+        if not self._handle:
+            return {}
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_multitrack_editor_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

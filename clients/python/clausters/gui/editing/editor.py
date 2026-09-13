@@ -477,18 +477,7 @@ class Editor:
         turn = self._read(envelope)
         kind = turn.get("turn")
         if kind == "closed":
-            self._window = None
-            # Closing a *view* is not an event of the history, so the context
-            # stays exactly as it is -- what goes is this window's place in the
-            # list of who to tell, and this editor's place in what the host
-            # delivers to. The second is also this editor's **lifetime**: the
-            # host holds an open editor so a script need not, and this is where
-            # it stops.
-            self._editing.detach(self)
-            self.app.forget(self)
-            if self._host is not None:
-                self._host.unsubscribe(self.apply)
-            return False
+            return self._closed()
         if kind == "nothing":
             return False
         seq = int(turn.get("seq", 0))
@@ -542,6 +531,22 @@ class Editor:
         # tree is what shows a widget that was not there.
         self._restructure()
         return changed
+
+    def _closed(self) -> bool:
+        """This editor's window closed. Answers ``False``: nothing changed.
+
+        Closing a *view* is not an event of the history, so the context stays
+        exactly as it is -- what goes is this window's place in the list of who
+        to tell, and this editor's place in what the host delivers to. The
+        second is also this editor's **lifetime**: the host holds an open editor
+        so a script need not, and this is where it stops.
+        """
+        self._window = None
+        self._editing.detach(self)
+        self.app.forget(self)
+        if self._host is not None:
+            self._host.unsubscribe(self.apply)
+        return False
 
     def _owns(self, widget_id: int) -> bool:
         """Whether this editor drew the widget an event names."""

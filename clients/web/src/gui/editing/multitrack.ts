@@ -29,9 +29,11 @@
  */
 
 import { TempoMap } from "../../base/time.ts";
-import { MULTITRACK, domainEdit, editingStitch } from "../../document.ts";
-import { Multitrack, multitrackNames as names } from "../../multitrack.ts";
+import { MULTITRACK, editingStitch } from "../../document.ts";
+import type { RecordedLeg, Selection } from "../../document.ts";
+import { Multitrack } from "../../multitrack.ts";
 import type { Region } from "../../multitrack.ts";
+import type { Answer } from "./echo.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
@@ -40,7 +42,7 @@ import { Buffer, type Part } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import {
-    appsMultitrackProps, appsMultitrackWindow, editingDefaultBpm,
+    MultitrackEditorCore, editingDefaultBpm,
 } from "../../core/clausters_core_web.js";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
@@ -316,57 +318,35 @@ export class Bridge {
 }
 
 /**
- * A piece's vocabulary: the crate's `MultitrackIntent`, both ways.
+ * A piece's vocabulary, as the **history** walks it.
  *
- * It reads nothing itself. A gesture goes to `editingIntake`, which is the same
- * reading the standalone host does, and an edit is applied through `domainEdit`,
- * which is where the inverse comes from.
+ * It reads no gesture and decides no edit: a gesture is the editor's turn, and
+ * the turn is the crate's (`MultitrackEditorCore`). What is left is what the
+ * history registers a structure for — putting a step back onto the piece — and
+ * that goes through the same editor, so an undo and an edit apply by one rule.
  */
 export class MultitrackDomain extends Domain<Multitrack> {
     override readonly name = MULTITRACK;
-    override readonly ingested = true;
     readonly bridge: Bridge;
+    /** The editor whose core applies a step, set by the editor this was made for. */
+    editor: MultitrackEditor | null = null;
 
     constructor(bridge: Bridge) {
         super();
         this.bridge = bridge;
     }
 
-    /**
-     * The report, the piece it is over, and the axis a beat lands on.
-     *
-     * A report of the boxes, the rows or the break-points is the **whole**
-     * structure rather than the gesture, so the piece has to be in hand for the
-     * reading to say what the difference is. The rate and the source table are
-     * the same two the picture is drawn with, which is what keeps a box from
-     * going out on one axis and coming back on another.
-     */
-    override request(
-        piece: Multitrack,
-        _tag: string,
-        values: readonly unknown[],
-    ): Record<string, unknown> {
-        return {
-            values: [...values],
-            state: this.state(piece),
-            rate: this.bridge.rate,
-            defaultBpm: this.bridge.bpm,
-            sources: this.bridge.sources.table(),
-        };
-    }
-
-    // ---- the state, and writing one back ----
-
-    /**
-     * The piece as the crate holds it — what {@link MultitrackDomain.current} is
-     * read against and what {@link MultitrackDomain.project} writes back.
-     */
+    /** The piece as the crate holds it. */
     state(piece: Multitrack): unknown {
         return piece.write();
     }
 
-    current(piece: Multitrack, payload: unknown): unknown {
-        return domainEdit(this.name, this.state(piece), payload)?.current;
+    /**
+     * Never asked: an edit's inverse is read by the editor's core, which answers
+     * the entry to record.
+     */
+    current(_piece: Multitrack, _payload: unknown): unknown {
+        return undefined;
     }
 
     project(piece: Multitrack, payload: unknown): boolean {
@@ -377,11 +357,22 @@ export class MultitrackDomain extends Domain<Multitrack> {
         // silence. It runs again on a redo, which is right: the source is gone
         // the moment nothing windows it.
         this.mint((payload as { source?: unknown })?.source);
-        const edited = domainEdit(this.name, this.state(piece), payload);
-        if (edited === undefined || !edited.applied) return false;
-        const written = Multitrack.read(edited.state as Record<string, unknown>);
-        // The object the page holds **is** the edited one: a piece handed back
-        // would be a second piece, and the caller's would go stale.
+        if (this.editor === null) return false;
+        const applied = this.editor.applyStep(payload);
+        if (applied.applied !== true) return false;
+        this.writeBack(piece, applied.piece as Record<string, unknown>);
+        return true;
+    }
+
+    /**
+     * Write a piece the crate answered onto **the object the page holds**: a
+     * piece handed back would be a second piece, and the caller's would go
+     * stale.
+     *
+     * @internal
+     */
+    writeBack(piece: Multitrack, state: Record<string, unknown>): void {
+        const written = Multitrack.read(state);
         piece.version = written.version;
         piece.tracks = written.tracks;
         piece.tempo = written.tempo;
@@ -391,7 +382,6 @@ export class MultitrackDomain extends Domain<Multitrack> {
         piece.punch = written.punch;
         // A tempo that moved changes where every box is drawn.
         this.bridge.refresh(piece);
-        return true;
     }
 
     /**
@@ -412,8 +402,10 @@ export class MultitrackDomain extends Domain<Multitrack> {
      * goes out either way at the same point in the same order — `wait: false`,
      * because a join has nothing to copy and nothing to load, so there is
      * nothing to wait for but the round trip itself.
+     *
+     * @internal
      */
-    private mint(minted: unknown): void {
+    mint(minted: unknown): void {
         const server = this.bridge.server;
         if (server === undefined || minted === null || typeof minted !== "object") return;
         const id = (minted as { id?: number }).id;
@@ -490,13 +482,6 @@ export class MultitrackView extends View<Multitrack> {
      */
     piece: number | null = null;
     /**
-     * **What the host was last told things are called** — the rows and the
-     * boxes, by name. See {@link props}.
-     */
-    told:
-        | readonly [ReadonlySet<string>, ReadonlySet<string>, ReadonlySet<string>]
-        | null = null;
-    /**
      * Whether the window carries the transport row. It is the *view's* and not a
      * page's `extra`: a piece that can be heard is played from the window it is
      * drawn in, and every window over a piece has the same three controls in the
@@ -512,10 +497,10 @@ export class MultitrackView extends View<Multitrack> {
     }
 
     build(editor: Editor<Multitrack>): GuiNode {
-        // **The window is the application's**, composed once in the shared
-        // crate (`appsMultitrackWindow`): the ruler above the piece, the piece,
-        // and the transport row. What is left here is the two ids a hand's
-        // gestures come back on.
+        // **The window is the application's**, composed in the shared crate
+        // (`MultitrackEditorCore`), so this page, the Python client and the
+        // standalone host open the same one. What is left here is the two ids a
+        // hand's gestures come back on.
         //
         // **The ruler is named like any other widget of this picture**, so what
         // a hand does on it comes back to this editor: the position cursor is
@@ -525,10 +510,9 @@ export class MultitrackView extends View<Multitrack> {
         const rid = this.widget(editor, "ruler", editor.structure, "ruler");
         this.ruler = rid;
         this.piece = wid;
-        const tree = JSON.parse(
-            appsMultitrackWindow(JSON.stringify(this.request(editor, wid))),
-        ) as GuiNode;
-        this.rememberNames(editor);
+        const ed = editor as MultitrackEditor;
+        ed.syncCore();
+        const tree = ed.coreCall("window", { widget: wid, ruler: rid }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, and a widget built over a
         // live source keeps a binding no JSON carries — so they are appended
         // here rather than composed in the crate.
@@ -536,79 +520,37 @@ export class MultitrackView extends View<Multitrack> {
         return tree;
     }
 
-    /**
-     * What the crate composes the window, or corrects a widget of it, from: the
-     * piece and its axis, the two ids, and what a running playback adds.
-     */
-    private request(editor: Editor<Multitrack>, widgetId: number): Record<string, unknown> {
-        const playback = (editor as { playback?: { meters?: Map<number, [number, number]> } })
-            .playback;
-        const meters: { track: number; bus: number; channels: number }[] = [];
-        for (const [track, [bus, channels]] of playback?.meters ?? []) {
-            meters.push({ track, bus, channels });
-        }
-        return {
-            piece: editor.structure.write(),
-            rate: this.bridge.rate,
-            defaultBpm: this.bridge.bpm,
-            sources: this.bridge.sources.table(),
-            widget: this.piece ?? widgetId,
-            ruler: this.ruler ?? -1,
-            link: this.link ?? null,
-            // In the editor's own units, beats, and `null` until a hand places
-            // one: a piece opens with the reader at the top.
-            cursor: editor.cursor ?? null,
-            meters,
-            transport: this.transport,
-            title: editor.title,
-            w: editor.size[0],
-            h: editor.size[1],
-            for: widgetId,
-        };
-    }
-
-    /**
-     * **The navigation group the piece and its ruler share.**
-     *
-     * A ruler rules by being on the same axis as what it is beside, and an
-     * unlinked widget is a group of one keyed by itself — so the two would pan
-     * and zoom apart. The piece's own widget id names the group when the caller
-     * did not name one, which is the id nothing else can collide with.
-     */
-    group(widgetId: number): number {
-        return this.link ?? widgetId;
-    }
-
     override props(editor: Editor<Multitrack>, widgetId: number): Record<string, PropValue> {
-        // **What a widget of this window draws is the application's**
-        // (`appsMultitrackProps`): the ruler's cursor, or the piece's whole
-        // props — the projection's rows, boxes and curves, and what the window
-        // adds to them.
-        const props = JSON.parse(
-            appsMultitrackProps(JSON.stringify(this.request(editor, widgetId))),
-        ) as Record<string, PropValue>;
-        if (widgetId !== this.ruler) this.rememberNames(editor);
-        return props;
+        const ed = editor as MultitrackEditor;
+        ed.syncCore();
+        return ed.coreCall("props", { widget: widgetId }) as Record<string, PropValue>;
     }
+}
 
-    private rememberNames(editor: Editor<Multitrack>): void {
-        // **What the host was last told things are called.** The rows, the
-        // boxes and the curves. A row or a box the
-        // *host* made carries a word it minted (`track 1`, `white 2`); the id is
-        // the document's and is minted when the report is read, so until the
-        // picture goes back the two are naming the same thing differently — and
-        // every later report about it names something the piece does not have,
-        // which mints it **again**. `MultitrackEditor.dataChanged` compares this
-        // with what the piece now holds and answers with the picture when they
-        // differ. A **curve** is the other half of the same fact: one the owner
-        // made is one the host cannot have drawn, because it did not make it.
-        const named = names(editor.structure);
-        this.told = [
-            new Set(named.rows),
-            new Set(named.boxes),
-            new Set(named.curves),
-        ];
-    }
+/** What one turn of the editor's core came to. */
+interface Outcome {
+    turn?: string;
+    answer?: Answer;
+    seq?: number;
+    redo?: boolean;
+    record?: { label: string; legs: { forward: unknown; backward: unknown; key: string }[] };
+    changed?: boolean;
+    version?: number;
+    piece?: Record<string, unknown>;
+    minted?: unknown[];
+    locate?: number;
+    selection?: Record<string, unknown>;
+    enter?: string;
+}
+
+/**
+ * An event's arguments as JSON carries them. A blob belongs to a widget this
+ * editor did not draw, and it crosses as nothing.
+ */
+function plain(value: unknown): unknown {
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return null;
+    if (Array.isArray(value)) return value.map(plain);
+    return value;
 }
 
 /** What {@link MultitrackEditor} is built with, beside a generic editor's. */
@@ -671,18 +613,36 @@ export class MultitrackEditor extends Editor<Multitrack> {
             sources instanceof Sources ? sources : new Sources(sources),
             server,
         );
+        const domain = new MultitrackDomain(bridge);
         super(piece, {
             ...rest,
             title,
             tempoMap: bridge.tempo,
-            domain: new MultitrackDomain(bridge),
+            domain,
             view: new MultitrackView(bridge, link, server !== undefined),
         });
         this.bridge = bridge;
+        domain.editor = this;
+        // **The editor's turns, in the shared crate**: what a message is, what
+        // a gesture does to the piece, the window, and the answer.
+        this.core = new MultitrackEditorCore(JSON.stringify({
+            piece: piece.write(),
+            rate: this.bridge.rate,
+            defaultBpm: this.bridge.bpm,
+            version: this.version,
+            link: link ?? null,
+            transport: server !== undefined,
+            title,
+            w: this.size[0],
+            h: this.size[1],
+        }));
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }
     }
+
+    /** The editor's turns, in the shared crate. */
+    private readonly core: MultitrackEditorCore;
 
     /**
      * The id of the piece's own widget — what a playhead is drawn on. `null`
@@ -690,6 +650,143 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     get pieceWidget(): number | null {
         return (this.view as MultitrackView | null)?.piece ?? null;
+    }
+
+    // ---- the crate's turns ----
+
+    /**
+     * One verb of the core, with its arguments; the answer, parsed.
+     *
+     * @internal
+     */
+    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return JSON.parse(this.core.call(JSON.stringify({ verb, ...args }))) as Record<
+            string,
+            unknown
+        >;
+    }
+
+    /**
+     * Hand the core what this page holds: the piece a page may have changed,
+     * the buffer table, the meters, the cursor and the window.
+     *
+     * @internal
+     */
+    syncCore(): void {
+        const meters: { track: number; bus: number; channels: number }[] = [];
+        for (const [track, [bus, channels]] of this.playback?.meters ?? []) {
+            meters.push({ track, bus, channels });
+        }
+        this.coreCall("sync", {
+            piece: this.structure.write(),
+            sources: this.bridge.sources.table(),
+            meters,
+            cursor: this.cursor ?? null,
+            window: this.windowId,
+        });
+    }
+
+    /**
+     * One payload of a history step, applied by the core.
+     *
+     * @internal
+     */
+    applyStep(payload: unknown): Record<string, unknown> {
+        this.syncCore();
+        return this.coreCall("apply", { payload });
+    }
+
+    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
+        this.syncCore();
+        const outcome = this.coreCall("event", {
+            addr,
+            args: plain([...rawArgs]),
+            version: this.version,
+        }) as Outcome;
+        if (outcome.turn === "closed") return this.closedWindow();
+        if (outcome.turn === "step") {
+            // **What it answers is whether anything moved**, and a step nobody
+            // could apply says why: the entry named a structure nothing in this
+            // context can write to, and it is still there rather than stepped
+            // over.
+            const stepped = outcome.redo === true ? this.redo() : this.undo();
+            const reason = !stepped && this.app.unreachable !== null
+                ? `${this.app.unreachable}: nothing here can put that edit back`
+                : null;
+            this.echo.send(this.coreCall("acknowledge", {
+                seq: outcome.seq ?? 0,
+                version: this.version,
+                reason,
+            }) as unknown as Answer);
+            return stepped;
+        }
+        return this.take(outcome);
+    }
+
+    /**
+     * One `/gui_event` payload, with the stamp already taken off: the same turn
+     * as a message, unstamped.
+     */
+    protected override route(args: readonly unknown[]): boolean {
+        this.syncCore();
+        const [wid, tag, ...values] = args;
+        return this.take(this.coreCall("event", {
+            addr: "/gui_event",
+            args: plain([wid, 0, 0, tag, ...values]),
+            version: this.version,
+        }) as Outcome);
+    }
+
+    /**
+     * Carry out what a turn came to, and answer the host. Answers whether the
+     * piece changed.
+     */
+    private take(outcome: Outcome): boolean {
+        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        const domain = this.domain as MultitrackDomain;
+        for (const minted of outcome.minted ?? []) domain.mint(minted);
+        const changed = outcome.changed === true;
+        if (changed) {
+            const record = outcome.record;
+            if (record !== undefined) {
+                this.editing.history.record(
+                    record.legs.map((leg) => ({ structure: this.registered(), ...leg }) as RecordedLeg),
+                    { label: record.label },
+                );
+            }
+            domain.writeBack(this.structure, outcome.piece ?? {});
+            this.version = outcome.version ?? this.version;
+            this.dirty = true;
+            this.editing.changed();
+        }
+        if (outcome.locate !== undefined) {
+            // **Whoever has the transport is told**: this editor, and the piece
+            // it is composed inside when it is one.
+            this.cursor = outcome.locate;
+            this.locate(this.cursor);
+            this.composedIn?.locate(this.cursor);
+            this.onLocate?.(this.cursor);
+        }
+        if (outcome.selection !== undefined) {
+            this.selection = outcome.selection as unknown as Selection;
+        }
+        if (outcome.enter !== undefined) void this.enter(outcome.enter);
+        this.echo.send(outcome.answer);
+        return changed;
+    }
+
+    /** Draw what a history walk left behind: every widget corrected, the host told once. */
+    override reflectStep(): void {
+        this.dirty = true;
+        this.syncCore();
+        this.echo.send(this.coreCall("resync", { version: this.version }) as unknown as Answer);
+    }
+
+    /** Another view of this piece edited it: bring this window in step. */
+    override adopt(): void {
+        if (this.host === null || this.windowId === null) return;
+        this.syncCore();
+        this.echo.send(this.coreCall("resync", { version: this.version }) as unknown as Answer);
     }
 
     // ---- the piece, heard ----
@@ -814,62 +911,16 @@ export class MultitrackEditor extends Editor<Multitrack> {
     /**
      * **A name the host minted is answered with the one the piece kept.**
      *
-     * A gesture is normally answered with an acknowledgement and nothing else,
-     * because the report described the result: the host drew what it sent and
-     * the piece agreed. The cases where it does not are the ones where the host
-     * **makes** something — a track from a double click, a box from a split or
-     * a paste. There the host mints the word (`track 1`, `white 2`) and the
-     * document mints the id, so until the picture goes back the two are naming
-     * the same thing differently.
-     *
-     * And a name the piece does not know is not ignored: it is read as
-     * something *new*. So the next report about that row or that box mints it
-     * again, and again after that — a split box took a fresh id on every drag,
-     * losing whatever was hung on it, and a box dropped on a new track landed
-     * on a track nobody had.
-     *
-     * So when the names the host was last told differ from the ones the piece
-     * now holds, the whole picture goes back as a correction. It carries the
-     * `meters` prop with it, which is the other half of the same fact for a
-     * track: one that reached the server has buses to read, and a host that
-     * never heard of it draws no strip.
+     * The host mints the word for a track it made or a box it split, and the
+     * document mints the id; the crate compares what the host was last told
+     * with what the piece now holds and answers with the picture when they
+     * differ (`settle`). It runs after the readers are synced, so a minted
+     * source's box draws.
      */
     private answerWithThePicture(): void {
-        const view = this.view as MultitrackView | null;
-        const piece = this.pieceWidget;
-        if (this.host === null || this.windowId === null || piece === null) return;
-        const told = view?.told ?? null;
-        if (told === null) return;
-        // **What the piece calls them is the crate's** — a flat prop's shape is
-        // not a fact to restate at a call site, and which boxes a piece has is
-        // not this page's arithmetic either.
-        const named = names(this.structure);
-        const same = (a: ReadonlySet<string>, b: readonly string[]) =>
-            a.size === b.length && b.every((name) => a.has(name));
-        if (
-            same(told[0], named.rows) &&
-            same(told[1], named.boxes) &&
-            same(told[2], named.curves)
-        )
-            return;
-        this.corrections = [];
-        this.resync(piece);
-        this.acknowledge(0);
-        this.corrections = [];
-    }
-
-    /**
-     * **A box was entered** — the double click the multitrack reports as
-     * `"enter"`, with the box's name.
-     */
-    protected override interface(
-        _widgetId: number,
-        tag: string,
-        values: readonly unknown[],
-    ): boolean {
-        if (tag !== "enter" || values.length === 0) return false;
-        void this.enter(String(values[0]));
-        return true;
+        if (this.host === null || this.windowId === null) return;
+        this.syncCore();
+        this.echo.send(this.coreCall("settle", { version: this.version }) as unknown as Answer);
     }
 
     /**

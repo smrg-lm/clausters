@@ -625,16 +625,7 @@ export class Editor<S = unknown> implements Adopting {
                 (rawArgs.length === 0 || id === this.windowId),
             owns: this.owns(id),
         });
-        if (turn.turn === "closed") {
-            this.windowId = null;
-            this.windowHandle = null;
-            // Closing a *view* is not an event of the history, so the context
-            // stays exactly as it is -- what goes is this window's place in the
-            // list of who to tell.
-            this.editing.detach(this);
-            this.onWindowGone();
-            return false;
-        }
+        if (turn.turn === "closed") return this.closedWindow();
         if (turn.turn === "nothing") return false;
         const seq = turn.seq ?? 0;
         this.corrections = [];
@@ -675,6 +666,21 @@ export class Editor<S = unknown> implements Adopting {
         // ...and *then* the redefine, when the gesture added or removed a widget.
         this.restructure();
         return changed;
+    }
+
+    /**
+     * This editor's window closed. Answers `false`: nothing changed.
+     *
+     * Closing a *view* is not an event of the history, so the context stays
+     * exactly as it is — what goes is this window's place in the list of who to
+     * tell.
+     */
+    protected closedWindow(): boolean {
+        this.windowId = null;
+        this.windowHandle = null;
+        this.editing.detach(this);
+        this.onWindowGone();
+        return false;
     }
 
     /** Whether this editor drew the widget an event names. */

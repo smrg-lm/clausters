@@ -1353,29 +1353,30 @@ pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources
     clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
 }
 
-/// JS face: **the multitrack editor's window**, as a GuiDef rooted at a
-/// `window` node, in a JSON string: the time ruler above the piece, the piece,
-/// and the transport row.
-///
-/// `request` is the JSON object `clausters_apps::multitrack::window_json`
-/// documents — the projection's `piece`, `rate`, `defaultBpm` and `sources`,
-/// and the window's ids, `link`, `cursor`, `meters`, `transport`, `title`, `w`
-/// and `h`. `{}` for a request that names no piece.
+/// **A multitrack editor**: a piece, the window it is drawn in, and one view's
+/// end of the conversation with the host. Its verbs cross through `call`, as
+/// JSON.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = appsMultitrackWindow)]
-pub fn apps_multitrack_window(request: &str) -> String {
-    clausters_apps::multitrack::window_json(request)
-}
+#[wasm_bindgen(js_name = MultitrackEditorCore)]
+pub struct JsMultitrackEditor(clausters_apps::multitrack::editor::MultitrackEditor);
 
-/// JS face: **everything one widget of the multitrack editor's window should be
-/// drawing**, for a correction — the ruler's cursor, or the piece's whole props.
-///
-/// `request` is the one `appsMultitrackWindow` takes, with `for` naming the
-/// widget.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = appsMultitrackProps)]
-pub fn apps_multitrack_props(request: &str) -> String {
-    clausters_apps::multitrack::props_json(request)
+#[wasm_bindgen(js_class = MultitrackEditorCore)]
+impl JsMultitrackEditor {
+    /// An editor over the piece `request` names — `piece`, `rate`, `defaultBpm`,
+    /// `version`, `link`, `transport`, `title`, `w`, `h` — or an error for a
+    /// request that names none.
+    #[wasm_bindgen(constructor)]
+    pub fn new(request: &str) -> Result<JsMultitrackEditor, JsError> {
+        clausters_apps::multitrack::editor::new_json(request)
+            .map(JsMultitrackEditor)
+            .ok_or_else(|| JsError::new("the request names no piece"))
+    }
+
+    /// One verb, as `clausters_apps::multitrack::editor::call_json` documents.
+    pub fn call(&mut self, request: &str) -> String {
+        clausters_apps::multitrack::editor::call_json(&mut self.0, request)
+    }
 }
 
 /// JS face: **what a gesture means, in a structure's own vocabulary** — the

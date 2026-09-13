@@ -920,9 +920,21 @@ the transport row, whose widgets are addressed by name. The ids are the caller's
 both clients number id-less widgets as they send a window, and a host composing
 one for itself numbers the row through `Transport::Numbered`. A script's own
 widgets are appended by the client, since a widget over a live source keeps a
-binding no JSON carries. The rest of the editor — the conversation, the history,
-the transport verbs, a minted source, entering a box — moves here in the order
-`crates/clausters-document/PLAN.md` gives for the applications crate.
+binding no JSON carries.
+
+**The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
+`MultitrackEditor` holds one view's end of the conversation with the host and
+answers every message as an `Outcome`: the gesture read and applied with the
+inverse read before it lands, the acknowledgement with its corrections and its
+reason, the entry to record, a source the edit minted, where the cursor was
+placed, a box that was entered. It answers rather than performs what belongs to a
+running system: a client or the host records the entry in the history it keeps —
+a piece shares one undo order with the boxes entered out of it — makes the minted
+source, cues the transport and opens the box. Both clients reach it through one
+handle (`clausters_apps_multitrack_editor_*` / `MultitrackEditorCore`) whose
+verbs cross as JSON; the standalone host holds it in its `Owner`. The transport
+verbs, a minted source's two servers and entering a box move here next, in the
+order `crates/clausters-document/PLAN.md` gives for the applications crate.
 
 ### Playback time in a session: read, never computed
 

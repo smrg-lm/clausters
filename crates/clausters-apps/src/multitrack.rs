@@ -32,6 +32,8 @@ use clausters_core::tempoclock::secs_to_samples;
 use clausters_document::multitrack::Multitrack;
 use clausters_editing::multitrack::{self as projection, Look};
 
+pub mod editor;
+
 /// The name of the transport row's rewind button.
 pub const REWIND: &str = "piece_rewind";
 /// The name of the transport row's play/pause button.
@@ -272,97 +274,6 @@ fn transport(ids: Option<TransportIds>) -> Value {
     )
 }
 
-/// What the JSON doors are asked with.
-///
-/// `piece`, `rate`, `defaultBpm` and `sources` are the projection's own four;
-/// the rest is [`Window`]'s. `transport` is `false`, `true` (named and
-/// unnumbered) or the object of [`TransportIds`].
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Request {
-    piece: Value,
-    #[serde(default)]
-    rate: f64,
-    #[serde(default)]
-    default_bpm: f64,
-    #[serde(default)]
-    sources: Value,
-    #[serde(default)]
-    widget: i32,
-    #[serde(default)]
-    ruler: i32,
-    #[serde(default)]
-    link: Option<i64>,
-    #[serde(default)]
-    cursor: Option<f64>,
-    #[serde(default)]
-    meters: Vec<Meter>,
-    #[serde(default)]
-    transport: Value,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    w: i64,
-    #[serde(default)]
-    h: i64,
-    /// Which widget [`props_json`] answers for.
-    #[serde(default, rename = "for")]
-    target: i32,
-}
-
-/// Reads a request and hands the window it describes to `f`, or answers
-/// `fallback` for one that does not describe a piece.
-fn with_request(
-    request: &str,
-    fallback: &str,
-    f: impl FnOnce(&Window<'_>, i32) -> Value,
-) -> String {
-    let Ok(request) = serde_json::from_str::<Request>(request) else {
-        return fallback.into();
-    };
-    let Ok(piece) = serde_json::from_value::<Multitrack>(request.piece) else {
-        return fallback.into();
-    };
-    let table = projection::table(&request.sources);
-    let tempo = projection::tempo_map(&piece, request.default_bpm);
-    let look = Look {
-        tempo: &tempo,
-        rate: request.rate,
-        sources: &table,
-    };
-    let transport = match request.transport {
-        Value::Bool(true) => Transport::Unnumbered,
-        Value::Object(_) => serde_json::from_value::<TransportIds>(request.transport)
-            .map_or(Transport::Unnumbered, Transport::Numbered),
-        _ => Transport::Absent,
-    };
-    let w = Window {
-        piece: &piece,
-        look: &look,
-        widget: request.widget,
-        ruler: request.ruler,
-        link: request.link,
-        cursor: request.cursor,
-        meters: &request.meters,
-        transport,
-        title: &request.title,
-        size: (request.w, request.h),
-    };
-    f(&w, request.target).to_string()
-}
-
-/// [`window`] over a request given as JSON — the door both clients bind.
-/// `{}` for a request that names no piece.
-pub fn window_json(request: &str) -> String {
-    with_request(request, "{}", |w, _| window(w))
-}
-
-/// [`props`] over a request given as JSON, for the widget its `for` names.
-/// `{}` for a request that names no piece.
-pub fn props_json(request: &str) -> String {
-    with_request(request, "{}", |w, target| Value::Object(props(w, target)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,28 +417,5 @@ mod tests {
             json!({"cursor": 0.0}),
             "the ruler's state is its cursor, and the top until one is placed"
         );
-    }
-
-    /// The JSON doors answer what the typed calls answer, and a request that
-    /// names no piece answers nothing rather than failing.
-    #[test]
-    fn the_doors_answer_what_the_calls_answer() {
-        let written = serde_json::to_value(piece()).unwrap();
-        let request = json!({
-            "piece": written, "rate": 48_000.0, "defaultBpm": 60.0, "sources": {},
-            "widget": 7, "ruler": 8, "cursor": 4.0,
-            "meters": [{"track": 1, "bus": 20, "channels": 2}],
-            "transport": true, "title": "piece", "w": 1000, "h": 560, "for": 8,
-        })
-        .to_string();
-        let def: Value = serde_json::from_str(&window_json(&request)).unwrap();
-        assert_eq!(
-            def,
-            compose(Transport::Unnumbered, Some(4.0), window),
-            "the same window by either door"
-        );
-        let ruler: Value = serde_json::from_str(&props_json(&request)).unwrap();
-        assert_eq!(ruler, json!({"cursor": 96_000.0}));
-        assert_eq!(window_json("{}"), "{}");
     }
 }
