@@ -110,6 +110,33 @@ pub struct Outcome {
     /// The box a double click entered, by name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enter: Option<String>,
+    /// What the transport is asked to do.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportVerb>,
+    /// Where the position cursor now is, in beats, when the turn moved it by a
+    /// verb of its own rather than by a hand on the ruler (which is `locate`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<f64>,
+}
+
+/// **What a turn asks the transport to do.** The editor decides what a button,
+/// the space bar and a rewind mean; the caller sends the steps its playback
+/// answers for the verb.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(tag = "verb", rename_all = "camelCase")]
+pub enum TransportVerb {
+    /// Play, or pause where it stands — whichever the transport is not doing.
+    Toggle,
+    /// Halt and go back to the mark: the position cursor, not the top.
+    Stop {
+        /// The mark, in beats.
+        mark: f64,
+    },
+    /// Cue a stopped transport at `beat`, and leave a rolling one alone.
+    Cue {
+        /// Where, in beats.
+        beat: f64,
+    },
 }
 
 /// What one payload of a history step did to the piece.
@@ -157,6 +184,9 @@ pub struct MultitrackEditor {
     /// What the host was last told the rows, the boxes and the curves are
     /// called.
     told: Option<[HashSet<String>; 3]>,
+    /// The transport row's ids, once they are known: numbered here, or learned
+    /// by name after the window opened.
+    controls: Option<TransportIds>,
 }
 
 impl MultitrackEditor {
@@ -180,6 +210,7 @@ impl MultitrackEditor {
             ruler: None,
             conversation: Conversation::new(version),
             told: None,
+            controls: None,
         }
     }
 
@@ -194,8 +225,22 @@ impl MultitrackEditor {
     ) {
         self.link = link;
         self.transport = transport;
+        if let Transport::Numbered(ids) = transport {
+            self.controls = Some(ids);
+        }
         self.title = title.to_string();
         self.size = size;
+    }
+
+    /// The transport row's ids, learned after the window opened — what a client
+    /// that numbers id-less widgets on the way out hands back.
+    pub fn set_controls(&mut self, ids: Option<TransportIds>) {
+        self.controls = ids;
+    }
+
+    /// The transport row's ids, once they are known.
+    pub fn controls(&self) -> Option<TransportIds> {
+        self.controls
     }
 
     /// The piece.
@@ -235,6 +280,11 @@ impl MultitrackEditor {
         self.window = window;
     }
 
+    /// The window this editor is open in, if it is.
+    pub fn window_id(&self) -> Option<i32> {
+        self.window
+    }
+
     /// The id of the piece's own widget, once a window has been composed.
     pub fn widget(&self) -> Option<i32> {
         self.widget
@@ -245,9 +295,60 @@ impl MultitrackEditor {
         self.ruler
     }
 
-    /// Whether this editor drew `widget`.
+    /// Whether this editor drew `widget`: the piece, its ruler, or a button of
+    /// the transport row.
     pub fn owns(&self, widget: i32) -> bool {
-        self.widget == Some(widget) || self.ruler == Some(widget)
+        self.widget == Some(widget)
+            || self.ruler == Some(widget)
+            || self
+                .controls
+                .is_some_and(|c| [c.rewind, c.play, c.stop].contains(&widget))
+    }
+
+    /// Whether a message on `widget` tagged `tag` is this editor's to answer:
+    /// one of its widgets, or its window's own `play` — the space bar.
+    pub fn answers(&self, widget: i32, tag: &str) -> bool {
+        self.owns(widget) || (self.window == Some(widget) && tag == PLAY_KEY)
+    }
+
+    /// **Rewind**: the position cursor back at the top, and a stopped
+    /// transport cued there. The cursor's own verb, not the transport's — it is
+    /// where the next play starts, and stop goes back to it rather than to the
+    /// top.
+    pub fn rewind(&mut self, version: i64) -> Outcome {
+        let mut out = Outcome {
+            turn: Kind::Route,
+            version,
+            ..Outcome::default()
+        };
+        let corrections = self.rewound(&mut out);
+        out.answer = Some(conversation::answer(0, version, None, corrections));
+        out
+    }
+
+    /// **Play, or pause where it stands.**
+    pub fn toggle(&self, version: i64) -> Outcome {
+        Outcome {
+            turn: Kind::Route,
+            version,
+            transport: Some(TransportVerb::Toggle),
+            ..Outcome::default()
+        }
+    }
+
+    /// **Halt and go back to the mark.**
+    pub fn stop(&self, version: i64) -> Outcome {
+        Outcome {
+            turn: Kind::Route,
+            version,
+            transport: Some(self.stopped()),
+            ..Outcome::default()
+        }
+    }
+
+    /// **What the clock reads** with the piece at `position` beats.
+    pub fn clock(&self, position: f64) -> String {
+        format!("{position:8.3} s   of {:.3} s", self.piece.end().0)
     }
 
     /// **The window**, composed around the piece's widget and ruler ids, which
@@ -288,17 +389,18 @@ impl MultitrackEditor {
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
         let args = &event.args;
         let widget = args.first().map_or(0, int);
+        let tag = args.get(3).map(text).unwrap_or_default();
         let message = Message {
             addr: event.addr.clone(),
             argc: args.len(),
             widget,
             seq: args.get(1).map_or(0, int),
             against: args.get(2).map_or(0, int),
-            tag: args.get(3).map(text).unwrap_or_default(),
+            owns: i32::try_from(widget).is_ok_and(|w| self.answers(w, &tag)),
+            tag,
             version,
             is_window: self.window.is_some()
                 && (args.is_empty() || i64::from(self.window.unwrap_or_default()) == widget),
-            owns: i32::try_from(widget).is_ok_and(|w| self.owns(w)),
         };
         let mut out = Outcome {
             version,
@@ -467,6 +569,29 @@ impl MultitrackEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        // **The space bar is the window's**, and it is play/pause: a piece's
+        // readers are resident and follow the transport, so there is nothing
+        // under the pointer to aim it at.
+        if self.window.map(i64::from) == Some(widget) && tag == PLAY_KEY {
+            out.transport = Some(TransportVerb::Toggle);
+            return (None, Vec::new());
+        }
+        if tag == "click"
+            && let Some(controls) = self.controls
+        {
+            let id = i32::try_from(widget).unwrap_or(i32::MIN);
+            if id == controls.rewind {
+                return (None, self.rewound(out));
+            }
+            if id == controls.play {
+                out.transport = Some(TransportVerb::Toggle);
+                return (None, Vec::new());
+            }
+            if id == controls.stop {
+                out.transport = Some(self.stopped());
+                return (None, Vec::new());
+            }
+        }
         if NOT_AN_EDIT.contains(&tag) {
             self.observe(tag, values, out);
             return (None, Vec::new());
@@ -533,6 +658,31 @@ impl MultitrackEditor {
         (None, Vec::new())
     }
 
+    /// The cursor put back at the top and the transport cued there; answers the
+    /// correction that tells the host where the cursor now is.
+    fn rewound(&mut self, out: &mut Outcome) -> Vec<Correction> {
+        self.cursor = Some(0.0);
+        out.cursor = Some(0.0);
+        out.transport = Some(TransportVerb::Cue { beat: 0.0 });
+        let Some(widget) = self.widget else {
+            return Vec::new();
+        };
+        // The host owns where the cursor *is*, so it is told rather than left
+        // to find out on the next redraw.
+        let units = self.composed(widget, self.ruler.unwrap_or(i32::MIN), |w| w.cursor_units());
+        vec![Correction {
+            widget: i64::from(widget),
+            props: json!({ "cursor": units }),
+        }]
+    }
+
+    /// A stop, back to the mark the position cursor is on.
+    fn stopped(&self) -> TransportVerb {
+        TransportVerb::Stop {
+            mark: self.cursor.unwrap_or(0.0),
+        }
+    }
+
     /// Applies one payload, answering whether it moved anything and the payload
     /// that puts it back. `None` for a payload the piece cannot read.
     fn edit(&mut self, payload: &Value) -> Option<(bool, Option<Value>)> {
@@ -572,6 +722,9 @@ impl MultitrackEditor {
         }
     }
 }
+
+/// The tag the host's space bar reaches a window with.
+pub const PLAY_KEY: &str = "play";
 
 /// The source a payload minted, when it names one.
 fn minted(payload: &Value) -> Option<Value> {
@@ -623,6 +776,11 @@ struct New {
     h: i64,
 }
 
+/// An [`Outcome`] as JSON.
+fn outcome(outcome: &Outcome) -> String {
+    serde_json::to_string(outcome).unwrap_or_else(|_| "{}".into())
+}
+
 /// An editor built from a JSON request, or `None` for one that names no piece.
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let request: New = serde_json::from_str(request).ok()?;
@@ -650,8 +808,12 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
 /// surface, and a door per verb would be each binding restating it. `request`
 /// names the `verb` and carries its arguments:
 ///
-/// - `sync` — `piece`, `sources`, `meters`, `cursor` (beats or `null`): the
-///   state a caller holds, handed over before the verbs that read it.
+/// - `sync` — `piece`, `sources`, `meters`, `cursor` (beats or `null`),
+///   `window`, `controls` (the transport row's ids): the state a caller holds,
+///   handed over before the verbs that read it.
+/// - `rewind`, `toggle`, `stop` — `version`: the transport row's verbs, as a
+///   script calls them, each an [`Outcome`].
+/// - `clock` — `position` (beats): `{"text"}`, what the clock reads.
 /// - `window` — `widget`, `ruler`: the window, as a GuiDef.
 /// - `setWindow` — `window` (an id or `null`).
 /// - `props` — `widget`.
@@ -689,8 +851,15 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             if request.get("window").is_some() {
                 editor.set_window(get("window").as_i64().map(|w| w as i32));
             }
+            if request.get("controls").is_some() {
+                editor.set_controls(serde_json::from_value(get("controls")).ok());
+            }
             "{}".into()
         }
+        "rewind" => outcome(&editor.rewind(version)),
+        "toggle" => outcome(&editor.toggle(version)),
+        "stop" => outcome(&editor.stop(version)),
+        "clock" => json!({ "text": editor.clock(number(&get("position"))) }).to_string(),
         "window" => editor
             .window(int(&get("widget")) as i32, int(&get("ruler")) as i32)
             .to_string(),
@@ -704,7 +873,7 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
                 addr: get("addr").as_str().unwrap_or_default().to_string(),
                 args: get("args").as_array().cloned().unwrap_or_default(),
             };
-            serde_json::to_string(&editor.event(&event, version)).unwrap_or_else(|_| "{}".into())
+            outcome(&editor.event(&event, version))
         }
         "apply" => {
             serde_json::to_string(&editor.apply(&get("payload"))).unwrap_or_else(|_| "{}".into())
@@ -942,5 +1111,76 @@ mod tests {
         assert_eq!(ack["answer"], json!("ack"));
         assert_eq!(ack["docVersion"], json!(4));
         assert_eq!(call_json(&mut ed, r#"{"verb": "nope"}"#), "{}");
+    }
+
+    fn with_controls() -> MultitrackEditor {
+        let mut ed = editor();
+        ed.set_controls(Some(TransportIds {
+            row: 0,
+            rewind: 50,
+            play: 51,
+            stop: 52,
+            clock: 53,
+        }));
+        ed
+    }
+
+    /// **The transport row's buttons are the editor's**, and each is one verb:
+    /// play/pause toggles, stop goes back to the mark.
+    #[test]
+    fn the_buttons_are_the_transport_verbs() {
+        let mut ed = with_controls();
+        ed.set_cursor(Some(3.0));
+        let play = ed.event(&event(51, 7, 1, "click", vec![]), 1);
+        assert_eq!(play.transport, Some(TransportVerb::Toggle));
+        assert!(matches!(play.answer, Some(Answer::Ack { seq: 7, .. })));
+        let stop = ed.event(&event(52, 8, 1, "click", vec![]), 1);
+        assert_eq!(stop.transport, Some(TransportVerb::Stop { mark: 3.0 }));
+        assert!(
+            ed.event(&event(51, 9, 1, "press", vec![]), 1)
+                .transport
+                .is_none(),
+            "a press is not a click"
+        );
+    }
+
+    /// **Rewind puts the mark at the top**, cues the transport there, and tells
+    /// the host where the cursor now is.
+    #[test]
+    fn rewind_puts_the_mark_at_the_top() {
+        let mut ed = with_controls();
+        ed.set_cursor(Some(12.0));
+        let out = ed.event(&event(50, 4, 1, "click", vec![]), 1);
+        assert_eq!(ed.cursor(), Some(0.0));
+        assert_eq!(out.cursor, Some(0.0));
+        assert_eq!(out.transport, Some(TransportVerb::Cue { beat: 0.0 }));
+        match out.answer {
+            Some(Answer::Push { corrections, .. }) => {
+                assert_eq!(corrections[0].widget, 40);
+                assert_eq!(corrections[0].props, json!({ "cursor": 0.0 }));
+            }
+            other => panic!("a push, not {other:?}"),
+        }
+        assert_eq!(
+            ed.rewind(1).transport,
+            Some(TransportVerb::Cue { beat: 0.0 })
+        );
+    }
+
+    /// **The space bar is the window's play/pause**, whatever is under the
+    /// pointer.
+    #[test]
+    fn the_space_bar_toggles() {
+        let mut ed = editor();
+        let out = ed.event(&event(39, 2, 1, PLAY_KEY, vec![]), 1);
+        assert_eq!(out.transport, Some(TransportVerb::Toggle));
+        assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
+    }
+
+    /// The clock reads the position and the piece's end, in the piece's beats.
+    #[test]
+    fn the_clock_reads_where_the_piece_is() {
+        let ed = editor();
+        assert_eq!(ed.clock(1.5), "   1.500 s   of 6.000 s");
     }
 }

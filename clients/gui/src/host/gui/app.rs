@@ -590,6 +590,15 @@ impl ApplicationHandler<UserEvent> for App {
         // window does — and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
 
+        // **A piece's clock reads where the transport is**, for a host that
+        // edits one with nobody else in the process to write the label.
+        if let Some(position) = self.shm.as_deref().map(|bus| bus.transport_position())
+            && let Some(def_id) = self.host.tick_piece_clock(position)
+            && let Some(ws) = self.windows.get(&def_id)
+        {
+            ws.gpu.window.request_redraw();
+        }
+
         // **What the last frame could not draw.** A view zoomed finer than its
         // summary leaves the span it was asked for on its slot; here that note
         // becomes a read of exactly that span, so a picture that cannot map

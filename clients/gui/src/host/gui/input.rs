@@ -234,28 +234,28 @@ impl App {
         true
     }
 
-    /// The space bar: roll the piece, or play what the cursor is over and stop
-    /// what is playing. Returns whether it was consumed.
+    /// The space bar: play the take the cursor is over and stop what is
+    /// playing, or — over nothing a take answers for — the window's own
+    /// `play`, which a multitrack editor reads as play/pause. Returns whether it
+    /// was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
+        if let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) {
+            let ctx = self.gesture_ctx(def_id);
+            if let Some(ws) = self.windows.get_mut(&def_id)
+                && let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy)
+            {
+                self.apply_gesture_effects(effects);
+                return true;
+            }
+        }
         // **A piece is the window's, not the pointer's.** Its readers are
         // resident and follow the transport, so there is nothing to point at --
         // and requiring a pointer is what made the first press after opening a
         // window do nothing at all, since the cursor is unknown until it moves.
-        // The same reason `Ctrl`+`Z` and `Ctrl`+`S` are the window's.
-        if self.host.roll_piece().is_some() {
-            return true;
-        }
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return false;
-        };
-        let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy) else {
-            return false;
-        };
-        self.apply_gesture_effects(effects);
+        // So the window is told, the way `Ctrl`+`Z` and `Ctrl`+`S` tell it, and
+        // whoever edits the piece answers: this host's own editor, or a
+        // script's.
+        self.window_verb(def_id, clausters_apps::multitrack::editor::PLAY_KEY);
         true
     }
 

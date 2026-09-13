@@ -1586,6 +1586,32 @@ mod window_verb_tests {
         (owner.open_editor(def_id, "t", (1000, 640)), def_id + 1)
     }
 
+    /// **The transport row and the space bar are the editor's**: a click on a
+    /// button of the row and the window's own `play` reach it and are answered,
+    /// rather than leaving on the wire to a script that is not there.
+    #[test]
+    fn the_transport_row_and_the_space_bar_reach_the_editor() {
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        // A piece with a track, which is what makes a session a piece.
+        let piece = Multitrack {
+            tracks: vec![Track::new(NodeId(10), NodeId(11))],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, _view) = with_piece(piece);
+        let play = def_id + 5;
+        let seq = host.outbox.borrow_mut().stamp(def_id, play);
+        assert!(
+            host.answer_own(def_id, play, seq, &[OscType::String("click".into())]),
+            "the play button"
+        );
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(
+            host.answer_own(def_id, def_id, seq, &[OscType::String("play".into())]),
+            "the space bar, addressed to the window"
+        );
+    }
+
     /// **A session host opens the editor a script opens**: the ruler above the
     /// piece and the transport row under it, every widget of it registered —
     /// a composition of the host's own had neither.

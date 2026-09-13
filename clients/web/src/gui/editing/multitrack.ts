@@ -541,6 +541,15 @@ interface Outcome {
     locate?: number;
     selection?: Record<string, unknown>;
     enter?: string;
+    transport?: TransportVerb;
+    cursor?: number;
+}
+
+/** What a turn asks the transport to do. */
+interface TransportVerb {
+    verb: string;
+    beat?: number;
+    mark?: number;
 }
 
 /**
@@ -644,6 +653,10 @@ export class MultitrackEditor extends Editor<Multitrack> {
     /** The editor's turns, in the shared crate. */
     private readonly core: MultitrackEditorCore;
 
+    /** The transport row's ids, once the window has numbered them. */
+    private controls: { rewind: number; play: number; stop: number; clock: number } | null =
+        null;
+
     /**
      * The id of the piece's own widget — what a playhead is drawn on. `null`
      * before the picture has been drawn once.
@@ -683,6 +696,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
             meters,
             cursor: this.cursor ?? null,
             window: this.windowId,
+            controls: this.controls,
         });
     }
 
@@ -771,6 +785,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
             this.selection = outcome.selection as unknown as Selection;
         }
         if (outcome.enter !== undefined) void this.enter(outcome.enter);
+        if (outcome.cursor !== undefined) this.cursor = outcome.cursor;
+        if (outcome.transport !== undefined) this.transported = this.transport(outcome.transport);
         this.echo.send(outcome.answer);
         return changed;
     }
@@ -809,9 +825,15 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (playback !== null) {
             await playback.prepare();
             playback.attach(this.host);
-            handle.widget(REWIND).onClick(() => this.rewind());
-            handle.widget(PLAY).onClick(() => void this.toggle());
-            handle.widget(STOP).onClick(() => this.stop());
+            // **The transport row's buttons are the editor's**, like the piece
+            // and its ruler: a click on one is a turn the core reads, so it
+            // learns their ids once the window has numbered them.
+            this.controls = {
+                rewind: handle.widget(REWIND).id,
+                play: handle.widget(PLAY).id,
+                stop: handle.widget(STOP).id,
+                clock: handle.widget(CLOCK).id,
+            };
             void this.tick();
         }
         return handle;
@@ -826,8 +848,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const playback = this.playback;
         if (this.closed || playback === null || this.windowHandle === null) return;
         await playback.refresh();
-        const text = `${playback.position.toFixed(3).padStart(8)} s   of ` +
-            `${this.structure.end.toFixed(3)} s`;
+        this.syncCore();
+        const text = String(this.coreCall("clock", { position: playback.position }).text);
         if (text !== this.shown) {
             this.windowHandle.widget(CLOCK).set({ text });
             this.shown = text;
@@ -840,11 +862,29 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * playing again continues rather than starting over.
      */
     async toggle(): Promise<void> {
+        this.syncCore();
+        this.take(this.coreCall("toggle", { version: this.version }) as Outcome);
+        await this.transported;
+    }
+
+    /** What the last transport verb a turn asked for is still doing. */
+    private transported: Promise<void> = Promise.resolve();
+
+    /** Carry out what a turn asked the transport to do, on the playback. */
+    private async transport(verb: TransportVerb): Promise<void> {
         const playback = this.playback;
         if (playback === null) return;
-        await playback.refresh();
-        if (playback.playing) playback.pause();
-        else await playback.play();
+        if (verb.verb === "toggle") {
+            // The engine is asked first: a transport another client stopped is
+            // stopped, whatever this window last told it.
+            await playback.refresh();
+            if (playback.playing) playback.pause();
+            else await playback.play();
+        } else if (verb.verb === "stop") {
+            playback.stop();
+        } else if (verb.verb === "cue") {
+            this.locate(verb.beat ?? 0.0);
+        }
     }
 
     /**
@@ -857,15 +897,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * get back to it.
      */
     rewind(): void {
-        this.cursor = 0.0;
-        this.locate(0.0);
-        // The host owns where the cursor *is*, so it is told rather than left
-        // to find out on the next redraw — the same way the transport tells it
-        // where the playhead stands.
-        const piece = this.pieceWidget;
-        if (this.host !== null && piece !== null) {
-            this.host.set(piece, { cursor: 0.0 });
-        }
+        this.syncCore();
+        this.take(this.coreCall("rewind", { version: this.version }) as Outcome);
     }
 
     /** Play the piece from where the position cursor is. */
@@ -880,7 +913,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
 
     /** Halt and go back to the mark the position cursor is on. */
     stop(): void {
-        this.playback?.stop();
+        this.syncCore();
+        this.take(this.coreCall("stop", { version: this.version }) as Outcome);
     }
 
     /**

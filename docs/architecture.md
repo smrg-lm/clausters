@@ -927,10 +927,12 @@ binding no JSON carries.
 answers every message as an `Outcome`: the gesture read and applied with the
 inverse read before it lands, the acknowledgement with its corrections and its
 reason, the entry to record, a source the edit minted, where the cursor was
-placed, a box that was entered. It answers rather than performs what belongs to a
-running system: a client or the host records the entry in the history it keeps —
-a piece shares one undo order with the boxes entered out of it — makes the minted
-source, cues the transport and opens the box. Both clients reach it through one
+placed, a box that was entered, and what the transport is asked to do — the
+transport row's buttons and the window's space bar are the editor's, so a click,
+a key and a script's `toggle` are one path. It answers rather than performs what
+belongs to a running system: a client or the host records the entry in the
+history it keeps — a piece shares one undo order with the boxes entered out of it
+— makes the minted source, sends the transport's steps and opens the box. Both clients reach it through one
 handle (`clausters_apps_multitrack_editor_*` / `MultitrackEditorCore`) whose
 verbs cross as JSON; the standalone host holds it in its `Owner`. The transport
 verbs, a minted source's two servers and entering a box move here next, in the

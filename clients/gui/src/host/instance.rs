@@ -304,6 +304,49 @@ impl Host {
         self.send_piece();
     }
 
+    /// **Halts the piece and puts it back at `mark`**, in beats: stop goes back
+    /// to the mark, which is what tells it from pause.
+    pub fn stop_piece(&mut self, mark: f64) {
+        let Some(piece) = self.instance.piece.as_mut() else {
+            return;
+        };
+        let steps = piece.stop(mark.max(0.0));
+        self.instance.queue.extend(steps);
+        self.send_piece();
+    }
+
+    /// **The clock of a piece this host edits alone**, read with the transport
+    /// at `position` samples of the piece: the label the editor names, set when
+    /// what the editor says it reads changed. Answers the window to repaint when
+    /// it did.
+    pub fn tick_piece_clock(&mut self, position: f64) -> Option<i32> {
+        let beat = self
+            .instance
+            .piece
+            .as_ref()?
+            .samples_to_beats(position.max(0.0).round() as i64);
+        let owner = self.owner.as_mut()?;
+        let editor = owner.editor.as_mut()?;
+        let (clock, window) = (editor.controls()?.clock, editor.window_id()?);
+        // The end the clock reads is the piece's, which an undo can move
+        // without a turn of the editor's.
+        if editor.piece().version != owner.piece.version {
+            editor.set_piece(owner.piece.clone());
+        }
+        let text = editor.clock(beat);
+        if self.clock_shown.as_deref() == Some(text.as_str()) {
+            return None;
+        }
+        let mut fx = Vec::new();
+        self.set_props(
+            clock,
+            vec![("text".into(), serde_json::Value::from(text.as_str()))],
+            &mut fx,
+        );
+        self.clock_shown = Some(text);
+        Some(window)
+    }
+
     /// How many nodes the piece is playing through, for a caller reporting what
     /// it built.
     pub fn sounding_count(&self) -> usize {

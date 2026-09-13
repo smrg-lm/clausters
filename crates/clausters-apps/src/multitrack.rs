@@ -49,7 +49,10 @@ const RULER_H: f64 = 20.0;
 /// The ids of the transport row, for a caller that numbers them itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TransportIds {
-    /// The row that holds the other four.
+    /// The row that holds the other four. A client that learns the other four
+    /// by name after opening the window has no name for this one, and nothing
+    /// is addressed to it.
+    #[serde(default)]
     pub row: i32,
     /// [`REWIND`].
     pub rewind: i32,

@@ -6924,3 +6924,5 @@ finished work, where a pending item reads as done.
   what is missing is a **musical** snap: the widget's own axis knows the map
   (`tempo_map`), which is what makes the ruler right, and the snap has to be
   read off the same one instead of off a number the wire converted once.
+
+- ⬜ **The browser host's space bar never reaches `play_key`** *(found 2026-09-13, moving a piece's transport into the applications crate)*. The native front routes a space to `play_key`, which plays the take under the pointer or, over nothing a take answers for, tells the window `play` — what a multitrack editor reads as play/pause. The browser front maps the key to `HostKey::Char(' ')` for a focused field and stops (`host/web/input.rs`), so in a page the space bar neither plays a take nor reaches a script's editor. The host is one host compiled twice, and a key that does something in a window and nothing in a tab is the divergence that rule forbids: the page's key path should reach the same `play_key`.

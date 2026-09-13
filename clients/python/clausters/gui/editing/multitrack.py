@@ -439,6 +439,8 @@ class MultitrackEditor(Editor):
             "link": link, "transport": server is not None, "title": title,
             "w": int(self.size[0]), "h": int(self.size[1])})
         self._shown = None
+        #: The transport row's ids, once the window has numbered them.
+        self._controls = None
         if server is not None:
             from .playback import Playback
 
@@ -462,7 +464,8 @@ class MultitrackEditor(Editor):
         self._core.call(
             "sync", piece=self.structure.write(),
             sources={str(k): v for k, v in self.bridge.sources.table().items()},
-            meters=meters, cursor=self.cursor, window=self._window)
+            meters=meters, cursor=self.cursor, window=self._window,
+            controls=self._controls)
 
     def _apply_step(self, payload: dict) -> dict:
         """One payload of a history step, applied by the core."""
@@ -533,6 +536,10 @@ class MultitrackEditor(Editor):
             self.selection = outcome["selection"]
         if outcome.get("enter") is not None:
             self.enter(str(outcome["enter"]))
+        if outcome.get("cursor") is not None:
+            self.cursor = float(outcome["cursor"])
+        if outcome.get("transport") is not None:
+            self._transport(outcome["transport"])
         self.echo.send(outcome.get("answer"))
         return changed
 
@@ -564,9 +571,12 @@ class MultitrackEditor(Editor):
         window = super().open(host, id)
         if self.playback is not None and self._window is not None:
             self.playback.attach(self._host)
-            self.window[REWIND].on_click(self.rewind)
-            self.window[PLAY].on_click(self.toggle)
-            self.window[STOP].on_click(self.stop)
+            # **The transport row's buttons are the editor's**, like the piece
+            # and its ruler: a click on one is a turn the core reads, so it
+            # learns their ids once the window has numbered them.
+            self._controls = {key: int(self.window[name].id)
+                              for key, name in (("rewind", REWIND), ("play", PLAY),
+                                                ("stop", STOP), ("clock", CLOCK))}
             self._tick()
             self._host.clock.sched(CLOCK_TICK, self._tick)
         return window
@@ -579,8 +589,8 @@ class MultitrackEditor(Editor):
         """
         if self.closed or self.playback is None:
             return None
-        end = self.structure.end
-        text = f"{self.playback.position:8.3f} s   of {end:.3f} s"
+        self._sync_core()
+        text = self._core.call("clock", position=float(self.playback.position))["text"]
         if text != self._shown:
             self.window[CLOCK].set(text=text)
             self._shown = text
@@ -589,12 +599,8 @@ class MultitrackEditor(Editor):
     def toggle(self):
         """Play, or pause where it stands. A pause freezes the governed group,
         so playing again continues rather than starting over."""
-        if self.playback is None:
-            return
-        if self.playback.playing:
-            self.playback.pause()
-        else:
-            self.playback.play()
+        self._sync_core()
+        self._take(self._core.call("toggle", version=int(self._version)))
 
     def rewind(self):
         """Put the **position cursor** back at the top, and cue a stopped
@@ -605,13 +611,25 @@ class MultitrackEditor(Editor):
         has been working at bar forty otherwise has to find beat zero on screen
         to get back to it.
         """
-        self.cursor = 0.0
-        self.locate(0.0)
-        # The host owns where the cursor *is*, so it is told rather than left
-        # to find out on the next redraw -- the same way the transport tells it
-        # where the playhead stands.
-        if self._host is not None and self.piece_widget is not None:
-            self._host.set(self.piece_widget, cursor=0.0)
+        self._sync_core()
+        self._take(self._core.call("rewind", version=int(self._version)))
+
+    def _transport(self, verb: dict) -> None:
+        """Carry out what a turn asked the transport to do, on the playback."""
+        if self.playback is None:
+            return
+        kind = verb.get("verb")
+        if kind == "toggle":
+            # The engine is asked first: a transport another client stopped is
+            # stopped, whatever this window last told it.
+            if self.playback.playing:
+                self.playback.pause()
+            else:
+                self.playback.play()
+        elif kind == "stop":
+            self.playback.stop()
+        elif kind == "cue":
+            self.locate(float(verb.get("beat", 0.0)))
 
     def play(self):
         """Play the piece from where the position cursor is."""
@@ -625,8 +643,8 @@ class MultitrackEditor(Editor):
 
     def stop(self):
         """Halt and go back to the mark the position cursor is on."""
-        if self.playback is not None:
-            self.playback.stop()
+        self._sync_core()
+        self._take(self._core.call("stop", version=int(self._version)))
 
     def locate(self, beat: float):
         """The position cursor was placed, here or in a window entered from

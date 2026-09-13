@@ -746,6 +746,9 @@ pub struct Host {
     /// editor, which has no script to wait for and must apply its own intents
     /// (`document::Owner`).
     pub owner: Option<document::Owner>,
+    /// What the clock of a piece this host edits alone last read, so an
+    /// unchanged reading is not set again every frame.
+    pub(crate) clock_shown: Option<String>,
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
@@ -840,6 +843,7 @@ impl Host {
             outbox: Default::default(),
             status: Default::default(),
             owner: None,
+            clock_shown: None,
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
@@ -2016,8 +2020,12 @@ impl Host {
         // same one a script and a page run: read, applied with its inverse, and
         // answered. What is left below is the tree's, for a document written
         // before the turn, and the window's own verbs.
+        let tag = match args.first() {
+            Some(OscType::String(tag)) => tag.as_str(),
+            _ => "",
+        };
         if self.owner.as_ref().is_some_and(|o| {
-            o.draws_piece() && o.editor.as_ref().is_some_and(|e| e.owns(widget_id))
+            o.draws_piece() && o.editor.as_ref().is_some_and(|e| e.answers(widget_id, tag))
         }) {
             return self.answer_piece(def_id, widget_id, seq, args);
         }
@@ -2146,7 +2154,7 @@ impl Host {
     /// settled with the reason the turn gave — so a refusal is said in the
     /// window that asked.
     fn answer_piece(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
-        use clausters_apps::multitrack::editor::{Event, Kind};
+        use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
         use clausters_editing::conversation::Answer;
 
         let Some(owner) = self.owner.as_mut() else {
@@ -2198,6 +2206,14 @@ impl Host {
         self.adopt(def_id, &[applied]);
         if let Some(beat) = outcome.locate {
             self.cue_piece(beat);
+        }
+        match outcome.transport {
+            Some(TransportVerb::Toggle) => {
+                self.roll_piece();
+            }
+            Some(TransportVerb::Stop { mark }) => self.stop_piece(mark),
+            Some(TransportVerb::Cue { beat }) => self.cue_piece(beat),
+            None => {}
         }
         let (reason, corrections) = match outcome.answer {
             Some(Answer::Ack { reason, .. }) => (reason, Vec::new()),
