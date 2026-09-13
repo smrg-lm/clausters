@@ -27,3 +27,5 @@ uv.lock
 /specs/
 # Subagent-driven-development scratch (ledgers, briefs, review packages).
 /.superpowers/
+# Playwright MCP session output (console logs, page snapshots).
+/.playwright-mcp/
