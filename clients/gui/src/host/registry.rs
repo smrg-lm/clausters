@@ -8,10 +8,10 @@
 //! one back. It is bookkeeping only — no geometry, no GPU: the renderers read
 //! the tree it holds, and every one of them hangs off it.
 
+use crate::host::diag;
 use std::collections::HashMap;
 
 use serde_json::{Map, Value};
-use tracing::warn;
 
 use super::guidef::GuiNode;
 
@@ -116,7 +116,7 @@ impl Registry {
         outcome: &mut DefineOutcome,
     ) {
         if self.widgets.contains_key(&id) {
-            warn!("gui_def: widget id {id} already in use, skipping (and its subtree)");
+            diag::warn!("gui_def: widget id {id} already in use, skipping (and its subtree)");
             outcome.skipped += 1;
             return;
         }
@@ -143,7 +143,7 @@ impl Registry {
                     }
                 }
                 None => {
-                    warn!("gui_def: child of widget {id} has no id, skipping it");
+                    diag::warn!("gui_def: child of widget {id} has no id, skipping it");
                     outcome.skipped += 1;
                 }
             }

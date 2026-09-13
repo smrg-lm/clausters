@@ -26,6 +26,7 @@
 mod draw;
 mod items;
 
+use crate::host::diag;
 use draw::*;
 pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
@@ -34,8 +35,6 @@ use items::*;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use tracing::warn;
 
 use crate::gpu::Gpu;
 use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
@@ -205,7 +204,7 @@ pub(crate) fn place_in_slot(
             Some(total)
         }
         Loaded::Samples(_) | Loaded::Raw { .. } => {
-            warn!("widget {}: raw samples cannot fill a GPU slot", id.0);
+            diag::warn!("widget {}: raw samples cannot fill a GPU slot", id.0);
             None
         }
     }

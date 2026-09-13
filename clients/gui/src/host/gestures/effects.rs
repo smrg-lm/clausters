@@ -6,6 +6,7 @@
 //! another widget, else a `/gui_event` to the script) is made in one place
 //! rather than at each gesture.
 
+use crate::host::diag;
 use clausters_core::osc::OscType;
 
 use super::super::status;
@@ -73,11 +74,7 @@ pub(super) fn refuse(
         out,
         def_id,
         widget_id,
-        vec![
-            OscType::String("refused".into()),
-            OscType::String(verb.into()),
-            OscType::String(why),
-        ],
+        super::super::widget::element::refusal(verb, &why),
     );
     true // consumed: a plan that resolved does not fall through to a sweep
 }
@@ -97,6 +94,13 @@ pub(super) fn deliver(
     if host.forward(widget_id, value.clone(), &mut effects) {
         // Bound: the value went straight to its destination, and whatever the
         // apply behind a widget binding touched has to repaint.
+        //
+        // **And the window says it anyway.** A binding is the one road a value
+        // takes that never passes through `emit`, so the bar went quiet for
+        // exactly the controls that act most directly -- a knob wired to the
+        // server has a history like every other widget's, and it is the same
+        // act whichever road the value took.
+        host.say(def_id, status::Line::of_bound(widget_id, &value));
         return redraws(out, effects);
     }
     emit(host, out, def_id, widget_id, vec![value]);
@@ -110,7 +114,7 @@ pub(super) fn redraws(out: &mut Vec<GestureEffect>, effects: Vec<HostEffect>) {
     for effect in effects {
         match effect {
             HostEffect::Redraw(root) => out.push(GestureEffect::Redraw(root)),
-            other => tracing::warn!("a binding's apply asked for {other:?}, which it cannot do"),
+            other => diag::warn!("a binding's apply asked for {other:?}, which it cannot do"),
         }
     }
 }

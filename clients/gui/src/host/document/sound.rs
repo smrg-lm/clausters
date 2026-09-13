@@ -33,6 +33,7 @@
 //! editor's. Both are drawn and neither sounds here, which is a gap with a
 //! name rather than a silence.
 
+use crate::host::diag;
 use std::collections::HashMap;
 
 use clausters_core::osc::{OscMessage, OscType};
@@ -226,7 +227,7 @@ impl Host {
                 }
             }
         }
-        tracing::debug!(
+        diag::debug!(
             "sound_piece: {} message(s), {} reader(s)",
             messages.len(),
             self.sounding.len()
@@ -271,7 +272,7 @@ impl Host {
             return None;
         }
         self.piece_rolling = !self.piece_rolling;
-        tracing::info!(
+        diag::info!(
             "the piece is {}",
             if self.piece_rolling {
                 "rolling"

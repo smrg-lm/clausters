@@ -16,6 +16,7 @@
 //! native-Rust counterpart of how the Python client reaches the same server over
 //! the C ABI; here the dependency is a plain crate link, not an FFI load.
 
+use crate::host::diag;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -82,7 +83,7 @@ impl EmbedServer {
         match view {
             Ok(view) => Some(Arc::new(view)),
             Err(e) => {
-                tracing::warn!("the embedded server's segment is unreadable: {e}");
+                diag::warn!("the embedded server's segment is unreadable: {e}");
                 None
             }
         }

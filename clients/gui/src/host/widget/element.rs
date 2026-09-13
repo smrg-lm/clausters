@@ -1055,6 +1055,23 @@ pub struct VoiceSpec {
     pub args: Vec<(String, f32)>,
 }
 
+/// **The arguments a refusal is**: `"refused" <verb> <why>`.
+///
+/// The one place the three strings are put in order. A gesture that refuses
+/// emits them ([`super::super::gestures::effects::refuse`]), an element that
+/// refuses reports them ([`Events::refused`]), and the status bar recognizes a
+/// refusal by reading exactly this shape back
+/// ([`status::Line::of_event`](super::super::status::Line::of_event)) -- three
+/// readers of one convention, which is a convention that has to be written
+/// once.
+pub fn refusal(verb: &str, why: &str) -> Vec<OscType> {
+    vec![
+        OscType::String("refused".into()),
+        OscType::String(verb.into()),
+        OscType::String(why.into()),
+    ]
+}
+
 impl Events {
     /// Nothing to report — the default.
     pub fn none() -> Self {
@@ -1075,6 +1092,19 @@ impl Events {
             msgs: vec![args],
             ..Self::default()
         }
+    }
+
+    /// **A refusal**: `"refused" <verb> <why>`, which is an ordinary message on
+    /// the wire and a refused line on the status bar.
+    ///
+    /// One constructor because the shape is one and it was being spelled out by
+    /// hand in six places, each of which had to remember the order of the three
+    /// strings and that the first of them is the word the bar keys on
+    /// (`status::Line::of_event`). An owner reads it as an event it may ignore,
+    /// and a client whose intake does not know the tag answers nothing, which
+    /// is the path every other host refusal already takes.
+    pub fn refused(verb: &str, why: &str) -> Self {
+        Self::message(refusal(verb, why))
     }
 
     /// Appends another message.

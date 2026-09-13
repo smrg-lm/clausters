@@ -34,6 +34,7 @@
 //! a preview. The nodes are freed rather than gated: the def has no envelope,
 //! since a monitor that fades is a monitor lying about the contents.
 
+use crate::host::diag;
 use clausters_core::osc::{OscMessage, OscType};
 use serde_json::json;
 
@@ -214,7 +215,7 @@ impl Host {
             return false;
         };
         if self.player().is_none() {
-            tracing::warn!("nothing to play this take through: no audio server");
+            diag::warn!("nothing to play this take through: no audio server");
             return false;
         }
         // As many readers as the contents has channels, each to the bus of the

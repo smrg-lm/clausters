@@ -586,14 +586,10 @@ impl Element for Notes {
         // it does not work* rather than *not here*.
         if !self.editable && matches!(h.region, Region::Grid | Region::Velocity) {
             return Claim::Take(Take {
-                events: Events::message(vec![
-                    OscType::String("refused".into()),
-                    OscType::String("notes".into()),
-                    OscType::String(
-                        "these notes are a rendering of an algorithm: render it to a track to edit them"
-                            .into(),
-                    ),
-                ]),
+                events: Events::refused(
+                    "notes",
+                    "these notes are a rendering of an algorithm: render it to a track to edit them",
+                ),
                 ..Take::default()
             });
         }
@@ -1123,14 +1119,12 @@ impl Notes {
     fn press_osc(&mut self, h: &Hit, _at: (f64, f64), input: &Input) -> Claim {
         if input.mods.ctrl {
             return Claim::Take(Take {
-                events: Events::message(vec![
-                    OscType::String("refused".into()),
-                    OscType::String("osc".into()),
-                    OscType::String(
-                        "the markers lane shows what a timeline holds besides notes, and does                          not write it: a marker is the message it sends, and its address is                          not something this lane can say"
-                            .into(),
-                    ),
-                ]),
+                events: Events::refused(
+                    "osc",
+                    "the markers lane shows what a timeline holds besides notes, and does \
+                     not write it: a marker is the message it sends, and its address is \
+                     not something this lane can say",
+                ),
                 ..Take::default()
             });
         }

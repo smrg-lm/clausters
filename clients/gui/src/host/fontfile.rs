@@ -11,6 +11,7 @@
 //! have it: the file is mapped, parsed once into the rasterizer's own tables and
 //! unmapped — the bytes are never held.
 
+use crate::host::diag;
 use std::path::{Path, PathBuf};
 
 use super::FontSource;
@@ -68,7 +69,7 @@ impl FontSource for FontFile {
         match read {
             Ok(bytes) => Some(bytes),
             Err(e) => {
-                tracing::warn!("cannot read the font {}: {e}", self.path.display());
+                diag::warn!("cannot read the font {}: {e}", self.path.display());
                 None
             }
         }

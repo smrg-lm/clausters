@@ -15,6 +15,7 @@
 //! [`clausters_core::osc::DEFAULT_MAX_FRAME`]) — or a zero prefix — close the
 //! connection instead of allocating on an untrusted length.
 
+use crate::host::diag;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket};
@@ -112,7 +113,7 @@ impl TcpHub {
         if let Some(stream) = self.conns.get(&id)
             && let Err(e) = write_frame(stream, bytes)
         {
-            tracing::warn!("failed to send reply to tcp client {id}: {e}");
+            diag::warn!("failed to send reply to tcp client {id}: {e}");
         }
     }
 }

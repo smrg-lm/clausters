@@ -311,10 +311,12 @@ window, drawn by the host as chrome. It is not a widget, it is not in the tree,
 and **no line of it crosses the wire** — the host already knows what it just did
 and what it refused, so asking a client to send that back would be telling the
 host something the host said first. What goes in it is every `/gui_event` the
-host emits, at the one place an event is stamped, plus every `reason` an
-acknowledgement carries. Consecutive lines from one widget with one verb replace
-rather than stack, because a drag emits per motion and a log of four hundred
-`"clip"` lines is a log of one.
+host emits, at the one place an event is stamped, every value that leaves by a
+**binding** instead — the one road that never passes through an event, so the
+most direct control in a window used to be the one with no history — plus every
+`reason` an acknowledgement carries. Consecutive lines from one widget with one
+verb replace rather than stack, because a drag emits per motion and a log of
+four hundred `"clip"` lines is a log of one.
 
 Closed it is one line: the newest, in the warning colour when it reports a
 refusal and quiet otherwise. **Clicking it opens it** into the window's log area
@@ -331,6 +333,12 @@ the pixels it was drawn on.
 A window that wants the pixels back says `status` false. It is **on by default**,
 because a bar nobody turns on is a bar nobody hears from, and the refusals it
 exists to show were already being said into nothing.
+
+A **debug build of the host** shows a third kind of line there, in a colour of
+its own: the host's notes about its own working — a key no element claimed, and
+whatever else is instrumented — which are about the machine rather than about
+the work. They are compiled out of a release build entirely, so nothing a client
+sees or sends depends on them.
 
 
 ## The model: containers, axes and elements

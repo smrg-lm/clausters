@@ -14,11 +14,11 @@
 //! **zero-length datagram** to the host's own address the moment a frame is
 //! queued, the audio server's multiplexing pattern.
 
+use crate::host::diag;
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 
 use clausters_core::osc::{OscMessage, OscPacket, encode};
-use tracing::{info, warn};
 
 use super::tcp::TcpHub;
 use super::ws::WsHub;
@@ -107,15 +107,15 @@ fn handle(
 ) {
     let packet = match clausters_core::osc::decode_packet(bytes) {
         Ok(packet) => packet,
-        Err(e) => return warn!("malformed OSC packet from {from}: {e}"),
+        Err(e) => return diag::warn!("malformed OSC packet from {from}: {e}"),
     };
     for effect in host.handle_packet(packet, from) {
         match effect {
             HostEffect::Reply(msg) => send_reply(socket, tcp, ws, from, msg),
             HostEffect::OpenWindow(id) => {
-                info!("gui_def {id}: window requested (headless front: not opening a window)")
+                diag::info!("gui_def {id}: window requested (headless front: not opening a window)")
             }
-            HostEffect::CloseWindow(id) => info!("gui_free {id}: window closed (headless)"),
+            HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
             HostEffect::Redraw(_) => {} // nothing to repaint headless
         }
     }
@@ -131,12 +131,12 @@ fn send_reply(
     let addr = msg.addr.clone();
     let bytes = match encode(&OscPacket::Message(msg)) {
         Ok(bytes) => bytes,
-        Err(e) => return warn!("failed to encode {addr}: {e}"),
+        Err(e) => return diag::warn!("failed to encode {addr}: {e}"),
     };
     match to {
         ClientId::Udp(to) => {
             if let Err(e) = socket.send_to(&bytes, to) {
-                warn!("failed to send {addr} to {to}: {e}");
+                diag::warn!("failed to send {addr} to {to}: {e}");
             }
         }
         ClientId::Tcp(id) => {
@@ -150,6 +150,6 @@ fn send_reply(
             }
         }
         // The wasm front never reaches the native serve loop.
-        ClientId::Web => warn!("reply {addr} to a web client on the native front"),
+        ClientId::Web => diag::warn!("reply {addr} to a web client on the native front"),
     }
 }

@@ -1272,17 +1272,6 @@ impl Multitrack {
         Events::message(args)
     }
 
-    /// A refusal to emit: the host's own `"refused" <verb> <why>`, which the
-    /// status bar reads as a refused line and an owner reads as an ordinary
-    /// event it may ignore.
-    fn refused(verb: &str, why: &str) -> Events {
-        Events::message(vec![
-            OscType::String("refused".into()),
-            OscType::String(verb.into()),
-            OscType::String(why.into()),
-        ])
-    }
-
     /// **Where each box is on screen, and the slice of its own span it shows** —
     /// the geometry the drawing and the texture pass both read, so a picture
     /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
@@ -2305,7 +2294,7 @@ impl Element for Multitrack {
                 Some(if placement::quantize(self, &held, self.snap) {
                     self.clips_event()
                 } else {
-                    Self::refused("quantize", "these boxes are already on the grid")
+                    Events::refused("quantize", "these boxes are already on the grid")
                 })
             }
             // **At the window's cursor**: a key gesture has no pointer to read a
@@ -2315,7 +2304,7 @@ impl Element for Multitrack {
                 Some(if self.split_held(at) {
                     self.clips_event()
                 } else {
-                    Self::refused("split", "the cursor is not inside a held box")
+                    Events::refused("split", "the cursor is not inside a held box")
                 })
             }
             Key::Char('j') | Key::Char('J') if !input.mods.ctrl => Some(self.join_event()),

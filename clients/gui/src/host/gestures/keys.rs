@@ -16,10 +16,11 @@
 
 use super::super::Host;
 use super::super::interact::Hit;
+use crate::host::diag;
 use clausters_core::osc::OscType;
 
 use super::super::clipboard::Clip;
-use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock};
+use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock, refusal};
 use super::effects::{emit, emit_view, redraw_all};
 use super::nav::{cursor_of, freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
@@ -111,7 +112,23 @@ impl Gestures {
             cursor: cursor_of(host, ctx, id),
         };
         let at = element::At::widget(id, rect, scale, indent);
-        let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
+        let Some(events) = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()
+        else {
+            // **A key nothing claimed is the quietest failure there is**, and
+            // it is the shape of the defect reported twice on 2026-09-12: a
+            // verb refused correctly by an element that had nothing to act on
+            // and a letter no element answers to are indistinguishable at the
+            // window. The element's own refusals are said out loud now; this is
+            // the other case, and it is the machine's business rather than the
+            // hand's -- so it is a note, and only a debug build carries it.
+            diag::note!(
+                host,
+                ctx.def_id,
+                "key",
+                "key {key:?}: widget {id} did not take it"
+            );
+            return None;
+        };
         let mut out = Vec::new();
         element::report(host, &mut out, ctx, id, events);
         // A content edit moves the extent the shared axis spans, and the window
@@ -266,11 +283,7 @@ impl Gestures {
                         &mut out,
                         ctx.def_id,
                         id,
-                        vec![
-                            OscType::String("refused".into()),
-                            OscType::String("copy".into()),
-                            OscType::String("this source has no samples the host can read".into()),
-                        ],
+                        refusal("copy", "this source has no samples the host can read"),
                     ),
                 }
             }
@@ -298,13 +311,7 @@ impl Gestures {
                         &mut out,
                         ctx.def_id,
                         id,
-                        vec![
-                            OscType::String("refused".into()),
-                            OscType::String("paste".into()),
-                            OscType::String(
-                                "the clipboard's payload did not travel with it".into(),
-                            ),
-                        ],
+                        refusal("paste", "the clipboard's payload did not travel with it"),
                     );
                     return Some(out);
                 }

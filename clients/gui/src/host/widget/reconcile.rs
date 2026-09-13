@@ -69,6 +69,7 @@
 //! That is the division this milestone exists to draw: **the client says what it
 //! redrew; the host decides what that costs.**
 
+use crate::host::diag;
 use std::collections::HashMap;
 
 use serde_json::{Map, Value};
@@ -274,8 +275,8 @@ fn carry<'a>(
 /// reader cannot see.
 fn unkept(id: Option<i32>) {
     match id {
-        Some(id) => tracing::warn!("{GUI_DEF} {id}: `data: keep` with nothing held to keep"),
-        None => tracing::warn!("{GUI_DEF}: `data: keep` on a body with nothing held to keep"),
+        Some(id) => diag::warn!("{GUI_DEF} {id}: `data: keep` with nothing held to keep"),
+        None => diag::warn!("{GUI_DEF}: `data: keep` on a body with nothing held to keep"),
     }
 }
 

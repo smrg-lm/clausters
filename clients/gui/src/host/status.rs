@@ -19,9 +19,17 @@
 //! # What goes in it
 //!
 //! Every `/gui_event` the host emits, at the one place it is stamped
-//! (`gestures::effects::emit`), plus every owner's reason as its
+//! (`gestures::effects::emit`), every **bound** value, which leaves by the
+//! other road and is just as much something the hand did
+//! (`gestures::effects::deliver`), plus every owner's reason as its
 //! acknowledgement is retired ([`super::Host::settle`]). So the line is the
 //! **hand's own history**: what the last gesture asked for, and what came back.
+//!
+//! And, in a debug build only, the host's notes about its own working
+//! ([`super::diag::note!`]) — a third [`Kind`], colored apart, because a bar
+//! that shows what the hand did is where somebody debugging is already looking.
+//! Nothing of that survives a release build, arguments included; the two kinds
+//! above are product and do.
 //!
 //! Consecutive lines from one widget with one verb **replace** rather than
 //! stack, because a drag emits per motion and a log of four hundred `clip`
@@ -63,6 +71,15 @@ pub enum Kind {
     Did,
     /// Something was refused, by this host or by the owner that answered it.
     Refused,
+    /// **A note about the host's own working** ([`super::diag::note!`]), which
+    /// nobody asked for and which is there only in a debug build.
+    ///
+    /// A third kind rather than a quieter `Did` because it reports on a
+    /// different subject: the two above are the *hand's* history — what it
+    /// asked for, what came back — and this one is the machine's. Colored
+    /// apart for the same reason, so a reader can tell at a glance which lines
+    /// are the work and which are the instrumentation.
+    Note,
 }
 
 /// One line the window has to say.
@@ -133,6 +150,40 @@ impl Line {
             widget,
             verb: "refused".to_string(),
             text: format!("refused: {reason}"),
+        }
+    }
+
+    /// A line for a value that left by the **binding** road rather than as a
+    /// `/gui_event` — a knob wired straight to the audio server or to another
+    /// widget's prop.
+    ///
+    /// The same `Did` a reported value is, said apart only in its text: what
+    /// the hand did is the same act whichever road the value took, and a bar
+    /// that showed one and not the other would make the most direct control in
+    /// the window the one with no history.
+    pub fn of_bound(widget: i32, value: &OscType) -> Line {
+        Line {
+            kind: Kind::Did,
+            widget: Some(widget),
+            verb: "value".to_string(),
+            text: format!("value {} (bound)", one_arg(value)),
+        }
+    }
+
+    /// A line for a **note about the host's own working** — what
+    /// [`super::diag::note!`] writes, and the only kind of line that reports on
+    /// the machine rather than on the work.
+    ///
+    /// `verb` is the first word and the collapse key, so a note said once per
+    /// motion of a drag stays one line exactly as an event's verb does. The
+    /// widget is `None`: a note is the window's, and the thing it is about is
+    /// named in its own text rather than by an id the collapse would key on.
+    pub fn of_note(verb: &str, text: String) -> Line {
+        Line {
+            kind: Kind::Note,
+            widget: None,
+            verb: verb.to_string(),
+            text,
         }
     }
 }
@@ -432,6 +483,29 @@ mod tests {
         s.set_open(true);
         s.set_open(false);
         assert_eq!(s.scroll(), 0);
+    }
+
+    /// A note is the third kind and collapses like the other two, so a note
+    /// said once per motion of a drag is one line rather than four hundred.
+    #[test]
+    fn a_note_is_the_machines_line_and_collapses_by_its_verb() {
+        let mut s = Status::default();
+        s.say(Line::of_note(
+            "key",
+            "key Char('q'): widget 9 did not take it".into(),
+        ));
+        s.say(Line::of_note(
+            "key",
+            "key Char('e'): widget 9 did not take it".into(),
+        ));
+        assert_eq!(s.len(), 1, "one verb, one line");
+        let last = s.last().unwrap();
+        assert_eq!(last.kind, Kind::Note);
+        assert_eq!(last.widget, None, "a note is the window's, not a widget's");
+        assert!(last.text.ends_with("did not take it"));
+        // ...and it does not collapse onto what the hand did.
+        s.say(line("clip"));
+        assert_eq!(s.len(), 2);
     }
 
     #[test]

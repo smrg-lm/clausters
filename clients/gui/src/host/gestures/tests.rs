@@ -3278,6 +3278,83 @@ mod status_bar {
             "the `/gui_ack` reason, which nothing used to read"
         );
     }
+
+    /// **A key nothing claimed says so**, on the bar and as the machine's own
+    /// note rather than as something the hand did.
+    ///
+    /// The defect this holds is the one reported twice on 2026-09-12: a verb
+    /// that refused correctly and a letter no element answers to were the same
+    /// silence at the window. The element's refusals were given words that day;
+    /// this is the other case.
+    #[test]
+    fn a_key_no_element_took_leaves_a_note_and_not_a_line() {
+        let mut host = barred_host();
+        let g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 400);
+        let toggle = placed_rect(&host, &ctx, 9);
+        let mut clip = crate::host::clipboard::Clip::default();
+        let taken = g.key_at_cursor(
+            &mut host,
+            &ctx,
+            Key::Char('q'),
+            (toggle.x + 4.0) as f64,
+            (toggle.y + toggle.h * 0.5) as f64,
+            &mut clip,
+        );
+        assert!(taken.is_none(), "a toggle has no `q`");
+        let statuses = host.statuses();
+        let line = statuses.get(&1).and_then(|s| s.last()).expect("a line");
+        assert_eq!(line.kind, Kind::Note, "the machine's, not the hand's");
+        assert_eq!(line.widget, None, "a note is the window's");
+        assert!(
+            line.text.contains("did not take it"),
+            "and it names what happened: {}",
+            line.text
+        );
+    }
+
+    /// **A bound value has a history too.** It leaves by the one road that
+    /// never passes through `emit`, which is why the bar used to go quiet for
+    /// the most direct control in the window.
+    #[test]
+    fn a_bound_widget_says_what_it_did() {
+        let mut host = Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![
+                    OscType::Int(1),
+                    OscType::String(
+                        r#"{"type":"window","children":[
+                            {"id":9,"type":"toggle","value":0,
+                             "bind":["server","/node_set",1000,"gate"]}]}"#
+                            .into(),
+                    ),
+                ],
+            }),
+            from(),
+        );
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 400);
+        let toggle = placed_rect(&host, &ctx, 9);
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            (toggle.x + 4.0) as f64,
+            (toggle.y + toggle.h * 0.5) as f64,
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Emit { .. })),
+            "bound: nothing was reported to a script"
+        );
+        let statuses = host.statuses();
+        let line = statuses.get(&1).and_then(|s| s.last()).expect("a line");
+        assert_eq!(line.kind, Kind::Did);
+        assert_eq!(line.widget, Some(9));
+        assert_eq!(line.text, "value 1 (bound)");
+    }
 }
 
 /// **The pencil's threshold is the drawing's**, not one of its own.

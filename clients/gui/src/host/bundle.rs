@@ -295,7 +295,7 @@ pub fn read_manifest(dir: &std::path::Path) -> Option<Manifest> {
     match serde_json::from_slice(&bytes) {
         Ok(manifest) => Some(manifest),
         Err(e) => {
-            tracing::warn!("{}/bundle.json is not a manifest: {e}", dir.display());
+            crate::host::diag::warn!("{}/bundle.json is not a manifest: {e}", dir.display());
             None
         }
     }

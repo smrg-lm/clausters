@@ -49,6 +49,11 @@
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
 pub mod bind;
+// What the host says to itself: one door for the platform log, in both builds,
+// and the debug channel that also lands on a window's status bar. The status
+// bar beside it is what the host says to the person at the window; this is the
+// other half, and it compiles out of a release below the warning level.
+pub mod diag;
 // The host-wide clipboard: one typed document plus the bulk it names. Here
 // rather than with the elements because it is nobody's — one clipboard serves
 // every field, roll and view of every window.
@@ -184,7 +189,6 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use serde_json::Value;
-use tracing::{debug, info, warn};
 
 pub use bind::Binding;
 #[cfg(not(target_arch = "wasm32"))]
@@ -1245,7 +1249,7 @@ impl Host {
             GUI_THEME => self.on_theme(&msg.args, from, effects),
             GUI_METRICS => self.on_metrics(&msg.args, from, effects),
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
-            other => debug!("{from}: ignoring unhandled address {other}"),
+            _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
     }
 
@@ -1254,14 +1258,14 @@ impl Host {
     /// `window` root also opens (or rebuilds) a window.
     fn on_def(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
-            return warn!("{from}: {GUI_DEF} needs an integer id");
+            return diag::warn!("{from}: {GUI_DEF} needs an integer id");
         };
         let Some(bytes) = json_arg(args, 1) else {
-            return warn!("{from}: {GUI_DEF} needs a JSON string or blob argument");
+            return diag::warn!("{from}: {GUI_DEF} needs a JSON string or blob argument");
         };
         let node = match GuiNode::parse(bytes) {
             Ok(node) => node,
-            Err(e) => return warn!("{from}: {GUI_DEF} {id}: invalid GuiDef JSON: {e}"),
+            Err(e) => return diag::warn!("{from}: {GUI_DEF} {id}: invalid GuiDef JSON: {e}"),
         };
         let blobs = blob_args(&args[2.min(args.len())..]);
         self.define_node(id, node, bytes.to_vec(), &blobs, &from, effects);
@@ -1297,7 +1301,7 @@ impl Host {
         let bytes = match serde_json::to_vec(&node) {
             Ok(bytes) => bytes,
             Err(e) => {
-                warn!("in-process: {GUI_DEF} {root_id}: cannot serialize the tree: {e}");
+                diag::warn!("in-process: {GUI_DEF} {root_id}: cannot serialize the tree: {e}");
                 return Vec::new();
             }
         };
@@ -1352,7 +1356,7 @@ impl Host {
         let was = self.registry.kinds();
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
-        info!(
+        diag::info!(
             "{from}: {GUI_DEF} {id}: {} widget(s){}{}\n{}",
             outcome.inserted,
             if outcome.replaced { " (replaced)" } else { "" },
@@ -1387,7 +1391,7 @@ impl Host {
                     self.sync_timeline_groups(Some(id));
                     effects.push(HostEffect::OpenWindow(id));
                 }
-                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
+                Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
             }
         } else if let Some(root) = inside {
             // **A widget inside an open window is redefined in place.** The
@@ -1431,13 +1435,13 @@ impl Host {
                         // it had.
                         effects.push(HostEffect::OpenWindow(root));
                     } else {
-                        warn!(
+                        diag::warn!(
                             "{from}: {GUI_DEF} {id}: no widget by that id in the \
                              window it belongs to"
                         );
                     }
                 }
-                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build widget: {e}"),
+                Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot build widget: {e}"),
             }
         }
         // A redefine frees the old subtree first; drop any binding whose widget
@@ -1457,8 +1461,8 @@ impl Host {
             && let Some(store) = self.store.as_ref()
         {
             match store.save(name, id, &bytes) {
-                Ok(()) => info!("{from}: {GUI_DEF} {id}: saved as \"{name}\""),
-                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
+                Ok(()) => diag::info!("{from}: {GUI_DEF} {id}: saved as \"{name}\""),
+                Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
             }
         }
     }
@@ -1468,16 +1472,16 @@ impl Host {
     /// saved with.
     fn on_load(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(name) = string_arg(args, 0) else {
-            return warn!("{from}: {GUI_LOAD} needs a name argument");
+            return diag::warn!("{from}: {GUI_LOAD} needs a name argument");
         };
         let Some(store) = self.store.as_ref() else {
-            return warn!("{from}: {GUI_LOAD} {name}: no data directory configured");
+            return diag::warn!("{from}: {GUI_LOAD} {name}: no data directory configured");
         };
         let (id, json) = match store.load(name) {
             Ok(loaded) => loaded,
-            Err(e) => return warn!("{from}: {GUI_LOAD} {name}: {e}"),
+            Err(e) => return diag::warn!("{from}: {GUI_LOAD} {name}: {e}"),
         };
-        info!("{from}: {GUI_LOAD} {name}: instantiating GuiDef {id}");
+        diag::info!("{from}: {GUI_LOAD} {name}: instantiating GuiDef {id}");
         self.on_def(
             &[
                 OscType::Int(id),
@@ -1497,7 +1501,9 @@ impl Host {
     /// face, which is what a refused face does too.
     fn on_font(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(bytes) = json_arg(args, 0) else {
-            return warn!("{from}: {GUI_FONT} needs a blob argument (a TrueType/OpenType file)");
+            return diag::warn!(
+                "{from}: {GUI_FONT} needs a blob argument (a TrueType/OpenType file)"
+            );
         };
         #[cfg(feature = "font-atlas")]
         {
@@ -1508,12 +1514,12 @@ impl Host {
                 }
             }
             if !self.load_face(&WireFace(bytes)) {
-                return warn!(
+                return diag::warn!(
                     "{from}: {GUI_FONT}: those {} bytes are not a typeface this host can read",
                     bytes.len()
                 );
             }
-            info!("{from}: {GUI_FONT}: drawing text with the face it handed over");
+            diag::info!("{from}: {GUI_FONT}: drawing text with the face it handed over");
             for id in self.window_def_ids() {
                 effects.push(HostEffect::Redraw(id));
             }
@@ -1521,7 +1527,7 @@ impl Host {
         #[cfg(not(feature = "font-atlas"))]
         {
             let _ = (bytes, effects);
-            warn!(
+            diag::warn!(
                 "{from}: {GUI_FONT}: this host was built without a rasterizer (the `font-atlas` \
                  feature); drawing with the embedded bitmap face"
             );
@@ -1537,10 +1543,10 @@ impl Host {
     /// changes what a group means — and redraws.
     fn on_theme(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(table) = json_table(args, 0) else {
-            return warn!("{from}: {GUI_THEME} needs a JSON object of role -> color");
+            return diag::warn!("{from}: {GUI_THEME} needs a JSON object of role -> color");
         };
         for w in self.theme.overlay_json(&table) {
-            warn!("{from}: {GUI_THEME}: {w}");
+            diag::warn!("{from}: {GUI_THEME}: {w}");
         }
         // The base moved under the resolved references: a group's colors are
         // its own table over the inherited one, so they are re-resolved rather
@@ -1552,7 +1558,7 @@ impl Host {
             }
             effects.push(HostEffect::Redraw(id));
         }
-        info!("{from}: {GUI_THEME}: {} role(s) overlaid", table.len());
+        diag::info!("{from}: {GUI_THEME}: {} role(s) overlaid", table.len());
     }
 
     /// `/gui_metrics <json>` — lay out with these sizes from now on.
@@ -1564,20 +1570,20 @@ impl Host {
     /// table, so a redraw is the rest of the update.
     fn on_metrics(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(table) = json_table(args, 0) else {
-            return warn!("{from}: {GUI_METRICS} needs a JSON object of role -> number");
+            return diag::warn!("{from}: {GUI_METRICS} needs a JSON object of role -> number");
         };
         let entries: Vec<(&str, f64)> = table
             .iter()
             .filter_map(|(k, v)| v.as_f64().map(|n| (k.as_str(), n)))
             .collect();
         for w in self.metrics.overlay(entries) {
-            warn!("{from}: {GUI_METRICS}: {w}");
+            diag::warn!("{from}: {GUI_METRICS}: {w}");
         }
         self.refresh_metrics();
         for id in self.window_def_ids() {
             effects.push(HostEffect::Redraw(id));
         }
-        info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
+        diag::info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
     }
 
     /// `/gui_headClock <which>` — draw every playhead from this counter from now on.
@@ -1590,13 +1596,13 @@ impl Host {
     fn on_clock(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let which = match args.first() {
             Some(OscType::String(s)) => s.as_str(),
-            _ => return warn!("{from}: {GUI_CLOCK} needs \"device\" or \"piece\""),
+            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"piece\""),
         };
         let head = match which {
             "device" => HeadClock::Device,
             "piece" => HeadClock::Piece,
             other => {
-                return warn!(
+                return diag::warn!(
                     "{from}: {GUI_CLOCK}: no counter called {other:?}; still drawing the \
                               one it was"
                 );
@@ -1606,7 +1612,7 @@ impl Host {
         for id in self.window_def_ids() {
             effects.push(HostEffect::Redraw(id));
         }
-        info!("{from}: {GUI_CLOCK}: playheads now read the {which}");
+        diag::info!("{from}: {GUI_CLOCK}: playheads now read the {which}");
     }
 
     /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
@@ -1614,17 +1620,17 @@ impl Host {
     /// in the typed render tree (so the change shows live).
     fn on_set(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
-            return warn!("{from}: {GUI_SET} needs an integer id");
+            return diag::warn!("{from}: {GUI_SET} needs an integer id");
         };
         let props = key_value_pairs(&args[1..]);
         if props.is_empty() {
-            return warn!("{from}: {GUI_SET} {id}: no key/value pairs");
+            return diag::warn!("{from}: {GUI_SET} {id}: no key/value pairs");
         }
         let keys: Vec<String> = props.iter().map(|(k, _)| k.clone()).collect();
         if !self.set_props(id, props, effects) {
-            return warn!("{from}: {GUI_SET} {id}: no such widget");
+            return diag::warn!("{from}: {GUI_SET} {id}: no such widget");
         }
-        info!("{from}: {GUI_SET} {id}: updated {keys:?}");
+        diag::info!("{from}: {GUI_SET} {id}: updated {keys:?}");
     }
 
     /// Replaces an `axes` pair among `props` with the per-axis keys it names,
@@ -1657,7 +1663,7 @@ impl Host {
                     widget::flatten_axes(axes, &mut flat);
                     out.extend(flat);
                 }
-                None => warn!("{GUI_SET}: {} is not a pair of axes", widget::AXES),
+                None => diag::warn!("{GUI_SET}: {} is not a pair of axes", widget::AXES),
             }
         }
         out
@@ -1679,7 +1685,7 @@ impl Host {
             }
             match widget::parse::truthy(&value) {
                 Some(on) => focus = Some(on),
-                None => warn!("{GUI_SET}: focus is not a flag"),
+                None => diag::warn!("{GUI_SET}: focus is not a flag"),
             }
         }
         (out, focus)
@@ -1709,7 +1715,7 @@ impl Host {
             .and_then(|tree| tree.find(id))
             .is_some_and(|w| w.kind.accepts_focus());
         if !accepts {
-            return warn!("{GUI_SET} {id}: this widget does not take the keyboard focus");
+            return diag::warn!("{GUI_SET} {id}: this widget does not take the keyboard focus");
         }
         if let Some(other) = self.focus(root, id) {
             effects.push(HostEffect::Redraw(other));
@@ -1831,7 +1837,7 @@ impl Host {
     /// `id` is a window-rooted def).
     fn on_free(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
-            return warn!("{from}: {GUI_FREE} needs an integer id");
+            return diag::warn!("{from}: {GUI_FREE} needs an integer id");
         };
         let removed = self.registry.free(id);
         self.def_json.remove(&id);
@@ -1856,9 +1862,9 @@ impl Host {
         self.prune_timeline_groups();
         self.prune_focus();
         if removed > 0 {
-            info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
+            diag::info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
-            warn!("{from}: {GUI_FREE} {id}: no such widget");
+            diag::warn!("{from}: {GUI_FREE} {id}: no such widget");
         }
     }
 
@@ -1960,7 +1966,7 @@ impl Host {
                 status::Line::of_reason(Some(last.widget_id), &reason),
             );
         }
-        debug!("retired {} pending edit(s)", settled.len());
+        diag::debug!("retired {} pending edit(s)", settled.len());
         // What the owner pushed is already in the samples, so letting go is
         // what makes the picture the document's again rather than the hand's.
         for p in &settled {
@@ -1987,7 +1993,7 @@ impl Host {
     /// be written back onto the picture, and a widget is reached through the
     /// tree it is in.
     pub fn answer_own(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
-        debug!(
+        diag::debug!(
             "answer_own: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
@@ -2032,8 +2038,8 @@ impl Host {
             }
             Some(OscType::String(tag)) if tag == "save" => {
                 match owner.save_now() {
-                    Ok(path) => info!("session saved to {}", path.display()),
-                    Err(e) => warn!("save: {e}"),
+                    Ok(path) => diag::info!("session saved to {}", path.display()),
+                    Err(e) => diag::warn!("save: {e}"),
                 }
                 return true;
             }
@@ -2105,7 +2111,7 @@ impl Host {
             // Refused, and said so: the pending drawing is dropped by the same
             // acknowledgement an applied edit sends, so the picture snaps back
             // to the samples rather than keeping a stroke nobody stored.
-            warn!("refusing to write {} sample(s): {why}", values.len());
+            diag::warn!("refusing to write {} sample(s): {why}", values.len());
             let version = self.owner.as_ref().map_or(0, |o| o.document.version as i64);
             self.settle(ack::Acked {
                 seq,
@@ -2282,14 +2288,14 @@ impl Host {
                 ],
             })
         {
-            warn!("failed to write buffer {bufnum}: {e}");
+            diag::warn!("failed to write buffer {bufnum}: {e}");
             return;
         }
         let Some(tree) = self.window_def_mut(def_id) else {
             return;
         };
         if write_buffer_views(tree, bufnum, channel, start, values) == 0 {
-            warn!("the picture refused a write the samples accepted — they will disagree");
+            diag::warn!("the picture refused a write the samples accepted — they will disagree");
         }
     }
 
@@ -2321,7 +2327,7 @@ impl Host {
             .collect();
         for (widget_id, channel, start, values) in writes {
             if let Err(why) = self.can_write(def_id, widget_id, channel, start, values.len()) {
-                warn!("cannot restore {} sample(s): {why}", values.len());
+                diag::warn!("cannot restore {} sample(s): {why}", values.len());
                 continue;
             }
             self.write_buffer_samples(def_id, widget_id, channel, start, &values);
@@ -2384,7 +2390,7 @@ impl Host {
     /// mechanism.
     fn on_ack(&mut self, args: &[OscType]) {
         let Some(OscType::Int(seq)) = args.first() else {
-            warn!("/gui_ack without a sequence number");
+            diag::warn!("/gui_ack without a sequence number");
             return;
         };
         let mut acked = ack::Acked {
@@ -2416,7 +2422,7 @@ impl Host {
 
     fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
-            return warn!("{from}: {GUI_QUERY} needs an integer id");
+            return diag::warn!("{from}: {GUI_QUERY} needs an integer id");
         };
         let mut out = vec![OscType::Int(id)];
         // What the widget *is now*, before the document is read: a gesture
@@ -2435,7 +2441,7 @@ impl Host {
                         out.push(arg);
                     }
                 }
-                info!("{from}: {GUI_QUERY} {id} -> {GUI_INFO} ({})", widget.kind);
+                diag::info!("{from}: {GUI_QUERY} {id} -> {GUI_INFO} ({})", widget.kind);
             }
             None => {
                 // An empty type string means "no such widget" — the query still
@@ -2443,7 +2449,7 @@ impl Host {
                 // miss is *not* a warning: it is how a client pings a host that is
                 // still empty (the launcher's readiness check does exactly that).
                 out.push(OscType::String(String::new()));
-                debug!("{from}: {GUI_QUERY} {id}: no such widget");
+                diag::debug!("{from}: {GUI_QUERY} {id}: no such widget");
             }
         }
         effects.push(HostEffect::Reply(OscMessage {
@@ -2482,34 +2488,34 @@ impl Host {
     /// binding is removed and the `/gui_event` path restored.
     fn on_bind(&mut self, args: &[OscType], from: ClientId) {
         let Some(id) = int_arg(args, 0) else {
-            return warn!("{from}: {GUI_BIND} needs an integer id");
+            return diag::warn!("{from}: {GUI_BIND} needs an integer id");
         };
         if args.len() <= 1 {
             if self.bindings.remove(&id).is_some() {
-                info!("{from}: {GUI_BIND} {id}: unbound (events restored)");
+                diag::info!("{from}: {GUI_BIND} {id}: unbound (events restored)");
             } else {
-                warn!("{from}: {GUI_BIND} {id}: no binding to remove");
+                diag::warn!("{from}: {GUI_BIND} {id}: no binding to remove");
             }
             return;
         }
         let binding = match Binding::parse(&args[1..]) {
             Ok(b) => b,
-            Err(e) => return warn!("{from}: {GUI_BIND} {id}: {e}"),
+            Err(e) => return diag::warn!("{from}: {GUI_BIND} {id}: {e}"),
         };
         match &binding {
             Binding::Server { addr, prefix } => {
                 if self.server.is_none() {
-                    warn!(
+                    diag::warn!(
                         "{from}: {GUI_BIND} {id}: no audio server attached (--server); the \
                          binding will swallow the value but cannot forward it"
                     );
                 }
-                info!("{from}: {GUI_BIND} {id} -> audio server {addr} {prefix:?}");
+                diag::info!("{from}: {GUI_BIND} {id} -> audio server {addr} {prefix:?}");
             }
             Binding::Widget {
                 id: target,
                 prop: key,
-            } => info!("{from}: {GUI_BIND} {id} -> widget {target} {key}"),
+            } => diag::info!("{from}: {GUI_BIND} {id} -> widget {target} {key}"),
         }
         self.bindings.insert(id, binding);
     }
@@ -2550,7 +2556,7 @@ impl Host {
             if let Some((target, key, value)) = binding.prop(&values)
                 && !self.set_props(target, vec![(key.clone(), value)], effects)
             {
-                warn!("{GUI_BIND} {widget_id}: no widget {target} to set {key:?} on");
+                diag::warn!("{GUI_BIND} {widget_id}: no widget {target} to set {key:?} on");
             }
             return true;
         }
@@ -2558,7 +2564,7 @@ impl Host {
             && let Some(server) = self.server.as_ref()
             && let Err(e) = server.send(msg)
         {
-            warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
+            diag::warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
         }
         true
     }
@@ -2771,9 +2777,9 @@ impl Host {
             addr: "/buffer_stream".into(),
             args,
         }) {
-            return warn!("cannot subscribe to the recording stream: {e}");
+            return diag::warn!("cannot subscribe to the recording stream: {e}");
         }
-        debug!(
+        diag::debug!(
             "buffer stream: {} buffer(s) at bucket {bucket}",
             buffers.len()
         );
@@ -2808,7 +2814,7 @@ impl Host {
             .flatten()
         {
             if let Err(e) = link.send(msg.clone()) {
-                warn!("cannot announce the write of buffer {bufnum}: {e}");
+                diag::warn!("cannot announce the write of buffer {bufnum}: {e}");
             }
         }
     }
@@ -2824,7 +2830,7 @@ impl Host {
             return;
         };
         if let Err(e) = link.send(msg) {
-            warn!("cannot send to the audio server: {e}");
+            diag::warn!("cannot send to the audio server: {e}");
         }
     }
 
@@ -2838,7 +2844,7 @@ impl Host {
                 Ok(binding) => {
                     self.bindings.insert(id, binding);
                 }
-                Err(e) => warn!("widget {id}: invalid inline `bind`: {e}"),
+                Err(e) => diag::warn!("widget {id}: invalid inline `bind`: {e}"),
             }
         }
         for child in &node.children {

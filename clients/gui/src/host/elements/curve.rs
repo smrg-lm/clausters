@@ -484,11 +484,7 @@ impl Element for Curve {
             // Consumed and said out loud, like the roll's: a curve drawn from
             // samples this editor cannot write is not a dead widget.
             return Claim::Take(Take {
-                events: Events::message(vec![
-                    OscType::String("refused".into()),
-                    OscType::String("points".into()),
-                    OscType::String("this curve is read-only here".into()),
-                ]),
+                events: Events::refused("points", "this curve is read-only here"),
                 ..Take::default()
             });
         }

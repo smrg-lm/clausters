@@ -744,7 +744,9 @@ pub(super) fn draw_element_overlays(
 /// that runs to the window's edge. What colors a line is the only thing a line
 /// is typed by: something done reads as quiet text, something refused reads as
 /// the warning role, because the whole point of the bar is that a refusal is
-/// seen without being looked for.
+/// seen without being looked for — and a note about the host's own working
+/// (debug builds only) reads as the accent's quiet form, since it is the one
+/// kind of line that is not about the work.
 pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, theme: &Theme) {
     let m = inputs.metrics;
     over.set_clip(Some(band));
@@ -761,6 +763,10 @@ pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, the
     let color = |line: &crate::host::status::Line| match line.kind {
         crate::host::status::Kind::Refused => theme.warn,
         crate::host::status::Kind::Did => theme.text_dim,
+        // A note reports on the machine and not on the work, so it is colored
+        // apart from both — the accent's quiet form, which is legible beside
+        // the dim text without competing with the warning a refusal is.
+        crate::host::status::Kind::Note => theme.accent_dim,
     };
     if !status.is_open() {
         if let Some(line) = status.last() {

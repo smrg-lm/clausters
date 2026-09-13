@@ -16,6 +16,7 @@
 //! model should not walk 800 lines of them to reach it. Each one owns its own
 //! `apply`/`parse` where it has one, so a new prop on a bundle is one edit.
 
+use crate::host::diag;
 use std::sync::Arc;
 
 use clausters_core::tempomap::TempoMap;
@@ -992,7 +993,7 @@ impl GestureMap {
         };
         for (modifier, value) in table {
             let Some(plan) = value.as_str().and_then(GesturePlan::parse) else {
-                tracing::warn!("gestures: unreadable plan for {modifier:?}");
+                diag::warn!("gestures: unreadable plan for {modifier:?}");
                 continue;
             };
             match modifier.as_str() {
@@ -1000,7 +1001,7 @@ impl GestureMap {
                 "shift" => self.shift = plan,
                 "ctrl" => self.ctrl = plan,
                 "alt" => self.alt = plan,
-                other => tracing::warn!("gestures: unknown modifier {other:?}"),
+                other => diag::warn!("gestures: unknown modifier {other:?}"),
             }
         }
         true

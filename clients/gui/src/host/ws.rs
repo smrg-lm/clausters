@@ -21,6 +21,7 @@
 //! channel and writes the bytes itself, polling with a short read timeout
 //! ([`POLL_TIMEOUT`]) to interleave reads with queued replies.
 
+use crate::host::diag;
 use std::collections::HashMap;
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket};
@@ -83,11 +84,11 @@ pub fn reply(conns: &HashMap<u64, (SyncSender<Vec<u8>>, TcpStream)>, id: u64, by
     match reply_tx.try_send(bytes.to_vec()) {
         Ok(()) => {}
         Err(TrySendError::Full(_)) => {
-            tracing::warn!("dropping ws client {id}: not draining its replies");
+            diag::warn!("dropping ws client {id}: not draining its replies");
             let _ = raw.shutdown(Shutdown::Both);
         }
         Err(TrySendError::Disconnected(_)) => {
-            tracing::warn!("ws client {id} reply channel closed before send");
+            diag::warn!("ws client {id} reply channel closed before send");
         }
     }
 }

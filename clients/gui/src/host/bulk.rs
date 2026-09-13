@@ -11,10 +11,9 @@
 //! a `path` de-interleaves every channel, a `cache` is the single multichannel
 //! [`MultiPyramid`] resource (version-1 mono caches still parse).
 
+use crate::host::diag;
 use std::path::Path;
 use std::sync::Arc;
-
-use tracing::{info, warn};
 
 use super::BulkLoader;
 use crate::peaks::MultiPyramid;
@@ -66,13 +65,13 @@ fn mapped_waveform(
 
     if let Some(cache) = cache {
         let map = MappedFile::open(cache)
-            .map_err(|e| warn!("waveform cache {}: {e}", cache.display()))
+            .map_err(|e| diag::warn!("waveform cache {}: {e}", cache.display()))
             .ok()?;
         let multi = MultiPyramid::from_bytes(map.bytes()).or_else(|| {
-            warn!("waveform cache {}: malformed peak pyramid", cache.display());
+            diag::warn!("waveform cache {}: malformed peak pyramid", cache.display());
             None
         })?;
-        info!(
+        diag::info!(
             "waveform: mapped peak cache {} ({} samples x {} channel(s), no raw data, no OSC)",
             cache.display(),
             multi.frames(),
@@ -83,7 +82,7 @@ fn mapped_waveform(
 
     let path = path?;
     let map = MappedFile::open(path)
-        .map_err(|e| warn!("waveform path {}: {e}", path.display()))
+        .map_err(|e| diag::warn!("waveform path {}: {e}", path.display()))
         .ok()?;
     let split: Vec<Arc<[f32]>> = map
         .channels_f32(channels)
@@ -118,7 +117,7 @@ fn mapped_waveform(
             WaveformData::from_parts(split.into_iter().zip(multi.into_channels()).collect())
         }
     };
-    info!(
+    diag::info!(
         "waveform: mapped {} samples x {} channel(s) from {} (no OSC, no re-send)",
         data.total_samples(),
         data.num_channels(),
@@ -134,7 +133,7 @@ fn mapped_waveform(
     _channels: usize,
     _base_bucket: usize,
 ) -> Option<WaveformData> {
-    warn!("waveform path/cache (mapped local resource) is only supported on Unix");
+    diag::warn!("waveform path/cache (mapped local resource) is only supported on Unix");
     None
 }
 
@@ -146,7 +145,7 @@ fn mapped_waveform(
 fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
     use super::mapfile::MappedFile;
     let map = MappedFile::open(path)
-        .map_err(|e| warn!("plot path {}: {e}", path.display()))
+        .map_err(|e| diag::warn!("plot path {}: {e}", path.display()))
         .ok()?;
     let mut floats: Vec<f32> = map
         .bytes()
@@ -158,7 +157,7 @@ fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
     let channels = channels.max(1);
     floats.truncate(floats.len() / channels * channels);
     let samples: Arc<[f32]> = floats.into();
-    info!(
+    diag::info!(
         "plot: mapped {} samples from {} (no OSC)",
         samples.len(),
         path.display()
@@ -168,7 +167,7 @@ fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
 
 #[cfg(not(unix))]
 fn map_plot_samples(_path: &Path, _channels: usize) -> Option<Arc<[f32]>> {
-    warn!("plot path (mapped local resource) is only supported on Unix");
+    diag::warn!("plot path (mapped local resource) is only supported on Unix");
     None
 }
 
@@ -178,14 +177,14 @@ fn map_plot_samples(_path: &Path, _channels: usize) -> Option<Arc<[f32]>> {
 fn map_raw_channels(path: &Path, channels: usize) -> Option<Vec<Vec<f32>>> {
     use super::mapfile::MappedFile;
     let map = MappedFile::open(path)
-        .map_err(|e| warn!("spectrogram path {}: {e}", path.display()))
+        .map_err(|e| diag::warn!("spectrogram path {}: {e}", path.display()))
         .ok()?;
     Some(map.channels_f32(channels))
 }
 
 #[cfg(not(unix))]
 fn map_raw_channels(_path: &Path, _channels: usize) -> Option<Vec<Vec<f32>>> {
-    warn!("spectrogram path (mapped local resource) is only supported on Unix");
+    diag::warn!("spectrogram path (mapped local resource) is only supported on Unix");
     None
 }
 
@@ -194,13 +193,13 @@ fn map_raw_channels(_path: &Path, _channels: usize) -> Option<Vec<Vec<f32>>> {
 fn map_file_bytes(path: &Path) -> Option<Vec<u8>> {
     use super::mapfile::MappedFile;
     let map = MappedFile::open(path)
-        .map_err(|e| warn!("cache {}: {e}", path.display()))
+        .map_err(|e| diag::warn!("cache {}: {e}", path.display()))
         .ok()?;
     Some(map.bytes().to_vec())
 }
 
 #[cfg(not(unix))]
 fn map_file_bytes(_path: &Path) -> Option<Vec<u8>> {
-    warn!("cache (mapped local resource) is only supported on Unix");
+    diag::warn!("cache (mapped local resource) is only supported on Unix");
     None
 }

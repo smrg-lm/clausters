@@ -42,6 +42,7 @@
 //! it lives in each widget's own module (`bpf`, `pianoroll`, `track`, `patch`,
 //! `textedit`, …); this module owns only the typed data and its wire mapping.
 
+use crate::host::diag;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -358,7 +359,7 @@ fn resolve_style_under(widget: &mut Widget, base: &Arc<super::theme::Theme>, alp
         Some(table) => {
             let mut t = (**base).clone();
             for warning in t.overlay_json(table) {
-                tracing::warn!("widget {:?}: {warning}", widget.id);
+                diag::warn!("widget {:?}: {warning}", widget.id);
             }
             Arc::new(t)
         }

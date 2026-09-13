@@ -15,6 +15,7 @@
 //! axis a property drops the axis marker, so `x.start` is `view_start` and
 //! `y.unit` is `ruler_y`.
 
+use crate::host::diag;
 use serde_json::{Map, Value};
 
 use super::GuiNode;
@@ -50,7 +51,7 @@ pub(crate) fn flatten(axes: &Map<String, Value>, out: &mut Map<String, Value>) {
         };
         for (key, value) in keys {
             let Some((_, flat)) = table.iter().find(|(k, _)| k == key) else {
-                tracing::debug!("axes.{axis}: no axis property {key:?}");
+                diag::debug!("axes.{axis}: no axis property {key:?}");
                 continue;
             };
             out.entry(flat.to_string()).or_insert_with(|| value.clone());
