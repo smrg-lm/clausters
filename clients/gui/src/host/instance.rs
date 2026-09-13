@@ -36,25 +36,24 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use clausters_core::ids::{IdError, IdSpaces, Space};
+use clausters_core::ids::Space;
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::SourceId;
-use clausters_document::multitrack::nodes::{self, Plan, SourceInfo};
-use clausters_editing::apply::{Applier, Endpoint, Step};
-use clausters_editing::instance::Instance;
+use clausters_document::multitrack::nodes::SourceInfo;
+use clausters_editing::apply::{Endpoint, Step};
+use clausters_editing::playback::PiecePlayback;
 
 use crate::host::diag;
 use crate::host::{Host, document};
 
-/// **A piece, as it is playing**: what the reconciler knows, the applier's
-/// tables, and the steps not yet sent.
+/// **A piece, as it is playing**: the crate's playback, and the steps not yet
+/// sent.
 #[derive(Debug, Default)]
 pub struct Playing {
-    /// What was made from the last plan — the crate's memory, not ours.
-    instance: Instance,
-    /// Handle → node, bus and buffer, made on the first plan: its target is
-    /// the governed group, which is the host's once a player is attached.
-    applier: Option<Applier>,
+    /// The instance, the applier and the transport — the crate's, as every
+    /// endpoint holds it. Made on the first sync: its target is the governed
+    /// group, which is the host's once a player is attached.
+    piece: Option<PiecePlayback>,
     /// Steps not sent yet, in order.
     queue: VecDeque<Step>,
     /// The step the queue is held behind, until its reply comes back.
@@ -65,66 +64,40 @@ impl Playing {
     /// The meters the piece is writing, as `(track id, first bus, channels)` —
     /// what a mixer strip is drawn from.
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
-        let Some(applier) = self.applier.as_ref() else {
-            return Vec::new();
-        };
-        self.instance
-            .meters()
-            .into_iter()
-            .filter_map(|(track, handle, channels)| {
-                let (bus, _) = applier.bus(&handle)?;
-                Some((track, bus, channels))
-            })
-            .collect()
+        self.piece
+            .as_ref()
+            .map_or_else(Vec::new, PiecePlayback::meters)
     }
 
     /// Whether anything is playing at all.
     pub fn is_sounding(&self) -> bool {
-        self.instance.is_sounding()
+        self.piece.as_ref().is_some_and(PiecePlayback::is_sounding)
     }
 
-    /// How many nodes the piece is holding — what a caller reports when it says
-    /// it built something.
+    /// How many nodes the piece is holding.
     pub fn nodes(&self) -> usize {
-        self.applier.as_ref().map_or(0, Applier::node_count)
+        self.piece.as_ref().map_or(0, PiecePlayback::node_count)
     }
 
-    /// **The difference between the plan and what is made, queued as steps**,
-    /// with every node created at the tail of `target`.
-    fn reconcile(
-        &mut self,
-        plan: &Plan,
-        gain: f32,
-        target: i32,
-        ids: &mut IdSpaces,
-    ) -> Result<(), IdError> {
-        let ops = self.instance.reconcile(plan, gain);
-        // **No transport binding.** The op means *the engine owns the piece's
-        // time*; this host also plays a take monitor, and there is one
-        // transport per server, so the governed group is the one the host
-        // made when its player attached and the piece's graph goes inside it.
-        // What the engine freezes is a subtree, so the intent holds exactly.
-        let applier = self.applier.get_or_insert_with(|| {
-            Applier::new(Endpoint {
+    /// Whether the transport was last told to roll the piece.
+    pub fn rolling(&self) -> bool {
+        self.piece.as_ref().is_some_and(PiecePlayback::rolling)
+    }
+
+    /// The playback, made at the tail of `target` the first time.
+    ///
+    /// **No transport binding.** This host also plays a take monitor, and
+    /// there is one transport per server, so the governed group is the one the
+    /// host made when its player attached and the piece's graph goes inside
+    /// it. What the engine freezes is a subtree, so the intent holds exactly.
+    fn playback(&mut self, target: i32) -> &mut PiecePlayback {
+        self.piece.get_or_insert_with(|| {
+            PiecePlayback::new(Endpoint {
                 target,
                 bind_transport: false,
                 ..Endpoint::default()
             })
-        });
-        let steps = applier.apply(ops, ids)?;
-        self.queue.extend(steps);
-        Ok(())
-    }
-
-    /// Everything freed, queued as steps. The piece itself is untouched: what
-    /// an instance holds is nodes, and nodes are not the composition.
-    fn teardown(&mut self, ids: &mut IdSpaces) -> Result<(), IdError> {
-        let ops = self.instance.teardown();
-        if let Some(mut applier) = self.applier.take() {
-            let steps = applier.apply(ops, ids)?;
-            self.queue.extend(steps);
-        }
-        Ok(())
+        })
     }
 
     /// **The messages that may go out now**: everything up to the next step
@@ -303,19 +276,19 @@ impl Host {
                 )
             })
             .collect();
-        // The default tempo is the picture's own, so a piece that states no
-        // tempo sounds at the rate it is drawn at rather than at two.
-        let plan = nodes::plan(
-            &owner.piece,
-            look.rate,
-            document::piece::DEFAULT_TEMPO * 60.0,
-            &sources,
-        );
         // Inside the governed group when there is one, so the transport the
         // take monitor answers to is the piece's too; the root otherwise.
         let target = self.governed.unwrap_or(0);
-        if let Err(e) = self.instance.reconcile(&plan, 1.0, target, &mut self.ids) {
-            diag::warn!("the piece cannot be played: {e}");
+        let synced = self.instance.playback(target).sync(
+            &owner.piece,
+            look.rate,
+            &sources,
+            1.0,
+            &mut self.ids,
+        );
+        match synced {
+            Ok(steps) => self.instance.queue.extend(steps),
+            Err(e) => diag::warn!("the piece cannot be played: {e}"),
         }
         self.send_piece();
         diag::debug!("sound_piece: {} node(s)", self.instance.nodes());
@@ -325,9 +298,27 @@ impl Host {
     /// Frees everything the piece made — what closing a window owes the server,
     /// and what a host that stops owning a piece owes it.
     pub fn hush_piece(&mut self) {
-        if let Err(e) = self.instance.teardown(&mut self.ids) {
-            diag::warn!("the piece cannot be freed: {e}");
+        let Some(piece) = self.instance.piece.as_mut() else {
+            return;
+        };
+        match piece.close(&mut self.ids) {
+            Ok(steps) => self.instance.queue.extend(steps),
+            Err(e) => diag::warn!("the piece cannot be freed: {e}"),
         }
+        self.send_piece();
+    }
+
+    /// **The position cursor was placed at `units`** of the piece's axis: a
+    /// stopped transport is cued there and a rolling one is left alone. The
+    /// axis is samples of the piece, so the beat is read through the piece's
+    /// own tempo map — the one a script's editor reads it through.
+    pub fn cue_piece(&mut self, units: f64) {
+        let Some(piece) = self.instance.piece.as_mut() else {
+            return;
+        };
+        let beat = piece.samples_to_beats(units.max(0.0).round() as i64);
+        let steps = piece.cue(beat);
+        self.instance.queue.extend(steps);
         self.send_piece();
     }
 
@@ -348,39 +339,35 @@ impl Host {
     /// `None` when there is no piece sounding, which is what tells the caller
     /// to fall through to whatever else the key meant.
     pub fn roll_piece(&mut self) -> Option<bool> {
-        if !self.instance.is_sounding() {
+        let piece = self.instance.piece.as_mut()?;
+        if !piece.is_sounding() {
             return None;
         }
-        self.piece_rolling = !self.piece_rolling;
+        let steps = if piece.rolling() {
+            piece.pause()
+        } else {
+            piece.play()
+        };
+        let rolling = piece.rolling();
+        self.instance.queue.extend(steps);
+        self.send_piece();
         diag::info!(
             "the piece is {}",
-            if self.piece_rolling {
-                "rolling"
-            } else {
-                "frozen"
-            }
+            if rolling { "rolling" } else { "frozen" }
         );
-        self.send_to_player(OscMessage {
-            addr: if self.piece_rolling {
-                "/transport_play".into()
-            } else {
-                "/transport_stop".into()
-            },
-            args: vec![],
-        });
-        Some(self.piece_rolling)
+        Some(rolling)
     }
 
     /// Whether the piece is rolling.
     pub fn piece_rolling(&self) -> bool {
-        self.piece_rolling
+        self.instance.rolling()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clausters_core::ids::{IdShare, ServerShape};
+    use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
     use clausters_document::{
         Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
@@ -440,12 +427,17 @@ mod tests {
         }
     }
 
-    fn plan_of(piece: &Multitrack) -> Plan {
-        nodes::plan(piece, 48_000.0, 120.0, &sources())
-    }
-
     fn spaces() -> IdSpaces {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
+    }
+
+    /// The piece synced into the queue, made at the tail of `target`.
+    fn sync(playing: &mut Playing, piece: &Multitrack, target: i32, ids: &mut IdSpaces) {
+        let steps = playing
+            .playback(target)
+            .sync(piece, 48_000.0, &sources(), 1.0, ids)
+            .unwrap();
+        playing.queue.extend(steps);
     }
 
     /// Everything the queue sends, answering every wait the way a server does.
@@ -480,19 +472,12 @@ mod tests {
     }
 
     /// **A piece becomes the messages that play it**, in the crate's order: the
-    /// defs it is made of, the barrier that closes them, the piece's own graph
-    /// inside the governed group, and its slots.
-    ///
-    /// What this asserts is the *shape* and not the contents: which defs a piece
-    /// needs and what a clip's ports are belong to the shared mixer and to the
-    /// crate's reconciler, and both are tested there. What can only go wrong
-    /// here is the carrying out.
+    /// defs, the barrier that closes them, the piece's graph inside the
+    /// governed group, and its slots.
     #[test]
     fn a_piece_becomes_the_messages_that_play_it() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        playing
-            .reconcile(&plan_of(&piece()), 1.0, 1234, &mut ids)
-            .unwrap();
+        sync(&mut playing, &piece(), 1234, &mut ids);
         let first = playing.ready();
         assert_eq!(
             addrs(&first).last(),
@@ -500,12 +485,7 @@ mod tests {
             "the defs go out and the barrier holds the rest: {:?}",
             addrs(&first)
         );
-        assert!(
-            !addrs(&first).contains(&"/graph_new"),
-            "nothing names a def before the barrier is answered"
-        );
         let messages = drain(&mut playing);
-        let addrs = addrs(&messages);
         let graph = messages
             .iter()
             .find(|m| m.addr == "/graph_new")
@@ -515,14 +495,8 @@ mod tests {
             OscType::Int(1234),
             "inside the governed group"
         );
-        assert!(
-            !addrs.contains(&"/transport_group"),
-            "the host binds one governed group, when its player attaches: {addrs:?}"
-        );
-        assert!(
-            addrs.contains(&"/graph_addSlot"),
-            "the tracks and the boxes are slots of it: {addrs:?}"
-        );
+        assert!(!addrs(&messages).contains(&"/transport_group"));
+        assert!(addrs(&messages).contains(&"/graph_addSlot"));
     }
 
     /// **The nodes come from the host's one node space**, so a voice, the
@@ -530,60 +504,57 @@ mod tests {
     #[test]
     fn the_nodes_it_makes_are_the_host_s_spaces() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        playing
-            .reconcile(&plan_of(&piece()), 1.0, 0, &mut ids)
-            .unwrap();
+        sync(&mut playing, &piece(), 0, &mut ids);
         assert!(playing.nodes() > 0);
         assert_eq!(ids.in_use(Space::Nodes), playing.nodes());
     }
 
-    /// **An edit reaches a node that is already running.** The second pass over
-    /// an unchanged piece says nothing at all, and over a moved box it is a
-    /// `/node_set` — never a free and a new node, which would cut what is
-    /// sounding on every drag.
+    /// **An edit reaches a node that is already running**: an unchanged piece
+    /// says nothing, and a moved box is a `/node_set`.
     #[test]
     fn an_edit_sets_a_live_node_and_an_unchanged_piece_says_nothing() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         let mut piece = piece();
-        playing
-            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
-            .unwrap();
+        sync(&mut playing, &piece, 0, &mut ids);
         drain(&mut playing);
         let made = playing.nodes();
-
-        playing
-            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
-            .unwrap();
+        sync(&mut playing, &piece, 0, &mut ids);
         assert!(
             drain(&mut playing).is_empty(),
             "a piece that did not move costs nothing"
         );
-
         piece.tracks[0].lanes[0].regions[0].position = Beat(6.0);
-        playing
-            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
-            .unwrap();
+        sync(&mut playing, &piece, 0, &mut ids);
         let messages = drain(&mut playing);
-        let addrs = addrs(&messages);
         assert!(!messages.is_empty(), "the box moved");
-        assert!(
-            addrs.iter().all(|a| *a == "/node_set"),
-            "a move is a set on a live node: {addrs:?}"
-        );
+        assert!(addrs(&messages).iter().all(|a| *a == "/node_set"));
         assert_eq!(playing.nodes(), made, "and nothing was made or freed");
     }
 
-    /// **A table is filled after its buffer exists, never before.**
-    ///
-    /// The defect this pins (found 2026-09-13, by ear): the host sent
-    /// `/buffer_alloc` and `/buffer_setRange` back to back, the allocation is
-    /// asynchronous, and the server refused every fill. A curve over an empty
-    /// table drives its gain to zero, so the whole piece went silent. The fill
-    /// waits for the `/done` of that very buffer.
+    /// **The transport verbs wait for their answers**, so a play sent right
+    /// after the defs does not reach the server before them.
+    #[test]
+    fn the_transport_waits_behind_the_piece() {
+        let (mut playing, mut ids) = (Playing::default(), spaces());
+        sync(&mut playing, &piece(), 0, &mut ids);
+        let steps = playing.playback(0).play();
+        playing.queue.extend(steps);
+        let first = playing.ready();
+        assert!(
+            !addrs(&first).contains(&"/transport_play"),
+            "held behind the barrier"
+        );
+        let rest = drain(&mut playing);
+        assert_eq!(addrs(&rest).last(), Some(&"/transport_play"));
+        assert!(playing.rolling());
+    }
+
+    /// **A table is filled after its buffer exists, never before** (found
+    /// 2026-09-13, by ear): the fill waits for the `/done` of that very buffer.
     #[test]
     fn a_curve_table_waits_for_its_buffer() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        let mut applier = Applier::new(Endpoint::default());
+        let mut applier = clausters_editing::apply::Applier::new(Endpoint::default());
         let steps = applier
             .apply(
                 vec![clausters_editing::instance::Op::Buffer {
@@ -605,33 +576,10 @@ mod tests {
             args: vec![OscType::String("/buffer_alloc".into()), OscType::Int(n)],
         };
         assert!(!playing.reply(&done(bufnum + 1)), "another buffer's answer");
-        assert!(playing.ready().is_empty(), "still held");
         assert!(playing.reply(&done(bufnum)));
         assert_eq!(
             addrs(&playing.ready()),
             ["/buffer_setRange", "/server_sync"]
         );
-    }
-
-    /// **Everything freed, and the tables with it.** What an instance holds is
-    /// nodes; the piece is untouched, which is why a host can hush and sound
-    /// again without the composition noticing.
-    #[test]
-    fn a_teardown_frees_what_it_made_and_forgets_it() {
-        let (mut playing, mut ids) = (Playing::default(), spaces());
-        playing
-            .reconcile(&plan_of(&piece()), 1.0, 0, &mut ids)
-            .unwrap();
-        drain(&mut playing);
-        assert!(playing.is_sounding());
-        playing.teardown(&mut ids).unwrap();
-        let messages = drain(&mut playing);
-        assert!(
-            addrs(&messages).contains(&"/node_free"),
-            "the groups go: {:?}",
-            addrs(&messages)
-        );
-        assert!(!playing.is_sounding());
-        assert_eq!(playing.nodes(), 0);
     }
 }

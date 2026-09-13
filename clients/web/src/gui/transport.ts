@@ -280,6 +280,22 @@ export class Transport {
     }
 
     /**
+     * **What the engine was just told**, on the piece: whether it rolls and
+     * where it stands, remembered as {@link Transport.refresh} would have
+     * answered, and every target's line drawn from the piece's position again.
+     *
+     * For a caller that sent the transport's commands itself — a playback whose
+     * verbs are the shared crate's — so the answers this object gives before
+     * the next refresh are the ones the commands made true.
+     */
+    reported({ playing, positionSample }: { playing?: boolean; positionSample?: number }): this {
+        if (playing !== undefined) this.piece.playing = playing;
+        if (positionSample !== undefined) this.piece.positionSample = positionSample;
+        this.pieceAnchor();
+        return this;
+    }
+
+    /**
      * Samples of the piece → beats, through the same map
      * {@link Transport.beatsToSamples} goes the other way — so what the engine
      * reports and what the ruler draws are one function read in two directions.

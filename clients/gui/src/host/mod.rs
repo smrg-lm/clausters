@@ -717,10 +717,6 @@ pub struct Host {
     /// and the allocators a standalone host keeps as any other endpoint does
     /// ([`instance`]).
     instance: instance::Playing,
-    /// Whether the transport is rolling the piece. Held rather than asked of
-    /// the server for the same reason the monitor's `rolling` is: the key that
-    /// toggles it has to know which way it is about to go.
-    piece_rolling: bool,
     /// Whether this host **drives the server's transport** — whether it is the
     /// one that bound the governed group (`play::take_group_messages`).
     ///
@@ -840,7 +836,6 @@ impl Host {
             governed: None,
             playing: None,
             instance: instance::Playing::default(),
-            piece_rolling: false,
             owns_transport: false,
             outbox: Default::default(),
             status: Default::default(),
@@ -2018,8 +2013,8 @@ impl Host {
             self.owner.is_some()
         );
         // Read before the owner is borrowed: whether the transport is rolling is
-        // the host's, and the locate arm below asks it.
-        let rolling = self.piece_rolling;
+        // the piece's playback's, and the locate arm below asks it.
+        let rolling = self.instance.rolling();
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -2080,7 +2075,7 @@ impl Host {
                     Some(OscType::Long(v)) => *v as f64,
                     _ => return false,
                 };
-                self.locate(at.max(0.0) as u64);
+                self.cue_piece(at);
                 return true;
             }
             // **The piece stated whole**: one payload naming every clip, every

@@ -2,36 +2,6 @@
 /* eslint-disable */
 
 /**
- * JS face: **what is sounding of a piece**, held across edits.
- *
- * The instance projection's state. The other two projections are functions of
- * a structure alone and this one is a function of a structure *and* of what a
- * server already holds: a piece plays itself from the transport, so the nodes
- * have to stay, and what this answers is the **difference**.
- * **The one applier**: the instance's operations as the steps that carry them
- * out, allocating from a client's [`JsIdSpaces`].
- */
-export class Applier {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * The steps that carry out `ops` (JSON), allocating from `ids`:
-     * `{"steps": [...]}` or `{"error": "..."}`.
-     */
-    apply(ops: string, ids: IdSpaces): string;
-    /**
-     * The control-bus run a handle became, as `[first, channels]`.
-     */
-    bus(handle: string): Float64Array | undefined;
-    /**
-     * An applier making its nodes at the tail of `target`, binding the
-     * piece's graph to the transport when `bind_transport`, with `chunk`
-     * samples to a `/buffer_setRange`.
-     */
-    constructor(target: number, bind_transport: boolean, chunk: number);
-}
-
-/**
  * One composition, held in Rust — the JS face of
  * [`clausters_document::Document`].
  */
@@ -348,6 +318,67 @@ export class Instance {
      * and nodes are not the composition.
      */
     teardown(): string;
+}
+
+/**
+ * **One piece, as it is playing**: its instance, its applier and its
+ * transport, answering every verb as steps (JSON).
+ */
+export class PiecePlayback {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * A beat as a sample of the piece.
+     */
+    beatsToSamples(beat: number): number;
+    /**
+     * The steps that free everything the piece made.
+     */
+    close(ids: IdSpaces): string;
+    /**
+     * The steps that cue a stopped transport at `beat`.
+     */
+    cue(beat: number): string;
+    /**
+     * The steps that put the transport at `beat`.
+     */
+    locate(beat: number): string;
+    /**
+     * The meters the piece writes, as JSON.
+     */
+    meters(): string;
+    /**
+     * A playback making its nodes at the tail of `target`.
+     */
+    constructor(target: number, bind_transport: boolean, chunk: number);
+    /**
+     * The steps that freeze the piece and zero its meters.
+     */
+    pause(): string;
+    /**
+     * The steps that roll the transport.
+     */
+    play(): string;
+    /**
+     * Whether the transport was last told to roll.
+     */
+    rolling(): boolean;
+    /**
+     * A sample of the piece as a beat.
+     */
+    samplesToBeats(samples: number): number;
+    /**
+     * Says whether the transport is rolling.
+     */
+    setRolling(rolling: boolean): void;
+    /**
+     * The steps that halt and go back to the mark.
+     */
+    stop(mark: number): string;
+    /**
+     * The steps that make what sounds be what the piece says.
+     */
+    sync(piece: string, sample_rate: number, sources: string, gain: number, ids: IdSpaces): string;
 }
 
 /**
@@ -1030,6 +1061,18 @@ export function domainCoalesceKey(domain: string, payload: string): string;
 export function domainEdit(domain: string, state: string, payload: string): string;
 
 /**
+ * JS face: **what is sounding of a piece**, held across edits.
+ *
+ * The instance projection's state. The other two projections are functions of
+ * a structure alone and this one is a function of a structure *and* of what a
+ * server already holds: a piece plays itself from the transport, so the nodes
+ * have to stay, and what this answers is the **difference**.
+ * The tempo a piece that states none is read and drawn at, in beats per
+ * minute.
+ */
+export function editingDefaultBpm(): number;
+
+/**
  * JS face: **what a gesture means, in a structure's own vocabulary** — the
  * edit ingestion, as a JSON string.
  *
@@ -1460,11 +1503,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_applier_free: (a: number, b: number) => void;
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
+    readonly __wbg_pieceplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -1473,9 +1516,6 @@ export interface InitOutput {
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
-    readonly applier_apply: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly applier_bus: (a: number, b: number, c: number) => [number, number];
-    readonly applier_new: (a: number, b: number, c: number) => number;
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -1499,6 +1539,7 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly editingDefaultBpm: () => number;
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
@@ -1554,6 +1595,19 @@ export interface InitOutput {
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
     readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
     readonly patchCompile: (a: number, b: number) => [number, number, number, number];
+    readonly pieceplayback_beatsToSamples: (a: number, b: number) => number;
+    readonly pieceplayback_close: (a: number, b: number) => [number, number];
+    readonly pieceplayback_cue: (a: number, b: number) => [number, number];
+    readonly pieceplayback_locate: (a: number, b: number) => [number, number];
+    readonly pieceplayback_meters: (a: number) => [number, number];
+    readonly pieceplayback_new: (a: number, b: number, c: number) => number;
+    readonly pieceplayback_pause: (a: number) => [number, number];
+    readonly pieceplayback_play: (a: number) => [number, number];
+    readonly pieceplayback_rolling: (a: number) => number;
+    readonly pieceplayback_samplesToBeats: (a: number, b: number) => number;
+    readonly pieceplayback_setRolling: (a: number, b: number) => void;
+    readonly pieceplayback_stop: (a: number, b: number) => [number, number];
+    readonly pieceplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pointsProps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
@@ -1672,8 +1726,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

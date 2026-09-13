@@ -5,11 +5,13 @@ what a piece looks like and `clausters.gui.editing.MultitrackDomain` says what a
 gesture makes of it; this says what it is heard as.
 
 **It decides nothing.** What a track and a clip *are* on the server is the
-shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
-strip under all of them); which of them a given piece needs is the document
-crate's; and the **difference** between that and what is already sounding is
-`clausters._native.Instance`, in the shared crate; and the messages that carry
-it out are the crate's applier. So what is left here is what a language
+shared core's; which of them a given piece needs, the difference between that
+and what is already sounding, the messages that carry it out and **how the piece
+is played** -- the tempo a piece that states none is read at, the sample a beat
+is when the transport is located, what play, pause, stop and cue send, and that a
+paused meter is zeroed -- are `clausters._native.PiecePlayback`, in the shared
+crate. The GUI host playing a session with no script behind it holds the same
+object, so the two are one program. What is left here is what a language
 genuinely owns: a socket, and waiting on it.
 
 # Why a diff and not a rebuild
@@ -24,18 +26,15 @@ again -- which is the reconciler's rule and is written down there.
 
 # Steps: the crate says what waits
 
-An operation never carries a node id, a bus index or a buffer number. The
-crate's applier (`clausters._native.Applier`) keeps the table from each
-operation's handle to what it became, allocates those from the server's id
-spaces, and answers **steps**: a message to send, a ``/done`` the rest waits
-for, a barrier. A buffer's fill waiting for its allocation is one of those
-steps, stated once, and every endpoint -- this client, the page and the GUI
-host playing a piece on its own -- carries out the same list.
+A verb answers **steps**: a message to send, a ``/done`` the rest waits for, a
+barrier. A buffer's fill waiting for its allocation is one of those steps,
+stated once, and every endpoint carries out the same list.
 """
 
 from array import array
 
 from ... import _native
+from ...base import _osclib
 from ...errors import CommandError
 from ..transport import Transport
 
@@ -64,20 +63,16 @@ class Playback:
         self.editor = editor
         self.server = server
         self.gain = float(gain)
-        #: What is sounding, as the crate holds it. It answers the difference
-        #: between that and the piece; nothing here decides what a difference
-        #: is.
-        self._instance = _native.Instance()
-        #: The operations as steps, and the table from handle to what each
-        #: became -- the crate's, as the instance is.
-        self._applier = _native.Applier(chunk=server._bulk_chunk())
+        #: The piece as it is playing -- the crate's, as the host's is.
+        self._piece = _native.PiecePlayback(chunk=server._bulk_chunk())
         # Node ids come back on their `/node_end`, which only a registered
         # client hears.
         server._ensure_recycler()
         bridge = editor.bridge
-        #: The piece's transport. ``head_clock="piece"`` says it once: the verbs
-        #: become the server's and the host draws the line from the engine's own
-        #: position instead of an anchor kept in step here.
+        #: The piece's transport, as the engine last reported it, and the line
+        #: the host draws from its position. ``head_clock="piece"`` says it
+        #: once: the host draws the line from the engine's own position instead
+        #: of an anchor kept in step here.
         self.transport = Transport(
             editor._host,
             lambda: [] if editor.piece_widget is None else [editor.piece_widget],
@@ -86,7 +81,7 @@ class Playback:
             extent=lambda: editor.structure.end)
         self.transport.server = server
         self.sync()
-        self.transport.locate(editor.cursor or 0.0)
+        self.locate(editor.cursor or 0.0)
 
     def attach(self, host) -> None:
         """The piece went on screen: draw the line from the engine's own
@@ -102,7 +97,7 @@ class Playback:
             return
         self.transport.host = host
         host.head_clock("piece")
-        self.transport.locate(self.transport.position)
+        self.locate(self.transport.position)
 
     # ---- the instance ----
 
@@ -113,16 +108,10 @@ class Playback:
         that waits after it.
 
         What the host reads every frame, and the reason a level that moves every
-        block costs no message. The crate says which run belongs to which track;
-        the buses are this client's, because it is this client that allocates
-        them.
+        block costs no message.
         """
-        out = {}
-        for row in self._instance.meters():
-            bus = self._applier.bus(row["bus"])
-            if bus is not None:
-                out[row["track"]] = (bus[0], int(row["channels"]))
-        return out
+        return {row["track"]: (int(row["bus"]), int(row["channels"]))
+                for row in self._piece.meters()}
 
     def sync(self) -> None:
         """Make what sounds be what is drawn.
@@ -132,20 +121,9 @@ class Playback:
         box without hearing the rest of the piece restart.
         """
         bridge = self.editor.bridge
-        self.apply(self._instance.reconcile(
-            self.editor.structure.write(), bridge.rate, bridge.bpm,
-            bridge.sources.table(), self.gain))
-
-    def apply(self, ops: list) -> None:
-        """Do what the reconciler says, in order.
-
-        **The order is the answer, and so are the waits.** A def before the
-        graph that names it, a buffer's fill after its allocation answered, a
-        node freed before the one that replaces it is made -- all of that is the
-        crate's, stated as steps, and this only sends them and waits where a
-        step says to.
-        """
-        self._run(self._applier.apply(ops, self.server.ids))
+        self._run(self._piece.sync(
+            self.editor.structure.write(), bridge.rate,
+            bridge.sources.table(), self.gain, self.server.ids))
 
     def _run(self, steps: list) -> None:
         """Send each step, waiting where one says to."""
@@ -186,31 +164,16 @@ class Playback:
     def play(self):
         """Play, or continue a paused pass: the engine keeps where it stopped,
         so resuming is the same verb as starting and nothing is re-cued."""
-        self.transport.play(self.server)
+        self._run(self._piece.play())
+        self.transport.reported(playing=True)
         return self
 
     def pause(self):
-        """Freeze the piece where it stands, with every node's state intact."""
-        self.transport.pause()
-        self._silence_meters()
+        """Freeze the piece where it stands, with every node's state intact,
+        and its meters at zero."""
+        self._run(self._piece.pause())
+        self.transport.reported(playing=False)
         return self
-
-    def _silence_meters(self) -> None:
-        """**A frozen meter must not go on claiming a level.**
-
-        The transport freezes the piece's whole subtree, so a paused meter is
-        starved of time and its bus keeps the last value it wrote -- forever.
-        A picture of what the piece *was* doing then reads as what it is doing,
-        which is the one thing a meter may never say. Nothing on the server can
-        move it (a frozen node gets no time and a fall is time), so whoever
-        stopped it says so: the buses go to zero and the strip falls empty,
-        which is what is true of a piece that is not sounding.
-
-        The mark goes with the level. A held peak is "the loudest thing lately"
-        and lately ended when the transport did.
-        """
-        for bus, channels in self.meters.values():
-            self.server.send_msg("/bus_fill", bus, 2 * channels, 0.0)
 
     def stop(self):
         """Halt and go back to **the mark**, not to the top.
@@ -219,14 +182,17 @@ class Playback:
         cursor is, so the next play starts from the mark the reader put down
         rather than from wherever the last pass happened to end.
         """
-        self.transport.pause()
-        self._silence_meters()
-        return self.locate(self.editor.cursor or 0.0)
+        mark = self.editor.cursor or 0.0
+        self._run(self._piece.stop(mark))
+        self.transport.reported(playing=False,
+                                position_sample=self._piece.beats_to_samples(mark))
+        return self
 
     def locate(self, beat: float):
         """Seek to ``beat``. The readers seek in the engine, so nothing is
         re-cued and what is sounding carries on from there."""
-        self.transport.locate(beat)
+        self._run(self._piece.locate(beat))
+        self.transport.reported(position_sample=self._piece.beats_to_samples(beat))
         return self
 
     def cue(self, beat: float):
@@ -237,20 +203,25 @@ class Playback:
         nothing puts the position cursor down, which is where the next play
         starts; moving the mark mid-pass must not move the music.
         """
-        if not self.playing:
-            self.locate(beat)
+        self._piece.set_rolling(self.playing)
+        steps = self._piece.cue(beat)
+        if steps:
+            self._run(steps)
+            self.transport.reported(position_sample=self._piece.beats_to_samples(beat))
         return self
 
     def close(self):
         """Free the piece's instance. The piece itself is untouched: what a
         playback holds is nodes, and nodes are not the composition."""
-        self.apply(self._instance.teardown())
+        self._run(self._piece.close(self.server.ids))
 
 
 def _arg(arg: dict):
     """One step argument as the value `send_msg` encodes to its tag."""
     if "i" in arg:
         return int(arg["i"])
+    if "h" in arg:
+        return _osclib.Int64(int(arg["h"]))
     if "f" in arg:
         return float(arg["f"])
     if "b" in arg:

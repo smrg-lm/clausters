@@ -270,7 +270,7 @@ pub fn track_mute(piece: &Multitrack, track: &Track) -> f32 {
 /// A piece that never said a tempo did not say one, and the document refuses to
 /// invent 120 — that would be the format deciding a musical question. So the
 /// default arrives from the caller, who is the one with a reason to have it.
-fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
+pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
     let changes: Vec<clausters_core::tempomap::TempoChange> = piece
         .tempo
         .iter()

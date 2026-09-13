@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Applier, IdSpaces, multitrackPlan } from "../src/core/clausters_core_web.js";
+import { multitrackPlan, PiecePlayback } from "../src/core/clausters_core_web.js";
 import {
     MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
@@ -922,17 +922,16 @@ test("a metered track names the buses the host reads", () => {
     assert.deepEqual(props(ed).meters, ["10", 40, 42, 2]);
 });
 
-test("the playback carries out what the reconciler says", async () => {
+test("the playback sends the crate's steps and waits where they say", async () => {
     // **What is left in a client is a socket, and waiting on it.**
     //
-    // What a difference *is* is the crate's (`Instance`), and so are the
-    // messages that carry it out and what they wait for (`Applier`), both
-    // tested there because they are one implementation for every endpoint.
-    // This is the other half: each step is sent, a send whose `/done` the rest
-    // waits for is one command, and a barrier is a sync.
+    // What a piece needs, the messages that carry it out and how it is played
+    // are the crate's (`PiecePlayback`), tested there because they are one
+    // implementation for every endpoint. This is the other half: a send whose
+    // `/done` the rest waits for is one command, a barrier is a sync, and a
+    // 64-bit sample goes out as one.
     const log: unknown[][] = [];
     const server = {
-        ids: new IdSpaces(8192, 1024, 2, 16384, 4096, 0, 1),
         sendMsg: (addr: string, ...args: unknown[]) => log.push(["send", addr, ...args]),
         command: async (addr: string, args: unknown[]) => {
             log.push(["command", addr, ...args]);
@@ -944,19 +943,35 @@ test("the playback carries out what the reconciler says", async () => {
         },
     };
     const playback = Object.create(Playback.prototype) as Playback;
-    const held = playback as unknown as { server: unknown; applier: Applier };
+    const held = playback as unknown as {
+        server: unknown;
+        run: (answer: string) => Promise<void>;
+    };
     held.server = server;
-    held.applier = new Applier(0, true, 8192);
 
-    await playback.apply([
-        { op: "buffer", handle: "curve:5", samples: [0.5, 1.0] },
-        { op: "bus", handle: "curvebus:5", channels: 1 },
-    ]);
+    await held.run(JSON.stringify({
+        steps: [
+            { send: { addr: "/buffer_alloc", args: [{ i: 3 }, { i: 2 }, { i: 1 }] } },
+            { await: { command: "/buffer_alloc", index: 3 } },
+            { send: { addr: "/buffer_setRange", args: [{ i: 3 }, { i: 0 }, { b: [0.5, 1.0] }] } },
+            { sync: 1 },
+        ],
+    }));
     assert.deepEqual(
         log.map((entry) => entry.slice(0, 2)),
         [["command", "/buffer_alloc"], ["send", "/buffer_setRange"], ["sync"]],
         "the fill waits for the allocation",
     );
-    assert.equal(held.applier.bus("curvebus:5")?.[1], 1);
-    assert.equal(server.ids.inUse("buffers"), 1, "the ids are the server's");
+
+    const piece = new PiecePlayback(0, true, 8192);
+    log.length = 0;
+    await held.run(piece.locate(2.0));
+    assert.equal(log.length, 1);
+    assert.deepEqual(log[0]!.slice(0, 2), ["command", "/transport_locateSample"]);
+    assert.deepEqual(
+        log[0]![2],
+        ["h", BigInt(piece.beatsToSamples(2.0))],
+        "a sample rides as 64 bits",
+    );
 });
+

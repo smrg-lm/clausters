@@ -332,81 +332,104 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **The one applier**: the instance's operations as the steps that carry
-/// them out, allocating from a client's id spaces.
-///
-/// A handle, because it holds the table from each operation's handle to the
-/// node, bus or buffer it became. Free it with
-/// [`clausters_editing_applier_free`].
-pub struct FfiApplier(std::sync::Mutex<clausters_editing::apply::Applier>);
+/// **The tempo a piece that states none is read and drawn at**, in beats per
+/// minute — the one default every endpoint takes.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_editing_default_bpm() -> f64 {
+    clausters_editing::playback::DEFAULT_BPM
+}
 
-/// A new applier making its nodes at the tail of `target`; `bind_transport`
+/// **One piece, as it is playing**: its instance, its applier and its
+/// transport, answering every verb as steps. Free it with
+/// [`clausters_editing_playback_free`].
+pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::PiecePlayback>);
+
+/// A new playback making its nodes at the tail of `target`; `bind_transport`
 /// nonzero binds the piece's graph to the transport, and `chunk` is how many
 /// samples one `/buffer_setRange` carries.
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_editing_applier_new(
+pub extern "C" fn clausters_editing_playback_new(
     target: i32,
     bind_transport: i32,
     chunk: usize,
-) -> *mut FfiApplier {
-    use clausters_editing::apply::{Applier, Endpoint};
-    Box::into_raw(Box::new(FfiApplier(std::sync::Mutex::new(Applier::new(
-        Endpoint {
+) -> *mut FfiPlayback {
+    use clausters_editing::apply::Endpoint;
+    use clausters_editing::playback::PiecePlayback;
+    Box::into_raw(Box::new(FfiPlayback(std::sync::Mutex::new(
+        PiecePlayback::new(Endpoint {
             target,
             bind_transport: bind_transport != 0,
             chunk: chunk.max(1),
-        },
-    )))))
+        }),
+    ))))
 }
 
-/// Frees an applier created by [`clausters_editing_applier_new`] (null is a
-/// no-op).
+/// Frees a playback created by [`clausters_editing_playback_new`] (null is a
+/// no-op). The bookkeeping, not the nodes: a caller that means to stop the
+/// sound closes it first and sends what that answers.
 ///
 /// # Safety
-/// `a` must be a pointer from `clausters_editing_applier_new`, not yet freed.
+/// `p` must be a pointer from `clausters_editing_playback_new`, not yet freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_applier_free(a: *mut FfiApplier) {
-    if !a.is_null() {
-        // SAFETY: caller guarantees `a` came from Box::into_raw above.
-        drop(unsafe { Box::from_raw(a) });
+pub unsafe extern "C" fn clausters_editing_playback_free(p: *mut FfiPlayback) {
+    if !p.is_null() {
+        // SAFETY: caller guarantees `p` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(p) });
     }
 }
 
-/// **The steps that carry out `ops`**, allocating from `ids`: `{"steps": [...]}`
-/// — `{"send": {addr, args}}`, `{"await": {command, index}}`, `{"sync": id}` —
-/// or `{"error": "..."}`.
-///
-/// Sizes with a null `out` and fills with a second call; the applier's table
-/// and the id spaces change only on the call that fills.
+/// Runs a verb against a copy and adopts the copy only on the call that fills:
+/// a sizing pass changes nothing.
 ///
 /// # Safety
-/// `a` must be null or a live applier, `ids` null or a live id-spaces handle,
-/// `ops` null or readable for `ops_len` bytes, and `out` null or writable for
+/// `p` must be null or a live playback, and `out` null or writable for
 /// `out_cap` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_applier_apply(
-    a: *mut FfiApplier,
-    ops: *const u8,
-    ops_len: usize,
+unsafe fn playback_verb(
+    p: *mut FfiPlayback,
+    out: *mut u8,
+    out_cap: usize,
+    verb: impl FnOnce(&mut clausters_editing::playback::PiecePlayback) -> String,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(playback) = (unsafe { p.as_ref() }) else {
+        return 0;
+    };
+    let Ok(mut held) = playback.0.lock() else {
+        return 0;
+    };
+    let mut next = held.clone();
+    let answer = verb(&mut next);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+            *held = next;
+        })
+    }
+}
+
+/// Runs a verb that allocates or releases ids, against copies of both.
+///
+/// # Safety
+/// As [`playback_verb`], and `ids` null or a live id-spaces handle.
+unsafe fn playback_ids_verb(
+    p: *mut FfiPlayback,
     ids: *mut crate::registry::FfiIdSpaces,
     out: *mut u8,
     out_cap: usize,
+    verb: impl FnOnce(
+        &mut clausters_editing::playback::PiecePlayback,
+        &mut clausters_core::ids::IdSpaces,
+    ) -> String,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(applier), Some(spaces), Some(ops)) =
-        (unsafe { a.as_ref() }, unsafe { ids.as_ref() }, unsafe {
-            crate::document::text(ops, ops_len)
-        })
-    else {
+    let (Some(playback), Some(spaces)) = (unsafe { p.as_ref() }, unsafe { ids.as_ref() }) else {
         return 0;
     };
-    let (Ok(mut held), Ok(mut spaces)) = (applier.0.lock(), spaces.0.lock()) else {
+    let (Ok(mut held), Ok(mut spaces)) = (playback.0.lock(), spaces.0.lock()) else {
         return 0;
     };
-    // Against copies, for the instance's reason: a sizing pass that allocated
-    // would leave ids taken that no step ever names.
     let (mut next, mut next_ids) = (held.clone(), spaces.clone());
-    let answer = clausters_editing::apply::apply_json(&mut next, &ops, &mut next_ids);
+    let answer = verb(&mut next, &mut next_ids);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::document::fill(answer.as_bytes(), out, out_cap, || {
@@ -416,39 +439,229 @@ pub unsafe extern "C" fn clausters_editing_applier_apply(
     }
 }
 
-/// **The control-bus run a handle became**: its first bus into `out[0]` and
-/// its channels into `out[1]`, and 0; -1 for a handle that is no bus.
+/// **Makes what sounds be what the piece says**: the steps, as JSON
+/// (`{"steps": [...]}` or `{"error": "..."}`), allocating from `ids`. The piece
+/// is the document's JSON and `sources` the table of source id → buffer and
+/// channels. Sizes with a null `out` and fills with a second call.
 ///
 /// # Safety
-/// `a` must be null or a live applier, `handle` readable for `handle_len`
-/// bytes, and `out` writable for two `i64`.
+/// `p` and `ids` null or live, `piece` and `sources` null or readable for their
+/// lengths, `out` null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_applier_bus(
-    a: *mut FfiApplier,
-    handle: *const u8,
-    handle_len: usize,
-    out: *mut i64,
-) -> i32 {
+pub unsafe extern "C" fn clausters_editing_playback_sync(
+    p: *mut FfiPlayback,
+    piece: *const u8,
+    piece_len: usize,
+    sample_rate: f64,
+    sources: *const u8,
+    sources_len: usize,
+    gain: f32,
+    ids: *mut crate::registry::FfiIdSpaces,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(applier), Some(handle)) = (unsafe { a.as_ref() }, unsafe {
-        crate::document::text(handle, handle_len)
-    }) else {
-        return -1;
+    let (Some(piece), Some(sources)) =
+        (unsafe { crate::document::text(piece, piece_len) }, unsafe {
+            crate::document::text(sources, sources_len)
+        })
+    else {
+        return 0;
     };
-    let Ok(held) = applier.0.lock() else {
-        return -1;
-    };
-    match held.bus(&handle) {
-        Some((first, channels)) if !out.is_null() => {
-            // SAFETY: caller guarantees `out` is writable for two i64.
-            unsafe {
-                *out = i64::from(first);
-                *out.add(1) = channels as i64;
-            }
-            0
-        }
-        _ => -1,
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_ids_verb(p, ids, out, out_cap, |playback, ids| {
+            clausters_editing::playback::sync_json(
+                playback,
+                &piece,
+                sample_rate,
+                &sources,
+                gain,
+                ids,
+            )
+        })
     }
+}
+
+/// The steps that roll the transport.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_play(
+    p: *mut FfiPlayback,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.play()))) }
+}
+
+/// The steps that freeze the piece and zero its meters.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_pause(
+    p: *mut FfiPlayback,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.pause()))) }
+}
+
+/// The steps that halt and go back to the mark at beat `mark`.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_stop(
+    p: *mut FfiPlayback,
+    mark: f64,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.stop(mark)))) }
+}
+
+/// The steps that put the transport at `beat`.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_locate(
+    p: *mut FfiPlayback,
+    beat: f64,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.locate(beat)))) }
+}
+
+/// The steps that cue a stopped transport at `beat` — none for a rolling one.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_cue(
+    p: *mut FfiPlayback,
+    beat: f64,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(beat)))) }
+}
+
+/// The steps that free everything the piece made, releasing into `ids`.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_close(
+    p: *mut FfiPlayback,
+    ids: *mut crate::registry::FfiIdSpaces,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_ids_verb(p, ids, out, out_cap, |pb, ids| answer_json(pb.close(ids))) }
+}
+
+/// The meters the piece writes, `[{"track", "bus", "channels"}]`.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_meters(
+    p: *mut FfiPlayback,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_verb(p, out, out_cap, |pb| {
+            clausters_editing::playback::meters_json(pb)
+        })
+    }
+}
+
+/// Says whether the transport is rolling, when the caller learned it from the
+/// engine.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_set_rolling(p: *mut FfiPlayback, rolling: i32) {
+    // SAFETY: caller guarantees `p` is null or live.
+    if let Some(playback) = unsafe { p.as_ref() }
+        && let Ok(mut held) = playback.0.lock()
+    {
+        held.set_rolling(rolling != 0);
+    }
+}
+
+/// Whether the transport was last told to roll: 1 or 0.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_rolling(p: *mut FfiPlayback) -> i32 {
+    // SAFETY: caller guarantees `p` is null or live.
+    unsafe { p.as_ref() }
+        .and_then(|playback| playback.0.lock().ok().map(|held| i32::from(held.rolling())))
+        .unwrap_or(0)
+}
+
+/// A beat as a sample of the piece, through its tempo map.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_beats_to_samples(
+    p: *mut FfiPlayback,
+    beat: f64,
+) -> i64 {
+    // SAFETY: caller guarantees `p` is null or live.
+    unsafe { p.as_ref() }
+        .and_then(|playback| {
+            playback
+                .0
+                .lock()
+                .ok()
+                .map(|held| held.beats_to_samples(beat))
+        })
+        .unwrap_or(0)
+}
+
+/// A sample of the piece as a beat, through the same map.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_samples_to_beats(
+    p: *mut FfiPlayback,
+    samples: i64,
+) -> f64 {
+    // SAFETY: caller guarantees `p` is null or live.
+    unsafe { p.as_ref() }
+        .and_then(|playback| {
+            playback
+                .0
+                .lock()
+                .ok()
+                .map(|held| held.samples_to_beats(samples))
+        })
+        .unwrap_or(0.0)
 }
 
 /// **What one message from the host is** — the conversation's first decision.

@@ -39,6 +39,7 @@ pub mod events;
 pub mod instance;
 pub mod intake;
 pub mod multitrack;
+pub mod playback;
 pub mod points;
 pub mod samples;
 pub mod sources;

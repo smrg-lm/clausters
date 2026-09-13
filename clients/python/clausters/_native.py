@@ -263,20 +263,39 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
-    lib.clausters_editing_applier_new.restype = ctypes.c_void_p
-    lib.clausters_editing_applier_new.argtypes = [
+    lib.clausters_editing_default_bpm.restype = ctypes.c_double
+    lib.clausters_editing_default_bpm.argtypes = []
+    lib.clausters_editing_playback_new.restype = ctypes.c_void_p
+    lib.clausters_editing_playback_new.argtypes = [
         ctypes.c_int32, ctypes.c_int32, ctypes.c_size_t,
     ]
-    lib.clausters_editing_applier_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_applier_apply.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
+    lib.clausters_editing_playback_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_playback_sync.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
+        u8p_early, ctypes.c_size_t, ctypes.c_float, ctypes.c_void_p,
         u8p_early, ctypes.c_size_t,
     ]
-    lib.clausters_editing_applier_apply.restype = ctypes.c_size_t
-    lib.clausters_editing_applier_bus.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64),
+    lib.clausters_editing_playback_sync.restype = ctypes.c_size_t
+    for name in ("play", "pause", "meters"):
+        fn = getattr(lib, f"clausters_editing_playback_{name}")
+        fn.argtypes = [ctypes.c_void_p, u8p_early, ctypes.c_size_t]
+        fn.restype = ctypes.c_size_t
+    for name in ("stop", "locate", "cue"):
+        fn = getattr(lib, f"clausters_editing_playback_{name}")
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_double, u8p_early, ctypes.c_size_t]
+        fn.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_close.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
-    lib.clausters_editing_applier_bus.restype = ctypes.c_int32
+    lib.clausters_editing_playback_close.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_set_rolling.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+    lib.clausters_editing_playback_set_rolling.restype = None
+    lib.clausters_editing_playback_rolling.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_playback_rolling.restype = ctypes.c_int32
+    lib.clausters_editing_playback_beats_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.clausters_editing_playback_beats_to_samples.restype = ctypes.c_int64
+    lib.clausters_editing_playback_samples_to_beats.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_editing_playback_samples_to_beats.restype = ctypes.c_double
     lib.clausters_editing_conversation_read.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
         u8p_early, ctypes.c_size_t,
@@ -1385,15 +1404,22 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
     return json.loads(raw) if raw else None
 
 
-class Applier:
-    """**The one applier**: the instance's operations as the steps that carry
-    them out (`clausters_editing_applier_*`).
+def editing_default_bpm() -> float:
+    """The tempo a piece that states none is read and drawn at, in beats per
+    minute (`clausters_editing_default_bpm`) -- the one default every endpoint
+    takes."""
+    return float(lib().clausters_editing_default_bpm())
 
-    It holds the table from each operation's handle to the node, bus or buffer
-    it became, and allocates those from the client's `IdSpaces`. What it
-    answers is **steps** -- ``{"send": {"addr", "args"}}``, ``{"await":
-    {"command", "index"}}`` after a send whose ``/done`` the rest waits for, and
-    ``{"sync": id}`` for a barrier -- and the caller only sends and waits.
+
+class PiecePlayback:
+    """**One piece, as it is playing** (`clausters_editing_playback_*`): its
+    instance, its applier and its transport, answering every verb as steps.
+
+    A step is ``{"send": {"addr", "args"}}``, ``{"await": {"command",
+    "index"}}`` after a send whose ``/done`` the rest waits for, or ``{"sync":
+    id}`` for a barrier; the caller sends and waits. Nothing about *how* a piece
+    is played is decided by the caller: the default tempo, a locate's sample,
+    what a stop and a pause send.
 
     Args:
         target: the group every node is made at the tail of.
@@ -1403,46 +1429,101 @@ class Applier:
 
     def __init__(self, *, target: int = 0, bind_transport: bool = True,
                  chunk: int = 8192):
-        self._handle = lib().clausters_editing_applier_new(
+        self._handle = lib().clausters_editing_playback_new(
             int(target), 1 if bind_transport else 0, max(1, int(chunk)))
 
     def __del__(self):
-        self.close()
+        self.free()
 
-    def close(self) -> None:
-        """Free the table. Not the nodes: those are the server's."""
+    def free(self) -> None:
+        """Free the bookkeeping. Not the nodes: `close` answers the steps that
+        free those."""
         handle, self._handle = getattr(self, "_handle", None), None
         if handle:
-            lib().clausters_editing_applier_free(ctypes.c_void_p(handle))
+            lib().clausters_editing_playback_free(ctypes.c_void_p(handle))
 
-    def apply(self, ops: list, ids: "IdSpaces") -> list:
-        """The steps that carry out ``ops``, allocating from ``ids``.
-
-        Raises:
-            ValueError: when an id space is exhausted; nothing is allocated
-                and the table is unchanged.
-        """
-        if not self._handle or not ops:
+    def _steps(self, fn, *args) -> list:
+        if not self._handle:
             return []
-        body = json.dumps(ops).encode("utf-8")
-        raw = size_then_fill(lib().clausters_editing_applier_apply,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
-                             ctypes.c_void_p(ids._handle))
+        raw = size_then_fill(fn, ctypes.c_void_p(self._handle), *args)
         answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
         if "error" in answer:
             raise ValueError(answer["error"])
         return answer["steps"]
 
-    def bus(self, handle: str) -> "tuple[int, int] | None":
-        """The control-bus run ``handle`` became, as ``(first, channels)``."""
+    def sync(self, piece: dict, sample_rate: float, sources: dict, gain: float,
+             ids: "IdSpaces") -> list:
+        """The steps that make what sounds be what ``piece`` says, allocating
+        from ``ids``.
+
+        Raises:
+            ValueError: when an id space is exhausted; nothing changes then.
+        """
+        body = json.dumps(piece).encode("utf-8")
+        table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
+        return self._steps(lib().clausters_editing_playback_sync,
+                           as_u8(body), len(body), float(sample_rate),
+                           as_u8(table), len(table), float(gain),
+                           ctypes.c_void_p(ids._handle))
+
+    def play(self) -> list:
+        """The steps that roll the transport."""
+        return self._steps(lib().clausters_editing_playback_play)
+
+    def pause(self) -> list:
+        """The steps that freeze the piece and zero its meters."""
+        return self._steps(lib().clausters_editing_playback_pause)
+
+    def stop(self, mark: float) -> list:
+        """The steps that halt and go back to the mark at beat ``mark``."""
+        return self._steps(lib().clausters_editing_playback_stop, float(mark))
+
+    def locate(self, beat: float) -> list:
+        """The steps that put the transport at ``beat``."""
+        return self._steps(lib().clausters_editing_playback_locate, float(beat))
+
+    def cue(self, beat: float) -> list:
+        """The steps that cue a stopped transport at ``beat`` -- none for a
+        rolling one."""
+        return self._steps(lib().clausters_editing_playback_cue, float(beat))
+
+    def close(self, ids: "IdSpaces") -> list:
+        """The steps that free everything the piece made."""
+        return self._steps(lib().clausters_editing_playback_close,
+                           ctypes.c_void_p(ids._handle))
+
+    def meters(self) -> list:
+        """``[{"track", "bus", "channels"}]``: the meter bus runs by track."""
         if not self._handle:
-            return None
-        name = handle.encode("utf-8")
-        out = (ctypes.c_int64 * 2)()
-        if lib().clausters_editing_applier_bus(ctypes.c_void_p(self._handle),
-                                               as_u8(name), len(name), out) != 0:
-            return None
-        return int(out[0]), int(out[1])
+            return []
+        raw = size_then_fill(lib().clausters_editing_playback_meters,
+                             ctypes.c_void_p(self._handle))
+        return json.loads(raw.decode("utf-8")) if raw else []
+
+    def set_rolling(self, rolling: bool) -> None:
+        """Say whether the transport is rolling, when the engine said so."""
+        if self._handle:
+            lib().clausters_editing_playback_set_rolling(
+                ctypes.c_void_p(self._handle), 1 if rolling else 0)
+
+    def rolling(self) -> bool:
+        """Whether the transport was last told to roll."""
+        return bool(self._handle) and bool(
+            lib().clausters_editing_playback_rolling(ctypes.c_void_p(self._handle)))
+
+    def beats_to_samples(self, beat: float) -> int:
+        """A beat as a sample of the piece, through its tempo map."""
+        if not self._handle:
+            return 0
+        return int(lib().clausters_editing_playback_beats_to_samples(
+            ctypes.c_void_p(self._handle), float(beat)))
+
+    def samples_to_beats(self, samples: int) -> float:
+        """A sample of the piece as a beat, through the same map."""
+        if not self._handle:
+            return 0.0
+        return float(lib().clausters_editing_playback_samples_to_beats(
+            ctypes.c_void_p(self._handle), int(samples)))
 
 
 class Instance:

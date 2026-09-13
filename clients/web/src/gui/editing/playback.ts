@@ -6,12 +6,14 @@
  * says what it is heard as.
  *
  * **It decides nothing.** What a track and a clip *are* on the server is the
- * shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
- * strip under all of them); which of them a given piece needs is the document
- * crate's; and the **difference** between that and what is already sounding is
- * `Instance`, in the shared crate; and the messages that carry it out are the
- * crate's applier. So what is left here is what a language genuinely owns: a
- * socket, and waiting on it.
+ * shared core's; which of them a given piece needs, the difference between that
+ * and what is already sounding, the messages that carry it out and **how the
+ * piece is played** — the tempo a piece that states none is read at, the sample
+ * a beat is when the transport is located, what play, pause, stop and cue send,
+ * and that a paused meter is zeroed — are `PiecePlayback`, in the shared crate.
+ * The GUI host playing a session with no page behind it holds the same object,
+ * so the two are one program. What is left here is what a language genuinely
+ * owns: a socket, and waiting on it.
  *
  * **Why a diff and not a rebuild.** A piece plays itself from the transport:
  * every reader reads the engine's own position, so a locate is no message at all
@@ -34,18 +36,15 @@
  * @module
  */
 
-import { Applier, Instance } from "../../core/clausters_core_web.js";
+import { PiecePlayback } from "../../core/clausters_core_web.js";
 import type { MsgArg } from "../../base/osc.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { GuiHost } from "../host.ts";
 import { Transport } from "../transport.ts";
 import type { MultitrackEditor } from "./multitrack.ts";
 
-/** **One thing to do to the server**, as the reconciler states it. */
-export type Op = Record<string, unknown> & { op: string };
-
 /** One argument of a step, tagged as the crate encoded it. */
-export type StepArg = { i: number } | { f: number } | { s: string } | { b: number[] };
+export type StepArg = { i: number } | { h: number } | { f: number } | { s: string } | { b: number[] };
 
 /** **One step**, as the applier states it. */
 export type Step =
@@ -59,16 +58,10 @@ export class Playback {
     /** The master's own level. */
     readonly gain: number;
     /**
-     * What is sounding, as the crate holds it. It answers the difference
-     * between that and the piece; nothing here decides what a difference is.
+     * The piece as it is playing — the crate's, as the host's is. Made in
+     * `prepare`, which knows how many samples one fill may carry on this server.
      */
-    private readonly instance = new Instance();
-    /**
-     * The operations as steps, and the table from handle to what each became —
-     * the crate's, as the instance is. Made in `prepare`, which knows how many
-     * samples one fill may carry on this server.
-     */
-    private applier: Applier | null = null;
+    private piece: PiecePlayback | null = null;
     readonly transport: Transport;
 
     constructor(
@@ -106,12 +99,12 @@ export class Playback {
      * they can be waited for.
      */
     async prepare(): Promise<this> {
-        this.applier = new Applier(0, true, await this.server.bulkChunk());
+        this.piece = new PiecePlayback(0, true, await this.server.bulkChunk());
         // Node ids come back on their `/node_end`, which only a registered
         // client hears.
         await this.server.notify(true);
         await this.syncAsync();
-        this.transport.locate(this.editor.cursor ?? 0.0);
+        await this.locateAsync(this.editor.cursor ?? 0.0);
         return this;
     }
 
@@ -127,7 +120,7 @@ export class Playback {
         if (host === null) return;
         this.transport.host = host;
         host.headClock("piece");
-        this.transport.locate(this.transport.position);
+        this.locate(this.transport.position);
     }
 
     // ---- the instance ----
@@ -143,16 +136,13 @@ export class Playback {
      */
     get meters(): Map<number, [number, number]> {
         const out = new Map<number, [number, number]>();
-        if (this.applier === null) return out;
-        const rows = JSON.parse(this.instance.meters()) as {
+        if (this.piece === null) return out;
+        const rows = JSON.parse(this.piece.meters()) as {
             track: number;
-            bus: string;
+            bus: number;
             channels: number;
         }[];
-        for (const row of rows) {
-            const bus = this.applier.bus(row.bus);
-            if (bus !== undefined) out.set(row.track, [bus[0], row.channels]);
-        }
+        for (const row of rows) out.set(row.track, [row.bus, row.channels]);
         return out;
     }
 
@@ -169,37 +159,23 @@ export class Playback {
 
     /** {@link Playback.sync}, waited for — what a page's own setup uses. */
     async syncAsync(): Promise<void> {
+        if (this.piece === null) return;
         const bridge = this.editor.bridge;
-        const answer = this.instance.reconcile(
-            JSON.stringify(this.editor.structure.write()),
-            bridge.rate,
-            bridge.bpm,
-            JSON.stringify(bridge.sources.table()),
-            this.gain,
+        await this.run(
+            this.piece.sync(
+                JSON.stringify(this.editor.structure.write()),
+                bridge.rate,
+                JSON.stringify(bridge.sources.table()),
+                this.gain,
+                this.server.ids,
+            ),
         );
-        await this.apply(JSON.parse(answer) as Op[]);
     }
 
-    /**
-     * Do what the reconciler says, in order.
-     *
-     * **The order is the answer, and so are the waits.** A def before the
-     * graph that names it, a buffer's fill after its allocation answered, a
-     * node freed before the one that replaces it is made — all of that is the
-     * crate's, stated as steps, and this only sends them and waits where a step
-     * says to.
-     */
-    async apply(ops: readonly Op[]): Promise<void> {
-        if (this.applier === null || ops.length === 0) return;
-        const answer = JSON.parse(
-            this.applier.apply(JSON.stringify(ops), this.server.ids),
-        ) as { steps?: Step[]; error?: string };
-        if (answer.error !== undefined) throw new Error(`clausters: ${answer.error}`);
-        await this.run(answer.steps ?? []);
-    }
-
-    /** Send each step, waiting where one says to. */
-    private async run(steps: readonly Step[]): Promise<void> {
+    /** Send each step of an answer, waiting where one says to. */
+    private async run(answer: string): Promise<void> {
+        const { steps = [], error } = JSON.parse(answer) as { steps?: Step[]; error?: string };
+        if (error !== undefined) throw new Error(`clausters: ${error}`);
         for (let index = 0; index < steps.length; index++) {
             const step = steps[index]!;
             if ("send" in step) {
@@ -248,13 +224,18 @@ export class Playback {
      * resuming is the same verb as starting and nothing is re-cued.
      */
     async play(): Promise<this> {
-        await this.transport.play(this.server);
+        if (this.piece !== null) await this.run(this.piece.play());
+        this.transport.reported({ playing: true });
         return this;
     }
 
-    /** Freeze the piece where it stands, with every node's state intact. */
+    /**
+     * Freeze the piece where it stands, with every node's state intact, and its
+     * meters at zero.
+     */
     pause(): this {
-        this.transport.pause();
+        if (this.piece !== null) void this.run(this.piece.pause());
+        this.transport.reported({ playing: false });
         return this;
     }
 
@@ -266,8 +247,14 @@ export class Playback {
      * from wherever the last pass happened to end.
      */
     stop(): this {
-        this.transport.pause();
-        return this.locate(this.editor.cursor ?? 0.0);
+        const mark = this.editor.cursor ?? 0.0;
+        if (this.piece === null) return this;
+        void this.run(this.piece.stop(mark));
+        this.transport.reported({
+            playing: false,
+            positionSample: this.piece.beatsToSamples(mark),
+        });
+        return this;
     }
 
     /**
@@ -275,8 +262,16 @@ export class Playback {
      * what is sounding carries on from there.
      */
     locate(beat: number): this {
-        this.transport.locate(beat);
+        void this.locateAsync(beat);
         return this;
+    }
+
+    /** {@link Playback.locate}, waited for. */
+    private async locateAsync(beat: number): Promise<void> {
+        if (this.piece === null) return;
+        const positionSample = this.piece.beatsToSamples(beat);
+        this.transport.reported({ positionSample });
+        await this.run(this.piece.locate(beat));
     }
 
     /**
@@ -288,7 +283,13 @@ export class Playback {
      * starts; moving the mark mid-pass must not move the music.
      */
     cue(beat: number): this {
-        if (!this.playing) this.locate(beat);
+        if (this.piece === null) return this;
+        this.piece.setRolling(this.playing);
+        const answer = this.piece.cue(beat);
+        if (answer !== '{"steps":[]}') {
+            this.transport.reported({ positionSample: this.piece.beatsToSamples(beat) });
+            void this.run(answer);
+        }
         return this;
     }
 
@@ -297,13 +298,14 @@ export class Playback {
      * holds is nodes, and nodes are not the composition.
      */
     close(): void {
-        void this.apply(JSON.parse(this.instance.teardown()) as Op[]);
+        if (this.piece !== null) void this.run(this.piece.close(this.server.ids));
     }
 }
 
 /** One step argument, tagged as the crate encoded it. */
 function stepArg(arg: StepArg): MsgArg {
     if ("i" in arg) return ["i", arg.i];
+    if ("h" in arg) return ["h", BigInt(arg.h)];
     if ("f" in arg) return ["f", arg.f];
     if ("b" in arg) return new Uint8Array(Float32Array.from(arg.b).buffer);
     return arg.s;

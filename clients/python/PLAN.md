@@ -334,7 +334,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
 
   **Acceptance.** No endpoint constructs a `Registry` of its own or states a bus or buffer base; the op-to-OSC encoding exists once; a curve's table in a standalone host, in a script and in a page is filled after its buffer exists by the same stated step; the parity tests and both suites pass.
 
-- ⬜ **C56 — The piece's playback control, once, in Rust** *(decided 2026-09-13 by the user, after `C55`: the standalone multitrack has to have the same capabilities as the clients' and in Rust, with no implementation written twice)*.
+- ✅ **C56 — The piece's playback control, once, in Rust** *(decided 2026-09-13 by the user, after `C55`: the standalone multitrack has to have the same capabilities as the clients' and in Rust, with no implementation written twice)*.
 
   **What is still written twice after `C55`.** Once the applier is shared, what decides *how a piece is played* is still the client's `Playback` (`gui/editing/playback.py`, its port in `playback.ts`) on one side and the host's own on the other (`host/instance.rs`, `host/play.rs`):
 
@@ -347,6 +347,8 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   **The shape.** A playback object in `clausters-editing` that owns the `Instance`, the `Applier` and the piece's transport state, and answers every verb as steps: `sync(piece, rate, sources)`, `play`, `pause`, `stop(mark)`, `locate(beat)`, `cue(beat)`, `close`, and the meters. The host calls it directly; the clients bind it through the C ABI and wasm, behind the surface they already have (`Playback.play()`, `transport.locate(beat)`), and keep only sending and awaiting.
 
   **Either route is the same program.** With a client (host → client → server) the client owns the document and plays it through this object; with none (`--session`) the host owns it and plays it through the same object. The host builds a piece only when it owns the document, so a piece is never played twice.
+
+  **What landed.** `clausters_editing::playback::PiecePlayback` (`DEFAULT_BPM`, `sync`, `play`, `pause`, `stop`, `locate`, `cue`, `close`, `meters`, `set_rolling`, the beat/sample conversions), bound as `clausters_editing_playback_*` and `PiecePlayback` in wasm. The host holds it in `host/instance.rs` and cues it from a placed cursor through the piece's tempo map (it used to take the cursor's units as frames); the clients' `Playback` runs its steps and tells its `Transport` what the engine was told (`reported`). The applier's own doors, which only a client's `Playback` used, went with it, and the default tempo every endpoint reads is the crate's (`editing_default_bpm`).
 
   **Acceptance.** Nothing about playing a piece is decided in `playback.py`, `playback.ts` or `host/instance.rs` beyond sending and awaiting; the default tempo, a locate's sample, a stop's return to the mark and a pause's silent meters are the same in a standalone host, a script and a page, pinned by crate tests and the parity tests.
 ### The arrangement model + the multitrack editor (client arc, phased)

@@ -53,7 +53,7 @@ use super::tree::{ClipRow, LaneRow, Piece};
 /// It is the **reader's** default and not the document's: a piece that said no
 /// tempo did not say one, and writing 120 into the format would be the crate
 /// deciding a musical question ([`clausters_document::multitrack::Multitrack::tempo`]).
-pub const DEFAULT_TEMPO: f64 = 1.0;
+pub const DEFAULT_TEMPO: f64 = clausters_editing::playback::DEFAULT_BPM / 60.0;
 
 /// How the picture is scaled.
 #[derive(Debug, Clone)]

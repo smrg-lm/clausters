@@ -375,21 +375,6 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
     })
 }
 
-/// **One apply as JSON**, the shape both the C ABI and wasm hand a client:
-/// `ops` is the list [`crate::instance::Instance::reconcile`] answers, and the
-/// answer is `{"steps": [...]}` in [`steps_json`]'s shape, or `{"error": "..."}`
-/// when an id space is exhausted or the ops are not ops.
-pub fn apply_json(applier: &mut Applier, ops: &str, ids: &mut IdSpaces) -> String {
-    let ops: Vec<Op> = match serde_json::from_str(ops) {
-        Ok(ops) => ops,
-        Err(e) => return json!({ "error": format!("not a list of ops: {e}") }).to_string(),
-    };
-    match applier.apply(ops, ids) {
-        Ok(steps) => json!({ "steps": steps_json(&steps) }).to_string(),
-        Err(e) => json!({ "error": e.to_string() }).to_string(),
-    }
-}
-
 /// **The steps as JSON**, for a client that walks them in its own language.
 ///
 /// `{"send": {"addr", "args"}}` with each argument tagged by its OSC type —
@@ -419,6 +404,7 @@ fn arg_json(arg: &OscType) -> Value {
         OscType::Int(v) => json!({ "i": v }),
         OscType::Float(v) => json!({ "f": v }),
         OscType::String(v) => json!({ "s": v }),
+        OscType::Long(v) => json!({ "h": v }),
         OscType::Blob(bytes) => json!({
             "b": bytes
                 .as_chunks::<4>()
@@ -705,31 +691,5 @@ mod tests {
         assert_eq!(json[0]["send"]["args"][2]["b"][0], 0.5);
         assert_eq!(json[1]["await"]["index"], 3);
         assert_eq!(json[2]["sync"], 1);
-    }
-
-    /// **The JSON door answers what the typed one does**, and an exhausted space
-    /// is an answer rather than a panic.
-    #[test]
-    fn the_json_door_answers_steps_or_an_error() {
-        let mut ids = IdSpaces::new(
-            clausters_core::ids::ServerShape::DEFAULT,
-            clausters_core::ids::IdShare::WHOLE,
-        );
-        let mut applier = Applier::new(Endpoint::default());
-        let answer: Value = serde_json::from_str(&apply_json(
-            &mut applier,
-            r#"[{"op": "bus", "handle": "meter:1", "channels": 2}]"#,
-            &mut ids,
-        ))
-        .unwrap();
-        assert_eq!(
-            answer["steps"],
-            json!([]),
-            "a bus is allocated and never asked for"
-        );
-        assert_eq!(applier.bus("meter:1").map(|(_, n)| n), Some(2));
-        let refused: Value =
-            serde_json::from_str(&apply_json(&mut applier, "not ops", &mut ids)).unwrap();
-        assert!(refused["error"].is_string());
     }
 }

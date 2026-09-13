@@ -1390,21 +1390,27 @@ pub fn editing_stitch(source: &str, held: &str) -> String {
 /// a structure alone and this one is a function of a structure *and* of what a
 /// server already holds: a piece plays itself from the transport, so the nodes
 /// have to stay, and what this answers is the **difference**.
-/// **The one applier**: the instance's operations as the steps that carry them
-/// out, allocating from a client's [`JsIdSpaces`].
+/// The tempo a piece that states none is read and drawn at, in beats per
+/// minute.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = Applier)]
-pub struct JsApplier(clausters_editing::apply::Applier);
+#[wasm_bindgen(js_name = editingDefaultBpm)]
+pub fn editing_default_bpm() -> f64 {
+    clausters_editing::playback::DEFAULT_BPM
+}
+
+/// **One piece, as it is playing**: its instance, its applier and its
+/// transport, answering every verb as steps (JSON).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = PiecePlayback)]
+pub struct JsPiecePlayback(clausters_editing::playback::PiecePlayback);
 
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_class = Applier)]
-impl JsApplier {
-    /// An applier making its nodes at the tail of `target`, binding the
-    /// piece's graph to the transport when `bind_transport`, with `chunk`
-    /// samples to a `/buffer_setRange`.
+#[wasm_bindgen(js_class = PiecePlayback)]
+impl JsPiecePlayback {
+    /// A playback making its nodes at the tail of `target`.
     #[wasm_bindgen(constructor)]
-    pub fn new(target: i32, bind_transport: bool, chunk: usize) -> JsApplier {
-        JsApplier(clausters_editing::apply::Applier::new(
+    pub fn new(target: i32, bind_transport: bool, chunk: usize) -> JsPiecePlayback {
+        JsPiecePlayback(clausters_editing::playback::PiecePlayback::new(
             clausters_editing::apply::Endpoint {
                 target,
                 bind_transport,
@@ -1413,17 +1419,81 @@ impl JsApplier {
         ))
     }
 
-    /// The steps that carry out `ops` (JSON), allocating from `ids`:
-    /// `{"steps": [...]}` or `{"error": "..."}`.
-    pub fn apply(&mut self, ops: &str, ids: &mut JsIdSpaces) -> String {
-        clausters_editing::apply::apply_json(&mut self.0, ops, &mut ids.0)
+    /// The steps that make what sounds be what the piece says.
+    pub fn sync(
+        &mut self,
+        piece: &str,
+        sample_rate: f64,
+        sources: &str,
+        gain: f32,
+        ids: &mut JsIdSpaces,
+    ) -> String {
+        clausters_editing::playback::sync_json(
+            &mut self.0,
+            piece,
+            sample_rate,
+            sources,
+            gain,
+            &mut ids.0,
+        )
     }
 
-    /// The control-bus run a handle became, as `[first, channels]`.
-    pub fn bus(&self, handle: &str) -> Option<Vec<f64>> {
-        self.0
-            .bus(handle)
-            .map(|(first, channels)| vec![f64::from(first), channels as f64])
+    /// The steps that roll the transport.
+    pub fn play(&mut self) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.play()))
+    }
+
+    /// The steps that freeze the piece and zero its meters.
+    pub fn pause(&mut self) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.pause()))
+    }
+
+    /// The steps that halt and go back to the mark.
+    pub fn stop(&mut self, mark: f64) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.stop(mark)))
+    }
+
+    /// The steps that put the transport at `beat`.
+    pub fn locate(&mut self, beat: f64) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.locate(beat)))
+    }
+
+    /// The steps that cue a stopped transport at `beat`.
+    pub fn cue(&mut self, beat: f64) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.cue(beat)))
+    }
+
+    /// The steps that free everything the piece made.
+    pub fn close(&mut self, ids: &mut JsIdSpaces) -> String {
+        clausters_editing::playback::answer_json(self.0.close(&mut ids.0))
+    }
+
+    /// The meters the piece writes, as JSON.
+    pub fn meters(&self) -> String {
+        clausters_editing::playback::meters_json(&self.0)
+    }
+
+    /// Says whether the transport is rolling.
+    #[wasm_bindgen(js_name = setRolling)]
+    pub fn set_rolling(&mut self, rolling: bool) {
+        self.0.set_rolling(rolling);
+    }
+
+    /// Whether the transport was last told to roll.
+    pub fn rolling(&self) -> bool {
+        self.0.rolling()
+    }
+
+    /// A beat as a sample of the piece.
+    #[wasm_bindgen(js_name = beatsToSamples)]
+    pub fn beats_to_samples(&self, beat: f64) -> f64 {
+        self.0.beats_to_samples(beat) as f64
+    }
+
+    /// A sample of the piece as a beat.
+    #[wasm_bindgen(js_name = samplesToBeats)]
+    pub fn samples_to_beats(&self, samples: f64) -> f64 {
+        self.0.samples_to_beats(samples as i64)
     }
 }
 

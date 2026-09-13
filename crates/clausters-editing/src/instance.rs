@@ -1021,6 +1021,24 @@ impl Instance {
     }
 }
 
+/// **A source table as JSON** — `{"<source id>": {"buffer", "channels"}}`,
+/// the shape both clients send — read into what the plan takes. An id that is
+/// not a number, or a table that is not one, reads as nothing rather than as
+/// an error: a source the plan does not know is simply not playing yet.
+pub fn sources_table(
+    sources: &str,
+) -> std::collections::HashMap<clausters_document::SourceId, SourceInfo> {
+    serde_json::from_str::<std::collections::HashMap<String, SourceInfo>>(sources)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(id, info)| {
+            id.parse::<u64>()
+                .ok()
+                .map(|id| (clausters_document::SourceId(id), info))
+        })
+        .collect()
+}
+
 /// [`Instance::reconcile`] against a piece and a source table given as JSON,
 /// which is how the two client doors carry them.
 ///
@@ -1044,16 +1062,7 @@ pub fn reconcile_json(
     else {
         return "[]".into();
     };
-    let table: std::collections::HashMap<clausters_document::SourceId, SourceInfo> =
-        serde_json::from_str::<std::collections::HashMap<String, SourceInfo>>(sources)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|(id, info)| {
-                id.parse::<u64>()
-                    .ok()
-                    .map(|id| (clausters_document::SourceId(id), info))
-            })
-            .collect();
+    let table = sources_table(sources);
     let plan =
         clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
     let ops = instance.reconcile(&plan, gain);

@@ -51,11 +51,16 @@ CLOCK = "piece_clock"
 #: is the price of the number beside it and nothing else.
 CLOCK_TICK = 0.05
 
-#: The tempo a piece that never said one is read at, in beats per second — one,
-#: so a beat is a second. It is the **reader's** default and not the document's:
-#: a piece that said no tempo did not say one, and writing 120 into the format
-#: would be deciding a musical question on its behalf.
-DEFAULT_TEMPO = 1.0
+def default_tempo() -> float:
+    """The tempo a piece that never said one is read at, in beats per second.
+
+    It is the **reader's** default and not the document's: a piece that said no
+    tempo did not say one, and writing 120 into the format would be deciding a
+    musical question on its behalf. The number is the shared crate's
+    (`clausters._native.editing_default_bpm`), the one every endpoint plays and
+    draws a piece at -- the GUI host with no script behind it included.
+    """
+    return _native.editing_default_bpm() / 60.0
 
 
 def tempo_map(piece: Multitrack) -> TempoMap:
@@ -70,7 +75,7 @@ def tempo_map(piece: Multitrack) -> TempoMap:
     return TempoMap.from_changes(
         [{"beats": t.at, "tempo": t.bpm / 60.0, "ramp": bool(t.ramp)}
          for t in piece.tempo],
-        DEFAULT_TEMPO)
+        default_tempo())
 
 
 class Sources:
@@ -205,7 +210,7 @@ class Bridge:
         #: The reader's own: a piece that never said a tempo did not say one,
         #: and a document that invented 120 would be deciding a musical
         #: question.
-        self.bpm = DEFAULT_TEMPO * 60.0
+        self.bpm = default_tempo() * 60.0
 
     def refresh(self, piece: Multitrack) -> None:
         """Re-read the tempo map, for an edit that moved one."""

@@ -244,6 +244,22 @@ class Transport:
             self._piece = server.transport_state()
         return self
 
+    def reported(self, *, playing: "bool | None" = None,
+                 position_sample: "int | None" = None):
+        """**What the engine was just told**, on the piece: whether it rolls and
+        where it stands, remembered as `refresh` would have answered, and every
+        target's line drawn from the piece's position again. Returns ``self``.
+
+        For a caller that sent the transport's commands itself -- a playback
+        whose verbs are the shared crate's -- so the answers this object gives
+        before the next `refresh` are the ones the commands made true."""
+        if playing is not None:
+            self._piece["playing"] = bool(playing)
+        if position_sample is not None:
+            self._piece["position_sample"] = int(position_sample)
+        self._piece_anchor()
+        return self
+
     def samples_to_beats(self, samples: float) -> float:
         """Samples of the piece → beats, through the same map `beats_to_samples`
         goes the other way — so what the engine reports and what the ruler draws

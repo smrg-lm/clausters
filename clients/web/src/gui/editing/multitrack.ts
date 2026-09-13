@@ -42,17 +42,23 @@ import type { Server } from "../../defs/server/index.ts";
 import { Buffer, type Part } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
+import { editingDefaultBpm } from "../../core/clausters_core_web.js";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
 
 /**
- * The tempo a piece that never said one is read at, in beats per second — one,
- * so a beat is a second. It is the **reader's** default and not the document's:
- * a piece that said no tempo did not say one, and writing 120 into the format
- * would be deciding a musical question on its behalf.
+ * The tempo a piece that never said one is read at, in beats per second.
+ *
+ * It is the **reader's** default and not the document's: a piece that said no
+ * tempo did not say one, and writing 120 into the format would be deciding a
+ * musical question on its behalf. The number is the shared crate's
+ * (`editingDefaultBpm`), the one every endpoint plays and draws a piece at —
+ * the GUI host with no script behind it included.
  */
-export const DEFAULT_TEMPO = 1.0;
+export function defaultTempo(): number {
+    return editingDefaultBpm() / 60.0;
+}
 
 /**
  * The piece's beat→second function, with the reader's default where the piece
@@ -67,8 +73,8 @@ export function tempoMap(piece: Multitrack): TempoMap {
     return (
         TempoMap.fromChanges(
             piece.tempo.map((t) => ({ beats: t.at, tempo: t.bpm / 60.0, ramp: t.ramp })),
-            DEFAULT_TEMPO,
-        ) ?? new TempoMap(DEFAULT_TEMPO)
+            defaultTempo(),
+        ) ?? new TempoMap(defaultTempo())
     );
 }
 
@@ -260,7 +266,7 @@ export class Bridge {
         this.rate = Number(sampleRate);
         this.sources = sources ?? new Sources();
         this.tempo = tempoMap(piece);
-        this.bpm = DEFAULT_TEMPO * 60.0;
+        this.bpm = defaultTempo() * 60.0;
         this.server = server;
     }
 

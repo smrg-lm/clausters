@@ -841,47 +841,49 @@ def test_a_metered_track_names_the_buses_the_host_reads():
     assert props(ed)["meters"] == ["10", 40, 42, 2]
 
 
-def test_the_playback_carries_out_what_the_reconciler_says():
+def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     """**What is left in a client is a socket, and waiting on it.**
 
-    What a difference *is* is the crate's (`clausters._native.Instance`), and so
-    are the messages that carry it out and what they wait for
-    (`clausters._native.Applier`), both tested there because they are one
-    implementation for every endpoint. This is the other half: each step is
-    sent, a send whose `/done` the rest waits for is one request, and a barrier
-    is a sync.
+    What a piece needs, the messages that carry it out and how it is played are
+    the crate's (`clausters._native.PiecePlayback`), tested there because they
+    are one implementation for every endpoint. This is the other half: a send
+    whose ``/done`` the rest waits for is one request, a barrier is a sync, and
+    a 64-bit sample goes out as one.
     """
+    from clausters.base import _osclib
     from clausters.gui.editing.playback import Playback
 
     class Server:
         def __init__(self):
             self.log = []
-            self.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024,
-                                        outputs=2, control_buses=16384,
-                                        buffers=4096)
 
         def send_msg(self, addr, *args):
             self.log.append(("send", addr) + args)
 
         def request(self, addr, *args, expect=None, timeout=None):
             self.log.append(("request", addr) + args)
-            return "/done", [addr, args[0]]
+            return "/done", [addr]
 
         def sync(self):
             self.log.append(("sync",))
 
     playback = object.__new__(Playback)
     playback.server = Server()
-    playback._applier = _native.Applier()
-
-    playback.apply([
-        {"op": "buffer", "handle": "curve:5", "samples": [0.5, 1.0]},
-        {"op": "bus", "handle": "curvebus:5", "channels": 1},
+    playback._run([
+        {"send": {"addr": "/buffer_alloc", "args": [{"i": 3}, {"i": 2}, {"i": 1}]}},
+        {"await": {"command": "/buffer_alloc", "index": 3}},
+        {"send": {"addr": "/buffer_setRange",
+                  "args": [{"i": 3}, {"i": 0}, {"b": [0.5, 1.0]}]}},
+        {"sync": 1},
     ])
     kinds = [entry[:2] for entry in playback.server.log]
     assert kinds == [("request", "/buffer_alloc"), ("send", "/buffer_setRange"),
                      ("sync",)], "the fill waits for the allocation"
-    bus = playback._applier.bus("curvebus:5")
-    assert bus is not None and bus[1] == 1
-    # The ids are the server's: what the applier took, its spaces hold.
-    assert playback.server.ids.in_use(_native.IdSpaces.BUFFERS) == 1
+
+    piece = _native.PiecePlayback()
+    playback.server.log.clear()
+    playback._run(piece.locate(2.0))
+    (entry,) = playback.server.log
+    assert entry[:2] == ("request", "/transport_locateSample")
+    assert isinstance(entry[2], _osclib.Int64), "a sample rides as 64 bits"
+    assert entry[2].value == piece.beats_to_samples(2.0)
