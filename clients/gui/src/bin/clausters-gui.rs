@@ -848,18 +848,18 @@ fn attach_server(
         path.display()
     );
 
-    // **The samples go to their owner.** A take is read into a buffer of the
-    // session, which puts it in a region beside the segment; from there the
-    // player maps it and this host draws it.
-    for msg in &load.messages {
-        send_session(&session, msg.clone())?;
-    }
+    // **The samples go to their owner, in the order they are made of.** A take
+    // is read into a buffer of the session, which puts it in a region beside
+    // the segment; from there the player maps it and this host draws it. A
+    // join is stitched from those buffers, so the crate's runner holds each
+    // stitch behind the reads it is over -- sent as one batch, the stitch
+    // arrived first and the join drew empty.
     if !load.messages.is_empty() {
         // **Waited for, not fired and forgotten.** A buffer read is
         // asynchronous, and a clip's fetch starts the moment the tree reaches
         // the host: without this the window would ask for the shape of a buffer
         // that is still empty, once, and draw nothing forever.
-        await_reads(&session, load.messages.len());
+        drive_session(&session, load.steps());
     }
 
     // **The picture, from the memory the samples are in.** The same file the
@@ -1110,17 +1110,30 @@ fn send_session(session: &EmbedSession, msg: OscMessage) -> Result<(), String> {
     Ok(())
 }
 
-/// Waits for `n` buffer reads to answer, reporting each failure by its own
-/// words. Bounded: a read that never answers costs a few seconds and a line,
-/// not a window that never opens.
+/// **Carries a session's load out**, through the crate's runner: what may go out
+/// is sent, every reply is offered back, and a stitch leaves only once the
+/// reads it is over are done. Each refusal is reported in its own words.
+/// Bounded: a read that never answers costs a few seconds and a line, not a
+/// window that never opens.
 #[cfg(feature = "standalone")]
-fn await_reads(session: &EmbedSession, n: usize) {
+fn drive_session(session: &EmbedSession, steps: Vec<clausters_editing::apply::Step>) {
+    use clausters_editing::run::{Reply, Runner, Server};
     use std::time::{Duration, Instant};
 
+    let sources = steps.len() / 2;
+    let mut run = Runner::new();
+    run.push(Server::Samples, steps);
     let deadline = Instant::now() + Duration::from_secs(10);
-    let mut answered = 0;
     let mut buf = vec![0u8; 65536];
-    while answered < n && Instant::now() < deadline {
+    loop {
+        for (_, message) in run.ready() {
+            if let Err(e) = send_session(session, message) {
+                tracing::warn!("session: {e}");
+            }
+        }
+        if run.is_idle() || Instant::now() >= deadline {
+            break;
+        }
         let Some(len) = session.poll_into(&mut buf) else {
             std::thread::sleep(Duration::from_millis(5));
             continue;
@@ -1128,26 +1141,16 @@ fn await_reads(session: &EmbedSession, n: usize) {
         let Ok(OscPacket::Message(msg)) = clausters_core::osc::decode_packet(&buf[..len]) else {
             continue;
         };
-        let of = |args: &[OscType]| match args.first() {
-            Some(OscType::String(s)) => s.clone(),
-            _ => String::new(),
-        };
-        match msg.addr.as_str() {
-            "/done" if of(&msg.args) == "/buffer_allocRead" => answered += 1,
-            "/fail" if of(&msg.args) == "/buffer_allocRead" => {
-                answered += 1;
-                tracing::warn!("session: a take did not load: {:?}", msg.args);
-            }
-            _ => {}
+        if let Reply::Refused(args) = run.reply(Server::Samples, &msg) {
+            tracing::warn!("session: a source did not load: {args:?}");
         }
     }
-    if answered < n {
-        tracing::warn!(
-            "session: {} of {n} take(s) had not loaded after 10s — they will draw empty",
-            n - answered
-        );
+    if run.is_idle() {
+        tracing::info!("session: {sources} source(s) loaded into buffers");
     } else {
-        tracing::info!("session: {n} take(s) read into buffers");
+        tracing::warn!(
+            "session: the sources had not all loaded after 10s — what is missing will draw empty"
+        );
     }
 }
 

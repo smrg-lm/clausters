@@ -123,6 +123,37 @@ pub struct Load {
     pub unresolved: Vec<(SourceId, String)>,
 }
 
+impl Load {
+    /// **The load as steps**: each read and each join followed by the `/done`
+    /// of that very buffer, in the order they were planned -- so a join is
+    /// stitched after the reads it is made of, whoever walks them
+    /// ([`clausters_editing::run::Runner`]).
+    ///
+    /// Sent as a batch, the stitch reached the session while its reads were
+    /// still running: `part 0: buffer 1 is not allocated`, and a join that drew
+    /// empty and could not be attached on the player.
+    pub fn steps(&self) -> Vec<clausters_editing::apply::Step> {
+        use clausters_editing::apply::Step;
+
+        self.messages
+            .iter()
+            .flat_map(|message| {
+                let index = match message.args.first() {
+                    Some(OscType::Int(bufnum)) => Some(*bufnum),
+                    _ => None,
+                };
+                [
+                    Step::Send(message.clone()),
+                    Step::AwaitDone {
+                        command: message.addr.clone(),
+                        index,
+                    },
+                ]
+            })
+            .collect()
+    }
+}
+
 /// Plans the load of every source the document actually names.
 ///
 /// `beside` is the session file's own folder, which is what a relative path is
@@ -442,6 +473,14 @@ mod tests {
         };
         assert_eq!(Path::new(path), dir.join("take.wav"), "beside the session");
         assert_eq!(load.messages[0].addr, "/buffer_allocRead");
+        // **And the read is waited for**, on that very buffer.
+        assert_eq!(
+            load.steps()[1],
+            clausters_editing::apply::Step::AwaitDone {
+                command: "/buffer_allocRead".into(),
+                index: Some(0),
+            }
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
