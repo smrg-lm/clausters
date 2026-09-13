@@ -1,5 +1,6 @@
-//! **The host's voices**: the node-id window they allocate from, and the two
-//! messages a held key sends.
+//! **The host's voices**: the two messages a held key sends. Their node ids
+//! are the host's like any node's (`ids.rs`), and come back on `/node_end`
+//! once the def frees itself.
 //!
 //! A voice is the host's, not a widget's. An element only *declares* one
 //! ([`VoiceSpec`](super::widget::element::VoiceSpec), through
@@ -15,13 +16,6 @@
 
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::scale;
-
-/// The base of the node-id window the host's voices allocate from — far above
-/// the Python client's ids (1000..) and the server's own auto range, so an
-/// explicit voice id can never collide (see `docs/decisions.md`).
-pub(super) const ID_BASE: i32 = 0x1000_0000;
-/// The wrapping window of voice ids over the base.
-pub(super) const ID_SPAN: i32 = 1 << 16;
 
 /// The `/synth_new` a host-managed voice press sends: the voice def by name, an
 /// explicit node id (so the release can gate it), head of the default group,
@@ -77,13 +71,13 @@ mod tests {
     #[test]
     fn the_messages_have_the_conventional_shape() {
         let extra = vec![("pan".to_string(), 0.5f32)];
-        let on = on_msg("piano_voice", 0x1000_0000, 69, 127, &extra);
+        let on = on_msg("piano_voice", 1000, 69, 127, &extra);
         assert_eq!(on.addr, "/synth_new");
         assert_eq!(
             &on.args[..4],
             &[
                 OscType::String("piano_voice".into()),
-                OscType::Int(0x1000_0000),
+                OscType::Int(1000),
                 OscType::Int(0),
                 OscType::Int(0),
             ]

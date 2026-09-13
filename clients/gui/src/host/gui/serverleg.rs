@@ -278,6 +278,9 @@ impl App {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path yet
         };
+        // The ids and the piece's waiting steps hear every reply first
+        // (`Host::on_server_reply`, which the page's leg calls too).
+        self.host.on_server_reply(&msg);
         match msg.addr.as_str() {
             "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.
@@ -359,9 +362,6 @@ impl App {
             // promptly instead of waiting for the next poll.
             "/node_start" | "/node_end" => self.next_query = Instant::now(),
             "/fail" => warn!("audio server replied /fail: {:?}", msg.args),
-            // A buffer the piece allocated exists now: its table can be filled
-            // (`Host::on_server_done`, which the page's leg calls too).
-            "/done" => self.host.on_server_done(&msg.args),
             _ => {}
         }
     }

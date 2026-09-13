@@ -156,9 +156,29 @@ pub struct ServerShape {
     pub buffers: usize,
 }
 
+impl ServerShape {
+    /// **The shape a server boots with when nothing says otherwise** — what a
+    /// client allocates by before its `/server_query` is answered, and all it
+    /// ever needs against a server started with no sizing options.
+    pub const DEFAULT: ServerShape = ServerShape {
+        max_nodes: 8192,
+        audio_buses: 1024,
+        outputs: 2,
+        control_buses: 16384,
+        buffers: 4096,
+    };
+}
+
+impl Default for ServerShape {
+    fn default() -> Self {
+        ServerShape::DEFAULT
+    }
+}
+
 /// **The four spaces one client allocates from.**
 pub struct IdSpaces {
     shape: ServerShape,
+    share: IdShare,
     score: bool,
     nodes: Registry,
     audio: Option<Registry>,
@@ -174,6 +194,7 @@ impl IdSpaces {
         let (base, span) = share_of(part.client_base, part.client_capacity, share);
         IdSpaces {
             shape,
+            share,
             score: false,
             nodes: Registry::new(base, span),
             audio: bus_space(
@@ -270,7 +291,17 @@ impl IdSpaces {
     /// a collision, and one that is reported is one that can be avoided. A
     /// score's node space stays unbounded, since a score has one author.
     pub fn narrow(&mut self, share: IdShare) -> Result<(), IdError> {
-        let mut next = IdSpaces::new(self.shape, share);
+        self.reshape(self.shape, share)
+    }
+
+    /// **Takes the spaces of another server shape and share, keeping what is
+    /// allocated** — what a client does when the server's `/server_query`
+    /// answers after it has already allocated by [`ServerShape::DEFAULT`].
+    ///
+    /// Refused whole, as [`IdSpaces::narrow`] is, when something held falls
+    /// outside the new spaces.
+    pub fn reshape(&mut self, shape: ServerShape, share: IdShare) -> Result<(), IdError> {
+        let mut next = IdSpaces::new(shape, share);
         next.score = self.score;
         let bounded: &[Space] = if self.score {
             &[Space::AudioBuses, Space::ControlBuses, Space::Buffers]
@@ -306,6 +337,16 @@ impl IdSpaces {
         }
         *self = next;
         Ok(())
+    }
+
+    /// The server shape these spaces were sized from.
+    pub fn shape(&self) -> ServerShape {
+        self.shape
+    }
+
+    /// The share of every space this client takes.
+    pub fn share(&self) -> IdShare {
+        self.share
     }
 
     /// Whether `id` falls inside this client's slice of `space`.
@@ -479,5 +520,29 @@ mod tests {
             spaces.alloc(Space::Nodes, 1).unwrap();
         }
         assert_eq!(spaces.in_use(Space::Nodes), 100);
+    }
+
+    /// **A server that answers with its own shape** reshapes a client that
+    /// already allocated by the default, and what it holds keeps its number.
+    #[test]
+    fn reshaping_to_the_servers_answer_keeps_what_is_held() {
+        let mut spaces = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        let node = spaces.alloc(Space::Nodes, 1).unwrap();
+        let buffer = spaces.alloc(Space::Buffers, 3).unwrap();
+        let answered = ServerShape {
+            buffers: 256,
+            outputs: 8,
+            ..ServerShape::DEFAULT
+        };
+        spaces.reshape(answered, IdShare::WHOLE).unwrap();
+        assert_eq!(spaces.shape(), answered);
+        assert_eq!(spaces.in_use(Space::Buffers), 3);
+        assert_eq!(spaces.alloc(Space::Buffers, 1), Ok(buffer + 3));
+        assert!(spaces.release(Space::Nodes, node, 1).is_ok());
+        assert_eq!(
+            spaces.alloc(Space::AudioBuses, 1),
+            Ok(8),
+            "above the eight outputs"
+        );
     }
 }

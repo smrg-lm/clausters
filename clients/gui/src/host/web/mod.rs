@@ -177,6 +177,9 @@ enum WebEvent {
     /// The MSAA sample count canvases attached from here on are drawn with
     /// (the browser form of the native `[gui] msaa`).
     Msaa(u32),
+    /// The share of the audio server's ids this host allocates from (the
+    /// browser form of the native `--id-share`).
+    IdShare(u32, u32),
     /// Text the hidden composition field produced — a typed letter, an
     /// accented one a dead key finished, an IME's output, a paste (`compose`).
     Typed { def_id: i32, text: String },
@@ -355,9 +358,11 @@ impl WebApp {
     /// A freshly attached server leg (WS or in-page) holds no subscription:
     /// forget the old ones and subscribe the current tree's buses and taps
     /// (WS frames queue until the socket opens, so sending now is safe).
-    /// `/clock_query` fetches the rate the oscilloscope windows are sized with,
-    /// and `/server_query` the ceiling on how many buses one subscription may
-    /// list — this leg's own, since the answer depends on the carrier.
+    /// `/clock_query` fetches the rate the oscilloscope windows are sized with;
+    /// the host's own attach (`Host::on_link_attached`) registers for node
+    /// ends and sends `/server_query`, whose reply also carries the ceiling on
+    /// how many buses one subscription may list — this leg's own, since the
+    /// answer depends on the carrier.
     fn on_server_attached(&mut self) {
         self.streamed.clear();
         self.tap_streamed = (Vec::new(), 0);
@@ -366,11 +371,8 @@ impl WebApp {
                 addr: "/clock_query".into(),
                 args: vec![],
             });
-            let _ = server.send(OscMessage {
-                addr: "/server_query".into(),
-                args: vec![],
-            });
         }
+        self.host.on_link_attached();
         self.on_tree_changed();
     }
 
@@ -720,6 +722,13 @@ impl WebApp {
                 // built against, exactly as a native window does: the count is
                 // read when a device comes up, and re-attaching applies it.
                 self.host.msaa = samples.max(1);
+            }
+            WebEvent::IdShare(index, of) => {
+                let narrowed = clausters_core::ids::IdShare::new(index, of)
+                    .and_then(|share| self.host.set_id_share(share));
+                if let Err(e) = narrowed {
+                    log(&format!("the host cannot take id share {index}/{of}: {e}"));
+                }
             }
         }
     }

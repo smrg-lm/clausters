@@ -364,14 +364,20 @@ class Session(Environment):
         server_addr = f"{self.server.target.host}:{self.server.target.port}"
         from .gui.host import DEFAULT_PORT
 
-        # The session's share governs both legs: a session that is one of two
-        # clients on a server is one of two on its host as well.
+        # The session's share of the host's widget ids is the one it has on
+        # its server: a session that is one of two clients on a server is one
+        # of two on its host as well.
+        widgets = self.server.share
+        # **The host allocates on this server too** -- its voices, its take
+        # monitor, the piece it plays -- so the session's ids are split with
+        # it: the session keeps the first half and the host takes the second.
         self._gui = GuiHost(
             port=DEFAULT_PORT if port is None else port, transport=transport,
-            share=self.server.share,
+            share=widgets,
         ).boot(
             server=server_addr, shm=self.server.shm, verbose=verbose,
-            data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,
+            data_dir=data_dir, id_share=self.server.split_share(),
+            extra_args=extra_args, ready_timeout=ready_timeout,
         )
         return self._gui
 

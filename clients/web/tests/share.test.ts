@@ -106,6 +106,18 @@ test("a shared client keeps the reservations its whole-space peer keeps", async 
     whole.close();
 });
 
+test("splitting a share keeps what is held and gives away the second half", () => {
+    // What a launcher does when it starts a second client on this engine: the
+    // session keeps the first half and every id it holds, and hands out the
+    // other (a GUI host's, on the Python side through `--id-share`).
+    const server = openShared(0, 1);
+    const held = server.nodes.alloc();
+    const other = server.splitShare();
+    assert.deepEqual([server.share, other], [{ index: 0, of: 2 }, { index: 1, of: 2 }]);
+    assert.ok(server.ids.contains("nodes", held), "what it held keeps its number");
+    assert.equal(server.nodes.alloc(), held + 1);
+});
+
 test("widget ids split the same way, so two clients of one host agree too", () => {
     const kernel = new GuiIdAllocator(BASE_ID, CAPACITY, { index: 0, of: 2 });
     const page = new GuiIdAllocator(BASE_ID, CAPACITY, { index: 1, of: 2 });

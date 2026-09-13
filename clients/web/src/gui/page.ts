@@ -17,6 +17,7 @@
 import type { GuiBridge } from "../gui-host/clausters_gui.js";
 import { engine as engineInstance, server } from "../engine/server.ts";
 import type { ClaustersServer } from "../engine/server.ts";
+import type { IdShare } from "../base/ids.ts";
 import { decodePacket } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { canvasBox, onScaleChange } from "./canvasbox.ts";
@@ -254,16 +255,19 @@ export function pageGuiIfUp(): Promise<ClaustersGui> | null {
  * with `bridge.close()`.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer } = {},
+    options: { engine?: ClaustersServer; idShare?: IdShare } = {},
 ): Promise<ClaustersGui> {
-    return boot(options.engine ?? await engineInstance());
+    return boot(options.engine ?? await engineInstance(), options.idShare);
 }
 
-async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
+async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
     const engine = audio ?? await server();
     await init();
     const bridge = start();
+    // The share of the engine's node ids, buses and buffers this host
+    // allocates from, when a client allocates on that engine too.
+    if (idShare !== undefined) bridge.id_share(idShare.index, idShare.of);
 
     // The page makes the canvas and hands it over, rather than waiting for one
     // to be appended and grabbing it: that is the ownership a document has, and

@@ -1724,6 +1724,13 @@ core-backed one replaced it. Unmaintainable as the client track grows.
 
 ## The piano's host voices use explicit node ids from a dedicated high window
 
+> **Superseded (2026-09-13).** The host allocates every node id, bus and
+> buffer from the one client id policy (`clausters_core::ids`), with a share a
+> launcher gives it (`--id-share`), and takes node ids back on `/node_end`. The
+> explicit ids and the reason for them stand; the fixed window does not: it
+> knew nothing of the server's size, recycled nothing, and the monitor and the
+> piece had grown windows of their own beside it.
+
 Context (the `piano` widget's voice mode): a key press must spawn a server
 voice the key *release* can later reach — `/synth_new` on press, `/node_set <id> gate
 0` on release. The server-assigned id form (`/synth_new … -1`) was rejected for

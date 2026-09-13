@@ -72,6 +72,12 @@ export class GuiBridge {
      */
     feed(packet: Uint8Array): void;
     /**
+     * Takes share `index` of `of` of the audio server's node ids, buses and
+     * buffers — the browser form of the native `--id-share`, given by
+     * whoever starts this host on an engine a client allocates on too.
+     */
+    id_share(index: number, of: number): void;
+    /**
      * Draws the host's windows with `samples`x multisampling — the browser
      * form of the native `[gui] msaa` / `--msaa`, and the same bounded
      * capability: `1` (the default) draws the flat picture, a higher count
@@ -169,6 +175,7 @@ export interface InitOutput {
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
+    readonly guibridge_id_share: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;

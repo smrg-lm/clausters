@@ -77,6 +77,9 @@ pub mod play;
 // allocators. Beside `play` and not under `document`, because what it holds is
 // the server's -- nodes, buses, buffers -- and nodes are not the composition.
 pub mod instance;
+// The node ids, buses and buffers this host allocates on its server, by the
+// one policy every client allocates by, and the replies that give them back.
+pub mod ids;
 pub mod registry;
 pub mod voices;
 pub mod widget;
@@ -697,11 +700,16 @@ pub struct Host {
     timelines: timeline::TimelineGroups,
     /// The live host-managed piano voices, per widget id: one `(pitch, node)`
     /// entry per held key of a `piano` in voice mode. The press sends the
-    /// `/synth_new`, the release the `gate 0`; the def frees the node itself, so
-    /// no `/node_end` tracking is needed.
+    /// `/synth_new`, the release the `gate 0`; the def frees the node itself,
+    /// and its id comes back on the `/node_end` that says so.
     voices: HashMap<i32, Vec<(i32, i32)>>,
-    /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
-    voice_counter: i32,
+    /// **The ids this host allocates on the server it plays through** — every
+    /// node, control bus and buffer it makes, by the one policy every client
+    /// allocates by ([`ids`]).
+    ids: clausters_core::ids::IdSpaces,
+    /// The group the transport governs, when this host bound one
+    /// ([`Host::govern_transport`]).
+    governed: Option<i32>,
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
@@ -825,11 +833,15 @@ impl Host {
             store: None,
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
+            ids: clausters_core::ids::IdSpaces::new(
+                clausters_core::ids::ServerShape::DEFAULT,
+                clausters_core::ids::IdShare::WHOLE,
+            ),
+            governed: None,
             playing: None,
             instance: instance::Playing::default(),
             piece_rolling: false,
             owns_transport: false,
-            voice_counter: 0,
             outbox: Default::default(),
             status: Default::default(),
             owner: None,
@@ -952,6 +964,12 @@ impl Host {
     /// the server that holds the samples (see the `player` field).
     pub fn set_player_link(&mut self, link: ServerLink) {
         self.player = Some(link);
+    }
+
+    /// The player, only when one was attached apart from the server leg — the
+    /// link whose replies a front reads on its own.
+    pub fn player_link(&self) -> Option<&ServerLink> {
+        self.player.as_ref()
     }
 
     /// The link everything audible goes out of: the player when one was
@@ -2676,8 +2694,9 @@ impl Host {
         };
         let (name, extra) = (spec.def, spec.args);
         self.voice_off(widget_id, pitch);
-        let node = voices::ID_BASE + self.voice_counter;
-        self.voice_counter = (self.voice_counter + 1) % voices::ID_SPAN;
+        let Some(node) = self.alloc_nodes(1) else {
+            return;
+        };
         self.send_to_player(voices::on_msg(&name, node, pitch, velocity, &extra));
         self.voices
             .entry(widget_id)

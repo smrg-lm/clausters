@@ -4327,3 +4327,15 @@ sound.
   The participants are structures now: `Editing.identity` takes an `Applier` (a
   `Domain`, or a `Score` for a page) and `distribute` asks those. `projectLegs`
   left the `Adopting` interface with it.
+
+- ⬜ **The page's own host takes no id share** *(found 2026-09-13 while giving
+  the GUI host its share of the server's ids; written in `clients/python/PLAN.md`,
+  `C55`)*. A `Session` holding its own engine splits its ids with the host it
+  opens (`splitShare`, the bridge's `id_share`), as a script does with
+  `--id-share`. The page's shared engine has no such launcher: `guiHost()` boots
+  a host that allocates from the whole space, beside the page's `Server` and
+  beside `pagePools()`, which also take the whole space. Before `C55` the host's
+  fixed window kept it clear of both by accident of its base; now nothing does.
+  What is to be decided is who splits on the page: the pools already defer to a
+  client's allocators when handed them, so the likely shape is one page-level
+  split between the page's `Server`, its pools and its host, stated once.

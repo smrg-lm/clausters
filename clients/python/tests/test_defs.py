@@ -154,6 +154,20 @@ def test_the_audio_space_starts_above_the_servers_own_outputs():
     assert AudioBusAllocator(_spaces(outputs=6)).alloc(1).index == 6
 
 
+def test_splitting_a_share_keeps_what_is_held_and_gives_away_the_second_half():
+    """A launcher that starts a second client on this server splits its ids:
+    the handle keeps the first half and every id it holds, and hands out the
+    other."""
+    from clausters.base.ids import IdShare
+
+    srv = Server(interface=_FakeInterface())
+    held = srv.nodes.alloc()
+    other = srv.split_share()
+    assert (srv.share, other) == (IdShare(0, 2), IdShare(1, 2))
+    assert srv.ids.contains(srv.ids.NODES, held)
+    assert srv.nodes.alloc() == held + 1
+
+
 def test_bus_commands_go_through_the_bus():
     iface = _FakeInterface()
     srv = Server(interface=iface)

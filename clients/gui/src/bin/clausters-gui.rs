@@ -14,6 +14,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clausters_core::config::{Config, PortChoice, WS_PORT_OFFSET};
+use clausters_core::ids::IdShare;
 use clausters_gui::host::metrics::Metrics;
 use clausters_gui::host::store::{self, GuiStore};
 use clausters_gui::host::theme::Theme;
@@ -47,7 +48,7 @@ usage:
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
                 [--theme <path>] [--font <path>] [--msaa <n>]
-                [--follow-block <seconds>]
+                [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --udp [addr:]port     move the UDP leg alone, off the host port. UDP is
@@ -80,6 +81,10 @@ usage:
                             this editor's own samples go, and what a player
                             is started against (`clausters --shm <path>`);
                             without one a path is picked and logged. Unix only
+      --id-share <i/of>     the share of the audio server's node ids, buses
+                            and buffers this host allocates from: share i of
+                            of. A script that launches a host keeps 0/2 and
+                            passes 1/2; default the whole space
       --clock <which>       which counter every playhead is drawn from:
                             `device` (default) is the engine's sample clock,
                             what a host watching a live server wants; `piece`
@@ -229,6 +234,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_max_frame: Option<usize> = None;
     let mut cli_server: Option<String> = None;
     let mut cli_shm: Option<String> = None;
+    let mut cli_id_share = IdShare::WHOLE;
     let mut cli_headless = false;
     let mut cli_data_dir: Option<String> = None;
     let mut cli_head: Option<HeadClock> = None;
@@ -282,6 +288,12 @@ fn run(args: &[String]) -> Result<(), String> {
                     .next()
                     .ok_or_else(|| format!("--shm needs a path\n{USAGE}"))?;
                 cli_shm = Some(v.clone());
+            }
+            "--id-share" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--id-share needs i/of\n{USAGE}"))?;
+                cli_id_share = parse_share(v)?;
             }
             "--clock" => {
                 let v = it
@@ -454,17 +466,14 @@ fn run(args: &[String]) -> Result<(), String> {
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
-        return run_session(
-            &path,
-            save_to.as_deref(),
-            udp_bind,
-            look,
-            shm,
-            server,
-            // A session editor's time is the piece's, which is what the head
-            // reads unless the launch said otherwise.
-            cli_head.unwrap_or(HeadClock::Piece),
-        );
+        return run_session(&path, save_to.as_deref(), udp_bind, look, shm, server, {
+            let mut host = Host::new();
+            host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
+            // A session editor's time is the piece's, which is what the
+            // head reads unless the launch said otherwise.
+            host.set_head_clock(cli_head.unwrap_or(HeadClock::Piece));
+            host
+        });
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -511,6 +520,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let local = socket.local_addr().map_err(|e| e.to_string())?;
 
     let mut host = Host::new();
+    host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
     host.set_head_clock(cli_head.unwrap_or_default());
     look.apply(&mut host);
     load_face(
@@ -526,6 +536,7 @@ fn run(args: &[String]) -> Result<(), String> {
         let leg = ServerLeg::connect(target).map_err(|e| format!("client leg: {e}"))?;
         tracing::info!("client leg ready: host -> audio server at {}", leg.target());
         host = host.with_server(leg);
+        host.on_link_attached();
     }
 
     let mode = if headless { "headless" } else { "windowed" };
@@ -656,7 +667,9 @@ fn run_session(
     look: Look,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
-    head: HeadClock,
+    // Made by the caller, with the launch's clock and id share: the session's
+    // load allocates its buffers from it before anything else exists.
+    mut host: Host,
 ) -> Result<(), String> {
     use clausters_gui::host::document::{Owner, sources, tree};
 
@@ -672,20 +685,15 @@ fn run_session(
     let load = owner
         .session
         .as_ref()
-        .map(|session| sources::plan(session, beside, 0))
+        // **One buffer space.** The session's sources take their numbers from
+        // the host's, and a curve's table or a join a hand mints later take
+        // theirs from the same one, so neither writes over the other.
+        .map(|session| sources::plan(session, beside, host.ids_mut()))
         .unwrap_or_default();
     for (id, why) in &load.unresolved {
         tracing::warn!("session: source {} is not loadable: {why}", id.0);
     }
 
-    let mut host = Host::new();
-    host.set_head_clock(head);
-    // **One buffer allocator over one space.** The session's sources took the
-    // numbers below this; a curve's table and anything a hand mints later take
-    // the numbers above it, and neither writes over the other. The control
-    // buses start at zero because in a host with no client attached nothing
-    // else allocates one.
-    host.play_piece_from(0, load.next_bufnum);
     #[cfg(feature = "standalone")]
     // The player is held, not used: it is a process this editor may own, and
     // dropping it is what stops it when the window closes.
@@ -1008,12 +1016,6 @@ fn attach_player(
     // it is an instrument. Sent before anything can press the space bar.
     leg.send(clausters_gui::host::play::take_def_message())
         .map_err(|e| e.to_string())?;
-    // The monitor's own group, bound to the transport: what `/transport_stop`
-    // freezes and `/transport_play` thaws. Created stopped, so a reader added
-    // to it stands still until a hand asks for sound.
-    for msg in clausters_gui::host::play::take_group_messages() {
-        leg.send(msg).map_err(|e| e.to_string())?;
-    }
     // **The takes, by number and not by sample.** A player maps the buffer
     // directory when it starts, and these were read into it afterwards — so it
     // is pointed at them, which is the whole message: no blob, no copy, and
@@ -1026,7 +1028,24 @@ fn attach_player(
         .map_err(|e| e.to_string())?;
     }
     host.set_player_link(ServerLink::Udp(leg));
+    host.on_link_attached();
+    // The group the transport governs, which the monitor's readers and the
+    // piece are made in: what `/transport_stop` freezes and `/transport_play`
+    // thaws. Created stopped, so a reader added to it stands still until a
+    // hand asks for sound.
+    host.govern_transport();
     Ok(owned)
+}
+
+/// `--id-share i/of`, as the share it names.
+fn parse_share(v: &str) -> Result<IdShare, String> {
+    let bad = || format!("--id-share takes i/of with i < of, not {v}\n{USAGE}");
+    let (index, of) = v.split_once('/').ok_or_else(bad)?;
+    IdShare::new(
+        index.trim().parse().map_err(|_| bad())?,
+        of.trim().parse().map_err(|_| bad())?,
+    )
+    .map_err(|_| bad())
 }
 
 /// Waits for a freshly started player to answer, so nothing is sent into a
@@ -1210,6 +1229,7 @@ fn run_standalone(
     let mut host = Host::new()
         .with_server_link(ServerLink::Embed(embed))
         .with_store(store);
+    host.on_link_attached();
     look.apply(&mut host);
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(

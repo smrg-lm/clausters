@@ -263,6 +263,11 @@ export class IdSpaces {
      */
     inUse(space: string): number;
     /**
+     * Takes share `index` of `of` of every space, keeping what is allocated;
+     * throws, changing nothing, when something held lies outside the slice.
+     */
+    narrow(index: number, of: number): void;
+    /**
      * The spaces of a live client of a server of this shape, taking share
      * `index` of `of`.
      */
@@ -1494,6 +1499,7 @@ export interface InitOutput {
     readonly idspaces_alloc: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly idspaces_contains: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly idspaces_inUse: (a: number, b: number, c: number) => [number, number, number];
+    readonly idspaces_narrow: (a: number, b: number, c: number) => [number, number];
     readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly idspaces_nodeEnded: (a: number, b: number) => number;
     readonly idspaces_release: (a: number, b: number, c: number, d: number, e: number) => [number, number];

@@ -50,6 +50,8 @@ use super::Host;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Monitor {
     pub widget: i32,
+    /// The first of the readers' node ids, one per channel.
+    pub first: i32,
     pub channels: usize,
     pub rolling: bool,
 }
@@ -57,29 +59,6 @@ pub struct Monitor {
 /// The def name the host plays a take through. Namespaced, because it is loaded
 /// into the same server a composition's own defs live in.
 pub const TAKE_DEF: &str = "clausters-gui-take";
-
-/// The first node id the take monitor plays on — a **fixed** one, over the
-/// voice window's base and outside its wrapping span, because there is only
-/// ever one monitor and a fixed id is what makes a stop that arrives after a
-/// lost reply still stop the right node. Channel `n` plays on `TAKE_NODE + n`.
-const TAKE_NODE: i32 = super::voices::ID_BASE + super::voices::ID_SPAN;
-
-/// The group the monitor's readers live in, and the one the transport governs.
-/// Fixed for the same reason the node ids are, and one past them so a stop can
-/// name either without arithmetic.
-const TAKE_GROUP: i32 = TAKE_NODE - 1;
-
-/// The group the transport governs, for the piece's readers as well as the
-/// monitor's: one group, because there is one transport and freezing half of
-/// what it drives would be a pause that is not one.
-pub fn take_group() -> i32 {
-    TAKE_GROUP
-}
-
-/// The first node id a **piece's** readers take — past the monitor's fixed
-/// channels, so the two never collide. Counted up from here, because a piece
-/// has as many readers as it has regions and no fixed one would do.
-pub const PIECE_NODE: i32 = TAKE_NODE + MAX_CHANNELS as i32;
 
 /// The span a reader with no stated end lasts, in frames: past any piece
 /// anybody edits (about 260 days at 48 kHz), and a number rather than a branch
@@ -174,19 +153,19 @@ pub fn take_def_message() -> OscMessage {
 /// The group is created **stopped**: the transport rolls only when a hand asks
 /// it to, and a node added to a frozen group is added frozen, so a take that is
 /// prepared before the first press does not start sounding on its own.
-pub fn take_group_messages() -> Vec<OscMessage> {
+pub fn take_group_messages(group: i32) -> Vec<OscMessage> {
     vec![
         OscMessage {
             addr: "/group_new".into(),
             args: vec![
-                OscType::Int(TAKE_GROUP),
+                OscType::Int(group),
                 OscType::Int(1), // add to the tail…
                 OscType::Int(0), // …of the root group
             ],
         },
         OscMessage {
             addr: "/transport_group".into(),
-            args: vec![OscType::Int(TAKE_GROUP)],
+            args: vec![OscType::Int(group)],
         },
     ]
 }
@@ -230,6 +209,12 @@ impl Host {
         // group, so they stand at the new position rather than racing from
         // wherever the last take left the piece.
         self.stop_playback();
+        // The readers' ids are the host's like any node's, and come back on
+        // their `/node_end` once the stop frees them.
+        let Some(first) = self.alloc_nodes(channels) else {
+            return false;
+        };
+        let group = self.governed.unwrap_or(0);
         self.set_loop(looping);
         self.locate(start);
         for ch in 0..channels {
@@ -237,9 +222,9 @@ impl Host {
                 addr: "/synth_new".into(),
                 args: vec![
                     OscType::String(TAKE_DEF.into()),
-                    OscType::Int(TAKE_NODE + ch as i32),
-                    OscType::Int(0),          // add to head…
-                    OscType::Int(TAKE_GROUP), // …of the monitor's own group
+                    OscType::Int(first + ch as i32),
+                    OscType::Int(0),     // add to head…
+                    OscType::Int(group), // …of the governed group
                     OscType::String("bufnum".into()),
                     OscType::Float(bufnum as f32),
                     OscType::String("chan".into()),
@@ -255,6 +240,7 @@ impl Host {
         });
         self.playing = Some(Monitor {
             widget: widget_id,
+            first,
             channels,
             rolling: true,
         });
@@ -274,13 +260,13 @@ impl Host {
             addr: "/transport_stop".into(),
             args: vec![],
         });
-        // One `/node_free` naming every reader: the ids are contiguous from
-        // `TAKE_NODE`, and freeing them together is what keeps a stereo take
-        // from half-stopping.
+        // One `/node_free` naming every reader: the ids are one contiguous run,
+        // and freeing them together is what keeps a stereo take from
+        // half-stopping.
         self.send_to_player(OscMessage {
             addr: "/node_free".into(),
             args: (0..monitor.channels)
-                .map(|ch| OscType::Int(TAKE_NODE + ch as i32))
+                .map(|ch| OscType::Int(monitor.first + ch as i32))
                 .collect(),
         });
         true
@@ -435,11 +421,10 @@ mod tests {
     /// binding the root would freeze every sound in the session.
     #[test]
     fn the_monitor_binds_its_own_group_to_the_transport() {
-        let msgs = take_group_messages();
+        let msgs = take_group_messages(1001);
         assert_eq!(msgs[0].addr, "/group_new");
-        assert_eq!(msgs[0].args[0], OscType::Int(TAKE_GROUP));
+        assert_eq!(msgs[0].args[0], OscType::Int(1001));
         assert_eq!(msgs[1].addr, "/transport_group");
-        assert_eq!(msgs[1].args[0], OscType::Int(TAKE_GROUP));
-        assert_ne!(TAKE_GROUP, 0, "not the root group");
+        assert_eq!(msgs[1].args[0], OscType::Int(1001));
     }
 }

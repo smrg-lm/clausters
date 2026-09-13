@@ -92,6 +92,7 @@ allocators from these, so a server launched with other numbers is worth
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
 | `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. A segment that already exists is **attached to**, not truncated: the first server on it owns the command plane and the samples, and any later one plays what the owner published. See [Local transports & embedding](ipc.md). |
+| `--id-share` | `i/of` | `0/1` (the whole space) | The share of the audio server's node ids, buses and buffers the host allocates from — its voices, its take monitor, the piece it plays. A script that launches a host on its own server keeps `0/2` and passes `1/2`, which is what `Session.gui` does; a host with no script beside it takes the whole space. |
 | `--data-dir` | dir | the XDG data dir | Where defs are persisted and reloaded. Several servers may share one. |
 | `--no-persist` | — | — | Disables def persistence for this run. |
 | `--prune-defs` | — | — | Drops the persisted defs that no longer load, instead of warning about them. Only the families this build has are pruned, so a build without a def family never eats its library. |
@@ -129,6 +130,7 @@ clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
               [--theme <path>] [--font <path>] [--msaa <n>]
               [--clock <device|piece>] [--follow-block <seconds>]
+              [--id-share <i/of>]
 ```
 
 The host has two legs: a **server front** a script sends `/gui_*` to, and an

@@ -196,7 +196,7 @@ class GuiHost:
         self._process = None
 
     def boot(self, server: "str | None" = None, *, shm: "str | None" = None,
-             verbose: int = 0, data_dir=None, extra_args=(),
+             verbose: int = 0, data_dir=None, id_share=None, extra_args=(),
              ready_timeout: float = 10.0, adopt_ambient: bool = True) -> "GuiHost":
         """Start the ``clausters-gui`` process **this handle is for**, connect
         to it, and return ``self``.
@@ -218,6 +218,11 @@ class GuiHost:
                 only), or ``None`` to skip it.
             verbose: host log verbosity, like `clausters.defs.Server.boot`.
             data_dir: the host's ``--data-dir`` for its GuiDef store.
+            id_share: the `clausters.base.ids.IdShare` of the audio server's
+                node ids, buses and buffers the host allocates from, when a
+                script allocates on the same server
+                (`clausters.defs.Server.split_share`); ``None`` gives the host
+                the whole space.
             extra_args: extra host CLI tokens.
             ready_timeout: seconds to wait for the host to answer.
             adopt_ambient: make this the **ambient** host when none is
@@ -233,7 +238,7 @@ class GuiHost:
 
         self._process = GuiProcess(
             server=server, shm=shm, port=self.target[1], verbose=verbose,
-            data_dir=data_dir, extra_args=extra_args,
+            data_dir=data_dir, id_share=id_share, extra_args=extra_args,
             ready_timeout=ready_timeout).start()
         self.start()
         if adopt_ambient:

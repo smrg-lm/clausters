@@ -354,6 +354,9 @@ class GuiProcess(_Process):
             finds. Only a host built with a rasterizer reads it. A face may also
             be handed over later, over the wire, with
             `clausters.gui.GuiHost.font`.
+        id_share: the `clausters.base.ids.IdShare` of the audio server's ids
+            the host allocates from (``--id-share``), when a script allocates
+            on the same server; ``None`` gives the host the whole space.
         extra_args: extra CLI tokens appended verbatim.
         binary: an explicit host-binary path; ``None`` locates it.
     """
@@ -363,9 +366,10 @@ class GuiProcess(_Process):
 
     def __init__(self, server: "str | None" = None, *, shm: "str | None" = None,
                  port: int = GUI_DEFAULT_PORT, verbose: int = 0, data_dir=None,
-                 font=None, extra_args=(), binary=None,
+                 font=None, id_share=None, extra_args=(), binary=None,
                  ready_timeout: float = 10.0):
         super().__init__()
+        self.id_share = id_share
         self.server = server
         self.shm = shm
         self.port = port
@@ -386,6 +390,8 @@ class GuiProcess(_Process):
             argv += ["--data-dir", str(self._data_dir)]
         if self._font is not None:
             argv += ["--font", str(self._font)]
+        if self.id_share is not None:
+            argv += ["--id-share", f"{self.id_share.index}/{self.id_share.of}"]
         argv += _verbosity_flags(self._verbose)
         argv += self._extra
         return argv

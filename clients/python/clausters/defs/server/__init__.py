@@ -45,7 +45,7 @@ log = _package_log.getChild("server")
 from ..bus import AudioBusAllocator, ControlBusAllocator
 from ..buffer import BufferAllocator
 from ..node import NodeIdAllocator, ROOT_NODE_ID
-from ...base.ids import WHOLE as WHOLE_SHARE
+from ...base.ids import WHOLE as WHOLE_SHARE, IdShare
 from .options import (
     DEFAULT_AUDIO_BUSES,
     DEFAULT_CONTROL_BUSES,
@@ -505,6 +505,25 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         pool, so the client range never exhausts while nodes keep dying."""
         self._ensure_recycler()
         return self.nodes.alloc()
+
+    def split_share(self) -> "IdShare":
+        """**Splits this handle's id share with a second client** and returns
+        the half the other client takes.
+
+        What a launcher does when it starts a client that allocates on this
+        server too — `clausters.Session.gui` gives the GUI host its half with
+        ``--id-share``. This handle keeps the first half of its share of every
+        space (node ids, buses, buffers) and every id it already holds keeps
+        its number; the other client takes the second half.
+
+        Raises:
+            ValueError: when something this handle holds lies in the half it
+                gives away, which would be a collision; nothing changes then.
+        """
+        index, of = 2 * self.share.index, 2 * self.share.of
+        self.ids.narrow(index, of)
+        self.share = IdShare(index, of)
+        return IdShare(index + 1, of)
 
     def _build_allocators(self, score: bool) -> None:
         """**One id space for this client of this server**, and the four

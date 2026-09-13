@@ -159,7 +159,14 @@ pub fn run(
     }
     // The host <- audio-server reply path: a background thread only for the UDP
     // leg (the embed link is polled in the event loop, no socket to drain).
-    if let Some(leg_socket) = host.server().and_then(|s| s.udp_socket()) {
+    // A player apart from the server leg answers on a socket of its own, and
+    // the piece's steps wait on what it says.
+    let legs = [
+        host.server().and_then(|s| s.udp_socket()),
+        host.player_link().and_then(|s| s.udp_socket()),
+    ];
+    for leg_socket in legs.into_iter().flatten() {
+        let proxy = proxy.clone();
         std::thread::Builder::new()
             .name("clausters-gui-server".into())
             .spawn(move || server_reply_loop(leg_socket, proxy))

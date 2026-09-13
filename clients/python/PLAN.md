@@ -322,12 +322,14 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
 
   **The shape.**
 
-  1. `clausters_core::ids` — `IdShare`, `share_of`, and `IdSpaces`: the four spaces sized from the server (`max_nodes`, audio buses and the outputs below them, control buses, buffers), sliced by a share, the GraphDef windows kept clear, a score's node space unbounded. Allocation exhausts loudly and a release of what was never handed out is refused. The outputs reserved are **the server's output count**, the answer that is a fact rather than a default.
-  2. The C ABI and wasm doors for it, declared in `docs/bindings.md`.
-  3. Python's and the web's allocators become that one object behind their existing surface; `base/pool.ts` is shaped by the server like the rest.
-  4. `clausters_editing::apply` — the applier: the handle table, every `Op` as the messages it is, and the **steps a message has to wait for** (a fill after its allocation's `/done`) stated as data, so no endpoint rederives them. It allocates from an `IdSpaces` it is handed.
-  5. The GUI host allocates from `IdSpaces` and applies through the applier; `host/instance.rs` keeps only the socket and the reply path.
-  6. Both clients' `Playback.apply` become that applier plus their own send and await.
+  1. ✅ `clausters_core::ids` — `IdShare`, `share_of`, and `IdSpaces`: the four spaces sized from the server (`max_nodes`, audio buses and the outputs below them, control buses, buffers), sliced by a share, the GraphDef windows kept clear, a score's node space unbounded. Allocation exhausts loudly and a release of what was never handed out is refused. The outputs reserved are **the server's output count**, the answer that is a fact rather than a default.
+  2. ✅ The C ABI and wasm doors for it, declared in `docs/bindings.md`.
+  3. ✅ Python's and the web's allocators become that one object behind their existing surface; `base/pool.ts` is shaped by the server like the rest.
+  4. ✅ `clausters_editing::apply` — the applier: the handle table, every `Op` as the messages it is, and the **steps a message has to wait for** (a fill after its allocation's `/done`) stated as data, so no endpoint rederives them. It allocates from an `IdSpaces` it is handed.
+  5. ✅ The GUI host allocates from `IdSpaces` and applies through the applier; `host/instance.rs` keeps only the socket and the reply path. The voice window, the monitor's fixed readers and group and the piece's node base are gone: every node the host makes comes from its spaces and returns on `/node_end`, and every reply from either front passes `Host::on_server_reply` first.
+
+     **Who hands out the shares** *(decided 2026-09-13 by the user)*: the launcher. A script that starts a host on its own server keeps share 0 of 2 and gives the host share 1 (`Server.split_share` / `splitShare`, passed as `--id-share 1/2` or the page bridge's `id_share`); a host with no script beside it takes the whole space. Every id already held keeps its number across the split (`IdSpaces::narrow`), and the host's spaces take the server's own shape when its `/server_query` answers (`IdSpaces::reshape`).
+  6. ⬜ Both clients' `Playback.apply` become that applier plus their own send and await.
 
   **Acceptance.** No endpoint constructs a `Registry` of its own or states a bus or buffer base; the op-to-OSC encoding exists once; a curve's table in a standalone host, in a script and in a page is filled after its buffer exists by the same stated step; the parity tests and both suites pass.
 ### The arrangement model + the multitrack editor (client arc, phased)

@@ -36,6 +36,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+use clausters_core::ids::{IdSpaces, Space};
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::session::{Location, Session, Source};
 use clausters_document::{Body, SourceId};
@@ -120,14 +121,6 @@ pub struct Load {
     /// empty rectangle, and the reader deserves to know it is missing rather
     /// than empty.
     pub unresolved: Vec<(SourceId, String)>,
-    /// **Where the allocation stopped**: the first buffer number this load did
-    /// not take.
-    ///
-    /// Reported because this module is the buffer allocator for a session and
-    /// something else goes on allocating after it -- a curve's table, a join
-    /// made by a hand. Two allocators over one space would write a table over a
-    /// take, and the number is only knowable here.
-    pub next_bufnum: i32,
 }
 
 /// Plans the load of every source the document actually names.
@@ -136,12 +129,12 @@ pub struct Load {
 /// resolved against — the rule that makes a session directory movable, and the
 /// format's own words rather than this host's convention.
 ///
-/// `first_bufnum` is where allocation starts, so a caller that already owns
-/// buffers says where to carry on from. Numbers are handed out in source-id
-/// order, which makes the same session load the same way twice.
-pub fn plan(session: &Session, beside: &Path, first_bufnum: i32) -> Load {
+/// The buffers come from `ids`, the host's one buffer space, so what goes on
+/// allocating after the load -- a curve's table, a join made by a hand -- never
+/// writes over a take. Numbers are handed out in source-id order, which makes
+/// the same session load the same way twice.
+pub fn plan(session: &Session, beside: &Path, ids: &mut IdSpaces) -> Load {
     let mut load = Load::default();
-    let mut next = first_bufnum;
     for id in referenced(session) {
         let Some(source) = session.source(id) else {
             // The session's own `dangling` says this too; saying it here keeps
@@ -152,8 +145,13 @@ pub fn plan(session: &Session, beside: &Path, first_bufnum: i32) -> Load {
         };
         match locate(source, beside) {
             Ok(path) => {
-                let bufnum = next;
-                next += 1;
+                let bufnum = match ids.alloc(Space::Buffers, 1) {
+                    Ok(bufnum) => bufnum as i32,
+                    Err(e) => {
+                        load.unresolved.push((id, e.to_string()));
+                        continue;
+                    }
+                };
                 load.takes.map.insert(
                     id,
                     Take {
@@ -179,8 +177,7 @@ pub fn plan(session: &Session, beside: &Path, first_bufnum: i32) -> Load {
             }
         }
     }
-    stitch(session, &mut load, &mut next);
-    load.next_bufnum = next;
+    stitch(session, &mut load, ids);
     load
 }
 
@@ -224,7 +221,7 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
 /// What is left over is **named rather than dropped**: a join over a take that
 /// did not load is a box that will draw empty, and the reader deserves the
 /// reason.
-fn stitch(session: &Session, load: &mut Load, next: &mut i32) {
+fn stitch(session: &Session, load: &mut Load, ids: &mut IdSpaces) {
     let mut waiting: Vec<SourceId> = referenced(session)
         .into_iter()
         .filter(|id| {
@@ -249,8 +246,10 @@ fn stitch(session: &Session, load: &mut Load, next: &mut i32) {
                 // anything else is not a join and never will be.
                 return matches!(source.location, Location::Segments { .. });
             };
-            let bufnum = *next;
-            *next += 1;
+            let Ok(bufnum) = ids.alloc(Space::Buffers, 1) else {
+                return true;
+            };
+            let bufnum = bufnum as i32;
             load.takes.insert(
                 *id,
                 Take {
@@ -413,6 +412,13 @@ mod tests {
         name.to_string()
     }
 
+    fn spaces() -> IdSpaces {
+        IdSpaces::new(
+            clausters_core::ids::ServerShape::DEFAULT,
+            clausters_core::ids::IdShare::WHOLE,
+        )
+    }
+
     fn tmp(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "clausters_gui_sources_{tag}_{}",
@@ -428,7 +434,7 @@ mod tests {
         let name = wav(&dir, "take.wav");
         let session = Session::new(Document::new(aggregate(1, vec![at(0.0, take_node(2, 7))])))
             .with_source(SourceId(7), Source::file(name, Lifetime::Session));
-        let load = plan(&session, &dir, 0);
+        let load = plan(&session, &dir, &mut spaces());
         assert!(load.unresolved.is_empty(), "{:?}", load.unresolved);
         assert_eq!(load.takes.get(SourceId(7)).map(|t| t.bufnum), Some(0));
         let OscType::String(path) = &load.messages[0].args[1] else {
@@ -450,7 +456,7 @@ mod tests {
         let session = Session::new(Document::new(aggregate(1, vec![at(0.0, take_node(2, 1))])))
             .with_source(SourceId(1), Source::file(used, Lifetime::Session))
             .with_source(SourceId(2), Source::file(unused, Lifetime::Session));
-        let load = plan(&session, &dir, 0);
+        let load = plan(&session, &dir, &mut spaces());
         assert_eq!(load.takes.len(), 1);
         assert!(load.takes.get(SourceId(2)).is_none());
         let _ = std::fs::remove_dir_all(&dir);
@@ -471,7 +477,7 @@ mod tests {
         )))
         .with_source(SourceId(1), Source::file("gone.wav", Lifetime::Session))
         .with_source(SourceId(2), Source::volatile(Lifetime::Temporary));
-        let load = plan(&session, &dir, 0);
+        let load = plan(&session, &dir, &mut spaces());
         assert!(load.takes.is_empty(), "nothing loadable");
         let why: Vec<&str> = load.unresolved.iter().map(|(_, w)| w.as_str()).collect();
         assert!(why[0].contains("is not there"), "{why:?}");
@@ -480,10 +486,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Buffers are handed out from where the caller said, in source order, so
-    /// the same session loads the same way twice.
+    /// Buffers come from the host's one space, past what it already holds, in
+    /// source order, so the same session loads the same way twice.
     #[test]
-    fn buffers_are_allocated_from_the_caller_s_base_in_order() {
+    fn buffers_are_allocated_from_the_host_s_space_in_order() {
         let dir = tmp("order");
         let a = wav(&dir, "a.wav");
         let b = wav(&dir, "b.wav");
@@ -494,9 +500,12 @@ mod tests {
         )))
         .with_source(SourceId(9), Source::file(a, Lifetime::Session))
         .with_source(SourceId(4), Source::file(b, Lifetime::Session));
-        let load = plan(&session, &dir, 100);
+        let mut ids = spaces();
+        let held = ids.alloc(Space::Buffers, 100).unwrap();
+        let load = plan(&session, &dir, &mut ids);
         assert_eq!(load.takes.get(SourceId(4)).map(|t| t.bufnum), Some(100));
         assert_eq!(load.takes.get(SourceId(9)).map(|t| t.bufnum), Some(101));
+        assert_eq!(held, 0, "past what the host already held");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

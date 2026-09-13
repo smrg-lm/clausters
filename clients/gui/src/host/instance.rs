@@ -1,141 +1,79 @@
-//! **What is sounding**: the piece's instance, and the ops that make it match.
+//! **What is sounding**: the piece's instance, and the steps that make it match.
 //!
 //! A standalone host plays a piece the way every other endpoint does — through
 //! [`clausters_document::multitrack::nodes::plan`], which says what a piece
-//! *needs*, and [`clausters_editing::instance::Instance`], which answers the
-//! **difference** between that and what a server already holds. Neither of them
-//! opens a socket or allocates anything, and that is the seam: `instance.rs`'s
-//! own header says *"the client's half is exactly: a table, an allocator, and a
-//! socket"*, and **a standalone host is a client in that sentence**. This
-//! module is those three.
+//! *needs*, [`clausters_editing::instance::Instance`], which answers the
+//! **difference** between that and what a server already holds, and
+//! [`clausters_editing::apply::Applier`], which turns that difference into the
+//! messages and the waits that carry it out. None of the three opens a socket,
+//! and that is the seam: *"the client's half is exactly: a table, an
+//! allocator, and a socket"*, and **a standalone host is a client in that
+//! sentence**. The table is the applier's, the allocator is the host's
+//! [`IdSpaces`](clausters_core::ids::IdSpaces) (`ids.rs`), and this module is
+//! the socket: it sends the steps in order and holds them where one waits for
+//! the server.
 //!
-//! # What it replaced, and why that was the bug factory
+//! # Why the host does not carry out ops itself any more
 //!
-//! `document::sound` was the host's own reconciler: a reader per region and
-//! channel, diffed against a remembered `Reading`, played through the host's
-//! one buffer-player def. It worked, and it was a **second implementation of
-//! the multitrack application** — its own module doc said *"it lives here
-//! rather than in a script because there is one of it"* while
-//! `clausters-editing` said, of the crate's reconciler, *"usable by a
-//! standalone host with no client in the process"*. Two modules, each claiming
-//! to be the only one. Every defect of 2026-09-12 was a slice of that split
-//! found one at a time.
+//! It did, twice over. `document::sound` was the host's own reconciler, and
+//! when that went, the ops were turned into messages here while the Python
+//! client turned them into messages in `playback.py` — two translations of one
+//! vocabulary, and the host's was the one that sent a buffer's fill before the
+//! buffer existed and went silent. The applier is that translation, once, and
+//! every endpoint binds it.
 //!
-//! What the piece gains by binding the real one is everything the strip is and
-//! the readers were not: a **clip's own gain and mute** before the track's, a
-//! **track's** gain, mute and the mixer's rule about solo, **automation heard**
-//! rather than only drawn (a curve is a table in a buffer driving a port), the
-//! widths rule that picks a mono or a stereo clip def, and the **meters** the
-//! plan allocates. None of that was reachable from a reader with a `chan` and
-//! an `out`.
+//! # The waits
 //!
-//! # The three halves, and what each one is allowed to know
-//!
-//! - **The table** ([`Playing`]): handle → node id, control bus, buffer. An op
-//!   never carries a number this host did not make, so the table is the only
-//!   place a handle becomes one.
-//! - **The allocator**: node ids from [`play::PIECE_NODE`] up (past the
-//!   monitor's fixed window), control buses and buffers from a base the caller
-//!   gives it. It is the host's because *"a bus allocator is a property of a
-//!   running session and not of a piece"*.
-//! - **The socket**: [`Host::send_to_player`], the same one every other
-//!   message to this host's server goes through.
+//! A step that waits (`/done` of an asynchronous command, a `/server_sync`
+//! barrier) holds everything after it until the matching reply comes back
+//! through [`Host::on_server_reply`], which both fronts call for every reply.
+//! Nothing blocks a frame: the steps queue, and the reply path drains them.
 //!
 //! Nothing here decides *what* to play. A question about order, about which
 //! node a port belongs to, or about what a curve's table holds is the crate's,
 //! and if the answer looks wrong the fix goes there — where both clients read
 //! it too.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
+use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::SourceId;
 use clausters_document::multitrack::nodes::{self, Plan, SourceInfo};
-use clausters_editing::instance::{Handle, Instance, Op, Port, Ports};
+use clausters_editing::apply::{Applier, Endpoint, Step};
+use clausters_editing::instance::Instance;
 
 use crate::host::diag;
-use crate::host::play;
-use crate::host::{Host, document, instance};
+use crate::host::{Host, document};
 
-/// How many control buses a run may hold before this refuses it — a guard on
-/// arithmetic rather than a policy: a plan asking for a thousand-channel meter
-/// is a plan that has gone wrong somewhere else.
-const MAX_BUS_RUN: usize = 64;
-
-/// **A piece, as it is playing**: what the reconciler knows, plus the numbers
-/// only a running session has.
-#[derive(Debug)]
+/// **A piece, as it is playing**: what the reconciler knows, the applier's
+/// tables, and the steps not yet sent.
+#[derive(Debug, Default)]
 pub struct Playing {
     /// What was made from the last plan — the crate's memory, not ours.
     instance: Instance,
-    /// The node a handle became.
-    nodes: HashMap<Handle, i32>,
-    /// The first control bus of the run a handle became, and how long it is.
-    buses: HashMap<Handle, (i32, usize)>,
-    /// The buffer a handle became.
-    buffers: HashMap<Handle, i32>,
-    /// **Samples waiting for their buffer to exist**, by buffer number.
-    ///
-    /// `/buffer_alloc` is asynchronous: the server builds the buffer off the
-    /// audio thread and answers `/done /buffer_alloc n` once it is queued to the
-    /// engine. A `/buffer_setRange` sent on the next line arrives first and is
-    /// refused -- which left every curve table empty, and a curve reading
-    /// nothing drives its gain to zero: the whole piece went silent the moment
-    /// a box or a track had a curve. So the fill is held here and sent when the
-    /// `/done` comes back, which lands it behind the buffer in the same queue.
-    pending: HashMap<i32, Vec<f32>>,
-    /// The next node id, counted up from the piece's base.
-    next_node: i32,
-    /// The next control bus, counted up from the base the caller set.
-    next_bus: i32,
-    /// The next buffer number, likewise.
-    next_buffer: i32,
-}
-
-impl Default for Playing {
-    /// An instance allocating from the piece's own node base and from zero for
-    /// the rest — what a host with no session behind it would use, and what
-    /// [`Playing::new`] overrides the moment a session says where its own
-    /// buffers stopped.
-    fn default() -> Self {
-        Playing {
-            instance: Instance::default(),
-            nodes: HashMap::new(),
-            buses: HashMap::new(),
-            buffers: HashMap::new(),
-            pending: HashMap::new(),
-            // **Never zero.** Node 0 is the root group, and a table that minted
-            // it would free the server's whole tree on the first reconcile.
-            next_node: play::PIECE_NODE,
-            next_bus: 0,
-            next_buffer: 0,
-        }
-    }
+    /// Handle → node, bus and buffer, made on the first plan: its target is
+    /// the governed group, which is the host's once a player is attached.
+    applier: Option<Applier>,
+    /// Steps not sent yet, in order.
+    queue: VecDeque<Step>,
+    /// The step the queue is held behind, until its reply comes back.
+    awaiting: Option<Step>,
 }
 
 impl Playing {
-    /// An instance that has made nothing yet, allocating from these bases.
-    ///
-    /// The buffer base is the caller's because a session's **sources** are
-    /// already in buffers by the time anything plays: the curve tables go above
-    /// them, and a host that guessed would write a table over a take.
-    pub fn new(first_bus: i32, first_buffer: i32) -> Self {
-        Playing {
-            next_bus: first_bus,
-            next_buffer: first_buffer,
-            ..Playing::default()
-        }
-    }
-
     /// The meters the piece is writing, as `(track id, first bus, channels)` —
     /// what a mixer strip is drawn from.
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
+        let Some(applier) = self.applier.as_ref() else {
+            return Vec::new();
+        };
         self.instance
             .meters()
             .into_iter()
             .filter_map(|(track, handle, channels)| {
-                let (bus, _) = self.buses.get(&handle)?;
-                Some((track, *bus, channels))
+                let (bus, _) = applier.bus(&handle)?;
+                Some((track, bus, channels))
             })
             .collect()
     }
@@ -148,321 +86,101 @@ impl Playing {
     /// How many nodes the piece is holding — what a caller reports when it says
     /// it built something.
     pub fn nodes(&self) -> usize {
-        self.nodes.len()
+        self.applier.as_ref().map_or(0, Applier::node_count)
     }
 
-    /// **The difference between the plan and what is made, as messages.**
-    ///
-    /// The order is the crate's and this only carries it out, which is the
-    /// whole reason a second endpoint cannot carry it out differently.
-    fn reconcile(&mut self, plan: &Plan, gain: f32) -> Vec<OscMessage> {
+    /// **The difference between the plan and what is made, queued as steps**,
+    /// with every node created at the tail of `target`.
+    fn reconcile(
+        &mut self,
+        plan: &Plan,
+        gain: f32,
+        target: i32,
+        ids: &mut IdSpaces,
+    ) -> Result<(), IdError> {
         let ops = self.instance.reconcile(plan, gain);
-        self.apply(ops)
+        // **No transport binding.** The op means *the engine owns the piece's
+        // time*; this host also plays a take monitor, and there is one
+        // transport per server, so the governed group is the one the host
+        // made when its player attached and the piece's graph goes inside it.
+        // What the engine freezes is a subtree, so the intent holds exactly.
+        let applier = self.applier.get_or_insert_with(|| {
+            Applier::new(Endpoint {
+                target,
+                bind_transport: false,
+                ..Endpoint::default()
+            })
+        });
+        let steps = applier.apply(ops, ids)?;
+        self.queue.extend(steps);
+        Ok(())
     }
 
-    /// Everything freed, as messages. The piece itself is untouched: what an
-    /// instance holds is nodes, and nodes are not the composition.
-    fn teardown(&mut self) -> Vec<OscMessage> {
+    /// Everything freed, queued as steps. The piece itself is untouched: what
+    /// an instance holds is nodes, and nodes are not the composition.
+    fn teardown(&mut self, ids: &mut IdSpaces) -> Result<(), IdError> {
         let ops = self.instance.teardown();
-        let out = self.apply(ops);
-        self.nodes.clear();
-        self.buses.clear();
-        self.buffers.clear();
-        self.pending.clear();
-        out
+        if let Some(mut applier) = self.applier.take() {
+            let steps = applier.apply(ops, ids)?;
+            self.queue.extend(steps);
+        }
+        Ok(())
     }
 
-    /// One op as the messages it is on this wire.
-    ///
-    /// The **only** place this host turns the crate's vocabulary into the
-    /// server's. An op it cannot carry out is said out loud rather than
-    /// skipped: a handle with nothing behind it means a table and a plan that
-    /// have gone out of step, and a piece that half-plays is worse than one
-    /// that says why.
-    fn apply(&mut self, ops: Vec<Op>) -> Vec<OscMessage> {
+    /// **The messages that may go out now**: everything up to the next step
+    /// that waits, which is sent (a sync) or noted (an await) and then holds
+    /// the rest.
+    fn ready(&mut self) -> Vec<OscMessage> {
         let mut out = Vec::new();
-        for op in ops {
-            match op {
-                Op::Def { family, spec } => out.push(message(
-                    "/def_send",
-                    vec![OscType::String(family), OscType::String(spec.to_string())],
-                )),
-                // **Sent, not waited on.** A barrier exists because a def send
-                // answers `/done` and a client that waits must not take another
-                // command's; this host's messages reach its server in order (a
-                // ring for an embedded one, one socket for an attached one), so
-                // the sync is sent for whoever is counting and nothing blocks
-                // the frame that produced the edit.
-                Op::Barrier => out.push(message("/server_sync", vec![OscType::Int(0)])),
-                Op::Graph {
-                    handle,
-                    graph,
-                    ports,
-                } => {
-                    let node = self.mint_node(&handle);
-                    let mut args = vec![
-                        OscType::String(graph),
-                        OscType::Int(node),
-                        // At the tail of the group the transport governs, which
-                        // is where the monitor's readers live too: one group,
-                        // because there is one transport.
-                        OscType::Int(1),
-                        OscType::Int(play::take_group()),
-                    ];
-                    args.extend(self.port_args(&ports));
-                    out.push(message("/graph_new", args));
+        while self.awaiting.is_none() {
+            match self.queue.pop_front() {
+                None => break,
+                Some(Step::Send(message)) => out.push(message),
+                Some(Step::Sync(id)) => {
+                    out.push(OscMessage {
+                        addr: "/server_sync".into(),
+                        args: vec![OscType::Int(id)],
+                    });
+                    self.awaiting = Some(Step::Sync(id));
                 }
-                // **The one op this endpoint answers differently, and it says
-                // why.** The op means *the engine owns the piece's time*, and
-                // a client with nothing else playing satisfies it by binding
-                // the piece's own graph. This host also plays a **take
-                // monitor**, and there is one transport per server: binding the
-                // piece would release the group the monitor lives in, so the
-                // monitor would run free of the transport that is supposed to
-                // start, stop and locate it.
-                //
-                // So the governed group stays the one this host made at boot
-                // (`play::take_group`) and the piece's graph is created
-                // **inside** it -- which satisfies the op's intent exactly,
-                // since what the engine freezes is a subtree. Ignoring it
-                // silently would be the divergence; this is the endpoint's own
-                // arrangement of its nodes, which is the half a client owns.
-                Op::Transport { handle } => {
-                    if let Some(node) = self.node(&handle) {
-                        diag::debug!(
-                            "the piece is node {node}, inside the group the transport already \
-                             governs ({}) -- this host binds no second one",
-                            play::take_group()
-                        );
-                    }
-                }
-                Op::Group { handle, before } => {
-                    let Some(target) = self.node(&before) else {
-                        continue;
-                    };
-                    let node = self.mint_node(&handle);
-                    out.push(message(
-                        "/group_new",
-                        vec![
-                            OscType::Int(node),
-                            // Before the node named, which is what the op says.
-                            OscType::Int(2),
-                            OscType::Int(target),
-                        ],
-                    ));
-                }
-                Op::Slot {
-                    handle,
-                    target,
-                    slot,
-                    ports,
-                } => {
-                    let Some(instance) = self.node(&target) else {
-                        continue;
-                    };
-                    let node = self.mint_node(&handle);
-                    let mut args = vec![
-                        OscType::Int(instance),
-                        OscType::String(slot),
-                        OscType::Int(node),
-                    ];
-                    args.extend(self.port_args(&ports));
-                    out.push(message("/graph_addSlot", args));
-                }
-                Op::Synth {
-                    handle,
-                    def,
-                    target,
-                    ports,
-                } => {
-                    let Some(group) = self.node(&target) else {
-                        continue;
-                    };
-                    let node = self.mint_node(&handle);
-                    let mut args = vec![
-                        OscType::String(def),
-                        OscType::Int(node),
-                        OscType::Int(1),
-                        OscType::Int(group),
-                    ];
-                    args.extend(self.port_args(&ports));
-                    out.push(message("/synth_new", args));
-                }
-                // **A control bus is allocated and never asked for.** The
-                // server holds a pool and the client owns the indices, which is
-                // the same arrangement every other client here has.
-                Op::Bus { handle, channels } => {
-                    let channels = channels.clamp(1, MAX_BUS_RUN);
-                    let first = self.next_bus;
-                    self.next_bus += channels as i32;
-                    self.buses.insert(handle, (first, channels));
-                }
-                Op::Buffer { handle, samples } => {
-                    let bufnum = self.next_buffer;
-                    self.next_buffer += 1;
-                    self.buffers.insert(handle, bufnum);
-                    out.push(message(
-                        "/buffer_alloc",
-                        vec![
-                            OscType::Int(bufnum),
-                            OscType::Int(samples.len().max(1) as i32),
-                            OscType::Int(1),
-                        ],
-                    ));
-                    // The samples wait for the buffer: see `pending`.
-                    if !samples.is_empty() {
-                        self.pending.insert(bufnum, samples);
-                    }
-                }
-                Op::Set { handle, ports } => {
-                    let Some(node) = self.node(&handle) else {
-                        continue;
-                    };
-                    let mut args = vec![OscType::Int(node)];
-                    args.extend(self.port_args(&ports));
-                    out.push(message("/node_set", args));
-                }
-                Op::Map { handle, port, bus } => {
-                    let (Some(node), Some((index, _))) =
-                        (self.node(&handle), self.buses.get(&bus).copied())
-                    else {
-                        continue;
-                    };
-                    out.push(message(
-                        "/graph_map",
-                        vec![
-                            OscType::Int(node),
-                            OscType::String(port),
-                            OscType::Int(index),
-                        ],
-                    ));
-                }
-                // **A handle with nothing behind it is a node that is already
-                // gone**, and a message naming one would reach whatever holds
-                // that id next. The reconciler does not emit these -- freeing a
-                // node takes its map with it -- and this is the other half of
-                // that, said the same way the Python client says it.
-                Op::Unmap { handle, port } => {
-                    if let Some(node) = self.node(&handle) {
-                        out.push(message(
-                            "/graph_map",
-                            vec![OscType::Int(node), OscType::String(port), OscType::Int(-1)],
-                        ));
-                    }
-                }
-                Op::Free { handle, forget } => {
-                    if let Some(node) = self.nodes.remove(&handle) {
-                        out.push(message("/node_free", vec![OscType::Int(node)]));
-                    }
-                    // Freeing a group frees what is inside it, so these only
-                    // leave the table: a second free would name a node that is
-                    // already gone.
-                    for handle in forget {
-                        self.nodes.remove(&handle);
-                    }
-                }
-                Op::FreeBus { handle } => {
-                    self.buses.remove(&handle);
-                }
-                Op::FreeBuffer { handle } => {
-                    if let Some(bufnum) = self.buffers.remove(&handle) {
-                        self.pending.remove(&bufnum);
-                        out.push(message("/buffer_free", vec![OscType::Int(bufnum)]));
-                    }
-                }
+                Some(wait @ Step::AwaitDone { .. }) => self.awaiting = Some(wait),
             }
         }
         out
     }
 
-    /// **The fill a buffer was waiting for**, now that the server says it exists
-    /// — `None` for a buffer this instance is not filling.
-    fn filled(&mut self, bufnum: i32) -> Option<OscMessage> {
-        let samples = self.pending.remove(&bufnum)?;
-        let mut bytes = Vec::with_capacity(samples.len() * 4);
-        for value in &samples {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        Some(message(
-            "/buffer_setRange",
-            vec![OscType::Int(bufnum), OscType::Int(0), OscType::Blob(bytes)],
-        ))
-    }
-
-    /// The node a handle is, saying so when it is nothing.
-    fn node(&self, handle: &Handle) -> Option<i32> {
-        match self.nodes.get(handle) {
-            Some(node) => Some(*node),
-            None => {
-                diag::warn!("the piece names {handle}, which this host never made");
-                None
-            }
-        }
-    }
-
-    /// **A buffer number from the one allocator**, for something made outside
-    /// a plan — a join a hand minted. Here rather than beside the sources
-    /// because there is one space and this is what counts through it.
-    pub(crate) fn mint_buffer(&mut self) -> i32 {
-        let bufnum = self.next_buffer;
-        self.next_buffer += 1;
-        bufnum
-    }
-
-    /// A fresh node id for a handle, remembered.
-    fn mint_node(&mut self, handle: &Handle) -> i32 {
-        let node = self.next_node;
-        self.next_node += 1;
-        self.nodes.insert(handle.clone(), node);
-        node
-    }
-
-    /// A port list as OSC pairs, resolving every reference through the tables.
+    /// **A reply, offered to the step the queue is held behind**: whether it
+    /// was the one, which releases the rest.
     ///
-    /// A port naming a resource this host did not make is **dropped**, and the
-    /// rest of the node is still set: the alternative is a whole strip that
-    /// does not arrive because one curve's buffer went missing.
-    fn port_args(&self, ports: &Ports) -> Vec<OscType> {
-        let mut args = Vec::new();
-        for (name, port) in ports {
-            let value = match port {
-                Port::Number(value) => *value as f32,
-                Port::Bus { bus, offset } => match self.buses.get(bus) {
-                    Some((first, _)) => (first + *offset as i32) as f32,
-                    None => continue,
-                },
-                Port::Buffer { buffer } => match self.buffers.get(buffer) {
-                    Some(bufnum) => *bufnum as f32,
-                    None => continue,
-                },
-            };
-            args.push(OscType::String(name.clone()));
-            args.push(OscType::Float(value));
+    /// A `/fail` of the awaited command releases it too, said out loud: a
+    /// queue held forever behind a refusal is a piece that never sounds again,
+    /// and the refusal already says why.
+    fn reply(&mut self, msg: &OscMessage) -> bool {
+        let released = match (&self.awaiting, msg.addr.as_str()) {
+            (Some(Step::Sync(id)), "/server_sync.reply") => {
+                msg.args.first() == Some(&OscType::Int(*id))
+            }
+            (Some(Step::AwaitDone { command, index }), "/done") => {
+                matches!(msg.args.first(), Some(OscType::String(c)) if c == command)
+                    && index.is_none_or(|index| msg.args.get(1) == Some(&OscType::Int(index)))
+            }
+            (Some(Step::AwaitDone { command, .. }), "/fail") => {
+                let refused = matches!(msg.args.first(), Some(OscType::String(c)) if c == command);
+                if refused {
+                    diag::warn!("the piece's {command} was refused: {:?}", msg.args);
+                }
+                refused
+            }
+            _ => false,
+        };
+        if released {
+            self.awaiting = None;
         }
-        args
-    }
-}
-
-/// One message, spelled the way every other one in this host is.
-fn message(addr: &str, args: Vec<OscType>) -> OscMessage {
-    OscMessage {
-        addr: addr.into(),
-        args,
+        released
     }
 }
 
 impl Host {
-    /// **Where this host's piece allocates from**, once a session has said
-    /// where its own buffers stopped.
-    ///
-    /// One allocator over one space, which is the whole point of taking the
-    /// number rather than guessing a base: the session's sources are in buffers
-    /// already, and a curve's table written over a take is a piece that plays
-    /// somebody else's audio through a fader.
-    pub fn play_piece_from(&mut self, first_bus: i32, first_buffer: i32) {
-        self.instance = instance::Playing::new(first_bus, first_buffer);
-    }
-
     /// **Makes the sources an edit minted**, so what names them can be drawn
     /// and heard.
     ///
@@ -473,7 +191,7 @@ impl Host {
     /// buffer it is (so a box draws and the plan can play it), and the
     /// **server** is told to make it.
     ///
-    /// The buffer number comes from the one allocator this host has, which is
+    /// The buffer number comes from the host's one buffer space, which is
     /// what keeps a minted join from being written over a take.
     pub(crate) fn mint_sources(
         &mut self,
@@ -516,7 +234,13 @@ impl Host {
                 );
                 continue;
             };
-            let bufnum = self.instance.mint_buffer();
+            let bufnum = match self.ids.alloc(Space::Buffers, 1) {
+                Ok(bufnum) => bufnum as i32,
+                Err(e) => {
+                    diag::warn!("source {} cannot be made: {e}", minted.id.0);
+                    continue;
+                }
+            };
             owner.takes.insert(
                 minted.id,
                 document::sources::Take {
@@ -532,33 +256,29 @@ impl Host {
         }
     }
 
-    /// **A reply the audio server sent `/done` with**, offered to the piece.
-    ///
-    /// Both fronts call this from their reply path, so a curve's table is
-    /// filled the same way whichever carries the server. Anything that is not
-    /// the allocation of a buffer the piece is waiting on is not the piece's,
-    /// and costs a map lookup.
-    pub fn on_server_done(&mut self, args: &[OscType]) {
-        let (Some(OscType::String(command)), Some(OscType::Int(bufnum))) =
-            (args.first(), args.get(1))
-        else {
-            return;
-        };
-        if command != "/buffer_alloc" {
-            return;
+    /// **A reply the piece may be waiting on**, offered to its queue; what it
+    /// releases goes out at once. Called by [`Host::on_server_reply`].
+    pub(super) fn piece_reply(&mut self, msg: &OscMessage) {
+        if self.instance.reply(msg) {
+            self.send_piece();
         }
-        if let Some(fill) = self.instance.filled(*bufnum) {
-            self.send_to_player(fill);
+    }
+
+    /// Sends every step of the piece that may go out now.
+    fn send_piece(&mut self) {
+        for message in self.instance.ready() {
+            self.send_to_player(message);
         }
     }
 
     /// **Makes what sounds be what the piece says.**
     ///
     /// One call, whether it is the first time or after any edit: the plan is
-    /// derived from the piece, the reconciler answers the difference, and this
-    /// sends it. A node that did not change costs nothing, and an edit reaches
-    /// a node that is already running — so a box moved while the piece plays is
-    /// heard where it was dropped, with nothing that is sounding cut.
+    /// derived from the piece, the reconciler answers the difference, the
+    /// applier turns it into steps, and this sends them. A node that did not
+    /// change costs nothing, and an edit reaches a node that is already
+    /// running — so a box moved while the piece plays is heard where it was
+    /// dropped, with nothing that is sounding cut.
     ///
     /// It is a no-op for a host with no piece and for one with no server — a
     /// session opens, edits, undoes and saves without either.
@@ -591,24 +311,24 @@ impl Host {
             document::piece::DEFAULT_TEMPO * 60.0,
             &sources,
         );
-        let messages = self.instance.reconcile(&plan, 1.0);
-        diag::debug!(
-            "sound_piece: {} message(s), {} node(s)",
-            messages.len(),
-            self.instance.nodes()
-        );
-        for message in messages {
-            self.send_to_player(message);
+        // Inside the governed group when there is one, so the transport the
+        // take monitor answers to is the piece's too; the root otherwise.
+        let target = self.governed.unwrap_or(0);
+        if let Err(e) = self.instance.reconcile(&plan, 1.0, target, &mut self.ids) {
+            diag::warn!("the piece cannot be played: {e}");
         }
+        self.send_piece();
+        diag::debug!("sound_piece: {} node(s)", self.instance.nodes());
         self.instance.nodes()
     }
 
     /// Frees everything the piece made — what closing a window owes the server,
     /// and what a host that stops owning a piece owes it.
     pub fn hush_piece(&mut self) {
-        for message in self.instance.teardown() {
-            self.send_to_player(message);
+        if let Err(e) = self.instance.teardown(&mut self.ids) {
+            diag::warn!("the piece cannot be freed: {e}");
         }
+        self.send_piece();
     }
 
     /// How many nodes the piece is playing through, for a caller reporting what
@@ -660,6 +380,7 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clausters_core::ids::{IdShare, ServerShape};
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
     use clausters_document::{
         Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
@@ -723,42 +444,80 @@ mod tests {
         nodes::plan(piece, 48_000.0, 120.0, &sources())
     }
 
+    fn spaces() -> IdSpaces {
+        IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
+    }
+
+    /// Everything the queue sends, answering every wait the way a server does.
+    fn drain(playing: &mut Playing) -> Vec<OscMessage> {
+        let mut sent = Vec::new();
+        loop {
+            sent.extend(playing.ready());
+            let reply = match playing.awaiting.clone() {
+                None => break,
+                Some(Step::Sync(id)) => OscMessage {
+                    addr: "/server_sync.reply".into(),
+                    args: vec![OscType::Int(id)],
+                },
+                Some(Step::AwaitDone { command, index }) => OscMessage {
+                    addr: "/done".into(),
+                    args: std::iter::once(OscType::String(command))
+                        .chain(index.map(OscType::Int))
+                        .collect(),
+                },
+                Some(Step::Send(_)) => unreachable!("a send never waits"),
+            };
+            assert!(
+                playing.reply(&reply),
+                "the server's answer releases the wait"
+            );
+        }
+        sent
+    }
+
     fn addrs(messages: &[OscMessage]) -> Vec<&str> {
         messages.iter().map(|m| m.addr.as_str()).collect()
     }
 
     /// **A piece becomes the messages that play it**, in the crate's order: the
-    /// defs it is made of, the barrier that closes them, the piece's own graph,
-    /// and the transport binding that makes the engine own its time.
+    /// defs it is made of, the barrier that closes them, the piece's own graph
+    /// inside the governed group, and its slots.
     ///
     /// What this asserts is the *shape* and not the contents: which defs a piece
     /// needs and what a clip's ports are belong to the shared mixer and to the
     /// crate's reconciler, and both are tested there. What can only go wrong
-    /// here is the translation.
+    /// here is the carrying out.
     #[test]
     fn a_piece_becomes_the_messages_that_play_it() {
-        let mut playing = Playing::new(0, 100);
-        let messages = playing.reconcile(&plan_of(&piece()), 1.0);
-        let addrs = addrs(&messages);
-        assert!(
-            addrs.starts_with(&["/def_send"]),
-            "the defs come first: {addrs:?}"
+        let (mut playing, mut ids) = (Playing::default(), spaces());
+        playing
+            .reconcile(&plan_of(&piece()), 1.0, 1234, &mut ids)
+            .unwrap();
+        let first = playing.ready();
+        assert_eq!(
+            addrs(&first).last(),
+            Some(&"/server_sync"),
+            "the defs go out and the barrier holds the rest: {:?}",
+            addrs(&first)
         );
-        let barrier = addrs
+        assert!(
+            !addrs(&first).contains(&"/graph_new"),
+            "nothing names a def before the barrier is answered"
+        );
+        let messages = drain(&mut playing);
+        let addrs = addrs(&messages);
+        let graph = messages
             .iter()
-            .position(|a| *a == "/server_sync")
-            .expect("a barrier closes the defs");
-        let graph = addrs
-            .iter()
-            .position(|a| *a == "/graph_new")
+            .find(|m| m.addr == "/graph_new")
             .expect("the piece is a graph");
-        assert!(barrier < graph, "nothing names a def before it is sent");
-        // **No second transport group.** The piece's graph is created inside
-        // the one this host already governs, which is what keeps the take
-        // monitor frozen and thawed by the same transport the piece is.
+        assert_eq!(
+            graph.args[3],
+            OscType::Int(1234),
+            "inside the governed group"
+        );
         assert!(
             !addrs.contains(&"/transport_group"),
-            "the host binds one governed group, at boot: {addrs:?}"
+            "the host binds one governed group, when its player attaches: {addrs:?}"
         );
         assert!(
             addrs.contains(&"/graph_addSlot"),
@@ -766,19 +525,16 @@ mod tests {
         );
     }
 
-    /// **Never node 0.** The root group is node 0, so an allocator that started
-    /// there would free the server's whole tree on the first thing it reaped.
+    /// **The nodes come from the host's one node space**, so a voice, the
+    /// monitor and the piece never name the same node.
     #[test]
-    fn the_nodes_it_mints_start_past_the_monitors_own() {
-        let mut playing = Playing::new(0, 100);
-        playing.reconcile(&plan_of(&piece()), 1.0);
-        let mut minted: Vec<i32> = playing.nodes.values().copied().collect();
-        minted.sort_unstable();
-        assert!(!minted.is_empty());
-        assert!(
-            minted[0] >= play::PIECE_NODE,
-            "a piece's nodes begin past the take monitor's fixed window: {minted:?}"
-        );
+    fn the_nodes_it_makes_are_the_host_s_spaces() {
+        let (mut playing, mut ids) = (Playing::default(), spaces());
+        playing
+            .reconcile(&plan_of(&piece()), 1.0, 0, &mut ids)
+            .unwrap();
+        assert!(playing.nodes() > 0);
+        assert_eq!(ids.in_use(Space::Nodes), playing.nodes());
     }
 
     /// **An edit reaches a node that is already running.** The second pass over
@@ -787,97 +543,74 @@ mod tests {
     /// sounding on every drag.
     #[test]
     fn an_edit_sets_a_live_node_and_an_unchanged_piece_says_nothing() {
-        let mut playing = Playing::new(0, 100);
+        let (mut playing, mut ids) = (Playing::default(), spaces());
         let mut piece = piece();
-        playing.reconcile(&plan_of(&piece), 1.0);
-        let made = playing.nodes.len();
+        playing
+            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
+            .unwrap();
+        drain(&mut playing);
+        let made = playing.nodes();
 
+        playing
+            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
+            .unwrap();
         assert!(
-            playing.reconcile(&plan_of(&piece), 1.0).is_empty(),
+            drain(&mut playing).is_empty(),
             "a piece that did not move costs nothing"
         );
 
         piece.tracks[0].lanes[0].regions[0].position = Beat(6.0);
-        let messages = playing.reconcile(&plan_of(&piece), 1.0);
+        playing
+            .reconcile(&plan_of(&piece), 1.0, 0, &mut ids)
+            .unwrap();
+        let messages = drain(&mut playing);
         let addrs = addrs(&messages);
         assert!(!messages.is_empty(), "the box moved");
         assert!(
             addrs.iter().all(|a| *a == "/node_set"),
             "a move is a set on a live node: {addrs:?}"
         );
-        assert_eq!(playing.nodes.len(), made, "and nothing was made or freed");
-    }
-
-    /// **A port names a resource this host made, and is resolved through the
-    /// table that made it.** One naming nothing is dropped and the rest of the
-    /// node still arrives — a whole strip that does not come because one
-    /// curve's buffer went missing is worse than a strip with a port unset.
-    #[test]
-    fn a_port_resolves_through_the_table_and_a_missing_one_is_dropped() {
-        let mut playing = Playing::new(64, 100);
-        playing.buses.insert("meter/1".into(), (64, 2));
-        playing.buffers.insert("curve/1".into(), 103);
-        let ports: Ports = [
-            ("gain".to_string(), Port::Number(0.5)),
-            (
-                "out".to_string(),
-                Port::Bus {
-                    bus: "meter/1".into(),
-                    offset: 1,
-                },
-            ),
-            (
-                "buf".to_string(),
-                Port::Buffer {
-                    buffer: "curve/1".into(),
-                },
-            ),
-            (
-                "nowhere".to_string(),
-                Port::Buffer {
-                    buffer: "curve/9".into(),
-                },
-            ),
-        ]
-        .into_iter()
-        .collect();
-        let args = playing.port_args(&ports);
-        let named: Vec<String> = args
-            .chunks(2)
-            .filter_map(|pair| match pair.first() {
-                Some(OscType::String(name)) => Some(name.clone()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            named,
-            ["buf", "gain", "out"],
-            "the one with no resource left"
-        );
-        assert!(args.contains(&OscType::Float(65.0)), "the bus, one along");
-        assert!(args.contains(&OscType::Float(103.0)), "the buffer's number");
+        assert_eq!(playing.nodes(), made, "and nothing was made or freed");
     }
 
     /// **A table is filled after its buffer exists, never before.**
     ///
-    /// The defect this pins (found 2026-09-13 by the user, by ear: "dejó de
-    /// sonar"): the host sent `/buffer_alloc` and `/buffer_setRange` back to
-    /// back, the allocation is asynchronous, and the server refused every
-    /// fill. A curve over an empty table drives its gain to zero, so the whole
-    /// piece went silent. The fill now waits for the `/done`.
+    /// The defect this pins (found 2026-09-13, by ear): the host sent
+    /// `/buffer_alloc` and `/buffer_setRange` back to back, the allocation is
+    /// asynchronous, and the server refused every fill. A curve over an empty
+    /// table drives its gain to zero, so the whole piece went silent. The fill
+    /// waits for the `/done` of that very buffer.
     #[test]
     fn a_curve_table_waits_for_its_buffer() {
-        let mut playing = Playing::new(0, 100);
-        let ops = vec![Op::Buffer {
-            handle: "curve/1".into(),
-            samples: vec![0.5, 1.0],
-        }];
-        let sent = playing.apply(ops);
-        assert_eq!(addrs(&sent), ["/buffer_alloc"], "the alloc alone goes out");
-        let fill = playing.filled(100).expect("the table waits for buffer 100");
-        assert_eq!(fill.addr, "/buffer_setRange");
-        assert!(playing.filled(100).is_none(), "and is sent once");
-        assert!(playing.filled(7).is_none(), "a buffer nobody waits on");
+        let (mut playing, mut ids) = (Playing::default(), spaces());
+        let mut applier = Applier::new(Endpoint::default());
+        let steps = applier
+            .apply(
+                vec![clausters_editing::instance::Op::Buffer {
+                    handle: "curve/1".into(),
+                    samples: vec![0.5, 1.0],
+                }],
+                &mut ids,
+            )
+            .unwrap();
+        let bufnum = applier.buffer("curve/1").unwrap();
+        playing.queue.extend(steps);
+        assert_eq!(
+            addrs(&playing.ready()),
+            ["/buffer_alloc"],
+            "the alloc alone"
+        );
+        let done = |n: i32| OscMessage {
+            addr: "/done".into(),
+            args: vec![OscType::String("/buffer_alloc".into()), OscType::Int(n)],
+        };
+        assert!(!playing.reply(&done(bufnum + 1)), "another buffer's answer");
+        assert!(playing.ready().is_empty(), "still held");
+        assert!(playing.reply(&done(bufnum)));
+        assert_eq!(
+            addrs(&playing.ready()),
+            ["/buffer_setRange", "/server_sync"]
+        );
     }
 
     /// **Everything freed, and the tables with it.** What an instance holds is
@@ -885,16 +618,20 @@ mod tests {
     /// again without the composition noticing.
     #[test]
     fn a_teardown_frees_what_it_made_and_forgets_it() {
-        let mut playing = Playing::new(0, 100);
-        playing.reconcile(&plan_of(&piece()), 1.0);
+        let (mut playing, mut ids) = (Playing::default(), spaces());
+        playing
+            .reconcile(&plan_of(&piece()), 1.0, 0, &mut ids)
+            .unwrap();
+        drain(&mut playing);
         assert!(playing.is_sounding());
-        let messages = playing.teardown();
+        playing.teardown(&mut ids).unwrap();
+        let messages = drain(&mut playing);
         assert!(
             addrs(&messages).contains(&"/node_free"),
             "the groups go: {:?}",
             addrs(&messages)
         );
         assert!(!playing.is_sounding());
-        assert!(playing.nodes.is_empty() && playing.buses.is_empty());
+        assert_eq!(playing.nodes(), 0);
     }
 }

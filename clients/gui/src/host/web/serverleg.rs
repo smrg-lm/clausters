@@ -216,6 +216,9 @@ impl WebApp {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path
         };
+        // The ids and the piece's waiting steps hear every reply first
+        // (`Host::on_server_reply`, which the native leg calls too).
+        self.host.on_server_reply(&msg);
         match msg.addr.as_str() {
             "/bus_stream.reply" => {
                 if !self.stream_seen {
@@ -410,10 +413,6 @@ impl WebApp {
                     self.schedule_stream_sync();
                 }
             }
-            // `/done` acks (e.g. for `/bus_stream`) need no action -- but a
-            // buffer the piece allocated exists now, and its table can be
-            // filled (`Host::on_server_done`, which the native leg calls too).
-            "/done" => self.host.on_server_done(&msg.args),
             _ => {}
         }
     }

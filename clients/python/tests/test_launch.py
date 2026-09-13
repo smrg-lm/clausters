@@ -30,6 +30,16 @@ def test_a_launched_host_carries_the_typeface_it_was_given():
     assert argv[argv.index("--font") + 1] == "/usr/share/fonts/x.ttf"
 
 
+def test_a_launched_host_carries_its_id_share():
+    # A script that launches a host on its own server splits its ids with it,
+    # and the host learns its half from the command line.
+    from clausters.base.ids import IdShare
+
+    assert "--id-share" not in GuiProcess()._argv()
+    argv = GuiProcess(id_share=IdShare(1, 2))._argv()
+    assert argv[argv.index("--id-share") + 1] == "1/2"
+
+
 @pytest.mark.skipif(not __import__("sys").platform.startswith("linux"),
                     reason="PR_SET_PDEATHSIG is Linux-only")
 def test_the_child_dies_with_a_killed_interpreter():

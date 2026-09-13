@@ -1016,6 +1016,15 @@ mod tests {
 
 #[cfg(test)]
 mod take_tests {
+    /// The host's spaces with the first `held` buffers already taken, so a
+    /// load's numbers start at `held`.
+    fn ids_past(held: usize) -> clausters_core::ids::IdSpaces {
+        use clausters_core::ids::{IdShare, IdSpaces, ServerShape, Space};
+        let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        ids.alloc(Space::Buffers, held).expect("buffers");
+        ids
+    }
+
     use super::*;
     use crate::host::document::sources;
     use clausters_document::session::{Session, Source};
@@ -1069,7 +1078,7 @@ mod take_tests {
             // Two seconds at the drawing's own rate: 96000 frames.
             Source::file("t.wav", Lifetime::Session).shaped(2, 96_000, 48_000.0),
         );
-        let load = sources::plan(&session, &dir, 7);
+        let load = sources::plan(&session, &dir, &mut ids_past(7));
         let look = Look {
             takes: Some(&load.takes),
             ..Look::default()
@@ -1138,7 +1147,7 @@ mod take_tests {
         };
 
         let one = piece(vec![segment(3, 480.0, 1.0)]);
-        let load = sources::plan(&one, &dir, 7);
+        let load = sources::plan(&one, &dir, &mut ids_past(7));
         let look = Look {
             takes: Some(&load.takes),
             ..Look::default()
@@ -1148,7 +1157,7 @@ mod take_tests {
         assert_eq!(trimmed[4], 480.0, "read from the frame the trim left it at");
 
         let joined = piece(vec![segment(3, 0.0, 1.0), segment(4, 480.0, 2.0)]);
-        let load = sources::plan(&joined, &dir, 7);
+        let load = sources::plan(&joined, &dir, &mut ids_past(7));
         let look = Look {
             takes: Some(&load.takes),
             ..Look::default()
@@ -1205,7 +1214,7 @@ mod take_tests {
             SourceId(3),
             Source::file("t.wav", Lifetime::Session).shaped(1, 96_000, 48_000.0),
         );
-        let load = sources::plan(&session, &dir, 7);
+        let load = sources::plan(&session, &dir, &mut ids_past(7));
         let look = Look {
             takes: Some(&load.takes),
             ..Look::default()

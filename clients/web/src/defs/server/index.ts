@@ -254,8 +254,9 @@ export class Server {
     /**
      * The slice of the server's client id space this handle allocates from —
      * the whole of it unless a second client shares the server (`IdShare`).
+     * Halved by {@link Server.splitShare}.
      */
-    readonly share: IdShare;
+    share: IdShare;
     /**
      * The sizes this client's allocators were built against — the constructor's
      * guess until {@link Server.reconcile} replaces it with the server's own
@@ -306,6 +307,27 @@ export class Server {
                   );
         }
         return this.built.ids;
+    }
+
+    /**
+     * **Splits this handle's id share with a second client** and returns the
+     * half the other client takes.
+     *
+     * What a launcher does when it starts a client that allocates on this
+     * server too — `Session.gui` gives the GUI host its half. This handle
+     * keeps the first half of its share of every space (node ids, buses,
+     * buffers) and every id it already holds keeps its number; the other
+     * client takes the second half.
+     *
+     * @throws Error when something this handle holds lies in the half it gives
+     *   away, which would be a collision; nothing changes then.
+     */
+    splitShare(): IdShare {
+        const index = 2 * this.share.index;
+        const of = 2 * this.share.of;
+        this.ids.narrow(index, of);
+        this.share = { index, of };
+        return { index: index + 1, of };
     }
 
     get nodes(): NodeIdAllocator {

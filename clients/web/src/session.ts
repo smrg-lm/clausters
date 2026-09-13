@@ -369,13 +369,20 @@ export class Session extends Environment {
 
     async gui(): Promise<GuiHost> {
         if (this.gui_) return this.gui_;
-        // The session's share governs both legs: a session that is one of two
-        // clients on an engine is one of two on its host as well.
+        // The session's share of the host's widget ids is the one it has on
+        // its engine: a session that is one of two clients on an engine is one
+        // of two on its host as well.
         const share = this.server.share;
         if (this.ownedEngine) {
             // A host of this session's own, wired to this session's engine —
-            // and this session's to close, unlike the page's shared one.
-            this.ownedGui = await newGuiHost({ engine: this.ownedEngine });
+            // and this session's to close, unlike the page's shared one. **It
+            // allocates on that engine too** (its voices, its take monitor, the
+            // piece it plays), so the session's ids are split with it: the
+            // session keeps the first half and the host takes the second.
+            this.ownedGui = await newGuiHost({
+                engine: this.ownedEngine,
+                idShare: this.server.splitShare(),
+            });
             this.gui_ = await new GuiHost({ gui: this.ownedGui, share }).boot();
         } else {
             this.gui_ = await new GuiHost({ share }).attach();

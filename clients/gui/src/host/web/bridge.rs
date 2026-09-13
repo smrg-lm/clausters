@@ -151,6 +151,13 @@ impl GuiBridge {
         self.send(WebEvent::Msaa(samples));
     }
 
+    /// Takes share `index` of `of` of the audio server's node ids, buses and
+    /// buffers — the browser form of the native `--id-share`, given by
+    /// whoever starts this host on an engine a client allocates on too.
+    pub fn id_share(&self, index: u32, of: u32) {
+        self.send(WebEvent::IdShare(index, of));
+    }
+
     /// Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
     /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
     /// the inbound half of [`connect_page`](Self::connect_page), the same
