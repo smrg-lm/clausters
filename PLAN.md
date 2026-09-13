@@ -2287,10 +2287,12 @@ finished work, where a pending item reads as done.
 
   The sampling is the crate's: `nodes::plan` hands back the table itself, on the
   **frame** axis, so a tempo change bends a curve the way it bends everything
-  else. Linear between break-points -- a segment's shape lives in the opaque
-  `Point::data` this crate carries and never reads, so shaped segments are heard
-  as the straight lines between their points, which is named rather than
-  guessed. `tests/mixer_graph.rs` hears it: a table opens a track's fader over
+  else. Each segment is sampled with the shape its first point states in
+  `Point::data` (`shape`, `curve`), through `clausters_core::envshape` -- the
+  function the host draws it with. *(It was linear between break-points, on the
+  grounds that `data` is opaque; a bend drawn on screen was then heard straight.
+  Changed 2026-09-13, `clients/gui/PLAN.md`, "Found by use", "A bent envelope
+  was drawn bent and heard straight".)* `tests/mixer_graph.rs` hears it: a table opens a track's fader over
   eight blocks, and unmapping gives the fader back to the hand.
 
 - ✅ **The clients each drove the piece by hand, so the mixer existed twice**

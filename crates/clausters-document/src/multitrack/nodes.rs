@@ -153,11 +153,16 @@ pub fn curve_port(automation: &Automation) -> Option<&str> {
 
 /// What a break-point curve says at `at`, holding its ends.
 ///
-/// Linear between points. The shape of a segment lives in
-/// [`crate::Point::data`], which this crate carries and never reads, so a curve
-/// with shaped segments is heard as the straight lines between its points --
-/// named here rather than guessed, since reaching into an opaque blob for a
-/// shape is the kind of thing that is right once and wrong afterwards.
+/// **Each segment as its first point shapes it**, through
+/// [`clausters_core::envshape::shape_value`] -- the function the GUI host draws
+/// the same curve with, so what is heard is what is on screen. The shape rides
+/// in [`crate::Point::data`] as the multitrack editor writes it (`shape`, an
+/// envelope shape number, and `curve`); a point that states none is linear.
+///
+/// It used to be linear always, on the grounds that `data` is opaque here. The
+/// editor had already settled what those two keys mean -- its projection draws
+/// them and its reading writes them -- so a bent segment was drawn bent and
+/// heard straight (found 2026-09-13, by ear).
 fn value_at(points: &[crate::Point], at: f64) -> f64 {
     let first = &points[0];
     if at <= first.at {
@@ -170,7 +175,21 @@ fn value_at(points: &[crate::Point], at: f64) -> f64 {
             if span <= 0.0 {
                 return b.value;
             }
-            return a.value + (b.value - a.value) * ((at - a.at) / span);
+            let data = a.data.0.as_object();
+            let number = |key: &str| {
+                data.and_then(|d| d.get(key))
+                    .and_then(serde_json::Value::as_f64)
+            };
+            let shape =
+                number("shape").map_or(clausters_core::envshape::SHAPE_LINEAR, |s| s as i32);
+            let curve = number("curve").unwrap_or(0.0) as f32;
+            return f64::from(clausters_core::envshape::shape_value(
+                shape,
+                curve,
+                a.value as f32,
+                b.value as f32,
+                ((at - a.at) / span) as f32,
+            ));
         }
     }
     points[points.len() - 1].value
@@ -631,6 +650,29 @@ mod curve_tests {
             (middle - 0.5).abs() < 0.02,
             "linear between points: {middle}"
         );
+    }
+
+    /// **A bent segment is heard bent** (found 2026-09-13, by ear: an envelope
+    /// bent on screen changed nothing in the sound). The segment takes the shape
+    /// its first point states, through the function the host draws it with.
+    #[test]
+    fn a_curve_is_sampled_with_the_shape_its_points_state() {
+        let mut bent = curve(
+            10,
+            serde_json::json!({"port": "gain"}),
+            &[(0.0, 0.0), (1.0, 1.0)],
+        );
+        bent.points[0].data = crate::Opaque(serde_json::json!({"shape": 5, "curve": 4.0}));
+        let piece = track_with(vec![bent]);
+        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let table = &plan.tracks[0].curves[0].table;
+        let middle = table[table.len() / 2];
+        let drawn = clausters_core::envshape::shape_value(5, 4.0, 0.0, 1.0, 0.5);
+        assert!(
+            (middle - drawn).abs() < 0.02,
+            "the table follows the drawn shape: {middle} against {drawn}"
+        );
+        assert!((middle - 0.5).abs() > 0.1, "and not the straight line");
     }
 
     /// **A curve that names nothing is not heard.** The target is opaque and the

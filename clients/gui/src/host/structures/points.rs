@@ -59,7 +59,14 @@ pub fn parse_points(v: &Value, lo: f32, hi: f32) -> Option<Vec<BpfPoint>> {
             Some(BpfPoint {
                 time: q[0].as_f64()?.max(0.0),
                 value: (q[1].as_f64()? as f32).clamp(lo, hi),
-                shape: q[2].as_i64().unwrap_or(SHAPE_LINEAR as i64) as i32,
+                // **A shape written as a float is still that shape.** The
+                // multitrack hands its curves their points as one `f64` run,
+                // so a bent segment arrived as `5.0`, read linear, and every
+                // redraw straightened what the hand had just bent.
+                shape: q[2]
+                    .as_i64()
+                    .or_else(|| q[2].as_f64().map(|s| s as i64))
+                    .unwrap_or(SHAPE_LINEAR as i64) as i32,
                 curve: q[3].as_f64().unwrap_or(0.0) as f32,
             })
         })
@@ -316,6 +323,19 @@ mod tests {
             0
         );
         assert!(parse_points(&Value::from("nope"), 0.0, 1.0).is_none());
+    }
+
+    /// **A shape written as a float is still that shape** (found 2026-09-13, by
+    /// eye: in a standalone host a bent envelope straightened on every redraw).
+    /// The multitrack hands its curves their points as one `f64` run, so a bent
+    /// segment arrives as `5.0`.
+    #[test]
+    fn a_shape_written_as_a_float_is_that_shape() {
+        let v = serde_json::json!([0.0, 0.0, 5.0, 4.0, 1.0, 1.0, 1.0, 0.0]);
+        let points = parse_points(&v, 0.0, 1.0).unwrap();
+        assert_eq!(points[0].shape, SHAPE_CURVE, "5.0 is the curve shape");
+        assert_eq!(points[0].curve, 4.0);
+        assert_eq!(points[1].shape, SHAPE_LINEAR);
     }
 
     #[test]
