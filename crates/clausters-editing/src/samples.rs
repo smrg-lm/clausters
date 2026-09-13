@@ -98,7 +98,7 @@ pub fn write(
 }
 
 /// The gesture as the write it is, with the run it replaced as its inverse —
-/// [`write`] behind the JSON reading a client's report arrives as.
+/// [`write()`] behind the JSON reading a client's report arrives as.
 pub fn intake(tag: &str, values: &[Value]) -> Intake {
     if !answers(tag) || values.len() < 4 {
         return Intake::nothing();

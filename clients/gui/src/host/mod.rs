@@ -2787,7 +2787,7 @@ impl Host {
     /// mapping path derives for itself.
     ///
     /// So the subscription is exactly the views that asked
-    /// ([`Samples::stream_want`](widget::Samples::stream_want)): the client
+    /// (`Samples::stream_want`): the client
     /// said the buffer is being written into (`fills`) and the body is this
     /// element's own copy. A mapped view is deliberately not in it — it would
     /// be paying twice for one picture.

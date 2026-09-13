@@ -545,7 +545,7 @@ impl Host {
     }
 
     /// Whether group `key` holds a view whose axis is **not bounded by what it
-    /// holds** ([`OnAxis::unbounded_axis`](super::widget::Element::unbounded_axis))
+    /// holds** (`OnAxis::unbounded_axis`)
     /// — a multitrack, which is composed into the space after its last clip.
     fn group_has_lane(&self, key: GroupKey) -> bool {
         self.window_defs.values().any(|tree| {

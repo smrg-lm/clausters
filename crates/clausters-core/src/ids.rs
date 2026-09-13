@@ -1,7 +1,7 @@
 //! **The id spaces a client allocates from**, sized from the server and sliced
 //! for the clients sharing it — the policy every endpoint used to restate.
 //!
-//! [`Registry`](crate::registry::Registry) is the occupancy map; this is what
+//! [`crate::registry::Registry`] is the occupancy map; this is what
 //! stands on it. A client needs four spaces — node ids, audio buses, control
 //! buses, buffers — and each has a shape the *server* decides: the node table's
 //! client range, the output buses at the bottom of the audio space, the private

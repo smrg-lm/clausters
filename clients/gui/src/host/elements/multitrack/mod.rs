@@ -221,7 +221,7 @@ pub struct Multitrack {
     /// drawn from, one entry however many boxes read it.
     ///
     /// It is the element's because the samples are: a buffer arrives once
-    /// ([`Element::bulk_of`]) and every box over it draws the same pyramid,
+    /// (`Element::bulk_of`) and every box over it draws the same pyramid,
     /// which is what makes six views of one recording cost one download.
     ///
     /// Each is a **signal element in its body form** — the very element that
