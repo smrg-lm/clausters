@@ -1852,6 +1852,93 @@ mod window_verb_tests {
         assert_eq!(moved, Some(0.25), "and the curve is where the hand left it");
     }
 
+    /// **The host delivers the event a client receives**, the version it was
+    /// made against included, so an edit a route the hand never saw has
+    /// overtaken is refused here as it is in a script. The host used to build
+    /// its own event with no version, which applied every edit unchecked.
+    #[test]
+    fn an_edit_made_against_a_picture_that_is_gone_is_refused_here_too() {
+        use clausters_document::multitrack::{Automation, Multitrack, Track};
+        use clausters_document::{Opaque, Point};
+
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.name = Some("t10".into());
+        track.automation.push(Automation {
+            points: vec![
+                Point {
+                    at: 0.0,
+                    value: 1.0,
+                    data: Opaque::default(),
+                },
+                Point {
+                    at: 4.0,
+                    value: 1.0,
+                    data: Opaque::default(),
+                },
+            ],
+            visible: true,
+            ..Automation::new(NodeId(30), Opaque::default())
+        });
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let (mut host, def_id, view) = with_piece(piece);
+        let points = |value: f32| {
+            vec![
+                OscType::String("points".into()),
+                OscType::String("30".into()),
+                OscType::Float(0.0),
+                OscType::Float(1.0),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::String("30".into()),
+                OscType::Float(400.0),
+                OscType::Float(value),
+                OscType::Int(1),
+                OscType::Float(0.0),
+            ]
+        };
+        let second = |host: &Host| {
+            host.owner
+                .as_ref()
+                .and_then(|o| o.piece.automation(NodeId(30)))
+                .map(|a| a.points[1].value)
+        };
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &points(0.25)));
+        let answered = host.outbox.borrow().version();
+        assert!(answered > 0, "the answer stated the version it left");
+
+        // A route no gesture took moves the piece.
+        if let Some(owner) = host.owner.as_mut() {
+            owner.piece.version += 5;
+        }
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        let message = host.event_message(view, seq, points(0.75));
+        assert_eq!(
+            message.args[2],
+            OscType::Long(answered),
+            "made against what the host was drawing"
+        );
+        assert!(host.deliver(def_id, &message), "the editor's to answer");
+        assert_eq!(
+            second(&host),
+            Some(0.25),
+            "the overtaken edit is not applied"
+        );
+        assert_eq!(
+            host.outbox
+                .borrow()
+                .last()
+                .and_then(|a| a.reason.clone())
+                .as_deref(),
+            Some("the composition changed since this edit"),
+            "and the window is told why"
+        );
+    }
+
     /// **A join makes the source it minted**, so the box that names it draws,
     /// sounds and has a length its edges stop at.
     ///

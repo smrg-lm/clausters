@@ -91,30 +91,18 @@ impl WebApp {
                     seq,
                     args,
                 } => {
-                    // A host that owns what it draws answers itself; every
-                    // other one emits and waits, as it always has. A page
-                    // rarely owns one — but the seam is the same on both
-                    // fronts, and a gesture is implemented once.
-                    if self.host.answer_own(def_id, widget_id, seq, &args) {
+                    // **One message, whoever it goes to**, built where the
+                    // native front builds it: a host that owns what it draws
+                    // is delivered it in memory, and every other one queues it
+                    // for the page. A page rarely owns one — but the seam is
+                    // the same on both fronts, and a gesture is implemented
+                    // once.
+                    let message = self.host.event_message(widget_id, seq, args);
+                    if self.host.deliver(def_id, &message) {
                         self.request_redraw(def_id);
                         continue;
                     }
-                    // The stamp and the version are the second and third
-                    // arguments on both fronts, before any tag, so one rule
-                    // reads every event whatever its payload. The version says
-                    // what state the edit was made against, and it is read here
-                    // rather than carried in the effect because it belongs to
-                    // the conversation and not to the gesture.
-                    let mut msg_args = vec![
-                        OscType::Int(widget_id),
-                        OscType::Int(seq),
-                        OscType::Long(self.host.outbox.borrow().version()),
-                    ];
-                    msg_args.extend(args);
-                    self.queue(OscMessage {
-                        addr: GUI_EVENT.into(),
-                        args: msg_args,
-                    });
+                    self.queue(message);
                 }
                 GestureEffect::Redraw(def_id) => self.request_redraw(def_id),
                 // The focus stepped past the ring: **blur the canvas**, so the

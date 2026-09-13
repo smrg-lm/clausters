@@ -8,7 +8,7 @@ use std::net::{TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
+use clausters_core::osc::{OscMessage, OscPacket, encode};
 use tracing::warn;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -30,7 +30,7 @@ use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{Key as HostKey, Live};
 use crate::host::world::World;
-use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
+use crate::host::{BusSource, ClientId, Host, HostEffect};
 use crate::view::Renderers;
 
 use super::{FRAME, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
@@ -357,27 +357,14 @@ impl App {
     /// what state it drew, which is what an owner that never speaks of versions
     /// leaves it with.
     ///
-    /// The version is read here rather than carried in the gesture's effect
-    /// because it is the **conversation's** state and not the gesture's: what
-    /// the edit was made against is what the host had been told when it went
-    /// out, which is this moment.
-    pub(super) fn emit(&self, def_id: i32, widget_id: i32, seq: i32, mut args: Vec<OscType>) {
+    /// The message is built by [`Host::event_message`], the one place both
+    /// fronts build an event, and a host that owns the window was offered it
+    /// first ([`Host::deliver`]).
+    pub(super) fn emit(&self, def_id: i32, message: OscMessage) {
         let Some(ws) = self.windows.get(&def_id) else {
             return;
         };
-        let mut msg_args = vec![
-            OscType::Int(widget_id),
-            OscType::Int(seq),
-            OscType::Long(self.host.outbox.borrow().version()),
-        ];
-        msg_args.append(&mut args);
-        self.send(
-            ws.origin,
-            OscMessage {
-                addr: GUI_EVENT.into(),
-                args: msg_args,
-            },
-        );
+        self.send(ws.origin, message);
     }
 
     /// Delivers what an element reported outside the gesture machine — the
@@ -408,7 +395,8 @@ impl App {
         // Stamped like any other edit: live MIDI painting reports the same
         // payloads a hand does, and the owner has no way to tell them apart.
         let seq = self.host.outbox.borrow_mut().stamp(def_id, widget_id);
-        self.emit(def_id, widget_id, seq, args);
+        let message = self.host.event_message(widget_id, seq, args);
+        self.emit(def_id, message);
     }
 
     /// The framebuffer size of a window.

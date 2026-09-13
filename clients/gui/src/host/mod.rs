@@ -2013,14 +2013,53 @@ impl Host {
     /// be written back onto the picture, and a widget is reached through the
     /// tree it is in.
     pub fn answer_own(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+        let message = self.event_message(widget_id, seq, args.to_vec());
+        self.deliver(def_id, &message)
+    }
+
+    /// **A `/gui_event` as a client receives it**: the widget, the stamp, the
+    /// version this host is drawing -- what the edit was made against -- and
+    /// the payload.
+    ///
+    /// Both fronts build every event here, whether it then crosses a socket or
+    /// is delivered in memory ([`Host::deliver`]), so the two are one message.
+    /// The version is read now rather than carried in the gesture because it
+    /// is the conversation's state: what the edit was made against is what the
+    /// host had been told when it went out.
+    pub fn event_message(&self, widget_id: i32, seq: i32, args: Vec<OscType>) -> OscMessage {
+        let mut msg_args = vec![
+            OscType::Int(widget_id),
+            OscType::Int(seq),
+            OscType::Long(self.outbox.borrow().version()),
+        ];
+        msg_args.extend(args);
+        OscMessage {
+            addr: GUI_EVENT.into(),
+            args: msg_args,
+        }
+    }
+
+    /// **Delivers an event to what this host owns**, the one message a client
+    /// would have received ([`Host::event_message`]); answers whether it was
+    /// taken, which is what tells a front not to send it on.
+    ///
+    /// A gesture on the piece's own window is the **editor's turn** — the same
+    /// one a script and a page run, read out of the same message: stamped,
+    /// versioned, applied with its inverse and answered. What is left is the
+    /// tree's, for a document written before the turn, and the window's own
+    /// verbs.
+    pub fn deliver(&mut self, def_id: i32, message: &OscMessage) -> bool {
+        let (Some(OscType::Int(widget_id)), Some(OscType::Int(seq))) =
+            (message.args.first(), message.args.get(1))
+        else {
+            return false;
+        };
+        let (widget_id, seq) = (*widget_id, *seq);
+        let args = message.args.get(3..).unwrap_or_default();
         diag::debug!(
-            "answer_own: widget={widget_id} seq={seq} owner={} args={args:?}",
+            "deliver: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
-        // **A gesture on the piece's own window is the editor's turn** — the
-        // same one a script and a page run: read, applied with its inverse, and
-        // answered. What is left below is the tree's, for a document written
-        // before the turn, and the window's own verbs.
         let tag = match args.first() {
             Some(OscType::String(tag)) => tag.as_str(),
             _ => "",
@@ -2028,8 +2067,14 @@ impl Host {
         if self.owner.as_ref().is_some_and(|o| {
             o.draws_piece() && o.editor.as_ref().is_some_and(|e| e.answers(widget_id, tag))
         }) {
-            return self.answer_piece(def_id, widget_id, seq, args);
+            return self.answer_piece(def_id, message);
         }
+        self.answer_tree(def_id, widget_id, seq, args)
+    }
+
+    /// **The tree's answer**, and the window's own verbs: history, save, and
+    /// the payloads a document written before the piece describes itself in.
+    fn answer_tree(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -2046,7 +2091,7 @@ impl Host {
                 if moved {
                     self.settle(ack::Acked {
                         seq,
-                        doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                        doc_version: applied.last().map_or(0, |a| a.version as i64),
                         ..Default::default()
                     });
                 }
@@ -2060,7 +2105,7 @@ impl Host {
                 if moved {
                     self.settle(ack::Acked {
                         seq,
-                        doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                        doc_version: applied.last().map_or(0, |a| a.version as i64),
                         ..Default::default()
                     });
                 }
@@ -2083,7 +2128,7 @@ impl Host {
                 self.adopt(def_id, &applied);
                 self.settle(ack::Acked {
                     seq,
-                    doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                    doc_version: applied.last().map_or(0, |a| a.version as i64),
                     ..Default::default()
                 });
                 return true;
@@ -2154,9 +2199,14 @@ impl Host {
     /// and the readers brought in step, a placed cursor cued, and the stamp
     /// settled with the reason the turn gave — so a refusal is said in the
     /// window that asked.
-    fn answer_piece(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+    fn answer_piece(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
         use clausters_editing::conversation::Answer;
+
+        let seq = match message.args.get(1) {
+            Some(OscType::Int(seq)) => *seq,
+            _ => 0,
+        };
 
         let Some(owner) = self.owner.as_mut() else {
             return false;
@@ -2169,18 +2219,14 @@ impl Host {
         };
         editor.set_piece(piece);
         editor.set_sources(table);
-        // A host answering its own gesture states no version it was made
-        // against: nothing moves the piece between the hand and this call.
-        let mut event = vec![
-            serde_json::json!(widget_id),
-            serde_json::json!(seq),
-            serde_json::json!(0),
-        ];
-        event.extend(args.iter().map(document::piece::atom));
+        // **The message a client would have received**, whole: its stamp, and
+        // the version the host was drawing when the hand made the edit -- which
+        // is what lets the conversation refuse one that a route the hand never
+        // saw has overtaken, here as in a script.
         let outcome = editor.event(
             &Event {
-                addr: "/gui_event".into(),
-                args: event,
+                addr: message.addr.clone(),
+                args: message.args.iter().map(document::piece::atom).collect(),
             },
             version,
         );
