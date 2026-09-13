@@ -750,6 +750,10 @@ pub struct Host {
     /// What the clock of a piece this host edits alone last read, so an
     /// unchanged reading is not set again every frame.
     pub(crate) clock_shown: Option<String>,
+    /// What this host told itself and asked of the playback, for the tests
+    /// that replay a client's recorded exchange against it.
+    #[cfg(test)]
+    pub(crate) exchange: instance::Exchange,
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
@@ -845,6 +849,8 @@ impl Host {
             status: Default::default(),
             owner: None,
             clock_shown: None,
+            #[cfg(test)]
+            exchange: instance::Exchange::default(),
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
@@ -2060,14 +2066,17 @@ impl Host {
             "deliver: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
-        let tag = match args.first() {
-            Some(OscType::String(tag)) => tag.as_str(),
-            _ => "",
-        };
-        if self.owner.as_ref().is_some_and(|o| {
-            o.draws_piece() && o.editor.as_ref().is_some_and(|e| e.answers(widget_id, tag))
-        }) {
-            return self.answer_piece(def_id, message);
+        // **The editor reads every message addressed to its window**: its
+        // gestures, its transport row and the space bar, and the window's undo
+        // and redo, which are a step of the history it answers once the host has
+        // walked it. What it does not take is the tree's.
+        if self
+            .owner
+            .as_ref()
+            .is_some_and(|o| o.draws_piece() && o.editor.is_some())
+            && self.answer_piece(def_id, message)
+        {
+            return true;
         }
         self.answer_tree(def_id, widget_id, seq, args)
     }
@@ -2201,17 +2210,11 @@ impl Host {
     /// window that asked.
     fn answer_piece(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
-        use clausters_editing::conversation::Answer;
-
-        let seq = match message.args.get(1) {
-            Some(OscType::Int(seq)) => *seq,
-            _ => 0,
-        };
 
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let version = owner.piece.version as i64;
+        let version = owner.conversed;
         let piece = owner.piece.clone();
         let table = owner.buffer_table();
         let Some(editor) = owner.editor.as_mut() else {
@@ -2233,8 +2236,12 @@ impl Host {
         if outcome.turn == Kind::Nothing {
             return false;
         }
+        if outcome.turn == Kind::Step {
+            return self.step_piece(def_id, outcome.seq, outcome.redo);
+        }
         if outcome.changed {
             owner.piece = editor.piece().clone();
+            owner.conversed = outcome.version;
         }
         if let Some(record) = &outcome.record {
             owner.record_piece(record);
@@ -2264,21 +2271,107 @@ impl Host {
         }
         match outcome.transport {
             Some(TransportVerb::Toggle) => {
+                #[cfg(test)]
+                self.exchange
+                    .asked
+                    .push(serde_json::json!([if self.piece_rolling() {
+                        "pause"
+                    } else {
+                        "play"
+                    }]));
                 self.roll_piece();
             }
             Some(TransportVerb::Stop { mark }) => self.stop_piece(mark),
             Some(TransportVerb::Cue { beat }) => self.cue_piece(beat),
             None => {}
         }
-        let (reason, corrections) = match outcome.answer {
-            Some(Answer::Ack { reason, .. }) => (reason, Vec::new()),
-            Some(Answer::Push {
+        if let Some(answer) = outcome.answer {
+            self.tell(answer);
+        }
+        // **A name the host minted is answered with the one the piece kept**:
+        // once a changed turn is carried out and a minted source has its
+        // buffer, the editor compares what the window was told with what the
+        // piece holds -- its `settle`, which a client's asks after every change.
+        if outcome.changed
+            && let Some(owner) = self.owner.as_mut()
+        {
+            let (version, piece) = (owner.conversed, owner.piece.clone());
+            let settled = owner.editor.as_mut().map(|editor| {
+                editor.set_piece(piece);
+                editor.settle(version)
+            });
+            if let Some(settled) = settled {
+                self.tell(settled);
+            }
+        }
+        true
+    }
+
+    /// **A step of the history, asked of the piece's window**: walked here,
+    /// where the one history is, then the window corrected and the stamp
+    /// answered -- the order a client's editor answers one in.
+    fn step_piece(&mut self, def_id: i32, seq: i64, redo: bool) -> bool {
+        let Some(owner) = self.owner.as_mut() else {
+            return false;
+        };
+        let applied = if redo { owner.redo() } else { owner.undo() };
+        let moved = !applied.is_empty();
+        self.adopt(def_id, &applied);
+        self.replay_writes(def_id, &applied);
+        let Some(owner) = self.owner.as_mut() else {
+            return true;
+        };
+        if moved {
+            owner.conversed += 1;
+        }
+        let (version, piece) = (owner.conversed, owner.piece.clone());
+        let answers = owner.editor.as_mut().map(|editor| {
+            editor.set_piece(piece);
+            let resync = moved.then(|| editor.resync_all(version));
+            (resync, editor.acknowledge(seq, version, None))
+        });
+        if let Some((resync, acknowledged)) = answers {
+            if let Some(resync) = resync {
+                self.tell(resync);
+            }
+            self.tell(acknowledged);
+        }
+        true
+    }
+
+    /// **An answer the editor gave, carried out on this host**: the corrections
+    /// drawn and the stamp settled -- what a client's `/gui_ack`, or its bundled
+    /// push, does when it reaches a host, without the socket.
+    fn tell(&mut self, answer: clausters_editing::conversation::Answer) {
+        use clausters_editing::conversation::Answer;
+
+        let (kind, seq, doc_version, reason, corrections) = match answer {
+            Answer::Silent => return,
+            Answer::Ack {
+                seq,
+                doc_version,
+                reason,
+            } => ("ack", seq, doc_version, reason, Vec::new()),
+            Answer::Push {
+                seq,
+                doc_version,
                 reason,
                 corrections,
-                ..
-            }) => (reason, corrections),
-            _ => (None, Vec::new()),
+            } => ("push", seq, doc_version, reason, corrections),
         };
+        #[cfg(test)]
+        self.exchange.told.push(serde_json::json!([
+            kind,
+            seq,
+            doc_version,
+            reason,
+            corrections
+                .iter()
+                .map(|c| serde_json::json!([c.widget, c.props]))
+                .collect::<Vec<_>>(),
+        ]));
+        #[cfg(not(test))]
+        let _ = kind;
         let mut fx = Vec::new();
         for correction in corrections {
             if let (Ok(id), Value::Object(props)) =
@@ -2288,12 +2381,11 @@ impl Host {
             }
         }
         self.settle(ack::Acked {
-            seq,
-            doc_version: outcome.version,
+            seq: seq as i32,
+            doc_version,
             reason,
             ..Default::default()
         });
-        true
     }
 
     /// Whether a destructive write can land on this widget's samples, or why

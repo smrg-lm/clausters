@@ -64,6 +64,19 @@ pub enum Leg {
     Player,
 }
 
+/// **What a host told itself and asked of the playback**, in the shapes the
+/// recorded exchange names (`editor_exchange` in the web client's
+/// `editing-vectors.json`): held only by tests, which compare it with what a
+/// client's editor was told and asked for the same turns.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct Exchange {
+    /// Each answer, as `[kind, seq, version, reason, [[widget, props]]]`.
+    pub(crate) told: Vec<serde_json::Value>,
+    /// Each verb carried out on the playback, as `[verb, ...args]`.
+    pub(crate) asked: Vec<serde_json::Value>,
+}
+
 /// **A piece, as it is playing**: the crate's playback, and the steps not yet
 /// carried out.
 #[derive(Debug, Default)]
@@ -287,6 +300,8 @@ impl Host {
     /// It is a no-op for a host with no piece and for one with no server — a
     /// session opens, edits, undoes and saves without either.
     pub fn sound_piece(&mut self) -> usize {
+        #[cfg(test)]
+        self.exchange.asked.push(serde_json::json!(["sync"]));
         let Some(owner) = self.owner.as_ref() else {
             return 0;
         };
@@ -377,6 +392,8 @@ impl Host {
     /// cued there and a rolling one is left alone. The beat is the editor's,
     /// read off the axis through the piece's own tempo map.
     pub fn cue_piece(&mut self, beat: f64) {
+        #[cfg(test)]
+        self.exchange.asked.push(serde_json::json!(["cue", beat]));
         let Some(piece) = self.instance.piece.as_mut() else {
             return;
         };
@@ -388,6 +405,8 @@ impl Host {
     /// **Halts the piece and puts it back at `mark`**, in beats: stop goes back
     /// to the mark, which is what tells it from pause.
     pub fn stop_piece(&mut self, mark: f64) {
+        #[cfg(test)]
+        self.exchange.asked.push(serde_json::json!(["stop"]));
         let Some(piece) = self.instance.piece.as_mut() else {
             return;
         };

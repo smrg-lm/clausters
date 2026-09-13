@@ -164,6 +164,14 @@ pub struct Owner {
     /// for it ([`Owner::open_editor`]): the applications crate's, which reads
     /// and answers every gesture on that window.
     pub editor: Option<MultitrackEditor>,
+    /// **The version the editor's conversation is at** -- what the host names
+    /// back on its next gesture, and what an answer states.
+    ///
+    /// Not the piece's own counter, which moves once per edit of the document:
+    /// a split is more than one, so the two part on the first. It is the
+    /// history's, as a client's editor keeps it: the version a changed turn
+    /// answered with, and one more for each step of the history.
+    pub conversed: i64,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -213,6 +221,7 @@ impl Owner {
             headers: HashMap::new(),
             multitrack: None,
             editor: None,
+            conversed: 0,
         }
     }
 
@@ -463,11 +472,12 @@ impl Owner {
     pub fn open_editor(&mut self, window: i32, title: &str, size: (i64, i64)) -> serde_json::Value {
         use clausters_apps::multitrack::{Transport, TransportIds};
 
+        self.conversed = self.piece.version as i64;
         let mut editor = MultitrackEditor::new(
             self.piece.clone(),
             self.units_per_second,
             clausters_editing::playback::DEFAULT_BPM,
-            self.piece.version as i64,
+            self.conversed,
         );
         editor.chrome(
             None,
@@ -1612,6 +1622,162 @@ mod window_verb_tests {
         );
     }
 
+    /// **The host answers the recorded exchange the way a client does.** The
+    /// turns of `editor_exchange` in the web client's `editing-vectors.json`
+    /// were made through the Python client's `MultitrackEditor` and are replayed
+    /// through the web client's; here they are delivered to the standalone
+    /// host, and what it tells itself, what it asks of the playback and the
+    /// piece it is left with are the same, turn by turn. Widgets are compared
+    /// by role, since which id an allocator hands out is each endpoint's own.
+    ///
+    /// Replaying them found two things the host did not do: settle a name it
+    /// minted after a split, and answer the window's undo as a step of the
+    /// history the editor reads.
+    #[test]
+    fn the_recorded_exchange_is_answered_the_same_by_the_host() {
+        use crate::host::document::sources::{Take, Takes};
+        use clausters_document::SourceId;
+        use clausters_document::multitrack::Multitrack;
+
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../web/tests/editing-vectors.json"
+        );
+        let vectors: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("the vectors")).unwrap();
+        let v = vectors
+            .iter()
+            .find(|v| v["kind"] == "editor_exchange")
+            .expect("the exchange was generated");
+
+        let def_id = 1;
+        let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
+            .with_units_per_second(v["rate"].as_f64().unwrap());
+        owner.piece = serde_json::from_value::<Multitrack>(v["piece"].clone()).unwrap();
+        let mut takes = Takes::default();
+        for (source, bufnum) in v["sources"].as_object().unwrap() {
+            takes.insert(
+                SourceId(source.parse().unwrap()),
+                Take {
+                    bufnum: bufnum.as_i64().unwrap() as i32,
+                    channels: None,
+                    frames: None,
+                },
+            );
+        }
+        let mut owner = owner.with_takes(takes);
+        let def = owner.open_editor(def_id, "t", (1000, 640));
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+
+        // The window numbers itself from the def's id: the piece, the ruler,
+        // then the transport row after its own layout.
+        let id_of = |role: &str| match role {
+            "window" => def_id,
+            "piece" => def_id + 1,
+            "ruler" => def_id + 2,
+            "rewind" => def_id + 4,
+            "play" => def_id + 5,
+            "stop" => def_id + 6,
+            "clock" => def_id + 7,
+            other => panic!("no widget plays {other}"),
+        };
+        let role_of = |widget: &Value| match widget.as_i64().map(|w| w - i64::from(def_id)) {
+            Some(1) => serde_json::json!("piece"),
+            Some(2) => serde_json::json!("ruler"),
+            _ => widget.clone(),
+        };
+        let atom = |value: &Value| match value {
+            Value::String(s) => OscType::String(s.clone()),
+            Value::Number(n) if n.is_i64() => OscType::Int(n.as_i64().unwrap() as i32),
+            Value::Number(n) => OscType::Float(n.as_f64().unwrap() as f32),
+            other => panic!("a report carries no {other}"),
+        };
+
+        for turn in v["turns"].as_array().unwrap() {
+            let name = turn["name"].as_str().unwrap();
+            host.exchange = Default::default();
+            let before = host.owner.as_ref().unwrap().piece.version;
+            let mut args = vec![OscType::String(turn["tag"].as_str().unwrap().into())];
+            args.extend(turn["values"].as_array().unwrap().iter().map(atom));
+            let mut message = host.event_message(
+                id_of(turn["target"].as_str().unwrap()),
+                turn["seq"].as_i64().unwrap() as i32,
+                args,
+            );
+            if let Some(against) = turn["against"].as_i64() {
+                message.args[2] = OscType::Long(against);
+            }
+            assert!(
+                host.deliver(def_id, &message),
+                "{name}: the host answers it"
+            );
+
+            // `link` names the piece's own widget, which each endpoint numbers
+            // for itself: compared by role, like every other widget.
+            let by_role = |said: &mut Value| {
+                for correction in said[4].as_array_mut().unwrap() {
+                    if let Some(props) = correction[1].as_object_mut()
+                        && props.contains_key("link")
+                    {
+                        props.insert("link".into(), serde_json::json!("piece"));
+                    }
+                }
+            };
+            let mut expected = turn["messages"].clone();
+            for said in expected.as_array_mut().unwrap() {
+                by_role(said);
+            }
+            let told: Vec<Value> = host
+                .exchange
+                .told
+                .iter()
+                .map(|said| {
+                    let mut said = said.clone();
+                    for correction in said[4].as_array_mut().unwrap() {
+                        correction[0] = role_of(&correction[0]);
+                    }
+                    by_role(&mut said);
+                    said
+                })
+                .collect();
+            assert_eq!(Value::Array(told), expected, "{name}: what it was told");
+            assert_eq!(
+                Value::Array(host.exchange.asked.clone()),
+                turn["playback"],
+                "{name}: what the playback was asked"
+            );
+            let piece = &host.owner.as_ref().unwrap().piece;
+            assert_eq!(
+                piece.version != before,
+                turn["changed"].as_bool().unwrap(),
+                "{name}: whether the piece changed"
+            );
+            let regions: Vec<Value> = piece
+                .tracks
+                .iter()
+                .flat_map(|t| {
+                    t.lanes.iter().flat_map(move |lane| {
+                        lane.regions.iter().map(move |r| {
+                            serde_json::json!([t.id.0, r.id.0, r.position.0, r.length.0])
+                        })
+                    })
+                })
+                .collect();
+            assert_eq!(Value::Array(regions), turn["regions"], "{name}: the piece");
+        }
+    }
+
     /// **A session host opens the editor a script opens**: the ruler above the
     /// piece and the transport row under it, every widget of it registered —
     /// a composition of the host's own had neither.
@@ -1913,7 +2079,7 @@ mod window_verb_tests {
 
         // A route no gesture took moves the piece.
         if let Some(owner) = host.owner.as_mut() {
-            owner.piece.version += 5;
+            owner.conversed += 5;
         }
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         let message = host.event_message(view, seq, points(0.75));
