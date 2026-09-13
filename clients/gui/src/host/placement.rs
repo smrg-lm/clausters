@@ -22,6 +22,19 @@
 //! The pixel mappings stay with their renderers — `graphics::pianoroll` maps a
 //! pitch to a row and `interact::coords` maps a cursor to a sample — and both
 //! hand the *numbers* to this module.
+//!
+//! # And the verbs over a selection, which are the layer above
+//!
+//! A drag moves one box and a **verb** acts on the several a hand is holding:
+//! cut them at the cursor, drop them, put a block down somewhere else. Those
+//! were written once per holder — a clip's `e` and a note's `e` doing the same
+//! thing in two files — and they had already drifted, one of them refusing out
+//! loud and the other returning silence. So they are here too, over [`Boxes`],
+//! which is [`Placements`] plus the two questions a verb asks and a drag never
+//! does: make another one, and take these away. What is *not* general stays
+//! with the holder, and the split is where the identity of a new box comes
+//! from: a clip is minted with a fresh name, a note keeps the pitch of the one
+//! it came from, and neither is something the arithmetic could state.
 
 /// Which part of a box a press grabbed: its body (move) or one of its edges
 /// (resize).
@@ -471,6 +484,107 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
     moved
 }
 
+/// **What a verb needs of whoever holds the boxes**, beside where each one is.
+///
+/// [`Placements`] answers *where a box is* and is enough for everything that
+/// moves one: a drag, a marquee, a rigid block, a quantize. A **verb over a
+/// selection** — cut these, drop those — needs the two questions that one does
+/// not ask, because they are about the list rather than about a box: make
+/// another one, and take these away.
+///
+/// They are two methods and not four because the rest of what a new box needs
+/// is the holder's own and nothing general can state it: a clip is minted with
+/// a name nothing else answers to, a note carries the pitch and velocity of the
+/// one it came from. So [`duplicate`](Boxes::duplicate) is *"another one of
+/// that"* and the caller then writes where it goes, which is the only part a
+/// verb knows.
+pub trait Boxes: Placements {
+    /// **Another box like `i`**, appended, with whatever identity a new box
+    /// gets here — and `None` where there is nothing at `i` to copy.
+    ///
+    /// Appended rather than inserted so that every index a caller is holding
+    /// still means the same box: a verb over a selection is walking one.
+    fn duplicate(&mut self, i: usize) -> Option<usize>;
+
+    /// **Drops the named boxes.** Any order, repeats allowed; what is left
+    /// keeps its relative order, so an index outside the set shifts down by
+    /// however many left before it.
+    fn discard(&mut self, indices: &[usize]);
+}
+
+/// The indices given as a set: sorted, deduplicated, and with whatever is not
+/// there dropped. What every verb starts from, because a selection is a hand's
+/// and may hold the same box twice or a box that has since gone.
+fn targets<P: Boxes + ?Sized>(p: &P, indices: &[usize]) -> Vec<usize> {
+    let mut t: Vec<usize> = indices.iter().copied().filter(|&i| i < p.len()).collect();
+    t.sort_unstable();
+    t.dedup();
+    t
+}
+
+/// **Cut every held box at `at`**, keeping both halves in the hand.
+///
+/// The window over the contents moves with the cut ([`split_at`] is the
+/// arithmetic), so the second half reads on from where the first stopped rather
+/// than from its source's start — which is what makes a split and a join
+/// inverses over material and not only over rectangles.
+///
+/// Returns the selection that is left: every head and every tail, and **empty
+/// when nothing was cut**, which is the answer a caller refuses out loud with.
+/// A box the cut falls outside of is not an error and not a refusal on its own
+/// — a selection may hold boxes the cursor is nowhere near, and the ones it is
+/// inside are still cut.
+pub fn split<P: Boxes + ?Sized>(p: &mut P, held: &[usize], at: f64) -> Vec<usize> {
+    let mut out = Vec::new();
+    for i in targets(p, held) {
+        let Some((head, tail)) = split_at(p.placement(i), at) else {
+            continue;
+        };
+        let Some(second) = p.duplicate(i) else {
+            continue;
+        };
+        p.set_placement(i, head);
+        p.set_placement(second, tail);
+        out.push(i);
+        out.push(second);
+    }
+    out
+}
+
+/// **Drops the held boxes**, answering whether any were there to drop.
+///
+/// The whole of what Delete is over a stack of boxes, and the reason it is here
+/// rather than written per holder: the two that had it disagreed about nothing
+/// except which list they walked backwards.
+pub fn discard<P: Boxes + ?Sized>(p: &mut P, held: &[usize]) -> bool {
+    let held = targets(p, held);
+    if held.is_empty() {
+        return false;
+    }
+    p.discard(&held);
+    true
+}
+
+/// **Where a block goes when it is put down at `at`**: the offset each box
+/// takes so that the earliest of them lands there and the rest keep their
+/// distances from it.
+///
+/// A pasted block is the same block, which is the whole rule — in time here,
+/// and in rows wherever rows mean something to the holder. `None` for an empty
+/// block, which is not a paste.
+pub fn rebased(offsets: &[f64], at: f64) -> Option<Vec<f64>> {
+    let first = offsets.iter().copied().fold(f64::INFINITY, f64::min);
+    if !first.is_finite() {
+        return None;
+    }
+    Some(
+        offsets
+            .iter()
+            .map(|o| (o - first + at).max(0.0))
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// The selection re-mapped after the box at `removed` left the list: the
 /// removed index drops out, higher indices shift down one.
 pub fn selection_after_removal(selected: &[usize], removed: usize) -> Vec<usize> {
@@ -489,5 +603,119 @@ pub fn toggle_selected(selected: &mut Vec<usize>, index: usize) {
             selected.remove(p);
         }
         None => selected.push(index),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A holder that is neither a roll nor a multitrack: the verbs are written
+    /// against [`Boxes`] and nothing else, and this is what says so — if one of
+    /// them ever reaches for something a clip or a note happens to have, it
+    /// stops compiling here first.
+    #[derive(Default)]
+    struct Stack {
+        boxes: Vec<(Placement, f32, char)>,
+    }
+
+    impl Placements for Stack {
+        fn len(&self) -> usize {
+            self.boxes.len()
+        }
+        fn placement(&self, i: usize) -> Placement {
+            self.boxes[i].0
+        }
+        fn set_placement(&mut self, i: usize, p: Placement) {
+            self.boxes[i].0 = p;
+        }
+        fn row(&self, i: usize) -> f32 {
+            self.boxes[i].1
+        }
+        fn set_row(&mut self, i: usize, r: f32) {
+            self.boxes[i].1 = r;
+        }
+    }
+
+    impl Boxes for Stack {
+        fn duplicate(&mut self, i: usize) -> Option<usize> {
+            let it = *self.boxes.get(i)?;
+            self.boxes.push(it);
+            Some(self.boxes.len() - 1)
+        }
+        fn discard(&mut self, indices: &[usize]) {
+            let mut held = indices.to_vec();
+            held.sort_unstable();
+            held.dedup();
+            for i in held.into_iter().rev() {
+                self.boxes.remove(i);
+            }
+        }
+    }
+
+    fn stack() -> Stack {
+        Stack {
+            boxes: vec![
+                (
+                    Placement {
+                        offset: 0.0,
+                        dur: 200.0,
+                        start: 1000.0,
+                    },
+                    0.0,
+                    'a',
+                ),
+                (
+                    Placement {
+                        offset: 400.0,
+                        dur: 100.0,
+                        start: 0.0,
+                    },
+                    1.0,
+                    'b',
+                ),
+            ],
+        }
+    }
+
+    /// A cut moves the window over the contents with it, so the tail reads on
+    /// from where the head stopped — which is what makes a split and a join
+    /// inverses over material rather than over rectangles only.
+    #[test]
+    fn a_split_leaves_both_halves_in_hand_and_the_tail_reads_on() {
+        let mut s = stack();
+        let cut = split(&mut s, &[0, 1], 50.0);
+        assert_eq!(cut, vec![0, 2], "the box it cut, and the one it made");
+        assert_eq!(s.boxes[0].0.dur, 50.0);
+        assert_eq!(s.boxes[2].0.offset, 50.0);
+        assert_eq!(s.boxes[2].0.dur, 150.0);
+        assert_eq!(s.boxes[2].0.start, 1050.0, "it reads on from the head");
+        assert_eq!(s.boxes[2].2, 'a', "and it is still that box");
+        assert_eq!(s.boxes[1].2, 'b', "the box the cut fell outside of stands");
+    }
+
+    /// A verb that acted on nothing answers so, which is what a caller refuses
+    /// out loud with instead of returning the silence that reads as a dead key.
+    #[test]
+    fn a_verb_with_nothing_to_act_on_says_it_did_nothing() {
+        let mut s = stack();
+        assert!(split(&mut s, &[0], 900.0).is_empty(), "outside the box");
+        assert!(!discard(&mut s, &[]), "nothing held");
+        assert!(!discard(&mut s, &[9]), "nor anything that is not there");
+        assert!(discard(&mut s, &[0, 0]), "a repeat is one box");
+        assert_eq!(s.boxes.len(), 1);
+        assert_eq!(s.boxes[0].2, 'b');
+    }
+
+    /// A pasted block is the same block: the earliest lands where it is put and
+    /// the rest keep their distances from it.
+    #[test]
+    fn a_block_put_down_keeps_its_own_shape() {
+        assert_eq!(
+            rebased(&[400.0, 100.0, 300.0], 1000.0),
+            Some(vec![1300.0, 1000.0, 1200.0])
+        );
+        assert_eq!(rebased(&[100.0], 0.0), Some(vec![0.0]));
+        assert_eq!(rebased(&[], 10.0), None, "an empty block is not a paste");
     }
 }

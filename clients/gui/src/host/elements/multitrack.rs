@@ -1220,28 +1220,14 @@ impl Multitrack {
     /// reads on from where the first stopped rather than from the source's
     /// start.
     fn split_held(&mut self, at: f64) -> bool {
-        let mut made = Vec::new();
-        for &i in &self.selected {
-            let Some(clip) = self.clips.get(i) else {
-                continue;
-            };
-            let Some((first, second)) = placement::split_at(clip.place, at) else {
-                continue;
-            };
-            let name = self.fresh_name(&clip.name);
-            let mut tail = clip.clone();
-            tail.name = name;
-            tail.place = second;
-            made.push((i, first, tail));
-        }
-        if made.is_empty() {
+        let held = self.selected.clone();
+        let cut = placement::split(self, &held, at);
+        if cut.is_empty() {
             return false;
         }
-        for (i, first, tail) in made {
-            self.clips[i].place = first;
-            self.clips.push(tail);
-            self.selected.push(self.clips.len() - 1);
-        }
+        // The heads were already in hand; what the cut adds is the tails.
+        self.selected
+            .extend(cut.into_iter().filter(|i| !held.contains(i)));
         true
     }
 
@@ -1657,6 +1643,34 @@ impl Placements for Multitrack {
         let at = r.round().max(0.0) as usize;
         if let Some(lane) = self.lanes.get(at) {
             self.clips[i].lane = lane.name.clone();
+        }
+    }
+}
+
+/// **And the two questions a verb asks of the list itself.**
+///
+/// A clip's identity is its **name**, which is what a report names it by and
+/// what a correction finds it again by, so a second box may not be a copy of
+/// the first in the one field that says which box it is. `fresh_name` is that
+/// rule and it is the whole of what is specific here — the cut itself, the
+/// halves' spans and the window each keeps onto its source are the arithmetic
+/// every box on a time axis shares.
+impl placement::Boxes for Multitrack {
+    fn duplicate(&mut self, i: usize) -> Option<usize> {
+        let mut copy = self.clips.get(i)?.clone();
+        copy.name = self.fresh_name(&copy.name);
+        self.clips.push(copy);
+        Some(self.clips.len() - 1)
+    }
+
+    fn discard(&mut self, indices: &[usize]) {
+        let mut held: Vec<usize> = indices.to_vec();
+        held.sort_unstable();
+        held.dedup();
+        for i in held.into_iter().rev() {
+            if i < self.clips.len() {
+                self.clips.remove(i);
+            }
         }
     }
 }
@@ -2309,15 +2323,8 @@ impl Element for Multitrack {
             }
             Key::Char('j') | Key::Char('J') if !input.mods.ctrl => Some(self.join_event()),
             Key::Delete | Key::Backspace => {
-                let mut held = self.selected.clone();
-                held.sort_unstable();
-                for i in held.into_iter().rev() {
-                    if i < self.clips.len() {
-                        self.clips.remove(i);
-                    }
-                }
-                self.selected.clear();
-                Some(self.clips_event())
+                let held = std::mem::take(&mut self.selected);
+                placement::discard(self, &held).then(|| self.clips_event())
             }
             // The clipboard is the host's one string, so a block travels between
             // multitracks and windows — and rides it in the same JSON form a
@@ -2342,12 +2349,8 @@ impl Element for Multitrack {
                     // consumed the key.
                     return Some(Events::none());
                 }
-                let mut held = self.selected.clone();
-                held.sort_unstable();
-                for i in held.into_iter().rev() {
-                    self.clips.remove(i);
-                }
-                self.selected.clear();
+                let held = std::mem::take(&mut self.selected);
+                placement::discard(self, &held);
                 Some(self.clips_event())
             }
             Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
@@ -2364,10 +2367,9 @@ impl Element for Multitrack {
                 // earliest pasted clip lands there and the rest keep their
                 // distances, which is what makes a pasted block the same block.
                 let at = placement::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
-                let first = block
-                    .iter()
-                    .map(|c| c.place.offset)
-                    .fold(f64::INFINITY, f64::min);
+                let offsets: Vec<f64> = block.iter().map(|c| c.place.offset).collect();
+                let placed = placement::rebased(&offsets, at)?;
+                let first = offsets.iter().copied().fold(f64::INFINITY, f64::min);
                 // **A paste needs two coordinates**, and the second is the
                 // selected track: the position cursor says *when* and the
                 // header says *where*. The earliest box lands on the selected
@@ -2386,7 +2388,7 @@ impl Element for Multitrack {
                 let last = self.lanes.len().saturating_sub(1);
                 self.selected.clear();
                 for (i, mut clip) in block.into_iter().enumerate() {
-                    clip.place.offset = (clip.place.offset - first + at).max(0.0);
+                    clip.place.offset = placed[i];
                     let row = (rows[i] + onto).saturating_sub(base).min(last);
                     if let Some(lane) = self.lanes.get(row) {
                         clip.lane = lane.name.clone();

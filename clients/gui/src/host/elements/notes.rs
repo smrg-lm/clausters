@@ -705,10 +705,13 @@ impl Element for Notes {
         match key {
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid — the same grid a drag snaps to.
-            Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
-                pianoroll::quantize_notes(&mut self.notes, &self.selected, self.snap)
-                    .then(|| self.notes_event())
-            }
+            Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => Some(
+                if pianoroll::quantize_notes(&mut self.notes, &self.selected, self.snap) {
+                    self.notes_event()
+                } else {
+                    Events::refused("quantize", "these notes are already on the grid")
+                },
+            ),
             // **Split and join**, the clip's own two verbs over notes — same
             // keys, same reading. A clip asks its owner to cut, because the
             // owner holds the element; a roll holds its notes and cuts them
@@ -730,7 +733,10 @@ impl Element for Notes {
                 let at = snap_to(self.anchor(input), self.snap).max(0.0);
                 let cut = pianoroll::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
-                    return None;
+                    return Some(Events::refused(
+                        "split",
+                        "the cursor is not inside a held note",
+                    ));
                 }
                 self.selected = cut;
                 Some(self.notes_event())
@@ -738,12 +744,20 @@ impl Element for Notes {
             Key::Char('j') | Key::Char('J') if !input.mods.ctrl && !self.selected.is_empty() => {
                 let before = self.notes.len();
                 self.selected = pianoroll::join_notes(&mut self.notes, &self.selected);
-                (self.notes.len() != before).then(|| self.notes_event())
+                Some(if self.notes.len() == before {
+                    // The roll's own four conditions, said as one sentence: a
+                    // join is a **pitch's**, and what joins is what touches.
+                    Events::refused(
+                        "join",
+                        "a join is one pitch's, and these notes do not touch on one",
+                    )
+                } else {
+                    self.notes_event()
+                })
             }
             Key::Delete | Key::Backspace if !self.selected.is_empty() => {
-                pianoroll::remove_notes(&mut self.notes, &self.selected);
-                self.selected.clear();
-                Some(self.notes_event())
+                let held = std::mem::take(&mut self.selected);
+                placement::discard(&mut self.notes, &held).then(|| self.notes_event())
             }
             // The clipboard is the host's one string, so a block travels
             // between rolls and windows — and rides it in the same JSON form a
@@ -1674,5 +1688,77 @@ mod tests {
         i.mods.ctrl = false;
         assert_eq!(r.press(on, &i), Claim::Decline);
         assert!(r.drag.is_none(), "and no marker is being slid");
+    }
+
+    /// The reason a verb gave for refusing, or `None` when it did the thing —
+    /// the same reader the multitrack's own verb test uses, because a refusal
+    /// is an ordinary event in both.
+    fn refusal(events: Option<Events>) -> Option<String> {
+        let msg = events?.into_messages().into_iter().next()?;
+        (msg.first() == Some(&OscType::String("refused".into()))).then(|| match msg.get(2) {
+            Some(OscType::String(s)) => s.clone(),
+            _ => String::new(),
+        })
+    }
+
+    /// **A roll's verbs say why they did nothing**, exactly as a lane's do.
+    ///
+    /// The drift this holds: the two implement one table of letters over one
+    /// reading, and a multitrack that could not quantize said so while a roll
+    /// that could not returned silence — which is the thing two reports in one
+    /// day settled as a defect rather than as a quiet success.
+    #[test]
+    fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut press = |roll: &mut Notes, k: char| {
+            refusal(roll.key(
+                &Key::Char(k),
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: Some(100.0),
+                },
+            ))
+        };
+
+        // Two notes on one pitch, already on the grid, and the cursor between
+        // them: every verb has something to act on and nothing to do.
+        let mut r =
+            roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0, 200.0,50.0,60.0,100.0,0.0],"snap":100.0}"#);
+        r.selected = vec![0, 1];
+        assert_eq!(
+            press(&mut r, 'q'),
+            Some("these notes are already on the grid".to_string())
+        );
+        assert_eq!(
+            press(&mut r, 'e'),
+            Some("the cursor is not inside a held note".to_string()),
+            "the cursor falls in the gap between them"
+        );
+        assert_eq!(
+            press(&mut r, 'j'),
+            Some("a join is one pitch's, and these notes do not touch on one".to_string())
+        );
+    }
+
+    /// **The cut is the box arithmetic's, and the identity is the roll's.**
+    ///
+    /// A note's second half keeps the pitch, the velocity and the channel of
+    /// the one it came from, which is what `Boxes::duplicate` answers for here;
+    /// everything else about the cut is what a clip's `e` does, through the
+    /// same function.
+    #[test]
+    fn a_cut_note_leaves_two_halves_that_are_still_the_same_note() {
+        let mut r = roll(r#"{"notes":[0.0,200.0,64.0,90,3]}"#);
+        r.selected = vec![0];
+        let cut = pianoroll::split_notes(&mut r.notes, &r.selected, 50.0);
+        assert_eq!(cut, vec![0, 1], "the head it was, and the tail it made");
+        assert_eq!((r.notes[0].start, r.notes[0].dur), (0.0, 50.0));
+        assert_eq!((r.notes[1].start, r.notes[1].dur), (50.0, 150.0));
+        assert_eq!(
+            (r.notes[1].pitch, r.notes[1].velocity, r.notes[1].channel),
+            (64.0, 90, 3),
+            "the tail is the same note, cut"
+        );
     }
 }

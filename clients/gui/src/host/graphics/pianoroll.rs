@@ -575,6 +575,47 @@ impl Placements for [Note] {
     }
 }
 
+/// **A growable list of notes is a list of boxes a verb can act on.**
+///
+/// The slice above answers where each note is, which is what a drag needs; a
+/// verb needs the list itself, because cutting one note makes a second and
+/// deleting one takes it away. Two methods, and both of them are what a note
+/// *is* rather than what a box is: a second half keeps the pitch, the velocity
+/// and the channel of the note it was cut out of, which is the identity nothing
+/// general could have written.
+impl Placements for Vec<Note> {
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn placement(&self, i: usize) -> Placement {
+        <[Note] as Placements>::placement(self, i)
+    }
+
+    fn set_placement(&mut self, i: usize, p: Placement) {
+        <[Note] as Placements>::set_placement(self, i, p)
+    }
+
+    fn row(&self, i: usize) -> f32 {
+        <[Note] as Placements>::row(self, i)
+    }
+
+    fn set_row(&mut self, i: usize, r: f32) {
+        <[Note] as Placements>::set_row(self, i, r)
+    }
+}
+
+impl placement::Boxes for Vec<Note> {
+    fn duplicate(&mut self, i: usize) -> Option<usize> {
+        let note = *self.get(i)?;
+        Some(insert_note(self, note))
+    }
+
+    fn discard(&mut self, indices: &[usize]) {
+        remove_notes(self, indices);
+    }
+}
+
 /// Move the note at `index` to a new start (clamped into the bounds' domain,
 /// tail included) and pitch (clamped into `[lo, hi]`, rounded to the nearest
 /// semitone). The duration is kept.
@@ -693,31 +734,38 @@ pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32)
 
 pub use crate::host::placement::{Limit, selection_after_removal, toggle_selected};
 
-/// Copy a selection of notes, normalized so the block's earliest onset is 0 —
-/// the clipboard form [`paste_notes`] re-places (pitches stay absolute).
+/// Copy a selection of notes **as they stand** — the clipboard form
+/// [`paste_notes`] re-places.
+///
+/// Absolute, not normalized to the block's first onset, because *where a block
+/// lands* is the paste's question and not the copy's: a clip's block travels
+/// the same way, and one carrier with two conventions is how the same gesture
+/// comes to mean two things in two views. What the payload is, either way, is
+/// exactly what a `/gui_set` of the prop would accept.
 pub fn copy_notes(notes: &[Note], indices: &[usize]) -> Vec<Note> {
-    let mut out: Vec<Note> = indices
+    indices
         .iter()
         .filter_map(|&i| notes.get(i).copied())
-        .collect();
-    let t0 = out.iter().map(|n| n.start).fold(f64::INFINITY, f64::min);
-    if t0.is_finite() {
-        for n in &mut out {
-            n.start -= t0;
-        }
-    }
-    out
+        .collect()
 }
 
 /// Paste a clipboard block with its first onset at `at`: the notes append
 /// (original pitches and spread kept), and the new indices come back — the
 /// pasted block becomes the selection, ready to drag into place.
+///
+/// Where each note lands is [`placement::rebased`], which is the rule a pasted
+/// block obeys wherever one is put down: the earliest goes to `at` and the rest
+/// keep their distances from it, so a pasted block is the same block.
 pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> {
-    let at = at.max(0.0);
+    let starts: Vec<f64> = clip.iter().map(|n| n.start).collect();
+    let Some(placed) = placement::rebased(&starts, at.max(0.0)) else {
+        return Vec::new();
+    };
     clip.iter()
-        .map(|n| {
+        .zip(placed)
+        .map(|(n, start)| {
             let mut n = *n;
-            n.start += at;
+            n.start = start;
             insert_note(notes, n)
         })
         .collect()
@@ -732,30 +780,14 @@ pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> 
 /// The clip's `e` verb, over notes. A clip asks its owner to cut, because the
 /// owner holds the element; a roll holds its own notes and cuts them.
 pub fn split_notes(notes: &mut Vec<Note>, indices: &[usize], at: f64) -> Vec<usize> {
-    let targets: Vec<usize> = if indices.is_empty() {
-        (0..notes.len()).collect()
+    let all: Vec<usize>;
+    let targets = if indices.is_empty() {
+        all = (0..notes.len()).collect();
+        &all[..]
     } else {
-        let mut t = indices.to_vec();
-        t.sort_unstable();
-        t.dedup();
-        t
+        indices
     };
-    let mut out = Vec::new();
-    for i in targets {
-        let Some(n) = notes.get(i).copied() else {
-            continue;
-        };
-        let Some((head, tail)) = placement::split_at(notes.placement(i), at) else {
-            continue;
-        };
-        notes.set_placement(i, head);
-        let mut second = n;
-        second.start = tail.offset;
-        second.dur = tail.dur;
-        out.push(i);
-        out.push(insert_note(notes, second));
-    }
-    out
+    placement::split(notes, targets, at)
 }
 
 /// **Join the named notes**: on each pitch, a run of notes that touch or
@@ -1193,13 +1225,13 @@ mod tests {
     }
 
     #[test]
-    fn copy_normalizes_the_block_and_paste_replaces_it_selected() {
+    fn a_block_travels_as_it_stands_and_the_paste_places_it() {
         let notes = three_notes();
-        // Copy the last two: the block's first onset normalizes to 0.
+        // Copy the last two: the block travels with the onsets it had.
         let clip = copy_notes(&notes, &[1, 2]);
         assert_eq!(clip.len(), 2);
-        assert_eq!((clip[0].start, clip[0].pitch), (0.0, 64.0));
-        assert_eq!((clip[1].start, clip[1].pitch), (200.0, 72.0));
+        assert_eq!((clip[0].start, clip[0].pitch), (notes[1].start, 64.0));
+        assert_eq!(clip[1].start - clip[0].start, 200.0, "and its own spread");
         // Paste at 1000: appended with the spread kept, new indices returned.
         let mut notes = three_notes();
         let sel = paste_notes(&mut notes, &clip, 1000.0);
