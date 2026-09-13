@@ -2167,7 +2167,7 @@ impl Host {
             .window_def(def_id)
             .and_then(|t| t.find(widget_id))
             .and_then(element_with_samples)
-            .and_then(widget::element::Element::sample_shape)
+            .and_then(widget::element::Samples::sample_shape)
         else {
             return Err("this widget is not drawing any samples".into());
         };
@@ -2225,7 +2225,7 @@ impl Host {
     /// The server buffer a widget's samples are in, when they are in one.
     fn buffer_of(&self, def_id: i32, widget_id: i32) -> Option<i32> {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)
-            .and_then(widget::element::Element::source_buffer)
+            .and_then(widget::element::Samples::source_buffer)
     }
 
     /// **Carries a destructive edit through to the samples**: the server's
@@ -2240,7 +2240,7 @@ impl Host {
     /// that out would be a round trip per gesture; the buffer number is what
     /// says which pictures are of this buffer.
     ///
-    /// The write itself belongs to each element ([`widget::element::Element::write_samples`]),
+    /// The write itself belongs to each element ([`widget::element::Samples::write_samples`]),
     /// because a take drawn as a clip holds samples and the same take drawn as
     /// a navigable view holds a pyramid.
     fn write_buffer_samples(
@@ -2734,7 +2734,7 @@ impl Host {
     /// mapping path derives for itself.
     ///
     /// So the subscription is exactly the views that asked
-    /// ([`Element::stream_want`](widget::Element::stream_want)): the client
+    /// ([`Samples::stream_want`](widget::Samples::stream_want)): the client
     /// said the buffer is being written into (`fills`) and the body is this
     /// element's own copy. A mapped view is deliberately not in it — it would
     /// be paying twice for one picture.
@@ -2993,14 +2993,18 @@ fn scalar_arg(v: &Value) -> Option<OscType> {
     }
 }
 
-/// The element under `widget` that holds samples — itself, or one of the
-/// bodies a container built from its own props (a clip's take carries no id of
-/// its own, so it is only ever reached through the widget that does).
-fn element_with_samples(widget: &widget::Widget) -> Option<&dyn widget::element::Element> {
+/// The samples under `widget` — its own, or those of one of the bodies a
+/// container built from its own props (a clip's take carries no id of its own,
+/// so it is only ever reached through the widget that does).
+///
+/// It answers with the **facet** and not with the element, which is what the
+/// callers wanted from it all along: every one of them goes on to ask a
+/// question about samples.
+fn element_with_samples(widget: &widget::Widget) -> Option<&dyn widget::element::Samples> {
     std::iter::once(widget)
         .chain(widget.children.iter())
-        .filter_map(|w| w.kind.as_element())
-        .find(|el| el.sample_shape().is_some())
+        .filter_map(|w| w.kind.as_samples())
+        .find(|s| s.sample_shape().is_some())
 }
 
 /// Re-reads the summary of a span in **every element in this tree drawing
@@ -3018,7 +3022,7 @@ pub(crate) fn refresh_buffer_views(
     frames: usize,
 ) -> usize {
     let mut refreshed = 0;
-    if let Some(el) = widget.kind.as_element_mut()
+    if let Some(el) = widget.kind.as_samples_mut()
         && el.source_buffer() == Some(bufnum)
         && el.resummarize(channel, start, frames)
     {
@@ -3045,7 +3049,7 @@ pub(crate) fn patch_buffer_views(
     samples: &[f32],
 ) -> usize {
     let mut patched = 0;
-    if let Some(el) = widget.kind.as_element_mut()
+    if let Some(el) = widget.kind.as_samples_mut()
         && el.source_buffer() == Some(bufnum)
         && el.patch_span(start, channels, samples)
     {
@@ -3066,7 +3070,7 @@ pub(crate) fn patch_buffer_views(
 /// reason: what the walk is for is the shape of the request, which only an
 /// element knows.
 pub(crate) fn span_to_read_back(widget: &widget::Widget, bufnum: i32) -> Option<(usize, usize)> {
-    if let Some(el) = widget.kind.as_element()
+    if let Some(el) = widget.kind.as_samples()
         && el.source_buffer() == Some(bufnum)
         && let Some((channels, _)) = el.sample_shape()
         && let Some(bucket) = el.summary_bucket()
@@ -3121,7 +3125,7 @@ pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f3
 /// Collects the buffers whose recording the elements of this tree want to be
 /// told about, and the bucket the first of them named.
 fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket: &mut usize) {
-    if let Some((bufnum, want)) = widget.kind.as_element().and_then(|el| el.stream_want()) {
+    if let Some((bufnum, want)) = widget.kind.as_samples().and_then(|s| s.stream_want()) {
         if *bucket == 0 {
             *bucket = want;
         }
@@ -3150,7 +3154,7 @@ pub(crate) fn stream_buffer_views(
     stats: &[f32],
 ) -> usize {
     let mut wrote = 0;
-    if let Some(el) = widget.kind.as_element_mut()
+    if let Some(el) = widget.kind.as_samples_mut()
         && el.source_buffer() == Some(bufnum)
     {
         if el.write_buckets(start_frame, bucket, stats) {
@@ -3185,7 +3189,7 @@ fn write_buffer_views(
     values: &[f32],
 ) -> usize {
     let mut wrote = 0;
-    if let Some(el) = widget.kind.as_element_mut()
+    if let Some(el) = widget.kind.as_samples_mut()
         && el.source_buffer() == Some(bufnum)
         && el.write_samples(channel, start, values)
     {

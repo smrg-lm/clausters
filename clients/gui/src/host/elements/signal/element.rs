@@ -32,8 +32,8 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
-    Ctx, Element, FreqAxis, Input, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame, SlotKey,
-    TextureLook, TimeSpace, ValueAxis,
+    Ctx, Element, FreqAxis, Input, Live, Loaded, Measured, Needs, SampleBlock, Samples, SlotFill,
+    SlotFrame, SlotKey, TextureLook, TimeSpace, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
@@ -149,10 +149,6 @@ impl Element for SignalElement {
         }
     }
 
-    fn wants_reload(&mut self) -> Option<crate::host::widget::element::Bulk> {
-        self.take_reload()
-    }
-
     fn needs(&self) -> Needs {
         let mut needs = Needs {
             retention: self.retention(),
@@ -176,69 +172,8 @@ impl Element for SignalElement {
         needs
     }
 
-    fn tap_frames(&self, sample_rate: f64) -> usize {
-        SignalElement::tap_frames(self, sample_rate)
-    }
-
     fn tick(&mut self, live: &Live) {
         SignalElement::tick(self, live);
-    }
-
-    fn bulk(&mut self, data: Loaded) -> bool {
-        self.take(data)
-    }
-
-    fn written(&self) -> Option<u64> {
-        self.written_frames()
-    }
-
-    fn set_written(&mut self, frames: u64) -> bool {
-        if !self.fills || self.written == frames {
-            return false;
-        }
-        self.written = frames;
-        self.slot_dirty = true;
-        true
-    }
-
-    fn write_buckets(&mut self, start_frame: u64, bucket: usize, stats: &[f32]) -> bool {
-        SignalElement::write_buckets(self, start_frame, bucket, stats)
-    }
-
-    fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
-        SignalElement::set_window(self, start, channels, samples)
-    }
-
-    fn set_detail(&mut self, start: u64, bucket: usize, stats: &[f32]) -> bool {
-        SignalElement::set_detail(self, start, bucket, stats)
-    }
-
-    fn stream_want(&self) -> Option<(i32, usize)> {
-        SignalElement::stream_want(self)
-    }
-
-    fn sample_shape(&self) -> Option<(usize, u64)> {
-        SignalElement::sample_shape(self)
-    }
-
-    fn source_buffer(&self) -> Option<i32> {
-        SignalElement::source_buffer(self)
-    }
-
-    fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
-        SignalElement::write_samples(self, ch, start, values)
-    }
-
-    fn resummarize(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
-        SignalElement::resummarize(self, ch, start, frames)
-    }
-
-    fn patch_span(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
-        SignalElement::patch_span(self, start, channels, samples)
-    }
-
-    fn summary_bucket(&self) -> Option<usize> {
-        SignalElement::summary_bucket(self)
     }
 
     fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
@@ -339,18 +274,6 @@ impl Element for SignalElement {
         SignalElement::centres_y_zoom(self)
     }
 
-    fn navigates_freq(&self) -> bool {
-        SignalElement::navigates_freq(self)
-    }
-
-    fn freq_axis(&self, rect: Rect, m: &Metrics, sample_rate: f64) -> Option<FreqAxis> {
-        SignalElement::freq_axis(self, rect, m, sample_rate)
-    }
-
-    fn sample_block(&self, start: u64, frames: u64, server_rate: f64) -> Option<SampleBlock> {
-        SignalElement::sample_block(self, start, frames, server_rate)
-    }
-
     fn pending_edit(&self) -> Option<&crate::host::widget::element::PendingEdit> {
         self.pending.as_ref()
     }
@@ -369,12 +292,6 @@ impl Element for SignalElement {
         true
     }
 
-    fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
-        let data = self.source.data()?;
-        let trace = data.trace();
-        trace.has_raw().then(|| trace.at(channel, frame as f64))
-    }
-
     fn value_axis(
         &self,
         rect: Rect,
@@ -385,16 +302,105 @@ impl Element for SignalElement {
         SignalElement::value_axis(self, rect, indent, m, channels)
     }
 
-    fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
-        self.freq_window_shown(sample_rate, want)
-    }
-
-    fn freq_min_span(&self, sample_rate: f64, start: f64) -> Option<f64> {
-        SignalElement::freq_min_span(self, sample_rate, start)
-    }
-
     fn gesture_map(&self) -> Option<GestureMap> {
         SignalElement::gesture_map(self)
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn clone_box(&self) -> Box<dyn Element> {
+        Box::new(self.clone())
+    }
+
+    fn samples(&self) -> Option<&dyn Samples> {
+        Some(self)
+    }
+
+    fn samples_mut(&mut self) -> Option<&mut dyn Samples> {
+        Some(self)
+    }
+
+    fn measured(&self) -> Option<&dyn Measured> {
+        Some(self)
+    }
+
+    fn measured_mut(&mut self) -> Option<&mut dyn Measured> {
+        Some(self)
+    }
+}
+
+impl Samples for SignalElement {
+    fn wants_reload(&mut self) -> Option<crate::host::widget::element::Bulk> {
+        self.take_reload()
+    }
+
+    fn tap_frames(&self, sample_rate: f64) -> usize {
+        SignalElement::tap_frames(self, sample_rate)
+    }
+
+    fn bulk(&mut self, data: Loaded) -> bool {
+        self.take(data)
+    }
+
+    fn written(&self) -> Option<u64> {
+        self.written_frames()
+    }
+
+    fn set_written(&mut self, frames: u64) -> bool {
+        if !self.fills || self.written == frames {
+            return false;
+        }
+        self.written = frames;
+        self.slot_dirty = true;
+        true
+    }
+
+    fn write_buckets(&mut self, start_frame: u64, bucket: usize, stats: &[f32]) -> bool {
+        SignalElement::write_buckets(self, start_frame, bucket, stats)
+    }
+
+    fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        SignalElement::set_window(self, start, channels, samples)
+    }
+
+    fn set_detail(&mut self, start: u64, bucket: usize, stats: &[f32]) -> bool {
+        SignalElement::set_detail(self, start, bucket, stats)
+    }
+
+    fn stream_want(&self) -> Option<(i32, usize)> {
+        SignalElement::stream_want(self)
+    }
+
+    fn sample_shape(&self) -> Option<(usize, u64)> {
+        SignalElement::sample_shape(self)
+    }
+
+    fn source_buffer(&self) -> Option<i32> {
+        SignalElement::source_buffer(self)
+    }
+
+    fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
+        SignalElement::write_samples(self, ch, start, values)
+    }
+
+    fn resummarize(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
+        SignalElement::resummarize(self, ch, start, frames)
+    }
+
+    fn summary_bucket(&self) -> Option<usize> {
+        SignalElement::summary_bucket(self)
+    }
+
+    fn sample_block(&self, start: u64, frames: u64, server_rate: f64) -> Option<SampleBlock> {
+        SignalElement::sample_block(self, start, frames, server_rate)
+    }
+
+    fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
+        let data = self.source.data()?;
+        let trace = data.trace();
+        trace.has_raw().then(|| trace.at(channel, frame as f64))
     }
 
     /// **The samples this element was drawing, kept.** What travels is the
@@ -426,13 +432,26 @@ impl Element for SignalElement {
         self.refresh_analysis();
         true
     }
+    fn patch_span(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        SignalElement::patch_span(self, start, channels, samples)
+    }
+}
 
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        Some(self)
+impl Measured for SignalElement {
+    fn navigates_freq(&self) -> bool {
+        SignalElement::navigates_freq(self)
     }
 
-    fn clone_box(&self) -> Box<dyn Element> {
-        Box::new(self.clone())
+    fn freq_axis(&self, rect: Rect, m: &Metrics, sample_rate: f64) -> Option<FreqAxis> {
+        SignalElement::freq_axis(self, rect, m, sample_rate)
+    }
+
+    fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        self.freq_window_shown(sample_rate, want)
+    }
+
+    fn freq_min_span(&self, sample_rate: f64, start: f64) -> Option<f64> {
+        SignalElement::freq_min_span(self, sample_rate, start)
     }
 }
 

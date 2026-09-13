@@ -153,7 +153,7 @@ pub(crate) fn spectrogram_slot(
 /// **What a slot-backed element keeps of the resource that filled its slot.**
 ///
 /// A pyramid is not only a picture: it is the samples the element named, and
-/// [`Element::sample_block`](crate::host::widget::element::Element::sample_block)
+/// [`Samples::sample_block`](crate::host::widget::element::Samples::sample_block)
 /// reads a copy back out of it. Routing it to the slot alone left the element
 /// holding nothing, so a copy over a mapped take — the very source the clipboard
 /// was written for — refused as if the host could not read it. The two share one

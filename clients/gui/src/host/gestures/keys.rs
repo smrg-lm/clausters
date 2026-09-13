@@ -379,7 +379,7 @@ pub enum ClipVerb {
 }
 
 /// The contents behind widget `id` over `frames` of its own frames from
-/// `start` — the element's own answer ([`crate::host::widget::element::Element::sample_block`]), since only
+/// `start` — the element's own answer ([`crate::host::widget::element::Samples::sample_block`]), since only
 /// it knows what it holds and whether it may be read.
 fn element_block(
     host: &mut Host,
@@ -390,5 +390,6 @@ fn element_block(
 ) -> Option<SampleBlock> {
     host.widget_kind(ctx.def_id, id)?
         .as_element()?
+        .samples()?
         .sample_block(start, frames, ctx.sample_rate)
 }

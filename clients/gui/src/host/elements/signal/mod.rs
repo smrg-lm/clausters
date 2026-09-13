@@ -366,7 +366,7 @@ pub struct SignalElement {
     pub fills: bool,
     /// **How far the samples have been written**, in frames — the buffer's
     /// write frontier, read by the host from the shared segment and pushed in
-    /// through [`Element::set_written`](crate::host::widget::element::Element::set_written).
+    /// through [`Samples::set_written`](crate::host::widget::element::Samples::set_written).
     ///
     /// Only consulted while [`Self::fills`] is set, and `0` until the first
     /// frontier arrives, so a take that has not been written into yet draws
@@ -399,7 +399,7 @@ pub struct SignalElement {
     /// not "have I got a body" (which is also true while a fetch is in flight,
     /// and would re-ask every frame): it is this one-shot flag, raised by
     /// [`SignalElement::reread`] and taken by
-    /// [`Element::wants_reload`](crate::host::widget::element::Element::wants_reload).
+    /// [`Samples::wants_reload`](crate::host::widget::element::Samples::wants_reload).
     pub reload_asked: bool,
     /// The edit the hand is making **right now**, before anyone has applied it.
     ///

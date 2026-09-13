@@ -9,7 +9,7 @@
 //! they draw straight into the mesh during the same walk, having nothing to
 //! defer.
 
-use super::super::widget::element::{SlotKey, TextureLook};
+use super::super::widget::element::{Samples, SlotKey, TextureLook};
 use super::*;
 
 /// A placed `track` lane and its clips, copied out of the host tree so the
@@ -236,7 +236,7 @@ pub(super) fn collect_widgets(
                                 kind,
                                 editor: editor.clone(),
                                 pending: el.pending_edit().cloned(),
-                                written: el.written(),
+                                written: el.samples().and_then(Samples::written),
                             });
                         }
                     };

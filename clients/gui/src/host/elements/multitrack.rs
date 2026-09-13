@@ -38,8 +38,8 @@ use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, Lane};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, SlotFill, SlotKey, Swept,
-    Take, TextureBody, TimeSpace,
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, Samples, SlotFill, SlotKey,
+    Swept, Take, TextureBody, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -2543,32 +2543,6 @@ impl Element for Multitrack {
         }
     }
 
-    /// One of them arrived. Every box over it draws the same pyramid.
-    ///
-    /// The samples are handed to the **body element** for that buffer, built
-    /// here on first sight: it is a signal element like any other, so what
-    /// resolving a pyramid means is its answer and not a second copy of one.
-    fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
-        let view = self.view;
-        // **The transform happens here for a spectral box**, because a body
-        // over a server buffer resolves its samples as a pyramid — the right
-        // answer for a trace, and nothing a transform can read. The loader does
-        // exactly this for a standalone spectral view, from the same samples.
-        if view == Presentation::TimeFrequency
-            && let Loaded::Raw { samples, channels } = &data
-        {
-            self.pending
-                .insert(bufnum, (samples.clone(), (*channels).max(1)));
-        }
-        // **The unlabelled door**, because a body element asked for one source
-        // and not for several: the plural ask is this widget's, and by the time
-        // the samples reach the body they are the only ones it wanted.
-        self.takes
-            .entry(bufnum)
-            .or_insert_with(|| take_body(bufnum, view))
-            .bulk(data)
-    }
-
     /// **The plan a hand on the stack runs.** The element first — that is a
     /// clip and a header control — then a marquee over what it declined, which
     /// is the bare stack. Shift pans the shared axis, as it does everywhere.
@@ -2602,6 +2576,42 @@ impl Element for Multitrack {
             ("layers".into(), model::layers_json(&self.layers)),
             ("points".into(), self.points_json()),
         ]
+    }
+
+    fn samples(&self) -> Option<&dyn Samples> {
+        Some(self)
+    }
+
+    fn samples_mut(&mut self) -> Option<&mut dyn Samples> {
+        Some(self)
+    }
+}
+
+impl Samples for Multitrack {
+    /// One of them arrived. Every box over it draws the same pyramid.
+    ///
+    /// The samples are handed to the **body element** for that buffer, built
+    /// here on first sight: it is a signal element like any other, so what
+    /// resolving a pyramid means is its answer and not a second copy of one.
+    fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
+        let view = self.view;
+        // **The transform happens here for a spectral box**, because a body
+        // over a server buffer resolves its samples as a pyramid — the right
+        // answer for a trace, and nothing a transform can read. The loader does
+        // exactly this for a standalone spectral view, from the same samples.
+        if view == Presentation::TimeFrequency
+            && let Loaded::Raw { samples, channels } = &data
+        {
+            self.pending
+                .insert(bufnum, (samples.clone(), (*channels).max(1)));
+        }
+        // **The unlabelled door**, because a body element asked for one source
+        // and not for several: the plural ask is this widget's, and by the time
+        // the samples reach the body they are the only ones it wanted.
+        self.takes
+            .entry(bufnum)
+            .or_insert_with(|| take_body(bufnum, view))
+            .bulk(data)
     }
 }
 

@@ -204,7 +204,7 @@ fn carry<'a>(
     // silently empty picture.
     if keeps_bulk(says)
         && let (Some(before), Some(now)) = (held.kind.as_element(), fresh.kind.as_element_mut())
-        && !now.keep_bulk(before)
+        && !now.samples_mut().is_some_and(|s| s.keep_bulk(before))
     {
         unkept(fresh.id);
     }

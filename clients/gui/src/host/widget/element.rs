@@ -20,11 +20,34 @@
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
-//! | the tree collectors | [`Element::needs`], with [`Element::tap_frames`] sizing a page's tap subscription |
+//! | the tree collectors | [`Element::needs`], with [`Samples::tap_frames`] sizing a page's tap subscription |
 //! | a clip's body draw | [`Element::draw_body`], or [`Element::texture_body`] for the one the frame must route to the GPU |
 //! | the shared time axis' chrome | [`Element::gutter`] / [`Element::measured_gutter`] |
 //! | the default drag table | [`Element::gesture_map`] |
-//! | the gesture machine's reads | [`Element::rows`] / [`Element::centres_y_zoom`], and [`Element::freq_axis`] & co. for an element that measures its own x |
+//! | the gesture machine's reads | [`Element::rows`] / [`Element::centres_y_zoom`], and [`Measured::freq_axis`] & co. for an element that measures its own x |
+//!
+//! # The facets: a capability is stated, not declined
+//!
+//! Not everything a pass asks is a question every element can be asked. A
+//! picture of **samples** owes nineteen answers nothing else in the catalog has
+//! — what shape they are, which buffer they came from, what a span of them is
+//! worth, how a write lands on them, what the view is asking for next — and an
+//! element with a **measured axis of its own** owes four more. As methods of
+//! [`Element`] those were twenty-three defaults every leaf inherited and
+//! declined, and the family the audio editor grows would have added to
+//! everyone's interface.
+//!
+//! So they are traits of their own — [`Samples`] and [`Measured`] — reached
+//! through [`Element::samples`] and [`Element::measured`], which answer `None`
+//! by default. A pass asks the node for the facet it needs
+//! ([`WidgetKind::as_samples`](super::WidgetKind::as_samples) and its kin) and
+//! gets nothing from everything else, which is what it got method by method
+//! before; what changed is that an element now implements the facets it **is**,
+//! and a new question about samples reaches the elements that have them.
+//!
+//! It is a facet and not a downcast for the same reason [`Element`] is a trait
+//! and not an enum: the caller is a pass, and *which element is this* is never
+//! the question it is asking.
 //!
 //! **Three things in, two things out**, and the boundary is narrow on purpose:
 //! most of what looks like "what a widget needs from the host" is the widget's
@@ -161,7 +184,7 @@ pub struct TextureBody {
 ///
 /// The one axis in the host that is neither the window's shared time nor a
 /// container's coordinate system — a spectrum's frequency. It is the element's
-/// alone ([`Element::freq_axis`]), which is why the gesture machine asks for it
+/// alone ([`Measured::freq_axis`]), which is why the gesture machine asks for it
 /// instead of holding it: only the element knows where inside its rectangle the
 /// picture ended up, and what the analysis behind it can resolve.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -444,8 +467,8 @@ pub struct Needs {
     ///
     /// It is a second field rather than a list of `Bulk` because what comes
     /// back has to be told apart: a `bulk` want is *the* source and arrives
-    /// unlabelled ([`Element::bulk`]), while these arrive by number
-    /// ([`Element::bulk_of`]) so the element can put each where it belongs.
+    /// unlabelled ([`Samples::bulk`]), while these arrive by number
+    /// ([`Samples::bulk_of`]) so the element can put each where it belongs.
     /// Duplicates cost nothing — the fetch machine is keyed by buffer and one
     /// download serves every view waiting on it.
     pub takes: Vec<i32>,
@@ -470,7 +493,7 @@ pub struct Needs {
     /// OSC. This is the *declaration*; where the answer goes is not the
     /// loader's decision either: an element that claimed a [`slot`](Self::slot)
     /// is fed through it, and every other one takes the data home through
-    /// [`Element::bulk`].
+    /// [`Samples::bulk`].
     pub bulk: Option<Bulk>,
 }
 
@@ -536,7 +559,7 @@ impl Bulk {
 }
 
 /// **What came back**, in the form the [`Bulk`] asked for. The element takes it
-/// home through [`Element::bulk`]; a loader never reaches into an element to
+/// home through [`Samples::bulk`]; a loader never reaches into an element to
 /// place it.
 pub enum Loaded {
     /// **Raw interleaved samples**, for the element to make what it draws from
@@ -1476,28 +1499,6 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **Keep the bulk this element already holds**, rather than the (empty)
-    /// bulk the def just built it with. `false` by default — an element that
-    /// carries no bulk has nothing to keep, and says so.
-    ///
-    /// A def that redraws a lane has to name every clip in it, and a clip's
-    /// samples are the largest payload on the wire: re-sending minutes of audio
-    /// because a neighbouring clip moved is the same failure as freeing a zoom
-    /// because a neighbouring clip moved, one order of magnitude up. So the
-    /// wire has a word for *the samples you already have* (`"data": "keep"`),
-    /// and this is what honours it — called by the reconcile, on a widget that
-    /// survived, with the element that widget was.
-    ///
-    /// It is a door and not a downcast because the caller is a pass: the
-    /// reconcile knows a widget kept its identity and knows the def said keep,
-    /// and neither of those is a question about which element this is. What is
-    /// kept is the element's own business, and an element that cannot make
-    /// sense of `from` answers `false` — a keep that could not be honoured is
-    /// reported rather than drawn as silence.
-    fn keep_bulk(&mut self, _from: &dyn Element) -> bool {
-        false
-    }
-
     /// Whether this element navigates the window's **shared time axis**, and so
     /// joins a navigation group. `false` by default.
     fn navigates_time(&self) -> bool {
@@ -1538,46 +1539,6 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// Whether this element navigates a **measured x axis of its own** — a
-    /// frequency axis — instead of joining the window's shared time. `false`
-    /// by default.
-    ///
-    /// Such an axis needs no history behind it (every bin is there every
-    /// frame) and no navigation group (nothing else in a window measures in
-    /// hertz along x), so it is one normalized window the element carries
-    /// alone.
-    fn navigates_freq(&self) -> bool {
-        false
-    }
-
-    /// This element's [`FreqAxis`] inside the rect it was placed in, or `None`
-    /// for one that navigates no axis of its own.
-    ///
-    /// The gesture machine cannot work it out: where the picture sits inside
-    /// the rectangle is the element's own region split — a label above it, a
-    /// ruler strip below, a value strip beside — and it must be the *same* one
-    /// the renderer drew through, or a zoom anchors at a hertz the reader is
-    /// not pointing at.
-    fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
-        None
-    }
-
-    /// **The samples this element holds over a span of its own frames**, as
-    /// interleaved samples with the rate they were taken at — what a copy puts
-    /// on the clipboard.
-    ///
-    /// `None` where the element has nothing it could honestly hand over: a
-    /// picture with no samples behind it (a mapped pyramid is an overview, and
-    /// a block of silence is worse than declining), a live view whose data is
-    /// gone the moment it is drawn, an element that is not samples at all.
-    /// **Read-only, and it is the host's whole part in a copy**: writing the
-    /// span back is an edit, and an edit belongs to whoever owns the data.
-    /// `server_rate` is what the block is stamped with when the element names
-    /// no rate of its own, the same fallback [`Element::freq_axis`] takes.
-    fn sample_block(&self, _start: u64, _frames: u64, _server_rate: f64) -> Option<SampleBlock> {
-        None
-    }
-
     /// The run this element is holding for the hand, if any — what the frame
     /// draws **over** the picture while an edit is in flight.
     fn pending_edit(&self) -> Option<&PendingEdit> {
@@ -1596,17 +1557,10 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// The value of one sample of this element's samples, in its own domain —
-    /// what a grab reads so the intent it later emits can carry the value it
-    /// started from.
-    fn sample_value(&self, _channel: usize, _frame: usize) -> Option<f32> {
-        None
-    }
-
     /// This element's [`ValueAxis`] inside the rect it was placed in, or `None`
     /// for one whose vertical measures nothing a selection could name.
     ///
-    /// Asked for the same reason [`Element::freq_axis`] is: the region split is
+    /// Asked for the same reason [`Measured::freq_axis`] is: the region split is
     /// the element's own, and a marquee that restricts a selection in value has
     /// to read the axis the picture was drawn through. `rows` is what the
     /// front found in the element's slot, resolved by
@@ -1620,31 +1574,6 @@ pub trait Element: fmt::Debug {
         _m: &Metrics,
         _channels: usize,
     ) -> Option<ValueAxis> {
-        None
-    }
-
-    /// **What this element's measured axis would actually show**: `want` opened
-    /// up wherever it is finer than the analysis behind it resolves, or its
-    /// current request when `want` is `None`. `None` for an element with no
-    /// such axis.
-    ///
-    /// Request and display are deliberately kept apart, which is why this is a
-    /// question and not a stored value: the floor is a function of *where* the
-    /// window sits — on a log axis a window narrow enough at 12 kHz cannot
-    /// exist at 100 Hz — so writing the opening back would spend the reader's
-    /// zoom on the way down the axis and never give it back.
-    fn freq_window_of(&self, _sample_rate: f64, _want: Option<(f64, f64)>) -> Option<(f64, f64)> {
-        None
-    }
-
-    /// The narrowest window this element's measured axis may be **asked** for
-    /// at `start`, or `None` for an element with no such axis.
-    ///
-    /// A zoom needs it as a number rather than as a clamp applied afterwards:
-    /// a step that overshot the floor and was corrected later would have
-    /// anchored a window narrower than the one it ends up with, sliding the
-    /// picture sideways at every further step.
-    fn freq_min_span(&self, _sample_rate: f64, _start: f64) -> Option<f64> {
         None
     }
 
@@ -1812,189 +1741,6 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// **How wide a window of a tapped bus one read has to bring**, in frames
-    /// at `sample_rate`, or `0` (the default) for an element that reads no
-    /// taps.
-    ///
-    /// It is a length and not a set: *which* buses are read is
-    /// [`Needs::taps`], and the page's one `/bus_tapStream` subscription serves
-    /// every consumer at the widest window any of them asks for. So an element
-    /// answers for itself and never for the window — a scope's display window
-    /// plus its trigger slack, a goniometer's window, a spectrum's FFT size —
-    /// and a subscription that is too narrow is not a slow drawing but a blank
-    /// one, since a source refuses a read it cannot fill.
-    ///
-    /// The sample rate is a parameter because most of these are declared in
-    /// **time** and one window is not the other at 96 kHz.
-    fn tap_frames(&self, _sample_rate: f64) -> usize {
-        0
-    }
-
-    /// **A bulk resource this element asked for has arrived.** Returns whether
-    /// it was taken, so a loader can log what it resolved for nobody.
-    ///
-    /// The element places the data itself, in whatever shape it draws from —
-    /// which is the half of the bulk seam that cannot be a declaration: what
-    /// comes back is a pyramid, a set of analyses or a run of samples, and only
-    /// the element knows what it is for.
-    /// **One of the [`Needs::takes`] arrived**, named by its buffer number.
-    ///
-    /// The plural door: an element drawing several server buffers is handed
-    /// each one labelled, because "the samples" is not an answer when there are
-    /// six of them. `false` — the default — is an element that asked for none.
-    fn bulk_of(&mut self, _bufnum: i32, _data: Loaded) -> bool {
-        false
-    }
-
-    fn bulk(&mut self, _data: Loaded) -> bool {
-        false
-    }
-
-    /// **How much of this element's samples exists**, in frames, or `None` when
-    /// all of it does — what a picture of the samples is cut to.
-    ///
-    /// It is the drawing's half of [`set_written`](Element::set_written): the
-    /// frontier goes in as a fact, and what comes back out is the element's own
-    /// answer over its own props, which is where a take being recorded and a
-    /// loaded one a single write touched part company.
-    fn written(&self) -> Option<u64> {
-        None
-    }
-
-    /// **How far the samples have been written**, in frames — a buffer's write
-    /// frontier, pushed in by the host that reads it from the shared segment.
-    /// Returns whether anything changed, which is what asks for a redraw.
-    ///
-    /// It is a *fact* and not an instruction: whether an element draws only up
-    /// to it is the element's own answer to its own props, because the frontier
-    /// alone cannot say what the picture is. A take being recorded is samples
-    /// up to the frontier and nothing past it; a take read from a file that one
-    /// `BufWr` dropped a sample into has a frontier too and is samples
-    /// everywhere. Only the client knows which it allocated, so the client says
-    /// so (`fills`) and the host supplies the number.
-    ///
-    /// The default ignores it: an element that draws no samples has nothing to
-    /// be told.
-    fn set_written(&mut self, _frames: u64) -> bool {
-        false
-    }
-
-    /// **The shape of the samples this element holds** — `(channels, frames)`
-    /// per channel — or `None` when it draws no samples.
-    ///
-    /// The measuring half of [`Element::bulk`], and it exists for one caller: a
-    /// destructive edit has to know what it may address before it addresses it.
-    /// It answers the *shape* and not the data, because measuring by handing
-    /// the samples over would copy a take per stroke.
-    fn sample_shape(&self) -> Option<(usize, u64)> {
-        None
-    }
-
-    /// **The server buffer the samples are *in***, when the element named one.
-    ///
-    /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
-    /// the samples land — which is exactly when a destructive edit becomes
-    /// possible. What the write needs is the buffer number the source keeps,
-    /// which outlives the load.
-    fn source_buffer(&self) -> Option<i32> {
-        None
-    }
-
-    /// **Writes a run of samples into the samples**, at frame `start` of
-    /// channel `ch`; returns whether it landed.
-    ///
-    /// The element writes rather than the host because only it knows which form
-    /// its samples are in — a pyramid, inline samples, or both — and a host
-    /// that patched one form left every view holding the other showing the
-    /// samples as it was before the stroke. What is written stays the
-    /// element's own picture; the *samples* is the server's buffer, and the
-    /// host sends that write itself.
-    /// **Re-reads the summary of a span** of samples this element draws
-    /// where it lies, returning whether it did. The default is not to: an
-    /// element holding its own samples has nothing to re-read.
-    ///
-    /// It is [`Self::write_samples`]' sibling for a write this host did not
-    /// make — another peer's, announced as a span and nothing more, or a
-    /// recording's, which announces only how far it has got.
-    ///
-    /// `ch` is `None` for **every channel**, which is what a recording wants:
-    /// the write frontier is the buffer's and they all advance together, and
-    /// asking per channel would copy the whole summary once per channel.
-    fn resummarize(&mut self, _ch: Option<usize>, _start: u64, _frames: usize) -> bool {
-        false
-    }
-
-    fn write_samples(&mut self, _ch: usize, _start: u64, _values: &[f32]) -> bool {
-        false
-    }
-
-    /// **Folds a run of already-measured buckets** into this element's
-    /// summary, returning whether it did. The default is not to.
-    ///
-    /// The sibling of [`Self::resummarize`] for the picture that cannot
-    /// re-read anything: its samples are a copy, and the samples themselves are
-    /// being written somewhere it has no access to (a page and a server
-    /// buffer). So the *overview* of what was written arrives instead —
-    /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and
-    /// channel-minor, `start_frame` on the buffer's own sample axis.
-    fn write_buckets(&mut self, _start_frame: u64, _bucket: usize, _stats: &[f32]) -> bool {
-        false
-    }
-
-    /// **Takes a span another peer wrote**, returning whether it did. The
-    /// default is not to.
-    ///
-    /// The sibling of [`Self::resummarize`] for a picture that cannot re-read
-    /// the samples: they are the server's, this element holds its own copy,
-    /// and the edit was announced (`/buffer_touched`) and then read back.
-    /// `samples` is interleaved, every channel of the frames
-    /// `[start, start + n)`.
-    fn patch_span(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
-        false
-    }
-
-    /// **The finest bucket this element's summary holds**, or `None` when it
-    /// holds no summary — what a span read back has to be aligned to before
-    /// it can replace what the summary says.
-    fn summary_bucket(&self) -> Option<usize> {
-        None
-    }
-
-    /// **Puts a finer summary over the span this element is showing**, beside
-    /// its own, returning whether it took it. The default is not to.
-    ///
-    /// The other landing of a zoom past the overview, and the cheaper one: the
-    /// wire's ordinary overview blob (`/buffer_peaks`, bucket-major and
-    /// channel-minor) measured at a bucket finer than this element's summary,
-    /// which is a few kilobytes where the samples over the same span are a few
-    /// hundred. It answers the columns inside its span and the summary goes on
-    /// answering everywhere else; the samples are what the deepest zoom still
-    /// reads, through [`Element::set_window`].
-    fn set_detail(&mut self, _start: u64, _bucket: usize, _stats: &[f32]) -> bool {
-        false
-    }
-
-    /// **Puts a fetched run of the samples under this element's summary**,
-    /// returning whether it took it. The default is not to.
-    ///
-    /// The landing of a zoom past the overview: `samples` is interleaved, every
-    /// channel of the frames `[start, start + n)`, and it answers exactly
-    /// there while the pyramid goes on answering everywhere else.
-    fn set_window(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
-        false
-    }
-
-    /// **The stream this element wants to be told about**, `(buffer, bucket)`,
-    /// or `None` (the default) for one that wants none.
-    ///
-    /// The host collects the wants of everything it draws and keeps one
-    /// subscription for all of them, so an element says what it needs without
-    /// knowing that a wire exists — the same shape as [`Needs`], one message
-    /// later.
-    fn stream_want(&self) -> Option<(i32, usize)> {
-        None
-    }
-
     /// The [`BodyRole`] this element fills when a container holds it as one of
     /// its bodies, or `None` (the default) for an element that is only ever
     /// itself.
@@ -2040,21 +1786,6 @@ pub trait Element: fmt::Debug {
     /// them.
     fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
         Vec::new()
-    }
-
-    /// **This element was told its resource moved**, and this is what it wants
-    /// loaded again — `None` for the overwhelming majority, which were told
-    /// nothing.
-    ///
-    /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
-    /// the reason [`fills`](Element::fills) is: **asking clears the ask**, so one
-    /// `reload` produces one load. A front's per-repaint walk can call it every
-    /// frame and it answers once, which is what a fetch in flight needs — an
-    /// element with no body yet is indistinguishable from one that has not
-    /// asked, and a front deriving the ask from that would send a query per
-    /// frame for as long as the answer took.
-    fn wants_reload(&mut self) -> Option<Bulk> {
-        None
     }
 
     /// **The slot's contents are gone**: the window's GPU resources were
@@ -2273,6 +2004,362 @@ pub trait Element: fmt::Debug {
 
     /// Clones this element into a fresh box (the tree is `Clone`).
     fn clone_box(&self) -> Box<dyn Element>;
+
+    /// **What this element holds as samples**, or `None` (the default) for one
+    /// that holds none — which is most of them.
+    ///
+    /// The first **facet**, and the reason there are facets at all: the
+    /// questions a picture of samples answers — what shape they are, which
+    /// buffer they came from, what a span of them is worth, how a write lands
+    /// on them, what the view is asking for next — are eighteen, and they mean
+    /// nothing to a knob. Asked through a door, an element implements what it
+    /// *is* instead of declining eighteen times, and the family the audio
+    /// editor grows adds to [`Samples`] rather than to everyone's interface.
+    ///
+    /// It is a facet and not a downcast for the same reason every other door
+    /// here is: the caller is a pass, and *which element is this* is not the
+    /// question it is asking.
+    fn samples(&self) -> Option<&dyn Samples> {
+        None
+    }
+
+    /// [`samples`](Element::samples), mutably — the half a write, a reload and
+    /// a view's own request go through.
+    fn samples_mut(&mut self) -> Option<&mut dyn Samples> {
+        None
+    }
+
+    /// **The measured axis of this element's own**, or `None` (the default).
+    ///
+    /// The second facet: an axis in hertz needs no history behind it (every bin
+    /// is there every frame) and no navigation group (nothing else in a window
+    /// measures in hertz along x), so it is one normalized window the element
+    /// carries alone — and four questions nothing else in the catalog answers.
+    fn measured(&self) -> Option<&dyn Measured> {
+        None
+    }
+
+    /// [`measured`](Element::measured), mutably.
+    fn measured_mut(&mut self) -> Option<&mut dyn Measured> {
+        None
+    }
+}
+
+/// **What a picture of samples owes**, beside what every element owes.
+///
+/// A facet of [`Element`], reached through [`Element::samples`]: an element
+/// that has samples behind it says so by handing one back, and every element
+/// that does not — a knob, a label, a menu, a score — says nothing at all.
+/// That is the difference from the eighteen defaulted methods this was: a
+/// capability is now *stated* rather than declined one question at a time, and
+/// a new question about samples reaches the elements that have them instead of
+/// every element there is.
+///
+/// The questions group by what is asking. **What is there**: the shape, the
+/// buffer it came from, the value of one sample, a span of them as a block.
+/// **What is being written**: a run of samples, the summary that follows it,
+/// and whether the element has anything written it has not handed back.
+/// **What the view wants next**: the window, the detail, the stream it is
+/// asking for, and the bulk it already holds.
+pub trait Samples {
+    /// **Keep the bulk this element already holds**, rather than the (empty)
+    /// bulk the def just built it with. `false` by default — an element that
+    /// carries no bulk has nothing to keep, and says so.
+    ///
+    /// A def that redraws a lane has to name every clip in it, and a clip's
+    /// samples are the largest payload on the wire: re-sending minutes of audio
+    /// because a neighbouring clip moved is the same failure as freeing a zoom
+    /// because a neighbouring clip moved, one order of magnitude up. So the
+    /// wire has a word for *the samples you already have* (`"data": "keep"`),
+    /// and this is what honours it — called by the reconcile, on a widget that
+    /// survived, with the element that widget was.
+    ///
+    /// It is a door and not a downcast because the caller is a pass: the
+    /// reconcile knows a widget kept its identity and knows the def said keep,
+    /// and neither of those is a question about which element this is. What is
+    /// kept is the element's own business, and an element that cannot make
+    /// sense of `from` answers `false` — a keep that could not be honoured is
+    /// reported rather than drawn as silence.
+    fn keep_bulk(&mut self, _from: &dyn Element) -> bool {
+        false
+    }
+
+    /// **The samples this element holds over a span of its own frames**, as
+    /// interleaved samples with the rate they were taken at — what a copy puts
+    /// on the clipboard.
+    ///
+    /// `None` where the element has nothing it could honestly hand over: a
+    /// picture with no samples behind it (a mapped pyramid is an overview, and
+    /// a block of silence is worse than declining), a live view whose data is
+    /// gone the moment it is drawn, an element that is not samples at all.
+    /// **Read-only, and it is the host's whole part in a copy**: writing the
+    /// span back is an edit, and an edit belongs to whoever owns the data.
+    /// `server_rate` is what the block is stamped with when the element names
+    /// no rate of its own, the same fallback [`Measured::freq_axis`] takes.
+    fn sample_block(&self, _start: u64, _frames: u64, _server_rate: f64) -> Option<SampleBlock> {
+        None
+    }
+
+    /// The value of one sample of this element's samples, in its own domain —
+    /// what a grab reads so the intent it later emits can carry the value it
+    /// started from.
+    fn sample_value(&self, _channel: usize, _frame: usize) -> Option<f32> {
+        None
+    }
+
+    /// **How wide a window of a tapped bus one read has to bring**, in frames
+    /// at `sample_rate`, or `0` (the default) for an element that reads no
+    /// taps.
+    ///
+    /// It is a length and not a set: *which* buses are read is
+    /// [`Needs::taps`], and the page's one `/bus_tapStream` subscription serves
+    /// every consumer at the widest window any of them asks for. So an element
+    /// answers for itself and never for the window — a scope's display window
+    /// plus its trigger slack, a goniometer's window, a spectrum's FFT size —
+    /// and a subscription that is too narrow is not a slow drawing but a blank
+    /// one, since a source refuses a read it cannot fill.
+    ///
+    /// The sample rate is a parameter because most of these are declared in
+    /// **time** and one window is not the other at 96 kHz.
+    fn tap_frames(&self, _sample_rate: f64) -> usize {
+        0
+    }
+
+    /// **A bulk resource this element asked for has arrived.** Returns whether
+    /// it was taken, so a loader can log what it resolved for nobody.
+    ///
+    /// The element places the data itself, in whatever shape it draws from —
+    /// which is the half of the bulk seam that cannot be a declaration: what
+    /// comes back is a pyramid, a set of analyses or a run of samples, and only
+    /// the element knows what it is for.
+    /// **One of the [`Needs::takes`] arrived**, named by its buffer number.
+    ///
+    /// The plural door: an element drawing several server buffers is handed
+    /// each one labelled, because "the samples" is not an answer when there are
+    /// six of them. `false` — the default — is an element that asked for none.
+    fn bulk_of(&mut self, _bufnum: i32, _data: Loaded) -> bool {
+        false
+    }
+
+    fn bulk(&mut self, _data: Loaded) -> bool {
+        false
+    }
+
+    /// **How much of this element's samples exists**, in frames, or `None` when
+    /// all of it does — what a picture of the samples is cut to.
+    ///
+    /// It is the drawing's half of [`set_written`](Samples::set_written): the
+    /// frontier goes in as a fact, and what comes back out is the element's own
+    /// answer over its own props, which is where a take being recorded and a
+    /// loaded one a single write touched part company.
+    fn written(&self) -> Option<u64> {
+        None
+    }
+
+    /// **How far the samples have been written**, in frames — a buffer's write
+    /// frontier, pushed in by the host that reads it from the shared segment.
+    /// Returns whether anything changed, which is what asks for a redraw.
+    ///
+    /// It is a *fact* and not an instruction: whether an element draws only up
+    /// to it is the element's own answer to its own props, because the frontier
+    /// alone cannot say what the picture is. A take being recorded is samples
+    /// up to the frontier and nothing past it; a take read from a file that one
+    /// `BufWr` dropped a sample into has a frontier too and is samples
+    /// everywhere. Only the client knows which it allocated, so the client says
+    /// so (`fills`) and the host supplies the number.
+    ///
+    /// The default ignores it: an element that draws no samples has nothing to
+    /// be told.
+    fn set_written(&mut self, _frames: u64) -> bool {
+        false
+    }
+
+    /// **The shape of the samples this element holds** — `(channels, frames)`
+    /// per channel — or `None` when it draws no samples.
+    ///
+    /// The measuring half of [`Samples::bulk`], and it exists for one caller: a
+    /// destructive edit has to know what it may address before it addresses it.
+    /// It answers the *shape* and not the data, because measuring by handing
+    /// the samples over would copy a take per stroke.
+    fn sample_shape(&self) -> Option<(usize, u64)> {
+        None
+    }
+
+    /// **The server buffer the samples are *in***, when the element named one.
+    ///
+    /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
+    /// the samples land — which is exactly when a destructive edit becomes
+    /// possible. What the write needs is the buffer number the source keeps,
+    /// which outlives the load.
+    fn source_buffer(&self) -> Option<i32> {
+        None
+    }
+
+    /// **Writes a run of samples into the samples**, at frame `start` of
+    /// channel `ch`; returns whether it landed.
+    ///
+    /// The element writes rather than the host because only it knows which form
+    /// its samples are in — a pyramid, inline samples, or both — and a host
+    /// that patched one form left every view holding the other showing the
+    /// samples as it was before the stroke. What is written stays the
+    /// element's own picture; the *samples* is the server's buffer, and the
+    /// host sends that write itself.
+    /// **Re-reads the summary of a span** of samples this element draws
+    /// where it lies, returning whether it did. The default is not to: an
+    /// element holding its own samples has nothing to re-read.
+    ///
+    /// It is [`Self::write_samples`]' sibling for a write this host did not
+    /// make — another peer's, announced as a span and nothing more, or a
+    /// recording's, which announces only how far it has got.
+    ///
+    /// `ch` is `None` for **every channel**, which is what a recording wants:
+    /// the write frontier is the buffer's and they all advance together, and
+    /// asking per channel would copy the whole summary once per channel.
+    fn resummarize(&mut self, _ch: Option<usize>, _start: u64, _frames: usize) -> bool {
+        false
+    }
+
+    fn write_samples(&mut self, _ch: usize, _start: u64, _values: &[f32]) -> bool {
+        false
+    }
+
+    /// **Folds a run of already-measured buckets** into this element's
+    /// summary, returning whether it did. The default is not to.
+    ///
+    /// The sibling of [`Self::resummarize`] for the picture that cannot
+    /// re-read anything: its samples are a copy, and the samples themselves are
+    /// being written somewhere it has no access to (a page and a server
+    /// buffer). So the *overview* of what was written arrives instead —
+    /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and
+    /// channel-minor, `start_frame` on the buffer's own sample axis.
+    fn write_buckets(&mut self, _start_frame: u64, _bucket: usize, _stats: &[f32]) -> bool {
+        false
+    }
+
+    /// **The finest bucket this element's summary holds**, or `None` when it
+    /// holds no summary — what a span read back has to be aligned to before
+    /// it can replace what the summary says.
+    fn summary_bucket(&self) -> Option<usize> {
+        None
+    }
+
+    /// **Puts a finer summary over the span this element is showing**, beside
+    /// its own, returning whether it took it. The default is not to.
+    ///
+    /// The other landing of a zoom past the overview, and the cheaper one: the
+    /// wire's ordinary overview blob (`/buffer_peaks`, bucket-major and
+    /// channel-minor) measured at a bucket finer than this element's summary,
+    /// which is a few kilobytes where the samples over the same span are a few
+    /// hundred. It answers the columns inside its span and the summary goes on
+    /// answering everywhere else; the samples are what the deepest zoom still
+    /// reads, through [`Samples::set_window`].
+    fn set_detail(&mut self, _start: u64, _bucket: usize, _stats: &[f32]) -> bool {
+        false
+    }
+
+    /// **Puts a fetched run of the samples under this element's summary**,
+    /// returning whether it took it. The default is not to.
+    ///
+    /// The landing of a zoom past the overview: `samples` is interleaved, every
+    /// channel of the frames `[start, start + n)`, and it answers exactly
+    /// there while the pyramid goes on answering everywhere else.
+    fn set_window(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
+        false
+    }
+
+    /// **The stream this element wants to be told about**, `(buffer, bucket)`,
+    /// or `None` (the default) for one that wants none.
+    ///
+    /// The host collects the wants of everything it draws and keeps one
+    /// subscription for all of them, so an element says what it needs without
+    /// knowing that a wire exists — the same shape as [`Needs`], one message
+    /// later.
+    fn stream_want(&self) -> Option<(i32, usize)> {
+        None
+    }
+
+    /// **This element was told its resource moved**, and this is what it wants
+    /// loaded again — `None` for the overwhelming majority, which were told
+    /// nothing.
+    ///
+    /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
+    /// the reason [`fills`](Element::fills) is: **asking clears the ask**, so one
+    /// `reload` produces one load. A front's per-repaint walk can call it every
+    /// frame and it answers once, which is what a fetch in flight needs — an
+    /// element with no body yet is indistinguishable from one that has not
+    /// asked, and a front deriving the ask from that would send a query per
+    /// frame for as long as the answer took.
+    fn wants_reload(&mut self) -> Option<Bulk> {
+        None
+    }
+    /// **Takes a span another peer wrote**, returning whether it did. The
+    /// default is not to.
+    ///
+    /// The sibling of [`Self::resummarize`] for a picture that cannot re-read
+    /// the samples: they are the server's, this element holds its own copy,
+    /// and the edit was announced (`/buffer_touched`) and then read back.
+    /// `samples` is interleaved, every channel of the frames
+    /// `[start, start + n)`.
+    fn patch_span(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
+        false
+    }
+}
+
+/// **What an element with a measured axis of its own owes.**
+///
+/// A facet of [`Element`], reached through [`Element::measured`]. The axis is
+/// in hertz and the element carries it alone: it is not the window's shared
+/// time, so it joins no navigation group, and it needs no history behind it
+/// because every bin is there every frame.
+pub trait Measured {
+    /// Whether this element navigates a **measured x axis of its own** — a
+    /// frequency axis — instead of joining the window's shared time. `false`
+    /// by default.
+    ///
+    /// Such an axis needs no history behind it (every bin is there every
+    /// frame) and no navigation group (nothing else in a window measures in
+    /// hertz along x), so it is one normalized window the element carries
+    /// alone.
+    fn navigates_freq(&self) -> bool {
+        false
+    }
+
+    /// This element's [`FreqAxis`] inside the rect it was placed in, or `None`
+    /// for one that navigates no axis of its own.
+    ///
+    /// The gesture machine cannot work it out: where the picture sits inside
+    /// the rectangle is the element's own region split — a label above it, a
+    /// ruler strip below, a value strip beside — and it must be the *same* one
+    /// the renderer drew through, or a zoom anchors at a hertz the reader is
+    /// not pointing at.
+    fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
+        None
+    }
+
+    /// **What this element's measured axis would actually show**: `want` opened
+    /// up wherever it is finer than the analysis behind it resolves, or its
+    /// current request when `want` is `None`. `None` for an element with no
+    /// such axis.
+    ///
+    /// Request and display are deliberately kept apart, which is why this is a
+    /// question and not a stored value: the floor is a function of *where* the
+    /// window sits — on a log axis a window narrow enough at 12 kHz cannot
+    /// exist at 100 Hz — so writing the opening back would spend the reader's
+    /// zoom on the way down the axis and never give it back.
+    fn freq_window_of(&self, _sample_rate: f64, _want: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        None
+    }
+
+    /// The narrowest window this element's measured axis may be **asked** for
+    /// at `start`, or `None` for an element with no such axis.
+    ///
+    /// A zoom needs it as a number rather than as a clamp applied afterwards:
+    /// a step that overshot the floor and was corrected later would have
+    /// anchored a window narrower than the one it ends up with, sliding the
+    /// picture sideways at every further step.
+    fn freq_min_span(&self, _sample_rate: f64, _start: f64) -> Option<f64> {
+        None
+    }
 }
 
 impl Clone for Box<dyn Element> {
@@ -2386,12 +2473,6 @@ mod tests {
             }
         }
 
-        fn tap_frames(&self, sample_rate: f64) -> usize {
-            // A hundredth of a second of the tap it declared: a length in time,
-            // like every real one.
-            (sample_rate / 100.0) as usize
-        }
-
         fn gutter(&self, m: &Metrics) -> f32 {
             // A band of its own left of the body, like a value ruler's.
             m.ruler_w
@@ -2432,6 +2513,18 @@ mod tests {
         fn clone_box(&self) -> Box<dyn Element> {
             Box::new(self.clone())
         }
+
+        fn samples(&self) -> Option<&dyn Samples> {
+            Some(self)
+        }
+    }
+
+    impl Samples for Counter {
+        fn tap_frames(&self, sample_rate: f64) -> usize {
+            // A hundredth of a second of the tap it declared: a length in time,
+            // like every real one.
+            (sample_rate / 100.0) as usize
+        }
     }
 
     fn counter(props: &Map<String, Value>, _blobs: &[Vec<u8>]) -> Result<Box<dyn Element>, String> {
@@ -2443,6 +2536,31 @@ mod tests {
 
     fn tree(json: &str) -> Widget {
         Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap()
+    }
+
+    /// **A capability is stated, and everything else declines once.**
+    ///
+    /// What the facets replaced: nineteen defaulted methods about samples and
+    /// four about a measured axis, inherited and declined by every leaf in the
+    /// catalog. A label has no samples and says so in one answer; a signal view
+    /// has both and says so in two. The test is the boundary itself — if a
+    /// question about samples is ever put back on `Element`, a label will start
+    /// answering it again and this stops meaning anything.
+    #[test]
+    fn an_element_states_the_facets_it_is_and_nothing_else() {
+        let label = tree(r#"{"id":1,"type":"label","text":"x"}"#);
+        let el = label.kind.as_element().expect("a label is an element");
+        assert!(el.samples().is_none(), "a label has no samples");
+        assert!(el.measured().is_none(), "and measures no axis of its own");
+        assert!(label.kind.as_samples().is_none(), "the door agrees");
+
+        let signal = tree(r#"{"id":2,"type":"signal","view":"spectrum","bus":0}"#);
+        let el = signal.kind.as_element().expect("so is a signal view");
+        assert!(el.samples().is_some(), "a signal view holds samples");
+        assert!(
+            el.measured().is_some(),
+            "and a spectrum measures its own x axis"
+        );
     }
 
     /// The whole promise in one test: a name nothing built in answers to

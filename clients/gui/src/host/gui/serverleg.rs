@@ -581,8 +581,8 @@ impl App {
             .is_some_and(|w| {
                 w.bulk_target_mut()
                     .kind
-                    .as_element_mut()
-                    .is_some_and(|el| el.set_window(start_frame as u64, channels, samples))
+                    .as_samples_mut()
+                    .is_some_and(|s| s.set_window(start_frame as u64, channels, samples))
             });
         if took && let Some(ws) = self.windows.get(&want.def_id) {
             ws.gpu.window.request_redraw();
@@ -614,7 +614,7 @@ impl App {
                     .host
                     .window_def(*def_id)
                     .and_then(|t| t.find(*widget_id))
-                    .and_then(|w| w.bulk_target().kind.as_element())
+                    .and_then(|w| w.bulk_target().kind.as_samples())
                 else {
                     continue;
                 };
@@ -676,8 +676,8 @@ impl App {
             .is_some_and(|w| {
                 w.bulk_target_mut()
                     .kind
-                    .as_element_mut()
-                    .is_some_and(|el| el.set_detail(start, bucket, stats))
+                    .as_samples_mut()
+                    .is_some_and(|s| s.set_detail(start, bucket, stats))
             });
         if took && let Some(ws) = self.windows.get(&def_id) {
             ws.gpu.window.request_redraw();
@@ -882,8 +882,8 @@ impl App {
                 tree.descendants()
                     .filter(|w| {
                         w.kind
-                            .as_element()
-                            .and_then(|el| el.source_buffer())
+                            .as_samples()
+                            .and_then(|s| s.source_buffer())
                             .is_some_and(|b| b == bufnum)
                     })
                     .filter_map(|w| w.id)
@@ -910,8 +910,8 @@ impl App {
                     tree.descendants()
                         .filter(|w| {
                             w.kind
-                                .as_element()
-                                .and_then(|el| el.source_buffer())
+                                .as_samples()
+                                .and_then(|s| s.source_buffer())
                                 .is_some_and(|b| b == bufnum)
                         })
                         .filter_map(|w| w.id)
@@ -958,7 +958,7 @@ impl App {
             return false;
         };
         tree.descendants().any(|w| {
-            let Some(el) = w.kind.as_element() else {
+            let Some(el) = w.kind.as_samples() else {
                 return false;
             };
             let (Some(bufnum), Some((_, frames))) = (el.source_buffer(), el.sample_shape()) else {
@@ -1007,7 +1007,7 @@ impl App {
                 // A body carries no id of its own, so what is followed is the
                 // widget that does — the same addressing every other samples
                 // path here uses.
-                let (Some(id), Some(el)) = (w.id, w.kind.as_element()) else {
+                let (Some(id), Some(el)) = (w.id, w.kind.as_samples()) else {
                     continue;
                 };
                 let Some(bufnum) = el.source_buffer() else {
@@ -1050,7 +1050,7 @@ impl App {
             let Some(w) = tree.find_mut(widget_id) else {
                 continue;
             };
-            let Some(el) = w.kind.as_element_mut() else {
+            let Some(el) = w.kind.as_samples_mut() else {
                 continue;
             };
             // **Every channel in one refresh.** The frontier is the buffer's,

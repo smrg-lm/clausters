@@ -612,8 +612,8 @@ impl WebApp {
                         .window_def_mut(want.def_id)
                         .and_then(|t| t.find_mut(want.widget_id))
                         .is_some_and(|w| {
-                            w.bulk_target_mut().kind.as_element_mut().is_some_and(|el| {
-                                el.set_window(start_frame as u64, channels, &samples)
+                            w.bulk_target_mut().kind.as_samples_mut().is_some_and(|s| {
+                                s.set_window(start_frame as u64, channels, &samples)
                             })
                         });
                 if took {
@@ -686,8 +686,8 @@ impl WebApp {
                 tree.descendants()
                     .filter(|w| {
                         w.kind
-                            .as_element()
-                            .and_then(|el| el.source_buffer())
+                            .as_samples()
+                            .and_then(|s| s.source_buffer())
                             .is_some_and(|b| b == bufnum)
                     })
                     .filter_map(|w| w.id)
@@ -769,7 +769,7 @@ impl WebApp {
                     .host
                     .window_def(def_id)
                     .and_then(|t| t.find(*widget_id))
-                    .and_then(|w| w.bulk_target().kind.as_element())
+                    .and_then(|w| w.bulk_target().kind.as_samples())
                 else {
                     continue;
                 };
@@ -832,8 +832,8 @@ impl WebApp {
             .is_some_and(|w| {
                 w.bulk_target_mut()
                     .kind
-                    .as_element_mut()
-                    .is_some_and(|el| el.set_detail(start, bucket, stats))
+                    .as_samples_mut()
+                    .is_some_and(|s| s.set_detail(start, bucket, stats))
             });
         if took {
             self.request_redraw(def_id);
@@ -862,8 +862,8 @@ impl WebApp {
                     tree.descendants()
                         .filter(|w| {
                             w.kind
-                                .as_element()
-                                .and_then(|el| el.source_buffer())
+                                .as_samples()
+                                .and_then(|s| s.source_buffer())
                                 .is_some_and(|b| b == bufnum)
                         })
                         .filter_map(|w| w.id)

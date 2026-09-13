@@ -294,7 +294,7 @@ mod data_tests {
     /// every frame for as long as the fetch took.
     #[test]
     fn a_reload_asks_once_and_the_ask_clears() {
-        use crate::host::widget::element::Element;
+        use crate::host::widget::element::{Element, Samples};
         let mut e =
             el(r#"{"id":1,"type":"signal","view":"trace","buffer":7,"bulk":true,"channels":1}"#);
         assert!(

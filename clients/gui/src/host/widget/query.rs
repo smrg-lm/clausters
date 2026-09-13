@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use super::super::elements::signal::SignalElement;
 use super::element::BodyRole;
-use super::element::Element;
+use super::element::{Element, Measured, Samples};
 use super::{EditorProps, GestureMap, Widget, WidgetKind};
 
 impl Widget {
@@ -145,11 +145,13 @@ impl WidgetKind {
     /// frequency axis — instead of joining the window's shared time. The one
     /// widget that carries an x window rather than a navigation group.
     pub fn navigates_freq(&self) -> bool {
-        self.as_element().is_some_and(Element::navigates_freq)
+        self.as_element()
+            .and_then(Element::measured)
+            .is_some_and(Measured::navigates_freq)
     }
 
     /// That axis inside the rect this widget was placed in
-    /// ([`Element::freq_axis`]) — where it lies,
+    /// ([`Measured::freq_axis`]) — where it lies,
     /// what it shows, and at what rate.
     pub fn freq_axis(
         &self,
@@ -157,7 +159,9 @@ impl WidgetKind {
         m: &super::super::metrics::Metrics,
         sample_rate: f64,
     ) -> Option<super::element::FreqAxis> {
-        self.as_element()?.freq_axis(rect, m, sample_rate)
+        self.as_element()?
+            .measured()?
+            .freq_axis(rect, m, sample_rate)
     }
 
     /// The run this widget is holding for the hand ([`Element::pending_edit`]).
@@ -172,9 +176,9 @@ impl WidgetKind {
             .is_some_and(|e| e.set_pending_edit(held))
     }
 
-    /// One sample of its samples ([`Element::sample_value`]).
+    /// One sample of its samples ([`Samples::sample_value`]).
     pub fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
-        self.as_element()?.sample_value(channel, frame)
+        self.as_element()?.samples()?.sample_value(channel, frame)
     }
 
     /// The widget's **value axis** inside the rect it was placed in
@@ -192,15 +196,19 @@ impl WidgetKind {
 
     /// What that axis would show for `want`, or shows now for `None` — the
     /// request opened up to what the analysis behind it resolves
-    /// ([`Element::freq_window_of`]).
+    /// ([`Measured::freq_window_of`]).
     pub fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
-        self.as_element()?.freq_window_of(sample_rate, want)
+        self.as_element()?
+            .measured()?
+            .freq_window_of(sample_rate, want)
     }
 
     /// The narrowest window that axis may be **asked** for at `start`
-    /// ([`Element::freq_min_span`]).
+    /// ([`Measured::freq_min_span`]).
     pub fn freq_min_span(&self, sample_rate: f64, start: f64) -> Option<f64> {
-        self.as_element()?.freq_min_span(sample_rate, start)
+        self.as_element()?
+            .measured()?
+            .freq_min_span(sample_rate, start)
     }
 
     /// The current value as an OSC primitive for a `/gui_event`, or `None` for a
@@ -354,12 +362,14 @@ impl WidgetKind {
     /// `sample_rate` — the one door the page's tap subscription is sized from.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::tap_frames`]). It replaced three
+    /// ([`Samples::tap_frames`]). It replaced three
     /// collectors that each walked the tree building a per-kind read spec — a
     /// scope's, a goniometer's, a spectrum's — only to take the largest of the
     /// three and throw the specs away.
     pub fn tap_frames(&self, sample_rate: f64) -> usize {
-        self.as_element().map_or(0, |el| el.tap_frames(sample_rate))
+        self.as_element()
+            .and_then(Element::samples)
+            .map_or(0, |s| s.tap_frames(sample_rate))
     }
 
     /// The editor chrome of a view that carries one — a timeline view
@@ -411,6 +421,29 @@ impl WidgetKind {
         }
     }
 
+    /// **The samples facet of whatever element this kind holds**, or `None` —
+    /// which is every kind that is not an element and every element with no
+    /// samples behind it.
+    ///
+    /// Here beside [`as_element`](WidgetKind::as_element) because that is how
+    /// every caller reaches one: a pass has a node, asks it for the capability
+    /// it needs, and gets nothing from everything else. Two questions in one
+    /// call, since neither answer is ever wanted without the other.
+    pub fn as_samples(&self) -> Option<&dyn Samples> {
+        self.as_element()?.samples()
+    }
+
+    /// [`as_samples`](WidgetKind::as_samples), mutably — what a write, a
+    /// summary refresh and a view's own request go through.
+    pub fn as_samples_mut(&mut self) -> Option<&mut dyn Samples> {
+        self.as_element_mut()?.samples_mut()
+    }
+
+    /// The measured-axis facet of whatever element this kind holds, or `None`.
+    pub fn as_measured(&self) -> Option<&dyn Measured> {
+        self.as_element()?.measured()
+    }
+
     /// The signal element this kind is, if it is one — see
     /// [`Widget::signal`] for why this is a downcast and not a match.
     pub fn signal(&self) -> Option<&SignalElement> {
@@ -431,10 +464,12 @@ impl WidgetKind {
     /// **A declared bulk resource has arrived**: the element takes it home.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::bulk`]) — the single door, so a loader
+    /// ([`Samples::bulk`]) — the single door, so a loader
     /// resolves a resource and never reaches into a widget to place it.
     pub fn take_bulk(&mut self, data: super::element::Loaded) -> bool {
-        self.as_element_mut().is_some_and(|el| el.bulk(data))
+        self.as_element_mut()
+            .and_then(Element::samples_mut)
+            .is_some_and(|s| s.bulk(data))
     }
 
     /// [`take_bulk`](Self::take_bulk) for one of a plural asker's
@@ -449,7 +484,10 @@ impl WidgetKind {
         data: &impl Fn() -> super::element::Loaded,
     ) -> bool {
         match self.as_element_mut() {
-            Some(el) => el.bulk_of(bufnum, data()) || el.bulk(data()),
+            Some(el) => match el.samples_mut() {
+                Some(s) => s.bulk_of(bufnum, data()) || s.bulk(data()),
+                None => false,
+            },
             None => false,
         }
     }
@@ -469,9 +507,9 @@ impl WidgetKind {
     }
 
     /// **What this widget was told to read again**, when it was
-    /// ([`Element::wants_reload`]). Asking clears the ask.
+    /// ([`Samples::wants_reload`]). Asking clears the ask.
     pub fn wants_reload(&mut self) -> Option<super::element::Bulk> {
-        self.as_element_mut()?.wants_reload()
+        self.as_element_mut()?.samples_mut()?.wants_reload()
     }
 
     /// **The window's GPU slots are gone** (a device rebuilt, a canvas
