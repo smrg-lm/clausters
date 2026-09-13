@@ -1630,6 +1630,53 @@ mod window_verb_tests {
         }
     }
 
+    /// **The head sweeps from the moment the window opens** (found 2026-09-13,
+    /// by eye: a standalone host placed the cursor and never moved a line). The
+    /// ruler is the window's first timeline member and seeds the group, so an
+    /// anchor stated only on the piece was dropped; a client hid it by setting
+    /// one afterwards.
+    #[test]
+    fn a_piece_window_opens_with_its_head_anchored() {
+        let (host, _def_id, view) =
+            with_piece(clausters_document::multitrack::Multitrack::default());
+        let key = host.timeline_key(view).expect("the piece is on a timeline");
+        let state = host.timelines().state(key).expect("its group");
+        assert_eq!(state.playhead_at, 0.0, "anchored at the piece's position");
+    }
+
+    /// **A piece that sounds tells its window where its meters are** (found
+    /// 2026-09-13, by eye: a standalone host's strips never moved). The window
+    /// is composed before anything is played, so the buses are only known once
+    /// the playback has made the tracks; a client's editor is handed them on
+    /// every turn, and the host's is handed them here.
+    #[test]
+    fn a_sounding_piece_tells_its_window_where_the_meters_are() {
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        let piece = Multitrack {
+            tracks: vec![Track::new(NodeId(10), NodeId(11))],
+            ..Multitrack::default()
+        };
+        let (mut host, _def_id, view) = with_piece(piece);
+        // A throwaway socket standing in for the server that sounds.
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let leg = crate::host::ServerLeg::connect(server.local_addr().unwrap()).unwrap();
+        host.set_server_link(crate::host::ServerLink::Udp(leg));
+        host.sound_piece();
+        let told = host
+            .owner
+            .as_ref()
+            .and_then(|o| o.editor.as_ref())
+            .map_or(0, |e| e.meters().len());
+        assert_eq!(told, 1, "the editor knows the track's buses");
+        let meters = &host.registry().get(view).expect("the piece").props["meters"];
+        assert_eq!(
+            meters.as_array().map_or(0, Vec::len),
+            4,
+            "and the widget reads them: track, first bus, end, channels"
+        );
+    }
+
     /// A box on a lane, a window onto source 1.
     fn region(id: u64, position: f64, length: f64) -> clausters_document::multitrack::Region {
         use clausters_document::multitrack::{Content, Region};

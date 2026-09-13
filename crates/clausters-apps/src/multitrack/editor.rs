@@ -259,6 +259,11 @@ impl MultitrackEditor {
         self.sources = sources;
     }
 
+    /// Where each track's meters are read from, as last told.
+    pub fn meters(&self) -> &[Meter] {
+        &self.meters
+    }
+
     /// Where each track's meters are read from.
     pub fn set_meters(&mut self, meters: Vec<Meter>) {
         self.meters = meters;

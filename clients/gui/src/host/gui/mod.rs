@@ -212,7 +212,18 @@ fn server_reply_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
                     return;
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {}
+            // A read timeout is not the leg going away: whoever set one on this
+            // socket (a probe waiting for a player to boot) shares it with this
+            // loop, and returning here left every later reply unheard -- a piece
+            // whose steps waited on a `/done` forever and never sounded.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::ConnectionRefused
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
             Err(_) => return,
         }
     }

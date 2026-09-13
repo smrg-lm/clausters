@@ -1064,17 +1064,24 @@ fn await_player(leg: &ServerLeg) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut buf = [0u8; 4096];
-    while Instant::now() < deadline {
+    let mut answered = false;
+    while !answered && Instant::now() < deadline {
         leg.send(OscMessage {
             addr: "/server_status".into(),
             args: vec![],
         })
         .map_err(|e| e.to_string())?;
-        if socket.recv_from(&mut buf).is_ok() {
-            return Ok(());
-        }
+        answered = socket.recv_from(&mut buf).is_ok();
     }
-    Err("the player did not answer within 3s".into())
+    // **The socket is the reply thread's too**, so the probe's timeout goes
+    // with the probe: left on, every read that waited longer than it ended
+    // the thread, and nothing the player said afterwards was heard.
+    socket.set_read_timeout(None).map_err(|e| e.to_string())?;
+    if answered {
+        Ok(())
+    } else {
+        Err("the player did not answer within 3s".into())
+    }
 }
 
 /// Where an editor puts its segment when nobody said: a memory filesystem if

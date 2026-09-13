@@ -293,8 +293,48 @@ impl Host {
             Err(e) => diag::warn!("the piece cannot be played: {e}"),
         }
         self.send_piece();
+        self.tell_meters();
         diag::debug!("sound_piece: {} node(s)", self.instance.nodes());
         self.instance.nodes()
+    }
+
+    /// **Tells the editor where the piece's meters are**, and the widget with
+    /// it, when that changed -- what a client's editor is handed on every turn
+    /// (`sync`'s `meters`). The window is composed before anything sounds, so
+    /// without this it never learns a bus and every strip reads nothing.
+    fn tell_meters(&mut self) {
+        use clausters_apps::multitrack::Meter;
+
+        let meters: Vec<Meter> = self
+            .instance
+            .meters()
+            .into_iter()
+            .map(|(track, bus, channels)| Meter {
+                track,
+                bus,
+                channels,
+            })
+            .collect();
+        let Some(owner) = self.owner.as_mut() else {
+            return;
+        };
+        let Some(widget) = owner.multitrack() else {
+            return;
+        };
+        let piece = owner.piece.clone();
+        let Some(editor) = owner.editor.as_mut() else {
+            return;
+        };
+        if editor.meters() == meters.as_slice() {
+            return;
+        }
+        editor.set_meters(meters);
+        editor.set_piece(piece);
+        let Some(value) = editor.props(widget).remove("meters") else {
+            return;
+        };
+        let mut fx = Vec::new();
+        self.set_props(widget, vec![("meters".into(), value)], &mut fx);
     }
 
     /// Frees everything the piece made — what closing a window owes the server,

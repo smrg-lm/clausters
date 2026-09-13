@@ -237,6 +237,11 @@ fn ruler(w: &Window<'_>) -> Value {
             "tempo_map": w.tempo_map(),
             "sample_rate": w.look.rate,
             "link": w.group(),
+            // **The same anchor as the piece's**, because the ruler comes
+            // first: a linked group is seeded by its first member, so a ruler
+            // with no anchor left the whole window's head parked and only a
+            // client's later `/gui_set` ever swept it.
+            "playhead_at": 0.0,
             "cursor": w.cursor_units(),
         }},
     })
@@ -355,6 +360,10 @@ mod tests {
             "one axis, not two"
         );
         assert_eq!(ruler["axes"]["x"]["unit"], "beats");
+        assert_eq!(
+            ruler["axes"]["x"]["playhead_at"], piece["playhead_at"],
+            "the first member seeds the group's anchor, so the ruler states it too"
+        );
         let names: Vec<&str> = row["children"]
             .as_array()
             .unwrap()
