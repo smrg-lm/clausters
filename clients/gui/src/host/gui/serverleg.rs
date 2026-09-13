@@ -359,6 +359,9 @@ impl App {
             // promptly instead of waiting for the next poll.
             "/node_start" | "/node_end" => self.next_query = Instant::now(),
             "/fail" => warn!("audio server replied /fail: {:?}", msg.args),
+            // A buffer the piece allocated exists now: its table can be filled
+            // (`Host::on_server_done`, which the page's leg calls too).
+            "/done" => self.host.on_server_done(&msg.args),
             _ => {}
         }
     }

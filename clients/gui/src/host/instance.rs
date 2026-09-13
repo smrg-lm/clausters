@@ -74,6 +74,16 @@ pub struct Playing {
     buses: HashMap<Handle, (i32, usize)>,
     /// The buffer a handle became.
     buffers: HashMap<Handle, i32>,
+    /// **Samples waiting for their buffer to exist**, by buffer number.
+    ///
+    /// `/buffer_alloc` is asynchronous: the server builds the buffer off the
+    /// audio thread and answers `/done /buffer_alloc n` once it is queued to the
+    /// engine. A `/buffer_setRange` sent on the next line arrives first and is
+    /// refused -- which left every curve table empty, and a curve reading
+    /// nothing drives its gain to zero: the whole piece went silent the moment
+    /// a box or a track had a curve. So the fill is held here and sent when the
+    /// `/done` comes back, which lands it behind the buffer in the same queue.
+    pending: HashMap<i32, Vec<f32>>,
     /// The next node id, counted up from the piece's base.
     next_node: i32,
     /// The next control bus, counted up from the base the caller set.
@@ -93,6 +103,7 @@ impl Default for Playing {
             nodes: HashMap::new(),
             buses: HashMap::new(),
             buffers: HashMap::new(),
+            pending: HashMap::new(),
             // **Never zero.** Node 0 is the root group, and a table that minted
             // it would free the server's whole tree on the first reconcile.
             next_node: play::PIECE_NODE,
@@ -157,6 +168,7 @@ impl Playing {
         self.nodes.clear();
         self.buses.clear();
         self.buffers.clear();
+        self.pending.clear();
         out
     }
 
@@ -297,15 +309,9 @@ impl Playing {
                             OscType::Int(1),
                         ],
                     ));
+                    // The samples wait for the buffer: see `pending`.
                     if !samples.is_empty() {
-                        let mut bytes = Vec::with_capacity(samples.len() * 4);
-                        for value in &samples {
-                            bytes.extend_from_slice(&value.to_le_bytes());
-                        }
-                        out.push(message(
-                            "/buffer_setRange",
-                            vec![OscType::Int(bufnum), OscType::Int(0), OscType::Blob(bytes)],
-                        ));
+                        self.pending.insert(bufnum, samples);
                     }
                 }
                 Op::Set { handle, ports } => {
@@ -360,12 +366,27 @@ impl Playing {
                 }
                 Op::FreeBuffer { handle } => {
                     if let Some(bufnum) = self.buffers.remove(&handle) {
+                        self.pending.remove(&bufnum);
                         out.push(message("/buffer_free", vec![OscType::Int(bufnum)]));
                     }
                 }
             }
         }
         out
+    }
+
+    /// **The fill a buffer was waiting for**, now that the server says it exists
+    /// — `None` for a buffer this instance is not filling.
+    fn filled(&mut self, bufnum: i32) -> Option<OscMessage> {
+        let samples = self.pending.remove(&bufnum)?;
+        let mut bytes = Vec::with_capacity(samples.len() * 4);
+        for value in &samples {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        Some(message(
+            "/buffer_setRange",
+            vec![OscType::Int(bufnum), OscType::Int(0), OscType::Blob(bytes)],
+        ))
     }
 
     /// The node a handle is, saying so when it is nothing.
@@ -508,6 +529,26 @@ impl Host {
         }
         for message in messages {
             self.send_to_player(message);
+        }
+    }
+
+    /// **A reply the audio server sent `/done` with**, offered to the piece.
+    ///
+    /// Both fronts call this from their reply path, so a curve's table is
+    /// filled the same way whichever carries the server. Anything that is not
+    /// the allocation of a buffer the piece is waiting on is not the piece's,
+    /// and costs a map lookup.
+    pub fn on_server_done(&mut self, args: &[OscType]) {
+        let (Some(OscType::String(command)), Some(OscType::Int(bufnum))) =
+            (args.first(), args.get(1))
+        else {
+            return;
+        };
+        if command != "/buffer_alloc" {
+            return;
+        }
+        if let Some(fill) = self.instance.filled(*bufnum) {
+            self.send_to_player(fill);
         }
     }
 
@@ -815,6 +856,28 @@ mod tests {
         );
         assert!(args.contains(&OscType::Float(65.0)), "the bus, one along");
         assert!(args.contains(&OscType::Float(103.0)), "the buffer's number");
+    }
+
+    /// **A table is filled after its buffer exists, never before.**
+    ///
+    /// The defect this pins (found 2026-09-13 by the user, by ear: "dejó de
+    /// sonar"): the host sent `/buffer_alloc` and `/buffer_setRange` back to
+    /// back, the allocation is asynchronous, and the server refused every
+    /// fill. A curve over an empty table drives its gain to zero, so the whole
+    /// piece went silent. The fill now waits for the `/done`.
+    #[test]
+    fn a_curve_table_waits_for_its_buffer() {
+        let mut playing = Playing::new(0, 100);
+        let ops = vec![Op::Buffer {
+            handle: "curve/1".into(),
+            samples: vec![0.5, 1.0],
+        }];
+        let sent = playing.apply(ops);
+        assert_eq!(addrs(&sent), ["/buffer_alloc"], "the alloc alone goes out");
+        let fill = playing.filled(100).expect("the table waits for buffer 100");
+        assert_eq!(fill.addr, "/buffer_setRange");
+        assert!(playing.filled(100).is_none(), "and is sent once");
+        assert!(playing.filled(7).is_none(), "a buffer nobody waits on");
     }
 
     /// **Everything freed, and the tables with it.** What an instance holds is

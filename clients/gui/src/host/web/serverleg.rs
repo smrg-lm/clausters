@@ -410,8 +410,10 @@ impl WebApp {
                     self.schedule_stream_sync();
                 }
             }
-            // `/done` acks (e.g. for `/bus_stream`) need no action.
-            "/done" => {}
+            // `/done` acks (e.g. for `/bus_stream`) need no action -- but a
+            // buffer the piece allocated exists now, and its table can be
+            // filled (`Host::on_server_done`, which the native leg calls too).
+            "/done" => self.host.on_server_done(&msg.args),
             _ => {}
         }
     }
