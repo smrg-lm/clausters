@@ -204,22 +204,6 @@ export class Sources {
         return out;
     }
 
-    /**
-     * How many channels a source has, `1` for one that does not say.
-     *
-     * What a **join** needs and the buffer number alone cannot answer: how wide
-     * the assembled thing is follows from the takes it is over.
-     */
-    width(source: number | undefined): number {
-        if (source === undefined) return 1;
-        const held = this.buffers.get(Math.trunc(source));
-        const channels =
-            typeof held === "object" && held !== null
-                ? Number((held as { channels?: unknown }).channels ?? 1)
-                : 1;
-        return Math.max(1, Math.trunc(channels || 1));
-    }
-
     /** The source a buffer number came from, or `undefined`. */
     source(bufnum: number): number | undefined {
         for (const [source, held] of this.buffers) {
@@ -273,46 +257,6 @@ export class Bridge {
     /** Re-read the tempo map, for an edit that moved one. */
     refresh(piece: Multitrack): void {
         this.tempo = tempoMap(piece);
-    }
-
-    /** Where a beat falls on the timeline, in frames. */
-    frameAt(beats: number): number {
-        return this.tempo.secsAt(beats) * this.rate;
-    }
-
-    /**
-     * How long a stretch of beats lasts there — **the difference of two
-     * positions**, because four beats are not one length.
-     */
-    framesOver(start: number, length: number): number {
-        return this.tempo.spanSecs(start, start + length) * this.rate;
-    }
-
-    /** The beat a frame falls on: the inverse, and the way an edit comes back. */
-    /**
-     * Where a beat measured **from `base`** falls, in frames from `base` — what
-     * a box's own axis counts in.
-     *
-     * A layer is drawn inside its box, so its break-points are the box's own
-     * time and not the timeline's. That is a *length* from the box's start,
-     * which is why it goes through {@link Bridge.framesOver} rather than
-     * {@link Bridge.frameAt}: four beats are not one length under a tempo that
-     * moves.
-     */
-    frameIn(base: number, at: number): number {
-        return this.framesOver(base, at);
-    }
-
-    /**
-     * The inverse: the beat, measured from `base`, that a frame from `base`
-     * falls on.
-     */
-    beatIn(base: number, frame: number): number {
-        return this.beatAt(this.frameAt(base) + Number(frame)) - Number(base);
-    }
-
-    beatAt(frame: number): number {
-        return this.tempo.beatsAt(frame / (this.rate || 1.0));
     }
 }
 

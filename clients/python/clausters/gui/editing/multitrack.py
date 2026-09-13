@@ -163,17 +163,6 @@ class Sources:
                                 "channels": max(1, int(channels or 1))}
         return out
 
-    def width(self, source) -> int:
-        """How many channels a source has, ``1`` for one that does not say.
-
-        What a **join** needs and the buffer number alone cannot answer: how
-        wide the assembled thing is follows from the takes it is over.
-        """
-        if source is None:
-            return 1
-        held = self.buffers.get(int(source))
-        return max(1, int(getattr(held, "channels", 1) or 1))
-
     def source(self, bufnum: int):
         """The source a buffer number came from, or ``None``."""
         for source, held in self.buffers.items():
@@ -209,36 +198,6 @@ class Bridge:
     def refresh(self, piece: Multitrack) -> None:
         """Re-read the tempo map, for an edit that moved one."""
         self.tempo = tempo_map(piece)
-
-    def frame_at(self, beats: float) -> float:
-        """Where a beat falls on the timeline, in frames."""
-        return self.tempo.secs_at(float(beats)) * self.rate
-
-    def frames_over(self, start: float, length: float) -> float:
-        """How long a stretch of beats lasts there — **the difference of two
-        positions**, because four beats are not one length."""
-        return self.tempo.span_secs(float(start), float(start) + float(length)) * self.rate
-
-    def beat_at(self, frame: float) -> float:
-        """The beat a frame falls on: the inverse, and the way an edit comes
-        back."""
-        return self.tempo.beats_at(float(frame) / (self.rate or 1.0))
-
-    def frame_in(self, base: float, at: float) -> float:
-        """Where a beat measured **from ``base``** falls, in frames from
-        ``base`` — what a box's own axis counts in.
-
-        A layer is drawn inside its box, so its break-points are the box's own
-        time and not the timeline's. That is a *length* from the box's start,
-        which is why it goes through `frames_over` rather than through
-        `frame_at`: four beats are not one length under a tempo that moves.
-        """
-        return self.frames_over(base, at)
-
-    def beat_in(self, base: float, frame: float) -> float:
-        """The inverse: the beat, measured from ``base``, that a frame from
-        ``base`` falls on."""
-        return self.beat_at(self.frame_at(base) + float(frame)) - float(base)
 
 
 class MultitrackDomain(Domain):

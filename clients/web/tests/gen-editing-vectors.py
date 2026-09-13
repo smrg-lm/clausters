@@ -206,6 +206,166 @@ def answers():
     ]
 
 
+def editor_exchange():
+    """**The multitrack editor, turn by turn**, as the host and the server see
+    it.
+
+    The acceptance of the multitrack application stated as data: the clients
+    hold a handle over the applications crate and carry out what it answers, so
+    a hand's gestures come to **the same messages to the host, the same calls
+    on the playback and the same piece** whichever client carries them. The
+    gestures run through the Python client's own `MultitrackEditor.apply`, and
+    `editing-parity.test.ts` replays them through the web client's.
+
+    Widgets are named by role rather than by number -- `piece`, `ruler`, the
+    window, the transport row -- because which id a client's allocator hands
+    out is its own, and what is compared is what the editor decided.
+    """
+    from clausters.gui.editing import MultitrackEditor
+    from clausters.multitrack import Multitrack
+
+    SR = 48_000.0
+
+    def box(id, at):
+        return {"id": id, "position": at, "length": 2.0,
+                "content": {"fill": "window",
+                            "window": {"source": {"source": 1, "lifetime": "session"},
+                                       "start": 0.0, "duration": 2.0}}}
+
+    written = {"version": 1, "tracks": [
+        {"id": 10, "name": "one",
+         "lanes": [{"id": 11, "regions": [box(12, 0.0), box(13, 4.0)]}]},
+        {"id": 20, "name": "two", "lanes": [{"id": 21, "regions": [box(22, 0.0)]}]},
+    ]}
+    sources = {"1": 7}
+    controls = {"rewind": 50, "play": 51, "stop": 52, "clock": 53}
+
+    class Recorder:
+        """A host that writes down what it is told."""
+
+        def __init__(self):
+            self.messages = []
+
+        def ack(self, seq, doc_version=0, reason=None):
+            self.messages.append(["ack", seq, doc_version, reason, []])
+
+        def push(self, seq, *corrections, doc_version=0, reason=None):
+            self.messages.append(["push", seq, doc_version, reason,
+                                  [[w, p] for w, p in corrections]])
+
+        def set(self, *args, **props):
+            pass
+
+    class Playback:
+        """A playback that writes down what it is asked to do."""
+
+        def __init__(self):
+            self.calls = []
+            self.playing = False
+            self.meters = {}
+
+        def play(self):
+            self.calls.append(["play"])
+            self.playing = True
+
+        def pause(self):
+            self.calls.append(["pause"])
+            self.playing = False
+
+        def stop(self):
+            self.calls.append(["stop"])
+            self.playing = False
+
+        def cue(self, beat):
+            self.calls.append(["cue", beat])
+
+        def sync(self):
+            self.calls.append(["sync"])
+
+    piece = Multitrack.read(json.loads(json.dumps(written)))
+    ed = MultitrackEditor(piece, sample_rate=SR, sources={1: 7})
+    host, playback = Recorder(), Playback()
+    ed._host = host
+    ed._window = 1
+    ed.playback = playback
+    ed.draw()
+    ed._controls = dict(controls)
+    ids = {"piece": ed.view.piece, "ruler": ed.view.ruler, "window": 1, **controls}
+    roles = {ed.view.piece: "piece", ed.view.ruler: "ruler"}
+
+    def septuples():
+        flat = ed.view.props(ed, ed.view.piece)["clips"]
+        return [list(flat[i:i + 7]) for i in range(0, len(flat), 7)]
+
+    def moved(name, at):
+        out = []
+        for row in septuples():
+            if row[0] == name:
+                row[2] = at * SR
+            out += row
+        return out
+
+    def split(name):
+        out = []
+        for row in septuples():
+            if row[0] == name:
+                first = list(row)
+                first[3] = 1.0 * SR
+                out += first
+                out += ["white 2", row[1], row[2] + 1.0 * SR, 1.0 * SR, 1.0 * SR,
+                        "", row[6]]
+            else:
+                out += row
+        return out
+
+    script = [
+        ("a box moved on its lane", "piece", "clips", lambda: moved("12", 2.0), "now"),
+        ("a box split under a name the host minted", "piece", "clips",
+         lambda: split("13"), "now"),
+        ("the cursor placed on the ruler", "ruler", "locate", lambda: [4.0 * SR], "now"),
+        ("play from the transport row", "play", "click", list, "now"),
+        ("stop from the transport row", "stop", "click", list, "now"),
+        ("rewind from the transport row", "rewind", "click", list, "now"),
+        ("the space bar", "window", "play", list, "now"),
+        ("an undo", "window", "undo", list, "now"),
+        ("an edit made against a picture that is gone", "piece", "clips",
+         lambda: moved("22", 6.0), 1),
+    ]
+    turns = []
+    for seq, (name, target, tag, values, against) in enumerate(script, start=1):
+        host.messages.clear()
+        playback.calls.clear()
+        args = values()
+        stated = int(ed._version) if against == "now" else against
+        changed = ed.apply("/gui_event", [ids[target], seq, stated, tag, *args])
+        turns.append({
+            "name": name,
+            "target": target,
+            "seq": seq,
+            "against": against,
+            "tag": tag,
+            "values": args,
+            "changed": bool(changed),
+            "messages": [
+                [kind, s, version, reason,
+                 [[roles.get(w, w), props] for w, props in corrections]]
+                for kind, s, version, reason, corrections in host.messages],
+            "playback": list(playback.calls),
+            "regions": [[t.id, r.id, r.position, r.length]
+                        for t in piece.tracks for lane in t.lanes
+                        for r in lane.regions],
+        })
+    return {
+        "name": "the multitrack editor answers a recorded exchange",
+        "kind": "editor_exchange",
+        "piece": written,
+        "rate": SR,
+        "sources": sources,
+        "controls": controls,
+        "turns": turns,
+    }
+
+
 def main() -> None:
     vectors = []
     for name, points, kept, held in curves():
@@ -269,6 +429,7 @@ def main() -> None:
             "piece": piece,
             "names": _native.multitrack_names(piece),
         })
+    vectors.append(editor_exchange())
     out = pathlib.Path(__file__).with_name("editing-vectors.json")
     out.write_text(json.dumps(vectors, indent=2) + "\n")
     print(f"wrote {out.name}: {len(vectors)} vectors")

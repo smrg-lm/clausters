@@ -19,6 +19,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { MultitrackEditor, MultitrackView } from "../src/gui/editing/index.ts";
+import { Multitrack } from "../src/multitrack.ts";
 import {
     conversationAnswer,
     conversationRead,
@@ -30,7 +32,28 @@ import {
 
 type Vector = {
     name: string;
-    kind: "points_props" | "multitrack_props" | "intake" | "conversation" | "answer" | "names";
+    kind:
+        | "points_props"
+        | "multitrack_props"
+        | "intake"
+        | "conversation"
+        | "answer"
+        | "names"
+        | "editor_exchange";
+    // `editor_exchange`
+    controls?: Record<string, number>;
+    turns?: {
+        name: string;
+        target: string;
+        seq: number;
+        against: number | "now";
+        tag: string;
+        values: unknown[];
+        changed: boolean;
+        messages: unknown[];
+        playback: unknown[];
+        regions: unknown[];
+    }[];
     props?: Record<string, unknown>;
     // `points_props`
     points?: number[];
@@ -148,6 +171,120 @@ test("and an answer is the same message in both clients", async () => {
             corrections: v.corrections ?? [],
         }))) as Record<string, unknown>;
         assert.deepEqual(got, v.answer, v.name);
+    }
+});
+
+test("and the multitrack editor answers a recorded exchange the same in both clients", async () => {
+    // The acceptance of the multitrack application, stated as data: each client
+    // holds a handle over the applications crate and carries out what it
+    // answers, so a hand's gestures come to the same messages to the host, the
+    // same calls on the playback and the same piece whichever client carries
+    // them. The gestures ran through the Python client's `MultitrackEditor` and
+    // run here through this one's; widgets are named by role, since which id an
+    // allocator hands out is each client's own.
+    await loadCore();
+    const [v] = of("editor_exchange");
+    assert.ok(v !== undefined, "the vectors were generated");
+    const piece = Multitrack.read(v.piece as Record<string, unknown>);
+    const ed = new MultitrackEditor(piece, {
+        sampleRate: v.rate ?? 48_000,
+        sources: v.sources as Record<number, number>,
+    });
+    type Message = [string, number, number, string | null, [unknown, unknown][]];
+    const messages: Message[] = [];
+    const host = {
+        ack(seq: number, docVersion = 0, _generations: unknown = [], reason?: string) {
+            messages.push(["ack", seq, docVersion, reason ?? null, []]);
+        },
+        push(
+            seq: number,
+            sets: [number, unknown][],
+            docVersion = 0,
+            _generations: unknown = [],
+            reason?: string,
+        ) {
+            messages.push(["push", seq, docVersion, reason ?? null, sets.map(([w, p]) => [w, p])]);
+        },
+        set() {},
+    };
+    const calls: unknown[][] = [];
+    const playback = {
+        playing: false,
+        meters: new Map<number, [number, number]>(),
+        refresh: () => Promise.resolve(),
+        play() {
+            calls.push(["play"]);
+            this.playing = true;
+            return Promise.resolve();
+        },
+        pause() {
+            calls.push(["pause"]);
+            this.playing = false;
+        },
+        stop() {
+            calls.push(["stop"]);
+            this.playing = false;
+        },
+        cue(beat: number) {
+            calls.push(["cue", beat]);
+        },
+        sync() {
+            calls.push(["sync"]);
+        },
+    };
+    const inner = ed as unknown as {
+        app: { host: unknown };
+        windowId: number | null;
+        controls: Record<string, number>;
+        version: number;
+        playback: unknown;
+    };
+    inner.app.host = host;
+    inner.windowId = 1;
+    inner.playback = playback;
+    ed.draw();
+    inner.controls = { ...(v.controls as Record<string, number>) };
+    const view = ed.view as MultitrackView;
+    const ids: Record<string, number> = {
+        piece: view.piece!,
+        ruler: view.ruler!,
+        window: 1,
+        ...(v.controls as Record<string, number>),
+    };
+    const roles = new Map<unknown, string>([[view.piece, "piece"], [view.ruler, "ruler"]]);
+    for (const turn of v.turns ?? []) {
+        messages.length = 0;
+        calls.length = 0;
+        const against = turn.against === "now" ? inner.version : turn.against;
+        const changed = ed.apply("/gui_event", [
+            ids[turn.target],
+            turn.seq,
+            against,
+            turn.tag,
+            ...turn.values,
+        ]);
+        // A toggle asks the engine first, which in a page is a promise.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        assert.equal(changed, turn.changed, turn.name);
+        assert.deepEqual(
+            messages.map(([kind, seq, version, reason, sets]) => [
+                kind,
+                seq,
+                version,
+                reason,
+                sets.map(([w, p]) => [roles.get(w) ?? w, p]),
+            ]),
+            turn.messages,
+            turn.name,
+        );
+        assert.deepEqual(calls, turn.playback, turn.name);
+        assert.deepEqual(
+            piece.tracks.flatMap((t) =>
+                t.lanes.flatMap((l) => l.regions.map((r) => [t.id, r.id, r.position, r.length]))
+            ),
+            turn.regions,
+            turn.name,
+        );
     }
 });
 
