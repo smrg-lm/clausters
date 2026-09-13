@@ -46,6 +46,14 @@ standalone = ["dep:clausters", "clausters/synth"]
 # runs, just skipping FaustDefs (with a warning). Build with
 # `cargo build --features standalone-faust`.
 standalone-faust = ["standalone", "clausters/faust"]
+# **The diagnostic channel, in a build that is not a debug build.** `diag`'s
+# `debug!` and `note!` levels compile out of a release
+# (`#[cfg(debug_assertions)]`), arguments and all, which is what they are for.
+# This turns them back on for a release build that is being instrumented --
+# the staged binaries the Python launcher runs are release, so without it the
+# notes are invisible in exactly the path a manual test takes. Off by default:
+# a shipped host carries no instrumentation.
+diagnostics = []
 # The `score` element: music notation, and the fill tessellation (`lyon`) that
 # turns SMuFL glyph outlines and engraving fills into the mesh. On by default —
 # it is shipped behaviour, and a feature exists so a build can *drop* it, never

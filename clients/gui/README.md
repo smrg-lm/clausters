@@ -41,6 +41,21 @@ and launches the host for you (`Session.gui()`).
 > refresh it (or set `CLAUSTERS_GUI_BIN`) after rebuilding. See the repo
 > `CLAUDE.md` / `clients/python/README.md`.
 
+**Watching what the host says to itself** is the other opt-in. The window's
+status bar shows what the hand did and what was refused in every build; the
+host's own notes about its working — a key no element claimed, and whatever
+else is instrumented — are compiled out of a release, arguments and all. A
+debug build has them. To get them in a *release* host (the binaries the Python
+launcher stages are release ones, which is where a manual test actually runs):
+
+```sh
+cargo build --release --features standalone,diagnostics --bin clausters-gui
+CLAUSTERS_GUI_BIN=$PWD/target/release/clausters-gui  python your_example.py
+```
+
+Click the bar to open it: the notes sit in the same log as the gesture that
+produced them.
+
 **Drawing text with a real typeface** is an opt-in build: the crate's own
 `font-atlas` feature adds a glyph rasterizer and one atlas texture per window,
 where the default build draws its embedded 5x7 bitmap face. It ships no face —

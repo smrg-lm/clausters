@@ -30,7 +30,10 @@
 //! - [`debug!`] and [`note!`] are **compiled only in a debug build**
 //!   (`debug_assertions`), arguments and all: the format call is inside the
 //!   `cfg`, so a release pays nothing, not even the formatting of a line
-//!   nothing would read.
+//!   nothing would read. A release build that is being *instrumented* turns
+//!   them back on with the `diagnostics` feature — which exists because the
+//!   binaries the Python launcher stages are release ones, so without it the
+//!   notes are invisible in exactly the path a manual test takes.
 //!
 //! [`note!`] is the one with a second destination. It writes a
 //! [`status::Kind::Note`](super::status::Kind::Note) line onto a **window's own
@@ -48,7 +51,7 @@
 //! for the same reason.
 
 // Only the note channel reaches the host, and only a debug build has one.
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "diagnostics"))]
 use super::Host;
 
 /// How loud a line is, which is the only thing that decides where it lands.
@@ -91,7 +94,7 @@ pub fn emit(level: Level, line: &str) {
 ///
 /// Called only through [`note!`], which is what keeps the formatting out of a
 /// release build; it is `pub` because the macro expands at the call site.
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "diagnostics"))]
 pub fn note_on(host: &Host, def_id: i32, verb: &str, text: String) {
     emit(Level::Debug, &text);
     host.say(def_id, super::status::Line::of_note(verb, text));
@@ -112,7 +115,7 @@ macro_rules! info {
 }
 
 /// A line only somebody debugging wants. Compiled out of a release build,
-/// arguments included.
+/// arguments included — unless that build asked for the `diagnostics` feature.
 ///
 /// *Arguments included* is the part with a consequence: a binding whose **only**
 /// reader is a `debug!` is unused in a release build and warns there. Spell it
@@ -122,20 +125,21 @@ macro_rules! info {
 /// this level exists to avoid.
 macro_rules! debug {
     ($($arg:tt)*) => {{
-        #[cfg(debug_assertions)]
+        #[cfg(any(debug_assertions, feature = "diagnostics"))]
         $crate::host::diag::emit($crate::host::diag::Level::Debug, &format!($($arg)*));
     }};
 }
 
 /// A line only somebody debugging wants, **on a window's status bar** as well
-/// as in the platform log. Compiled out of a release build, arguments included.
+/// as in the platform log. Compiled out of a release build, arguments included
+/// — unless that build asked for the `diagnostics` feature.
 ///
 /// `verb` is the first word of the line and the key the bar collapses on, so a
 /// note repeated by every motion of one drag stays one line — the same rule an
 /// event's verb follows there.
 macro_rules! note {
     ($host:expr, $def_id:expr, $verb:expr, $($arg:tt)*) => {{
-        #[cfg(debug_assertions)]
+        #[cfg(any(debug_assertions, feature = "diagnostics"))]
         $crate::host::diag::note_on($host, $def_id, $verb, format!($($arg)*));
     }};
 }
