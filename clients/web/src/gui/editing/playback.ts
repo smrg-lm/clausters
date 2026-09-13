@@ -9,9 +9,9 @@
  * shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
  * strip under all of them); which of them a given piece needs is the document
  * crate's; and the **difference** between that and what is already sounding is
- * `Instance`, in the shared crate. So what is left here is three things a
- * language genuinely owns: a socket, an allocator, and one table from the
- * crate's handles to the objects this page made.
+ * `Instance`, in the shared crate; and the messages that carry it out are the
+ * crate's applier. So what is left here is what a language genuinely owns: a
+ * socket, and waiting on it.
  *
  * **Why a diff and not a rebuild.** A piece plays itself from the transport:
  * every reader reads the engine's own position, so a locate is no message at all
@@ -22,49 +22,36 @@
  * set cannot express is torn down and made again — which is the reconciler's
  * rule and is written down there.
  *
- * **Handles: the crate names what it cannot make.** An operation never carries a
- * node id, a bus index or a buffer number, because the crate allocates none of
- * them. It carries a **handle** — a string it mints from the document's own
- * ids — and `Playback` keeps the one table from handle to whatever it made. A
- * port that has to name a resource names it the same way, and `value` is where
- * that is resolved.
+ * **Steps: the crate says what waits.** An operation never carries a node id,
+ * a bus index or a buffer number. The crate's applier (`Applier`) keeps the
+ * table from each operation's handle to what it became, allocates those from
+ * the server's id spaces, and answers **steps**: a message to send, a `/done`
+ * the rest waits for, a barrier. A buffer's fill waiting for its allocation is
+ * one of those steps, stated once, and every endpoint — this page, the Python
+ * client and the GUI host playing a piece on its own — carries out the same
+ * list.
  *
  * @module
  */
 
-import { Instance } from "../../core/clausters_core_web.js";
-import { Buffer } from "../../defs/buffer.ts";
-import { Bus } from "../../defs/bus.ts";
-import { AddAction, Group, Synth } from "../../defs/node.ts";
+import { Applier, Instance } from "../../core/clausters_core_web.js";
+import type { MsgArg } from "../../base/osc.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { GuiHost } from "../host.ts";
 import { Transport } from "../transport.ts";
 import type { MultitrackEditor } from "./multitrack.ts";
 
-/** One value of one port: a number, or a handle of something this made. */
-export type PortValue = number | { bus: string; offset?: number } | { buffer: string };
-
-/** The ports of one node, as an operation states them. */
-export type Ports = Record<string, PortValue>;
-
 /** **One thing to do to the server**, as the reconciler states it. */
-export interface Op {
-    op: string;
-    handle?: string;
-    target?: string;
-    before?: string;
-    slot?: string;
-    graph?: string;
-    def?: string;
-    family?: string;
-    spec?: unknown;
-    port?: string;
-    bus?: string;
-    channels?: number;
-    samples?: number[];
-    ports?: Ports;
-    forget?: string[];
-}
+export type Op = Record<string, unknown> & { op: string };
+
+/** One argument of a step, tagged as the crate encoded it. */
+export type StepArg = { i: number } | { f: number } | { s: string } | { b: number[] };
+
+/** **One step**, as the applier states it. */
+export type Step =
+    | { send: { addr: string; args: StepArg[] } }
+    | { await: { command: string; index: number | null } }
+    | { sync: number };
 
 export class Playback {
     readonly editor: MultitrackEditor;
@@ -76,12 +63,12 @@ export class Playback {
      * between that and the piece; nothing here decides what a difference is.
      */
     private readonly instance = new Instance();
-    /** Handle → the node this page made for it. */
-    private readonly nodes = new Map<string, Group | Synth>();
-    /** Handle → the control bus. */
-    private readonly buses = new Map<string, Bus>();
-    /** Handle → the buffer. */
-    private readonly buffers = new Map<string, Buffer>();
+    /**
+     * The operations as steps, and the table from handle to what each became —
+     * the crate's, as the instance is. Made in `prepare`, which knows how many
+     * samples one fill may carry on this server.
+     */
+    private applier: Applier | null = null;
     readonly transport: Transport;
 
     constructor(
@@ -119,6 +106,10 @@ export class Playback {
      * they can be waited for.
      */
     async prepare(): Promise<this> {
+        this.applier = new Applier(0, true, await this.server.bulkChunk());
+        // Node ids come back on their `/node_end`, which only a registered
+        // client hears.
+        await this.server.notify(true);
         await this.syncAsync();
         this.transport.locate(this.editor.cursor ?? 0.0);
         return this;
@@ -150,16 +141,17 @@ export class Playback {
      * says which run belongs to which track; the buses are this page's, because
      * it is this page that allocates them.
      */
-    get meters(): Map<number, [Bus, number]> {
-        const out = new Map<number, [Bus, number]>();
+    get meters(): Map<number, [number, number]> {
+        const out = new Map<number, [number, number]>();
+        if (this.applier === null) return out;
         const rows = JSON.parse(this.instance.meters()) as {
             track: number;
             bus: string;
             channels: number;
         }[];
         for (const row of rows) {
-            const bus = this.buses.get(row.bus);
-            if (bus !== undefined) out.set(row.track, [bus, row.channels]);
+            const bus = this.applier.bus(row.bus);
+            if (bus !== undefined) out.set(row.track, [bus[0], row.channels]);
         }
         return out;
     }
@@ -191,158 +183,41 @@ export class Playback {
     /**
      * Do what the reconciler says, in order.
      *
-     * **The order is the answer.** A def before the graph that names it, a
-     * buffer before the reader pointed at it, a node freed before the one that
-     * replaces it is made — all of that is decided in the crate and this only
-     * carries it out, which is why a second client cannot carry it out
-     * differently.
+     * **The order is the answer, and so are the waits.** A def before the
+     * graph that names it, a buffer's fill after its allocation answered, a
+     * node freed before the one that replaces it is made — all of that is the
+     * crate's, stated as steps, and this only sends them and waits where a step
+     * says to.
      */
     async apply(ops: readonly Op[]): Promise<void> {
-        for (const op of ops) {
-            switch (op.op) {
-                case "def":
-                    this.server.sendMsg(
-                        "/def_send",
-                        String(op.family),
-                        JSON.stringify(op.spec),
-                    );
-                    break;
-                case "barrier":
-                    // **The batch is closed before anything else is sent.** A
-                    // def send is asynchronous and answers `/done`, so a
-                    // `/done` left in flight is one the next command that waits
-                    // for one takes as its own — and a buffer alloc that
-                    // returns before it ran is written into before it exists.
-                    await this.server.sync();
-                    break;
-                case "graph":
-                    this.nodes.set(
-                        String(op.handle),
-                        Group.graph(String(op.graph), this.ports(op), { server: this.server }),
-                    );
-                    break;
-                case "transport":
-                    await this.server.transportGroup(this.node(op.handle) as Group);
-                    break;
-                case "group":
-                    this.nodes.set(
-                        String(op.handle),
-                        new Group({
-                            target: this.node(op.before) as Group,
-                            action: AddAction.BEFORE,
-                            server: this.server,
-                        }),
-                    );
-                    break;
-                case "slot":
-                    this.nodes.set(
-                        String(op.handle),
-                        (this.node(op.target) as Group).addSlot(String(op.slot), this.ports(op)),
-                    );
-                    break;
-                case "synth":
-                    this.nodes.set(
-                        String(op.handle),
-                        new Synth(String(op.def), this.ports(op), {
-                            target: this.node(op.target) as Group,
-                            server: this.server,
-                        }),
-                    );
-                    break;
-                case "bus":
-                    this.buses.set(
-                        String(op.handle),
-                        Bus.control(Number(op.channels), { server: this.server }),
-                    );
-                    break;
-                case "buffer":
-                    this.buffers.set(
-                        String(op.handle),
-                        await Buffer.fromSamples(
-                            Float32Array.from(op.samples ?? []),
-                            1,
-                            0.0,
-                            { server: this.server },
-                        ),
-                    );
-                    break;
-                case "set":
-                    this.node(op.handle)?.set(this.ports(op));
-                    break;
-                case "map": {
-                    const node = this.node(op.handle);
-                    const bus = this.buses.get(String(op.bus));
-                    if (node !== undefined && bus !== undefined) {
-                        this.server.sendMsg(
-                            "/graph_map",
-                            node.id,
-                            String(op.port),
-                            Math.trunc(bus.index),
-                        );
-                    }
-                    break;
+        if (this.applier === null || ops.length === 0) return;
+        const answer = JSON.parse(
+            this.applier.apply(JSON.stringify(ops), this.server.ids),
+        ) as { steps?: Step[]; error?: string };
+        if (answer.error !== undefined) throw new Error(`clausters: ${answer.error}`);
+        await this.run(answer.steps ?? []);
+    }
+
+    /** Send each step, waiting where one says to. */
+    private async run(steps: readonly Step[]): Promise<void> {
+        for (let index = 0; index < steps.length; index++) {
+            const step = steps[index]!;
+            if ("send" in step) {
+                const { addr } = step.send;
+                const args = step.send.args.map(stepArg);
+                const after = steps[index + 1];
+                if (after !== undefined && "await" in after) {
+                    // Sent and waited for as one command, so the `/done` cannot
+                    // arrive before anyone is listening for it.
+                    await this.server.command(addr, args);
+                    index++;
+                    continue;
                 }
-                case "unmap": {
-                    // **A handle with nothing behind it is a node that is
-                    // already gone**, and a message naming one would reach
-                    // whatever holds that id next. The reconciler does not emit
-                    // these — freeing a node takes its map with it, and there
-                    // is a crate test saying so — and this is the second half
-                    // of that: the two clients answer an impossible handle the
-                    // same way, instead of one raising and the other
-                    // addressing node 0.
-                    const node = this.node(op.handle);
-                    if (node !== undefined) {
-                        this.server.sendMsg("/graph_map", node.id, String(op.port), -1);
-                    }
-                    break;
-                }
-                case "free": {
-                    this.nodes.get(String(op.handle))?.free();
-                    this.nodes.delete(String(op.handle));
-                    // Freeing a group frees what is inside it, so these only
-                    // leave the table: a second free would name a node that is
-                    // already gone.
-                    for (const handle of op.forget ?? []) this.nodes.delete(handle);
-                    break;
-                }
-                case "freeBus":
-                    this.buses.get(String(op.handle))?.free();
-                    this.buses.delete(String(op.handle));
-                    break;
-                case "freeBuffer":
-                    this.buffers.get(String(op.handle))?.free();
-                    this.buffers.delete(String(op.handle));
-                    break;
-                default:
-                    break;
+                this.server.sendMsg(addr, ...args);
+            } else if ("sync" in step) {
+                await this.server.sync();
             }
         }
-    }
-
-    /** The node a handle names. */
-    private node(handle: string | undefined): Group | Synth | undefined {
-        return this.nodes.get(String(handle));
-    }
-
-    /**
-     * One port's value: a number as itself, and a **handle** resolved out of
-     * the table this filled when it made the thing.
-     */
-    value(port: PortValue): number {
-        if (typeof port === "number") return port;
-        if ("bus" in port) {
-            return Number(this.buses.get(port.bus)?.index ?? 0) + Number(port.offset ?? 0);
-        }
-        return Number(this.buffers.get(port.buffer)?.bufnum ?? 0);
-    }
-
-    private ports(op: Op): Record<string, number> {
-        const out: Record<string, number> = {};
-        for (const [name, value] of Object.entries(op.ports ?? {})) {
-            out[name] = this.value(value);
-        }
-        return out;
     }
 
     // ---- the transport ----
@@ -424,4 +299,12 @@ export class Playback {
     close(): void {
         void this.apply(JSON.parse(this.instance.teardown()) as Op[]);
     }
+}
+
+/** One step argument, tagged as the crate encoded it. */
+function stepArg(arg: StepArg): MsgArg {
+    if ("i" in arg) return ["i", arg.i];
+    if ("f" in arg) return ["f", arg.f];
+    if ("b" in arg) return new Uint8Array(Float32Array.from(arg.b).buffer);
+    return arg.s;
 }

@@ -11,6 +11,8 @@ and whether a report that means several edits lands as **one** entry.
 
 import pytest
 
+from clausters import _native
+
 from clausters.gui.editing import MultitrackEditor, Sources, edit
 from clausters.multitrack import Content, Lane, Multitrack, Region, Tempo, Track
 
@@ -830,11 +832,8 @@ def test_a_metered_track_names_the_buses_the_host_reads():
     The host reads those buses itself every frame, which is why a level that
     moves every block costs no message at all.
     """
-    class FakeBus:
-        index = 40
-
     class FakePlayback:
-        meters = {10: (FakeBus(), 2)}
+        meters = {10: (40, 2)}
 
     ed = editor(piece())
     assert props(ed)["meters"] == [], "a piece nobody plays has no meters"
@@ -843,59 +842,46 @@ def test_a_metered_track_names_the_buses_the_host_reads():
 
 
 def test_the_playback_carries_out_what_the_reconciler_says():
-    """**What is left in a client is a socket, an allocator and a table.**
+    """**What is left in a client is a socket, and waiting on it.**
 
-    What a difference *is* -- which node stays, which is made again, which port
-    the hand may write -- is the crate's (`clausters._native.Instance`), and its
-    rules are tested there because they are one implementation for both clients.
-    This is the other half: an operation names what it acts on by a **handle**,
-    and turning a handle into the node, bus or buffer this client made is what a
-    language owns.
+    What a difference *is* is the crate's (`clausters._native.Instance`), and so
+    are the messages that carry it out and what they wait for
+    (`clausters._native.Applier`), both tested there because they are one
+    implementation for every endpoint. This is the other half: each step is
+    sent, a send whose `/done` the rest waits for is one request, and a barrier
+    is a sync.
     """
     from clausters.gui.editing.playback import Playback
 
-    class Server(list):
-        def send_msg(self, *args):
-            self.append(args)
-
-    class Node:
-        def __init__(self, id):
-            self.id = id
-            self.freed = False
-
-        def free(self):
-            self.freed = True
-
-    class Bus:
-        index = 7
-
+    class Server:
         def __init__(self):
-            self.freed = False
+            self.log = []
+            self.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024,
+                                        outputs=2, control_buses=16384,
+                                        buffers=4096)
 
-        def free(self):
-            self.freed = True
+        def send_msg(self, addr, *args):
+            self.log.append(("send", addr) + args)
+
+        def request(self, addr, *args, expect=None, timeout=None):
+            self.log.append(("request", addr) + args)
+            return "/done", [addr, args[0]]
+
+        def sync(self):
+            self.log.append(("sync",))
 
     playback = object.__new__(Playback)
     playback.server = Server()
-    clip, bus = Node(2), Bus()
-    playback._nodes = {"clip:3": clip, "reader:3:0": Node(3)}
-    playback._buses = {"curvebus:5": bus}
-    playback._buffers = {}
-
-    # A port that names a resource is resolved out of the same table.
-    assert playback._value(3.0) == 3.0
-    assert playback._value({"bus": "curvebus:5"}) == 7.0
-    assert playback._value({"bus": "curvebus:5", "offset": 2}) == 9.0
+    playback._applier = _native.Applier()
 
     playback.apply([
-        {"op": "map", "handle": "clip:3", "port": "gain", "bus": "curvebus:5"},
-        {"op": "unmap", "handle": "clip:3", "port": "mute"},
-        {"op": "free", "handle": "clip:3", "forget": ["reader:3:0"]},
-        {"op": "freeBus", "handle": "curvebus:5"},
+        {"op": "buffer", "handle": "curve:5", "samples": [0.5, 1.0]},
+        {"op": "bus", "handle": "curvebus:5", "channels": 1},
     ])
-    assert playback.server == [("/graph_map", 2, "gain", 7),
-                               ("/graph_map", 2, "mute", -1)]
-    assert clip.freed and bus.freed
-    # Freeing a group frees what is inside it, so the reader only leaves the
-    # table -- a second free would name a node that is already gone.
-    assert playback._nodes == {} and playback._buses == {}
+    kinds = [entry[:2] for entry in playback.server.log]
+    assert kinds == [("request", "/buffer_alloc"), ("send", "/buffer_setRange"),
+                     ("sync",)], "the fill waits for the allocation"
+    bus = playback._applier.bus("curvebus:5")
+    assert bus is not None and bus[1] == 1
+    # The ids are the server's: what the applier took, its spaces hold.
+    assert playback.server.ids.in_use(_native.IdSpaces.BUFFERS) == 1

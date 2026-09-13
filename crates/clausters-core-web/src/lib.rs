@@ -1390,6 +1390,43 @@ pub fn editing_stitch(source: &str, held: &str) -> String {
 /// a structure alone and this one is a function of a structure *and* of what a
 /// server already holds: a piece plays itself from the transport, so the nodes
 /// have to stay, and what this answers is the **difference**.
+/// **The one applier**: the instance's operations as the steps that carry them
+/// out, allocating from a client's [`JsIdSpaces`].
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = Applier)]
+pub struct JsApplier(clausters_editing::apply::Applier);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Applier)]
+impl JsApplier {
+    /// An applier making its nodes at the tail of `target`, binding the
+    /// piece's graph to the transport when `bind_transport`, with `chunk`
+    /// samples to a `/buffer_setRange`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(target: i32, bind_transport: bool, chunk: usize) -> JsApplier {
+        JsApplier(clausters_editing::apply::Applier::new(
+            clausters_editing::apply::Endpoint {
+                target,
+                bind_transport,
+                chunk: chunk.max(1),
+            },
+        ))
+    }
+
+    /// The steps that carry out `ops` (JSON), allocating from `ids`:
+    /// `{"steps": [...]}` or `{"error": "..."}`.
+    pub fn apply(&mut self, ops: &str, ids: &mut JsIdSpaces) -> String {
+        clausters_editing::apply::apply_json(&mut self.0, ops, &mut ids.0)
+    }
+
+    /// The control-bus run a handle became, as `[first, channels]`.
+    pub fn bus(&self, handle: &str) -> Option<Vec<f64>> {
+        self.0
+            .bus(handle)
+            .map(|(first, channels)| vec![f64::from(first), channels as f64])
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Instance)]
 pub struct JsInstance(clausters_editing::instance::Instance);

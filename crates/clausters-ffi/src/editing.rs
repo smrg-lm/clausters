@@ -332,6 +332,125 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **The one applier**: the instance's operations as the steps that carry
+/// them out, allocating from a client's id spaces.
+///
+/// A handle, because it holds the table from each operation's handle to the
+/// node, bus or buffer it became. Free it with
+/// [`clausters_editing_applier_free`].
+pub struct FfiApplier(std::sync::Mutex<clausters_editing::apply::Applier>);
+
+/// A new applier making its nodes at the tail of `target`; `bind_transport`
+/// nonzero binds the piece's graph to the transport, and `chunk` is how many
+/// samples one `/buffer_setRange` carries.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_editing_applier_new(
+    target: i32,
+    bind_transport: i32,
+    chunk: usize,
+) -> *mut FfiApplier {
+    use clausters_editing::apply::{Applier, Endpoint};
+    Box::into_raw(Box::new(FfiApplier(std::sync::Mutex::new(Applier::new(
+        Endpoint {
+            target,
+            bind_transport: bind_transport != 0,
+            chunk: chunk.max(1),
+        },
+    )))))
+}
+
+/// Frees an applier created by [`clausters_editing_applier_new`] (null is a
+/// no-op).
+///
+/// # Safety
+/// `a` must be a pointer from `clausters_editing_applier_new`, not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_applier_free(a: *mut FfiApplier) {
+    if !a.is_null() {
+        // SAFETY: caller guarantees `a` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(a) });
+    }
+}
+
+/// **The steps that carry out `ops`**, allocating from `ids`: `{"steps": [...]}`
+/// — `{"send": {addr, args}}`, `{"await": {command, index}}`, `{"sync": id}` —
+/// or `{"error": "..."}`.
+///
+/// Sizes with a null `out` and fills with a second call; the applier's table
+/// and the id spaces change only on the call that fills.
+///
+/// # Safety
+/// `a` must be null or a live applier, `ids` null or a live id-spaces handle,
+/// `ops` null or readable for `ops_len` bytes, and `out` null or writable for
+/// `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_applier_apply(
+    a: *mut FfiApplier,
+    ops: *const u8,
+    ops_len: usize,
+    ids: *mut crate::registry::FfiIdSpaces,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(applier), Some(spaces), Some(ops)) =
+        (unsafe { a.as_ref() }, unsafe { ids.as_ref() }, unsafe {
+            crate::document::text(ops, ops_len)
+        })
+    else {
+        return 0;
+    };
+    let (Ok(mut held), Ok(mut spaces)) = (applier.0.lock(), spaces.0.lock()) else {
+        return 0;
+    };
+    // Against copies, for the instance's reason: a sizing pass that allocated
+    // would leave ids taken that no step ever names.
+    let (mut next, mut next_ids) = (held.clone(), spaces.clone());
+    let answer = clausters_editing::apply::apply_json(&mut next, &ops, &mut next_ids);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+            *held = next;
+            *spaces = next_ids;
+        })
+    }
+}
+
+/// **The control-bus run a handle became**: its first bus into `out[0]` and
+/// its channels into `out[1]`, and 0; -1 for a handle that is no bus.
+///
+/// # Safety
+/// `a` must be null or a live applier, `handle` readable for `handle_len`
+/// bytes, and `out` writable for two `i64`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_applier_bus(
+    a: *mut FfiApplier,
+    handle: *const u8,
+    handle_len: usize,
+    out: *mut i64,
+) -> i32 {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(applier), Some(handle)) = (unsafe { a.as_ref() }, unsafe {
+        crate::document::text(handle, handle_len)
+    }) else {
+        return -1;
+    };
+    let Ok(held) = applier.0.lock() else {
+        return -1;
+    };
+    match held.bus(&handle) {
+        Some((first, channels)) if !out.is_null() => {
+            // SAFETY: caller guarantees `out` is writable for two i64.
+            unsafe {
+                *out = i64::from(first);
+                *out.add(1) = channels as i64;
+            }
+            0
+        }
+        _ => -1,
+    }
+}
+
 /// **What one message from the host is** — the conversation's first decision.
 ///
 /// `state` is the conversation's two integers (`{"floor", "applied"}`) and

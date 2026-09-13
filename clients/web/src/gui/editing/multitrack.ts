@@ -451,12 +451,12 @@ function cursorOf(editor: Editor<Multitrack>): number {
  * each run is.
  */
 function meterBuses(editor: Editor<Multitrack>): unknown[] {
-    const playback = (editor as { playback?: { meters?: Map<number, [{ index: number }, number]> } })
+    const playback = (editor as { playback?: { meters?: Map<number, [number, number]> } })
         .playback;
     if (playback?.meters === undefined) return [];
     const out: unknown[] = [];
     for (const [track, [bus, channels]] of playback.meters) {
-        out.push(String(track), bus.index, bus.index + channels, channels);
+        out.push(String(track), bus, bus + channels, channels);
     }
     return out;
 }

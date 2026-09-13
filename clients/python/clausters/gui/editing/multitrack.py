@@ -513,7 +513,7 @@ def _meters(editor) -> list:
         return []
     out = []
     for track, (bus, channels) in playback.meters.items():
-        out += [str(track), int(bus.index), int(bus.index) + channels, channels]
+        out += [str(track), int(bus), int(bus) + channels, channels]
     return out
 
 

@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { multitrackPlan } from "../src/core/clausters_core_web.js";
+import { Applier, IdSpaces, multitrackPlan } from "../src/core/clausters_core_web.js";
 import {
     MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
@@ -917,59 +917,46 @@ test("a metered track names the buses the host reads", () => {
     const ed = editor(piece());
     assert.deepEqual(props(ed).meters, [], "a piece nobody plays has no meters");
     (ed as unknown as { playback: unknown }).playback = {
-        meters: new Map([[10, [{ index: 40 }, 2]]]),
+        meters: new Map([[10, [40, 2]]]),
     };
     assert.deepEqual(props(ed).meters, ["10", 40, 42, 2]);
 });
 
 test("the playback carries out what the reconciler says", async () => {
-    // **What is left in a client is a socket, an allocator and a table.**
+    // **What is left in a client is a socket, and waiting on it.**
     //
-    // What a difference *is* — which node stays, which is made again, which
-    // port the hand may write — is the crate's (`Instance`), and its rules are
-    // tested there because they are one implementation for both clients. This
-    // is the other half: an operation names what it acts on by a **handle**,
-    // and turning a handle into the node, bus or buffer this page made is what
-    // a language owns.
-    const sent: unknown[][] = [];
-    const server = { sendMsg: (...args: unknown[]) => sent.push(args) };
-    const freed: string[] = [];
-    const node = (id: number, name: string) => ({ id, free: () => freed.push(name) });
-    const bus = { index: 7, free: () => freed.push("bus") };
-
-    const playback = Object.create(Playback.prototype) as Playback;
-    const held = playback as unknown as {
-        server: unknown;
-        nodes: Map<string, unknown>;
-        buses: Map<string, unknown>;
-        buffers: Map<string, unknown>;
+    // What a difference *is* is the crate's (`Instance`), and so are the
+    // messages that carry it out and what they wait for (`Applier`), both
+    // tested there because they are one implementation for every endpoint.
+    // This is the other half: each step is sent, a send whose `/done` the rest
+    // waits for is one command, and a barrier is a sync.
+    const log: unknown[][] = [];
+    const server = {
+        ids: new IdSpaces(8192, 1024, 2, 16384, 4096, 0, 1),
+        sendMsg: (addr: string, ...args: unknown[]) => log.push(["send", addr, ...args]),
+        command: async (addr: string, args: unknown[]) => {
+            log.push(["command", addr, ...args]);
+            return { addr: "/done", args: [addr] };
+        },
+        sync: async () => {
+            log.push(["sync"]);
+            return 1;
+        },
     };
+    const playback = Object.create(Playback.prototype) as Playback;
+    const held = playback as unknown as { server: unknown; applier: Applier };
     held.server = server;
-    held.nodes = new Map([
-        ["clip:3", node(2, "clip")],
-        ["reader:3:0", node(3, "reader")],
-    ]);
-    held.buses = new Map([["curvebus:5", bus]]);
-    held.buffers = new Map();
-
-    // A port that names a resource is resolved out of the same table.
-    assert.equal(playback.value(3.0), 3.0);
-    assert.equal(playback.value({ bus: "curvebus:5" }), 7.0);
-    assert.equal(playback.value({ bus: "curvebus:5", offset: 2 }), 9.0);
+    held.applier = new Applier(0, true, 8192);
 
     await playback.apply([
-        { op: "map", handle: "clip:3", port: "gain", bus: "curvebus:5" },
-        { op: "unmap", handle: "clip:3", port: "mute" },
-        { op: "free", handle: "clip:3", forget: ["reader:3:0"] },
-        { op: "freeBus", handle: "curvebus:5" },
+        { op: "buffer", handle: "curve:5", samples: [0.5, 1.0] },
+        { op: "bus", handle: "curvebus:5", channels: 1 },
     ]);
-    assert.deepEqual(sent, [
-        ["/graph_map", 2, "gain", 7],
-        ["/graph_map", 2, "mute", -1],
-    ]);
-    assert.deepEqual(freed, ["clip", "bus"]);
-    // Freeing a group frees what is inside it, so the reader only leaves the
-    // table — a second free would name a node that is already gone.
-    assert.equal(held.nodes.size, 0);
-    assert.equal(held.buses.size, 0);
+    assert.deepEqual(
+        log.map((entry) => entry.slice(0, 2)),
+        [["command", "/buffer_alloc"], ["send", "/buffer_setRange"], ["sync"]],
+        "the fill waits for the allocation",
+    );
+    assert.equal(held.applier.bus("curvebus:5")?.[1], 1);
+    assert.equal(server.ids.inUse("buffers"), 1, "the ids are the server's");
 });

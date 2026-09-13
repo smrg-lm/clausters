@@ -114,6 +114,7 @@ pub enum ReleaseError {
     NotAllocated,
 }
 
+#[derive(Clone, Debug)]
 enum Space {
     /// The real thing: a fixed occupancy map, preallocated once.
     Bounded {
@@ -129,6 +130,7 @@ enum Space {
 }
 
 /// A registry of one finite id space `[base, base + capacity)`.
+#[derive(Clone, Debug)]
 pub struct Registry {
     base: i64,
     space: Space,

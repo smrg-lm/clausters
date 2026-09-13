@@ -18,6 +18,8 @@ import type { GuiBridge } from "../gui-host/clausters_gui.js";
 import { engine as engineInstance, server } from "../engine/server.ts";
 import type { ClaustersServer } from "../engine/server.ts";
 import type { IdShare } from "../base/ids.ts";
+import { loadCore } from "../base/core.ts";
+import { splitPageIds } from "../base/pool.ts";
 import { decodePacket } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { canvasBox, onScaleChange } from "./canvasbox.ts";
@@ -266,8 +268,12 @@ async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<Clauste
     await init();
     const bridge = start();
     // The share of the engine's node ids, buses and buffers this host
-    // allocates from, when a client allocates on that engine too.
-    if (idShare !== undefined) bridge.id_share(idShare.index, idShare.of);
+    // allocates from, when a client allocates on that engine too. The page's
+    // own host is on the page's engine, which the page's pools and handles
+    // allocate on: the page splits its space with it, as a script does.
+    await loadCore();
+    const share = idShare ?? (audio === undefined ? splitPageIds() : undefined);
+    if (share !== undefined) bridge.id_share(share.index, share.of);
 
     // The page makes the canvas and hands it over, rather than waiting for one
     // to be appended and grabbing it: that is the ownership a document has, and

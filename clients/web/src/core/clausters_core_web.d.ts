@@ -2,6 +2,36 @@
 /* eslint-disable */
 
 /**
+ * JS face: **what is sounding of a piece**, held across edits.
+ *
+ * The instance projection's state. The other two projections are functions of
+ * a structure alone and this one is a function of a structure *and* of what a
+ * server already holds: a piece plays itself from the transport, so the nodes
+ * have to stay, and what this answers is the **difference**.
+ * **The one applier**: the instance's operations as the steps that carry them
+ * out, allocating from a client's [`JsIdSpaces`].
+ */
+export class Applier {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * The steps that carry out `ops` (JSON), allocating from `ids`:
+     * `{"steps": [...]}` or `{"error": "..."}`.
+     */
+    apply(ops: string, ids: IdSpaces): string;
+    /**
+     * The control-bus run a handle became, as `[first, channels]`.
+     */
+    bus(handle: string): Float64Array | undefined;
+    /**
+     * An applier making its nodes at the tail of `target`, binding the
+     * piece's graph to the transport when `bind_transport`, with `chunk`
+     * samples to a `/buffer_setRange`.
+     */
+    constructor(target: number, bind_transport: boolean, chunk: number);
+}
+
+/**
  * One composition, held in Rust — the JS face of
  * [`clausters_document::Document`].
  */
@@ -286,14 +316,6 @@ export class IdSpaces {
     static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number): IdSpaces;
 }
 
-/**
- * JS face: **what is sounding of a piece**, held across edits.
- *
- * The instance projection's state. The other two projections are functions of
- * a structure alone and this one is a function of a structure *and* of what a
- * server already holds: a piece plays itself from the transport, so the nodes
- * have to stay, and what this answers is the **difference**.
- */
 export class Instance {
     free(): void;
     [Symbol.dispose](): void;
@@ -1438,6 +1460,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_applier_free: (a: number, b: number) => void;
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
@@ -1450,6 +1473,9 @@ export interface InitOutput {
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
+    readonly applier_apply: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly applier_bus: (a: number, b: number, c: number) => [number, number];
+    readonly applier_new: (a: number, b: number, c: number) => number;
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -1646,8 +1672,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

@@ -4328,7 +4328,7 @@ sound.
   `Domain`, or a `Score` for a page) and `distribute` asks those. `projectLegs`
   left the `Adopting` interface with it.
 
-- ⬜ **The page's own host takes no id share** *(found 2026-09-13 while giving
+- ✅ **The page's own host takes no id share** *(found 2026-09-13 while giving
   the GUI host its share of the server's ids; written in `clients/python/PLAN.md`,
   `C55`)*. A `Session` holding its own engine splits its ids with the host it
   opens (`splitShare`, the bridge's `id_share`), as a script does with
@@ -4339,3 +4339,7 @@ sound.
   What is to be decided is who splits on the page: the pools already defer to a
   client's allocators when handed them, so the likely shape is one page-level
   split between the page's `Server`, its pools and its host, stated once.
+  Fixed the same day (`C55`, step 7): `pageIds` is the page engine's one space,
+  `pagePools` and an attached `Server` with no share of its own draw from it,
+  and `guiHost()` splits it once (`splitPageIds`), handing the host its half
+  through the bridge's `id_share`.

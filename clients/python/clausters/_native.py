@@ -263,6 +263,20 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
+    lib.clausters_editing_applier_new.restype = ctypes.c_void_p
+    lib.clausters_editing_applier_new.argtypes = [
+        ctypes.c_int32, ctypes.c_int32, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_applier_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_applier_apply.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_applier_apply.restype = ctypes.c_size_t
+    lib.clausters_editing_applier_bus.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64),
+    ]
+    lib.clausters_editing_applier_bus.restype = ctypes.c_int32
     lib.clausters_editing_conversation_read.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
         u8p_early, ctypes.c_size_t,
@@ -1369,6 +1383,66 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
     raw = size_then_fill(_lib.clausters_editing_stitch, as_u8(body), len(body),
                          as_u8(table), len(table))
     return json.loads(raw) if raw else None
+
+
+class Applier:
+    """**The one applier**: the instance's operations as the steps that carry
+    them out (`clausters_editing_applier_*`).
+
+    It holds the table from each operation's handle to the node, bus or buffer
+    it became, and allocates those from the client's `IdSpaces`. What it
+    answers is **steps** -- ``{"send": {"addr", "args"}}``, ``{"await":
+    {"command", "index"}}`` after a send whose ``/done`` the rest waits for, and
+    ``{"sync": id}`` for a barrier -- and the caller only sends and waits.
+
+    Args:
+        target: the group every node is made at the tail of.
+        bind_transport: bind the piece's graph to the transport.
+        chunk: how many samples one ``/buffer_setRange`` carries.
+    """
+
+    def __init__(self, *, target: int = 0, bind_transport: bool = True,
+                 chunk: int = 8192):
+        self._handle = lib().clausters_editing_applier_new(
+            int(target), 1 if bind_transport else 0, max(1, int(chunk)))
+
+    def __del__(self):
+        self.close()
+
+    def close(self) -> None:
+        """Free the table. Not the nodes: those are the server's."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_editing_applier_free(ctypes.c_void_p(handle))
+
+    def apply(self, ops: list, ids: "IdSpaces") -> list:
+        """The steps that carry out ``ops``, allocating from ``ids``.
+
+        Raises:
+            ValueError: when an id space is exhausted; nothing is allocated
+                and the table is unchanged.
+        """
+        if not self._handle or not ops:
+            return []
+        body = json.dumps(ops).encode("utf-8")
+        raw = size_then_fill(lib().clausters_editing_applier_apply,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
+                             ctypes.c_void_p(ids._handle))
+        answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        return answer["steps"]
+
+    def bus(self, handle: str) -> "tuple[int, int] | None":
+        """The control-bus run ``handle`` became, as ``(first, channels)``."""
+        if not self._handle:
+            return None
+        name = handle.encode("utf-8")
+        out = (ctypes.c_int64 * 2)()
+        if lib().clausters_editing_applier_bus(ctypes.c_void_p(self._handle),
+                                               as_u8(name), len(name), out) != 0:
+            return None
+        return int(out[0]), int(out[1])
 
 
 class Instance:

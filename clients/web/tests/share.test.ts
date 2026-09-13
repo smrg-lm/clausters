@@ -23,6 +23,7 @@ import type { Connection } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { GuiHost } from "../src/gui/host.ts";
 import { GuiIdAllocator, BASE_ID, CAPACITY } from "../src/gui/ids.ts";
+import { pageIds, pagePools, splitPageIds } from "../src/base/pool.ts";
 
 await loadCore();
 
@@ -116,6 +117,18 @@ test("splitting a share keeps what is held and gives away the second half", () =
     assert.deepEqual([server.share, other], [{ index: 0, of: 2 }, { index: 1, of: 2 }]);
     assert.ok(server.ids.contains("nodes", held), "what it held keeps its number");
     assert.equal(server.nodes.alloc(), held + 1);
+});
+
+test("the page splits its one id space with its host, once", () => {
+    // The page's pools and a handle attached to the page's engine allocate from
+    // one space; the page's GUI host takes the second half of it.
+    const pools = pagePools();
+    const held = pools.nodes.alloc();
+    assert.equal(pageIds().inUse("nodes"), 1, "the pools are views of the page's space");
+    assert.deepEqual(splitPageIds(), { index: 1, of: 2 });
+    assert.deepEqual(splitPageIds(), { index: 1, of: 2 }, "once");
+    assert.ok(pageIds().contains("nodes", held), "what the page held keeps its number");
+    pools.nodes.release(held);
 });
 
 test("widget ids split the same way, so two clients of one host agree too", () => {

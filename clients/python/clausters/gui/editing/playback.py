@@ -8,9 +8,9 @@ gesture makes of it; this says what it is heard as.
 shared core's (`mt.piece`, `mt.track`, `mt.clip`, `mt.reader` and the channel
 strip under all of them); which of them a given piece needs is the document
 crate's; and the **difference** between that and what is already sounding is
-`clausters._native.Instance`, in the shared crate. So what is left here is three
-things a language genuinely owns: a socket, an allocator, and one table from the
-crate's handles to the objects this client made.
+`clausters._native.Instance`, in the shared crate; and the messages that carry
+it out are the crate's applier. So what is left here is what a language
+genuinely owns: a socket, and waiting on it.
 
 # Why a diff and not a rebuild
 
@@ -22,21 +22,21 @@ own gesture as a stutter. So a track, a clip and a reader are each added once
 and set thereafter, and only what a set cannot express is torn down and made
 again -- which is the reconciler's rule and is written down there.
 
-# Handles: the crate names what it cannot make
+# Steps: the crate says what waits
 
-An operation never carries a node id, a bus index or a buffer number, because
-the crate allocates none of them. It carries a **handle** -- a string it mints
-from the document's own ids -- and `Playback` keeps the one table from handle to
-whatever it made. A port that has to name a resource names it the same way, and
-`_value` is where that is resolved.
+An operation never carries a node id, a bus index or a buffer number. The
+crate's applier (`clausters._native.Applier`) keeps the table from each
+operation's handle to what it became, allocates those from the server's id
+spaces, and answers **steps**: a message to send, a ``/done`` the rest waits
+for, a barrier. A buffer's fill waiting for its allocation is one of those
+steps, stated once, and every endpoint -- this client, the page and the GUI
+host playing a piece on its own -- carries out the same list.
 """
 
-import json
+from array import array
 
 from ... import _native
-from ...defs.buffer import Buffer
-from ...defs.bus import Bus
-from ...defs.node import AddAction, Group, Synth
+from ...errors import CommandError
 from ..transport import Transport
 
 __all__ = ["Playback"]
@@ -68,12 +68,12 @@ class Playback:
         #: between that and the piece; nothing here decides what a difference
         #: is.
         self._instance = _native.Instance()
-        #: handle -> the node this client made for it.
-        self._nodes: dict = {}
-        #: handle -> the control bus.
-        self._buses: dict = {}
-        #: handle -> the buffer.
-        self._buffers: dict = {}
+        #: The operations as steps, and the table from handle to what each
+        #: became -- the crate's, as the instance is.
+        self._applier = _native.Applier(chunk=server._bulk_chunk())
+        # Node ids come back on their `/node_end`, which only a registered
+        # client hears.
+        server._ensure_recycler()
         bridge = editor.bridge
         #: The piece's transport. ``head_clock="piece"`` says it once: the verbs
         #: become the server's and the host draws the line from the engine's own
@@ -119,9 +119,9 @@ class Playback:
         """
         out = {}
         for row in self._instance.meters():
-            bus = self._buses.get(row["bus"])
+            bus = self._applier.bus(row["bus"])
             if bus is not None:
-                out[row["track"]] = (bus, int(row["channels"]))
+                out[row["track"]] = (bus[0], int(row["channels"]))
         return out
 
     def sync(self) -> None:
@@ -139,110 +139,36 @@ class Playback:
     def apply(self, ops: list) -> None:
         """Do what the reconciler says, in order.
 
-        **The order is the answer.** A def before the graph that names it, a
-        buffer before the reader pointed at it, a node freed before the one that
-        replaces it is made -- all of that is decided in the crate and this only
-        carries it out, which is why a second client cannot carry it out
-        differently.
+        **The order is the answer, and so are the waits.** A def before the
+        graph that names it, a buffer's fill after its allocation answered, a
+        node freed before the one that replaces it is made -- all of that is the
+        crate's, stated as steps, and this only sends them and waits where a
+        step says to.
         """
-        for op in ops:
-            getattr(self, "_op_" + str(op["op"]).lower())(op)
+        self._run(self._applier.apply(ops, self.server.ids))
 
-    def _value(self, port):
-        """One port's value: a number as itself, and a **handle** resolved out
-        of the table this filled when it made the thing."""
-        if isinstance(port, dict):
-            if "bus" in port:
-                return float(self._buses[port["bus"]].index
-                             + int(port.get("offset", 0)))
-            return float(self._buffers[port["buffer"]].bufnum)
-        return float(port)
-
-    def _ports(self, op) -> dict:
-        return {name: self._value(value)
-                for name, value in (op.get("ports") or {}).items()}
-
-    # ---- one method per operation ----
-
-    def _op_def(self, op) -> None:
-        self.server.send_msg("/def_send", op["family"], json.dumps(op["spec"]))
-
-    def _op_barrier(self, op) -> None:
-        # **The batch is closed before anything else is sent.** A def send is
-        # asynchronous and answers `/done`, so a `/done` left in flight is one
-        # the next command that waits for one takes as its own -- and a buffer
-        # alloc that returns before it ran is written into before it exists.
-        self.server.sync()
-
-    def _op_graph(self, op) -> None:
-        self._nodes[op["handle"]] = Group.graph(op["graph"], self._ports(op),
-                                                server=self.server)
-
-    def _op_transport(self, op) -> None:
-        self.server.transport_group(self._nodes[op["handle"]])
-
-    def _op_group(self, op) -> None:
-        self._nodes[op["handle"]] = Group(target=self._nodes[op["before"]],
-                                          action=AddAction.BEFORE,
-                                          server=self.server)
-
-    def _op_slot(self, op) -> None:
-        target = self._nodes[op["target"]]
-        self._nodes[op["handle"]] = target.add_slot(op["slot"], self._ports(op))
-
-    def _op_synth(self, op) -> None:
-        self._nodes[op["handle"]] = Synth(op["def"], self._ports(op),
-                                          target=self._nodes[op["target"]],
-                                          server=self.server)
-
-    def _op_bus(self, op) -> None:
-        self._buses[op["handle"]] = Bus.control(int(op["channels"]),
-                                                server=self.server)
-
-    def _op_buffer(self, op) -> None:
-        self._buffers[op["handle"]] = Buffer.from_samples(op["samples"],
-                                                          server=self.server)
-
-    def _op_set(self, op) -> None:
-        node = self._nodes.get(op["handle"])
-        if node is not None:
-            node.set(self._ports(op))
-
-    def _op_map(self, op) -> None:
-        node, bus = self._nodes.get(op["handle"]), self._buses.get(op["bus"])
-        if node is not None and bus is not None:
-            self.server.send_msg("/graph_map", node.id, op["port"],
-                                 int(bus.index))
-
-    def _op_unmap(self, op) -> None:
-        # **A handle with nothing behind it is a node that is already gone**,
-        # and a message naming one would reach whatever holds that id next. The
-        # reconciler does not emit these -- freeing a node takes its map with
-        # it, and there is a crate test saying so -- and this is the second
-        # half of that: the two clients answer an impossible handle the same
-        # way, instead of one raising and the other addressing node 0.
-        node = self._nodes.get(op["handle"])
-        if node is not None:
-            self.server.send_msg("/graph_map", node.id, op["port"], -1)
-
-    def _op_free(self, op) -> None:
-        node = self._nodes.pop(op["handle"], None)
-        if node is not None:
-            node.free()
-        # Freeing a group frees what is inside it, so these only leave the
-        # table: a second free would name a node that is already gone.
-        for handle in op.get("forget") or ():
-            self._nodes.pop(handle, None)
-
-    def _op_freebus(self, op) -> None:
-        bus = self._buses.pop(op["handle"], None)
-        if bus is not None:
-            bus.free()
-
-    def _op_freebuffer(self, op) -> None:
-        buffer = self._buffers.pop(op["handle"], None)
-        if buffer is not None:
-            buffer.free()
+    def _run(self, steps: list) -> None:
+        """Send each step, waiting where one says to."""
+        index = 0
+        while index < len(steps):
+            step = steps[index]
+            if "send" in step:
+                addr = step["send"]["addr"]
+                args = [_arg(a) for a in step["send"]["args"]]
+                after = steps[index + 1] if index + 1 < len(steps) else {}
+                if "await" in after:
+                    # Sent and waited for as one request, so the `/done` cannot
+                    # arrive before anyone is listening for it.
+                    raddr, rargs = self.server.request(
+                        addr, *args, expect=("/done", "/fail"))
+                    if raddr == "/fail":
+                        raise CommandError(f"{addr} failed: {rargs}")
+                    index += 2
+                    continue
+                self.server.send_msg(addr, *args)
+            elif "sync" in step:
+                self.server.sync()
+            index += 1
 
     # ---- the transport ----
 
@@ -284,7 +210,7 @@ class Playback:
         and lately ended when the transport did.
         """
         for bus, channels in self.meters.values():
-            self.server.send_msg("/bus_fill", bus.index, 2 * channels, 0.0)
+            self.server.send_msg("/bus_fill", bus, 2 * channels, 0.0)
 
     def stop(self):
         """Halt and go back to **the mark**, not to the top.
@@ -319,3 +245,14 @@ class Playback:
         """Free the piece's instance. The piece itself is untouched: what a
         playback holds is nodes, and nodes are not the composition."""
         self.apply(self._instance.teardown())
+
+
+def _arg(arg: dict):
+    """One step argument as the value `send_msg` encodes to its tag."""
+    if "i" in arg:
+        return int(arg["i"])
+    if "f" in arg:
+        return float(arg["f"])
+    if "b" in arg:
+        return array("f", arg["b"]).tobytes()
+    return str(arg["s"])

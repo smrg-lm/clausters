@@ -165,7 +165,7 @@ pub extern "C" fn clausters_registry_graph_control_reserved(control_buses: usize
 use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 
 /// The id-spaces handle.
-pub struct FfiIdSpaces(Mutex<IdSpaces>);
+pub struct FfiIdSpaces(pub(crate) Mutex<IdSpaces>);
 
 /// The space a small integer names across the ABI: 0 nodes, 1 audio buses, 2
 /// control buses, 3 buffers.

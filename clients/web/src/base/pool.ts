@@ -16,11 +16,18 @@
 // same pool), because a widget id names a node of the one host's one widget
 // namespace: a page that mounts components *and* opens windows from script
 // must not hand the same id to both. Node ids, buses and buffers are a
-// `Server`'s to size from `/server_query`, so a page doing both should hand its
-// client's allocators to the mount rather than let the two pools overlap; the
-// mount takes them as an argument for exactly that.
+// `Server`'s to size from `/server_query`.
+//
+// **On the page's engine they are one `IdSpaces`** (`pageIds`): the pools draw
+// from it, a `Server` attached to the page's engine with no share of its own
+// draws from it, and when the page's GUI host boots the page splits it once
+// (`splitPageIds`) — the page keeps the first half and the host, which
+// allocates on the same engine for its voices, its take monitor and the piece
+// it plays, takes the second. It is the page's form of what a script does when
+// it launches a host with `--id-share`.
 
 import { IdSpaces, Registry, requireCore } from "./core.ts";
+import type { IdShare } from "./ids.ts";
 
 /**
  * The widget-id window, matching the client's own (`gui/ids.ts`): ids below
@@ -101,15 +108,21 @@ export function newPools(shape: PoolShape = ENGINE_SHAPE): Pools {
     // of their GraphDef windows. The policy is the core's
     // (`clausters_core::ids`), the one every endpoint allocates by; widget ids
     // are the host's namespace, not the server's, and keep their own window.
-    const ids = new IdSpaces(
-        shape.maxNodes,
-        shape.audioBuses,
-        shape.outputs,
-        shape.controlBuses,
-        shape.buffers,
-        0,
-        1,
+    return poolsOver(
+        new IdSpaces(
+            shape.maxNodes,
+            shape.audioBuses,
+            shape.outputs,
+            shape.controlBuses,
+            shape.buffers,
+            0,
+            1,
+        ),
     );
+}
+
+/** The pools as views of `ids`, with widget ids in their own window. */
+function poolsOver(ids: IdSpaces): Pools {
     return {
         widgets: pool(WIDGET_BASE, WIDGET_CAPACITY, "widget"),
         nodes: space(ids, "nodes", "node"),
@@ -174,6 +187,44 @@ function space(
  * one bundle apart. A client of its own takes `newPools` instead.
  */
 export function pagePools(): Pools {
-    instance ??= newPools();
+    instance ??= poolsOver(pageIds());
     return instance;
+}
+
+let pageSpaces: IdSpaces | null = null;
+let pageSplit: IdShare | null = null;
+
+/**
+ * **The page engine's one id space**: what the page's pools and a `Server`
+ * attached to the page's engine with no share of its own allocate from, so the
+ * page is one client of its engine however many handles it holds.
+ */
+export function pageIds(): IdSpaces {
+    requireCore("the page's id spaces");
+    pageSpaces ??= new IdSpaces(
+        ENGINE_SHAPE.maxNodes,
+        ENGINE_SHAPE.audioBuses,
+        ENGINE_SHAPE.outputs,
+        ENGINE_SHAPE.controlBuses,
+        ENGINE_SHAPE.buffers,
+        0,
+        1,
+    );
+    return pageSpaces;
+}
+
+/**
+ * **Splits the page's id space with the page's GUI host**, once, and returns
+ * the host's share.
+ *
+ * The page keeps the first half and every id it already holds; the host takes
+ * the second. A second call answers the same share without splitting again,
+ * since there is one host per page engine. Throws, changing nothing, when
+ * something the page holds lies in the half it would give away.
+ */
+export function splitPageIds(): IdShare {
+    if (pageSplit !== null) return pageSplit;
+    pageIds().narrow(0, 2);
+    pageSplit = { index: 1, of: 2 };
+    return pageSplit;
 }

@@ -310,7 +310,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   commit.
 
 
-- ⬜ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.
+- ✅ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.
 
   **What is written three times today.** The *numbers* a client allocates — node ids, audio and control buses, buffers — and the *applying* of the instance's `Op`s (a handle table, the encoding to OSC, and what has to wait for what) live once per endpoint:
 
@@ -329,9 +329,26 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   5. ✅ The GUI host allocates from `IdSpaces` and applies through the applier; `host/instance.rs` keeps only the socket and the reply path. The voice window, the monitor's fixed readers and group and the piece's node base are gone: every node the host makes comes from its spaces and returns on `/node_end`, and every reply from either front passes `Host::on_server_reply` first.
 
      **Who hands out the shares** *(decided 2026-09-13 by the user)*: the launcher. A script that starts a host on its own server keeps share 0 of 2 and gives the host share 1 (`Server.split_share` / `splitShare`, passed as `--id-share 1/2` or the page bridge's `id_share`); a host with no script beside it takes the whole space. Every id already held keeps its number across the split (`IdSpaces::narrow`), and the host's spaces take the server's own shape when its `/server_query` answers (`IdSpaces::reshape`).
-  6. ⬜ Both clients' `Playback.apply` become that applier plus their own send and await.
+  6. ✅ Both clients' `Playback.apply` become that applier plus their own send and await: the applier gets C ABI and wasm doors (declared in `docs/bindings.md`), the `_op_*` methods and the handle tables leave `playback.py` and `playback.ts`, and what is left is sending each step and waiting where a step says to.
+  7. ✅ **The page splits its ids once.** The page's shared engine has three allocators and no launcher: the page's `Server`, `pagePools()` and the host `guiHost()` boots all take the whole space. One page-level split — the pools draw from the page server's `IdSpaces`, and the page's host gets the other share through the bridge's `id_share` — so a page, like a script, hands its host a share instead of hoping the spaces do not meet.
 
   **Acceptance.** No endpoint constructs a `Registry` of its own or states a bus or buffer base; the op-to-OSC encoding exists once; a curve's table in a standalone host, in a script and in a page is filled after its buffer exists by the same stated step; the parity tests and both suites pass.
+
+- ⬜ **C56 — The piece's playback control, once, in Rust** *(decided 2026-09-13 by the user, after `C55`: the standalone multitrack has to have the same capabilities as the clients' and in Rust, with no implementation written twice)*.
+
+  **What is still written twice after `C55`.** Once the applier is shared, what decides *how a piece is played* is still the client's `Playback` (`gui/editing/playback.py`, its port in `playback.ts`) on one side and the host's own on the other (`host/instance.rs`, `host/play.rs`):
+
+  - **The default tempo** a piece that states none plays at: the clients pass the bridge's `bpm` to `nodes::plan`, the host passes a constant.
+  - **A beat as a sample** for a locate: the clients convert through `gui/transport.py`'s map, the host is handed frames.
+  - **The transport verbs** — play, pause, stop (back to the mark), locate, cue (a stopped transport only) — and the messages each is.
+  - **When to reconcile**, and the teardown on close.
+  - **The meters on a pause**: the clients zero the meter buses (a frozen meter must not claim a level), the host does not.
+
+  **The shape.** A playback object in `clausters-editing` that owns the `Instance`, the `Applier` and the piece's transport state, and answers every verb as steps: `sync(piece, rate, sources)`, `play`, `pause`, `stop(mark)`, `locate(beat)`, `cue(beat)`, `close`, and the meters. The host calls it directly; the clients bind it through the C ABI and wasm, behind the surface they already have (`Playback.play()`, `transport.locate(beat)`), and keep only sending and awaiting.
+
+  **Either route is the same program.** With a client (host → client → server) the client owns the document and plays it through this object; with none (`--session`) the host owns it and plays it through the same object. The host builds a piece only when it owns the document, so a piece is never played twice.
+
+  **Acceptance.** Nothing about playing a piece is decided in `playback.py`, `playback.ts` or `host/instance.rs` beyond sending and awaiting; the default tempo, a locate's sample, a stop's return to the mark and a pause's silent meters are the same in a standalone host, a script and a page, pinned by crate tests and the parity tests.
 ### The arrangement model + the multitrack editor (client arc, phased)
 
 The recursive-granularity composition/editor track: a client-side **arrangement

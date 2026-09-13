@@ -69,6 +69,7 @@ import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
 import { IdSpaces, requireCore } from "../../base/core.ts";
 import { NodeIdAllocator } from "../node.ts";
 import { WHOLE_SHARE } from "../../base/ids.ts";
+import { pageIds } from "../../base/pool.ts";
 import type { IdShare } from "../../base/ids.ts";
 import { AudioBusAllocator, ControlBusAllocator } from "../bus.ts";
 import { BufferAllocator } from "../buffer.ts";
@@ -231,6 +232,11 @@ export class Server {
         return this.audio;
     }
     private recv: OscReceiver | null = null;
+    /**
+     * Whether this handle reached the page's own engine by attaching, which
+     * makes it one of the page's allocators rather than a client of its own.
+     */
+    private onPageEngine = false;
     /** Whether `boot` brought up the engine under this handle, so `quit` ends it. */
     private ownsEngine = false;
 
@@ -291,6 +297,10 @@ export class Server {
      * `/node_end` stream to recycle from.
      */
     get ids(): IdSpaces {
+        // **On the page's engine the page is one client**: a handle attached
+        // to it with no share of its own allocates from the page's one space,
+        // which the page splits with its GUI host.
+        if (this.onPageEngine && this.share.of === 1 && !this.scoring) return pageIds();
         if (this.built.ids === undefined) {
             requireCore("the id spaces");
             const s = this.sizing;
@@ -510,6 +520,7 @@ export class Server {
                 );
             }
             this.ownsEngine = own && !this.audio;
+            this.onPageEngine = !own && !this.audio;
             this.audio = await found;
             this.conn = await pageConnection(this.audio);
         }

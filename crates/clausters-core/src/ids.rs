@@ -176,6 +176,7 @@ impl Default for ServerShape {
 }
 
 /// **The four spaces one client allocates from.**
+#[derive(Clone, Debug)]
 pub struct IdSpaces {
     shape: ServerShape,
     share: IdShare,
