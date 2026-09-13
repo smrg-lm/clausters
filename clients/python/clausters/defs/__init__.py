@@ -34,6 +34,8 @@ from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
 from .node import AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth
+# A client's id spaces on a server: the type `Server.ids` answers with.
+from .._native import IdSpaces
 from .info import (
     BufferInfo,
     ControlInfo,
@@ -140,7 +142,7 @@ from .ugens import (
     white_noise,
 )
 
-__all__ = [
+__all__ = ["IdSpaces", 
     "boxes",
     "signals",
     "ugens",

@@ -16,7 +16,6 @@ from an id a responder or a query reported, use `Synth.from_id` /
 from enum import IntEnum
 
 from .. import _native
-from ..base.ids import share_of
 from .info import NodeInfo, parse_n_info
 from ._wire import resolve as _resolve
 
@@ -490,34 +489,27 @@ class Group(Node):
 
 
 class NodeIdAllocator:
-    """The registry of the client's node-id range.
+    """The client's node-id range: one space of the server's `_native.IdSpaces`.
 
     Node ids name slots of a finite boot-time resource (the server's node
     table), so the allocator is an occupancy map, not a counter: every id
     handed out stays tracked until the server reports the node's death
     (``/node_end``, fed in through `free`), which makes it allocatable again —
-    the space never exhausts while nodes keep dying. ``capacity=None`` builds
-    the unbounded NRT/score variant (an offline score has no live ``/node_end``
-    stream to recycle from).
+    the space never exhausts while nodes keep dying. A score's spaces are the
+    unbounded variant (an offline score has no live ``/node_end`` stream to
+    recycle from).
 
-    It carries no range of its own: the client range of the node-id space is
-    a property of the server (the partition scales from ``--max-nodes``), so
-    the `Server` sizes it from its ``ServerOptions`` via
-    ``_native.node_id_partition``, the same formula the server applies."""
+    It carries no range of its own: the client range and the share a second
+    client takes of it are the core's (`clausters_core::ids`), so a script, a
+    page and the GUI host hand out node ids by one rule."""
 
-    def __init__(self, base: int, capacity: "int | None", share=None):
-        #: A ``share`` takes one slice of the range instead of all of it, for a
-        #: server with more than one client on it (`clausters.base.IdShare`).
-        #: The unbounded (score) registry ignores it: an offline score has one
-        #: author by construction.
-        if capacity is not None:
-            base, capacity = share_of(base, capacity, share)
-        self._registry = _native.Registry(base, capacity)
+    def __init__(self, spaces: "_native.IdSpaces"):
+        self._spaces = spaces
 
     def alloc(self) -> int:
         """A free node id. Raises `RuntimeError` when the whole range is in
         flight — allocation never wraps into ids that may still be alive."""
-        node_id = self._registry.alloc()
+        node_id = self._spaces.alloc(_native.IdSpaces.NODES)
         if node_id is None:
             raise RuntimeError(
                 "out of node ids: the client range is fully in flight "
@@ -529,10 +521,9 @@ class NodeIdAllocator:
         arrives. Ids outside the client range (another owner's) and ids not
         currently allocated are ignored: every node death on the server is
         reported, not only those of nodes this client created."""
-        if self._registry.contains(node_id):
-            self._registry.release(node_id)
+        self._spaces.node_ended(node_id)
 
     @property
     def in_use(self) -> int:
         """How many ids are allocated (alive or in flight) right now."""
-        return self._registry.in_use
+        return self._spaces.in_use(_native.IdSpaces.NODES)

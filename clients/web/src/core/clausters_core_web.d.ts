@@ -244,6 +244,44 @@ export class History {
 }
 
 /**
+ * A client's id spaces, the JS face of [`clausters_core::ids::IdSpaces`].
+ */
+export class IdSpaces {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
+     * `"buffers"`); throws when the space is exhausted.
+     */
+    alloc(space: string, width: number): number;
+    /**
+     * Whether `id` falls inside this client's slice of `space`.
+     */
+    contains(space: string, id: number): boolean;
+    /**
+     * How many ids of `space` are allocated now.
+     */
+    inUse(space: string): number;
+    /**
+     * The spaces of a live client of a server of this shape, taking share
+     * `index` of `of`.
+     */
+    constructor(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, index: number, of: number);
+    /**
+     * A node the server reports gone, taken back if it was this client's.
+     */
+    nodeEnded(node: number): boolean;
+    /**
+     * Returns a run of `space` to the pool; throws on a double free.
+     */
+    release(space: string, first: number, width: number): void;
+    /**
+     * The spaces of an offline score: node ids never run out.
+     */
+    static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number): IdSpaces;
+}
+
+/**
  * JS face: **what is sounding of a piece**, held across edits.
  *
  * The instance projection's state. The other two projections are functions of
@@ -1257,6 +1295,11 @@ export function secs_to_samples(secs: number, sample_rate: number): number;
 export function sessionFormat(): number;
 
 /**
+ * The `[base, span]` of share `index` of `of` within `span` ids at `base`.
+ */
+export function shareOf(base: number, span: number, index: number, of: number): Float64Array;
+
+/**
  * Apply one operation to a score model, both as JSON, returning the new model.
  *
  * **One export for every operation there will ever be**: the verb and its
@@ -1392,6 +1435,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
+    readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
@@ -1447,6 +1491,13 @@ export interface InitOutput {
     readonly history_walk: (a: number, b: number, c: number) => [number, number, number, number];
     readonly hz_to_bark: (a: number) => number;
     readonly hz_to_mel: (a: number) => number;
+    readonly idspaces_alloc: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly idspaces_contains: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly idspaces_inUse: (a: number, b: number, c: number) => [number, number, number];
+    readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly idspaces_nodeEnded: (a: number, b: number) => number;
+    readonly idspaces_release: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly instance_meters: (a: number) => [number, number];
     readonly instance_new: () => number;
     readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
@@ -1532,6 +1583,7 @@ export interface InitOutput {
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
     readonly sessionFormat: () => number;
+    readonly shareOf: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];

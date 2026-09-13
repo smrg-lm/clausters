@@ -15,9 +15,7 @@
 // of wrapping. The `Server` sizes it from its options (`maxBuffers`).
 
 import { AllocationError, CommandError } from "../errors.ts";
-import { Registry, requireCore } from "../base/core.ts";
-import { shareOf } from "../base/ids.ts";
-import type { IdShare } from "../base/ids.ts";
+import { IdSpaces, requireCore } from "../base/core.ts";
 import { blobToSamples, samplesToBlob } from "../base/bulk.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";
@@ -1141,22 +1139,21 @@ export function bufferNumber(buf: BufferLike): number {
 }
 
 export class BufferAllocator {
-    readonly size: number;
-    private registry: Registry;
+    private readonly spaces: IdSpaces;
 
-    constructor(size = NUM_BUFFERS, share?: IdShare) {
-        this.size = size;
+    /** The buffer-slot space of a client's {@link IdSpaces}. */
+    constructor(spaces: IdSpaces) {
         requireCore("a buffer allocator");
-        this.registry = new Registry(...shareOf(0, size, share));
+        this.spaces = spaces;
     }
 
     /** A free buffer index; throws when the pool is exhausted. */
     alloc(): number {
-        const bufnum = this.registry.alloc(1);
-        if (bufnum === undefined) {
+        try {
+            return this.spaces.alloc("buffers", 1);
+        } catch {
             throw new AllocationError("out of buffer slots");
         }
-        return bufnum;
     }
 
     /**
@@ -1165,15 +1162,15 @@ export class BufferAllocator {
      * bug, never absorbed silently.
      */
     free(bufnum: number): void {
-        if (!this.registry.release(bufnum, 1)) {
-            throw new AllocationError(
-                `double free of buffer ${bufnum}: not currently allocated`,
-            );
+        try {
+            this.spaces.release("buffers", bufnum, 1);
+        } catch {
+            throw new AllocationError(`double free of buffer ${bufnum}: not currently allocated`);
         }
     }
 
     /** How many buffer slots are currently allocated. */
     get inUse(): number {
-        return this.registry.inUse;
+        return this.spaces.inUse("buffers");
     }
 }

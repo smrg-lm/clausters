@@ -21,7 +21,6 @@ counts can be read back with `query_info`.
 """
 
 from .. import _native
-from ..base.ids import share_of
 from ._wire import resolve as _resolve
 
 
@@ -160,27 +159,24 @@ class Bus:
 
 
 class _Allocator:
-    def __init__(self, rate: str, size: int, reserved: int, graph_reserved: int,
-                 share=None):
+    """One bus space of the server's `_native.IdSpaces`.
+
+    The shape of the space is the core's (`clausters_core::ids`): the audio
+    buses start above the server's own outputs, both bus spaces stop below
+    their GraphDef private window, and a second client takes a share of what
+    is left. Nothing here states a base."""
+
+    SPACE: int = -1
+
+    def __init__(self, spaces: "_native.IdSpaces", rate: str):
+        self._spaces = spaces
         self.rate = rate
-        self.size = size
-        # The private GraphDef range sits at the top of the space, clamped the
-        # same way the server clamps it when the configured count is small. A
-        # space the reservations swallow whole leaves no registry: `alloc`
-        # reports exhaustion from the first call.
-        top = size - min(graph_reserved, size)
-        span = max(0, top - reserved)
-        # The share is taken of what is left after the reservations, which are
-        # the server's and belong to no client: two clients splitting the space
-        # both stay clear of the output buses and of the GraphDef window.
-        start, width = share_of(reserved, span, share)
-        self._registry = _native.Registry(start, width) if width > 0 else None
 
     def alloc(self, channels: int = 1, server=None) -> Bus:
         """A run of ``channels`` contiguous buses, stamped with the ``server``
         whose pool this is. Raises when no such run is free — exhaustion is an
         explicit failure, never an aliased index."""
-        index = self._registry.alloc(channels) if self._registry else None
+        index = self._spaces.alloc(self.SPACE, channels)
         if index is None:
             raise RuntimeError(f"out of {self.rate} buses")
         return Bus(index, channels, self.rate, server)
@@ -189,7 +185,7 @@ class _Allocator:
         """Returns the bus's run to the pool. A double free (or a bus this
         allocator never handed out) raises — losing track of a bus is a
         client bug, never absorbed silently."""
-        if self._registry is None or self._registry.release(bus.index, bus.channels) != 0:
+        if not self._spaces.release(self.SPACE, bus.index, bus.channels):
             raise RuntimeError(
                 f"double free of {self.rate} bus {bus.index} "
                 f"(channels={bus.channels}): not currently allocated here")
@@ -197,22 +193,23 @@ class _Allocator:
     @property
     def in_use(self) -> int:
         """How many buses are currently allocated."""
-        return self._registry.in_use if self._registry else 0
+        return self._spaces.in_use(self.SPACE)
 
 
 class AudioBusAllocator(_Allocator):
-    """Allocates audio buses above the hardware outputs (``reserved``) and
-    below the GraphDef private range. ``size`` is the server's audio-bus count
-    (from ``ServerOptions``/``query_info``)."""
+    """The audio-bus space: above the server's outputs and below the GraphDef
+    private range."""
 
-    def __init__(self, size: int, reserved: int = 2, share=None):
-        super().__init__("audio", size, reserved,
-                         _native.graph_bus_reserved(size, 0)[0], share)
+    SPACE = _native.IdSpaces.AUDIO
+
+    def __init__(self, spaces: "_native.IdSpaces"):
+        super().__init__(spaces, "audio")
 
 
 class ControlBusAllocator(_Allocator):
-    """``size`` is the server's control-bus count (from
-    ``ServerOptions``/``query_info``)."""
+    """The control-bus space: below the GraphDef private range."""
 
-    def __init__(self, size: int, share=None):
-        super().__init__("control", size, 0, _native.graph_bus_reserved(0, size)[1], share)
+    SPACE = _native.IdSpaces.CONTROL
+
+    def __init__(self, spaces: "_native.IdSpaces"):
+        super().__init__(spaces, "control")

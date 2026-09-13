@@ -644,6 +644,30 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_registry_node_partition.argtypes = [
         ctypes.c_uint64, ctypes.POINTER(ctypes.c_int64),
     ]
+    lib.clausters_ids_new.restype = ctypes.c_void_p
+    lib.clausters_ids_new.argtypes = [
+        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64,
+        ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32,
+    ]
+    lib.clausters_ids_free.restype = None
+    lib.clausters_ids_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_ids_alloc.restype = ctypes.c_int64
+    lib.clausters_ids_alloc.argtypes = [ctypes.c_void_p, ctypes.c_int32, ctypes.c_uint64]
+    lib.clausters_ids_release.restype = ctypes.c_int32
+    lib.clausters_ids_release.argtypes = [
+        ctypes.c_void_p, ctypes.c_int32, ctypes.c_int64, ctypes.c_uint64,
+    ]
+    lib.clausters_ids_node_ended.restype = ctypes.c_int32
+    lib.clausters_ids_node_ended.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_ids_contains.restype = ctypes.c_int32
+    lib.clausters_ids_contains.argtypes = [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int64]
+    lib.clausters_ids_in_use.restype = ctypes.c_uint64
+    lib.clausters_ids_in_use.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+    lib.clausters_ids_share_of.restype = ctypes.c_int32
+    lib.clausters_ids_share_of.argtypes = [
+        ctypes.c_int64, ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_int64),
+    ]
     lib.clausters_registry_graph_audio_reserved.restype = ctypes.c_uint64
     lib.clausters_registry_graph_audio_reserved.argtypes = [ctypes.c_size_t]
     lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
@@ -2861,6 +2885,75 @@ class TempoMap:
 
 
 # ---- finite-resource registry ----
+
+
+class IdSpaces:
+    """**A client's id spaces** — node ids, audio buses, control buses,
+    buffers — sized from the server and sliced by a share
+    (`clausters_ids_new`).
+
+    The policy is the core's: the node table's client range, the audio buses
+    above the server's own outputs, both bus spaces clear of their GraphDef
+    windows, the last share taking the remainder. Every allocator a `Server`
+    has is a view of one of these, so the numbers a script, a page and the GUI
+    host hand out follow one rule. Internally locked: the clock thread
+    allocates while the reply thread takes ended nodes back.
+    """
+
+    NODES, AUDIO, CONTROL, BUFFERS = 0, 1, 2, 3
+
+    def __init__(self, *, max_nodes: int, audio_buses: int, outputs: int,
+                 control_buses: int, buffers: int, index: int = 0, of: int = 1,
+                 score: bool = False):
+        self._lib = lib()
+        self._handle = self._lib.clausters_ids_new(
+            int(max_nodes), int(audio_buses), int(outputs), int(control_buses),
+            int(buffers), int(index), int(of), 1 if score else 0)
+        if not self._handle:
+            raise ValueError(f"id share {index} is outside a split of {of}")
+
+    def alloc(self, space: int, width: int = 1) -> "int | None":
+        """First id of a run of ``width`` in ``space``, or ``None`` when the
+        space is exhausted (never a wrap)."""
+        first = self._lib.clausters_ids_alloc(self._handle, int(space), max(1, int(width)))
+        return None if first == -1 else first
+
+    def release(self, space: int, first: int, width: int = 1) -> bool:
+        """Returns a run to ``space``; ``False`` for ids it never handed out."""
+        return self._lib.clausters_ids_release(
+            self._handle, int(space), int(first), max(1, int(width))) == 0
+
+    def node_ended(self, node: int) -> bool:
+        """A node the server reports gone, taken back if it was this client's."""
+        return bool(self._lib.clausters_ids_node_ended(self._handle, int(node)))
+
+    def contains(self, space: int, id_: int) -> bool:
+        """Whether ``id_`` falls inside this client's slice of ``space``."""
+        return bool(self._lib.clausters_ids_contains(self._handle, int(space), int(id_)))
+
+    def in_use(self, space: int) -> int:
+        """How many ids of ``space`` are allocated now."""
+        return int(self._lib.clausters_ids_in_use(self._handle, int(space)))
+
+    def close(self) -> None:
+        if getattr(self, "_handle", None):
+            self._lib.clausters_ids_free(self._handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def ids_share_of(base: int, span: int, index: int, of: int) -> "tuple[int, int]":
+    """The ``(base, span)`` of share ``index`` of ``of`` within ``span`` ids at
+    ``base`` — the core's slicing (`clausters_ids_share_of`)."""
+    out = (ctypes.c_int64 * 2)()
+    if lib().clausters_ids_share_of(int(base), max(0, int(span)), int(index), int(of), out) != 0:
+        raise ValueError(f"id share {index} is outside a split of {of}")
+    return int(out[0]), int(out[1])
 
 
 class Registry:

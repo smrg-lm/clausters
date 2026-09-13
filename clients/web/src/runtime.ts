@@ -20,7 +20,8 @@
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
 export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted } from "./bundle.ts";
-export { newPools, pagePools } from "./base/pool.ts";
+export { ENGINE_SHAPE, newPools, pagePools } from "./base/pool.ts";
+export type { PoolShape } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export { guiHost } from "./gui/page.ts";
 export type { ClaustersGui } from "./gui/page.ts";

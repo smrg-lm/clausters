@@ -15,7 +15,9 @@
 // with its own copy — a bundler's asset, a test — does.
 
 import initCore, {
+    IdSpaces,
     Registry,
+    shareOf as coreShareOf,
     WidgetIds,
     graph_bus_reserved,
     midiWriteClip,
@@ -23,7 +25,7 @@ import initCore, {
     node_id_partition,
 } from "../core/clausters_core_web.js";
 
-export { Registry, WidgetIds };
+export { IdSpaces, Registry, WidgetIds, coreShareOf };
 
 // The MIDI file writers (`clausters-midi`, through the core's door). Straight
 // re-exports: they take and return flat bytes, so there is nothing to convert

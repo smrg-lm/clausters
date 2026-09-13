@@ -67,7 +67,7 @@ def share_of(base: int, span: int, share: "IdShare | None" = None):
     so, which is the failure this whole mechanism exists to make loud.
     """
     share = WHOLE if share is None else share
-    each = span // share.of
-    if share.index == share.of - 1:
-        return base + share.index * each, span - share.index * each
-    return base + share.index * each, each
+    # The slicing is the core's (`clausters_core::ids::share_of`), the one every
+    # endpoint's allocators stand on.
+    from .. import _native
+    return _native.ids_share_of(base, span, share.index, share.of)

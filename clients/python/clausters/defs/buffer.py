@@ -17,7 +17,6 @@ from array import array
 from typing import NamedTuple
 
 from .. import _native
-from ..base.ids import share_of
 from ..base.bulk import blob_to_samples, samples_to_blob
 from ..errors import CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
@@ -809,13 +808,14 @@ class Buffer:
 
 
 class BufferAllocator:
-    def __init__(self, size: int = NUM_BUFFERS, share=None):
-        self.size = size
-        self._registry = _native.Registry(*share_of(0, size, share))
+    """The buffer-slot space of the server's `_native.IdSpaces`."""
+
+    def __init__(self, spaces: "_native.IdSpaces"):
+        self._spaces = spaces
 
     def alloc(self) -> int:
         """A free buffer index; raises when the pool is exhausted."""
-        bufnum = self._registry.alloc()
+        bufnum = self._spaces.alloc(_native.IdSpaces.BUFFERS)
         if bufnum is None:
             raise RuntimeError("out of buffer slots")
         return bufnum
@@ -824,11 +824,11 @@ class BufferAllocator:
         """Returns ``bufnum`` to the pool. A double free (or an index this
         allocator never handed out) raises — a lost buffer slot is a client
         bug, never absorbed silently."""
-        if self._registry.release(bufnum) != 0:
+        if not self._spaces.release(_native.IdSpaces.BUFFERS, bufnum):
             raise RuntimeError(
                 f"double free of buffer {bufnum}: not currently allocated")
 
     @property
     def in_use(self) -> int:
         """How many buffer slots are currently allocated."""
-        return self._registry.in_use
+        return self._spaces.in_use(_native.IdSpaces.BUFFERS)

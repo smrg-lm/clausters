@@ -66,6 +66,7 @@ import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
+import { IdSpaces, requireCore } from "../../base/core.ts";
 import { NodeIdAllocator } from "../node.ts";
 import { WHOLE_SHARE } from "../../base/ids.ts";
 import type { IdShare } from "../../base/ids.ts";
@@ -273,19 +274,42 @@ export class Server {
      * constructor did that could fail.
      */
     private built: {
+        ids?: IdSpaces;
         nodes?: NodeIdAllocator;
         audioBuses?: AudioBusAllocator;
         controlBuses?: ControlBusAllocator;
         buffers?: BufferAllocator;
     } = {};
 
+    /**
+     * **This client's id spaces** on this server: one `IdSpaces` the four
+     * allocators are views of, shaped by `sizing` and sliced by `share` — the
+     * core's policy (`clausters_core::ids`), so the outputs at the bottom of
+     * the audio space are the server's own count and the GraphDef windows stay
+     * clear. A score's node space is unbounded: an offline score has no
+     * `/node_end` stream to recycle from.
+     */
+    get ids(): IdSpaces {
+        if (this.built.ids === undefined) {
+            requireCore("the id spaces");
+            const s = this.sizing;
+            this.built.ids = this.scoring
+                ? IdSpaces.score(s.maxNodes, s.audioBuses, s.channels, s.controlBuses, s.maxBuffers)
+                : new IdSpaces(
+                      s.maxNodes,
+                      s.audioBuses,
+                      s.channels,
+                      s.controlBuses,
+                      s.maxBuffers,
+                      this.share.index,
+                      this.share.of,
+                  );
+        }
+        return this.built.ids;
+    }
+
     get nodes(): NodeIdAllocator {
-        return (this.built.nodes ??= this.scoring
-            // An offline score has no `/node_end` stream to recycle from and
-            // no real-time bound on how many ids its length needs, so the
-            // registry is unbounded there — the reference client's rule.
-            ? NodeIdAllocator.unbounded(this.sizing.maxNodes)
-            : NodeIdAllocator.forMaxNodes(this.sizing.maxNodes, this.share));
+        return (this.built.nodes ??= new NodeIdAllocator(this.ids));
     }
 
     set nodes(value: NodeIdAllocator) {
@@ -293,8 +317,7 @@ export class Server {
     }
 
     get audioBuses(): AudioBusAllocator {
-        return (this.built.audioBuses ??= new AudioBusAllocator(
-            this.sizing.audioBuses, this.sizing.channels, this.share));
+        return (this.built.audioBuses ??= new AudioBusAllocator(this.ids));
     }
 
     set audioBuses(value: AudioBusAllocator) {
@@ -302,8 +325,7 @@ export class Server {
     }
 
     get controlBuses(): ControlBusAllocator {
-        return (this.built.controlBuses ??= new ControlBusAllocator(
-            this.sizing.controlBuses, this.share));
+        return (this.built.controlBuses ??= new ControlBusAllocator(this.ids));
     }
 
     set controlBuses(value: ControlBusAllocator) {
@@ -311,8 +333,7 @@ export class Server {
     }
 
     get buffers(): BufferAllocator {
-        return (this.built.buffers ??= new BufferAllocator(
-            this.sizing.maxBuffers, this.share));
+        return (this.built.buffers ??= new BufferAllocator(this.ids));
     }
 
     set buffers(value: BufferAllocator) {

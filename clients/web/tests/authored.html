@@ -120,7 +120,12 @@
         if (mounted.params.freq !== 330) {
             throw new Error(`the attribute did not resolve: ${mounted.params.freq}`);
         }
-        if (!(mounted.symbols.tone > 0) || !(mounted.symbols.lfo > 0)) {
+        // **Bus 0 is a bus**, as buffer 0 is a buffer: an allocation is a
+        // whole number at or above the space's first id, and the control-bus
+        // space starts at 0 -- the core's policy, the same one every client
+        // allocates by.
+        const allocated = (id) => Number.isInteger(id) && id >= 0;
+        if (!allocated(mounted.symbols.tone) || !allocated(mounted.symbols.lfo)) {
             throw new Error(`nothing was allocated: ${JSON.stringify(mounted.symbols)}`);
         }
 

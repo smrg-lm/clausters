@@ -5,6 +5,8 @@
 // one -- the module map is part of the port, since a reader who knows one
 // client looks for the other at the same relative path.
 
+import { coreShareOf } from "./core.ts";
+
 /**
  * Which slice of a client-side id space this client takes, when **more than
  * one client shares one server** — mirrors the Python client's `IdShare`.
@@ -57,7 +59,9 @@ export function shareOf(
     if (!Number.isInteger(index) || index < 0 || index >= of) {
         throw new RangeError(`id share ${index} is outside a split of ${of}`);
     }
-    const each = Math.floor(span / of);
-    const last = index === of - 1;
-    return [base + index * each, last ? span - index * each : each];
+    // The slicing is the core's (`clausters_core::ids::share_of`), the one every
+    // endpoint's allocators stand on; the checks above keep this client's
+    // `RangeError` for a share that is not one.
+    const [first, width] = coreShareOf(base, span, index, of);
+    return [first, width];
 }

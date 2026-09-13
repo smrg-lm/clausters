@@ -20,7 +20,7 @@
 // client's allocators to the mount rather than let the two pools overlap; the
 // mount takes them as an argument for exactly that.
 
-import { Registry, requireCore } from "./core.ts";
+import { IdSpaces, Registry, requireCore } from "./core.ts";
 
 /**
  * The widget-id window, matching the client's own (`gui/ids.ts`): ids below
@@ -29,24 +29,6 @@ import { Registry, requireCore } from "./core.ts";
  */
 export const WIDGET_BASE = 1000;
 export const WIDGET_CAPACITY = 1 << 20;
-
-/**
- * The node-id base the server's client range starts at (scsynth convention,
- * `clausters_core::registry::NodeIdPartition`).
- */
-export const NODE_BASE = 1000;
-export const NODE_CAPACITY = 1 << 15;
-
-/**
- * Buses and buffers: the bottom of each space, above the few a hand-written
- * def or a `boot.json` writes to by convention.
- */
-export const CONTROL_BUS_BASE = 64;
-export const CONTROL_BUS_CAPACITY = 4096;
-export const AUDIO_BUS_BASE = 64;
-export const AUDIO_BUS_CAPACITY = 1024;
-export const BUFFER_BASE = 32;
-export const BUFFER_CAPACITY = 1024;
 
 /**
  * One finite id space a mount draws from. `Registry` is the core's occupancy
@@ -112,13 +94,77 @@ let instance: Pools | null = null;
  * `engine`) want an id space of their own too, since the whole point of an
  * independent client is that its ids are its own and may repeat another's.
  */
-export function newPools(): Pools {
+export function newPools(shape: PoolShape = ENGINE_SHAPE): Pools {
+    requireCore("the id pools");
+    // **One client's spaces, shaped by the server**: the node table's client
+    // range, the audio buses above the engine's outputs, both bus spaces clear
+    // of their GraphDef windows. The policy is the core's
+    // (`clausters_core::ids`), the one every endpoint allocates by; widget ids
+    // are the host's namespace, not the server's, and keep their own window.
+    const ids = new IdSpaces(
+        shape.maxNodes,
+        shape.audioBuses,
+        shape.outputs,
+        shape.controlBuses,
+        shape.buffers,
+        0,
+        1,
+    );
     return {
         widgets: pool(WIDGET_BASE, WIDGET_CAPACITY, "widget"),
-        nodes: pool(NODE_BASE, NODE_CAPACITY, "node"),
-        controlBuses: pool(CONTROL_BUS_BASE, CONTROL_BUS_CAPACITY, "control bus"),
-        audioBuses: pool(AUDIO_BUS_BASE, AUDIO_BUS_CAPACITY, "audio bus"),
-        buffers: pool(BUFFER_BASE, BUFFER_CAPACITY, "buffer"),
+        nodes: space(ids, "nodes", "node"),
+        controlBuses: space(ids, "control", "control bus"),
+        audioBuses: space(ids, "audio", "audio bus"),
+        buffers: space(ids, "buffers", "buffer"),
+    };
+}
+
+/** What a server says about itself that decides the shape of the pools. */
+export interface PoolShape {
+    maxNodes: number;
+    audioBuses: number;
+    outputs: number;
+    controlBuses: number;
+    buffers: number;
+}
+
+/**
+ * The in-page engine's own shape — the sizes it boots with — which is the
+ * server the page's components share.
+ */
+export const ENGINE_SHAPE: PoolShape = {
+    maxNodes: 8192,
+    audioBuses: 1024,
+    outputs: 2,
+    controlBuses: 16384,
+    buffers: 4096,
+};
+
+/** A `Pool` over one space of an `IdSpaces`, throwing rather than returning `undefined`. */
+function space(
+    ids: IdSpaces,
+    name: "nodes" | "audio" | "control" | "buffers",
+    what: string,
+): Pool {
+    return {
+        alloc(width = 1) {
+            try {
+                return ids.alloc(name, width);
+            } catch {
+                throw new Error(`clausters: out of ${what} ids (${ids.inUse(name)} in use)`);
+            }
+        },
+        release(first, width = 1) {
+            try {
+                ids.release(name, first, width);
+            } catch {
+                // A release of what this pool never handed out is ignored here, as
+                // a registry's refused release always was on this door.
+            }
+        },
+        get inUse() {
+            return ids.inUse(name);
+        },
     };
 }
 

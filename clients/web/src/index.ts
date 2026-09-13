@@ -86,7 +86,8 @@ export type {
     Renderable } from "./render.ts";
 export { loadRenderer } from "./engine/render.ts";
 export type { EngineModule } from "./engine/render.ts";
-export { newPools, pagePools } from "./base/pool.ts";
+export { ENGINE_SHAPE, newPools, pagePools } from "./base/pool.ts";
+export type { PoolShape } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export {
     decodePacket,
@@ -173,7 +174,8 @@ export * as seq from "./seq/index.ts";
 export { Event, rest } from "./seq/event.ts";
 export { Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
-export { loadCore } from "./base/core.ts";
+// A client's id spaces on a server: the type `Server.ids` answers with.
+export { IdSpaces, loadCore } from "./base/core.ts";
 // The id share every constructor that allocates ids accepts, for the same
 // reason the options bags below are exported: a public signature names it.
 export type { IdShare } from "./base/ids.ts";

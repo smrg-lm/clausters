@@ -96,8 +96,18 @@ def test_faustdef_source_dump():
 
 # ---- resource allocators ----
 
+def _spaces(**shape):
+    """A client's id spaces over a server of this shape."""
+    from clausters import _native
+    base = dict(max_nodes=1, audio_buses=128, outputs=2, control_buses=128,
+                buffers=4)
+    base.update(shape)
+    return _native.IdSpaces(**base)
+
+
 def test_node_id_allocator_recycles_and_never_wraps():
-    a = NodeIdAllocator(1000, 4)
+    # max_nodes=1 gives the partition's client range 4 ids from 1000.
+    a = NodeIdAllocator(_spaces(max_nodes=1))
     assert (a.alloc(), a.alloc()) == (1000, 1001)
     # Every freed id becomes allocatable again: with frees keeping pace the
     # space never exhausts, however many ids pass through.
@@ -115,12 +125,12 @@ def test_node_id_allocator_recycles_and_never_wraps():
 
 
 def test_node_id_allocator_unbounded_for_scores():
-    a = NodeIdAllocator(1000, None)   # the NRT/score variant
+    a = NodeIdAllocator(_spaces(max_nodes=1, score=True))   # the NRT/score variant
     assert all(a.alloc() == 1000 + i for i in range(10_000))
 
 
 def test_audio_bus_allocator_reserves_outputs_and_graph_top():
-    a = AudioBusAllocator(size=128, reserved=2)
+    a = AudioBusAllocator(_spaces(outputs=2))
     b2 = a.alloc(2)
     assert b2.index == 2 and b2.channels == 2     # above the 2 hardware outs
     assert a.alloc(1).index == 4
@@ -133,10 +143,15 @@ def test_audio_bus_allocator_reserves_outputs_and_graph_top():
     # out: 128 - 2 reserved - 64 = 62 allocatable. A share and not a fixed
     # count, so a server booted with more buses gives both sides more -- which
     # is the whole reason the count is configurable.
-    a2 = AudioBusAllocator(size=128, reserved=2)
+    a2 = AudioBusAllocator(_spaces(outputs=2))
     assert a2.alloc(62).index == 2
     with pytest.raises(RuntimeError, match="out of audio buses"):
         a2.alloc(1)
+
+
+def test_the_audio_space_starts_above_the_servers_own_outputs():
+    """The outputs reserved are the server's count, not a default of two."""
+    assert AudioBusAllocator(_spaces(outputs=6)).alloc(1).index == 6
 
 
 def test_bus_commands_go_through_the_bus():
@@ -163,7 +178,7 @@ def test_bus_watch_taps_the_bus():
 
 
 def test_bus_allocator_refuses_double_free():
-    a = AudioBusAllocator(size=128, reserved=2)
+    a = AudioBusAllocator(_spaces(outputs=2))
     b = a.alloc(2)
     a.free(b)
     with pytest.raises(RuntimeError, match="double free"):
@@ -171,7 +186,7 @@ def test_bus_allocator_refuses_double_free():
 
 
 def test_buffer_allocator():
-    a = BufferAllocator(size=4)
+    a = BufferAllocator(_spaces(buffers=4))
     assert (a.alloc(), a.alloc()) == (0, 1)
     a.free(0)
     for _ in range(100):                           # recycles, never exhausts

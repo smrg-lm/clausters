@@ -162,6 +162,15 @@ position. One implementation, every client bound to it.
 | `clausters_registry_node_partition` | `node_id_partition` | |
 | `clausters_registry_graph_audio_reserved` | `graph_bus_reserved` | `idiom` — C answers one number per call, wasm returns the pair |
 | `clausters_registry_graph_control_reserved` | `graph_bus_reserved` | `idiom` — as above |
+| `clausters_ids_new` | `JsIdSpaces.new` | `idiom` — **a client's id spaces**, sized from the server and sliced by a share: the node table's client range, the audio buses above the server's own outputs, both bus spaces clear of their GraphDef windows, the buffers. One constructor with a `score` flag in C; two in wasm, because a constructor that cannot fail and one that can are two JS shapes. The policy every endpoint used to restate over its own registries, and had drifted on (two output buses by default against the server's output count) |
+| `clausters_ids_new` | `JsIdSpaces.score` | `idiom` — the **offline score**'s spaces, whose node space never runs out: C passes `score` non-zero to the one constructor, wasm has a second one |
+| `clausters_ids_free` | — | `idiom` — wasm frees by `Drop` |
+| `clausters_ids_alloc` | `JsIdSpaces.alloc` | `idiom` — the space is a small integer in C and its name in wasm; exhaustion is `-1` in C and a thrown error in wasm |
+| `clausters_ids_release` | `JsIdSpaces.release` | `idiom` — a double free is `-1` in C and a thrown error in wasm |
+| `clausters_ids_node_ended` | `JsIdSpaces.node_ended` | a node the server reports gone, taken back if it was this client's |
+| `clausters_ids_contains` | `JsIdSpaces.contains` | `idiom` — as `alloc` for the space |
+| `clausters_ids_in_use` | `JsIdSpaces.in_use` | `idiom` — as `alloc` for the space |
+| `clausters_ids_share_of` | `share_of` | `idiom` — C writes the pair into an out-array, wasm returns it |
 | — | `JsRegistry.unbounded` | **gap** — the capacity-less constructor |
 | — | `JsRegistry.is_allocated` | **gap** — per-id occupancy read |
 | — | `JsRegistry.base` | **gap** — the range's first id |

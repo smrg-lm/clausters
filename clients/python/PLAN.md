@@ -309,6 +309,27 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   spellings**: the port is `W31` (`clients/web/PLAN.md`) and lands in the same
   commit.
 
+
+- ⬜ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.
+
+  **What is written three times today.** The *numbers* a client allocates — node ids, audio and control buses, buffers — and the *applying* of the instance's `Op`s (a handle table, the encoding to OSC, and what has to wait for what) live once per endpoint:
+
+  - **Python**: `NodeIdAllocator`, `AudioBusAllocator`, `ControlBusAllocator`, `BufferAllocator`, `share_of` (`clausters/base/ids.py`, `defs/node.py`, `defs/bus.py`, `defs/buffer.py`), and `Playback.apply` with `Buffer.from_samples` waiting on the allocation (`gui/editing/playback.py`).
+  - **Web**: the same four classes and `shareOf`, plus a **second** scheme in `base/pool.ts` with fixed bases (buses at 64, buffers at 32) that no server stated, and `Playback.apply` with `await Buffer.fromSamples`.
+  - **GUI host**: a node window of its own for voices (`voices::ID_BASE`, `docs/decisions.md`), counters from `play::PIECE_NODE` and a session base in `host/instance.rs`, no `Registry` at all — and it was this copy that sent a buffer's fill before its allocation and silenced the piece.
+
+  All of them already stand on the core's `Registry`, `NodeIdPartition` and `graph_*_reserved`; what is repeated is the **policy** over those. And it has drifted: Python reserves **2** output buses by default where the web reserves the **server's output count**, and the page's pools are shaped by constants rather than by the server.
+
+  **The shape.**
+
+  1. `clausters_core::ids` — `IdShare`, `share_of`, and `IdSpaces`: the four spaces sized from the server (`max_nodes`, audio buses and the outputs below them, control buses, buffers), sliced by a share, the GraphDef windows kept clear, a score's node space unbounded. Allocation exhausts loudly and a release of what was never handed out is refused. The outputs reserved are **the server's output count**, the answer that is a fact rather than a default.
+  2. The C ABI and wasm doors for it, declared in `docs/bindings.md`.
+  3. Python's and the web's allocators become that one object behind their existing surface; `base/pool.ts` is shaped by the server like the rest.
+  4. `clausters_editing::apply` — the applier: the handle table, every `Op` as the messages it is, and the **steps a message has to wait for** (a fill after its allocation's `/done`) stated as data, so no endpoint rederives them. It allocates from an `IdSpaces` it is handed.
+  5. The GUI host allocates from `IdSpaces` and applies through the applier; `host/instance.rs` keeps only the socket and the reply path.
+  6. Both clients' `Playback.apply` become that applier plus their own send and await.
+
+  **Acceptance.** No endpoint constructs a `Registry` of its own or states a bus or buffer base; the op-to-OSC encoding exists once; a curve's table in a standalone host, in a script and in a page is filled after its buffer exists by the same stated step; the parity tests and both suites pass.
 ### The arrangement model + the multitrack editor (client arc, phased)
 
 The recursive-granularity composition/editor track: a client-side **arrangement

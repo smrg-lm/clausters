@@ -23,9 +23,7 @@
 // whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
-import { Registry, graphBusReserved, requireCore } from "../base/core.ts";
-import { shareOf } from "../base/ids.ts";
-import type { IdShare } from "../base/ids.ts";
+import { IdSpaces, requireCore } from "../base/core.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 
@@ -121,28 +119,14 @@ export function busIndex(bus: BusLike): number {
 
 class Allocator {
     readonly rate: BusRate;
-    readonly size: number;
-    // A space the reservations swallow whole leaves no registry: `alloc`
-    // reports exhaustion from the first call.
-    private registry: Registry | null;
+    private readonly spaces: IdSpaces;
+    private readonly space: "audio" | "control";
 
-    constructor(
-        rate: BusRate,
-        size: number,
-        reserved: number,
-        graphReserved: number,
-        share?: IdShare,
-    ) {
-        this.rate = rate;
-        this.size = size;
-        const top = size - Math.min(graphReserved, size);
-        const span = Math.max(0, top - reserved);
-        // The share is taken of what is left after the reservations, which are
-        // the server's and belong to no client: two clients splitting the space
-        // both stay clear of the output buses and of the GraphDef window.
-        const [from, width] = shareOf(reserved, span, share);
+    constructor(rate: BusRate, spaces: IdSpaces) {
         requireCore("a bus allocator");
-        this.registry = width > 0 ? new Registry(from, width) : null;
+        this.rate = rate;
+        this.spaces = spaces;
+        this.space = rate === "audio" ? "audio" : "control";
     }
 
     /**
@@ -150,8 +134,10 @@ class Allocator {
      * — exhaustion is an explicit failure, never an aliased index.
      */
     alloc(channels = 1, server?: Server): Bus {
-        const index = this.registry?.alloc(channels);
-        if (index === undefined) {
+        let index: number;
+        try {
+            index = this.spaces.alloc(this.space, channels);
+        } catch {
             throw new AllocationError(`out of ${this.rate} buses`);
         }
         return new Bus(index, channels, this.rate, server);
@@ -163,7 +149,9 @@ class Allocator {
      * bug, never absorbed silently.
      */
     free(bus: Bus): void {
-        if (!this.registry?.release(bus.index, bus.channels)) {
+        try {
+            this.spaces.release(this.space, bus.index, bus.channels);
+        } catch {
             throw new AllocationError(
                 `double free of ${this.rate} bus ${bus.index} ` +
                     `(channels=${bus.channels}): not currently allocated here`,
@@ -173,23 +161,23 @@ class Allocator {
 
     /** How many buses are currently allocated. */
     get inUse(): number {
-        return this.registry?.inUse ?? 0;
+        return this.spaces.inUse(this.space);
     }
 }
 
 /**
- * Allocates audio buses above the hardware outputs (`reserved`) and below
- * the GraphDef private range. `size` is the server's audio-bus count.
+ * The audio-bus space of a client's {@link IdSpaces}: above the server's own
+ * outputs and below the GraphDef private range — the core's shape.
  */
 export class AudioBusAllocator extends Allocator {
-    constructor(size: number, reserved = 2, share?: IdShare) {
-        super("audio", size, reserved, graphBusReserved(size, 0)[0], share);
+    constructor(spaces: IdSpaces) {
+        super("audio", spaces);
     }
 }
 
-/** `size` is the server's control-bus count. */
+/** The control-bus space of a client's {@link IdSpaces}: below the GraphDef private range. */
 export class ControlBusAllocator extends Allocator {
-    constructor(size: number, share?: IdShare) {
-        super("control", size, 0, graphBusReserved(0, size)[1], share);
+    constructor(spaces: IdSpaces) {
+        super("control", spaces);
     }
 }

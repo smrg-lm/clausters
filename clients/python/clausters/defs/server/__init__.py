@@ -174,16 +174,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: (`clausters.base.IdShare`). Every space is sliced the same way, so a
         #: handle is one share of everything rather than of one pool.
         self.share = WHOLE_SHARE if share is None else share
-        part = _native.node_id_partition(self.options.max_nodes)
         score = getattr(self.interface, "time_mode", "unix") == "score"
-        self.nodes = NodeIdAllocator(
-            part["client_base"], None if score else part["client_capacity"],
-            self.share)
-        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses,
-                                             share=self.share)
-        self.control_buses = ControlBusAllocator(size=self.options.control_buses,
-                                                 share=self.share)
-        self.buffers = BufferAllocator(size=self.options.max_buffers, share=self.share)
+        self._build_allocators(score)
         #: the `/node_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/server_notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
@@ -334,12 +326,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             outputs=info.channels,
             inputs=info.input_channels,
         )
-        part = _native.node_id_partition(self.options.max_nodes)
-        self.nodes = NodeIdAllocator(part["client_base"], part["client_capacity"], self.share)
-        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses, share=self.share)
-        self.control_buses = ControlBusAllocator(size=self.options.control_buses,
-                                                 share=self.share)
-        self.buffers = BufferAllocator(size=self.options.max_buffers, share=self.share)
+        self._build_allocators(False)
         return self
 
     @property
@@ -518,6 +505,30 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         pool, so the client range never exhausts while nodes keep dying."""
         self._ensure_recycler()
         return self.nodes.alloc()
+
+    def _build_allocators(self, score: bool) -> None:
+        """**One id space for this client of this server**, and the four
+        allocators as views of it.
+
+        The shape is the core's (`_native.IdSpaces`): the node table's client
+        range, the audio buses above the server's own outputs, both bus spaces
+        clear of their GraphDef windows, the buffers — each sliced by this
+        handle's share. The outputs are the server's; until the server has
+        said (a booted server with no ``outputs`` flag follows its device), two
+        is assumed, which is the page client's same assumption before its own
+        query.
+        """
+        opts = self.options
+        outputs = opts.outputs if opts.outputs is not None else 2
+        self.ids = _native.IdSpaces(
+            max_nodes=opts.max_nodes, audio_buses=opts.audio_buses,
+            outputs=outputs, control_buses=opts.control_buses,
+            buffers=opts.max_buffers, index=self.share.index, of=self.share.of,
+            score=score)
+        self.nodes = NodeIdAllocator(self.ids)
+        self.audio_buses = AudioBusAllocator(self.ids)
+        self.control_buses = ControlBusAllocator(self.ids)
+        self.buffers = BufferAllocator(self.ids)
 
     def _ensure_recycler(self):
         """Starts the ``/node_end`` listener once per server handle: a dedicated

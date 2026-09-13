@@ -21,9 +21,7 @@
 // it stays; reach for `globalThis.Node` in the rare page that needs both.)
 
 import { AllocationError } from "../errors.ts";
-import { Registry, nodeIdPartition, requireCore } from "../base/core.ts";
-import { shareOf } from "../base/ids.ts";
-import type { IdShare } from "../base/ids.ts";
+import { IdSpaces, requireCore } from "../base/core.ts";
 import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";
@@ -385,41 +383,20 @@ function createGroup(
  *
  * It carries no range of its own: the client range is a property of the
  * server (the partition scales from `--max-nodes`), so the `Server` sizes it
- * through `nodeIdPartition`, the same formula the server applies.
+ * through the core's id spaces, the same partition the server applies.
  */
 export class NodeIdAllocator {
-    private registry: Registry;
+    private readonly spaces: IdSpaces;
 
-    /** Bounded over `[base, base + capacity)`; open-ended with no `capacity`. */
-    constructor(base: number, capacity?: number) {
+    /**
+     * The node-id space of a client's {@link IdSpaces}: the partition's client
+     * range sliced by the share, unbounded for a score. The range and the
+     * slicing are the core's (`clausters_core::ids`), so every endpoint hands
+     * out node ids by one rule.
+     */
+    constructor(spaces: IdSpaces) {
         requireCore("a node id allocator");
-        this.registry = capacity === undefined
-            ? Registry.unbounded(base)
-            : new Registry(base, capacity);
-    }
-
-    /**
-     * The allocator for a server whose node table holds `maxNodes` slots.
-     *
-     * `share` takes one slice of the client range instead of all of it, for a
-     * server with more than one client on it (see `IdShare`).
-     */
-    static forMaxNodes(maxNodes: number, share?: IdShare): NodeIdAllocator {
-        const p = nodeIdPartition(maxNodes);
-        return new NodeIdAllocator(...shareOf(p.clientBase, p.clientCapacity, share));
-    }
-
-    /**
-     * The registry an **offline score** allocates from: ids ascend from the
-     * client base and allocation never fails.
-     *
-     * Recycling is what bounds a live client — an id is reusable once its
-     * `/node_end` arrives — and a score has no `/node_end` stream and no
-     * real-time bound on how many nodes its length asks for. So the range is
-     * open there, which is the reference client's rule too.
-     */
-    static unbounded(maxNodes: number): NodeIdAllocator {
-        return new NodeIdAllocator(nodeIdPartition(maxNodes).clientBase);
+        this.spaces = spaces;
     }
 
     /**
@@ -427,14 +404,14 @@ export class NodeIdAllocator {
      * never wraps into ids that may still be alive.
      */
     alloc(): number {
-        const id = this.registry.alloc(1);
-        if (id === undefined) {
+        try {
+            return this.spaces.alloc("nodes", 1);
+        } catch {
             throw new AllocationError(
                 "out of node ids: the client range is fully in flight " +
                     "(nodes are recycled when their /node_end arrives)",
             );
         }
-        return id;
     }
 
     /**
@@ -444,11 +421,11 @@ export class NodeIdAllocator {
      * only those of nodes this client created.
      */
     free(id: number): void {
-        if (this.registry.contains(id)) this.registry.release(id, 1);
+        this.spaces.nodeEnded(id);
     }
 
     /** How many ids are allocated (alive or in flight) right now. */
     get inUse(): number {
-        return this.registry.inUse;
+        return this.spaces.inUse("nodes");
     }
 }

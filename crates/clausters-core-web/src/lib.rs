@@ -316,6 +316,128 @@ impl JsRegistry {
     }
 }
 
+// ---- the id spaces a client allocates from ----
+//
+// `clausters_core::ids::IdSpaces`: the four spaces sized from the server and
+// sliced by a share. The page's allocators and its component pools all stand on
+// this, so the policy -- the outputs at the bottom of the audio space, the
+// GraphDef windows at the top of both bus spaces, the slice a share takes -- is
+// the Rust one and not a restatement of it.
+
+/// A client's id spaces, the JS face of [`clausters_core::ids::IdSpaces`].
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = IdSpaces)]
+pub struct JsIdSpaces(clausters_core::ids::IdSpaces);
+
+#[cfg(target_arch = "wasm32")]
+fn js_space(name: &str) -> Result<clausters_core::ids::Space, JsError> {
+    clausters_core::ids::Space::parse(name)
+        .ok_or_else(|| JsError::new(&format!("no id space called {name:?}")))
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = IdSpaces)]
+impl JsIdSpaces {
+    /// The spaces of a live client of a server of this shape, taking share
+    /// `index` of `of`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        max_nodes: u32,
+        audio_buses: u32,
+        outputs: u32,
+        control_buses: u32,
+        buffers: u32,
+        index: u32,
+        of: u32,
+    ) -> Result<JsIdSpaces, JsError> {
+        let share = clausters_core::ids::IdShare::new(index, of)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(JsIdSpaces(clausters_core::ids::IdSpaces::new(
+            js_shape(max_nodes, audio_buses, outputs, control_buses, buffers),
+            share,
+        )))
+    }
+
+    /// The spaces of an offline score: node ids never run out.
+    pub fn score(
+        max_nodes: u32,
+        audio_buses: u32,
+        outputs: u32,
+        control_buses: u32,
+        buffers: u32,
+    ) -> JsIdSpaces {
+        JsIdSpaces(clausters_core::ids::IdSpaces::score(js_shape(
+            max_nodes,
+            audio_buses,
+            outputs,
+            control_buses,
+            buffers,
+        )))
+    }
+
+    /// A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
+    /// `"buffers"`); throws when the space is exhausted.
+    pub fn alloc(&mut self, space: &str, width: u32) -> Result<f64, JsError> {
+        let space = js_space(space)?;
+        self.0
+            .alloc(space, width as usize)
+            .map(|id| id as f64)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Returns a run of `space` to the pool; throws on a double free.
+    pub fn release(&mut self, space: &str, first: f64, width: u32) -> Result<(), JsError> {
+        let space = js_space(space)?;
+        self.0
+            .release(space, first as i64, width as usize)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// A node the server reports gone, taken back if it was this client's.
+    #[wasm_bindgen(js_name = nodeEnded)]
+    pub fn node_ended(&mut self, node: f64) -> bool {
+        self.0.node_ended(node as i64)
+    }
+
+    /// Whether `id` falls inside this client's slice of `space`.
+    pub fn contains(&self, space: &str, id: f64) -> Result<bool, JsError> {
+        Ok(self.0.contains(js_space(space)?, id as i64))
+    }
+
+    /// How many ids of `space` are allocated now.
+    #[wasm_bindgen(js_name = inUse)]
+    pub fn in_use(&self, space: &str) -> Result<u32, JsError> {
+        Ok(self.0.in_use(js_space(space)?) as u32)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn js_shape(
+    max_nodes: u32,
+    audio_buses: u32,
+    outputs: u32,
+    control_buses: u32,
+    buffers: u32,
+) -> clausters_core::ids::ServerShape {
+    clausters_core::ids::ServerShape {
+        max_nodes: max_nodes as usize,
+        audio_buses: audio_buses as usize,
+        outputs: outputs as usize,
+        control_buses: control_buses as usize,
+        buffers: buffers as usize,
+    }
+}
+
+/// The `[base, span]` of share `index` of `of` within `span` ids at `base`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = shareOf)]
+pub fn share_of(base: f64, span: u32, index: u32, of: u32) -> Result<Vec<f64>, JsError> {
+    let share =
+        clausters_core::ids::IdShare::new(index, of).map_err(|e| JsError::new(&e.to_string()))?;
+    let (first, width) = clausters_core::ids::share_of(base as i64, span as usize, share);
+    Ok(vec![first as f64, width as f64])
+}
+
 // ---- the widget-id table: an id that names what it draws ----
 //
 // The GUI namespace's other door. A leased id changes on every redraw, so
