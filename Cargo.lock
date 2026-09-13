@@ -237,6 +237,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-apps"
+version = "0.10.0"
+dependencies = [
+ "clausters-core",
+ "clausters-document",
+ "clausters-editing",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "clausters-core"
 version = "0.10.0"
 dependencies = [
@@ -253,6 +264,7 @@ dependencies = [
 name = "clausters-core-web"
 version = "0.10.0"
 dependencies = [
+ "clausters-apps",
  "clausters-core",
  "clausters-document",
  "clausters-editing",
@@ -286,6 +298,7 @@ dependencies = [
 name = "clausters-ffi"
 version = "0.10.0"
 dependencies = [
+ "clausters-apps",
  "clausters-core",
  "clausters-document",
  "clausters-editing",

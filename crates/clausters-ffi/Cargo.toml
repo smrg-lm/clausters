@@ -32,6 +32,10 @@ clausters-document = { path = "../clausters-document" }
 # reason the document is -- a client that had to re-derive one would be a client
 # that draws the same curve differently.
 clausters-editing = { path = "../clausters-editing" }
+# The applications over the document: the window an editor opens and what it
+# answers. Non-optional for the projections' reason -- a client that composed
+# its own window would be an editor the host and the other client do not have.
+clausters-apps = { path = "../clausters-apps" }
 # The native half of the notation layer (libverovio); `verovio` only.
 clausters-notation = { path = "../clausters-notation", optional = true }
 # `derive`, for the few request objects this surface parses itself -- an entry

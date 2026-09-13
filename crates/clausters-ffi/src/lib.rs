@@ -29,6 +29,7 @@ use clausters_core::rng::{Rng, WhiteNoise};
 use clausters_core::tempoclock::{self, Scheduler};
 use clausters_core::window::Window;
 
+mod apps;
 mod builtins;
 mod bundle;
 mod clocksync;
@@ -389,7 +390,13 @@ pub use time::*;
 /// so a client can ask what format the crate writes instead of only knowing.
 /// **Breaking**: a caller of the four is a caller of symbols that no longer
 /// exist.
-pub const CORE_ABI_VERSION: u32 = 55;
+/// **v56 an editor's window is one composition.** `clausters_apps_multitrack_*`
+/// is the first door of the applications crate: the window the multitrack
+/// editor opens -- the time ruler above the piece, the piece, the transport row
+/// -- and the props any widget of it is corrected with. Each client composed it
+/// for itself and the standalone host composed a third, which had no ruler and
+/// no transport at all. **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 56;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

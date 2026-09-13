@@ -2,6 +2,7 @@
 # C0: the server crate is the workspace root (all existing paths stay put);
 # the shared native core and its C ABI live under `crates/`. See clients/python/PLAN.md.
 members = [
+    "crates/clausters-apps",
     "crates/clausters-core",
     "crates/clausters-core-web",
     "crates/clausters-document",

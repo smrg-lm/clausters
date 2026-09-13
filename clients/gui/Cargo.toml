@@ -96,6 +96,10 @@ clausters-document = { path = "../../crates/clausters-document" }
 # one every client binds, which is what makes a standalone editor this host
 # driven by itself rather than a fourth implementation of the picture.
 clausters-editing = { path = "../../crates/clausters-editing" }
+# The applications: the window an editor opens. The host links the one both
+# clients bind, so a session opened here is the editor a script opens rather
+# than a composition of the host's own.
+clausters-apps = { path = "../../crates/clausters-apps" }
 # The full server crate, linked ONLY under the `standalone` feature for the
 # in-process embedded server (`host::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so

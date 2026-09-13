@@ -743,7 +743,10 @@ pub fn intake_value(
 }
 
 /// The instance plan's source table as the buffer question this crate asks.
-fn table(sources: &Value) -> HashMap<SourceId, i64> {
+///
+/// Public because an application reads the same table off the same request: a
+/// window over a piece is drawn from the buffers the piece is played from.
+pub fn table(sources: &Value) -> HashMap<SourceId, i64> {
     serde_json::from_value::<HashMap<String, SourceInfo>>(sources.clone())
         .unwrap_or_default()
         .into_iter()

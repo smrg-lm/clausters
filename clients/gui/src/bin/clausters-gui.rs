@@ -724,41 +724,71 @@ fn run_session(
         None => format!("{} (read-only: no --save-to)", name(path)),
     };
     let def_id = 1;
-    // **The picture comes from whichever description the file carries.** A
-    // session written today is a piece with an empty tree; one written before
-    // the turn is the other. Both draw the same window, because the widget
-    // takes lanes and clips and does not care which walk produced them.
     let mut owner = owner.with_takes(load.takes.clone());
-    let shown = owner.draws_piece().then(|| owner.shown());
-    // The ruler is told the piece's own map, so its beats are labelled where
-    // they actually fall rather than at the tempo that held at bar one. Only
-    // the marks move: the boxes were already placed through the same map.
-    let tempo_map = owner.draws_piece().then(|| {
-        serde_json::to_value(owner.piece_look().tempo.breakpoints())
-            .unwrap_or(serde_json::Value::Null)
-    });
-    let drawn = tree::draw_ruled(
-        &owner.document,
-        &tree::Look {
-            // Past the window's own id: a GuiDef's id *is* its root widget's,
-            // so a tree numbering from 1 beside a def 1 collides and the
-            // registry drops the whole subtree -- which is an empty window and
-            // one line in the log.
-            first_id: def_id + 1,
-            takes: Some(&load.takes),
-            ..tree::Look::default()
-        },
-        &title,
-        shown,
-        tempo_map,
-    );
-    // The take editors are bound one by one -- each is a widget drawing a node
-    // -- and the piece is bound once: the multitrack names its lanes and clips
-    // by the nodes' own numbers, so there is nothing per clip to record.
-    for bound in &drawn.bindings {
-        owner.bind(bound.widget, bound.node);
-    }
-    owner.bind_multitrack(drawn.multitrack);
+    // **A piece opens in the multitrack editor's own window**, the one a script
+    // and a page open: the ruler above the piece, the piece, the transport row.
+    // It is the applications crate's, so this host composes nothing of its own
+    // for it. The ids start past the window's own: a GuiDef's id *is* its root
+    // widget's, so a child numbered 1 beside a def 1 collides and the registry
+    // drops the whole subtree -- which is an empty window and one line in the
+    // log.
+    //
+    // A session written before the turn is a tree rather than a piece, and it
+    // still draws through the tree's own walk, with a take editor per source
+    // under the tracks.
+    let (def, drawn_clips, drawn_lanes, editors) = if owner.draws_piece() {
+        use clausters_apps::multitrack::{self as app, Transport, TransportIds};
+        let piece = owner.piece_look();
+        let look = piece.projection();
+        let window = app::Window {
+            piece: &owner.piece,
+            look: &look,
+            widget: def_id + 1,
+            ruler: def_id + 2,
+            link: None,
+            cursor: None,
+            meters: &[],
+            transport: Transport::Numbered(TransportIds {
+                row: def_id + 3,
+                rewind: def_id + 4,
+                play: def_id + 5,
+                stop: def_id + 6,
+                clock: def_id + 7,
+            }),
+            title: &title,
+            size: (1000, 640),
+        };
+        let def = app::window(&window);
+        let shown = owner.shown();
+        let counts = (shown.clips.len(), shown.lanes.len());
+        owner.bind_multitrack(def_id + 1);
+        (def, counts.0, counts.1, 0)
+    } else {
+        let drawn = tree::draw(
+            &owner.document,
+            &tree::Look {
+                first_id: def_id + 1,
+                takes: Some(&load.takes),
+                ..tree::Look::default()
+            },
+            &title,
+        );
+        // The take editors are bound one by one -- each is a widget drawing a
+        // node -- and the piece is bound once: the multitrack names its lanes
+        // and clips by the nodes' own numbers, so there is nothing per clip to
+        // record.
+        for bound in &drawn.bindings {
+            owner.bind(bound.widget, bound.node);
+        }
+        owner.bind_multitrack(drawn.multitrack);
+        let editors = drawn.bindings.len();
+        (
+            drawn.def,
+            drawn.piece.clips.len(),
+            drawn.piece.lanes.len(),
+            editors,
+        )
+    };
 
     // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
     // and it writes only where `--save-to` named a file, since overwriting what
@@ -776,7 +806,7 @@ fn run_session(
     host.handle_packet(
         OscPacket::Message(OscMessage {
             addr: "/gui_def".into(),
-            args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
         }),
         origin,
     );
@@ -785,11 +815,8 @@ fn run_session(
     // hand presses play because the governed group is created stopped.
     let readers = host.sound_piece();
     tracing::info!(
-        "session: opened {path} — {} clip(s) on {} lane(s), {} take editor(s), \
-         {readers} reader(s)",
-        drawn.piece.clips.len(),
-        drawn.piece.lanes.len(),
-        drawn.bindings.len(),
+        "session: opened {path} — {drawn_clips} clip(s) on {drawn_lanes} lane(s), \
+         {editors} take editor(s), {readers} reader(s)",
     );
     match save_to {
         Some(out) => tracing::info!("session: Ctrl+S writes {out}"),

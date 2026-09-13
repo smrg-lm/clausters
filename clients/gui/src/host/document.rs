@@ -1570,22 +1570,13 @@ mod window_verb_tests {
         let doc = Document::new(aggregate(1, Value::Null, Vec::new()));
         let mut owner = Owner::new(doc).with_units_per_beat(100.0);
         owner.piece = piece;
-        let drawn = super::tree::draw_shown(
-            &owner.document,
-            &super::tree::Look {
-                first_id: def_id + 1,
-                units_per_beat: 100.0,
-                ..super::tree::Look::default()
-            },
-            "t",
-            Some(owner.shown()),
-        );
-        owner.bind_multitrack(drawn.multitrack);
+        let (def, view) = composed(&owner, def_id);
+        owner.bind_multitrack(view);
         let mut host = Host::new();
         host.handle_packet(
             crate::host::OscPacket::Message(crate::host::OscMessage {
                 addr: "/gui_def".into(),
-                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
             }),
             crate::host::ClientId::Udp(std::net::SocketAddr::from((
                 std::net::Ipv4Addr::LOCALHOST,
@@ -1593,7 +1584,53 @@ mod window_verb_tests {
             ))),
         );
         host.owner = Some(owner);
-        (host, def_id, drawn.multitrack)
+        (host, def_id, view)
+    }
+
+    /// **The multitrack editor's own window** over the owner's piece, numbered
+    /// from past `def_id` the way `--session` numbers it, and the id of the
+    /// piece's widget in it.
+    fn composed(owner: &Owner, def_id: i32) -> (Value, i32) {
+        use clausters_apps::multitrack::{self as app, Transport, TransportIds};
+        let look = owner.piece_look();
+        let projection = look.projection();
+        let def = app::window(&app::Window {
+            piece: &owner.piece,
+            look: &projection,
+            widget: def_id + 1,
+            ruler: def_id + 2,
+            link: None,
+            cursor: None,
+            meters: &[],
+            transport: Transport::Numbered(TransportIds {
+                row: def_id + 3,
+                rewind: def_id + 4,
+                play: def_id + 5,
+                stop: def_id + 6,
+                clock: def_id + 7,
+            }),
+            title: "t",
+            size: (1000, 640),
+        });
+        (def, def_id + 1)
+    }
+
+    /// **A session host opens the editor a script opens**: the ruler above the
+    /// piece and the transport row under it, every widget of it registered —
+    /// a composition of the host's own had neither.
+    #[test]
+    fn a_piece_opens_in_the_multitrack_editors_own_window() {
+        let (host, def_id, view) =
+            with_piece(clausters_document::multitrack::Multitrack::default());
+        let tree = host.window_def(def_id).expect("the window is defined");
+        assert!(tree.find(view).is_some(), "the piece");
+        for widget in 3..=7 {
+            assert!(
+                tree.find(def_id + widget - 1).is_some(),
+                "the ruler and the transport row, widget {}",
+                def_id + widget - 1
+            );
+        }
     }
 
     /// A box on a lane, a window onto source 1.
@@ -2237,24 +2274,14 @@ mod window_verb_tests {
         assert!(owner.draws_piece(), "the file carries a piece and no tree");
 
         let def_id = 1;
-        let drawn = super::tree::draw_shown(
-            &owner.document,
-            &super::tree::Look {
-                first_id: def_id + 1,
-                units_per_beat: 100.0,
-                ..super::tree::Look::default()
-            },
-            "t",
-            Some(owner.shown()),
-        );
-        let view = drawn.multitrack;
+        let (def, view) = composed(&owner, def_id);
         let mut owner = owner;
         owner.bind_multitrack(view);
         let mut host = Host::new();
         host.handle_packet(
             crate::host::OscPacket::Message(crate::host::OscMessage {
                 addr: "/gui_def".into(),
-                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
             }),
             crate::host::ClientId::Udp(std::net::SocketAddr::from((
                 std::net::Ipv4Addr::LOCALHOST,

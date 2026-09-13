@@ -376,6 +376,19 @@ sits over it.
 | `clausters_editing_multitrack_props` | `multitrack_props` | `idiom` — a piece as the props the multitrack widget is drawn with: the rows, the boxes, the automations over both, their break-points, which are hidden and which boxes loop. Both take the piece and the source table as JSON; C sizes and fills a buffer where wasm returns the string. It takes **the same source table the instance plan does** rather than a second one shaped for drawing — what a box is drawn from and what it is played from are the same samples |
 | `clausters_editing_points_props` | `points_props` | `idiom` — the props a break-point curve is drawn with. C sizes and fills a JSON buffer and takes the kept axis as a flag plus two `f64`s; wasm returns the JSON string and takes the kept axis as optional arguments — the same split `clausters_core_curve_axis` makes, and for the same reason |
 
+## The applications
+
+What an editor opens and what it answers, out of `clausters-apps`. A projection
+is a function of one structure; an application is what puts a structure beside
+the controls that act on it — the window, and the props every widget of it is
+corrected with. Each client composed that window for itself and the standalone
+host composed a third, so one editor looked three ways.
+
+| C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
+|---|---|---|
+| `clausters_apps_multitrack_window` | `apps_multitrack_window` | `idiom` — **the multitrack editor's window**, as a GuiDef rooted at a `window` node: the time ruler above the piece, the piece, and the transport row. One JSON request carries the projection's piece, rate, default tempo and source table, and the window's ids, cursor, meters and transport; C sizes and fills a buffer where wasm returns the string. A script's own widgets are not in it: they are the client's objects, and a client appends them |
+| `clausters_apps_multitrack_props` | `apps_multitrack_props` | `idiom` — **everything one widget of that window should be drawing**, for a correction: the ruler's cursor, or the piece's whole props. The same request, with `for` naming the widget |
+
 ## OSC
 
 | C ABI | wasm | Note |

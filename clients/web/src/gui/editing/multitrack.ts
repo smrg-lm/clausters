@@ -30,11 +30,8 @@
 
 import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, domainEdit, editingStitch } from "../../document.ts";
-import {
-    Multitrack, multitrackNames as names, multitrackProps,
-} from "../../multitrack.ts";
+import { Multitrack, multitrackNames as names } from "../../multitrack.ts";
 import type { Region } from "../../multitrack.ts";
-import { button, label, layout, node, timeruler, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
@@ -42,7 +39,9 @@ import type { Server } from "../../defs/server/index.ts";
 import { Buffer, type Part } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
-import { editingDefaultBpm } from "../../core/clausters_core_web.js";
+import {
+    appsMultitrackProps, appsMultitrackWindow, editingDefaultBpm,
+} from "../../core/clausters_core_web.js";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
@@ -444,30 +443,6 @@ export class MultitrackDomain extends Domain<Multitrack> {
     }
 }
 /**
- * The position cursor in timeline samples: where the editor last saw it placed,
- * and the top of the piece until a hand places one.
- */
-function cursorOf(editor: Editor<Multitrack>): number {
-    return editor.beatsToUnits(editor.cursor ?? 0.0);
-}
-
-/**
- * The playback's meter buses as the widget's flat quadruples: the lane, the
- * first bus of the level run, the first of the mark run, and how many channels
- * each run is.
- */
-function meterBuses(editor: Editor<Multitrack>): unknown[] {
-    const playback = (editor as { playback?: { meters?: Map<number, [number, number]> } })
-        .playback;
-    if (playback?.meters === undefined) return [];
-    const out: unknown[] = [];
-    for (const [track, [bus, channels]] of playback.meters) {
-        out.push(String(track), bus, bus + channels, channels);
-    }
-    return out;
-}
-
-/**
  * One `multitrack` widget: the whole piece, in one of them.
  *
  * A row per track and a box per region — the crate's own mapping, crossed to
@@ -537,57 +512,59 @@ export class MultitrackView extends View<Multitrack> {
     }
 
     build(editor: Editor<Multitrack>): GuiNode {
-        // **The props are already what the wire takes**, so the node is made
-        // from them directly rather than through `guidef.multitrack`, whose
-        // `lanes`/`clips` are the *tuples* a page types and which would flatten
-        // an already-flat list a second time — one row per number. The flat form
-        // is the one `props` has to answer in anyway, since a correction rides
-        // as a `/gui_set`.
-        const wid = this.widget(editor, "multitrack", editor.structure);
+        // **The window is the application's**, composed once in the shared
+        // crate (`appsMultitrackWindow`): the ruler above the piece, the piece,
+        // and the transport row. What is left here is the two ids a hand's
+        // gestures come back on.
+        //
         // **The ruler is named like any other widget of this picture**, so what
         // a hand does on it comes back to this editor: the position cursor is
         // placed on the ruler and nowhere else, and an unnamed strip would put
         // that one gesture outside the only object that could hear it.
+        const wid = this.widget(editor, "multitrack", editor.structure);
         const rid = this.widget(editor, "ruler", editor.structure, "ruler");
         this.ruler = rid;
         this.piece = wid;
-        return guiWindow(
-            { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            timeruler({
-                id: rid,
-                link: this.group(wid),
-                ruler: "beats",
-                cursor: cursorOf(editor),
-                sampleRate: this.bridge.rate,
-                tempoMap: this.bridge.tempo.dump(),
-            }),
-            node("multitrack", { id: wid, ...this.props(editor, wid) }),
-            ...(this.transport ? this.chrome() : []),
-            ...editor.extra,
-        );
+        const tree = JSON.parse(
+            appsMultitrackWindow(JSON.stringify(this.request(editor, wid))),
+        ) as GuiNode;
+        this.rememberNames(editor);
+        // **A page's own widgets are its objects**, and a widget built over a
+        // live source keeps a binding no JSON carries — so they are appended
+        // here rather than composed in the crate.
+        tree.children = [...(tree.children ?? []), ...editor.extra];
+        return tree;
     }
 
     /**
-     * The transport row: play/pause, stop, and where the piece is.
-     *
-     * Named rather than numbered, because these are the only widgets of this
-     * window a *hand* addresses and a handler is hung on a name. The names are
-     * the piece's own (`piece_*`), so a page's `extra` may carry anything it
-     * likes beside them.
+     * What the crate composes the window, or corrects a widget of it, from: the
+     * piece and its axis, the two ids, and what a running playback adds.
      */
-    chrome(): GuiNode[] {
-        // **Rewind is not stop.** Stop goes back to the *mark* — which is what
-        // tells it from pause — and the mark is wherever a hand last put it, so
-        // with nothing else the way back to the top is finding beat zero on
-        // screen and clicking it. Rewind puts the mark there, which is a
-        // statement about the cursor and not about the transport.
-        return [layout(
-            { flow: "row", h: 40.0, gap: 6.0 },
-            button({ label: "|<", name: REWIND, w: 44.0 }),
-            button({ label: "play/pause", name: PLAY, w: 110.0 }),
-            button({ label: "stop", name: STOP, w: 110.0 }),
-            label("", { name: CLOCK, textSize: 2.0, weight: 1.0 }),
-        )];
+    private request(editor: Editor<Multitrack>, widgetId: number): Record<string, unknown> {
+        const playback = (editor as { playback?: { meters?: Map<number, [number, number]> } })
+            .playback;
+        const meters: { track: number; bus: number; channels: number }[] = [];
+        for (const [track, [bus, channels]] of playback?.meters ?? []) {
+            meters.push({ track, bus, channels });
+        }
+        return {
+            piece: editor.structure.write(),
+            rate: this.bridge.rate,
+            defaultBpm: this.bridge.bpm,
+            sources: this.bridge.sources.table(),
+            widget: this.piece ?? widgetId,
+            ruler: this.ruler ?? -1,
+            link: this.link ?? null,
+            // In the editor's own units, beats, and `null` until a hand places
+            // one: a piece opens with the reader at the top.
+            cursor: editor.cursor ?? null,
+            meters,
+            transport: this.transport,
+            title: editor.title,
+            w: editor.size[0],
+            h: editor.size[1],
+            for: widgetId,
+        };
     }
 
     /**
@@ -603,51 +580,18 @@ export class MultitrackView extends View<Multitrack> {
     }
 
     override props(editor: Editor<Multitrack>, widgetId: number): Record<string, PropValue> {
-        if (widgetId === this.ruler) {
-            // The strip's own state, which is the axis' and nothing else: the
-            // piece's payloads are the piece widget's.
-            return { cursor: cursorOf(editor) };
-        }
-        const props: Record<string, PropValue> = {
-            // **The piece's own props are the projection's**: the rows, the
-            // boxes, the automations over both, their break-points, which of
-            // them are hidden and which boxes loop. All of it is a function of
-            // the piece and of where a beat lands, so all of it is written once
-            // and every client and the standalone host ask the same question.
-            ...(JSON.parse(
-                multitrackProps(
-                    JSON.stringify(editor.structure.write()),
-                    this.bridge.rate,
-                    this.bridge.bpm,
-                    JSON.stringify(this.bridge.sources.table()),
-                ),
-            ) as Record<string, PropValue>),
-            // **Where each track's level is read from**: the control buses its
-            // meters write, which the host reads every frame straight out of
-            // the shared segment. A piece with no playback names none, and a
-            // header with nothing to read draws no strip.
-            meters: meterBuses(editor),
-            weight: 1.0,
-            ruler: "beats",
-            sample_rate: this.bridge.rate,
-            // **The window is the reader's.** In an editor a content change is
-            // mostly the reader's own edit, so the axis does not re-frame itself
-            // on one; the extent is still registered.
-            autofit: false,
-            // The head is anchored at 0 because the counter it sweeps from is
-            // already the piece's position.
-            playhead_at: 0.0,
-            // The piece's own map rules the beats, so the labels and the boxes
-            // cannot disagree.
-            tempo_map: this.bridge.tempo.dump(),
-            // **A piece opens with the reader at the top.** The position cursor
-            // is where a playback starts, so a piece that stated none would open
-            // with nowhere to play from; and it is reported from the editor's
-            // own copy rather than fixed at zero, or every resync would drag the
-            // mark back to the start.
-            cursor: cursorOf(editor),
-        };
-        props.link = this.group(widgetId);
+        // **What a widget of this window draws is the application's**
+        // (`appsMultitrackProps`): the ruler's cursor, or the piece's whole
+        // props — the projection's rows, boxes and curves, and what the window
+        // adds to them.
+        const props = JSON.parse(
+            appsMultitrackProps(JSON.stringify(this.request(editor, widgetId))),
+        ) as Record<string, PropValue>;
+        if (widgetId !== this.ruler) this.rememberNames(editor);
+        return props;
+    }
+
+    private rememberNames(editor: Editor<Multitrack>): void {
         // **What the host was last told things are called.** The rows, the
         // boxes and the curves. A row or a box the
         // *host* made carries a word it minted (`track 1`, `white 2`); the id is
@@ -664,7 +608,6 @@ export class MultitrackView extends View<Multitrack> {
             new Set(named.boxes),
             new Set(named.curves),
         ];
-        return props;
     }
 }
 

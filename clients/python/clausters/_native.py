@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 55
+CORE_ABI_VERSION = 56
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -309,6 +309,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_names.restype = ctypes.c_size_t
+    lib.clausters_apps_multitrack_window.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_multitrack_window.restype = ctypes.c_size_t
+    lib.clausters_apps_multitrack_props.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_multitrack_props.restype = ctypes.c_size_t
     lib.clausters_session_format.restype = ctypes.c_uint32
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
@@ -1665,6 +1673,38 @@ def multitrack_names(piece: dict) -> dict:
     raw = size_then_fill(_lib.clausters_editing_multitrack_names,
                          as_u8(body), len(body))
     return json.loads(raw) if raw else {"rows": [], "boxes": [], "curves": []}
+
+
+def apps_multitrack_window(request: dict) -> dict:
+    """**The multitrack editor's window**, as a GuiDef rooted at a ``window``
+    node (`clausters_apps_multitrack_window`): the time ruler above the piece,
+    the piece, and the transport row when ``request["transport"]`` asks for it.
+
+    ``request`` carries the projection's ``piece``, ``rate``, ``defaultBpm`` and
+    ``sources``, and the window's ``widget`` and ``ruler`` ids, ``link``,
+    ``cursor`` (in beats, or ``None``), ``meters`` (``{"track", "bus",
+    "channels"}`` rows), ``transport``, ``title``, ``w`` and ``h``.
+    """
+    _lib = lib()
+    body = json.dumps(request).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_apps_multitrack_window,
+                         as_u8(body), len(body))
+    return json.loads(raw) if raw else {}
+
+
+def apps_multitrack_props(request: dict) -> dict:
+    """**Everything one widget of the multitrack editor's window should be
+    drawing**, for a correction (`clausters_apps_multitrack_props`): the
+    ruler's cursor, or the piece's whole props.
+
+    ``request`` is the one `apps_multitrack_window` takes, with ``for`` naming
+    the widget.
+    """
+    _lib = lib()
+    body = json.dumps(request).encode("utf-8")
+    raw = size_then_fill(_lib.clausters_apps_multitrack_props,
+                         as_u8(body), len(body))
+    return json.loads(raw) if raw else {}
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":

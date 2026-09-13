@@ -1353,6 +1353,31 @@ pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources
     clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
 }
 
+/// JS face: **the multitrack editor's window**, as a GuiDef rooted at a
+/// `window` node, in a JSON string: the time ruler above the piece, the piece,
+/// and the transport row.
+///
+/// `request` is the JSON object `clausters_apps::multitrack::window_json`
+/// documents — the projection's `piece`, `rate`, `defaultBpm` and `sources`,
+/// and the window's ids, `link`, `cursor`, `meters`, `transport`, `title`, `w`
+/// and `h`. `{}` for a request that names no piece.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = appsMultitrackWindow)]
+pub fn apps_multitrack_window(request: &str) -> String {
+    clausters_apps::multitrack::window_json(request)
+}
+
+/// JS face: **everything one widget of the multitrack editor's window should be
+/// drawing**, for a correction — the ruler's cursor, or the piece's whole props.
+///
+/// `request` is the one `appsMultitrackWindow` takes, with `for` naming the
+/// widget.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = appsMultitrackProps)]
+pub fn apps_multitrack_props(request: &str) -> String {
+    clausters_apps::multitrack::props_json(request)
+}
+
 /// JS face: **what a gesture means, in a structure's own vocabulary** — the
 /// edit ingestion, as a JSON string.
 ///

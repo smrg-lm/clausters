@@ -917,6 +917,27 @@ export class WidgetIds {
 }
 
 /**
+ * JS face: **everything one widget of the multitrack editor's window should be
+ * drawing**, for a correction — the ruler's cursor, or the piece's whole props.
+ *
+ * `request` is the one `appsMultitrackWindow` takes, with `for` naming the
+ * widget.
+ */
+export function appsMultitrackProps(request: string): string;
+
+/**
+ * JS face: **the multitrack editor's window**, as a GuiDef rooted at a
+ * `window` node, in a JSON string: the time ruler above the piece, the piece,
+ * and the transport row.
+ *
+ * `request` is the JSON object `clausters_apps::multitrack::window_json`
+ * documents — the projection's `piece`, `rate`, `defaultBpm` and `sources`,
+ * and the window's ids, `link`, `cursor`, `meters`, `transport`, `title`, `w`
+ * and `h`. `{}` for a request that names no piece.
+ */
+export function appsMultitrackWindow(request: string): string;
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1516,6 +1537,8 @@ export interface InitOutput {
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
+    readonly appsMultitrackProps: (a: number, b: number) => [number, number];
+    readonly appsMultitrackWindow: (a: number, b: number) => [number, number];
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -1726,8 +1749,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

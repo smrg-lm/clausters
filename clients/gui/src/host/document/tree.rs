@@ -299,36 +299,11 @@ pub fn piece(document: &Document, look: &Look<'_>) -> Piece {
 /// lane change say *the clips are now these*, and nothing has to say which of
 /// them the hand touched. It is the same shape a `pianoroll` has always had,
 /// and the reason this driver had a bug the roll never could.
-pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
-    draw_shown(document, look, title, None)
-}
-
-/// The same window over a picture somebody else derived — what a host drawing
-/// the **piece** hands in, so the widget, the ruler, the editors and the
-/// numbering are one function and not two that have to be kept alike.
-pub fn draw_shown(
-    document: &Document,
-    look: &Look<'_>,
-    title: &str,
-    shown: Option<Piece>,
-) -> Drawn {
-    draw_ruled(document, look, title, shown, None)
-}
-
-/// The same window, told the piece's **tempo map** — what rules its beat ruler.
 ///
-/// Separate from the scales the boxes are placed with because it answers a
-/// different question: a client converts a placement through the map before it
-/// sends one, so the clips are already where they belong and only the *marks*
-/// move. Without it a piece whose tempo changes is ruled by whatever tempo held
-/// at its start, and the labels disagree with the boxes drawn beside them.
-pub fn draw_ruled(
-    document: &Document,
-    look: &Look<'_>,
-    title: &str,
-    shown: Option<Piece>,
-    tempo_map: Option<Value>,
-) -> Drawn {
+/// It draws a document written **before the turn**, whose description is the
+/// tree. A piece opens in the multitrack editor's own window instead, which is
+/// the applications crate's (`clausters_apps::multitrack::window`).
+pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     let mut ids = Ids {
         next: look.first_id,
     };
@@ -337,10 +312,7 @@ pub fn draw_ruled(
         content: Some(&document.content),
         ..*look
     };
-    let piece = match shown {
-        Some(shown) => shown,
-        None => piece(document, look),
-    };
+    let piece = piece(document, look);
     let multitrack = ids.take();
     let mut props = Map::new();
     props.insert("id".into(), json!(multitrack));
@@ -349,11 +321,6 @@ pub fn draw_ruled(
     props.insert("ruler".into(), json!("beats"));
     props.insert("sample_rate".into(), json!(look.sample_rate));
     props.insert("tempo".into(), json!(look.tempo));
-    // Where the piece states a map it wins over the single `tempo` above, and
-    // it is what makes a beat ruler right on a piece whose tempo moves.
-    if let Some(map) = tempo_map {
-        props.insert("tempo_map".into(), map);
-    }
     if look.quant > 0.0 {
         props.insert("snap".into(), json!(look.quant * look.units_per_beat));
     }

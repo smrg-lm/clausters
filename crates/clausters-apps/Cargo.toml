@@ -1,0 +1,21 @@
+[package]
+name = "clausters-apps"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The applications over the document -- the multitrack editor today, the audio and score editors after it: the window each one opens and what it answers, written once, run by the GUI host and bound by every client."
+
+[dependencies]
+# The numeric rules an application composes with: where a beat lands on the
+# sample axis, rounded the way every client rounds it.
+clausters-core = { path = "../clausters-core" }
+# The model an application edits.
+clausters-document = { path = "../clausters-document" }
+# The projections an application is built out of: the props a structure is drawn
+# with, the payloads a gesture becomes, what makes a server sound it. An
+# application calls them and restates none.
+clausters-editing = { path = "../clausters-editing" }
+# Flat data at the boundary, as in every crate a client binds: a window is a
+# GuiDef, and a GuiDef is JSON.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

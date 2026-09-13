@@ -898,6 +898,32 @@ it would be a fourth place for it to live. The track that fills the crate out is
 `crates/clausters-document/PLAN.md`, "The projections: one implementation per
 question, whoever asks it".
 
+### The applications: what an editor opens
+
+`crates/clausters-apps` sits over the projections and holds the **applications**
+the project is built around — the multitrack editor today, the audio and score
+editors after it. A projection is a function of one structure; an application is
+what puts a structure beside the controls that act on it, and what each thing a
+hand does in that window is answered with.
+
+**An application draws nothing.** It speaks the GUI protocol like any client: a
+window is a GuiDef, a correction is props, and the host draws them and reports
+the gestures back. That is what lets one application run in three places — a
+script and a page bind it (`clausters_apps_*` / `apps*`) and carry its answers
+over their socket, and a standalone host links it and hands its answers to
+itself. It never depends on the host, because a client cannot link a renderer.
+
+What it composes today is the multitrack editor's window
+(`clausters_apps::multitrack::window`): a time ruler above the piece on the
+piece's own axis, the `multitrack` widget, and — when the piece can be heard —
+the transport row, whose widgets are addressed by name. The ids are the caller's:
+both clients number id-less widgets as they send a window, and a host composing
+one for itself numbers the row through `Transport::Numbered`. A script's own
+widgets are appended by the client, since a widget over a live source keeps a
+binding no JSON carries. The rest of the editor — the conversation, the history,
+the transport verbs, a minted source, entering a box — moves here in the order
+`crates/clausters-document/PLAN.md` gives for the applications crate.
+
 ### Playback time in a session: read, never computed
 
 A standalone host that edits a session sounds its takes through a monitor of its own, and the rule that shapes it is the server's: **the server is the only thing that manages playback time.** The monitor's readers follow the transport's position (`TransportPos` driving a `BufRd`) inside a group the host binds with `/transport_group`, so the three things an editor wants are transport commands rather than properties of a def — seeking is `/transport_locateSample`, looping a selection is `/transport_loop`, and pausing is `/transport_stop`, which freezes the readers with their state intact so playing again *continues* -- all of it but the smoothing, which is re-primed on the thaw so a fader under an automation comes back where the automation is rather than gliding there from where the music stopped (see [`schemas.md`](schemas.md)). The host computes no time at all: it sends a locate and reads a position back.

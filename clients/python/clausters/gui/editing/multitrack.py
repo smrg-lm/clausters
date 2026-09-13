@@ -388,52 +388,53 @@ class MultitrackView(View):
         self.transport = bool(transport)
 
     def build(self, editor) -> dict:
-        from ..guidef import node, timeruler, window
-
-        # **The props are already what the wire takes**, so the node is made
-        # from them directly rather than through `clausters.gui.guidef.multitrack`,
-        # whose `lanes`/`clips` are the *tuples* a script types and which would
-        # flatten an already-flat list a second time — one row per number. The
-        # flat form is the one `props` has to answer in anyway, since a
-        # correction rides as a `/gui_set`.
-        wid = self.widget(editor, "multitrack", editor.structure)
+        # **The window is the application's**, composed once in the shared
+        # crate (`clausters._native.apps_multitrack_window`): the ruler above
+        # the piece, the piece, and the transport row. What is left here is the
+        # two ids a hand's gestures come back on.
+        #
         # **The ruler is named like any other widget of this picture**, so what
         # a hand does on it comes back to this editor: the position cursor is
         # placed on the ruler and nowhere else, and an unnamed strip would put
         # that one gesture outside the only object that could hear it.
+        wid = self.widget(editor, "multitrack", editor.structure)
         rid = self.widget(editor, "ruler", editor.structure, "ruler")
         self.ruler = rid
         self.piece = wid
-        return window(timeruler(id=rid, link=self.group(wid), ruler="beats",
-                                cursor=_cursor(editor),
-                                sample_rate=self.bridge.rate,
-                                tempo_map=self.bridge.tempo.dump()),
-                      node("multitrack", id=wid, **self.props(editor, wid)),
-                      *(self.chrome() if self.transport else ()),
-                      *editor.extra,
-                      title=editor.title, w=editor.size[0], h=editor.size[1],
-                      layout="col")
+        tree = _native.apps_multitrack_window(self._request(editor, wid))
+        self._remember_names(editor)
+        # **A script's own widgets are its objects**, and a widget built over a
+        # live source keeps a binding no JSON carries -- so they are appended
+        # here rather than composed in the crate.
+        tree["children"] = [*tree.get("children", ()), *editor.extra]
+        return tree
 
-    def chrome(self) -> tuple:
-        """The transport row: rewind, play/pause, stop, and where the piece is.
-
-        Named rather than numbered, because these are the only widgets of this
-        window a *hand* addresses and a name is what a handler is hung on. The
-        names are the piece's own (``piece_*``), so a script's ``extra`` may
-        carry anything it likes beside them.
-        """
-        from ..guidef import button, label, layout
-
-        # **Rewind is not stop.** Stop goes back to the *mark* -- which is
-        # what tells it from pause -- and the mark is wherever a hand last put
-        # it, so with nothing else the way back to the top is finding beat zero
-        # on screen and clicking it. Rewind puts the mark there, which is a
-        # statement about the cursor and not about the transport.
-        return (layout(button(label="|<", name=REWIND, w=44.0),
-                       button(label="play/pause", name=PLAY, w=110.0),
-                       button(label="stop", name=STOP, w=110.0),
-                       label("", name=CLOCK, text_size=2.0, weight=1.0),
-                       flow="row", h=40.0, gap=6.0),)
+    def _request(self, editor, widget_id: int) -> dict:
+        """What the crate composes the window, or corrects a widget of it,
+        from: the piece and its axis, the two ids, and what a running
+        playback adds."""
+        playback = getattr(editor, "playback", None)
+        meters = [] if playback is None else [
+            {"track": int(track), "bus": int(bus), "channels": int(channels)}
+            for track, (bus, channels) in playback.meters.items()]
+        return {
+            "piece": editor.structure.write(),
+            "rate": float(self.bridge.rate),
+            "defaultBpm": float(self.bridge.bpm),
+            "sources": {str(k): v for k, v in self.bridge.sources.table().items()},
+            "widget": int(self.piece if self.piece is not None else widget_id),
+            "ruler": int(self.ruler if self.ruler is not None else -1),
+            "link": self.link,
+            # In the editor's own units, beats, and `None` until a hand places
+            # one: a piece opens with the reader at the top.
+            "cursor": editor.cursor,
+            "meters": meters,
+            "transport": self.transport,
+            "title": editor.title,
+            "w": int(editor.size[0]),
+            "h": int(editor.size[1]),
+            "for": int(widget_id),
+        }
 
     def group(self, widget_id: int) -> int:
         """**The navigation group the piece and its ruler share.**
@@ -446,46 +447,16 @@ class MultitrackView(View):
         return widget_id if self.link is None else self.link
 
     def props(self, editor, widget_id: int) -> dict:
-        if widget_id == self.ruler:
-            # The strip's own state, which is the axis' and nothing else: the
-            # piece's payloads are the piece widget's.
-            return {"cursor": _cursor(editor)}
-        # **The piece's own props are the projection's**: the rows, the boxes,
-        # the automations over both, their break-points, which of them are
-        # hidden and which boxes loop. All of it is a function of the piece and
-        # of where a beat lands, so all of it is written once and every client
-        # and the standalone host ask the same question
-        # (`clausters._native.multitrack_props`).
-        props = {
-            **_native.multitrack_props(editor.structure.write(), self.bridge.rate,
-                                       self.bridge.bpm,
-                                       self.bridge.sources.table()),
-            # **Where each track's level is read from**: the control buses its
-            # meters write, which the host reads every frame straight out of the
-            # shared segment. A piece with no playback names none, and a header
-            # with nothing to read draws no strip.
-            "meters": _meters(editor),
-            "weight": 1.0,
-            "ruler": "beats",
-            "sample_rate": self.bridge.rate,
-            # **The window is the reader's.** In an editor a content change is
-            # mostly the reader's own edit, so the axis does not re-frame itself
-            # on one; the extent is still registered.
-            "autofit": False,
-            # The head is anchored at 0 because the counter it sweeps from is
-            # already the piece's position.
-            "playhead_at": 0.0,
-            # The piece's own map rules the beats, so the labels and the boxes
-            # cannot disagree.
-            "tempo_map": self.bridge.tempo.dump(),
-            # **A piece opens with the reader at the top.** The position cursor
-            # is where a playback starts, so a piece that stated none would open
-            # with nowhere to play from; and it is reported from the editor's
-            # own copy rather than fixed at zero, or every resync would drag the
-            # mark back to the start.
-            "cursor": _cursor(editor),
-        }
-        props["link"] = self.group(widget_id)
+        # **What a widget of this window draws is the application's**
+        # (`clausters._native.apps_multitrack_props`): the ruler's cursor, or
+        # the piece's whole props -- the projection's rows, boxes and curves,
+        # and what the window adds to them.
+        props = _native.apps_multitrack_props(self._request(editor, widget_id))
+        if widget_id != self.ruler:
+            self._remember_names(editor)
+        return props
+
+    def _remember_names(self, editor) -> None:
         #: **What the host was last told things are called.** The rows, the
         #: boxes and the curves, by name. A row or a box the *host* made carries
         #: a word it minted (``track 1``, ``white 2``); the id is the document's
@@ -499,27 +470,6 @@ class MultitrackView(View):
         named = _native.multitrack_names(editor.structure.write())
         self.told = (frozenset(named["rows"]), frozenset(named["boxes"]),
                      frozenset(named["curves"]))
-        return props
-
-
-def _cursor(editor) -> float:
-    """The position cursor in timeline samples: where the editor last saw it
-    placed, and the top of the piece until a hand places one."""
-    return editor.beats_to_units(editor.cursor if editor.cursor is not None else 0.0)
-
-
-
-def _meters(editor) -> list:
-    """The playback's meter buses as the widget's flat quadruples: ``lane``,
-    the first bus of the level run, the first of the mark run, and how many
-    channels each run is."""
-    playback = getattr(editor, "playback", None)
-    if playback is None:
-        return []
-    out = []
-    for track, (bus, channels) in playback.meters.items():
-        out += [str(track), int(bus), int(bus) + channels, channels]
-    return out
 
 
 class MultitrackEditor(Editor):
