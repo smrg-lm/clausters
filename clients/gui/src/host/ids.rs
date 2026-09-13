@@ -20,6 +20,7 @@
 use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 use clausters_core::osc::{OscMessage, OscType};
 
+use crate::host::instance::Leg;
 use crate::host::{Host, diag, play};
 
 impl Host {
@@ -96,28 +97,14 @@ impl Host {
     }
 
     /// **Every reply from the audio server passes here first**, from both
-    /// fronts: a node this host made that ended, the server's shape, and
-    /// whatever the piece's steps are waiting on. Anything else is not the
-    /// ids' and costs a match.
-    pub fn on_server_reply(&mut self, msg: &OscMessage) {
+    /// fronts, with the leg it came in on: a node this host made that ended,
+    /// the server's shape, and whatever the piece's steps are waiting on.
+    /// Anything else is not the ids' and costs a match.
+    pub fn on_server_reply(&mut self, from: Leg, msg: &OscMessage) {
         match msg.addr.as_str() {
             "/node_end" => {
                 if let Some(OscType::Int(node)) = msg.args.first() {
                     self.ids.node_ended(i64::from(*node));
-                }
-            }
-            // A join the session finished making: the player is pointed at it
-            // now, and not before, or it would map a buffer that is not there.
-            "/done" => {
-                if let [OscType::String(command), OscType::Int(bufnum), ..] = msg.args.as_slice()
-                    && command == "/buffer_stitch"
-                    && let Some(at) = self.stitching.iter().position(|b| b == bufnum)
-                {
-                    let bufnum = self.stitching.remove(at);
-                    self.send_to_player(OscMessage {
-                        addr: "/buffer_attach".into(),
-                        args: vec![OscType::Int(bufnum)],
-                    });
                 }
             }
             "/server_query.reply" => {
@@ -133,7 +120,7 @@ impl Host {
             }
             _ => {}
         }
-        self.piece_reply(msg);
+        self.piece_reply(from, msg);
     }
 }
 
@@ -172,9 +159,10 @@ mod tests {
         let mut host = Host::new();
         host.set_id_share(IdShare::new(1, 2).unwrap()).unwrap();
         let ints = |v: &[i32]| v.iter().map(|n| OscType::Int(*n)).collect::<Vec<_>>();
-        host.on_server_reply(&reply(ints(&[
-            512, 4096, 6, 64, 48000, 48000, 2, 2048, 128,
-        ])));
+        host.on_server_reply(
+            Leg::Server,
+            &reply(ints(&[512, 4096, 6, 64, 48000, 48000, 2, 2048, 128])),
+        );
         let shape = host.ids().shape();
         assert_eq!(
             (shape.outputs, shape.max_nodes, shape.buffers),
@@ -199,28 +187,10 @@ mod tests {
             addr: "/node_end".into(),
             args: vec![OscType::Int(n)],
         };
-        host.on_server_reply(&end(3));
+        host.on_server_reply(Leg::Server, &end(3));
         assert_eq!(host.ids().in_use(Space::Nodes), 1);
-        host.on_server_reply(&end(node));
+        host.on_server_reply(Leg::Server, &end(node));
         assert_eq!(host.ids().in_use(Space::Nodes), 0);
-    }
-
-    /// **A join the session made is attached once, when its stitch is done** —
-    /// and a `/done` for a buffer nobody is waiting on attaches nothing.
-    #[test]
-    fn a_stitch_done_in_the_session_is_attached_once() {
-        let mut host = Host::new();
-        host.stitching.push(9);
-        let done = |command: &str, bufnum: i32| OscMessage {
-            addr: "/done".into(),
-            args: vec![OscType::String(command.into()), OscType::Int(bufnum)],
-        };
-        host.on_server_reply(&done("/buffer_allocRead", 9));
-        assert_eq!(host.stitching, [9], "another command's done");
-        host.on_server_reply(&done("/buffer_stitch", 4));
-        assert_eq!(host.stitching, [9], "another buffer's stitch");
-        host.on_server_reply(&done("/buffer_stitch", 9));
-        assert!(host.stitching.is_empty(), "its own stitch releases it");
     }
 
     /// The governed group is allocated once, like any node, and bound once.

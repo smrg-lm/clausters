@@ -85,7 +85,10 @@ pub enum UserEvent {
     /// WebSocket connection `id` closed; its reply channel is dropped.
     WsDisconnected { id: u64 },
     /// One OSC reply from the audio server (the client leg): `/buffer_query.reply`, `/buffer_getRange.reply`.
-    ServerOsc { bytes: Vec<u8> },
+    ServerOsc {
+        leg: crate::host::instance::Leg,
+        bytes: Vec<u8>,
+    },
 }
 
 /// Runs the windowed host: spawn the transport thread(s), then own the winit
@@ -162,14 +165,23 @@ pub fn run(
     // A player apart from the server leg answers on a socket of its own, and
     // the piece's steps wait on what it says.
     let legs = [
-        host.server().and_then(|s| s.udp_socket()),
-        host.player_link().and_then(|s| s.udp_socket()),
+        (
+            crate::host::instance::Leg::Server,
+            host.server().and_then(|s| s.udp_socket()),
+        ),
+        (
+            crate::host::instance::Leg::Player,
+            host.player_link().and_then(|s| s.udp_socket()),
+        ),
     ];
-    for leg_socket in legs.into_iter().flatten() {
+    for (leg, socket) in legs {
+        let Some(socket) = socket else {
+            continue;
+        };
         let proxy = proxy.clone();
         std::thread::Builder::new()
             .name("clausters-gui-server".into())
-            .spawn(move || server_reply_loop(leg_socket, proxy))
+            .spawn(move || server_reply_loop(socket, leg, proxy))
             .map_err(|e| e.to_string())?;
     }
 
@@ -199,13 +211,18 @@ fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
 
 /// Drains the client leg's socket, forwarding the audio server's replies to the
 /// main thread (which routes `/buffer_query.reply`/`/buffer_getRange.reply` into the buffer-fetch path).
-fn server_reply_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
+fn server_reply_loop(
+    socket: Arc<UdpSocket>,
+    leg: crate::host::instance::Leg,
+    proxy: EventLoopProxy<UserEvent>,
+) {
     let mut buf = vec![0u8; 65536];
     loop {
         match socket.recv_from(&mut buf) {
             Ok((0, _)) => {}
             Ok((len, _)) => {
                 let event = UserEvent::ServerOsc {
+                    leg,
                     bytes: buf[..len].to_vec(),
                 };
                 if proxy.send_event(event).is_err() {

@@ -10,8 +10,7 @@
 //! allocator, and a socket"*, and **a standalone host is a client in that
 //! sentence**. The table is the applier's, the allocator is the host's
 //! [`IdSpaces`](clausters_core::ids::IdSpaces) (`ids.rs`), and this module is
-//! the socket: it sends the steps in order and holds them where one waits for
-//! the server.
+//! the socket.
 //!
 //! # Why the host does not carry out ops itself any more
 //!
@@ -24,17 +23,21 @@
 //!
 //! # The waits
 //!
-//! A step that waits (`/done` of an asynchronous command, a `/server_sync`
-//! barrier) holds everything after it until the matching reply comes back
-//! through [`Host::on_server_reply`], which both fronts call for every reply.
-//! Nothing blocks a frame: the steps queue, and the reply path drains them.
+//! Walked by the crate's [`Runner`]: a step that waits (`/done` of an
+//! asynchronous command, a `/server_sync` barrier) holds everything after it
+//! until the matching reply comes back through [`Host::on_server_reply`], which
+//! both fronts call for every reply, saying which link it came in on. Nothing
+//! blocks a frame: the steps queue, and the reply path drains them. The host
+//! used to keep a queue of its own here; it had nowhere to put a step for the
+//! *other* server, so a join's stitch in the session and its attach on the
+//! player were ordered by a list of buffer numbers beside it.
 //!
 //! Nothing here decides *what* to play. A question about order, about which
 //! node a port belongs to, or about what a curve's table holds is the crate's,
 //! and if the answer looks wrong the fix goes there — where both clients read
 //! it too.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use clausters_core::ids::Space;
 use clausters_core::osc::{OscMessage, OscType};
@@ -42,22 +45,35 @@ use clausters_document::SourceId;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_editing::apply::{Endpoint, Step};
 use clausters_editing::playback::PiecePlayback;
+use clausters_editing::run::{Reply, Runner, Server};
 
 use crate::host::diag;
 use crate::host::{Host, document};
 
+/// **Which link a server's reply came in on.**
+///
+/// A host has at most two: the **server** leg, which is the embedded server, an
+/// external `--server`, or an editor's in-process session; and the **player**,
+/// where one is attached apart from it. Which [`Server`] a leg is follows from
+/// whether the other one exists ([`Host::server_of`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Leg {
+    /// The server leg.
+    Server,
+    /// A player attached apart from the server.
+    Player,
+}
+
 /// **A piece, as it is playing**: the crate's playback, and the steps not yet
-/// sent.
+/// carried out.
 #[derive(Debug, Default)]
 pub struct Playing {
     /// The instance, the applier and the transport — the crate's, as every
     /// endpoint holds it. Made on the first sync: its target is the governed
     /// group, which is the host's once a player is attached.
     piece: Option<PiecePlayback>,
-    /// Steps not sent yet, in order.
-    queue: VecDeque<Step>,
-    /// The step the queue is held behind, until its reply comes back.
-    awaiting: Option<Step>,
+    /// The steps not carried out yet, across both servers — the crate's walk.
+    run: Runner,
 }
 
 impl Playing {
@@ -98,58 +114,6 @@ impl Playing {
                 ..Endpoint::default()
             })
         })
-    }
-
-    /// **The messages that may go out now**: everything up to the next step
-    /// that waits, which is sent (a sync) or noted (an await) and then holds
-    /// the rest.
-    fn ready(&mut self) -> Vec<OscMessage> {
-        let mut out = Vec::new();
-        while self.awaiting.is_none() {
-            match self.queue.pop_front() {
-                None => break,
-                Some(Step::Send(message)) => out.push(message),
-                Some(Step::Sync(id)) => {
-                    out.push(OscMessage {
-                        addr: "/server_sync".into(),
-                        args: vec![OscType::Int(id)],
-                    });
-                    self.awaiting = Some(Step::Sync(id));
-                }
-                Some(wait @ Step::AwaitDone { .. }) => self.awaiting = Some(wait),
-            }
-        }
-        out
-    }
-
-    /// **A reply, offered to the step the queue is held behind**: whether it
-    /// was the one, which releases the rest.
-    ///
-    /// A `/fail` of the awaited command releases it too, said out loud: a
-    /// queue held forever behind a refusal is a piece that never sounds again,
-    /// and the refusal already says why.
-    fn reply(&mut self, msg: &OscMessage) -> bool {
-        let released = match (&self.awaiting, msg.addr.as_str()) {
-            (Some(Step::Sync(id)), "/server_sync.reply") => {
-                msg.args.first() == Some(&OscType::Int(*id))
-            }
-            (Some(Step::AwaitDone { command, index }), "/done") => {
-                matches!(msg.args.first(), Some(OscType::String(c)) if c == command)
-                    && index.is_none_or(|index| msg.args.get(1) == Some(&OscType::Int(index)))
-            }
-            (Some(Step::AwaitDone { command, .. }), "/fail") => {
-                let refused = matches!(msg.args.first(), Some(OscType::String(c)) if c == command);
-                if refused {
-                    diag::warn!("the piece's {command} was refused: {:?}", msg.args);
-                }
-                refused
-            }
-            _ => false,
-        };
-        if released {
-            self.awaiting = None;
-        }
-        released
     }
 }
 
@@ -210,39 +174,71 @@ impl Host {
         }
         // **Where the samples are, and then where the piece sounds.** A host
         // with two servers makes the join in the session, which owns the takes
-        // and is what the picture reads, and points the player at it once it is
-        // there (`Host::on_server_reply`) -- the order a session's open follows.
-        // Sent to the player instead, the join sounded and the picture read a
-        // buffer the session never had: an empty box. With one server the two
-        // are the same place.
+        // and is what the picture reads, and points the player at it once the
+        // session says it is made. Sent to the player instead, the join sounded
+        // and the picture read a buffer the session never had: an empty box.
+        // With one server the two are the same place and nothing is attached.
         let split = self.player.is_some() && self.server.is_some();
         for (bufnum, message) in messages {
             if !split {
-                self.send_to_player(message);
+                self.instance.run.push(Server::Sound, [Step::Send(message)]);
                 continue;
             }
-            let Some(session) = self.server.as_ref() else {
-                continue;
-            };
-            match session.send(message) {
-                Ok(()) => self.stitching.push(bufnum),
-                Err(e) => diag::warn!("cannot make the join in the session: {e}"),
-            }
+            self.instance.run.push(
+                Server::Samples,
+                [
+                    Step::Send(message),
+                    Step::AwaitDone {
+                        command: "/buffer_stitch".into(),
+                        index: Some(bufnum),
+                    },
+                ],
+            );
+            self.instance.run.push(
+                Server::Sound,
+                [Step::Send(OscMessage {
+                    addr: "/buffer_attach".into(),
+                    args: vec![OscType::Int(bufnum)],
+                })],
+            );
+        }
+        self.send_piece();
+    }
+
+    /// **Which server a leg is**: the player sounds; the server leg holds the
+    /// samples when a player is attached apart from it, and is the one server
+    /// otherwise.
+    pub(super) fn server_of(&self, leg: Leg) -> Server {
+        match leg {
+            Leg::Player => Server::Sound,
+            Leg::Server if self.player.is_some() => Server::Samples,
+            Leg::Server => Server::Sound,
         }
     }
 
-    /// **A reply the piece may be waiting on**, offered to its queue; what it
+    /// **A reply the piece may be waiting on**, offered to the runner; what it
     /// releases goes out at once. Called by [`Host::on_server_reply`].
-    pub(super) fn piece_reply(&mut self, msg: &OscMessage) {
-        if self.instance.reply(msg) {
-            self.send_piece();
+    pub(super) fn piece_reply(&mut self, from: Leg, msg: &OscMessage) {
+        let server = self.server_of(from);
+        match self.instance.run.reply(server, msg) {
+            Reply::Unrelated => return,
+            Reply::Refused(args) => diag::warn!("a step the piece waited on was refused: {args:?}"),
+            Reply::Released => {}
         }
+        self.send_piece();
     }
 
-    /// Sends every step of the piece that may go out now.
+    /// Sends every step that may go out now, each to its server.
     fn send_piece(&mut self) {
-        for message in self.instance.ready() {
-            self.send_to_player(message);
+        for (to, message) in self.instance.run.ready() {
+            match (to, self.server.as_ref()) {
+                (Server::Samples, Some(session)) => {
+                    if let Err(e) = session.send(message) {
+                        diag::warn!("cannot send to the server that holds the samples: {e}");
+                    }
+                }
+                _ => self.send_to_player(message),
+            }
         }
     }
 
@@ -289,7 +285,7 @@ impl Host {
             &mut self.ids,
         );
         match synced {
-            Ok(steps) => self.instance.queue.extend(steps),
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
             Err(e) => diag::warn!("the piece cannot be played: {e}"),
         }
         self.send_piece();
@@ -344,7 +340,7 @@ impl Host {
             return;
         };
         match piece.close(&mut self.ids) {
-            Ok(steps) => self.instance.queue.extend(steps),
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
             Err(e) => diag::warn!("the piece cannot be freed: {e}"),
         }
         self.send_piece();
@@ -358,7 +354,7 @@ impl Host {
             return;
         };
         let steps = piece.cue(beat.max(0.0));
-        self.instance.queue.extend(steps);
+        self.instance.run.push(Server::Sound, steps);
         self.send_piece();
     }
 
@@ -369,7 +365,7 @@ impl Host {
             return;
         };
         let steps = piece.stop(mark.max(0.0));
-        self.instance.queue.extend(steps);
+        self.instance.run.push(Server::Sound, steps);
         self.send_piece();
     }
 
@@ -432,7 +428,7 @@ impl Host {
             piece.play()
         };
         let rolling = piece.rolling();
-        self.instance.queue.extend(steps);
+        self.instance.run.push(Server::Sound, steps);
         self.send_piece();
         diag::info!(
             "the piece is {}",
@@ -514,36 +510,42 @@ mod tests {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
     }
 
-    /// The piece synced into the queue, made at the tail of `target`.
+    /// The piece synced into the runner, made at the tail of `target`.
     fn sync(playing: &mut Playing, piece: &Multitrack, target: i32, ids: &mut IdSpaces) {
         let steps = playing
             .playback(target)
             .sync(piece, 48_000.0, &sources(), 1.0, ids)
             .unwrap();
-        playing.queue.extend(steps);
+        playing.run.push(Server::Sound, steps);
     }
 
-    /// Everything the queue sends, answering every wait the way a server does.
+    /// What may go out now, without the server each goes to.
+    fn ready(playing: &mut Playing) -> Vec<OscMessage> {
+        playing.run.ready().into_iter().map(|(_, m)| m).collect()
+    }
+
+    /// Everything the runner sends, answering every wait the way a server does.
     fn drain(playing: &mut Playing) -> Vec<OscMessage> {
         let mut sent = Vec::new();
         loop {
-            sent.extend(playing.ready());
-            let reply = match playing.awaiting.clone() {
+            sent.extend(ready(playing));
+            let reply = match playing.run.awaiting() {
                 None => break,
-                Some(Step::Sync(id)) => OscMessage {
+                Some((_, Step::Sync(id))) => OscMessage {
                     addr: "/server_sync.reply".into(),
-                    args: vec![OscType::Int(id)],
+                    args: vec![OscType::Int(*id)],
                 },
-                Some(Step::AwaitDone { command, index }) => OscMessage {
+                Some((_, Step::AwaitDone { command, index })) => OscMessage {
                     addr: "/done".into(),
-                    args: std::iter::once(OscType::String(command))
+                    args: std::iter::once(OscType::String(command.clone()))
                         .chain(index.map(OscType::Int))
                         .collect(),
                 },
-                Some(Step::Send(_)) => unreachable!("a send never waits"),
+                Some((_, Step::Send(_))) => unreachable!("a send never waits"),
             };
-            assert!(
-                playing.reply(&reply),
+            assert_eq!(
+                playing.run.reply(Server::Sound, &reply),
+                Reply::Released,
                 "the server's answer releases the wait"
             );
         }
@@ -561,7 +563,7 @@ mod tests {
     fn a_piece_becomes_the_messages_that_play_it() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         sync(&mut playing, &piece(), 1234, &mut ids);
-        let first = playing.ready();
+        let first = ready(&mut playing);
         assert_eq!(
             addrs(&first).last(),
             Some(&"/server_sync"),
@@ -621,8 +623,8 @@ mod tests {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         sync(&mut playing, &piece(), 0, &mut ids);
         let steps = playing.playback(0).play();
-        playing.queue.extend(steps);
-        let first = playing.ready();
+        playing.run.push(Server::Sound, steps);
+        let first = ready(&mut playing);
         assert!(
             !addrs(&first).contains(&"/transport_play"),
             "held behind the barrier"
@@ -648,9 +650,9 @@ mod tests {
             )
             .unwrap();
         let bufnum = applier.buffer("curve/1").unwrap();
-        playing.queue.extend(steps);
+        playing.run.push(Server::Sound, steps);
         assert_eq!(
-            addrs(&playing.ready()),
+            addrs(&ready(&mut playing)),
             ["/buffer_alloc"],
             "the alloc alone"
         );
@@ -658,11 +660,64 @@ mod tests {
             addr: "/done".into(),
             args: vec![OscType::String("/buffer_alloc".into()), OscType::Int(n)],
         };
-        assert!(!playing.reply(&done(bufnum + 1)), "another buffer's answer");
-        assert!(playing.reply(&done(bufnum)));
         assert_eq!(
-            addrs(&playing.ready()),
+            playing.run.reply(Server::Sound, &done(bufnum + 1)),
+            Reply::Unrelated,
+            "another buffer's answer"
+        );
+        assert_eq!(
+            playing.run.reply(Server::Sound, &done(bufnum)),
+            Reply::Released
+        );
+        assert_eq!(
+            addrs(&ready(&mut playing)),
             ["/buffer_setRange", "/server_sync"]
+        );
+    }
+
+    /// **A join made in the session is attached on the player once the
+    /// session has made it** -- and only the session's `/done` says so, which
+    /// is what the leg a reply came in on is for.
+    #[test]
+    fn a_wait_on_the_samples_is_released_by_the_session_and_not_the_player() {
+        let mut host = Host::new();
+        let session = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let player = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let link = |socket: &std::net::UdpSocket| {
+            crate::host::ServerLink::Udp(
+                crate::host::ServerLeg::connect(socket.local_addr().unwrap()).unwrap(),
+            )
+        };
+        host.set_server_link(link(&session));
+        host.set_player_link(link(&player));
+        host.instance.run.push(
+            Server::Samples,
+            [Step::AwaitDone {
+                command: "/buffer_stitch".into(),
+                index: Some(5),
+            }],
+        );
+        host.instance.run.push(
+            Server::Sound,
+            [Step::Send(OscMessage {
+                addr: "/buffer_attach".into(),
+                args: vec![OscType::Int(5)],
+            })],
+        );
+        host.send_piece();
+        let done = OscMessage {
+            addr: "/done".into(),
+            args: vec![OscType::String("/buffer_stitch".into()), OscType::Int(5)],
+        };
+        host.piece_reply(Leg::Player, &done);
+        assert!(
+            host.instance.run.awaiting().is_some(),
+            "the player did not make the join"
+        );
+        host.piece_reply(Leg::Server, &done);
+        assert!(
+            host.instance.run.is_idle(),
+            "the session's done released the attach"
         );
     }
 }

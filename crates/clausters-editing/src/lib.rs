@@ -41,6 +41,7 @@ pub mod intake;
 pub mod multitrack;
 pub mod playback;
 pub mod points;
+pub mod run;
 pub mod samples;
 pub mod sources;
 

@@ -560,8 +560,9 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::WsDisconnected { id } => {
                 self.ws_conns.remove(&id);
             }
-            UserEvent::ServerOsc { bytes } => match clausters_core::osc::decode_packet(&bytes) {
-                Ok(packet) => self.handle_server_packet(packet),
+            UserEvent::ServerOsc { leg, bytes } => match clausters_core::osc::decode_packet(&bytes)
+            {
+                Ok(packet) => self.handle_server_packet(packet, leg),
                 Err(e) => warn!("malformed OSC reply from the audio server: {e}"),
             },
         }

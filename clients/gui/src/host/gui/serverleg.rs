@@ -14,6 +14,7 @@ use crate::host::ServerLink;
 use crate::host::fetch::{FetchStep, SpanUse, WaveWant, align_span};
 use crate::host::frame::{self, Owed};
 use crate::host::graphics::nodetree::NodeTree;
+use crate::host::instance::Leg;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{Bulk, Loaded, SlotKey, SlotKind};
 use crate::waveform::WaveformData;
@@ -262,7 +263,7 @@ impl App {
         }
         for bytes in packets {
             match clausters_core::osc::decode_packet(&bytes) {
-                Ok(packet) => self.handle_server_packet(packet),
+                Ok(packet) => self.handle_server_packet(packet, Leg::Server),
                 Err(e) => warn!("malformed OSC reply from the embedded server: {e}"),
             }
         }
@@ -274,13 +275,14 @@ impl App {
     pub(super) fn drain_embed_replies(&mut self) {}
 
     /// Routes one decoded reply from the audio server (the client leg).
-    pub(super) fn handle_server_packet(&mut self, packet: OscPacket) {
+    pub(super) fn handle_server_packet(&mut self, packet: OscPacket, from: Leg) {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path yet
         };
-        // The ids and the piece's waiting steps hear every reply first
-        // (`Host::on_server_reply`, which the page's leg calls too).
-        self.host.on_server_reply(&msg);
+        // The ids and the piece's waiting steps hear every reply first, with
+        // the leg it came in on (`Host::on_server_reply`, which the page's leg
+        // calls too).
+        self.host.on_server_reply(from, &msg);
         match msg.addr.as_str() {
             "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.

@@ -218,7 +218,9 @@ impl WebApp {
         };
         // The ids and the piece's waiting steps hear every reply first
         // (`Host::on_server_reply`, which the native leg calls too).
-        self.host.on_server_reply(&msg);
+        // A page has one server leg and no player apart from it.
+        self.host
+            .on_server_reply(crate::host::instance::Leg::Server, &msg);
         match msg.addr.as_str() {
             "/bus_stream.reply" => {
                 if !self.stream_seen {
