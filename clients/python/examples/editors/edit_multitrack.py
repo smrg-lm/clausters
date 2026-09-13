@@ -62,17 +62,26 @@ crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
 **one** reader like any other take. Put the cursor inside it and play: the reader
 finds the span it lands in once and reads it like a plain buffer from there.
 
+**The piece is also written down as a session** (``examples/out/``): its takes as
+files, the join as its parts, and the piece that names them. So
+``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
+opens the standalone editor on exactly this material, with no Python behind it.
+
 Run it as a script (``python edit_multitrack.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter.
 """
 
 # %%
+import json
+import os
+
 from clausters import Buffer, Session, Synth
 from clausters.defs import Part, SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
 from clausters.multitrack import (Automation, Content, Lane, Multitrack, Region,
-                                  Track)
+                                  Source, Track)
+from clausters.multitrack import Session as SavedSession
 
 SR = 48_000.0
 TAKE_DUR = 2.0
@@ -184,6 +193,57 @@ piece = Multitrack(tracks=[
     Track(id=14, name="bass", level=0.7,
           lanes=[Lane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
 ])
+
+# %% [markdown]
+# ## The same piece, for a host with no Python behind it
+# The takes above exist only on this server, so a program that cannot run this
+# file cannot open this piece. Written down as a **session** -- every take as a
+# file, the join as the parts it is made of, and the piece that names them -- it
+# opens with nothing else:
+#
+#     clausters-gui --session clients/python/examples/out/edit_multitrack.json
+#
+# which is the standalone editor on exactly this material, and the way to put the
+# two side by side. The takes are written as floats, because the last one is hot
+# on purpose and a 16-bit file would clip it into a different take. The files go
+# to `examples/out/`, the git-ignored directory every generator in this tree
+# writes to. **A page cannot do this**: a tab has no filesystem to write a take
+# into, so the web twin has no such cell.
+
+# %%
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")
+os.makedirs(OUT, exist_ok=True)
+FRAMES = int(TAKE_DUR * SR)
+ID = {take: id for id, take in SOURCES.items()}
+
+saved = SavedSession(multitrack=piece)
+for id, take in SOURCES.items():
+    if take == "comp":
+        continue
+    name = f"edit_multitrack-{take}.wav"
+    BUFS[take].write(os.path.join(OUT, name), sample_format="float")
+    saved.sources[id] = Source.file(name).shaped(1, FRAMES, SR)
+
+
+def part(take: str, start: int, frames: int, **fades) -> dict:
+    """One span of a take, as the join names it: the source, the frames it
+    contributes, and the fade at its seam."""
+    return {"source": {"source": ID[take], "lifetime": "session", "generation": 0,
+                       "range": {"start": start, "end": start + frames}},
+            **fades}
+
+
+#: **The join is its recipe, not its samples**: the same two spans and fades the
+#: `Buffer.stitch` above was made from, so a reader builds the same buffer.
+saved.sources[ID["comp"]] = Source(location={"at": "segments", "parts": [
+    part("glide", 0, HALF, fade_out=FADE),
+    part("saw", HALF, HALF, fade_in=FADE),
+]}).shaped(1, 2 * HALF, SR)
+
+session_path = os.path.join(OUT, "edit_multitrack.json")
+with open(session_path, "w") as f:
+    f.write(json.dumps(saved.write(), indent=1))
+print(f"wrote {session_path}")
 
 # %% [markdown]
 # ## One verb

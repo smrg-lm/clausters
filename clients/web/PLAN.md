@@ -4343,3 +4343,5 @@ sound.
   `pagePools` and an attached `Server` with no share of its own draw from it,
   and `guiHost()` splits it once (`splitPageIds`), handing the host its half
   through the bridge's `id_share`.
+
+- ⬜ **`editors/edit-multitrack.html` is not call for call its script** *(found 2026-09-13, auditing the pair while the script learned to write its piece as a session)*. `scripts/audit-example-pairs.py editors/edit_multitrack` reports three differences nobody declared and nobody decided: the script calls `sine` where the page does not (the hot take's oscillator), the script builds its join's two spans with `Part` where the page does not, and the page calls `push` where the script does not. Each is either a port that drifted or a spelling the idiom table is missing; which is to be read side by side before either file changes. The session cell the script gained the same day is declared (`docs/example-parity.md`), because a tab has no filesystem to write a take into.

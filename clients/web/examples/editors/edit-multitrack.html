@@ -85,7 +85,11 @@ there.</div>
       written plainly, and the same one `edit` over it.
 
       The platform's differences are the usual two: the host is the wasm one in
-      this tab and draws into an element, and nothing is pumped.
+      this tab and draws into an element, and nothing is pumped. And one more:
+      the script also writes the piece down as a session -- its takes as files,
+      the join as its parts -- so the standalone editor can open the same
+      material, and a tab has no filesystem to write a take into, so this page
+      has no such cell.
 
       Serve clients/web (the package root) and open
       /examples/editors/edit-multitrack.html. Build it first: ./build.sh
