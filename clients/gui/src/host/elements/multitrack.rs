@@ -2370,27 +2370,56 @@ impl Element for Multitrack {
                 let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
                 let offsets: Vec<f64> = block.iter().map(|c| c.place.offset).collect();
                 let placed = boxes::rebased(&offsets, at)?;
-                let first = offsets.iter().copied().fold(f64::INFINITY, f64::min);
                 // **A paste needs two coordinates**, and the second is the
                 // selected track: the position cursor says *when* and the
-                // header says *where*. The earliest box lands on the selected
-                // track and the rest keep their distances from it, in rows as
-                // in time -- a block pasted onto a track is the same block, so
-                // what is kept is its shape and not the row numbers it was cut
-                // from. With no track selected the rows are the ones it came
-                // from, which is what a paste back into the same piece means.
+                // header says *where*. A block pasted onto a track is the same
+                // block, so what is kept is its shape and not the row numbers
+                // it was cut from -- and the two coordinates anchor it at
+                // **two different boxes**, which is the part that was wrong.
+                //
+                // In time the anchor is the **earliest** box: that is what "it
+                // starts here" means on an axis that runs one way. In rows it
+                // is the **topmost**, and for the same reason: a track selected
+                // for a paste is where the block *begins*, so everything lands
+                // on it or below it, keeping whatever gaps the block had. Rows
+                // 2, 4 and 1 pasted onto track 3 are tracks 4, 6 and 3.
+                //
+                // Anchoring the rows at the earliest box instead -- which is
+                // what this did -- made the paste follow a rule nobody could
+                // state: which track the block landed on depended on which of
+                // its boxes happened to be first in *time*, so the same block
+                // pasted onto the same track went up or down according to the
+                // order it was recorded in, and part of it landed above the
+                // track the hand had pointed at.
+                //
+                // With no track selected the rows are the ones it came from,
+                // which is what a paste back into the same piece means.
                 let rows: Vec<usize> = block.iter().map(|c| self.lane_of(c).unwrap_or(0)).collect();
-                let earliest = block
-                    .iter()
-                    .position(|c| c.place.offset <= first + f64::EPSILON)
-                    .unwrap_or(0);
-                let base = rows.get(earliest).copied().unwrap_or(0);
+                let base = rows.iter().copied().min().unwrap_or(0);
+                let depth = rows.iter().copied().max().unwrap_or(0) - base;
                 let onto = self.track.unwrap_or(base);
-                let last = self.lanes.len().saturating_sub(1);
+                // **A block that does not fit is refused, not flattened.** It
+                // used to clamp every row past the last track onto that track,
+                // which silently made a block of four tracks into a pile on
+                // one -- the one thing a paste promises not to do. The piece
+                // gains no track here either: making one is a verb of its own
+                // (a double click on a header), reported as `lanes`, and a
+                // paste is not the place to grow the thing it is pasting into.
+                if onto + depth >= self.lanes.len() {
+                    let need = onto + depth + 1;
+                    return Some(Events::refused(
+                        "paste",
+                        &format!(
+                            "this block is {} track(s) tall and needs {need} here; the piece has {}",
+                            depth + 1,
+                            self.lanes.len()
+                        ),
+                    ));
+                }
                 self.selected.clear();
                 for (i, mut clip) in block.into_iter().enumerate() {
                     clip.place.offset = placed[i];
-                    let row = (rows[i] + onto).saturating_sub(base).min(last);
+                    let row = rows[i] - base + onto;
                     if let Some(lane) = self.lanes.get(row) {
                         clip.lane = lane.name.clone();
                     }
@@ -3588,19 +3617,38 @@ mod tests {
         );
     }
 
-    /// **A paste needs two coordinates, and the second is the selected track.**
-    /// The position cursor says *when* and the header says *where*, so a block
-    /// lands on the track a hand pointed at and keeps its own shape from there
-    /// — in rows as in time.
+    /// **A paste needs two coordinates, and they anchor at two different
+    /// boxes.** In time the block starts at the **earliest** of them; in rows
+    /// it starts at the **topmost**, so the selected track is where the block
+    /// begins and everything else lands on it or below it, keeping whatever
+    /// gaps the block had.
+    ///
+    /// The defect this pins (found 2026-09-12 by the user, on the multitrack
+    /// example): the rows anchored at the earliest box *in time*, so which
+    /// track a block landed on depended on the order its boxes happened to be
+    /// recorded in — the same block pasted onto the same track went up or down
+    /// according to that, and part of it landed **above** the track the hand
+    /// had pointed at. The user's own case: boxes from tracks 2, 4 and 1,
+    /// pasted onto track 3, belong on 4, 6 and 3.
     #[test]
-    fn a_paste_lands_on_the_selected_track_and_keeps_its_shape() {
+    fn a_paste_starts_at_the_selected_track_and_never_above_it() {
         let mut clipboard = crate::host::clipboard::Clip::default();
-        let mut mt = piece();
-        mt.selected = vec![0, 1];
         let ctrl = Mods {
             ctrl: true,
             ..Mods::default()
         };
+        // Seven tracks, and three boxes whose rows and whose onsets disagree:
+        // the earliest box is on track 2 and the topmost is on track 1.
+        let lanes: String = (0..7)
+            .map(|i| format!(r#""t{i}", "", 100, 0, 0, 1, 1"#))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut mt = from_props(&props(&format!(
+            r#"{{"lanes": [{lanes}],
+                 "clips": ["x", "t2", 200, 100, 0, "", 0,
+                           "y", "t4", 400, 100, 0, "", 0,
+                           "z", "t1", 100, 100, 0, "", 0]}}"#
+        )));
         let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
             mt.key(
                 &key,
@@ -3611,27 +3659,72 @@ mod tests {
                 },
             )
         };
+        mt.selected = vec![0, 1, 2];
         keys(&mut mt, Key::Char('c'), None).expect("copied");
 
-        // With a track in hand the block lands on it: the earliest box on the
-        // selected track, the rest keeping their distance from it.
-        mt.track = Some(1);
-        keys(&mut mt, Key::Char('v'), Some(100.0)).expect("pasted");
-        assert_eq!(mt.clips.len(), 4);
-        assert_eq!(mt.clips[2].lane, "tone", "the earliest onto the selection");
+        mt.track = Some(3);
+        keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
+        assert_eq!(mt.clips.len(), 6);
+        let landed: Vec<&str> = mt.clips[3..].iter().map(|c| c.lane.as_str()).collect();
         assert_eq!(
-            mt.clips[3].lane, "tone",
-            "and the second kept its distance -- there is no third lane to fall on"
+            landed,
+            ["t4", "t6", "t3"],
+            "the topmost box is the one on the selected track, and the gap is kept"
         );
-        assert_eq!(mt.clips[2].place.offset, 100.0, "on the cursor");
+        // The time anchor is the other box: the earliest onset lands on the
+        // cursor, and the rest keep their distances from it.
+        let offsets: Vec<f64> = mt.clips[3..].iter().map(|c| c.place.offset).collect();
+        assert_eq!(offsets, [100.0, 300.0, 0.0]);
 
-        // With none, the rows are the ones it came from: a paste back into the
-        // same piece is the block where it was.
-        let mut mt = piece();
-        mt.selected = vec![0, 1];
-        keys(&mut mt, Key::Char('c'), None).expect("copied");
+        // With no track selected the rows are the ones it came from: a paste
+        // back into the same piece is the block where it was.
         mt.track = None;
         keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
+        let landed: Vec<&str> = mt.clips[6..].iter().map(|c| c.lane.as_str()).collect();
+        assert_eq!(landed, ["t2", "t4", "t1"]);
+    }
+
+    /// **A block that does not fit is refused, not flattened.**
+    ///
+    /// It used to clamp every row past the last track onto that track, which
+    /// turned a block several tracks tall into a pile on one — the one thing a
+    /// paste promises not to do. The piece gains no track either: making one is
+    /// a verb of its own, and a paste is not the place to grow the thing it is
+    /// pasting into.
+    #[test]
+    fn a_paste_that_runs_past_the_last_track_says_so() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let mut mt = piece();
+        let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
+            mt.key(
+                &key,
+                &mut KeyInput {
+                    mods: ctrl,
+                    clipboard: &mut clipboard,
+                    cursor,
+                },
+            )
+        };
+        // Two tracks, a block two tracks tall, pasted onto the second: the
+        // second half has nowhere to go.
+        mt.selected = vec![0, 1];
+        keys(&mut mt, Key::Char('c'), None).expect("copied");
+        mt.track = Some(1);
+        let said = refusal(keys(&mut mt, Key::Char('v'), Some(100.0)));
+        assert_eq!(
+            said,
+            Some("this block is 2 track(s) tall and needs 3 here; the piece has 2".to_string())
+        );
+        assert_eq!(mt.clips.len(), 2, "and nothing was pasted");
+
+        // Onto the first, the same block fits exactly.
+        mt.track = Some(0);
+        keys(&mut mt, Key::Char('v'), Some(100.0)).expect("pasted");
+        assert_eq!(mt.clips.len(), 4);
         assert_eq!(mt.clips[2].lane, "noise");
         assert_eq!(mt.clips[3].lane, "tone");
     }
