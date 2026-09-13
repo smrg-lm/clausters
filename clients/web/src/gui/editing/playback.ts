@@ -36,7 +36,7 @@
  * @module
  */
 
-import { PiecePlayback } from "../../core/clausters_core_web.js";
+import { PiecePlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { MsgArg } from "../../base/osc.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { GuiHost } from "../host.ts";
@@ -62,6 +62,11 @@ export class Playback {
      * `prepare`, which knows how many samples one fill may carry on this server.
      */
     private piece: PiecePlayback | null = null;
+    /**
+     * The steps not carried out yet — the crate's walk, as the script's and the
+     * GUI host's are. Made in `prepare`, beside the playback.
+     */
+    private runner: StepRunner | null = null;
     readonly transport: Transport;
 
     constructor(
@@ -100,6 +105,7 @@ export class Playback {
      */
     async prepare(): Promise<this> {
         this.piece = new PiecePlayback(0, true, await this.server.bulkChunk());
+        this.runner = new StepRunner();
         // Node ids come back on their `/node_end`, which only a registered
         // client hears.
         await this.server.notify(true);
@@ -172,26 +178,61 @@ export class Playback {
         );
     }
 
-    /** Send each step of an answer, waiting where one says to. */
+    /**
+     * Carry the steps of an answer out through the crate's runner.
+     *
+     * What may go out is sent; where something is awaited, the runner puts the
+     * message it waits on last, and that one is sent as a request — so the
+     * reply cannot arrive before anyone is listening for it — and its reply is
+     * handed back, which releases the rest. Which reply releases what is the
+     * runner's, as it is the script's and the GUI host's.
+     */
     private async run(answer: string): Promise<void> {
         const { steps = [], error } = JSON.parse(answer) as { steps?: Step[]; error?: string };
         if (error !== undefined) throw new Error(`clausters: ${error}`);
-        for (let index = 0; index < steps.length; index++) {
-            const step = steps[index]!;
-            if ("send" in step) {
-                const { addr } = step.send;
-                const args = step.send.args.map(stepArg);
-                const after = steps[index + 1];
-                if (after !== undefined && "await" in after) {
-                    // Sent and waited for as one command, so the `/done` cannot
-                    // arrive before anyone is listening for it.
-                    await this.server.command(addr, args);
-                    index++;
-                    continue;
+        const runner = this.runner;
+        if (runner === null) throw new Error("clausters: the playback is not prepared");
+        const call = (request: object): Record<string, unknown> =>
+            JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
+        call({ verb: "push", to: "sound", steps });
+        for (;;) {
+            const ready = call({ verb: "ready" }) as {
+                messages?: { addr: string; args: StepArg[] }[];
+                awaiting?: { step: Step } | null;
+            };
+            const messages = ready.messages ?? [];
+            const awaiting = ready.awaiting ?? null;
+            if (awaiting === null) {
+                for (const message of messages) {
+                    this.server.sendMsg(message.addr, ...message.args.map(stepArg));
                 }
-                this.server.sendMsg(addr, ...args);
-            } else if ("sync" in step) {
-                await this.server.sync();
+                return;
+            }
+            const last = messages.pop();
+            if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
+            for (const message of messages) {
+                this.server.sendMsg(message.addr, ...message.args.map(stepArg));
+            }
+            const reply =
+                "sync" in awaiting.step
+                    ? await this.server.request(last.addr, last.args.map(stepArg), {
+                          expect: ["/server_sync.reply"],
+                      })
+                    : await this.server.request(last.addr, last.args.map(stepArg), {
+                          expect: ["/done", "/fail"],
+                          cmd: last.addr,
+                      });
+            const answered = call({
+                verb: "reply",
+                from: "sound",
+                addr: reply.addr,
+                args: reply.args.map(tagged),
+            });
+            if (answered.reply === "refused") {
+                throw new Error(`clausters: ${last.addr} failed: ${reply.args.slice(1).join(" ")}`);
+            }
+            if (answered.reply !== "released") {
+                throw new Error(`clausters: ${last.addr} was answered by ${reply.addr}, which is not what it waits on`);
             }
         }
     }
@@ -309,4 +350,15 @@ function stepArg(arg: StepArg): MsgArg {
     if ("f" in arg) return ["f", arg.f];
     if ("b" in arg) return new Uint8Array(Float32Array.from(arg.b).buffer);
     return arg.s;
+}
+
+/**
+ * One reply argument in the tagged shape the runner reads — the other direction
+ * of `stepArg`. A reply carries ints, floats and strings; a JS number is tagged
+ * by whether it is integral, which is what those replies hold.
+ */
+function tagged(value: number | string | Uint8Array | boolean | null): StepArg {
+    if (typeof value === "boolean") return { i: value ? 1 : 0 };
+    if (typeof value === "number") return Number.isInteger(value) ? { i: value } : { f: value };
+    return { s: String(value) };
 }

@@ -403,7 +403,13 @@ pub use time::*;
 /// corrections. Its verbs cross through one JSON door (`_call`), and it composes
 /// the window itself, so the two stateless v56 doors are **removed** --
 /// **breaking** for a caller of those two.
-pub const CORE_ABI_VERSION: u32 = 57;
+/// **v58 steps are carried out once.** `clausters_editing_runner_*` holds the
+/// queue a playback's answers are walked through: the messages that may go out
+/// now, the one awaited last, and what a reply releases. Each client walked
+/// the steps its own way and the standalone host had a third walk, which could
+/// not order a join's reads before its stitch. **Additive**, and the counter
+/// moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 58;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

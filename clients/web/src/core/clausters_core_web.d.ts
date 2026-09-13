@@ -729,6 +729,23 @@ export class Score {
 }
 
 /**
+ * **Steps being carried out**: the queue a playback's answers are walked
+ * through, as `clausters_editing::run::call_json` documents.
+ */
+export class StepRunner {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb: `push`, `ready`, `reply`, `idle`.
+     */
+    call(request: string): string;
+    /**
+     * A runner holding nothing.
+     */
+    constructor();
+}
+
+/**
  * The piece's beat↔second time map, the JS face of
  * [`clausters_core::tempomap::TempoMap`].
  *
@@ -1535,6 +1552,7 @@ export interface InitOutput {
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
     readonly __wbg_score_free: (a: number, b: number) => void;
+    readonly __wbg_steprunner_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
     readonly bar: (a: number, b: number) => number;
@@ -1697,6 +1715,8 @@ export interface InitOutput {
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
+    readonly steprunner_call: (a: number, b: number, c: number) => [number, number];
+    readonly steprunner_new: () => number;
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
     readonly tempomap_anchored: (a: number, b: number, c: number) => number;
     readonly tempomap_beatsAt: (a: number, b: number) => number;

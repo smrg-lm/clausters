@@ -65,6 +65,9 @@ class Playback:
         self.gain = float(gain)
         #: The piece as it is playing -- the crate's, as the host's is.
         self._piece = _native.PiecePlayback(chunk=server._bulk_chunk())
+        #: The steps not carried out yet -- the crate's walk, as the page's and
+        #: the GUI host's are.
+        self._runner = _native.StepRunner()
         # Node ids come back on their `/node_end`, which only a registered
         # client hears.
         server._ensure_recycler()
@@ -126,27 +129,41 @@ class Playback:
             bridge.sources.table(), self.gain, self.server.ids))
 
     def _run(self, steps: list) -> None:
-        """Send each step, waiting where one says to."""
-        index = 0
-        while index < len(steps):
-            step = steps[index]
-            if "send" in step:
-                addr = step["send"]["addr"]
-                args = [_arg(a) for a in step["send"]["args"]]
-                after = steps[index + 1] if index + 1 < len(steps) else {}
-                if "await" in after:
-                    # Sent and waited for as one request, so the `/done` cannot
-                    # arrive before anyone is listening for it.
-                    raddr, rargs = self.server.request(
-                        addr, *args, expect=("/done", "/fail"))
-                    if raddr == "/fail":
-                        raise CommandError(f"{addr} failed: {rargs}")
-                    index += 2
-                    continue
-                self.server.send_msg(addr, *args)
-            elif "sync" in step:
-                self.server.sync()
-            index += 1
+        """Carry the steps out through the crate's runner.
+
+        What may go out is sent; where something is awaited, the runner puts
+        the message it waits on last, and that one is sent as a request -- so
+        the reply cannot arrive before anyone is listening for it -- and its
+        reply is handed back, which releases the rest. Which reply releases
+        what is the runner's, as it is the page's and the GUI host's.
+        """
+        runner = self._runner
+        runner.call("push", to="sound", steps=steps)
+        while True:
+            ready = runner.call("ready")
+            messages = ready.get("messages", [])
+            awaiting = ready.get("awaiting")
+            if awaiting is None:
+                for message in messages:
+                    self.server.send_msg(message["addr"], *[_arg(a) for a in message["args"]])
+                return
+            if not messages:
+                raise CommandError("the runner waits on a step nothing was sent for")
+            *first, last = messages
+            for message in first:
+                self.server.send_msg(message["addr"], *[_arg(a) for a in message["args"]])
+            expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
+                      else ("/done", "/fail"))
+            raddr, rargs = self.server.request(
+                last["addr"], *[_arg(a) for a in last["args"]], expect=expect)
+            answer = runner.call("reply", **{"from": "sound"}, addr=raddr,
+                                 args=[_tagged(a) for a in rargs])
+            if answer.get("reply") == "refused":
+                raise CommandError(f"{last['addr']} failed: {rargs}")
+            if answer.get("reply") != "released":
+                raise CommandError(
+                    f"{last['addr']} was answered by {raddr} {rargs}, "
+                    "which is not what it waits on")
 
     # ---- the transport ----
 
@@ -227,3 +244,18 @@ def _arg(arg: dict):
     if "b" in arg:
         return array("f", arg["b"]).tobytes()
     return str(arg["s"])
+
+
+def _tagged(value) -> dict:
+    """One reply argument in the tagged shape the runner reads -- the other
+    direction of `_arg`. A reply carries ints, floats and strings; anything
+    else is handed over as its text."""
+    if isinstance(value, bool):
+        return {"i": int(value)}
+    if isinstance(value, _osclib.Int64):
+        return {"h": value.value}
+    if isinstance(value, int):
+        return {"i": value}
+    if isinstance(value, float):
+        return {"f": value}
+    return {"s": str(value)}

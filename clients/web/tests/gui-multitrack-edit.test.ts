@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { multitrackPlan, PiecePlayback } from "../src/core/clausters_core_web.js";
+import { multitrackPlan, PiecePlayback, StepRunner } from "../src/core/clausters_core_web.js";
 import {
     MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
@@ -926,28 +926,31 @@ test("the playback sends the crate's steps and waits where they say", async () =
     // **What is left in a client is a socket, and waiting on it.**
     //
     // What a piece needs, the messages that carry it out and how it is played
-    // are the crate's (`PiecePlayback`), tested there because they are one
-    // implementation for every endpoint. This is the other half: a send whose
-    // `/done` the rest waits for is one command, a barrier is a sync, and a
+    // are the crate's (`PiecePlayback`), and so is which reply releases what
+    // (`StepRunner`), tested there because they are one implementation for
+    // every endpoint. This is the other half: the message a step waits on goes
+    // out as the request whose reply is handed back, a barrier included, and a
     // 64-bit sample goes out as one.
     const log: unknown[][] = [];
+    const value = (arg: unknown): unknown => (Array.isArray(arg) ? arg[1] : arg);
     const server = {
         sendMsg: (addr: string, ...args: unknown[]) => log.push(["send", addr, ...args]),
-        command: async (addr: string, args: unknown[]) => {
-            log.push(["command", addr, ...args]);
-            return { addr: "/done", args: [addr] };
-        },
-        sync: async () => {
-            log.push(["sync"]);
-            return 1;
+        // Answers as a server does: a barrier with its id, a command with its
+        // own name and the index it was sent with.
+        request: async (addr: string, args: unknown[]) => {
+            log.push(["request", addr, ...args]);
+            if (addr === "/server_sync") return { addr: "/server_sync.reply", args: args.map(value) };
+            return { addr: "/done", args: [addr, ...args.slice(0, 1).map(value)] };
         },
     };
     const playback = Object.create(Playback.prototype) as Playback;
     const held = playback as unknown as {
         server: unknown;
+        runner: unknown;
         run: (answer: string) => Promise<void>;
     };
     held.server = server;
+    held.runner = new StepRunner();
 
     await held.run(JSON.stringify({
         steps: [
@@ -959,7 +962,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
     }));
     assert.deepEqual(
         log.map((entry) => entry.slice(0, 2)),
-        [["command", "/buffer_alloc"], ["send", "/buffer_setRange"], ["sync"]],
+        [["request", "/buffer_alloc"], ["send", "/buffer_setRange"], ["request", "/server_sync"]],
         "the fill waits for the allocation",
     );
 
@@ -967,7 +970,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
     log.length = 0;
     await held.run(piece.locate(2.0));
     assert.equal(log.length, 1);
-    assert.deepEqual(log[0]!.slice(0, 2), ["command", "/transport_locateSample"]);
+    assert.deepEqual(log[0]!.slice(0, 2), ["request", "/transport_locateSample"]);
     assert.deepEqual(
         log[0]![2],
         ["h", BigInt(piece.beatsToSamples(2.0))],

@@ -845,15 +845,19 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     """**What is left in a client is a socket, and waiting on it.**
 
     What a piece needs, the messages that carry it out and how it is played are
-    the crate's (`clausters._native.PiecePlayback`), tested there because they
-    are one implementation for every endpoint. This is the other half: a send
-    whose ``/done`` the rest waits for is one request, a barrier is a sync, and
-    a 64-bit sample goes out as one.
+    the crate's (`clausters._native.PiecePlayback`), and so is which reply
+    releases what (`clausters._native.StepRunner`), tested there because they
+    are one implementation for every endpoint. This is the other half: the
+    message a step waits on goes out as the request whose reply is handed back,
+    a barrier included, and a 64-bit sample goes out as one.
     """
     from clausters.base import _osclib
     from clausters.gui.editing.playback import Playback
 
     class Server:
+        """Answers as a server does: a barrier with its id, a command with its
+        own name and the index it was sent with."""
+
         def __init__(self):
             self.log = []
 
@@ -862,13 +866,13 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
 
         def request(self, addr, *args, expect=None, timeout=None):
             self.log.append(("request", addr) + args)
-            return "/done", [addr]
-
-        def sync(self):
-            self.log.append(("sync",))
+            if addr == "/server_sync":
+                return "/server_sync.reply", list(args)
+            return "/done", [addr, *args[:1]]
 
     playback = object.__new__(Playback)
     playback.server = Server()
+    playback._runner = _native.StepRunner()
     playback._run([
         {"send": {"addr": "/buffer_alloc", "args": [{"i": 3}, {"i": 2}, {"i": 1}]}},
         {"await": {"command": "/buffer_alloc", "index": 3}},
@@ -878,7 +882,7 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     ])
     kinds = [entry[:2] for entry in playback.server.log]
     assert kinds == [("request", "/buffer_alloc"), ("send", "/buffer_setRange"),
-                     ("sync",)], "the fill waits for the allocation"
+                     ("request", "/server_sync")], "the fill waits for the allocation"
 
     piece = _native.PiecePlayback()
     playback.server.log.clear()

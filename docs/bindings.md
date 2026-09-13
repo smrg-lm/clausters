@@ -357,6 +357,9 @@ sits over it.
 | `clausters_editing_instance_teardown` | `JsInstance.teardown` | `idiom` — the operations that give back everything it made |
 | `clausters_editing_instance_meters` | `JsInstance.meters` | `idiom` — which control bus run each track's meters write, by track |
 | `clausters_editing_default_bpm` | `editing_default_bpm` | `idiom` — the tempo a piece that states none is read and drawn at; a plain function on both sides |
+| `clausters_editing_runner_new` | `JsStepRunner.new` | `idiom` — C hands back an opaque pointer, wasm a class; **steps being carried out**: the one queue a playback's answers are walked through, whatever waits on the reply |
+| `clausters_editing_runner_free` | `n/a` | wasm frees by `Drop` |
+| `clausters_editing_runner_call` | `JsStepRunner.call` | `idiom` — **one verb of the runner**, as JSON: `push` steps for a server, what is `ready` to go out (the awaited message last, with what it awaits), a `reply` offered back, and whether it is `idle`. **One door rather than one per verb**, as the editor's. A script blocks on the last message's reply and a page awaits it; both hand the reply back the same way. C sizes and fills a buffer where wasm returns the string |
 | `clausters_editing_playback_new` | `JsPiecePlayback.new` | `idiom` — C hands back an opaque pointer, wasm a class; **one piece as it is playing** — its instance, its applier and its transport, answering every verb as steps |
 | `clausters_editing_playback_free` | `JsPiecePlayback` `Drop` | `idiom` — wasm frees by `Drop`, C needs an explicit `_free`; the bookkeeping, not the nodes |
 | `clausters_editing_playback_sync` | `JsPiecePlayback.sync` | `idiom` — the steps that make what sounds be what the piece says, allocating from the client's id spaces; C sizes and fills (changing the playback and the spaces only on the fill) where wasm returns the string |

@@ -1424,6 +1424,27 @@ pub fn editing_default_bpm() -> f64 {
     clausters_editing::playback::DEFAULT_BPM
 }
 
+/// **Steps being carried out**: the queue a playback's answers are walked
+/// through, as `clausters_editing::run::call_json` documents.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = StepRunner)]
+pub struct JsStepRunner(clausters_editing::run::Runner);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = StepRunner)]
+impl JsStepRunner {
+    /// A runner holding nothing.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> JsStepRunner {
+        JsStepRunner(clausters_editing::run::Runner::new())
+    }
+
+    /// One verb: `push`, `ready`, `reply`, `idle`.
+    pub fn call(&mut self, request: &str) -> String {
+        clausters_editing::run::call_json(&mut self.0, request)
+    }
+}
+
 /// **One piece, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps (JSON).
 #[cfg(target_arch = "wasm32")]

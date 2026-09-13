@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 57
+CORE_ABI_VERSION = 58
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -269,6 +269,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_playback_new.argtypes = [
         ctypes.c_int32, ctypes.c_int32, ctypes.c_size_t,
     ]
+    lib.clausters_editing_runner_new.restype = ctypes.c_void_p
+    lib.clausters_editing_runner_new.argtypes = []
+    lib.clausters_editing_runner_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_runner_free.restype = None
+    lib.clausters_editing_runner_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_runner_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_playback_sync.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
@@ -1417,6 +1425,36 @@ def editing_default_bpm() -> float:
     minute (`clausters_editing_default_bpm`) -- the one default every endpoint
     takes."""
     return float(lib().clausters_editing_default_bpm())
+
+
+class StepRunner:
+    """**Steps being carried out** (`clausters_editing_runner_*`): the one queue
+    a playback's answers are walked through, whatever waits on the reply.
+
+    Every verb crosses through `call`, as JSON: ``push`` steps for a server,
+    ``ready`` answers the messages that may go out -- the awaited one last,
+    with what it awaits -- ``reply`` hands a server's answer back, and ``idle``
+    says whether anything is left.
+    """
+
+    def __init__(self):
+        self._handle = lib().clausters_editing_runner_new()
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the runner."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_editing_runner_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **fields) -> dict:
+        """One verb, with its fields; the answer as a dict."""
+        body = json.dumps({"verb": verb, **fields}).encode()
+        raw = size_then_fill(lib().clausters_editing_runner_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
 
 
 class PiecePlayback:

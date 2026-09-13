@@ -339,6 +339,73 @@ pub extern "C" fn clausters_editing_default_bpm() -> f64 {
     clausters_editing::playback::DEFAULT_BPM
 }
 
+/// **Steps being carried out**: the queue a playback's answers are walked
+/// through, the messages that may go out now and what a reply releases. Free it
+/// with [`clausters_editing_runner_free`].
+pub struct FfiStepRunner(std::sync::Mutex<clausters_editing::run::Runner>);
+
+/// A runner holding nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_editing_runner_new() -> *mut FfiStepRunner {
+    Box::into_raw(Box::new(FfiStepRunner(std::sync::Mutex::new(
+        clausters_editing::run::Runner::new(),
+    ))))
+}
+
+/// Frees a runner created by [`clausters_editing_runner_new`] (null is a
+/// no-op).
+///
+/// # Safety
+/// `r` must be a pointer from `clausters_editing_runner_new`, not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_runner_free(r: *mut FfiStepRunner) {
+    if !r.is_null() {
+        // SAFETY: caller guarantees `r` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(r) });
+    }
+}
+
+/// **One verb of the runner**, as `clausters_editing::run::call_json`
+/// documents: `push`, `ready`, `reply`, `idle`.
+///
+/// The verb runs against a copy that is adopted when the answer is filled, so a
+/// sizing pass changes nothing and can be repeated.
+///
+/// Returns the byte count the answer needs, or 0 for a null handle or a request
+/// that is not UTF-8.
+///
+/// # Safety
+/// `r` must be null or a live runner, `request` readable for `request_len`
+/// bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_runner_call(
+    r: *mut FfiStepRunner,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees `r` is live or null.
+    let Some(runner) = (unsafe { r.as_ref() }) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = runner.0.lock() else {
+        return 0;
+    };
+    let mut next = held.clone();
+    let answer = clausters_editing::run::call_json(&mut next, &request);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+            *held = next;
+        })
+    }
+}
+
 /// **One piece, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps. Free it with
 /// [`clausters_editing_playback_free`].

@@ -142,9 +142,139 @@ impl Runner {
     }
 }
 
+/// The name a server goes by over JSON.
+fn server_name(server: Server) -> &'static str {
+    match server {
+        Server::Sound => "sound",
+        Server::Samples => "samples",
+    }
+}
+
+/// **The runner over JSON**, for a client that binds it rather than links it.
+///
+/// `request` names a `verb`:
+///
+/// - `push` — `to` (`"sound"` or `"samples"`, sound when absent) and `steps`,
+///   in the shape a playback answers them ([`crate::apply::steps_json`]).
+///   Answers `{}`.
+/// - `ready` — answers `messages`, each `{"to", "addr", "args"}` with the
+///   arguments tagged as a step's are, and `awaiting`: `null`, or `{"from",
+///   "step"}` for the step the queue is now held behind. **When something is
+///   awaited, the last message is the one it waits on** -- the barrier itself,
+///   or the command a `/done` answers -- which is what lets a client that
+///   pairs a send with its reply send that one last.
+/// - `reply` — `from`, `addr` and `args` (tagged): answers `{"reply":
+///   "released"}`, `{"reply": "unrelated"}`, or `{"reply": "refused", "args"}`.
+/// - `idle` — answers `{"idle": bool}`.
+///
+/// A verb it does not know answers `{"error": ...}`.
+pub fn call_json(run: &mut Runner, request: &str) -> String {
+    use crate::apply::{arg_from_json, arg_json, steps_from_json, steps_json};
+    use serde_json::{Value, json};
+
+    let request: Value = serde_json::from_str(request).unwrap_or(Value::Null);
+    let server = |key: &str| match request.get(key).and_then(Value::as_str) {
+        Some("samples") => Server::Samples,
+        _ => Server::Sound,
+    };
+    let answer = match request.get("verb").and_then(Value::as_str) {
+        Some("push") => {
+            run.push(
+                server("to"),
+                steps_from_json(request.get("steps").unwrap_or(&Value::Null)),
+            );
+            json!({})
+        }
+        Some("ready") => {
+            let messages: Vec<Value> = run
+                .ready()
+                .into_iter()
+                .map(|(to, message)| {
+                    json!({
+                        "to": server_name(to),
+                        "addr": message.addr,
+                        "args": message.args.iter().map(arg_json).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            let awaiting = run.awaiting().map(|(from, step)| {
+                json!({
+                    "from": server_name(from),
+                    "step": steps_json(std::slice::from_ref(step))[0].clone(),
+                })
+            });
+            json!({ "messages": messages, "awaiting": awaiting })
+        }
+        Some("reply") => {
+            let message = OscMessage {
+                addr: request
+                    .get("addr")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                args: request
+                    .get("args")
+                    .and_then(Value::as_array)
+                    .map(|args| args.iter().filter_map(arg_from_json).collect())
+                    .unwrap_or_default(),
+            };
+            match run.reply(server("from"), &message) {
+                Reply::Released => json!({ "reply": "released" }),
+                Reply::Unrelated => json!({ "reply": "unrelated" }),
+                Reply::Refused(args) => json!({
+                    "reply": "refused",
+                    "args": args.iter().map(arg_json).collect::<Vec<_>>(),
+                }),
+            }
+        }
+        Some("idle") => json!({ "idle": run.is_idle() }),
+        other => json!({ "error": format!("the runner has no verb {other:?}") }),
+    };
+    answer.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The JSON door walks the same queue**: a playback's own steps pushed
+    /// in, the barrier as the last message out, and its reply releasing the
+    /// rest.
+    #[test]
+    fn the_json_door_walks_a_barrier() {
+        let mut run = Runner::new();
+        let steps = crate::apply::steps_json(&[
+            send("/def_send", vec![OscType::String("synth".into())]),
+            Step::Sync(3),
+            send("/graph_new", vec![OscType::Int(1000)]),
+        ]);
+        let pushed = call_json(
+            &mut run,
+            &serde_json::json!({"verb": "push", "steps": steps}).to_string(),
+        );
+        assert_eq!(pushed, "{}");
+        let ready: serde_json::Value =
+            serde_json::from_str(&call_json(&mut run, r#"{"verb":"ready"}"#)).unwrap();
+        let messages = ready["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["addr"], "/server_sync", "the awaited one last");
+        assert_eq!(ready["awaiting"]["step"]["sync"], 3);
+        assert_eq!(ready["awaiting"]["from"], "sound");
+        let reply = call_json(
+            &mut run,
+            r#"{"verb":"reply","from":"sound","addr":"/server_sync.reply","args":[{"i":3}]}"#,
+        );
+        assert_eq!(reply, r#"{"reply":"released"}"#);
+        let rest: serde_json::Value =
+            serde_json::from_str(&call_json(&mut run, r#"{"verb":"ready"}"#)).unwrap();
+        assert_eq!(rest["messages"][0]["addr"], "/graph_new");
+        assert_eq!(rest["messages"][0]["args"][0]["i"], 1000);
+        assert!(rest["awaiting"].is_null());
+        assert_eq!(
+            call_json(&mut run, r#"{"verb":"idle"}"#),
+            r#"{"idle":true}"#
+        );
+    }
 
     fn send(addr: &str, args: Vec<OscType>) -> Step {
         Step::Send(OscMessage {

@@ -399,7 +399,64 @@ pub fn steps_json(steps: &[Step]) -> Value {
     )
 }
 
-fn arg_json(arg: &OscType) -> Value {
+/// **Steps read back** from [`steps_json`]'s own shape: what a client hands a
+/// [`Runner`](crate::run::Runner) after a playback answered it. A step this
+/// cannot read is left out rather than guessed, and so is an argument.
+pub fn steps_from_json(steps: &Value) -> Vec<Step> {
+    let Some(steps) = steps.as_array() else {
+        return Vec::new();
+    };
+    steps
+        .iter()
+        .filter_map(|step| {
+            if let Some(send) = step.get("send") {
+                return Some(Step::Send(OscMessage {
+                    addr: send.get("addr")?.as_str()?.to_string(),
+                    args: send
+                        .get("args")
+                        .and_then(Value::as_array)
+                        .map(|args| args.iter().filter_map(arg_from_json).collect())
+                        .unwrap_or_default(),
+                }));
+            }
+            if let Some(wait) = step.get("await") {
+                return Some(Step::AwaitDone {
+                    command: wait.get("command")?.as_str()?.to_string(),
+                    index: wait.get("index").and_then(Value::as_i64).map(|i| i as i32),
+                });
+            }
+            step.get("sync")
+                .and_then(Value::as_i64)
+                .map(|id| Step::Sync(id as i32))
+        })
+        .collect()
+}
+
+/// One argument read back from [`arg_json`]'s tagged shape.
+pub fn arg_from_json(arg: &Value) -> Option<OscType> {
+    if let Some(v) = arg.get("i") {
+        return Some(OscType::Int(v.as_i64()? as i32));
+    }
+    if let Some(v) = arg.get("h") {
+        return Some(OscType::Long(v.as_i64()?));
+    }
+    if let Some(v) = arg.get("f") {
+        return Some(OscType::Float(v.as_f64()? as f32));
+    }
+    if let Some(v) = arg.get("s") {
+        return Some(OscType::String(v.as_str()?.to_string()));
+    }
+    let samples = arg.get("b")?.as_array()?;
+    Some(OscType::Blob(
+        samples
+            .iter()
+            .flat_map(|v| (v.as_f64().unwrap_or(0.0) as f32).to_le_bytes())
+            .collect(),
+    ))
+}
+
+/// One argument in the tagged shape a client reads.
+pub fn arg_json(arg: &OscType) -> Value {
     match arg {
         OscType::Int(v) => json!({ "i": v }),
         OscType::Float(v) => json!({ "f": v }),
@@ -670,6 +727,37 @@ mod tests {
     }
 
     /// The JSON a client walks: typed arguments, and a blob as its samples.
+    #[test]
+    fn steps_are_read_back_as_they_were_written() {
+        let steps = vec![
+            Step::Send(OscMessage {
+                addr: "/buffer_setRange".into(),
+                args: vec![
+                    OscType::Int(3),
+                    OscType::Long(1 << 40),
+                    OscType::Float(0.5),
+                    OscType::String("x".into()),
+                    OscType::Blob(
+                        [0.25f32, -1.0]
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect(),
+                    ),
+                ],
+            }),
+            Step::AwaitDone {
+                command: "/buffer_alloc".into(),
+                index: Some(3),
+            },
+            Step::AwaitDone {
+                command: "/transport_play".into(),
+                index: None,
+            },
+            Step::Sync(9),
+        ];
+        assert_eq!(steps_from_json(&steps_json(&steps)), steps);
+    }
+
     #[test]
     fn steps_cross_as_typed_json() {
         let steps = vec![
