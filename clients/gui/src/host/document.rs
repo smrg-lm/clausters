@@ -788,21 +788,7 @@ impl Owner {
                     .filter(|d| *d > 0.0);
                 Some((Intent::Place { node, offset, dur }, "move a clip"))
             }
-            // One sample dragged (D1) — a run of one, so it and a stroke are
-            // the same intent at two lengths.
-            "sample" => {
-                let start = long_at(args, 2)?;
-                let value = float_at(args, 3)?;
-                Some((
-                    Intent::WriteSamples {
-                        node,
-                        channel: channel_at(args),
-                        start,
-                        values: vec![value],
-                    },
-                    "edit a sample",
-                ))
-            }
+
             // A lane header's toggle or fader. **The composition's**, not the
             // window's: what is muted is a fact about the piece, so it goes
             // through the log like a clip's move and survives a save. It is the
@@ -840,25 +826,74 @@ impl Owner {
                     },
                 ))
             }
-            // A whole stroke (D2), the run as a blob.
-            "draw" => {
-                let start = long_at(args, 2)?;
-                let values = match args.get(3) {
-                    Some(OscType::Blob(bytes)) => decode_samples(bytes),
-                    _ => return None,
-                };
-                Some((
-                    Intent::WriteSamples {
-                        node,
-                        channel: channel_at(args),
-                        start,
-                        values,
-                    },
-                    "draw",
-                ))
+            // **A stroke and a single sample are one verb**, and the reading
+            // is the projection's (`clausters_editing::samples`): what the run
+            // is, whether there is one at all, and what the undo stack calls
+            // it. The host held its own copy of those rules and was short two
+            // of them -- it recorded an empty stroke as an edit that undoes to
+            // itself, and an inverse that did not cover the write's span as one
+            // that did.
+            "sample" | "draw" => {
+                let written = self.read_write(args)?;
+                let label = written.label;
+                Some((self.written_intent(node, &written, false)?, label))
             }
             _ => None,
         }
+    }
+
+    /// **What a `sample` or a `draw` report came to**, read once for the two
+    /// doors that ask about it.
+    ///
+    /// The blob is the whole reason this is here rather than a call into the
+    /// crate's JSON door: a stroke's run rides the wire as little-endian `f32`,
+    /// and turning it into a JSON array so the reading could be asked for would
+    /// be a conversion in each direction, on the one editing path whose payload
+    /// is large by design. So the host decodes the wire and the *rule* is the
+    /// crate's ([`clausters_editing::samples::write`]).
+    fn read_write(&self, args: &[OscType]) -> Option<clausters_editing::samples::Write> {
+        let tag = match args.first() {
+            Some(OscType::String(tag)) => tag.as_str(),
+            _ => return None,
+        };
+        let run = |at: usize| -> Vec<f64> {
+            match args.get(at) {
+                Some(OscType::Blob(bytes)) => decode_samples(bytes)
+                    .iter()
+                    .map(|v| f64::from(*v))
+                    .collect(),
+                Some(OscType::Float(v)) => vec![f64::from(*v)],
+                Some(OscType::Double(v)) => vec![*v],
+                _ => Vec::new(),
+            }
+        };
+        clausters_editing::samples::write(
+            tag,
+            i64::from(channel_at(args)),
+            long_at(args, 2)? as i64,
+            &run(3),
+            &run(4),
+        )
+    }
+
+    /// The reading as the intent it is, forward or inverted — `None` where the
+    /// run asked for is not there (an inverse the payload did not carry).
+    fn written_intent(
+        &self,
+        node: NodeId,
+        written: &clausters_editing::samples::Write,
+        inverse: bool,
+    ) -> Option<Intent> {
+        let values = match inverse {
+            true => written.previous.as_ref()?,
+            false => &written.values,
+        };
+        Some(Intent::WriteSamples {
+            node,
+            channel: written.channel,
+            start: written.start,
+            values: values.iter().map(|v| *v as f32).collect(),
+        })
     }
 
     /// The **inverse the payload carries**, for the one edit whose inverse the
@@ -872,25 +907,8 @@ impl Owner {
     /// gesture sends both.
     pub fn read_inverse(&self, widget_id: i32, args: &[OscType]) -> Option<Intent> {
         let node = self.node_of(widget_id)?;
-        let tag = match args.first() {
-            Some(OscType::String(tag)) => tag.as_str(),
-            _ => return None,
-        };
-        let start = long_at(args, 2)?;
-        let values = match tag {
-            "sample" => vec![float_at(args, 4)?],
-            "draw" => match args.get(4) {
-                Some(OscType::Blob(bytes)) => decode_samples(bytes),
-                _ => return None,
-            },
-            _ => return None,
-        };
-        (!values.is_empty()).then_some(Intent::WriteSamples {
-            node,
-            channel: channel_at(args),
-            start,
-            values,
-        })
+        let written = self.read_write(args)?;
+        self.written_intent(node, &written, true)
     }
 
     /// Applies one intent through the log, so it can be undone.
@@ -1214,7 +1232,12 @@ mod tests {
     }
 
     /// A dragged sample and a whole stroke are the same intent at two lengths,
-    /// which is what makes one owner answer both.
+    /// which is what makes one owner answer both — **including what the undo
+    /// stack calls it**, which is the one place they were still two. The
+    /// reading is the projection's now
+    /// (`clausters_editing::samples::write`), and it names the verb once: a
+    /// host's undo entry and a client's say the same thing over the same
+    /// gesture.
     #[test]
     fn a_sample_and_a_stroke_are_one_intent() {
         let mut owner = Owner::new(Document::new(clang(1)));
@@ -1232,7 +1255,7 @@ mod tests {
                 ],
             )
             .expect("a dragged sample");
-        assert_eq!(label, "edit a sample");
+        assert_eq!(label, "draw the samples");
         assert!(
             matches!(&one, Intent::WriteSamples { start, values, .. }
                      if *start == 12 && values == &[0.5]),
@@ -1255,11 +1278,49 @@ mod tests {
                 ],
             )
             .expect("a stroke");
-        assert_eq!(label, "draw");
+        assert_eq!(label, "draw the samples", "one verb, one name");
         assert!(
             matches!(&many, Intent::WriteSamples { start, values, .. }
                      if *start == 12 && values.len() == 3),
             "{many:?}"
+        );
+
+        // **And the two rules the host used to be short of.** A stroke that
+        // covered no frame is not an edit -- recorded, it would be a pile entry
+        // that undoes to itself -- and an inverse that does not cover the
+        // write's span is no inverse, which is better said than pretended.
+        assert_eq!(
+            owner.read_event(
+                50,
+                &[
+                    OscType::String("draw".into()),
+                    OscType::Int(0),
+                    OscType::Long(12),
+                    OscType::Blob(Vec::new()),
+                    OscType::Blob(Vec::new()),
+                ]
+            ),
+            None,
+            "a stroke over nothing is not an edit"
+        );
+        let short: Vec<u8> = 0.5f32.to_le_bytes().to_vec();
+        let long: Vec<u8> = [0.25f32, -0.25]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        assert_eq!(
+            owner.read_inverse(
+                50,
+                &[
+                    OscType::String("draw".into()),
+                    OscType::Int(0),
+                    OscType::Long(12),
+                    OscType::Blob(long),
+                    OscType::Blob(short),
+                ]
+            ),
+            None,
+            "an inverse that covers half the write undoes half of it"
         );
     }
 

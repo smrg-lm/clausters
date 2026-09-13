@@ -27,30 +27,91 @@ fn run(value: &Value) -> Vec<f64> {
     }
 }
 
-/// The gesture as the write it is, with the run it replaced as its inverse.
+/// **The words this domain answers for**, and the only place they are listed.
 ///
 /// Two tags, one verb: a stroke and a single sample differ in how much they
-/// carry and not in what they mean. A write of nothing is **not an edit** — a
-/// stroke that covered no frame changed no frame, and recording one would put
-/// an entry in the pile that undoes to itself.
+/// carry and not in what they mean.
+pub fn answers(tag: &str) -> bool {
+    matches!(tag, "draw" | "sample")
+}
+
+/// **What a report over samples came to**: the write, and the run it replaced
+/// when that run can undo it.
 ///
-/// **The inverse is stated only when it covers the same span.** An inverse
-/// shorter or longer than the write it undoes would leave part of the edit
-/// standing, and an entry the pile cannot invert is better recorded as one than
-/// pretended.
+/// The label is here rather than at each caller for the reason every other
+/// label in this crate is: a verb named two ways in two endpoints is the same
+/// divergence as a verb applied two ways, only quieter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Write {
+    /// Which channel of the samples the span belongs to.
+    pub channel: u32,
+    /// First frame of the span, in that channel.
+    pub start: u64,
+    /// The values the span now holds.
+    pub values: Vec<f64>,
+    /// The run it replaced, when that is an inverse the pile can apply.
+    pub previous: Option<Vec<f64>>,
+    /// What the undo stack shows for it.
+    pub label: &'static str,
+}
+
+/// **The gesture as the write it is**, from the numbers rather than from a
+/// payload.
+///
+/// The typed door, for a caller that is already holding the run: a host has
+/// decoded the blob the wire carried, and turning it back into JSON so that
+/// this crate could read it would be a conversion in each direction for a rule
+/// fifteen lines long. [`intake`] is the same function with the JSON reading in
+/// front of it, which is what a client needs.
+///
+/// `f64` and not `f32` because that is what a report's numbers are once they
+/// have been read: the samples on the wire are `f32` and every value here comes
+/// from one, so both conversions are exact and neither door has to know which
+/// the other used.
+///
+/// Two rules, and both of them are *what is not an edit*:
+///
+/// - **A write of nothing is not one.** A stroke that covered no frame changed
+///   no frame, and recording it would put an entry in the pile that undoes to
+///   itself.
+/// - **The inverse is stated only when it covers the same span.** An inverse
+///   shorter or longer than the write it undoes would leave part of the edit
+///   standing, and an entry the pile cannot invert is better recorded as one
+///   than pretended.
+pub fn write(
+    tag: &str,
+    channel: i64,
+    start: i64,
+    wrote: &[f64],
+    previous: &[f64],
+) -> Option<Write> {
+    if !answers(tag) || wrote.is_empty() {
+        return None;
+    }
+    Some(Write {
+        channel: channel.max(0) as u32,
+        start: start.max(0) as u64,
+        values: wrote.to_vec(),
+        previous: (previous.len() == wrote.len()).then(|| previous.to_vec()),
+        label: "draw the samples",
+    })
+}
+
+/// The gesture as the write it is, with the run it replaced as its inverse —
+/// [`write`] behind the JSON reading a client's report arrives as.
 pub fn intake(tag: &str, values: &[Value]) -> Intake {
-    if !matches!(tag, "draw" | "sample") || values.len() < 4 {
+    if !answers(tag) || values.len() < 4 {
         return Intake::nothing();
     }
     let (channel, start) = (number(&values[0]) as i64, number(&values[1]) as i64);
     let (wrote, previous) = (run(&values[2]), run(&values[3]));
-    if wrote.is_empty() {
+    let Some(written) = write(tag, channel, start, &wrote, &previous) else {
         return Intake::nothing();
-    }
-    let write = |values: &[f64]| json!({ "intent": "write", "channel": channel, "start": start, "values": values });
-    let mut intake = Intake::edit(write(&wrote), "draw the samples");
-    if previous.len() == wrote.len() {
-        intake.inverse = Some(write(&previous));
+    };
+    let payload = |values: &[f64]| json!({ "intent": "write", "channel": written.channel, "start": written.start, "values": values });
+    let mut intake = Intake::edit(payload(&written.values), written.label);
+    if let Some(previous) = &written.previous {
+        intake.inverse = Some(payload(previous));
     }
     intake
 }
