@@ -316,14 +316,6 @@ generator's output in an ignored `out/`. Their plans' checkboxes, the
 being the skill's, since that is where the three directories and their forms
 are written down.
 
-- ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
-  it** *(`APPLICATION-SCOPE.md`, Found by use)*. The crate's `samples` vocabulary
-  has no field for "what this replaced", so the previous run waits in a private
-  attribute between `payload` and `current`, and the interface never says the two
-  must be called in that order, once. **The decision:** whether the inverse is a
-  field of the vocabulary or stays the client's bookkeeping - which is `AP4`
-  asked again about the one payload that did not fit it.
-
 - ⬜ **A pass re-cued from the playhead drops the clip the playhead is inside**
   *(`clients/python/PLAN.md`, Found by use)*. `Playhead.play(at=…)` starts the
   scan at the first item **at or after** that beat, so an item spanning the

@@ -929,7 +929,11 @@ three-gesture plan, the measures its picture stacks (`peak`, `rms`, checked by
 the correction a write from the other side answers with. Its handle
 (`clausters_apps::samples::editor::SamplesEditor`) holds those facts between
 messages and composes and corrects the window through the same kind of JSON door
-the multitrack editor has; the conversation is still each client's.
+the multitrack editor has. Its turns are there too: a stroke or a dragged sample
+is read with the run it replaced in one reading, so the inverse is the reading's,
+and a turn answers the write to carry out on the buffer and the entry to record,
+which the caller does. The turn's words — `Kind`, `Leg`, `Record`, `Event` — are
+the two applications' own and live in `clausters_apps::turn`.
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and

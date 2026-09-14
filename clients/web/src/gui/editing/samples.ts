@@ -33,6 +33,8 @@
  */
 
 import { SAMPLES } from "../../document.ts";
+import type { RecordedLeg, Selection } from "../../document.ts";
+import type { Answer } from "./echo.ts";
 import type { Buffer } from "../../defs/buffer.ts";
 import { SamplesEditorCore, samplesMeasures } from "../../core/clausters_core_web.js";
 import type { GuiNode } from "../guidef.ts";
@@ -78,6 +80,31 @@ interface Write {
 }
 
 /**
+ * An event's arguments as JSON carries them: a blob is the run a stroke wrote or
+ * replaced, read into its numbers — the wire's framing is this page's.
+ */
+function plain(value: unknown): unknown {
+    if (value instanceof ArrayBuffer) return floats(new Uint8Array(value));
+    if (ArrayBuffer.isView(value)) return floats(value);
+    if (Array.isArray(value)) return value.map(plain);
+    return value;
+}
+
+/** What one turn of the core came to. */
+interface Outcome {
+    turn?: string;
+    answer?: Answer;
+    seq?: number;
+    redo?: boolean;
+    record?: { label: string; legs: { forward: unknown; backward: unknown; key: string }[] };
+    changed?: boolean;
+    version?: number;
+    edit?: unknown;
+    locate?: number;
+    selection?: unknown;
+}
+
+/**
  * A run of samples as numbers, from the little-endian `f32` blob the wire
  * carries (or from an array, which is what a hand-written test sends).
  */
@@ -96,6 +123,11 @@ function floats(blob: unknown): number[] {
 /**
  * A span of samples' vocabulary: the crate's `samples`, over frames the server
  * holds.
+ *
+ * **What a gesture means is the application's** (`SamplesEditorCore`): the run
+ * a stroke wrote and the run it replaced are read there in one reading, so
+ * nothing waits here between two calls. What is left is the write itself, onto
+ * the buffer this page holds — a stroke's, and a step of the history's.
  */
 export class SamplesDomain extends Domain<Buffer> {
     override readonly name = SAMPLES;
@@ -112,39 +144,11 @@ export class SamplesDomain extends Domain<Buffer> {
     #writes: Promise<void> = Promise.resolve();
 
     /**
-     * The report, with the two runs decoded.
-     *
-     * **The wire's own framing is this page's.** A `draw` carries its run as a
-     * little-endian `f32` blob, which is an `ArrayBuffer` here and a
-     * `memoryview` in the Python client and cannot be either in a JSON request —
-     * so the blob is read into numbers and the crate reads the numbers.
-     */
-    override request(
-        _structure: Buffer,
-        tag: string,
-        values: readonly unknown[],
-    ): Record<string, unknown> {
-        const out = [...values];
-        if (tag === "draw" && out.length >= 4) {
-            out[2] = floats(out[2]);
-            out[3] = floats(out[3]);
-        }
-        return { values: out };
-    }
-
-    /**
-     * What the stroke replaced, as the write that puts it back.
-     *
-     * **The one vocabulary whose inverse arrives with the gesture**: the payload
-     * states the run written and has no field for the run it replaced, and the
-     * host sends both in the same event. So there is nothing to read off the
-     * structure — by the time this is asked the answer is already in the
-     * reading, and it is `null` when the two runs did not cover the same span,
-     * which is an entry the pile cannot invert and is better recorded as one
-     * than pretended.
+     * Nothing: the inverse of a stroke is read by the core from the same
+     * message that carried the stroke, so there is nothing to read off the take.
      */
     current(_structure: Buffer, _payload: unknown): unknown {
-        return this.taken.inverse ?? null;
+        return null;
     }
 
     project(structure: Buffer, payload: unknown): boolean {
@@ -244,7 +248,9 @@ export class SamplesEditor extends Editor<Buffer> {
             domain: new SamplesDomain(),
             view,
         });
-        this.core = new SamplesEditorCore(JSON.stringify({ ...this.facts(), layers: view.layers }));
+        this.core = new SamplesEditorCore(
+            JSON.stringify({ ...this.facts(), layers: view.layers, version: this.version }),
+        );
     }
 
     /** What this page holds about the take and the window. */
@@ -260,6 +266,7 @@ export class SamplesEditor extends Editor<Buffer> {
             title: this.title,
             w: this.size[0],
             h: this.size[1],
+            window: this.windowId,
         };
     }
 
@@ -283,6 +290,83 @@ export class SamplesEditor extends Editor<Buffer> {
      */
     syncCore(): void {
         this.coreCall("sync", this.facts());
+    }
+
+    // ---- the crate's turns ----
+
+    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
+        this.syncCore();
+        const outcome = this.coreCall("event", {
+            addr,
+            args: plain([...rawArgs]),
+            version: this.version,
+        }) as Outcome;
+        if (outcome.turn === "closed") return this.closedWindow();
+        if (outcome.turn === "step") {
+            // **What it answers is whether anything moved**, and a step nobody
+            // could apply says why.
+            const stepped = outcome.redo === true ? this.redo() : this.undo();
+            const reason = !stepped && this.app.unreachable !== null
+                ? `${this.app.unreachable}: nothing here can put that edit back`
+                : null;
+            this.echo.send(this.coreCall("acknowledge", {
+                seq: outcome.seq ?? 0,
+                version: this.version,
+                reason,
+            }) as unknown as Answer);
+            return stepped;
+        }
+        return this.take(outcome);
+    }
+
+    /**
+     * One `/gui_event` payload, with the stamp already taken off: the same turn
+     * as a message, unstamped.
+     */
+    protected override route(args: readonly unknown[]): boolean {
+        this.syncCore();
+        const [wid, tag, ...values] = args;
+        return this.take(this.coreCall("event", {
+            addr: "/gui_event",
+            args: plain([wid, 0, 0, tag, ...values]),
+            version: this.version,
+        }) as Outcome);
+    }
+
+    /**
+     * Carry out what a turn came to, and answer the host. Answers whether the
+     * take changed.
+     */
+    private take(outcome: Outcome): boolean {
+        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        const changed = outcome.changed === true;
+        if (changed) {
+            // **The write is this page's to carry out**: the samples are in the
+            // server's buffer, and the crate answered what to write there.
+            (this.domain as SamplesDomain).project(this.structure, outcome.edit);
+            const record = outcome.record;
+            if (record !== undefined) {
+                this.editing.history.record(
+                    record.legs.map((leg) => ({ structure: this.registered(), ...leg }) as RecordedLeg),
+                    { label: record.label },
+                );
+            }
+            this.version = outcome.version ?? this.version;
+            this.dirty = true;
+            this.editing.changed();
+        }
+        if (outcome.locate !== undefined) {
+            this.cursor = outcome.locate;
+            this.locate(this.cursor);
+            this.composedIn?.locate(this.cursor);
+            this.onLocate?.(this.cursor);
+        }
+        if (outcome.selection !== undefined) {
+            this.selection = outcome.selection as unknown as Selection;
+            this.selected();
+        }
+        this.echo.send(outcome.answer);
+        return changed;
     }
 
     /**

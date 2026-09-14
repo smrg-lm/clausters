@@ -1062,7 +1062,7 @@ clients and the standalone host green, and each is its own commit.
    constant in each client, as the list a reader names, and the crate is what
    refuses one that is not on it. The label a nameless take is shown under is
    the crate's too.
-2. ⬜ **The conversation.** `clausters_apps::samples::editor::SamplesEditor`: one
+2. ✅ **The conversation.** `clausters_apps::samples::editor::SamplesEditor`: one
    view's end of the conversation, as the multitrack's editor is -- a `draw` or a
    `sample` read through `clausters_editing::samples` (a client still decodes the
    `f32` blob, which is the wire's framing), checked against the version, the
@@ -1073,6 +1073,13 @@ clients and the standalone host green, and each is its own commit.
    and `SamplesDomain.request`/`current` go; the "Found by use" entry about
    `SamplesDomain` smuggling the inverse closes here. The history stays with the
    caller in this step, as it did for the multitrack's (`O32` step 2).
+
+   *Done 2026-09-14.* `SamplesEditor` grew `event` and `acknowledge`; a turn
+   answers the write to carry out (`edit`), the entry to record, the version,
+   and the position cursor and selection in beats. The words a turn is made of
+   moved to `clausters_apps::turn`, since two applications now share them. Both
+   clients hand every message to the core and `SamplesDomain` keeps only the
+   write, which step 3 takes.
 3. ⬜ **The write.** What an applied stroke does to the server buffer, as steps
    the runner carries out (`clausters_editing::run`): a `/buffer_setRange` of
    the run for a mono take, and for an interleaved one the span read, the
@@ -1587,7 +1594,7 @@ owner moved is how a working editor becomes a new set of defects.
   document logs read it. One door answers the same shape in both directions, so
   dropping it now takes a deliberate line rather than an omission.
 
-- ⬜ **`SamplesDomain` smuggles the inverse between two calls that do not mention
+- ✅ **`SamplesDomain` smuggles the inverse between two calls that do not mention
   it** *(found 2026-09-06, auditing AP4's premise)*. The crate's `samples`
   vocabulary has no field for "what this replaced", so the previous run - which
   arrives on the wire in the same event - waits in `self._previous` between
@@ -1601,6 +1608,12 @@ owner moved is how a working editor becomes a new set of defects.
   against, and the fix - carrying the previous run in the payload the wire
   already put it in - has to answer what an extra field does to the coalesce key
   and to what the log records, which is more than a rename.
+
+  **Closed 2026-09-14 by `AP7` step 2, without a field.** The gesture is read
+  once, in the application's editor (`clausters_apps::samples::editor`), and
+  `clausters_editing::samples::intake` answers the write and its inverse off that
+  one reading, so nothing waits in a domain between two calls and the vocabulary
+  did not grow. The coalesce key and what the log records are unchanged.
 
 - ✅ **A publish that redefines widgets does not always tell the host what
   version it is now drawing** — *moot 2026-09-06 with `FormEditor`'s removal, and

@@ -35,47 +35,9 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction, Me
 use clausters_editing::multitrack::{self as projection, Look};
 
 use super::{Meter, Transport, TransportIds, Window};
+use crate::turn::{int, number, text};
 
-/// What kind of turn a message came to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Kind {
-    /// Not this editor's, or not an event at all.
-    #[default]
-    Nothing,
-    /// This editor's window closed.
-    Closed,
-    /// A walk through the history, which the caller takes and then answers
-    /// with [`MultitrackEditor::acknowledge`].
-    Step,
-    /// An edit made against a picture that is gone: refused, and the picture
-    /// handed back.
-    Stale,
-    /// A gesture, read and answered.
-    Route,
-}
-
-/// One structure's share of an entry to record: how to redo it, how to put it
-/// back, and what makes two of them the same thing done the same way.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Leg {
-    /// `{"edit": <payload>}`.
-    pub forward: Value,
-    /// The payload that puts the piece back, read before the edit landed.
-    pub backward: Value,
-    /// The coalesce key, empty for an edit that never coalesces.
-    pub key: String,
-}
-
-/// An entry for the history the caller keeps: one gesture, however many edits
-/// it took.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Record {
-    /// What an undo menu calls it.
-    pub label: String,
-    /// The piece's legs, in the order they were applied.
-    pub legs: Vec<Leg>,
-}
+pub use crate::turn::{Event, Kind, Leg, Record};
 
 /// **What one turn came to.**
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -150,17 +112,6 @@ pub struct Applied {
     /// The piece as it now stands, when it moved.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub piece: Option<Value>,
-}
-
-/// One message from the host: its address and its arguments,
-/// `<id> <seq> <version> <tag> <payload…>`.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct Event {
-    /// `"/gui_event"` or `"/gui_closed"`.
-    pub addr: String,
-    /// The arguments, in order.
-    #[serde(default)]
-    pub args: Vec<Value>,
 }
 
 /// **The multitrack editor**: a piece, the window it is drawn in, and one
@@ -861,24 +812,6 @@ fn minted(payload: &Value) -> Option<Value> {
         .get("source")
         .filter(|s| s.get("id").is_some_and(|id| !id.is_null()))
         .cloned()
-}
-
-fn int(value: &Value) -> i64 {
-    value
-        .as_i64()
-        .or_else(|| value.as_f64().map(|f| f as i64))
-        .unwrap_or(0)
-}
-
-fn number(value: &Value) -> f64 {
-    value.as_f64().unwrap_or(0.0)
-}
-
-fn text(value: &Value) -> String {
-    match value {
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
 }
 
 /// What [`call_json`] builds an editor from: the piece, its axis and its

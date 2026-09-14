@@ -53,6 +53,17 @@ def measures(stack) -> tuple:
     return _native.samples_measures(stack)
 
 
+def _plain(value):
+    """An event's arguments as JSON carries them: a blob is the run a stroke
+    wrote or replaced, read into its numbers -- the wire's framing is this
+    client's."""
+    if isinstance(value, (bytes, bytearray, memoryview, array)):
+        return _floats(value)
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
 def _floats(blob) -> list:
     """A run of samples as floats, from the little-endian ``f32`` blob the wire
     carries (or from a list, which is what a hand-written test sends)."""
@@ -68,36 +79,17 @@ def _floats(blob) -> list:
 
 class SamplesDomain(Domain):
     """A span of samples' vocabulary: the crate's ``samples``, over frames the
-    server holds."""
+    server holds.
+
+    **What a gesture means is the application's** (`SamplesEditorCore`): the
+    run a stroke wrote and the run it replaced are read there in one reading,
+    so nothing waits here between two calls. What is left is the write itself,
+    onto the buffer this client holds -- a stroke's, and a step of the
+    history's.
+    """
 
     name = _native.SAMPLES
     ingested = True
-
-    def request(self, structure, tag: str, values) -> dict:
-        """The report, with the two runs decoded.
-
-        **The wire's own framing is this client's.** A `draw` carries its run as
-        a little-endian ``f32`` blob, which is a `memoryview` here and an
-        `ArrayBuffer` in the page and cannot be either in a JSON request — so
-        the blob is read into numbers and the crate reads the numbers.
-        """
-        values = list(values)
-        if tag == "draw" and len(values) >= 4:
-            values[2], values[3] = _floats(values[2]), _floats(values[3])
-        return {"values": values}
-
-    def current(self, structure, payload: dict) -> "dict | None":
-        """What the stroke replaced, as the write that puts it back.
-
-        **The one vocabulary whose inverse arrives with the gesture**: the
-        payload states the run written and has no field for the run it
-        replaced, and the host sends both in the same event. So there is nothing
-        to read off the structure — by the time this is asked, the answer is
-        already in the reading, and it is ``None`` when the two runs did not
-        cover the same span, which is an entry the pile cannot invert and is
-        better recorded as one than pretended.
-        """
-        return self._taken.get("inverse")
 
     def project(self, structure, payload: dict) -> bool:
         channels = max(1, int(getattr(structure, "channels", 1) or 1))
@@ -170,7 +162,8 @@ class SamplesEditor(Editor):
         #: **The window, in the shared crate**: the take, the measures and the
         #: chrome it is composed from.
         self._core = _native.SamplesEditorCore(
-            {**self._facts(), "layers": list(view.layers)})
+            {**self._facts(), "layers": list(view.layers),
+             "version": int(self._version)})
 
     def _facts(self) -> dict:
         take = self.structure
@@ -179,12 +172,77 @@ class SamplesEditor(Editor):
                 "channels": max(1, int(getattr(take, "channels", 1) or 1)),
                 "name": name if isinstance(name, str) and name else None,
                 "rate": self.sample_rate, "tempo": self.tempo,
-                "title": self.title, "w": int(self.size[0]), "h": int(self.size[1])}
+                "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
+                "window": self._window}
 
     def _sync_core(self) -> None:
         """Hand the core what this client holds: the take a script may have
-        resized, the axis and the window's chrome."""
+        resized, the axis, the window's chrome and the window it is open in."""
         self._core.call("sync", **self._facts())
+
+    # ---- the crate's turns ----
+
+    def _deliver(self, addr: str, args) -> bool:
+        self._sync_core()
+        outcome = self._core.call("event", addr=str(addr), args=_plain(list(args)),
+                                  version=int(self._version))
+        kind = outcome.get("turn")
+        if kind == "closed":
+            return self._closed()
+        if kind == "step":
+            # **What it answers is whether anything moved**, and a step nobody
+            # could apply says why.
+            stepped = (self.redo if outcome.get("redo") else self.undo)()
+            reason = None
+            if not stepped and self.app.unreachable is not None:
+                reason = (f"{self.app.unreachable}: nothing here can put "
+                          "that edit back")
+            self.echo.send(self._core.call(
+                "acknowledge", seq=int(outcome.get("seq", 0)),
+                version=int(self._version), reason=reason))
+            return stepped
+        return self._take(outcome)
+
+    def _route(self, args) -> bool:
+        """One ``/gui_event`` payload, with the stamp already taken off: the
+        same turn as a message, unstamped."""
+        self._sync_core()
+        wid, tag, values = args[0], args[1], list(args[2:])
+        return self._take(self._core.call(
+            "event", addr="/gui_event",
+            args=_plain([wid, 0, 0, tag, *values]), version=int(self._version)))
+
+    def _take(self, outcome: dict) -> bool:
+        """Carry out what a turn came to, and answer the host. Returns whether
+        the take changed."""
+        if outcome.get("turn") in (None, "nothing"):
+            return False
+        changed = bool(outcome.get("changed"))
+        if changed:
+            # **The write is this client's to carry out**: the samples are in
+            # the server's buffer, and the crate answered what to write there.
+            self.domain.project(self.structure, outcome["edit"])
+            record = outcome.get("record")
+            if record:
+                self._editing.history.record(
+                    [{"structure": self._registered(), **leg}
+                     for leg in record["legs"]],
+                    label=record["label"])
+            self._version = int(outcome["version"])
+            self.dirty = True
+            self._editing.changed()
+        if outcome.get("locate") is not None:
+            self.cursor = float(outcome["locate"])
+            self.locate(self.cursor)
+            if self.composed_in is not None:
+                self.composed_in.locate(self.cursor)
+            if callable(self.on_locate):
+                self.on_locate(self.cursor)
+        if outcome.get("selection") is not None:
+            self.selection = outcome["selection"]
+            self.selected()
+        self.echo.send(outcome.get("answer"))
+        return changed
 
     @property
     def layers(self) -> tuple:
