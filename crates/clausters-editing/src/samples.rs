@@ -15,6 +15,9 @@
 
 use serde_json::{Value, json};
 
+use clausters_core::osc::{OscMessage, OscType};
+
+use crate::apply::Step;
 use crate::intake::{Intake, number};
 
 /// A reported field as a run of samples: an array as itself, a lone number as a
@@ -116,6 +119,58 @@ pub fn intake(tag: &str, values: &[Value]) -> Intake {
     intake
 }
 
+/// **What a write does to the buffer the take is in**, as steps a runner
+/// carries out.
+///
+/// A mono take is written with `/buffer_setRange`, whose positions are flat
+/// samples; a take with more channels is written one channel at a time with
+/// `/buffer_setRangeChannel`, whose positions are that channel's frames, so the
+/// other channels are never read or written. The run is sent in chunks of at
+/// most `chunk` values — the endpoint's transport bound — and the last one's
+/// `/done` is awaited, so a caller that walks the steps learns of a refusal
+/// (a run past the end of the buffer) rather than losing the write silently.
+///
+/// `payload` is the `write` intent a turn answered: `channel`, `start` and
+/// `values`. A write of nothing is no steps.
+pub fn write_steps(bufnum: i32, channels: u32, payload: &Value, chunk: usize) -> Vec<Step> {
+    let values: Vec<f32> = run(payload.get("values").unwrap_or(&Value::Null))
+        .into_iter()
+        .map(|v| v as f32)
+        .collect();
+    if values.is_empty() {
+        return Vec::new();
+    }
+    let channels = channels.max(1);
+    let channel =
+        (number(payload.get("channel").unwrap_or(&Value::Null)).max(0.0) as u32).min(channels - 1);
+    let start = number(payload.get("start").unwrap_or(&Value::Null)).max(0.0) as usize;
+    let addr = if channels == 1 {
+        "/buffer_setRange"
+    } else {
+        "/buffer_setRangeChannel"
+    };
+    let chunk = chunk.max(1);
+    let mut steps = Vec::new();
+    for (i, part) in values.chunks(chunk).enumerate() {
+        let blob = part.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let mut args = vec![OscType::Int(bufnum)];
+        if channels > 1 {
+            args.push(OscType::Int(channel as i32));
+        }
+        args.push(OscType::Int((start + i * chunk) as i32));
+        args.push(OscType::Blob(blob));
+        steps.push(Step::Send(OscMessage {
+            addr: addr.into(),
+            args,
+        }));
+    }
+    steps.push(Step::AwaitDone {
+        command: addr.into(),
+        index: Some(bufnum),
+    });
+    steps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +208,59 @@ mod tests {
         );
         assert_eq!(ragged.payloads.len(), 1);
         assert!(ragged.inverse.is_none());
+    }
+
+    /// **A mono take is written as flat samples, a stereo one a channel at a
+    /// time**, chunked by the endpoint's bound and closed by the last chunk's
+    /// `/done`.
+    #[test]
+    fn a_write_is_chunked_onto_the_right_command() {
+        let payload =
+            json!({"intent": "write", "channel": 1, "start": 4, "values": [0.5, 0.25, -1.0]});
+        let addr = |step: &Step| match step {
+            Step::Send(m) => m.addr.clone(),
+            Step::AwaitDone { command, .. } => format!("await {command}"),
+            Step::Sync(_) => "sync".into(),
+        };
+        let mono = write_steps(7, 1, &payload, 2);
+        assert_eq!(
+            mono.iter().map(addr).collect::<Vec<_>>(),
+            [
+                "/buffer_setRange",
+                "/buffer_setRange",
+                "await /buffer_setRange"
+            ]
+        );
+        let Step::Send(second) = &mono[1] else {
+            panic!()
+        };
+        assert_eq!(
+            second.args[1],
+            OscType::Int(6),
+            "the start advances by a chunk"
+        );
+        assert_eq!(
+            second.args[2],
+            OscType::Blob((-1.0f32).to_le_bytes().to_vec())
+        );
+
+        let stereo = write_steps(7, 2, &payload, 8);
+        let Step::Send(only) = &stereo[0] else {
+            panic!()
+        };
+        assert_eq!(only.addr, "/buffer_setRangeChannel");
+        assert_eq!(
+            &only.args[..3],
+            &[OscType::Int(7), OscType::Int(1), OscType::Int(4)]
+        );
+        assert_eq!(
+            stereo[1],
+            Step::AwaitDone {
+                command: "/buffer_setRangeChannel".into(),
+                index: Some(7)
+            }
+        );
+        assert!(write_steps(7, 1, &json!({"values": []}), 8).is_empty());
     }
 
     /// A tag no hand over samples makes is nothing, not a refusal.

@@ -931,8 +931,11 @@ the correction a write from the other side answers with. Its handle
 messages and composes and corrects the window through the same kind of JSON door
 the multitrack editor has. Its turns are there too: a stroke or a dragged sample
 is read with the run it replaced in one reading, so the inverse is the reading's,
-and a turn answers the write to carry out on the buffer and the entry to record,
-which the caller does. The turn's words — `Kind`, `Leg`, `Record`, `Event` — are
+and a turn answers the write to carry out on the buffer and the entry to record.
+What a write does to the buffer is steps too (`clausters_editing::samples::write_steps`):
+`/buffer_setRange` for a mono take, `/buffer_setRangeChannel` for one channel of a
+wider one, walked by the runner against the take's server — for a stroke and for
+a step of the history alike. The turn's words — `Kind`, `Leg`, `Record`, `Event` — are
 the two applications' own and live in `clausters_apps::turn`.
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One

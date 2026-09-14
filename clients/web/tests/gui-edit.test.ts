@@ -80,9 +80,45 @@ const aTimeline = (): Timeline =>
         [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
     ]);
 
+/** The two writes a take's editor sends, laid into a `FakeBuffer`. */
+class FakeServer {
+    sent: string[] = [];
+    private readonly take: FakeBuffer;
+
+    constructor(take: FakeBuffer) {
+        this.take = take;
+    }
+
+    bulkChunk(): Promise<number> {
+        return Promise.resolve(8192);
+    }
+
+    sendMsg(addr: string, ...args: unknown[]): void {
+        this.sent.push(addr);
+        const bytes = args[args.length - 1] as Uint8Array;
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const mono = addr === "/buffer_setRange";
+        const at = (i: number) => {
+            const arg = args[i];
+            return Array.isArray(arg) ? Number(arg[1]) : Number(arg);
+        };
+        const first = mono ? at(1) : at(2) * this.take.channels + at(1);
+        const stride = mono ? 1 : this.take.channels;
+        for (let i = 0; i * 4 < bytes.byteLength; i += 1) {
+            this.take.data[first + i * stride] = view.getFloat32(i * 4, true);
+        }
+    }
+
+    request(addr: string, args: unknown[]): Promise<{ addr: string; args: unknown[] }> {
+        this.sendMsg(addr, ...args);
+        const bufnum = Array.isArray(args[0]) ? Number(args[0][1]) : Number(args[0]);
+        return Promise.resolve({ addr: "/done", args: [addr, bufnum] });
+    }
+}
+
 /**
- * A server buffer, as the samples domain touches one: a number, a shape, and the
- * two calls that read and write its frames.
+ * A server buffer, as the samples domain touches one: a number, a shape, and
+ * the server its writes go to.
  */
 class FakeBuffer {
     bufnum = 7;
@@ -90,21 +126,17 @@ class FakeBuffer {
     channels: number;
     sampleRate = SR;
     data: number[];
+    server: FakeServer;
 
     constructor(frames = 16, channels = 1) {
         this.frames = frames;
         this.channels = channels;
         this.data = new Array(frames * channels).fill(0);
+        this.server = new FakeServer(this);
     }
 
-    getSamples({ start = 0, count = -1 }: { start?: number; count?: number } = {}) {
-        const end = count < 0 ? this.data.length : start + count;
-        return Promise.resolve(Float32Array.from(this.data.slice(start, end)));
-    }
-
-    setSamples(samples: ArrayLike<number>, { start = 0 }: { start?: number } = {}) {
-        for (let i = 0; i < samples.length; i += 1) this.data[start + i] = Number(samples[i]);
-        return Promise.resolve();
+    setSamples(): Promise<void> {
+        return Promise.reject(new Error("a take's editor writes through its steps"));
     }
 }
 
@@ -388,7 +420,8 @@ test("one dragged sample is the same edit one frame wide", async () => {
     const { wid } = await opened(editor);
     assert.equal(editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]), true);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(take.data[3], 0.9);
+    // A server buffer holds `f32`, and the write crosses as one.
+    assert.equal(take.data[3], Math.fround(0.9));
     editor.undo();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(take.data[3], 0);
@@ -406,6 +439,7 @@ test("a stroke on one channel of a stereo take leaves the other alone", async ()
         take.data.map((v) => Math.round(v * 10) / 10),
         [0.1, 0.2, 0.1, 0.7, 0.1, 0.8, 0.1, 0.2],
     );
+    assert.deepEqual(take.server.sent, ["/buffer_setRangeChannel"], "one channel, never read");
 });
 
 test("a take's window is composed by the crate", async () => {

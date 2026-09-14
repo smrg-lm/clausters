@@ -91,9 +91,37 @@ def a_timeline() -> Timeline:
                      (1.0, SeqEvent(midinote=64, dur=1.0))])
 
 
+class FakeServer:
+    """The two writes a take's editor sends, laid into a `FakeBuffer`, and the
+    ``/done`` each is answered with."""
+
+    def __init__(self, take):
+        self.take = take
+        self.sent: list = []
+
+    def _bulk_chunk(self, timeout=None) -> int:
+        return 8192
+
+    def send_msg(self, addr, *args):
+        self.sent.append(addr)
+        take = self.take
+        values = struct.unpack(f"<{len(args[-1]) // 4}f", args[-1])
+        if addr == "/buffer_setRange":
+            first = int(args[1])
+        else:
+            first = int(args[2]) * take.channels + int(args[1])
+        stride = 1 if addr == "/buffer_setRange" else take.channels
+        for i, value in enumerate(values):
+            take.data[first + i * stride] = float(value)
+
+    def request(self, addr, *args, expect=None, timeout=None):
+        self.send_msg(addr, *args)
+        return "/done", [addr, int(args[0])]
+
+
 class FakeBuffer:
     """A server buffer, as the samples domain touches one: a number, a shape,
-    and the two calls that read and write its frames."""
+    and the server its writes go to."""
 
     def __init__(self, frames=16, channels=1):
         self.bufnum = 7
@@ -101,16 +129,10 @@ class FakeBuffer:
         self.channels = channels
         self.sample_rate = SR
         self.data = [0.0] * (frames * channels)
-        self.writes = 0
-
-    def get_samples(self, start=0, count=-1, **kwargs):
-        end = len(self.data) if count < 0 else start + count
-        return list(self.data[start:end])
+        self.server = FakeServer(self)
 
     def set_samples(self, samples, start=0, **kwargs):
-        self.writes += 1
-        for i, value in enumerate(samples):
-            self.data[start + i] = float(value)
+        raise AssertionError("a take's editor writes through its steps")
 
 
 def opened(editor):
@@ -407,6 +429,7 @@ def test_a_stroke_on_one_channel_of_a_stereo_take_leaves_the_other_alone():
     editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1,
                                 blob([0.7, 0.8]), blob([0.2, 0.2])])
     assert take.data == pytest.approx([0.1, 0.2, 0.1, 0.7, 0.1, 0.8, 0.1, 0.2])
+    assert take.server.sent == ["/buffer_setRangeChannel"], "one channel, never read"
 
 
 # ---- the acceptance the track was opened with ----

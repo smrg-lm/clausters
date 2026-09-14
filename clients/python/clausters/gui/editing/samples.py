@@ -23,16 +23,20 @@ of them on one rectangle are not layers, the second hides the first. Measuring
 twice into one body is also what makes the rest of it one thing: one axis, one
 ruler, one selection, one playhead, one upload of the samples.
 
-**A stroke lands on one channel.** The samples are interleaved, so writing one
-channel of a stereo take is a strided write and ``/buffer_setRange`` is
-contiguous: the span is read, the channel's frames are spliced into it and the
-run goes back whole. Mono needs neither, which is the ordinary take.
+**A stroke lands on one channel.** What a write does to the buffer is the
+shared crate's (`clausters._native.SamplesEditorCore`, ``write``): a mono take
+takes the run as flat samples (``/buffer_setRange``), and one channel of a take
+with more is written by frames of that channel alone
+(``/buffer_setRangeChannel``), so the other channels are never touched. This
+client walks those steps against the take's server (`clausters._steps.run_steps`).
 """
 
 import struct
 from array import array
 
 from ... import _native
+from ..._steps import run_steps
+from ...defs._wire import resolve as _resolve
 from .domain import Domain
 from .editor import Editor
 from .view import View
@@ -91,26 +95,23 @@ class SamplesDomain(Domain):
     name = _native.SAMPLES
     ingested = True
 
+    #: The editor whose take this is: what turns a write into steps, and the
+    #: runner they are walked through.
+    editor = None
+
     def project(self, structure, payload: dict) -> bool:
-        channels = max(1, int(getattr(structure, "channels", 1) or 1))
-        channel = min(int(payload.get("channel", 0)), channels - 1)
-        start = int(payload.get("start", 0))
-        values = [float(v) for v in payload.get("values") or ()]
-        if not values:
+        """Write ``payload`` onto the take's buffer: the steps the core answers
+        for it, walked against the take's server. A stroke's write and a step of
+        the history's are this one call."""
+        editor = self.editor
+        if editor is None or not (payload or {}).get("values"):
             return False
-        if channels == 1:
-            structure.set_samples(values, start=start)
-            return True
-        # Interleaved: read the frames the stroke covers, splice this channel's
-        # into them and write the run back whole. One extra round trip on a
-        # multi-channel take, and none on a mono one.
-        first = start * channels
-        span = list(structure.get_samples(first, len(values) * channels))
-        if len(span) < len(values) * channels:
-            span += [0.0] * (len(values) * channels - len(span))
-        for i, value in enumerate(values):
-            span[i * channels + channel] = value
-        structure.set_samples(span, start=first)
+        server = _resolve(getattr(structure, "server", None))
+        steps = editor._core.call("write", edit=payload,
+                                  chunk=int(server._bulk_chunk())).get("steps") or []
+        if not steps:
+            return False
+        run_steps(server, editor._runner, steps)
         return True
 
 
@@ -156,9 +157,13 @@ class SamplesEditor(Editor):
                  title: str = "Samples", layers=MEASURES, **options):
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
+        domain = SamplesDomain()
         super().__init__(take, sample_rate=rate, tempo=tempo,
-                         domain=SamplesDomain(), view=view,
+                         domain=domain, view=view,
                          title=title, **options)
+        domain.editor = self
+        #: The runner a write's steps are walked through.
+        self._runner = _native.StepRunner()
         #: **The window, in the shared crate**: the take, the measures and the
         #: chrome it is composed from.
         self._core = _native.SamplesEditorCore(

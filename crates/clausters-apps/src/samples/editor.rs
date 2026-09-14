@@ -23,6 +23,7 @@ use clausters_core::tempoclock::samples_to_secs;
 use clausters_document::samples::SAMPLES;
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Opaque, domain};
+use clausters_editing::apply::steps_json;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
 use clausters_editing::samples;
 
@@ -183,6 +184,18 @@ impl SamplesEditor {
             }
         }
         out
+    }
+
+    /// **What a write does to the take's buffer**, as the steps a runner
+    /// carries out (`clausters_editing::samples::write_steps`) in the JSON a
+    /// client walks: a turn's `edit`, or a payload of a history step.
+    pub fn write(&self, payload: &Value, chunk: usize) -> Value {
+        steps_json(&samples::write_steps(
+            self.buffer as i32,
+            self.channels,
+            payload,
+            chunk,
+        ))
     }
 
     /// Answers the stamp a [`Kind::Step`] carried, once the caller has walked.
@@ -373,6 +386,9 @@ pub fn new_json(request: &str) -> Result<SamplesEditor, String> {
 /// - `props` — `widget`: the correction.
 /// - `event` — `addr`, `args` (a blob decoded to its numbers), `version`: an
 ///   [`Outcome`].
+/// - `write` — `edit` (a `write` payload), `chunk` (the most values one
+///   message carries, 8192 when absent): `{"steps"}`, what the write does to the
+///   take's buffer.
 /// - `acknowledge` — `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
@@ -411,6 +427,10 @@ pub fn call_json(editor: &mut SamplesEditor, request: &str) -> String {
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             serde_json::to_string(&editor.event(&event, version)).unwrap_or_else(|_| "{}".into())
+        }
+        "write" => {
+            let chunk = get("chunk").as_u64().map_or(8192, |c| c as usize);
+            json!({ "steps": editor.write(&get("edit"), chunk) }).to_string()
         }
         "acknowledge" => serde_json::to_string(&editor.acknowledge(
             int(&get("seq")),
@@ -561,6 +581,29 @@ mod tests {
         assert_eq!(
             out["answer"]["corrections"],
             json!([{"widget": 12, "props": {"reload": 1}}])
+        );
+    }
+
+    /// **The write a turn answered becomes steps over this editor's take**:
+    /// one channel of a stereo take by its own command.
+    #[test]
+    fn a_write_is_steps_over_the_take() {
+        let mut editor = opened();
+        call(&mut editor, json!({"verb": "sync", "channels": 2}));
+        let out = call(
+            &mut editor,
+            json!({"verb": "write", "chunk": 16,
+                   "edit": {"intent": "write", "channel": 1, "start": 3, "values": [0.5]}}),
+        );
+        let steps = out["steps"].as_array().unwrap();
+        assert_eq!(steps[0]["send"]["addr"], "/buffer_setRangeChannel");
+        assert_eq!(
+            steps[0]["send"]["args"].as_array().unwrap()[..3],
+            [json!({"i": 7}), json!({"i": 1}), json!({"i": 3})]
+        );
+        assert_eq!(
+            steps[1],
+            json!({"await": {"command": "/buffer_setRangeChannel", "index": 7}})
         );
     }
 

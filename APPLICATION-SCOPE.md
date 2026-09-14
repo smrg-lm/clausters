@@ -1080,12 +1080,20 @@ clients and the standalone host green, and each is its own commit.
    moved to `clausters_apps::turn`, since two applications now share them. Both
    clients hand every message to the core and `SamplesDomain` keeps only the
    write, which step 3 takes.
-3. ⬜ **The write.** What an applied stroke does to the server buffer, as steps
+3. ✅ **The write.** What an applied stroke does to the server buffer, as steps
    the runner carries out (`clausters_editing::run`): a `/buffer_setRange` of
    the run for a mono take, and for an interleaved one the span read, the
    channel spliced in and the run written back -- which today is
    `SamplesDomain.project` in each client. Both clients run the steps against
    their server.
+
+   *Done 2026-09-14.* `clausters_editing::samples::write_steps`, reached through
+   the editor's `write` verb. No span is read: one channel of a wider take is
+   written with `/buffer_setRangeChannel` (the server's `S16`), so the splice this
+   step named is not needed. The run is chunked by the endpoint's bound and the
+   last chunk's `/done` is awaited, so a write past the end is refused rather
+   than lost. `SamplesDomain.project` asks for the steps and walks them with the
+   runner, which is the path an undo takes too.
 4. ⬜ **The undo order moves into the crate.** Today each endpoint keeps the
    history -- `Editing` in the clients, the `Owner`'s history in the host --
    while the multitrack editor hands back the entry to record. With two

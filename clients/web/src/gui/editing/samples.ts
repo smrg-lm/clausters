@@ -24,10 +24,12 @@
  * Measuring twice into one body is also what makes the rest of it one thing: one
  * axis, one ruler, one selection, one playhead, one upload of the samples.
  *
- * **A stroke lands on one channel.** The samples are interleaved, so writing one
- * channel of a stereo take is a strided write and `/buffer_setRange` is
- * contiguous: the span is read, the channel's frames are spliced into it and the
- * run goes back whole. Mono needs neither, which is the ordinary take.
+ * **A stroke lands on one channel.** What a write does to the buffer is the
+ * shared crate's (`SamplesEditorCore`, `write`): a mono take takes the run as
+ * flat samples (`/buffer_setRange`), and one channel of a take with more is
+ * written by frames of that channel alone (`/buffer_setRangeChannel`), so the
+ * other channels are never touched. This page walks those steps against the
+ * take's server ({@link runSteps}).
  *
  * @module
  */
@@ -36,7 +38,9 @@ import { SAMPLES } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import type { Buffer } from "../../defs/buffer.ts";
-import { SamplesEditorCore, samplesMeasures } from "../../core/clausters_core_web.js";
+import { SamplesEditorCore, StepRunner, samplesMeasures } from "../../core/clausters_core_web.js";
+import { resolveServer } from "../../defs/wire.ts";
+import { runSteps } from "../../steps.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -133,6 +137,9 @@ export class SamplesDomain extends Domain<Buffer> {
     override readonly name = SAMPLES;
     override readonly ingested = true;
 
+    /** The editor whose take this is: what turns a write into steps. */
+    editor: SamplesEditor | null = null;
+
     /**
      * The writes in flight, chained.
      *
@@ -151,29 +158,19 @@ export class SamplesDomain extends Domain<Buffer> {
         return null;
     }
 
+    /**
+     * Write `payload` onto the take's buffer: the steps the core answers for it,
+     * walked against the take's server. A stroke's write and a step of the
+     * history's are this one call.
+     */
     project(structure: Buffer, payload: unknown): boolean {
+        const editor = this.editor;
         const write = payload as Write;
-        const channels = Math.max(1, Math.trunc(structure.channels || 1));
-        const channel = Math.min(Math.trunc(write.channel ?? 0), channels - 1);
-        const start = Math.trunc(write.start ?? 0);
-        const values = write.values ?? [];
-        if (values.length === 0) return false;
-        if (channels === 1) {
-            this.#queue(() => structure.setSamples(values, { start }));
-            return true;
-        }
-        // Interleaved: read the frames the stroke covers, splice this channel's
-        // into them and write the run back whole. One extra round trip on a
-        // multi-channel take, and none on a mono one.
-        const first = start * channels;
-        const width = values.length * channels;
+        if (editor === null || (write.values ?? []).length === 0) return false;
         this.#queue(async () => {
-            const span = [...(await structure.getSamples({ start: first, count: width }))];
-            while (span.length < width) span.push(0);
-            values.forEach((value, i) => {
-                span[i * channels + channel] = value;
-            });
-            await structure.setSamples(span, { start: first });
+            const server = resolveServer(structure.server);
+            const steps = editor.writeSteps(write, await server.bulkChunk());
+            await runSteps(server, editor.runner, steps);
         });
         return true;
     }
@@ -239,15 +236,33 @@ export class SamplesEditor extends Editor<Buffer> {
     /** The window, in the shared crate: the take, the measures and the chrome. */
     private readonly core: SamplesEditorCore;
 
+    /**
+     * The runner a write's steps are walked through.
+     *
+     * @internal
+     */
+    readonly runner = new StepRunner();
+
+    /**
+     * What a write does to the take's buffer, as the steps the core answers.
+     *
+     * @internal
+     */
+    writeSteps(edit: unknown, chunk: number): unknown[] {
+        return (this.coreCall("write", { edit, chunk }).steps as unknown[] | undefined) ?? [];
+    }
+
     constructor(take: Buffer, options: SamplesEditorOptions) {
         const view = new SamplesView(options.layers ?? MEASURES);
+        const domain = new SamplesDomain();
         super(take, {
             title: "Samples",
             ...options,
             sampleRate: Number(options.sampleRate || take.sampleRate || 48_000),
-            domain: new SamplesDomain(),
+            domain,
             view,
         });
+        domain.editor = this;
         this.core = new SamplesEditorCore(
             JSON.stringify({ ...this.facts(), layers: view.layers, version: this.version }),
         );
