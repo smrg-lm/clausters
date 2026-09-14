@@ -1104,6 +1104,48 @@ clients and the standalone host green, and each is its own commit.
    the multitrack editor stops handing entries back. How the order is shared,
    and what an application open alone holds, is what this step works out.
 
+   **The design, decided 2026-09-14 with the user.**
+
+   - **`clausters_apps::editing::Editing` is the context**, named as the
+     clients already name it. It holds the history (`History`, memory spill as
+     today), the version, and its **members**. No application holds a history:
+     an editor is always opened *in* an `Editing`, and one open alone is an
+     `Editing` with one member. Two applications in one context walk one order.
+   - **The context owns the editors.** One handle,
+     `clausters_apps_editing_{new,free,call}` (and its wasm class), with verbs
+     that open a multitrack or a samples editor and answer the member's id;
+     every verb of a member goes through the context. `MultitrackEditorCore`
+     and `SamplesEditorCore` become a member's face on it, and the separate
+     editor handles go. Two handles referring to each other was the other
+     shape, and it would have left the turn -> record -> step chaining written
+     once per endpoint, and a borrow across handles that wasm cannot keep.
+   - **A turn** is the context's: the member reads the gesture, the context
+     records the entry under that member's structure and moves the version, and
+     the answer names the other members to correct. The version stops crossing
+     in and out of every call.
+   - **A step** is the context's: it walks the pile, hands each leg to the member
+     that owns the structure (the multitrack applies it to its piece; the samples
+     editor answers the write's steps), puts the cursor back when nothing could
+     apply it and says why, moves the version, and answers the corrections for
+     every member. What a client does is carry the effects out: write the piece
+     back, walk the steps, send the answers.
+   - **A structure is named by a key its member declares** — a take by its
+     buffer, a piece by the piece — and the context reuses the identity when a
+     second member declares the same key, so two windows over one take are one
+     structure in the order.
+   - **Structures the crate does not apply** — a client's curve, its notes, a
+     score — join the same context as **external members**: the context records
+     and walks for them and hands their legs back to be applied, as `Editing`
+     does today. One order still covers everything on screen.
+   - **The standalone host joins in this step**, in a commit of its own: the
+     `Owner`'s log becomes an `Editing`, with the tree as an external member.
+
+   The acceptance, with no box entered: a crate test and the same test in both
+   clients — a multitrack editor and a samples editor in one context, edits made
+   in each in turn, and undo and redo walking that interleaving — and an editor
+   open alone behaving as it does now. Commits: the context in the crate; the C
+   and wasm doors; Python; web; the host.
+
 **Not in these steps**, so their absence is read as a decision:
 
 - **entering a box from a piece** -- the multitrack does not edit samples, and
