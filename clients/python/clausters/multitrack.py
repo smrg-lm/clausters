@@ -152,7 +152,12 @@ class Content:
     def onto(cls, window: dict, *, playrate: float = 1.0,
              args: "dict | None" = None, looping: bool = False) -> "Content":
         """A window onto a source — a `clausters.form` segment reference, or any
-        `{"source": …, "start": …, "duration": …}` the crate accepts."""
+        `{"source": …, "start": …, "duration": …}` the crate accepts.
+
+        `duration` is how much of the source the window **reaches** — the whole
+        take, or the sum of a join's segments — and not how much the region
+        shows: the region's own `length` says that, and a trim that hides part
+        of the source leaves `duration` alone so the edge can be pulled back."""
         return cls(fill="window", window=window, playrate=playrate, args=args,
                    looping=looping)
 

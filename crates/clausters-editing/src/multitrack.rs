@@ -713,6 +713,12 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
             piece,
             &placed(values, look),
             picture::fresh_id(piece),
+            &|source| {
+                look.sources
+                    .frames(source)
+                    .filter(|_| look.rate > 0.0)
+                    .map(|frames| frames as f64 / look.rate)
+            },
         )),
         "lanes" => Reading::of(picture::read_rows(piece, &strips(values))),
         "points" => Reading::of(picture::read_points(piece, &curved(piece, values, look))),

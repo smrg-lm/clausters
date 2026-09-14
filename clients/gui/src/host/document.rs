@@ -541,6 +541,40 @@ impl Owner {
             .collect()
     }
 
+    /// **Writes down how long each take is, where nothing said**, asking
+    /// `frames_of` by buffer number once the samples are read. Both the take
+    /// table and the session's own source entry learn it, so a save states the
+    /// length a join is bounded by and a reader of the file does not have to
+    /// open the file to know it. A length already stated is kept. Returns how
+    /// many takes learned one.
+    pub fn learn_lengths(&mut self, frames_of: impl Fn(i32) -> Option<u64>) -> usize {
+        let learned: Vec<(clausters_document::SourceId, i32, Option<u32>, u64)> = self
+            .takes
+            .iter()
+            .filter(|(_, take)| take.frames.is_none_or(|f| f == 0))
+            .filter_map(|(id, take)| {
+                let frames = frames_of(take.bufnum).filter(|f| *f > 0)?;
+                Some((*id, take.bufnum, take.channels, frames))
+            })
+            .collect();
+        for &(id, bufnum, channels, frames) in &learned {
+            if let Some(entry) = self.session.as_mut().and_then(|s| s.sources.get_mut(&id))
+                && entry.frames.is_none_or(|f| f == 0)
+            {
+                entry.frames = Some(frames);
+            }
+            self.takes.insert(
+                id,
+                sources::Take {
+                    bufnum,
+                    channels,
+                    frames: Some(frames),
+                },
+            );
+        }
+        learned.len()
+    }
+
     /// **Records an editor's turn** in the one history the tree records into,
     /// so a piece's edit and a tree's undo in the order they were made.
     pub fn record_piece(&mut self, record: &clausters_apps::multitrack::editor::Record) {
@@ -2313,6 +2347,50 @@ mod window_verb_tests {
         let (_, bufnum, frames) = minted[0];
         assert_ne!(bufnum, 7, "and in a buffer of its own, not over the take");
         assert!(frames.is_some_and(|f| f > 0), "as long as its parts");
+    }
+
+    /// **A take whose length nobody stated learns it once it is read**
+    /// (decided 2026-09-13): the length of a take is the source's fact, what a
+    /// join is bounded by and what a save writes down. One already stated is
+    /// kept, and a buffer with nothing live answers nothing.
+    #[test]
+    fn a_read_take_learns_its_length_and_keeps_a_stated_one() {
+        use clausters_document::multitrack::Multitrack;
+
+        let (mut host, _def_id, _view) = with_piece(Multitrack::default());
+        let owner = host.owner.as_mut().expect("an owner");
+        let take = |bufnum, frames| super::sources::Take {
+            bufnum,
+            channels: Some(1),
+            frames,
+        };
+        owner
+            .takes
+            .insert(clausters_document::SourceId(1), take(7, None));
+        owner
+            .takes
+            .insert(clausters_document::SourceId(2), take(8, Some(4_800)));
+        owner
+            .takes
+            .insert(clausters_document::SourceId(3), take(9, None));
+        let frames_of = |bufnum: i32| match bufnum {
+            7 => Some(96_000),
+            8 => Some(1),
+            _ => None,
+        };
+        assert_eq!(
+            owner.learn_lengths(frames_of),
+            1,
+            "only the unstated, live one"
+        );
+        assert_eq!(
+            owner.buffer_lengths(),
+            HashMap::from([
+                (clausters_document::SourceId(1), 96_000),
+                (clausters_document::SourceId(2), 4_800),
+            ])
+        );
+        assert_eq!(owner.learn_lengths(frames_of), 0, "and once");
     }
 
     /// **The picture a host pushes back is the whole picture**, not the two

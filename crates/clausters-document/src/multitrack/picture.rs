@@ -509,7 +509,17 @@ pub struct Placed {
 /// `next_id` is where minted region ids start; a caller with nothing better to
 /// say passes [`fresh_id`]. Ids are the piece's and a hand that made a box has
 /// none to offer.
-pub fn read(piece: &Multitrack, placed: &[Placed], next_id: u64) -> Vec<MultitrackIntent> {
+///
+/// `reach_of` answers how long a source is, in seconds, where the caller knows:
+/// a box a hand made is a window onto its **whole** source, so that is the
+/// duration its window is written with (see [`crate::SegmentRef::duration`]).
+/// Unknown, it falls back to what the box shows.
+pub fn read(
+    piece: &Multitrack,
+    placed: &[Placed],
+    next_id: u64,
+    reach_of: &dyn Fn(SourceId) -> Option<f64>,
+) -> Vec<MultitrackIntent> {
     let rows = rows(piece);
     let mut out = Vec::new();
     let mut seen: Vec<NodeId> = Vec::new();
@@ -564,7 +574,9 @@ pub fn read(piece: &Multitrack, placed: &[Placed], next_id: u64) -> Vec<Multitra
             });
         }
     }
-    out.extend(lane_lists(piece, &rows, &seen, &fresh, next_id, placed));
+    out.extend(lane_lists(
+        piece, &rows, &seen, &fresh, next_id, placed, reach_of,
+    ));
     out
 }
 
@@ -928,6 +940,7 @@ fn lane_lists(
     fresh: &[(NodeId, Placed)],
     mut next: u64,
     placed: &[Placed],
+    reach_of: &dyn Fn(SourceId) -> Option<f64>,
 ) -> Vec<MultitrackIntent> {
     let mut out = Vec::new();
     for row in rows {
@@ -992,7 +1005,11 @@ fn lane_lists(
                             range: None,
                         }),
                         start: box_.start,
-                        duration: box_.content,
+                        // What the window reaches, not what the box shows: a
+                        // box a hand made can be pulled out to its whole source.
+                        duration: reach_of(source)
+                            .filter(|secs| *secs > 0.0)
+                            .unwrap_or(box_.content),
                     },
                     playrate: 1.0,
                     args: crate::Opaque::none(),
@@ -1191,11 +1208,11 @@ mod tests {
             source: held.source,
         };
         // What is already true is no edit at all.
-        let out = read(&piece, &[placed(0.0)], fresh_id(&piece));
+        let out = read(&piece, &[placed(0.0)], fresh_id(&piece), &|_| None);
         assert!(out.is_empty(), "nothing moved: {out:?}");
 
         // The window slid: the box reads from two seconds in.
-        let out = read(&piece, &[placed(2.0)], fresh_id(&piece));
+        let out = read(&piece, &[placed(2.0)], fresh_id(&piece), &|_| None);
         let [MultitrackIntent::TrimRegion { content, .. }] = &out[..] else {
             panic!("one trim, carrying what it now reads: {out:?}");
         };
@@ -1204,6 +1221,48 @@ mod tests {
         };
         assert_eq!(window.start, 2.0);
         assert_eq!(window.duration, 8.0, "and nothing else");
+    }
+
+    /// **A box a hand made is a window onto its whole source** (decided
+    /// 2026-09-13). The box shows two seconds of an eight-second take; its
+    /// window reaches all eight, so pulling an edge out later shows the rest.
+    /// A caller that does not know the source's length writes what the box
+    /// shows, as before.
+    #[test]
+    fn a_new_box_windows_its_whole_source() {
+        let piece = piece();
+        let held = boxes(&piece)[0].clone();
+        let made = Placed {
+            name: "new".into(),
+            row: held.row,
+            position: Beat(4.0),
+            length: Beat(2.0),
+            start: 1.0,
+            content: 2.0,
+            source: Some(crate::SourceId(1)),
+        };
+        let window_of_new = |out: &[MultitrackIntent]| {
+            out.iter()
+                .find_map(|intent| match intent {
+                    MultitrackIntent::SetLane { regions, .. } => regions
+                        .iter()
+                        .find(|r| r.position == Beat(4.0))
+                        .and_then(|r| r.content.as_window().cloned()),
+                    _ => None,
+                })
+                .expect("the new box, windowing its source")
+        };
+        let known = read(
+            &piece,
+            std::slice::from_ref(&made),
+            fresh_id(&piece),
+            &|s| (s == crate::SourceId(1)).then_some(8.0),
+        );
+        let window = window_of_new(&known);
+        assert_eq!((window.start, window.duration), (1.0, 8.0));
+
+        let unknown = read(&piece, &[made], fresh_id(&piece), &|_| None);
+        assert_eq!(window_of_new(&unknown).duration, 2.0);
     }
 
     /// **A lane stated whole is stated as the report left it**, not as the
@@ -1245,6 +1304,7 @@ mod tests {
             &piece,
             &[same("3", 0.0, 2.0, 0.0), same("3 2", 2.0, 2.0, 2.0)],
             fresh_id(&piece),
+            &|_| None,
         );
         for intent in &out {
             crate::multitrack::edit::apply(

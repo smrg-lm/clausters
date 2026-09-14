@@ -65,6 +65,12 @@ impl SharedBuffers {
         &self.path
     }
 
+    /// How many frames pool buffer `bufnum` holds, off the directory row and
+    /// without opening its region, or `None` when nothing is live there.
+    pub fn frames(&self, bufnum: usize) -> Option<usize> {
+        self.segment.buffer_info(bufnum).map(|shape| shape.frames)
+    }
+
     /// Maps pool buffer `bufnum`, or `None` when the directory has nothing
     /// live under that number or the region cannot be opened.
     ///

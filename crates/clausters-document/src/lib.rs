@@ -326,6 +326,17 @@ pub struct SegmentRef {
     #[serde(default)]
     pub start: f64,
     /// How long it lasts, in the unit the source measures.
+    ///
+    /// **In a region's window it is how much of the source the window reaches,
+    /// never how much the region shows.** A region is a view onto its whole
+    /// source: a trim hides what is behind an edge and pulling the edge back
+    /// shows it again, so a trim or a split moves `start` and the region's own
+    /// position and length, and leaves this alone. It is the whole take for a
+    /// window over a file or a buffer, and the sum of the segments for a join,
+    /// whose edges cannot be pulled past them. `start + duration` is therefore
+    /// not the end of what plays: the region's length is. Decided 2026-09-13
+    /// after a join read this as what a trimmed box shows and asked for
+    /// samples past its take.
     pub duration: Seconds,
 }
 

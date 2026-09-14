@@ -869,7 +869,15 @@ fn attach_server(
     let bus = {
         let (bus, buffers) = gui::open_shm_buffers(Some(path.display().to_string()));
         match buffers {
-            Some(buffers) => host.set_shared_buffers(buffers),
+            Some(buffers) => {
+                host.set_shared_buffers(buffers);
+                // What the session did not say about its takes, the buffers
+                // now can: a join is bounded by it, and a save writes it down.
+                let learned = host.learn_take_lengths();
+                if learned > 0 {
+                    tracing::info!("session: learned the length of {learned} take(s)");
+                }
+            }
             None => tracing::warn!("session: the buffers could not be mapped; takes will fetch"),
         }
         bus

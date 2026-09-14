@@ -1019,6 +1019,23 @@ impl Host {
         self.window_defs.keys().copied().collect()
     }
 
+    /// **Writes down how long each loaded take is**, off the mapped buffers'
+    /// directory, where the session did not say. Returns how many learned one;
+    /// nothing without an owner or a mapping.
+    #[cfg(unix)]
+    pub fn learn_take_lengths(&mut self) -> usize {
+        let Some(buffers) = self.shared_buffers.as_ref() else {
+            return 0;
+        };
+        let Some(owner) = self.owner.as_mut() else {
+            return 0;
+        };
+        owner.learn_lengths(|bufnum| {
+            let index = usize::try_from(bufnum).ok()?;
+            buffers.frames(index).map(|f| f as u64)
+        })
+    }
+
     /// **A buffer's samples were just made** (`/done /buffer_stitch bufnum`):
     /// every element that asked for that take forgets it, so the next walk
     /// asks again. Returns the windows that had one, for a front to redraw.
