@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit, watch }
+import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit, measures, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { Automation } from "../src/seq/automation.ts";
@@ -406,6 +406,33 @@ test("a stroke on one channel of a stereo take leaves the other alone", async ()
         take.data.map((v) => Math.round(v * 10) / 10),
         [0.1, 0.2, 0.1, 0.7, 0.1, 0.8, 0.1, 0.2],
     );
+});
+
+test("a take's window is composed by the crate", async () => {
+    const take = new FakeBuffer(8, 2);
+    const editor = await edit(take, { tempo: TEMPO, title: "take", open: false });
+    const { host, wid } = await opened(editor);
+    const tree = host.trees[0] as GuiNode & Record<string, unknown>;
+    assert.deepEqual([tree.type, tree.title, tree.flow], ["window", "take", "col"]);
+    const picture = (tree.children as (GuiNode & Record<string, unknown>)[])[0];
+    assert.equal(picture.type, "signal");
+    assert.equal(picture.id, wid);
+    assert.deepEqual([picture.buffer, picture.channels], [take.bufnum, 2]);
+    assert.equal(picture.measure, "peak rms");
+    assert.equal(picture.label, `buffer ${take.bufnum}`);
+    assert.deepEqual(picture.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
+    assert.deepEqual(editor.view?.props(editor, wid), { reload: 1 });
+});
+
+test("a refused measure stack keeps the one the picture had", async () => {
+    const editor = new SamplesEditor(new FakeBuffer() as never, { sampleRate: SR, layers: ["peak"] });
+    editor.layers = ["rms", "peak"];
+    assert.deepEqual(editor.layers, ["rms", "peak"]);
+    assert.throws(() => {
+        editor.layers = ["loud"];
+    }, /'loud'/);
+    assert.deepEqual(editor.layers, ["rms", "peak"]);
+    assert.throws(() => measures([]), /measures something/);
 });
 
 // ---- the acceptance the track was opened with ----

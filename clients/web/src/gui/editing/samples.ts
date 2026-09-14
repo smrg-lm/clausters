@@ -34,7 +34,7 @@
 
 import { SAMPLES } from "../../document.ts";
 import type { Buffer } from "../../defs/buffer.ts";
-import { window as guiWindow } from "../guidef.ts";
+import { SamplesEditorCore, samplesMeasures } from "../../core/clausters_core_web.js";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -55,19 +55,18 @@ export type Measure = (typeof MEASURES)[number];
  * A measure stack as an array, or a `RangeError` naming what is wrong.
  *
  * A stack is written by hand, so a silent typo is a layer that quietly does not
- * appear, and an empty one is a picture that measures nothing.
+ * appear, and an empty one is a picture that measures nothing. The check is the
+ * crate's (`samplesMeasures`).
  */
 export function measures(stack: Iterable<string>): Measure[] {
-    const out = [...stack].map(String);
-    for (const name of out) {
-        if (!(MEASURES as readonly string[]).includes(name)) {
-            throw new RangeError(`unknown measure ${name} (one of ${MEASURES.join(", ")})`);
-        }
+    const answer = JSON.parse(samplesMeasures(JSON.stringify({ stack: [...stack].map(String) }))) as {
+        layers?: Measure[];
+        error?: string;
+    };
+    if (answer.error !== undefined || answer.layers === undefined) {
+        throw new RangeError(answer.error ?? "not a measure stack");
     }
-    if (out.length === 0) {
-        throw new RangeError(`a signal view measures something (one of ${MEASURES.join(", ")})`);
-    }
-    return out as Measure[];
+    return answer.layers;
 }
 
 /** One write in the crate's vocabulary. */
@@ -190,6 +189,12 @@ export class SamplesDomain extends Domain<Buffer> {
 /**
  * One `waveform`: the take on its own axis, drawn by the host straight from the
  * server buffer.
+ *
+ * **The window is the application's**, composed in the shared crate
+ * (`SamplesEditorCore`): the waveform, the gesture plan a take is edited with (a
+ * drag selects, Alt draws, Ctrl grabs one sample), the label and the correction
+ * a write answers with. What is left here is the id a hand's gestures come back
+ * on.
  */
 export class SamplesView extends View<Buffer> {
     /** What the picture measures, innermost last. */
@@ -201,38 +206,21 @@ export class SamplesView extends View<Buffer> {
     }
 
     build(editor: Editor<Buffer>): GuiNode {
-        const take = editor.structure;
-        return guiWindow(
-            { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "waveform", "waveform", take, {
-                buffer: Math.trunc(take.bufnum),
-                channels: Math.max(1, Math.trunc(take.channels || 1)),
-                measure: this.layers.join(" "),
-                ruler: "time",
-                sample_rate: editor.sampleRate,
-                tempo: editor.tempo,
-                label: nameOf(take),
-            }),
-            ...editor.extra,
-        );
+        const wid = this.widget(editor, "waveform", editor.structure);
+        const ed = editor as SamplesEditor;
+        ed.syncCore();
+        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
+        // **A page's own widgets are its objects**, so they are appended here
+        // rather than composed in the crate.
+        tree.children = [...(tree.children ?? []), ...editor.extra];
+        return tree;
     }
 
-    override props(): Record<string, PropValue> {
-        // **The take's picture is the server's buffer, so what corrects it is
-        // "read it again".** A stroke needs nothing from here: the host wrote
-        // those cells itself and its picture moved with them. An undo is the
-        // case that needs it — the write goes to the *server's* buffer from
-        // this side, and nothing in the host saw it, so the window kept drawing
-        // the stroke until some other reason (a zoom, a scroll) made it resolve
-        // the source again. That is what "the samples undo is slow to show up"
-        // was.
-        //
-        // `reload` is the verb for exactly this: the element forgets what it
-        // resolved and the loader reads its file, cache or server buffer on the
-        // next pass. The generation pairs `/gui_ack` carries would say the same
-        // thing more cheaply, but no client sends one and the host acts on
-        // none — so this is the door that is actually open.
-        return { reload: 1 };
+    override props(editor: Editor<Buffer>, widgetId: number): Record<string, PropValue> {
+        return (editor as SamplesEditor).coreCall("props", { widget: widgetId }) as Record<
+            string,
+            PropValue
+        >;
     }
 }
 
@@ -244,14 +232,57 @@ export class SamplesView extends View<Buffer> {
  * what is seen, with no copy in between.
  */
 export class SamplesEditor extends Editor<Buffer> {
+    /** The window, in the shared crate: the take, the measures and the chrome. */
+    private readonly core: SamplesEditorCore;
+
     constructor(take: Buffer, options: SamplesEditorOptions) {
+        const view = new SamplesView(options.layers ?? MEASURES);
         super(take, {
             title: "Samples",
             ...options,
             sampleRate: Number(options.sampleRate || take.sampleRate || 48_000),
             domain: new SamplesDomain(),
-            view: new SamplesView(options.layers ?? MEASURES),
+            view,
         });
+        this.core = new SamplesEditorCore(JSON.stringify({ ...this.facts(), layers: view.layers }));
+    }
+
+    /** What this page holds about the take and the window. */
+    private facts(): Record<string, unknown> {
+        const take = this.structure;
+        const name = (take as { name?: string }).name;
+        return {
+            buffer: Math.trunc(take.bufnum),
+            channels: Math.max(1, Math.trunc(take.channels || 1)),
+            name: typeof name === "string" && name ? name : null,
+            rate: this.sampleRate,
+            tempo: this.tempo,
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+        };
+    }
+
+    /**
+     * One verb of the core, with its arguments; the answer, parsed.
+     *
+     * @internal
+     */
+    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return JSON.parse(this.core.call(JSON.stringify({ verb, ...args }))) as Record<
+            string,
+            unknown
+        >;
+    }
+
+    /**
+     * Hand the core what this page holds: the take a page may have resized, the
+     * axis and the window's chrome.
+     *
+     * @internal
+     */
+    syncCore(): void {
+        this.coreCall("sync", this.facts());
     }
 
     /**
@@ -271,11 +302,13 @@ export class SamplesEditor extends Editor<Buffer> {
     }
 
     set layers(stack: Iterable<string>) {
+        const answer = this.coreCall("layers", { stack: [...stack].map(String) });
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
         const view = this.view as SamplesView;
-        view.layers = measures(stack);
+        view.layers = answer.layers as Measure[];
         if (this.host !== null && this.window !== null) {
             for (const wid of view.widgets.keys()) {
-                void this.host.set(wid, { measure: view.layers.join(" ") });
+                void this.host.set(wid, { measure: String(answer.measure) });
             }
         }
     }
@@ -285,12 +318,6 @@ export class SamplesEditor extends Editor<Buffer> {
 export interface SamplesEditorOptions extends GenericEditorOptions<Buffer> {
     /** What the picture measures. Defaults to {@link MEASURES}. */
     layers?: readonly string[];
-}
-
-function nameOf(take: Buffer): string {
-    const name = (take as { name?: string }).name;
-    if (typeof name === "string" && name) return name;
-    return `buffer ${Math.trunc(take.bufnum)}`;
 }
 
 /**

@@ -1045,7 +1045,7 @@ rather than delegated.
 **Steps, in order** *(written 2026-09-14 with the user)*. Each leaves both
 clients and the standalone host green, and each is its own commit.
 
-1. ⬜ **The window.** `clausters_apps::samples::{window, props}`: the one
+1. ✅ **The window.** `clausters_apps::samples::{window, props}`: the one
    `waveform` over the take -- its buffer, channels, the measures it stacks
    (`peak`, `rms`), the time ruler, rate, tempo and label -- and the gesture plan
    a take is edited with (a drag selects, Alt draws, Ctrl grabs one sample), and
@@ -1053,6 +1053,15 @@ clients and the standalone host green, and each is its own commit.
    server buffer does not see a write made from the other side). Bound through
    the C ABI and wasm like the multitrack's; both clients' `SamplesView.build`
    and `props` call it, and `measures`/`MEASURES` move with it.
+
+   *Done 2026-09-14.* The window's facts are held by the handle this step was
+   going to leave for step 2 — `clausters_apps_samples_editor_{new,free,call}`
+   with `sync`, `layers`, `window` and `props` (core ABI **v61**) — so step 2
+   grows its verbs rather than replacing a stateless door. The check of a
+   measure stack is `clausters_apps_samples_measures`; `MEASURES` stays a
+   constant in each client, as the list a reader names, and the crate is what
+   refuses one that is not on it. The label a nameless take is shown under is
+   the crate's too.
 2. ⬜ **The conversation.** `clausters_apps::samples::editor::SamplesEditor`: one
    view's end of the conversation, as the multitrack's editor is -- a `draw` or a
    `sample` read through `clausters_editing::samples` (a client still decodes the

@@ -610,6 +610,25 @@ export class SampleClockModel {
 }
 
 /**
+ * **A samples editor**: a take, the measures its picture stacks, and the window
+ * it is drawn in. Its verbs cross through `call`, as JSON.
+ */
+export class SamplesEditorCore {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb, as `clausters_apps::samples::editor::call_json` documents.
+     */
+    call(request: string): string;
+    /**
+     * An editor over the take `request` names — `buffer`, `channels`, `name`,
+     * `layers`, `rate`, `tempo`, `title`, `w`, `h` — or an error saying why it
+     * cannot be one.
+     */
+    constructor(request: string);
+}
+
+/**
  * The beat-ordered scheduling queue, the JS face of
  * [`clausters_core::tempoclock::Scheduler`]. It holds `(time, id)` pairs and
  * nothing else: the language side maps each id back to the routine it queued,
@@ -1386,6 +1405,12 @@ export function pointsProps(points: Float64Array, kept_lo?: number | null, kept_
 export function quant_delay(pos: number, quant: number): number;
 
 /**
+ * JS face: **a measure stack, checked** — `{"stack": [...]}` answers
+ * `{"layers": [...]}` or `{"error"}` naming what is refused.
+ */
+export function samplesMeasures(request: string): string;
+
+/**
  * Sample count → seconds at `sample_rate`.
  */
 export function samples_to_secs(samples: number, sample_rate: number): number;
@@ -1561,6 +1586,7 @@ export interface InitOutput {
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
+    readonly __wbg_sampleseditorcore_free: (a: number, b: number) => void;
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_steprunner_free: (a: number, b: number) => void;
@@ -1697,7 +1723,10 @@ export interface InitOutput {
     readonly sampleclockmodel_rate: (a: number) => number;
     readonly sampleclockmodel_sampleAt: (a: number, b: number) => number;
     readonly sampleclockmodel_span: (a: number) => number;
+    readonly samplesMeasures: (a: number, b: number) => [number, number];
     readonly samples_to_secs: (a: number, b: number) => number;
+    readonly sampleseditorcore_call: (a: number, b: number, c: number) => [number, number];
+    readonly sampleseditorcore_new: (a: number, b: number) => [number, number, number];
     readonly scheduler_clear: (a: number) => void;
     readonly scheduler_isEmpty: (a: number) => number;
     readonly scheduler_len: (a: number) => number;

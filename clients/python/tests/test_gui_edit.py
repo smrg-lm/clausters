@@ -14,7 +14,7 @@ import pytest
 from clausters.defs.ugens import points_to_env
 from clausters.gui import edit
 from clausters.gui.editing import (Editing, NotesEditor, PointsEditor,
-                                   SamplesEditor)
+                                   SamplesEditor, measures)
 from clausters.seq import Timeline
 from clausters.seq.automation import Automation
 from clausters.seq.event import Event as SeqEvent
@@ -361,6 +361,32 @@ def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
     # The inverse rode on the wire: nothing was read back to invert it.
     assert editor.undo() is True
     assert take.data[2:4] == [0.0, 0.0]
+
+
+def test_a_takes_window_is_composed_by_the_crate():
+    take = FakeBuffer(frames=8, channels=2)
+    editor = edit(take, tempo=TEMPO, title="take", open=False)
+    host, wid = opened(editor)
+    tree = host.trees[0]
+    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "col")
+    picture = tree["children"][0]
+    assert picture["type"] == "signal" and picture["id"] == wid
+    assert (picture["buffer"], picture["channels"]) == (take.bufnum, 2)
+    assert picture["measure"] == "peak rms"
+    assert picture["label"] == f"buffer {take.bufnum}"
+    assert picture["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
+    assert editor.view.props(editor, wid) == {"reload": 1}
+
+
+def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
+    editor = SamplesEditor(FakeBuffer(), sample_rate=SR, layers=("peak",))
+    editor.layers = ("rms", "peak")
+    assert editor.layers == ("rms", "peak")
+    with pytest.raises(ValueError, match="'loud'"):
+        editor.layers = ("loud",)
+    assert editor.layers == ("rms", "peak")
+    with pytest.raises(ValueError, match="measures something"):
+        measures(())
 
 
 def test_one_dragged_sample_is_the_same_edit_one_frame_wide():

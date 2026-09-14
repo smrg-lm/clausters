@@ -922,6 +922,15 @@ one for itself numbers the row through `Transport::Numbered`. A script's own
 widgets are appended by the client, since a widget over a live source keeps a
 binding no JSON carries.
 
+The **samples editor's window** is the second (`clausters_apps::samples`): one
+`waveform` over a take's server buffer on a time ruler, with the catalogue's
+three-gesture plan, the measures its picture stacks (`peak`, `rms`, checked by
+`samples::measures`), a label from the take's name or its buffer, and `reload` as
+the correction a write from the other side answers with. Its handle
+(`clausters_apps::samples::editor::SamplesEditor`) holds those facts between
+messages and composes and corrects the window through the same kind of JSON door
+the multitrack editor has; the conversation is still each client's.
+
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and
 answers every message as an `Outcome`: the gesture read and applied with the

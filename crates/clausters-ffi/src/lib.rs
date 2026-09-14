@@ -420,7 +420,12 @@ pub use time::*;
 /// for the runner. Only the GUI host could open a session and sound it; a
 /// client loaded each take by hand and could not load a join at all.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 60;
+/// **v61 the samples editor's window is the crate's.**
+/// `clausters_apps_samples_editor_*` holds a take, the measures its picture
+/// stacks and the window's chrome, and composes and corrects the window; each
+/// client composed it for itself. `clausters_apps_samples_measures` checks a
+/// measure stack. **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 61;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

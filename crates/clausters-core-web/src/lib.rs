@@ -1379,6 +1379,39 @@ impl JsMultitrackEditor {
     }
 }
 
+/// **A samples editor**: a take, the measures its picture stacks, and the window
+/// it is drawn in. Its verbs cross through `call`, as JSON.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = SamplesEditorCore)]
+pub struct JsSamplesEditor(clausters_apps::samples::editor::SamplesEditor);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = SamplesEditorCore)]
+impl JsSamplesEditor {
+    /// An editor over the take `request` names — `buffer`, `channels`, `name`,
+    /// `layers`, `rate`, `tempo`, `title`, `w`, `h` — or an error saying why it
+    /// cannot be one.
+    #[wasm_bindgen(constructor)]
+    pub fn new(request: &str) -> Result<JsSamplesEditor, JsError> {
+        clausters_apps::samples::editor::new_json(request)
+            .map(JsSamplesEditor)
+            .map_err(|e| JsError::new(&e))
+    }
+
+    /// One verb, as `clausters_apps::samples::editor::call_json` documents.
+    pub fn call(&mut self, request: &str) -> String {
+        clausters_apps::samples::editor::call_json(&mut self.0, request)
+    }
+}
+
+/// JS face: **a measure stack, checked** — `{"stack": [...]}` answers
+/// `{"layers": [...]}` or `{"error"}` naming what is refused.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = samplesMeasures)]
+pub fn samples_measures(request: &str) -> String {
+    clausters_apps::samples::measures_json(request)
+}
+
 /// JS face: **what a gesture means, in a structure's own vocabulary** — the
 /// edit ingestion, as a JSON string.
 ///

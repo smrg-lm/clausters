@@ -47,17 +47,10 @@ def measures(stack) -> tuple:
     """A measure stack as a tuple, or a `ValueError` naming what is wrong.
 
     A stack is written by hand, so a silent typo is a layer that quietly does
-    not appear, and an empty one is a picture that measures nothing.
+    not appear, and an empty one is a picture that measures nothing. The check
+    is the crate's (`clausters._native.samples_measures`).
     """
-    out = tuple(str(name) for name in stack)
-    for name in out:
-        if name not in MEASURES:
-            raise ValueError(
-                f"unknown measure {name!r} (one of {', '.join(MEASURES)})")
-    if not out:
-        raise ValueError(f"a signal view measures something (one of "
-                         f"{', '.join(MEASURES)})")
-    return out
+    return _native.samples_measures(stack)
 
 
 def _floats(blob) -> list:
@@ -129,17 +122,17 @@ class SamplesDomain(Domain):
         return True
 
 
-#: **What a hand may do to the samples**, and it is three gestures rather than a
-#: mode: a plain drag sweeps a selection (what an editor does by default), Alt
-#: draws over the samples and Ctrl grabs one. A navigable `signal` declares only
-#: the first of those, so an editor that says nothing opens a window that can
-#: only select — which is what this editor was doing while its own docstring
-#: promised a stroke. It is the plan the standalone host builds the same view
-#: with (`clients/gui/src/host/document/tree.rs`), and one view is one plan.
 class SamplesView(View):
     """One `clausters.gui.guidef.waveform`: the take on its own axis, drawn by
     the host straight from the server buffer, with the measures it stacks as a
-    prop of that one widget (see the module docstring)."""
+    prop of that one widget (see the module docstring).
+
+    **The window is the application's**, composed in the shared crate
+    (`clausters._native.SamplesEditorCore`): the waveform, the gesture plan a
+    take is edited with (a drag selects, Alt draws, Ctrl grabs one sample), the
+    label and the correction a write answers with. What is left here is the id a
+    hand's gestures come back on.
+    """
 
     def __init__(self, layers=MEASURES):
         super().__init__()
@@ -147,38 +140,16 @@ class SamplesView(View):
         self.layers = measures(layers)
 
     def build(self, editor) -> dict:
-        from ..guidef import window
-
-        take = editor.structure
-        picture = self.catalogue(editor, "waveform", "waveform", take, {
-            "buffer": int(take.bufnum),
-            "channels": max(1, int(take.channels or 1)),
-            "measure": " ".join(self.layers),
-            "ruler": "time",
-            "sample_rate": editor.sample_rate,
-            "tempo": editor.tempo,
-            "label": _name(take),
-        })
-        return window(picture, *editor.extra,
-                      title=editor.title, w=editor.size[0], h=editor.size[1],
-                      layout="col")
+        wid = self.widget(editor, "waveform", editor.structure)
+        editor._sync_core()
+        tree = editor._core.call("window", widget=wid)
+        # **A script's own widgets are its objects**, so they are appended here
+        # rather than composed in the crate.
+        tree["children"] = [*tree.get("children", ()), *editor.extra]
+        return tree
 
     def props(self, editor, widget_id: int) -> dict:
-        # **The take's picture is the server's buffer, so what corrects it is
-        # "read it again".** A stroke needs nothing from here: the host wrote
-        # those cells itself and its picture moved with them. An undo is the
-        # case that needs it -- the write goes to the *server's* buffer from
-        # this side, and nothing in the host saw it, so the window kept drawing
-        # the stroke until some other reason (a zoom, a scroll) made it resolve
-        # the source again. That is what "the samples undo is slow to show up"
-        # was.
-        #
-        # `reload` is the verb for exactly this: the element forgets what it
-        # resolved and the loader reads its file, cache or server buffer on the
-        # next pass. The generation pairs `/gui_ack` carries would say the same
-        # thing more cheaply, but no client sends one and the host acts on
-        # none -- so this is the door that is actually open.
-        return {"reload": 1}
+        return editor._core.call("props", widget=int(widget_id))
 
 
 class SamplesEditor(Editor):
@@ -192,9 +163,28 @@ class SamplesEditor(Editor):
     def __init__(self, take, *, sample_rate: float = 0.0, tempo: float = 1.0,
                  title: str = "Samples", layers=MEASURES, **options):
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
+        view = SamplesView(layers)
         super().__init__(take, sample_rate=rate, tempo=tempo,
-                         domain=SamplesDomain(), view=SamplesView(layers),
+                         domain=SamplesDomain(), view=view,
                          title=title, **options)
+        #: **The window, in the shared crate**: the take, the measures and the
+        #: chrome it is composed from.
+        self._core = _native.SamplesEditorCore(
+            {**self._facts(), "layers": list(view.layers)})
+
+    def _facts(self) -> dict:
+        take = self.structure
+        name = getattr(take, "name", None)
+        return {"buffer": int(getattr(take, "bufnum", 0) or 0),
+                "channels": max(1, int(getattr(take, "channels", 1) or 1)),
+                "name": name if isinstance(name, str) and name else None,
+                "rate": self.sample_rate, "tempo": self.tempo,
+                "title": self.title, "w": int(self.size[0]), "h": int(self.size[1])}
+
+    def _sync_core(self) -> None:
+        """Hand the core what this client holds: the take a script may have
+        resized, the axis and the window's chrome."""
+        self._core.call("sync", **self._facts())
 
     @property
     def layers(self) -> tuple:
@@ -213,17 +203,13 @@ class SamplesEditor(Editor):
 
     @layers.setter
     def layers(self, stack) -> None:
-        self.view.layers = measures(stack)
+        answer = self._core.call("layers", stack=[str(name) for name in stack])
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        self.view.layers = tuple(answer["layers"])
         if self._host is not None and self._window is not None:
             for wid in self.view.widgets:
-                self._host.set(wid, measure=" ".join(self.view.layers))
-
-
-def _name(take) -> str:
-    name = getattr(take, "name", None)
-    if isinstance(name, str) and name:
-        return name
-    return f"buffer {int(getattr(take, 'bufnum', 0) or 0)}"
+                self._host.set(wid, measure=answer["measure"])
 
 
 def is_samples(structure) -> bool:

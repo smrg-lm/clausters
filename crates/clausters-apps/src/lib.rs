@@ -32,3 +32,4 @@
 //! projections already follow.
 
 pub mod multitrack;
+pub mod samples;

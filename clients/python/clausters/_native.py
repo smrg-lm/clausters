@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 60
+CORE_ABI_VERSION = 61
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -327,6 +327,18 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_multitrack_editor_call.restype = ctypes.c_size_t
+    lib.clausters_apps_samples_editor_new.argtypes = [u8p_early, ctypes.c_size_t]
+    lib.clausters_apps_samples_editor_new.restype = ctypes.c_void_p
+    lib.clausters_apps_samples_editor_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_apps_samples_editor_free.restype = None
+    lib.clausters_apps_samples_editor_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_samples_editor_call.restype = ctypes.c_size_t
+    lib.clausters_apps_samples_measures.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_samples_measures.restype = ctypes.c_size_t
     lib.clausters_session_format.restype = ctypes.c_uint32
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
@@ -1780,6 +1792,63 @@ class MultitrackEditorCore:
         raw = size_then_fill(lib().clausters_apps_multitrack_editor_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body))
         return json.loads(raw) if raw else {}
+
+
+class SamplesEditorCore:
+    """**The samples editor's window** (`clausters_apps_samples_editor_*`): a
+    take, the measures its picture stacks, and the window it is drawn in.
+
+    Every verb crosses through `call`, as JSON: ``sync`` hands over the facts
+    the caller holds (``buffer``, ``channels``, ``name``, ``rate``, ``tempo``,
+    ``title``, ``w``, ``h``), ``layers`` reads or replaces the measure stack,
+    ``window`` composes the window and ``props`` corrects one widget.
+
+    Args:
+        request: the same facts, plus ``layers``.
+
+    Raises:
+        ValueError: the request is not one, or its measure stack is refused.
+    """
+
+    def __init__(self, request: dict):
+        measures = request.get("layers")
+        if measures is not None:
+            samples_measures(measures)
+        body = json.dumps(request).encode("utf-8")
+        self._handle = lib().clausters_apps_samples_editor_new(as_u8(body), len(body))
+        if not self._handle:
+            raise ValueError("not a samples editor request")
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the editor."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_apps_samples_editor_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **args) -> dict:
+        """One verb, with its arguments; the answer, as a dict."""
+        if not self._handle:
+            return {}
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_samples_editor_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+
+def samples_measures(stack) -> tuple:
+    """A measure stack, checked by the crate (`clausters_apps_samples_measures`).
+
+    Raises:
+        ValueError: a measure nobody draws, or an empty stack, with the reason.
+    """
+    answer = _read_json(lib().clausters_apps_samples_measures,
+                        {"stack": [str(name) for name in stack]})
+    if not isinstance(answer, dict) or "error" in answer:
+        raise ValueError((answer or {}).get("error", "not a measure stack"))
+    return tuple(answer["layers"])
 
 
 def domain_edit(domain: str, state, payload: dict) -> "dict | None":
