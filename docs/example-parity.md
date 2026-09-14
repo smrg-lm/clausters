@@ -98,6 +98,7 @@ to.
 | — | `loadCore` | `n/a` — the shared core's wasm module, which has to be loaded before the first call into it. A script needs no such line: ctypes opens its library on first use |
 | `Score` | `open` | `idiom` — a score is engraved when it is built, and libverovio in a page is fetched asynchronously; a TypeScript constructor cannot await, so the same act is the static factory `Score.open` |
 | — | `call` | `idiom` — applying a Faust box to its inputs. Python's `Box` is callable, so an unapplied fragment is wired up by writing `box.faust("os.osc")(freq)`; TypeScript has no callable object and spells the same application `.call(freq)` |
+| `Part` | — | `idiom` — one span of a join, as `Buffer.stitch` takes it. Python's `Part` is a named tuple, built by a call; TypeScript's `Part` is an interface, so a page writes the same span as an object literal and there is no call to pair it with |
 | `read` | `fromSamples` | `idiom` — loading a take into a server buffer. A script renders it to a `.wav` and the server reads the path (`/buffer_read`); a tab has no path, so the samples go straight in |
 | `segments` | `tempoSegments` | `idiom` — every segment of a tempo map, in order. Same reason as the row below: the wasm `TempoMap` cannot grow a method, so the wrapper takes the map |
 | `env` | `tempoEnv` | `idiom` — writing a tempo envelope onto a map. The Python client's `TempoMap` carries the method; the wasm one is a handle with no room for it, so the same act is the free function `tempoEnv(map, …)` |
@@ -458,4 +459,5 @@ in the middle of an example.
 | python | `file` | the same cell: a take's entry in the source table, naming the file it was written to |
 | python | `shaped` ×2 | the same cell: the shape a take's entry and the join's entry state |
 | python | `Source` | the same cell: the join's entry, stated as the parts it is made of rather than as a file |
+| web | `push` | the clip envelope added to the first box's automation: `Array.push`, which the audit reads as the host's `push`. The script's `list.append` is the same line and is no call on the client |
 
