@@ -40,26 +40,21 @@ small set of data structures with no view. The design that replaces it is
 `crates/clausters-document/PLAN.md`, "The turn: the arrangement stops being a
 projection" (`O21`-`O24`).
 
-**Taken first, and everything below is read against it**: `O21` (the session's
-types and format) closed 2026-09-06, `O22` (the intents a DAW admits) and `O23`
-(the host binds the session and reconciles) **closed 2026-09-07**, so what is
-left of the turn is **`O24` — the three applications**, and it is the next
-thing. What the three leave for it: the model exists in the crate and in both
-clients, with a vocabulary of fourteen verbs registered as a domain of its own;
-the presentation is a structure beside the piece (a view object per model
-object, on the Live Object Model's shape) and a session saves a list of them;
-a `/gui_def` means *make it look like this* and the host reconciles, so no
-client holds a picture of what the host draws and none can. What `O24` still
-finds waiting is that **the host draws the general tree**: it reconciles
-correctly against what it is handed, and what it is handed is not yet derived
-from a session.
+**Taken first, and everything below is read against it**: `O21`-`O23` closed
+2026-09-06 and 2026-09-07, and of **`O24` — the three applications** the
+**multitrack editor** is done: `O25`-`O33` put its projections, its
+conversation, its playback and the application itself in the shared crates, run
+by the standalone host and bound by both clients, and a saved session opens and
+sounds from all three. **What is taken next is the audio editor**, which is
+`APPLICATION-SCOPE.md`'s `AP7` (decided 2026-09-13 with the user): the second
+application, written in `crates/clausters-apps` beside the multitrack, with its
+steps in that milestone. The score editor is not started.
 
-`O24` is also where three things deferred from elsewhere are decided:
-`APPLICATION-SCOPE.md`'s `AP7` (whether a second application is still a
-milestone or is one of these three), `AP5`'s catalogue views (which lost their
-home when `AP6` was closed by removal), and the manual surface the reconcile has
-never had — no example in either client sends a second `/gui_def` over an open
-window, so the branch's opening complaint cannot be watched being fixed.
+Two things deferred to `O24` still have no step of their own: `AP5`'s catalogue
+views (building `waveform`, `bpf` and `pianoroll` from the shared code, so the
+standalone host has the same function), and the manual surface the reconcile
+has never had — no example in either client sends a second `/gui_def` over an
+open window (`APPLICATION-SCOPE.md`, "Found by use").
 
 Where the work lives:
 
@@ -457,9 +452,12 @@ its plan; the plan is where its acceptance is read.
 ### The branch's own, and they are the near work
 
 - ⬜ **`AP7` - a second application, to prove the abstraction**
-  *(`APPLICATION-SCOPE.md`)*. Written before the turn, and the turn gives it its
-  subject: the second application is one of the three, not an invented one, so it
-  is read against `O24` before it starts.
+  *(`APPLICATION-SCOPE.md`)*. **Taken next.** The second application is the
+  **audio editor** (decided 2026-09-13), ported from the Python client's
+  `SamplesEditor` into `crates/clausters-apps` the way the multitrack was, in
+  the steps that milestone lists: the window, the conversation, the write, entering
+  a box from the multitrack, and the undo order moving into the crate. It is what
+  lets the standalone host enter a box.
 
 - ⬜ **`AP8` - the pass over the packages, and the plans keep what is worth
   keeping** *(`APPLICATION-SCOPE.md`)*. The branch's closing milestone: what of
