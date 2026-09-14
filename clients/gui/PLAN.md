@@ -1269,6 +1269,152 @@ its header with a meter beside it answering, and every one of them undone in one
 order.
 
 
+## G36 — Key bindings are configuration, not code
+
+- ⬜ **G36 — A key names a verb, and which key is set outside the code.** *(Added
+  2026-09-14 by the user: the widgets' keyboard shortcuts should be definable as
+  configuration, for instance from a config file and a GuiDef; configurable
+  shortcuts will be very useful for complex applications such as the multitrack,
+  audio and MIDI editors, and this way they are not hardcoded — **a milestone
+  that needs design** before
+  anything is built. It absorbs the future direction "A shortcut is the
+  application's, not the widget's", raised by the user 2026-09-08 closing `G34`.)*
+
+  **The design is the standard one** *(the user, 2026-09-14)*: it follows the
+  conventions common to desktop and mobile interfaces rather than inventing its
+  own, and where desktop and mobile conventions differ, choosing between them is
+  part of the design.
+
+  **What is wrong today is where the letters live, not which they are.** Every
+  heavy view spells its own keys in its own `key` arm: a roll splits on `e` and
+  joins on `j`, a multitrack does the same over clips, `q` quantizes in both,
+  `Ctrl`+`C`/`X`/`V` move a block through the host's one clipboard, Delete
+  removes, the space bar drives the transport and `A` in a track's header shows
+  its automation. The two fronts read keys separately too (`host/gui/app.rs` and
+  `host/web/input.rs`), which is how the browser's space bar came not to reach the
+  window's transport while the native one did. A key is a **binding** — a name
+  for a verb, chosen by whoever uses the program — and as a `match` arm inside the
+  element that performs the verb, the same key cannot mean two things in two
+  applications over one widget, a user cannot change one, and a verb no key names
+  is unreachable though the element implements it. The audio, multitrack and
+  notes editors (`crates/clausters-apps/PLAN.md`) are several applications over
+  one set of views, which is what makes this stop being hypothetical.
+
+  **Precedents in the host, each a shape the design can reuse or reject:**
+  `Element::gesture_map` already did this for the pointer (a container's plan names
+  the steps, the element performs them); and the look is set from outside the code
+  at two levels — a launch-time table in the config file (`[gui.theme]`,
+  `[gui.metrics]`, `docs/configuration.md`) and a protocol message a client sends
+  (`/gui_theme`, `/gui_metrics`), with a `theme` prop scoping it to a subtree.
+
+  **What the design has to answer, none of it decided:**
+
+  - **The verbs.** Each element declares the verbs it performs by name, and what
+    the names are — per element, or one vocabulary shared by every view that edits
+    a time axis.
+  - **Who owns the table**: the host, an application, a client — and at which
+    levels it can be set: the config file, a GuiDef (a window or a subtree), a
+    protocol message at run time, an application's defaults. With them, which
+    level wins over which.
+  - **Context.** Which binding applies where: the focused widget, the widget under
+    the pointer, the window, the application — and, once an application can stand
+    inside another (`crates/clausters-document/PLAN.md`, Future directions), which
+    one answers a key both claim.
+  - **One reading for both fronts**, so the native and the browser host cannot
+    disagree about a key again.
+  - **What a binding may not take**: a text field typing, the keys a browser or a
+    platform reserves, and how a modifier is spelled across platforms.
+  - **Discovery**: how a user finds out which key does what — the documentation
+    (`docs/gui-protocol.md`'s catalog rows carry the letters today), a status line,
+    a menu.
+
+  **What stays true until it lands**: the letters are documented where they are
+  performed (the element's `key` doc comment and `docs/gui-protocol.md`), and the
+  interaction vocabulary itself stays provisional ("The whole interaction
+  vocabulary is provisional…", Future directions). **Acceptance** is decided with
+  the design.
+
+
+## G37 — Menus: a tree of options, a menu bar, and the chooser put right
+
+- ⬜ **G37 — A menu is a tree of options, and the chooser stops misplacing its
+  list.** *(Added 2026-09-14 by the user — **a milestone that needs design**
+  before anything is built.)* Two widgets that are complementary and separable,
+  and a fix to the one that exists:
+
+  - **A drop-down menu over a tree of options**: the familiar menu a press opens,
+    whose entries can open submenus of their own.
+  - **A menu bar**: a row of those menus along a window. It uses the drop-down
+    menu and the drop-down menu does not need it — a menu can be opened from a
+    button, a header or anywhere else a composition puts one.
+  - **The existing `menu` put right**, which is a combobox (a field showing the
+    chosen option, with a list that opens under it — `E11`): as the user sees it
+    today, **the list opens out of line with the button**, and **the chosen
+    option's name is shown twice**, in the button and again in the list. Where
+    the list is placed is one function, `controls::menu_popup`, from the field
+    `Menu::body` answers, resolved once at the press; the cause of the offset is
+    not diagnosed here.
+
+  **The design is the standard one** *(the user, 2026-09-14)*: it follows the
+  conventions common to desktop and mobile interfaces rather than inventing its
+  own, and where desktop and mobile conventions differ, choosing between them is
+  part of the design.
+
+  **What exists to build on:** the combobox's popup is already the host's one
+  **overlay** mechanism — an element declares `overlay_rect` and draws `overlay`
+  last, over everything, and the list is modal at the door (a press anywhere is
+  the list's) — so a tree of lists is that mechanism more than once, not a second
+  one.
+
+  **What the design has to answer, none of it decided:**
+
+  - **The tree on the wire**: how a GuiDef states entries, submenus, separators,
+    a disabled entry, a checkable or one-of-several entry, and what a pick reports
+    (a path, a name, an id).
+  - **Where the combobox's list goes**: under the field, or placed so the chosen
+    option sits over the field the way some platforms do it; and whether the list
+    leaves the chosen option out, marks it, or shows it as the others.
+  - **How the menu bar belongs to a window**: a widget in the tree, or a window
+    prop; what it does when the window is too narrow.
+  - **The keyboard**: opening, walking and closing menus from keys, and showing
+    beside an entry the key bound to it — which is `G36`'s table, so the two are
+    designed together.
+  - **Both fronts alike**, native and browser, as every widget is.
+
+## G38 — A tooltip
+
+- ⬜ **G38 — A widget can say what it is when the pointer rests on it.** *(Added
+  2026-09-14 by the user — **a milestone that needs design** before anything is
+  built.)* A tooltip widget: a short text that appears near the pointer after it
+  rests over a widget, and goes when it leaves.
+
+  **The design is the standard one** *(the user, 2026-09-14)*: it follows the
+  conventions common to desktop and mobile interfaces rather than inventing its
+  own, and where desktop and mobile conventions differ, choosing between them is
+  part of the design.
+
+  **What exists to build on:** the same overlay the combobox's list draws into;
+  the frame already reads the pointer for hovering (`ctx.world.cursor`, which the
+  open list highlights its row from, and which is not a gesture); and a window
+  has a **status bar** (`status`), which already carries a sentence about what
+  the hand did.
+
+  **What the design has to answer, none of it decided:**
+
+  - **Whether it is a widget or a prop**: a `tooltip` any widget carries (as it
+    carries a `label` or a `theme`), a widget of its own placed over another, or
+    both.
+  - **When**: the delay before it shows, whether moving between two widgets with
+    tooltips shows the second at once, and what hides it (leaving, a press, a key).
+  - **Where**: beside the pointer or beside the widget, and kept inside the window.
+  - **What it says**: plain text, or text with the key bound to the widget's verb
+    (`G36`); and whether a heavy view can answer a tooltip per part (a box, a
+    grip, a note) rather than one for the whole widget.
+  - **Its relation to the status bar**: one of them, both, or the status bar as
+    the tooltip's place when there is no room.
+  - **Touch and the browser**, where there is no resting pointer.
+
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Five design rules bound it, all in the direction of keeping the host light:
@@ -3847,44 +3993,9 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
   - **A gesture is written where it can be changed, and written down where it can be found.** In the host, in the element that performs it, with the reason in its doc comment and the rule in `docs/gui-protocol.md` — never spread across a client, never a convention two clients each implement.
   - **A facility says it is one.** A verb that exists because the example needed something to try (the `A` toggle making a gain curve, the wheel's two modifiers, the double click that adds a track) carries that sentence in its own documentation, so the next reader does not mistake a scaffold for a norm.
-  - **What is deliberately not decided yet**, and what the other two applications are expected to move: which keys the verbs are bound to and who owns the binding (the entry below); what a modifier addresses — a place under the pointer, or a thing — which this year already produced one defect in each direction; what a track may automate, and how one is chosen, where today one button makes the one curve every track has a port for; how a fade *inside* a box is drawn, which the join's seam and the gap and overlap cases all wait on (`crates/clausters-document/PLAN.md`, "A join's crossfade"); and how much of any of it is the **application's** rather than the widget's, which is the question the other two applications exist to answer.
+  - **What is deliberately not decided yet**, and what the other two applications are expected to move: which keys the verbs are bound to and who owns the binding (`G36`); what a modifier addresses — a place under the pointer, or a thing — which this year already produced one defect in each direction; what a track may automate, and how one is chosen, where today one button makes the one curve every track has a port for; how a fade *inside* a box is drawn, which the join's seam and the gap and overlap cases all wait on (`crates/clausters-document/PLAN.md`, "A join's crossfade"); and how much of any of it is the **application's** rather than the widget's, which is the question the other two applications exist to answer.
 
   It does not open as a milestone: there is nothing to build until there is a second application to disagree with the first. It opens the day the audio editor or the score editor wants a gesture this one already spends.
-
-- ⬜ **A shortcut is the application's, not the widget's** *(raised 2026-09-08
-  by the user, closing `G34`'s host logic: "los shortcut documentalos cuando
-  hagas la documentacion del elemento, luego se deberian poder cambiar pero eso
-  tal vez requiera una implementacion mas general para todas las vistas segun el
-  contexto de la apicacion")*. Every heavy view spells its own letters in its own
-  `key` arm: a roll splits on `e` and joins on `j`, a multitrack now does the
-  same over clips, `q` quantizes in both, `Ctrl`+`C`/`X`/`V` move a block
-  through the host's one clipboard, Delete removes. They agree today because
-  they were written to agree, which is exactly the kind of agreement that stops
-  being true quietly.
-
-  **What is wrong with it is not the letters, it is where they live.** A key is
-  a *binding* — a name for a verb, chosen by whoever is using the program — and
-  today it is a `match` arm inside the element that performs the verb. So the
-  same key cannot mean two things in two applications over one widget, a user
-  cannot change one, and a verb no key names is unreachable even though the
-  element implements it. The audio editor, the multitrack editor and the score
-  editor are three applications over one set of views (`O24`), which is what
-  makes this stop being hypothetical: they will want different letters over the
-  same element, and the element is the wrong place to ask.
-
-  **The shape this suggests, and it is not decided:** an element declares the
-  **verbs** it performs, by name, and something above it — the application, or a
-  table the host holds and a client can set — decides which key reaches which
-  verb, in this context. That is the same move `Element::gesture_map` already
-  made for the pointer (a container's plan names the steps, the element performs
-  them), applied to the keyboard; and the same move `/gui_theme` and
-  `/gui_metrics` made for the look. Whether the table is the host's, the
-  application's or the client's is the open question, and it is `O24`'s to
-  answer rather than a widget's.
-
-  Until then the letters are documented where they are performed (the element's
-  `key` doc comment and `docs/gui-protocol.md`'s catalog row), so at least what
-  is unchangeable is written down.
 
 Captured here so the depth the editor-grade vision needs is not lost; each becomes a milestone — or a track — when its design converges. **The convention, stated because the list only works if it holds:** every entry carries a `⬜`, and one that converges into numbered milestones **leaves this list** — it is not marked `✅` here, because converging is not shipping and a `✅` beside an unstarted milestone says the opposite of what is true. The milestone that absorbed it is the record, and it says where it came from, so nothing needs a pointer that would go stale. Gone that way so far: scopes, the editor-grade views, edit-back-to-data and the BPF view (G18-G21), and — 2026-08-13 — the **DAW / timeline view**, which became the whole of G22 with its dedicated note view following as G24 — while the free arrangement plane it named alongside the lane stack **stays here**, since it is a second kind of multitrack whose model differs structurally from the one that shipped and has still to be defined, not an increment on it; and **a sample as a grabbable point**, folded into the D track (D1, D2), which is where the questions it raised are answered.
 

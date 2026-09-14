@@ -48,20 +48,24 @@ by the standalone host and bound by both clients, and a saved session opens and
 sounds from all three. **The application-scope track is closed**
 (`clients/gui/PLAN.md`, AP track): the samples editor is the second application
 in `crates/clausters-apps`, and the undo order over both is the crate's editing
-context, in both clients and the standalone host. The audio editor itself is a
-track of its own that no plan holds yet, and the score editor is not started.
+context, in both clients and the standalone host. The applications after the
+multitrack — the audio editor, a buffer editor, the notes editor, the score
+editor, and which composed views get one — are milestones of
+`crates/clausters-apps/PLAN.md` (`X1`-`X6`), each opened on a question rather
+than on a design, and the score editor is not started.
 
-Two things deferred to `O24` still have no step of their own: `AP5`'s catalogue
-views (building `waveform`, `bpf` and `pianoroll` from the shared code, so the
-standalone host has the same function), and the manual surface the reconcile
-has never had — no example in either client sends a second `/gui_def` over an
-open window (`clients/gui/PLAN.md`, "Found by use").
+One thing deferred to `O24` still has no step of its own: the manual surface
+the reconcile has never had — no example in either client sends a second
+`/gui_def` over an open window (`clients/gui/PLAN.md`, "Found by use", "The
+reconcile has no example to see it in"). `AP5`'s catalogue views, deferred with
+it, are the crate's since `a1e54513`.
 
 Where the work lives:
 
 | Track | File | What it is |
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
+| `Xx` | `crates/clausters-apps/PLAN.md` | the applications over the document, each written once |
 | `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
@@ -250,6 +254,29 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
+- ⬜ **The applications after the multitrack, `X1`-`X6`**
+  *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
+  what exists under it and what is open, and each opens on a decision:
+  **`X1`** the audio editor, whose requirements are stated (cut, copy and paste
+  over segments, mix, a history in memory and on disk) and whose memory/disk
+  split and segment model are not; **`X2`** a buffer editor that draws a table by
+  hand, where the wavetable conversion and what the hand edits are open; **`X3`**
+  the notes editor, decided to be an application, opening on what the crate
+  edits; **`X4`** whether the points editor is one; **`X5`** the score editor over
+  the `N` track; **`X6`** which composed views (scope, plot, waveform,
+  spectrogram) get an application. **Related:** an application inside another,
+  under "The larger questions" below.
+
+- ⬜ **`G36` - `G38` — key bindings, menus and a tooltip, each a design first**
+  *(`clients/gui/PLAN.md`, sections "G36", "G37", "G38")*. **The decision is the
+  design**, and it follows the conventions common to desktop and mobile
+  interfaces. **`G36`** — key bindings set outside the code (a config file, a
+  GuiDef) instead of spelled in each element. **`G37`** — a drop-down menu over a
+  tree of options and a menu bar, separable, and the existing combobox's list
+  that opens out of line and shows the chosen name twice put right. **`G38`** — a
+  tooltip. `G37`'s keyboard and `G38`'s text both read `G36`'s table, so the three
+  are designed together.
+
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
   device axis, so the grid slides by the frozen total across a pause. No test
@@ -363,7 +390,8 @@ its plan; the plan is where its acceptance is read.
   Sonic Visualiser's pane/layer shape - layers that display audio and layers
   that annotate it as one kind on one axis, with the rule that *the axis belongs
   to the pane, not to the content*. The two entries are one design and the host's
-  is the view half; read them together before either starts.
+  is the view half; read them together before either starts. **Related:** `X1`,
+  the audio editor as an application (`crates/clausters-apps/PLAN.md`).
 
 - ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
   Future directions)*. A **second kind of multitrack**, explicitly not a milestone
@@ -418,6 +446,12 @@ Named, not enumerated: each is written where it belongs and is read there.
   session, the audio editor's, the analysis layers of the audio editor, the score
   editor's - so what is open is now *what they share*, which is the same decision
   seen from the other end.
+- **An application inside another, so an application is also a composed
+  widget** *(`crates/clausters-document/PLAN.md`, Future directions)*. What would
+  let the notes editor (`X3`) stand inside a multitrack or a script's window, as a
+  composed widget. Nothing about it is designed: a subtree rather than a window,
+  ids a parent hands a child, events routed to the application that owns each
+  widget, and who answers a key when applications nest, which meets `G36`.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (the
