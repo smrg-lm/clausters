@@ -136,7 +136,7 @@ class Score:
             return                      # a resend is not an edit
         context = self._editing
         with context.turn(self):
-            context.history.record(
+            context.record(
                 # `forward` is a **step** and `backward` is a bare payload:
                 # the pile hands an inverse back as what it holds, and wrapping
                 # it a second time hands the reader a leg it cannot read.
@@ -175,13 +175,11 @@ class Score:
     def can_undo(self) -> bool:
         """Whether the **context's** pile has an edit to step back over — which
         may be an edit to something else entirely, since the order is one."""
-        history = self._editing.history
-        return bool(history is not None and history.can_undo)
+        return self._editing.can_undo
 
     @property
     def can_redo(self) -> bool:
-        history = self._editing.history
-        return bool(history is not None and history.can_redo)
+        return self._editing.can_redo
 
     def undo(self) -> bool:
         """Step the editing context back one edit, and say whether anything
@@ -199,8 +197,11 @@ class Score:
 
     def _step(self, direction: str) -> bool:
         context = self._editing
-        legs = context.step(direction)
-        return False if legs is None else context.distribute(legs, self)
+        stepped = context.step(direction)
+        if not stepped.get("stepped"):
+            return False
+        context.carry(stepped)
+        return True
 
     def sheet(self) -> dict:
         """The open score as the **model** (`clausters.gui.notation.sheet`).

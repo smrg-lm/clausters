@@ -464,7 +464,7 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     curve_editor.apply("/gui_event", [curve_wid, 1, 0, "points",
                                       0.0, 300.0, 1, 0.0, 2.0, 900.0, 1, 0.0])
     roll.apply("/gui_event", [roll_wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
-    assert context.history.undo_label == "edit the notes"
+    assert context.undo_label == "edit the notes"
 
     # The notes go back first: one pile, walked in the order the edits landed.
     assert roll.undo() is True

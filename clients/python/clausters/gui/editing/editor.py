@@ -354,12 +354,9 @@ class Editor:
 
     @property
     def _version(self) -> int:
-        """The version — the counter the host names back on its next gesture."""
+        """The version — the counter the host names back on its next gesture.
+        The context's, moved by its turns, steps and records and never here."""
         return self._editing.version
-
-    @_version.setter
-    def _version(self, value: int):
-        self._editing.version = int(value)
 
     def _registered(self) -> int:
         """This structure's identity in the history, minted on first use.
@@ -504,9 +501,8 @@ class Editor:
             # nobody could apply and the whole pile blocked behind it. The
             # applier is the structure's vocabulary now
             # (`clausters.gui.editing.Editing.identity`), which no window owns.
-            if not stepped and self.app.unreachable is not None:
-                self._reason = (f"{self.app.unreachable}: nothing here can put "
-                                "that edit back")
+            if not stepped and self.app.refusal is not None:
+                self._reason = self.app.refusal
             self._acknowledge(seq, reason=self._reason)
             return stepped
         if kind == "stale":
@@ -688,13 +684,14 @@ class Editor:
             return False
         log.debug("record [%s] %s", label, payload.get("intent"))
         if before is not None:
-            self._editing.history.record(
+            self._editing.record(
                 [{"structure": self._registered(),
                   "forward": {"edit": payload},
                   "backward": before,
                   "key": self.domain.coalesce_key(payload)}],
                 label=label, coalesce=coalesce)
-        self._version += 1
+        else:
+            self._editing.moved()
         self.dirty = True
         self._editing.changed()
         return True
@@ -727,8 +724,9 @@ class Editor:
             return False
         log.debug("record [%s] %d leg(s)", label, len(legs))
         if legs:
-            self._editing.history.record(legs, label=label)
-        self._version += 1
+            self._editing.record(legs, label=label)
+        else:
+            self._editing.moved()
         self.dirty = True
         return True
 
@@ -837,20 +835,17 @@ class Editor:
     @property
     def can_undo(self) -> bool:
         """Whether there is an edit to step back over."""
-        history = self._editing.history
-        return history is not None and history.can_undo
+        return self._editing.can_undo
 
     @property
     def can_redo(self) -> bool:
         """Whether there is an undone edit to step forward into."""
-        history = self._editing.history
-        return history is not None and history.can_redo
+        return self._editing.can_redo
 
     @property
     def undo_label(self) -> "str | None":
         """What an undo would be called, for a menu item."""
-        history = self._editing.history
-        return None if history is None else history.undo_label
+        return self._editing.undo_label
 
     @property
     def redo_label(self) -> "str | None":
@@ -861,8 +856,7 @@ class Editor:
         person knows which edit a keystroke is about to move — and both windows
         read the same one.
         """
-        history = self._editing.history
-        return None if history is None else history.redo_label
+        return self._editing.redo_label
 
     @property
     def window(self):

@@ -403,13 +403,38 @@ def test_entering_a_box_opens_its_contents_on_the_piece_s_history():
     assert ed.entered["12"] is opened
 
 
+class TakeServer:
+    """The write a mono take's editor sends, laid into a `Take`, and the
+    ``/done`` it is answered with."""
+
+    def __init__(self, take):
+        self.take = take
+
+    def _bulk_chunk(self, timeout=None) -> int:
+        return 8192
+
+    def send_msg(self, addr, *args):
+        import struct
+
+        assert addr == "/buffer_setRange", addr
+        values = struct.unpack(f"<{len(args[-1]) // 4}f", args[-1])
+        for i, v in enumerate(values):
+            if int(args[1]) + i < len(self.take.frames):
+                self.take.frames[int(args[1]) + i] = float(v)
+
+    def request(self, addr, *args, expect=None, timeout=None):
+        self.send_msg(addr, *args)
+        return "/done", [addr, int(args[0])]
+
+
 class Take(FakeTake):
     """A take the samples editor can write a stroke into — `FakeTake` plus the
-    read-back the domain uses to splice one."""
+    server its writes go to."""
 
     def __init__(self, bufnum: int = 7, n: int = 16):
         super().__init__(bufnum)
         self.frames = [0.0] * n
+        self.server = TakeServer(self)
 
     def get_samples(self, start: int = 0, n: "int | None" = None) -> list:
         end = len(self.frames) if n is None else start + n
@@ -503,7 +528,7 @@ def test_a_box_closed_does_not_block_the_piece_s_undo():
     # neither went with the window.
     assert ed.undo() is True, "the piece can put back an edit made inside a box"
     assert take.frames[2:4] == [0.0, 0.0], "and it is the stroke that was undone"
-    assert ed.app.unreachable is None
+    assert ed.app.refusal is None
 
     # ...and the order keeps going, which is the half that was actually broken:
     # a refused step put the cursor back, so everything behind it was walled off.

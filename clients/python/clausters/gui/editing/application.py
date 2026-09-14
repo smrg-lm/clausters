@@ -304,51 +304,42 @@ class Application:
     #: no participant held the structure the entry names — the label of the edit
     #: that is waiting, for whoever wants to say why nothing happened. ``None``
     #: after a step that landed, and after one there was nothing to take.
-    unreachable: "str | None" = None
+    refusal: "str | None" = None
 
     def step(self, direction: str, walker) -> bool:
-        """One step of the pile, **handed round the context**.
+        """One step of the order, **taken by the context** and carried out here.
 
-        The history holds structures the crate cannot reach, so it applies
-        nothing: what comes back is an ordered list of legs, each naming the
-        structure it belongs to. One entry can name several — a stroke over a
-        take and a bend of the curve over it are one order — so the step is
-        offered to **every editor in the context**, and each projects the legs it
-        owns. An editor that walked only its own legs would step the cursor over
-        somebody else's edit and undo nothing, which looks exactly like a dead
-        button.
+        The history and the members are the crate's (`clausters.gui.editing.
+        Editing`): it walks the pile, hands each leg to the member that owns the
+        structure, and puts the cursor back — with the reason — when nothing
+        could apply it. What is left is the objects: a piece written back, a
+        take's writes, a curve's payloads.
 
         ``walker`` is whoever asked, and it is the one that draws afterwards:
         every other window is told on the way out of the turn, the way it is told
         about any edit, so a step is one answer per window rather than two.
         """
-        context = self.context
+        context = walker._editing
         if context is None:
             return False
-        self.unreachable = None
-        history = context.history
-        before = None if history is None else (history.undo_label, history.redo_label)
-        legs = context.step(direction)
-        if legs is None:
-            log.debug("%s   nothing stepped (at %s)", direction, before)
+        return self.stepped(context.step(direction), walker)
+
+    def stepped(self, stepped: dict, walker) -> bool:
+        """Carry out a step the context **already took** — by `step`, or inside
+        a turn whose message was an undo — and say whether anything moved.
+
+        A step nothing could apply is not a step: the crate put the cursor back,
+        and `refusal` is why, which is what an acknowledgement says instead of
+        a dead button.
+        """
+        self.refusal = None
+        if not stepped.get("stepped"):
+            self.refusal = stepped.get("reason")
+            log.debug("step   nothing moved%s",
+                      "" if self.refusal is None else f" ({self.refusal})")
             return False
-        if not context.distribute(legs, walker):
-            # **A step nobody could apply is not a step.** The walk moves the
-            # pile's cursor before anything is projected, so an entry naming a
-            # structure no participant holds -- a box whose window was closed --
-            # was stepped *over*: the edit stayed and the order lost it, which is
-            # the one thing a history may not do. So the cursor goes back and
-            # the answer is "nothing happened", which is true and recoverable:
-            # open that window and the entry is still on top, waiting.
-            context.step("redo" if direction == "undo" else "undo")
-            self.unreachable = (before[0] if direction == "undo" else before[1]) if before else None
-            log.debug("%s   nothing could apply it (at %s)", direction, before)
-            return False
-        log.debug("%s   %s -> %s", direction, before,
-                  None if history is None else (history.undo_label, history.redo_label))
-        # **Once for the walk, not once per window.** The version is the
-        # context's, and every view reports the same one.
-        context.version += 1
+        walker._editing.carry(stepped)
+        log.debug("step   -> version %s", stepped.get("version"))
         walker.reflect_step()
         return True
 

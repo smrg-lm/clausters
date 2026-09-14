@@ -288,6 +288,14 @@ impl Editing {
             .map(|seat| &mut seat.member)
     }
 
+    /// **An edit that leaves no entry still moves the version**: one applied
+    /// with no inverse to record, which a host must stop naming the version it
+    /// was made against. Answers the version it moved to.
+    pub fn moved(&mut self) -> i64 {
+        self.version += 1;
+        self.version
+    }
+
     /// **Records an entry** under `member`'s structure — what an external
     /// member hands over for an edit it applied itself — continuing the entry
     /// before it when `coalesce` says the hand has not stopped. Answers whether
@@ -513,6 +521,7 @@ struct RecordedLeg {
 /// - `member` — `member`, and a verb of that member's own door with its
 ///   arguments, the version filled in: what that door answers. `event` and
 ///   `apply` are the context's and answer `{}` here.
+/// - `moved` — an edit that leaves no entry: `{"version"}`, moved on.
 /// - `state` — `{"version", "canUndo", "canRedo", "undoLabel", "redoLabel"}`.
 ///
 /// An unknown verb answers `{}`.
@@ -602,6 +611,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 _ => "{}".into(),
             }
         }
+        "moved" => json!({ "version": editing.moved() }).to_string(),
         "state" => json!({
             "version": editing.version(),
             "canUndo": editing.can_undo(),
@@ -945,6 +955,11 @@ mod tests {
         assert_eq!(turned["version"], 2);
         assert_eq!(turned["outcome"]["edit"]["values"], json!([0.5]));
         let state = call(&mut editing, json!({"verb": "state"}));
+        assert_eq!(
+            call(&mut editing, json!({"verb": "moved"}))["version"],
+            3,
+            "an edit with no entry moves the version and records nothing"
+        );
         assert_eq!(state["undoLabel"], "draw the samples");
         let stepped = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
         assert_eq!(stepped["effects"][0]["kind"], "samples");

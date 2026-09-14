@@ -24,7 +24,7 @@ twice into one body is also what makes the rest of it one thing: one axis, one
 ruler, one selection, one playhead, one upload of the samples.
 
 **A stroke lands on one channel.** What a write does to the buffer is the
-shared crate's (`clausters._native.SamplesEditorCore`, ``write``): a mono take
+shared crate's (`clausters._native.EditingCore`, ``write``): a mono take
 takes the run as flat samples (``/buffer_setRange``), and one channel of a take
 with more is written by frames of that channel alone
 (``/buffer_setRangeChannel``), so the other channels are never touched. This
@@ -85,7 +85,7 @@ class SamplesDomain(Domain):
     """A span of samples' vocabulary: the crate's ``samples``, over frames the
     server holds.
 
-    **What a gesture means is the application's** (`SamplesEditorCore`): the
+    **What a gesture means is the application's** (`clausters._native.EditingCore`): the
     run a stroke wrote and the run it replaced are read there in one reading,
     so nothing waits here between two calls. What is left is the write itself,
     onto the buffer this client holds -- a stroke's, and a step of the
@@ -107,7 +107,7 @@ class SamplesDomain(Domain):
         if editor is None or not (payload or {}).get("values"):
             return False
         server = _resolve(getattr(structure, "server", None))
-        steps = editor._core.call("write", edit=payload,
+        steps = editor._call("write", edit=payload,
                                   chunk=int(server._bulk_chunk())).get("steps") or []
         if not steps:
             return False
@@ -121,7 +121,7 @@ class SamplesView(View):
     prop of that one widget (see the module docstring).
 
     **The window is the application's**, composed in the shared crate
-    (`clausters._native.SamplesEditorCore`): the waveform, the gesture plan a
+    (`clausters._native.EditingCore`): the waveform, the gesture plan a
     take is edited with (a drag selects, Alt draws, Ctrl grabs one sample), the
     label and the correction a write answers with. What is left here is the id a
     hand's gestures come back on.
@@ -135,14 +135,14 @@ class SamplesView(View):
     def build(self, editor) -> dict:
         wid = self.widget(editor, "waveform", editor.structure)
         editor._sync_core()
-        tree = editor._core.call("window", widget=wid)
+        tree = editor._call("window", widget=wid)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]
         return tree
 
     def props(self, editor, widget_id: int) -> dict:
-        return editor._core.call("props", widget=int(widget_id))
+        return editor._call("props", widget=int(widget_id))
 
 
 class SamplesEditor(Editor):
@@ -164,11 +164,13 @@ class SamplesEditor(Editor):
         domain.editor = self
         #: The runner a write's steps are walked through.
         self._runner = _native.StepRunner()
-        #: **The window, in the shared crate**: the take, the measures and the
-        #: chrome it is composed from.
-        self._core = _native.SamplesEditorCore(
-            {**self._facts(), "layers": list(view.layers),
-             "version": int(self._version)})
+        #: **The editor, in the shared crate**: a member of this take's editing
+        #: context, holding the take, the measures and the chrome the window is
+        #: composed from, and reading every message. A take is named by its
+        #: buffer, so two windows over one are one structure in the order.
+        self._member, self._structure_id = self._editing.open(
+            "openSamples", f"buffer:{int(getattr(take, 'bufnum', 0) or 0)}",
+            {**self._facts(), "layers": list(view.layers)}, take, domain)
 
     def _facts(self) -> dict:
         take = self.structure
@@ -180,31 +182,28 @@ class SamplesEditor(Editor):
                 "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
                 "window": self._window}
 
+    def _call(self, verb: str, **args) -> dict:
+        """One verb of this editor's member, through the context."""
+        return self._editing.member(self._member, verb, **args)
+
     def _sync_core(self) -> None:
         """Hand the core what this client holds: the take a script may have
         resized, the axis, the window's chrome and the window it is open in."""
-        self._core.call("sync", **self._facts())
+        self._call("sync", **self._facts())
 
     # ---- the crate's turns ----
 
     def _deliver(self, addr: str, args) -> bool:
         self._sync_core()
-        outcome = self._core.call("event", addr=str(addr), args=_plain(list(args)),
-                                  version=int(self._version))
-        kind = outcome.get("turn")
-        if kind == "closed":
+        turned = self._editing.event(self._member, str(addr), _plain(list(args)))
+        outcome = turned.get("outcome") or {}
+        if outcome.get("turn") == "closed":
             return self._closed()
-        if kind == "step":
-            # **What it answers is whether anything moved**, and a step nobody
-            # could apply says why.
-            stepped = (self.redo if outcome.get("redo") else self.undo)()
-            reason = None
-            if not stepped and self.app.unreachable is not None:
-                reason = (f"{self.app.unreachable}: nothing here can put "
-                          "that edit back")
-            self.echo.send(self._core.call(
-                "acknowledge", seq=int(outcome.get("seq", 0)),
-                version=int(self._version), reason=reason))
+        if outcome.get("turn") == "step":
+            # **The step is the context's, already taken**; what is left is
+            # carrying it out, and the acknowledgement the crate wrote.
+            stepped = self.app.stepped(turned.get("stepped") or {}, self)
+            self.echo.send(outcome.get("answer"))
             return stepped
         return self._take(outcome)
 
@@ -213,9 +212,9 @@ class SamplesEditor(Editor):
         same turn as a message, unstamped."""
         self._sync_core()
         wid, tag, values = args[0], args[1], list(args[2:])
-        return self._take(self._core.call(
-            "event", addr="/gui_event",
-            args=_plain([wid, 0, 0, tag, *values]), version=int(self._version)))
+        turned = self._editing.event(self._member, "/gui_event",
+                                     _plain([wid, 0, 0, tag, *values]))
+        return self._take(turned.get("outcome") or {})
 
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
@@ -226,14 +225,9 @@ class SamplesEditor(Editor):
         if changed:
             # **The write is this client's to carry out**: the samples are in
             # the server's buffer, and the crate answered what to write there.
+            # The entry is already recorded and the version moved: both are the
+            # context's.
             self.domain.project(self.structure, outcome["edit"])
-            record = outcome.get("record")
-            if record:
-                self._editing.history.record(
-                    [{"structure": self._registered(), **leg}
-                     for leg in record["legs"]],
-                    label=record["label"])
-            self._version = int(outcome["version"])
             self.dirty = True
             self._editing.changed()
         if outcome.get("locate") is not None:
@@ -266,7 +260,7 @@ class SamplesEditor(Editor):
 
     @layers.setter
     def layers(self, stack) -> None:
-        answer = self._core.call("layers", stack=[str(name) for name in stack])
+        answer = self._call("layers", stack=[str(name) for name in stack])
         if "error" in answer:
             raise ValueError(answer["error"])
         self.view.layers = tuple(answer["layers"])

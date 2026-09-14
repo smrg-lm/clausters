@@ -1164,6 +1164,18 @@ clients and the standalone host green, and each is its own commit.
      and `clausters_apps_editing_new` takes no argument. An open answers the
      structure as well as the member, since a client names a structure's widgets
      by it, and `record` takes `coalesce` and answers the version.
+   - ✅ *Python (2026-09-14).* `clausters.gui.editing.Editing` is the crate's
+     context behind `EditingCore`: `MultitrackEditor` and `SamplesEditor` open
+     as its members (a piece by the piece, a take by its buffer) and hand every
+     message to it, so a turn's entry and version are the crate's; a curve, a
+     timeline and a score join as external members through `identity` and
+     `record`. `Application.step` takes the step from the context and carries
+     its effects out — a piece written back, a take's writes projected, an
+     external member's payloads applied — and `refusal` is the crate's reason
+     when nothing could apply one. `moved` is the verb an edit with no inverse
+     moves the version by. The window notification stays the client's
+     (`Editing.turn` and `adopt`), since an external member's view is the
+     client's to redraw.
 
 **Not in these steps**, so their absence is read as a decision:
 

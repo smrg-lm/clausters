@@ -8,7 +8,7 @@ editor that is `clausters.gui.editing.Editor` with those two in it.
 **Nothing here decides anything about a turn.** What a message from the host
 is, what a gesture means, how an edit inverts, what the window is and what the
 host is answered with are the shared crate's
-(`clausters._native.MultitrackEditorCore`), which the standalone host runs and
+(`clausters._native.EditingCore`), which the standalone host runs and
 the web client binds too. What this adds is what a language owns: the
 `clausters.multitrack.Multitrack` object a script holds and gets written back
 onto, which server buffer a source was read into, the history a piece shares
@@ -208,7 +208,7 @@ class MultitrackDomain(Domain):
     """A piece's vocabulary, as the **history** walks it.
 
     It reads no gesture and decides no edit: a gesture is the editor's turn,
-    and the turn is the crate's (`clausters._native.MultitrackEditorCore`).
+    and the turn is the crate's (`clausters._native.EditingCore`).
     What is left is what the history registers a structure for — putting a step
     back onto the piece — and that goes through the same editor, so an undo and
     an edit apply by one rule.
@@ -219,29 +219,27 @@ class MultitrackDomain(Domain):
     def __init__(self, bridge: Bridge):
         super().__init__()
         self.bridge = bridge
-        #: The editor whose core applies a step, set by the editor this domain
-        #: was made for.
+        #: The editor this domain was made for.
         self.editor = None
 
     def state(self, structure) -> dict:
         """The piece as the crate holds it."""
         return structure.write()
 
-    def project(self, structure, payload: dict) -> bool:
-        # **A source the edit makes is made before the edit lands.** A join over
-        # fragments mints the source its box is a window onto, and a box over a
-        # source nothing answers for is left out of the plan -- so realizing it
-        # after the piece already names it would be one pass of silence. It runs
-        # again on a redo, which is right: the source is gone the moment nothing
-        # windows it.
-        self._mint(payload.get("source"))
-        if self.editor is None:
-            return False
-        applied = self.editor._apply_step(payload)
-        if not applied.get("applied"):
-            return False
-        self.write_back(structure, applied["piece"])
-        return True
+    def stepped(self, structure, applied: dict) -> None:
+        """Carry out a step of the history the context applied to the piece: a
+        source the edit mints, and the piece as it now stands written back onto
+        the object the script holds.
+
+        **The source first.** A join over fragments mints the source its box is
+        a window onto, and a box over a source nothing answers for is left out of
+        the plan -- so realizing it after the piece names it would be one pass of
+        silence. It runs again on a redo, which is right: the source is gone the
+        moment nothing windows it.
+        """
+        self._mint(applied.get("minted"))
+        if applied.get("applied") and applied.get("piece") is not None:
+            self.write_back(structure, applied["piece"])
 
     def write_back(self, structure, state: dict) -> None:
         """Write a piece the crate answered onto **the object the script
@@ -301,7 +299,7 @@ class MultitrackView(View):
     transport row under it when the piece can be heard.
 
     **The window is the application's**, composed in the shared crate
-    (`clausters._native.MultitrackEditorCore`), so this client, the web client
+    (`clausters._native.EditingCore`), so this client, the web client
     and the standalone host open the same one. What is left here is the two
     widget ids a hand's gestures come back on, named like every widget of a
     picture.
@@ -334,7 +332,7 @@ class MultitrackView(View):
         self.ruler = rid
         self.piece = wid
         editor._sync_core()
-        tree = editor._core.call("window", widget=wid, ruler=rid)
+        tree = editor._call("window", widget=wid, ruler=rid)
         # **A script's own widgets are its objects**, and a widget built over a
         # live source keeps a binding no JSON carries -- so they are appended
         # here rather than composed in the crate.
@@ -343,7 +341,7 @@ class MultitrackView(View):
 
     def props(self, editor, widget_id: int) -> dict:
         editor._sync_core()
-        return editor._core.call("props", widget=int(widget_id))
+        return editor._call("props", widget=int(widget_id))
 
 
 def _plain(value):
@@ -394,13 +392,17 @@ class MultitrackEditor(Editor):
                                              transport=server is not None),
                          title=title, **options)
         domain.editor = self
-        #: **The editor's turns, in the shared crate**: what a message is, what
-        #: a gesture does to the piece, the window, and the answer.
-        self._core = _native.MultitrackEditorCore({
-            "piece": piece.write(), "rate": float(sample_rate),
-            "defaultBpm": float(bridge.bpm), "version": int(self._version),
-            "link": link, "transport": server is not None, "title": title,
-            "w": int(self.size[0]), "h": int(self.size[1])})
+        #: **The editor's turns, in the shared crate**: a member of this piece's
+        #: editing context, which reads a message, records what a gesture did
+        #: and takes the steps of the one order the piece shares with whatever
+        #: else is open in it.
+        self._member, self._structure_id = self._editing.open(
+            "openMultitrack", f"piece:{id(piece)}", {
+                "piece": piece.write(), "rate": float(sample_rate),
+                "defaultBpm": float(bridge.bpm),
+                "link": link, "transport": server is not None, "title": title,
+                "w": int(self.size[0]), "h": int(self.size[1])},
+            piece, domain)
         self._shown = None
         #: The transport row's ids, once the window has numbered them.
         self._controls = None
@@ -424,37 +426,28 @@ class MultitrackEditor(Editor):
         meters = [] if playback is None else [
             {"track": int(track), "bus": int(bus), "channels": int(channels)}
             for track, (bus, channels) in playback.meters.items()]
-        self._core.call(
+        self._call(
             "sync", piece=self.structure.write(),
             sources={str(k): v for k, v in self.bridge.sources.held().items()},
             meters=meters, cursor=self.cursor, window=self._window,
             controls=self._controls)
 
-    def _apply_step(self, payload: dict) -> dict:
-        """One payload of a history step, applied by the core."""
-        self._sync_core()
-        return self._core.call("apply", payload=payload)
+    def _call(self, verb: str, **args) -> dict:
+        """One verb of this editor's member, through the context."""
+        return self._editing.member(self._member, verb, **args)
 
     def _deliver(self, addr: str, args) -> bool:
         self._sync_core()
-        outcome = self._core.call("event", addr=str(addr), args=_plain(list(args)),
-                                  version=int(self._version))
-        kind = outcome.get("turn")
-        if kind == "closed":
+        turned = self._editing.event(self._member, str(addr), _plain(list(args)))
+        outcome = turned.get("outcome") or {}
+        if outcome.get("turn") == "closed":
             return self._closed()
-        if kind == "step":
-            # **What it answers is whether anything moved**, and a step nobody
-            # could apply says why: the entry named a structure nothing in this
-            # context can write to, and it is still there rather than stepped
-            # over.
-            stepped = (self.redo if outcome.get("redo") else self.undo)()
-            reason = None
-            if not stepped and self.app.unreachable is not None:
-                reason = (f"{self.app.unreachable}: nothing here can put "
-                          "that edit back")
-            self.echo.send(self._core.call(
-                "acknowledge", seq=int(outcome.get("seq", 0)),
-                version=int(self._version), reason=reason))
+        if outcome.get("turn") == "step":
+            # **The step is the context's, already taken**; what is left is
+            # carrying it out, and the acknowledgement the crate wrote -- with
+            # the reason when nothing could apply it.
+            stepped = self.app.stepped(turned.get("stepped") or {}, self)
+            self.echo.send(outcome.get("answer"))
             return stepped
         return self._take(outcome)
 
@@ -463,9 +456,9 @@ class MultitrackEditor(Editor):
         same turn as a message, unstamped."""
         self._sync_core()
         wid, tag, values = args[0], args[1], list(args[2:])
-        return self._take(self._core.call(
-            "event", addr="/gui_event",
-            args=_plain([wid, 0, 0, tag, *values]), version=int(self._version)))
+        turned = self._editing.event(self._member, "/gui_event",
+                                     _plain([wid, 0, 0, tag, *values]))
+        return self._take(turned.get("outcome") or {})
 
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
@@ -476,14 +469,9 @@ class MultitrackEditor(Editor):
             self.domain._mint(minted)
         changed = bool(outcome.get("changed"))
         if changed:
-            record = outcome.get("record")
-            if record:
-                self._editing.history.record(
-                    [{"structure": self._registered(), **leg}
-                     for leg in record["legs"]],
-                    label=record["label"])
+            # **The entry is already recorded and the version moved**: both are
+            # the context's. What is left is the object the script holds.
             self.domain.write_back(self.structure, outcome["piece"])
-            self._version = int(outcome["version"])
             self.dirty = True
             self._editing.changed()
         if outcome.get("locate") is not None:
@@ -511,14 +499,14 @@ class MultitrackEditor(Editor):
         host told once."""
         self.dirty = True
         self._sync_core()
-        self.echo.send(self._core.call("resync", version=int(self._version)))
+        self.echo.send(self._call("resync"))
 
     def adopt(self) -> None:
         """Another view of this piece edited it: bring this window in step."""
         if self._host is None or self._window is None:
             return
         self._sync_core()
-        self.echo.send(self._core.call("resync", version=int(self._version)))
+        self.echo.send(self._call("resync"))
 
     # ---- the piece, heard ----
 
@@ -553,7 +541,7 @@ class MultitrackEditor(Editor):
         if self.closed or self.playback is None:
             return None
         self._sync_core()
-        text = self._core.call("clock", position=float(self.playback.position))["text"]
+        text = self._call("clock", position=float(self.playback.position))["text"]
         if text != self._shown:
             self.window[CLOCK].set(text=text)
             self._shown = text
@@ -563,7 +551,7 @@ class MultitrackEditor(Editor):
         """Play, or pause where it stands. A pause freezes the governed group,
         so playing again continues rather than starting over."""
         self._sync_core()
-        self._take(self._core.call("toggle", version=int(self._version)))
+        self._take(self._call("toggle"))
 
     def rewind(self):
         """Put the **position cursor** back at the top, and cue a stopped
@@ -575,7 +563,7 @@ class MultitrackEditor(Editor):
         to get back to it.
         """
         self._sync_core()
-        self._take(self._core.call("rewind", version=int(self._version)))
+        self._take(self._call("rewind"))
 
     def _transport(self, verb: dict) -> None:
         """Carry out what a turn asked the transport to do, on the playback."""
@@ -607,7 +595,7 @@ class MultitrackEditor(Editor):
     def stop(self):
         """Halt and go back to the mark the position cursor is on."""
         self._sync_core()
-        self._take(self._core.call("stop", version=int(self._version)))
+        self._take(self._call("stop"))
 
     def locate(self, beat: float):
         """The position cursor was placed, here or in a window entered from
@@ -644,7 +632,7 @@ class MultitrackEditor(Editor):
         if self._host is None or self._window is None:
             return
         self._sync_core()
-        self.echo.send(self._core.call("settle", version=int(self._version)))
+        self.echo.send(self._call("settle"))
 
     def enter(self, name: str):
         """Open the contents of the box called ``name`` in an editor of its
@@ -684,7 +672,7 @@ class MultitrackEditor(Editor):
         # **What the box is, is the piece's** (the core's `box`): the source its
         # region windows and what a window over it is called.
         self._sync_core()
-        contents = self._core.call("box", name=str(name))
+        contents = self._call("box", name=str(name))
         if not contents:
             return None
         held = self.bridge.sources.structure(contents.get("source"))
