@@ -1721,7 +1721,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   stopped. Whichever it is lands in both clients, since it is one resolution
   rule in two languages.
 
-- ⬜ **A composed signal window goes mute after the multitrack redefines**
+- ✅ **A composed signal window goes mute after the multitrack redefines**
   *(found 2026-09-04, by hand, running `examples/editors/composed.py` in the
   `C53` acceptance pass; not a regression -- nothing in the event-loop work
   touches this path. **That example was deleted with `FormEditor` on 2026-09-06**,
@@ -1768,6 +1768,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   frees, a widget whose identity persisted is never freed and the composed window
   never loses its id — which is the acceptance to write, and this is the case to
   write it against.
+
+  *Closed 2026-09-14.* The example and `FormEditor` are gone, and the mechanism
+  the entry kept for `O23` is answered: a def over an open window is reconciled
+  by the host, so a widget whose identity persists is never freed out from under
+  a composed window.
 
 - ✅ **Re-cueing a pass makes the engine reject the notes already in flight**
   *(found 2026-09-04, in the log of a by-hand run of
@@ -2002,7 +2007,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   nothing builds one from a gesture, and the next entry is where it will need
   to.
 
-- ⬜ **Two clips at the same onset are drawn as one, and neither can be
+- ✅ **Two clips at the same onset are drawn as one, and neither can be
   addressed** *(found 2026-09-03 while reproducing the entry above; re-framed
   2026-09-03 after the user's reading -- the first framing had it as a question
   about drops, and it is not one)*. Overlapping placements are **legal and
@@ -2021,6 +2026,13 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   in depth, or on sub-rows -- each keeping its own body, its own grips and its
   own hit. See "A view is configured by what it holds, and the arrangement is
   not the norm" in `docs/decisions.md`.
+
+  *Closed 2026-09-14, superseded.* The rule that collapsed coinciding members
+  into one layered clip belonged to `FormEditor`'s lanes, which were removed on
+  2026-09-06. A multitrack's lane holds regions the document gives an identity
+  each, so two regions at one onset draw as two overlapping boxes and each is
+  moved, trimmed and selected on its own (`crates/clausters-document/PLAN.md`,
+  `O21`).
 
 - ✅ **A clip resized itself when a note inside it moved** *(found 2026-09-03,
   testing `composer.py` with `autofit=False`; fixed the same day)*. A placement
@@ -2789,7 +2801,7 @@ work, where a pending item reads as done.)*
   arrangement (`clausters/gui/editing.py`), which is the "editable structure that
   owns its model and its log" this entry asked for.
 
-- ⬜ **An edit round-trips a note through the document, so a key the document
+- ✅ **An edit round-trips a note through the document, so a key the document
   cannot hold does not survive it** *(found 2026-08-31, by a crash while
   editing a note in a piece that had already played)*. A note's `Event` is not
   plain data once it has sounded: `Event.play` writes resolved values onto it,
@@ -2809,6 +2821,12 @@ work, where a pending item reads as done.)*
   rebuild it from the config, keeping what the document never claimed to carry;
   that is the same question as "what a leaf's config is *of*", so it wants
   reading against `O14` before it is written. **Both clients.**
+
+  *Closed 2026-09-14, withdrawn.* The path it describes — a roll's lane stated as
+  a `SetMembers` over `clausters.form`'s tree, written through `leaf_config` and
+  projected back by `_project` — went with `FormEditor` and the form bridge
+  (`O21`); none of the three exists. A note edited today is a timeline's, through
+  `NotesEditor`, and never crosses a document.
 
 - ✅ **The editor's bridge freezes a tempo and drops the clock's anchor, so
   the line and the sound disagree by whatever a `set_tempo` moved** *(found
@@ -3588,6 +3606,10 @@ work, where a pending item reads as done.)*
   with nothing moving -- `play` scans what is drawn and no `Playhead` is
   anchored to the line, the way `editors/multitrack` anchors its transport.
 
+  **Re-read 2026-09-14**: `editors/multitrack` is `edit_multitrack` now, which
+  edits through `edit()` and has the history, so the right-hand column is three:
+  `bpf`, `pianoroll`, `pianoroll_midi`.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
@@ -3630,11 +3652,18 @@ work, where a pending item reads as done.)*
   contents, like the others: a clone of a stretch of samples is a bounce of that
   window into a new take, which is the same act one unit over.
 
+  *Re-read 2026-09-14: still missing, in today's terms.* A piece is regions
+  windowing sources, and a join mints a source made of segments; every verb
+  refers and none copies. The clone is still the other verb — consolidate a
+  region, or a stretch of one, into a source of its own (a bounce, for samples;
+  a copied timeline, for notes) — and the choice it names between windows and
+  copies is now a choice about sources rather than about `form`'s tree.
+
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
 
-- ⬜ **A clip's body and a composed view edit the same data by two roads**
+- ✅ **A clip's body and a composed view edit the same data by two roads**
   *(named 2026-09-02, the half of `C51` that was deliberately not done)*. The
   milestone said "a clip's bodies are then views over structures, not props with
   a parallel edit path", and the dedicated views are — but a clip's own bodies
@@ -3685,6 +3714,13 @@ than being ticked here.
   the answer to that is the same one the base class already gives every other
   bare structure (a `History` and no `Document`), so it is part of the design
   below rather than an exception to it.
+
+  *Closed 2026-09-14, superseded.* One of the two roads was `FormEditor`'s
+  `_apply_notes` over `clausters.form`'s tree, which went on 2026-09-06, so there
+  is one road left: `NotesEditor` over a timeline. The decision it recorded — a
+  note is a member with an id — is the multitrack session's to take again, where a
+  region's contents are what a lane holds (`crates/clausters-document/PLAN.md`,
+  `O21`).
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
   call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo
@@ -3793,6 +3829,13 @@ than being ticked here.
   is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
   question seen from the view.
 
+  *Re-read 2026-09-14.* `Editor.render` and `Editor._apply_notes` were
+  `FormEditor`'s and went with it, so the mapping is not "the editor's" any more:
+  what turns a roll's notes into a `Timeline` is `NotesEditor`'s, still private
+  (`gui/editing/events.py`). The gap stands as written: `Timeline` has no `play`
+  (a `Playhead` does), `session.play` takes a pattern only, `Ppar`/`Pmono` do not
+  exist, and `editors/pianoroll` still plays a monophonic `Pbind`.
+
 - ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo
   map lives; read with the entry below, which is the same question from the
@@ -3892,7 +3935,15 @@ than being ticked here.
   **Related:** "The mapping exists and is private to the `Editor`" — this is the
   same question for the third data kind.
 
-- ⬜ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
+  *Re-read 2026-09-14: half answered.* A piece's curves are a point list with a
+  target and a name now — `Automation` in `clausters.multitrack` and its web twin,
+  the session's own type — so "whether the point list becomes a named type in
+  both clients" is yes, for a piece. What is still open is
+  `clausters.seq.automation.Automation`, which keeps an `Env` and discretizes it
+  with `/buffer_gen "env"`: whether it takes the points too, and what a drawn
+  curve does if it ever needs a sustain.
+
+- ✅ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
   *(named 2026-08-30 by the user: a track is a restricted `Aggregate`, and the
   timeline is not the tree)*. An `Aggregate` places members by offset; a
   `Timeline` places items by beat; `Track` is an `Element` that wraps one, so
@@ -3938,6 +3989,12 @@ than being ticked here.
   the bridge that writes the document. **Related:** "Two views of one
   arrangement keep two histories" (Found by use) — a note with no id is also a
   note a history cannot name.
+
+  *Closed 2026-09-14, withdrawn.* `clausters.form`, where `Track` and the tree
+  live, is frozen and takes no new work, and the multitrack's model is no longer
+  that tree: it is the session's tracks, lanes and regions in
+  `crates/clausters-document`. Which model a note's edit belongs to is answered
+  there, by a region's contents, and not by typing `form`.
 
 - ✅ **The intents an edit projects were collected and nobody read one**
   *(found 2026-09-12; collapsed the same day)*. `Editing.moved` appended an

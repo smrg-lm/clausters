@@ -1985,10 +1985,8 @@ where it came from).
 
   Until those are answered the slot stays empty, and that is not a gap in the
   node system: the shape of the hole is right, and a wrong answer to any of the
-  four would be much harder to take back than a missing feature. The full
-  statement of what is decided and what is open is in `SISTEMA-DE-NODOS.md`
-  (the spec the node system was built from), which is a temporary file -- this
-  entry is what outlives it.
+  four would be much harder to take back than a missing feature. This entry is what outlives the
+  spec the node system was built from.
 
 - ✅ **A UGen's trailing inputs could be declared optional, so a def survives one growing** *(named 2026-08-16, after S17 moved `PlayBuf` from four inputs to seven and every stored def that used it stopped compiling — seven of them on the author's machine, warning at every boot)*. Arity is exact: `synthdef::compile` rejects a UGen whose input count is not the descriptor's, and `UGenInput.default` is advisory metadata the server never applies. So a UGen that grows breaks every def written against it, including the ones already persisted on disk and the ones inside a saved bundle.
 
@@ -2175,6 +2173,58 @@ where it came from).
   seeks once, into a ring that is already full, instead of beginning to read
   when the playhead is already moving. The ring's size and how far ahead of a
   seam a refill starts are the two numbers the work has to pick and state.
+
+  **What has to be measured before it is trusted** *(from the node system's
+  spec, 2026-09-10)*: how far ahead the disk thread has to read so a seam never
+  arrives late, stated against the hard case -- a comping pass chopped into
+  quarter-second parts, each from another file -- and what the reader does when
+  the thread runs out of lead anyway, which is declared silence and never a
+  click. The shape is the stitched buffer's one layer down: the ring `DiskIn`
+  fills becomes a stitch of segments, and the audio thread goes on reading a
+  buffer and nothing more.
+
+- ⬜ **Free routing: a track's output is any bus, and a track can feed another**
+  *(named 2026-09-10 in the node system's spec, left open on purpose)*. Group
+  buses, folders and a sidechain are one capability: a track's output going
+  somewhere other than the master, and an effect reading a signal from elsewhere.
+  **What already admits it**: a track's output bus is `external` in its
+  `GraphDef` -- the instance that holds it provides it -- so sending a track
+  somewhere else is handing it another bus, not a redesign. **What is missing**:
+  (a) the document naming a destination as an **identity** (a track, a group
+  bus) rather than a bus number, which is an instance's detail; (b) an execution
+  order that is no longer the tree's -- a track that feeds another has to run
+  first, so a topological order over the routing, with a cycle detected and
+  refused by name; (c) latency, which nothing has today and which decides whether
+  two parallel paths sound together the moment one of them carries an effect.
+
+- ⬜ **Sends: pre- or post-fader is the send's choice, and a meter can read
+  either side** *(named 2026-09-10 in the node system's spec)*. **What already
+  admits it**: `mt.send.<n>` carries a strip's `post` bus to another bus at a
+  gain -- it is what joins a track to the master today -- so an extra post-fader
+  send is another instance of that def, and a send is a slot like a clip or an
+  effect, with its destination an `external` bus (the entry above). **What is
+  missing**: the pre/post choice per send, which is wiring and not a control -- a
+  pre-fader send reads the strip's mix bus rather than its `post` -- and the
+  destination, which is free routing. A pre-fader **meter** per track is the same
+  choice for the meter's slot and lands with it. Sends stay empty until there are
+  effects to send to, because a send to nowhere cannot be heard.
+
+- ⬜ **A track wider than stereo, and the downmix between widths** *(named
+  2026-09-10 in the node system's spec; `clausters_core::mixer` refuses the
+  widths it does not write)*. A strip is written for one and two channels, which
+  is what a track declares today. The rules the spec fixed for the rest: N to M
+  with N > M sums with the standard table's coefficients (ITU-R BS.775 for 5.1 to
+  stereo), written once in `clausters-core`; N to M with N < M and no case above
+  takes the first N channels, the rest silent, and the editor says so.
+
+- ⬜ **A silent track could stop costing a cycle, and that is not what mute is**
+  *(named 2026-09-10 in the node system's spec)*. Mute is the fader's control --
+  it is automated through a bus like any port, it ramps rather than cuts, and it
+  keeps an effect's tail and a pre-fader send alive -- so `/node_run 0` on a
+  track's group is **not** a mute. It is a separate rule about cost: the
+  application could pause a group that is already silent, has no tail to finish
+  and no pre-fader send, once the ramp is over. Measured before it is taken, and
+  taken without touching the audible rule.
 
 ## Found by use: the running list of fixes
 

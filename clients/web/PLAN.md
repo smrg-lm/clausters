@@ -1976,7 +1976,7 @@ from the frame the line is at, one dragged away goes quiet as the hand lifts it
   Named here so a reader going through the parity gaps is not left thinking it
   is unrecorded.
 
-- ⬜ **The logging area system is Python-only** *(found 2026-09-09, reading the
+- ✅ **The logging area system is Python-only** *(found 2026-09-09, reading the
   two `gui/editing/` surfaces against each other for `W30`)*. `clausters.log`
   gives every area of the Python client a logger a script can arm by name —
   `CLAUSTERS_LOG=gui.editing`, or `watch()` from a script — and the editing path
@@ -2074,6 +2074,10 @@ from the frame the line is at, one dragged away goes quiet as the hand lifts it
   client's option types — and `clients/python/tests/test_gui_props.py` fails on
   a difference it does not name. A prop added here or there is checked against
   it, so this plan does not carry a second list of them.
+
+  **Closed 2026-09-12** (`e1372cb2`, "clausters.log, ported"): `base/log.ts`
+  carries the area registry and `watch`, the environment list arms areas by
+  name, and `gui/editing/trace.ts` is the `gui.editing` area.
 
 ## Future directions
 
@@ -4256,7 +4260,7 @@ sound.
     not: both clients re-export `Event`, `rest`, `Timeline` and `Playhead` at
     the top level and keep the two raw-message items under `seq`.
 
-- ⬜ **Three places call beats what is measured in seconds** *(found 2026-08-30
+- ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user; written in full in `clients/python/PLAN.md`, "Three places call
   beats what is measured in seconds")*. The port carries the same three: the
   automation's curve naming an `Env`'s seconds beats, a take's length stored in
@@ -4265,6 +4269,10 @@ sound.
   of what contains it, a duration in the unit of the material — and so is the
   place the conversion belongs, the flattening for playback. It lands in the same
   commit as the Python fix, since it is one arrangement model in two languages.
+
+  **Closed 2026-08-30** with the Python entry, whose fix landed in one pass over
+  the four packages (`75445faa`): `durationUnit` in `form/` and the conversion
+  at the flattening.
 
 - ✅ **The editing path said nothing in the page** *(found and fixed
   2026-09-12)*. Python's `clausters/gui/editing/trace.py` said the path out loud

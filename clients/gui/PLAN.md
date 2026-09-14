@@ -1059,7 +1059,7 @@ would be written against a picture the first half had already changed.
   beginning. The example's reader takes that `start`, and a `loop` flag beside
   it.
 
-- ⬜ **G35.11 — Join, defined — and the snap that makes it reachable.**
+- ✅ **G35.11 — Join, defined — and the snap that makes it reachable.**
   `j` does nothing: it asks whether two placements are within **one sample** of
   each other (`placement::adjacent(a, b, 1.0)`), and with no quantization a hand
   never lands one there, so it never has two boxes to join. The snap is **inside
@@ -1100,8 +1100,14 @@ would be written against a picture the first half had already changed.
   other has to live with. Until then `j` joins what touches and leaves what does
   not, which is honest: nothing is silently mixed or padded.
 
-- ⬜ **G35.3 + G35.4 — The chain: a clip's gain and a track's gain are two
-  controls, and both curves play.**
+  *Closed 2026-09-14 as a milestone of this track.* A join is a window onto
+  segments of several sources now (`/buffer_stitch`, the multitrack's join
+  vocabulary), so what is left is not the host's: how a join treats a gap and an
+  overlap is `crates/clausters-document/PLAN.md`'s "A join takes its clips' fades,
+  and invents none", with the clip fades it stands on beside it.
+
+- ✅ **G35.3 + G35.4 — The chain: a clip's gain and a track's gain are two
+  controls, and both curves play.** *(closed 2026-09-10)*
   One entry because it is one **node structure** at two levels, and building
   either level alone would decide the other by accident.
 
@@ -1130,6 +1136,16 @@ would be written against a picture the first half had already changed.
   reading the transport's position (the shape the readers already have) or
   written into a control bus, and where the curve's samples live — with no
   message per frame either way, the discipline the playhead already keeps.
+
+  *Closed 2026-09-10 by the node system.* A clip and a track are nested
+  `GraphDef`s (`mt.clip`, `mt.track`, `mt.piece` in `clausters_core::mixer`), each
+  with its own `gain` port in that order, and a curve **plays**: `mt.curve` reads a
+  table on the transport's position and writes a control bus, and `/graph_map`
+  maps the port to it, so a curve drives a control three levels down with no
+  message per frame and survives a locate. The header's knob writes the same
+  port the curve maps. What is not built is the effect chain between the curves
+  and the fader, which waits on what an effect is (root `PLAN.md`, Future
+  directions).
 
 - ✅ **G35.14 — The header's level is a knob, and a track shows what it
   produces.**
@@ -1195,7 +1211,7 @@ would be written against a picture the first half had already changed.
   UGen indices advanced by two where each channel pushes three, so the second
   channel wrote its raw input to the bus and metered its neighbour.
 
-- ⬜ **G35.6 — An entered box keeps its own history.**
+- ✅ **G35.6 — An entered box keeps its own history.**
   After editing a box's samples, closing that window and opening it again,
   `Ctrl`+`Z` in the box's editor steps the **multitrack's** last edit, and the
   sample edits are gone. One order is right — that is what `G34` decided — but a
@@ -1226,6 +1242,13 @@ would be written against a picture the first half had already changed.
   object, and the writes are a promise chain): a stand-in with a shape no client
   has is a test that passes against nothing, which is why the first probe found
   "the edit never applied".
+
+  *Closed 2026-09-14, superseded.* The history a box's editor walks is no longer
+  a client's: it is the applications crate's editing context (AP track, `AP7`),
+  where two editors over one take are one structure under its buffer's key and a
+  step is taken by the crate. Entering a box from a piece was taken out of that
+  track on purpose, since the multitrack does not edit samples, so the live probe
+  this entry wanted has no path left to probe.
 
 **Two of the fourteen are not work**, and are here so a later pass does not
 reopen them:
@@ -3539,6 +3562,12 @@ Whatever symbols the model itself needs owe their rows either way
   as a timeline. *(The G31 line "Notation as a composition surface", numbered
   2026-08-30 now that the model it needed exists.)*
 
+  *Re-read 2026-09-14.* "The arrangement (`clausters.form`)" is the frozen
+  module now, and a piece is the session in `crates/clausters-document`: a track
+  holds lanes of regions, and a region's contents are what it windows. So the
+  question stands and its address moved: a score placed in a piece is a region
+  whose contents is a sheet, which is the score editor's half of `O24`.
+
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
 here and none of them is a milestone any more: the **surface** is N5's, being a
@@ -3654,8 +3683,7 @@ at the end (there is none).
   and a projection has nowhere to keep it but the widget tree. `FormEditor` was
   deleted and the session in `crates/clausters-document` replaced it
   (`O21`-`O24`); what survived is the measurement that proved the named ids.
-- ⬜ **AP7 - A second application, to prove the abstraction.** *(steps done
-  2026-09-14; open for the by-eye check)* The Python client's `SamplesEditor`,
+- ✅ **AP7 - A second application, to prove the abstraction.** *(2026-09-14)* The Python client's `SamplesEditor`,
   moved as it is into `crates/clausters-apps` to work out one undo order over two
   applications — not the audio editor, which is a track of its own no plan holds
   yet. (1) ✅ the window, `clausters_apps::samples::{window, props}`; (2) ✅ the
@@ -3669,9 +3697,7 @@ at the end (there is none).
   entering a box from a piece, the audio editor, the catalogue views.
   **Acceptance:** written with the supported surface, one program in two
   languages, and an undo that walks edits made in two applications as one order —
-  held by the crate's and both clients' tests. **Left: the by-eye check** —
-  `edit_samples.py` and its page (draw, move a sample, undo and redo),
-  `edit_multitrack.py` and its page, and `clausters-gui --session`.
+  held by the crate's and both clients' tests.
 - ✅ **AP8 - The pass over the packages.** *(2026-09-14)* The durable half of
   `APPLICATION-SCOPE.md` went where it belongs (above) and the file was deleted.
   The open question it raised about a version across a load is in
@@ -3723,7 +3749,7 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
   **And one thing the split found by itself**: the `impl Element` block was 857 lines, so *what this element is* could not be read without reading everything it does. As a table it is thirty.
 
-- ⬜ **The node system, specified: which groups a track is, and what a curve
+- ✅ **The node system, specified: which groups a track is, and what a curve
   drives** *(the user, 2026-09-10)*. A specification of the synthesis nodes and
   groups that carry a piece -- **source, pre, post, fx** and the rest -- and of
   the **names** the multitrack's own elements answer to, so that the two ends
@@ -3734,7 +3760,16 @@ Following the project rule: code + tests, a clear commit message (the record of 
   entry builds the chain, this one says what everything in it is called and who
   may address it. Design first, then either absorbs the other.
 
-- ⬜ **Join over fragments: one box, several sources, sample by sample** *(the
+  *Closed 2026-09-10: specified and built.* A clip, a track and the piece are
+  nested `GraphDef`s (`mt.clip`, `mt.track`, `mt.piece` in `clausters_core::mixer`,
+  which also holds the port vocabulary), and an automation's target is
+  `{"port": "gain"}` resolved against the instance it hangs on by the plan in
+  `clausters_editing` — so the header's knob and the curve write the same port,
+  which is how `G35.3 + G35.4` closed. What the spec left open is in root
+  `PLAN.md`'s Future directions: what an effect is, free routing, sends, a track
+  wider than stereo, a silent track's cost, and a join over file spans.
+
+- ✅ **Join over fragments: one box, several sources, sample by sample** *(the
   user, 2026-09-10)*. `G35.11` left join at what touches over one source. What a
   join **is**, though, is a box made of fragments of many files, each played
   over the range its own box was showing -- and that is not something a reader
@@ -3795,6 +3830,14 @@ Following the project rule: code + tests, a clear commit message (the record of 
   a join must be able to name a **file** span and not only a pool buffer, read
   by a prebuffered stream, because a multitrack's ordinary source is a file and
   the buffer is what *this* server adds.
+
+  *Closed 2026-09-12 as `O31`* (`crates/clausters-document/PLAN.md`): a join mints
+  a source made of segments, saved as a `Location` in the session's source table
+  and played as one stitched buffer. What is left is elsewhere: a part naming a
+  file span rather than a pool buffer (root `PLAN.md`, "A long take is played out
+  of the pool"), and what a join does with a gap and an overlap
+  (`crates/clausters-document/PLAN.md`, "A join takes its clips' fades, and
+  invents none").
 
 - ⬜ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "estas reglas que te estoy pidiendo pueden cambiar despues. Luego, cuando hayamos hecho las otras aplicaciones vamos a tener que refactorizar y definir muchas cosas de la interaccion, cosas que no estan decididas")*.
 
@@ -4397,7 +4440,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   alone on purpose rather than patched in the example, since sampling the curve
   per block is exactly what the milestone existed to stop.
 
-- ⬜ **A take reloads into the web host's views over and over** *(found
+- ✅ **A take reloads into the web host's views over and over** *(found
   2026-09-11, driving `edit-multitrack.html` from a browser to check the port
   against its Python twin; **not diagnosed**)*. The page's console prints
   `buffer N: 96000 frames x 1 channel(s) loaded into K view(s)` for the visible
@@ -4409,6 +4452,12 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   cost is nothing like the same), and why the count of views moves when the
   window does not. The native host is where to compare, since the host is one
   program compiled twice and a loop in only one of them names its own cause.
+
+  **Fixed 2026-09-13** (`7ecbbf84`). The pass before every repaint pushed every
+  take the multitrack declares, so a finished download started again on the
+  next frame. An element asks for its takes through `Samples::ask_takes` now:
+  all of them when a window is built, and a stitched one again when its
+  `/done` arrives.
 
 - ✅ **Buffer 0 is a buffer, and `x or -1` said it was not** *(found by use
   2026-09-10, on the box the example loads first)*. `Sources.bufnum` answered
@@ -4798,7 +4847,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   sentence, and each got one case right by making another wrong. The editor
   needs to know what a press is *for* before it decides what it landed on.
 
-- ⬜ **A paste lands on a cursor no hand can place** *(found 2026-09-07 by the
+- ✅ **A paste lands on a cursor no hand can place** *(found 2026-09-07 by the
   user, by eye, in `editors/pianoroll`: "al pegar deberia hacerlo a partir del
   cursor, de lo contrario no hay referencia de donde pegar")*. `Ctrl`+`V` over a
   roll pastes the block at `self.step`, and so does the cut that shares the
@@ -4823,6 +4872,10 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   playing/stopped halves and the lane question a clip paste raises are in "One
   cursor, it is the transport's, and the content never moves it" (Future
   directions); this entry is the defect that made it concrete.
+
+  **Closed with "One cursor, it is the transport's, and the content never moves
+  it"**: `Ctrl`+`V` pastes at the window's cursor through `KeyInput::cursor`, and
+  a press on the roll's grid locates it.
 
 - ✅ **A marker added on the OSC lane names nothing, and the two clients
   disagree about it** *(found 2026-09-07 by the user, by eye, comparing
@@ -6563,7 +6616,7 @@ finished work, where a pending item reads as done.
 
   **The one defect left standing is closed** *(2026-08-18)*, and not by the guard it was waiting for. The segment is lit exactly when the curve is the **active edit layer**, where the bend *is* the gesture — so inside a clip it lights when the curve is in hand and not otherwise, and the press there bends rather than moving the clip. The condition that was written and reverted three times was a precedence between claimants; what it needed was the layer rule above, and then the affordance and the press agree without either of them knowing about the other.
 
-- ⬜ **A widget's label strip is written four times** *(found 2026-08-21 doing
+- ✅ **A widget's label strip is written four times** *(found 2026-08-21 doing
   the plate pass above, which had to read all four to decide none of them wanted
   a plate)*. `graphics::meters::label_strip` is the helper — "draws the label
   strip above a view body, if it has a label" — and three views do not call it:
@@ -6586,6 +6639,9 @@ finished work, where a pending item reads as done.
   carries the reason it exists at all: the strip's height is
   `controls::body_rect`'s and its drawing is this, and the two are one fact
   stated in two places.
+
+  **Closed on re-reading (2026-09-14)**: the note above says it was done; only
+  the box was left open.
 
 - ✅ **A control has a range and no curve, and no step** *(noted 2026-08-23,
   with the Python client's control-widget work)*. `props::Range` is
@@ -6909,7 +6965,12 @@ finished work, where a pending item reads as done.
   which clip is which without entering it. The roll is the cheap one (the notes
   are mesh, like the waveform); the spectrogram is the one that needs a design.
 
-- ⬜ **A left trim does not travel with the clip**
+  **Re-read 2026-09-14: two of the three draw now.** A box of notes draws the
+  roll's body on the box's own axis (`multitrack/draw.rs`, since the multitrack
+  became an application, 2026-09-13), and a join is stitched into one take, so
+  it draws as one waveform. The spectrogram is what is left, with its design.
+
+- ✅ **A left trim does not travel with the clip**
   *(found 2026-09-08, same port)*. The `"clips"` payload carries `start` — the
   source frame the box's own zero reads — and the document's tree vocabulary
   has nowhere to put it: `Intent::Place` states an offset and a length, so a
@@ -6921,6 +6982,11 @@ finished work, where a pending item reads as done.
   the honest fix is the owner speaking that vocabulary rather than a fourth
   field on `Place` — so it waits on the document's own multitrack (`O21`-`O24`)
   rather than growing a stopgap here.
+
+  **Closed with the piece bound in the host (2026-09-08, `O24`)**. A box whose
+  width changed is read as `MultitrackIntent::TrimRegion`, with its position and,
+  when the left edge rewound the window, the region's content with it -- one edit
+  and not a move beside a resize (`host/document/piece.rs`, its test).
 
 - ✅ **`--session` opens a session written today as an empty window**
   *(found 2026-09-08, by eye, right after the tree became one `multitrack`)*.
@@ -6951,7 +7017,7 @@ finished work, where a pending item reads as done.
   spellings, with a test); found only because a piece with six readers gave
   space something audible to do.
 
-- ⬜ **`e` and `j` over a `multitrack` fall through to a verb written for the
+- ✅ **`e` and `j` over a `multitrack` fall through to a verb written for the
   old widgets** *(found 2026-09-08, same sitting)*. Split and join reach the
   element first, which declines when nothing is selected — correct — and then
   the window's own `clip_verb`, which resolves a `WidgetKind::Clip` under the
@@ -6978,6 +7044,10 @@ finished work, where a pending item reads as done.
   in their source becomes one window claiming the stretch between them, because
   a box is one window and `JoinRegions`' composite is not reachable from a flat
   payload.
+
+  **Closed 2026-09-09** (`b75a4298`): `track` and `clip` left the tree, and the
+  window's `clip_verb` with them. A join of windows that are not contiguous is
+  stitched into a take of its own since G35.11.
 
 - ✅ **The piece is drawn and sounded through one tempo, and it carries a map**
   *(found 2026-09-09, auditing what the standalone host reimplements)*.

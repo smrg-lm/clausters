@@ -45,12 +45,11 @@ projection" (`O21`-`O24`).
 **multitrack editor** is done: `O25`-`O33` put its projections, its
 conversation, its playback and the application itself in the shared crates, run
 by the standalone host and bound by both clients, and a saved session opens and
-sounds from all three. **The application-scope track is closed but for one
-check** (`clients/gui/PLAN.md`, AP track): the samples editor is the second
-application in `crates/clausters-apps`, and the undo order over both is the
-crate's editing context, in both clients and the standalone host. What `AP7`
-still owes is its by-eye pass. The audio editor itself is a track of its own that
-no plan holds yet, and the score editor is not started.
+sounds from all three. **The application-scope track is closed**
+(`clients/gui/PLAN.md`, AP track): the samples editor is the second application
+in `crates/clausters-apps`, and the undo order over both is the crate's editing
+context, in both clients and the standalone host. The audio editor itself is a
+track of its own that no plan holds yet, and the score editor is not started.
 
 Two things deferred to `O24` still have no step of their own: `AP5`'s catalogue
 views (building `waveform`, `bpf` and `pianoroll` from the shared code, so the
@@ -106,8 +105,8 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
-The section fills from section 3's review and empties again; a fix that lands
-leaves no line here, because its plan's checkbox and the commit already carry it.
+A fix that lands leaves no line here, because its plan's checkbox and the commit
+already carry it.
 
 - ⬜ **An automation's lane is freed on a beat length computed from one tempo**
   *(`clients/python/PLAN.md`, Found by use)*. `Automation.play` schedules the
@@ -120,98 +119,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   line in each client. **Distinct from the ownership question in section 2**:
   this one uses the map that is already there.
 
-- **The visual review's first sitting, 2026-09-05** — what the user found by
-  opening the pages and using them. Listed together because they came out of one
-  pass and are read together; the fixed ones keep their line here only until this
-  sitting is closed, so the next one starts from what is still open. Everything
-  the sitting turned up is now fixed, the mechanical pass's own list included,
-  so this entry goes on the next rewrite. Three of the fixes left a *general*
-  gap standing behind them — a play onto a stopped clock, a refusal an editor
-  has no door for, a time axis that holds one tempo — and each is written into
-  its own plan and named on the line that found it. **The third of those is
-  since fixed** (2026-09-05): a beat ruler places its ticks by the piece's tempo
-  map, and `views/tempo_ruler` is the example that shows it.
-
-  **Which client each was seen in** is written on every line, because it decides
-  where the work is: *both* means the user reproduced it in the page **and** in
-  the script, which puts the defect in what the two share — the host, the shared
-  crate, or the pair of examples — and never in one client's port. *Page only*
-  means nobody has run the script yet, so where it lives is still open; it is
-  not a claim that the script is fine.
-
-  - ✅ **both** — `editors/edit_notes`, **play did nothing and reported
-    nothing.** Reported for the page; the script had the same two lines. The
-    program activated a session and never started it, so the ambient play
-    scheduled onto a stopped clock. Both twins start it now; what the *surface*
-    should do about a play onto a stopped clock is an open question in
-    `clients/python/PLAN.md`, "Found by use".
-  - ✅ **page only, and it could only be the page** — `editors/tempo_map`
-    stopped at `failed: unknown aggregate kind: null`. It passed `null` where
-    the script leaves the default, and JavaScript takes a default only for
-    `undefined`, which is a mistake the script cannot make.
-  - ✅ **both** — `editors/edit_samples`, **the take sounded edited and the
-    waveform kept the old samples.** Reported in the page and in the script, and
-    it was the server's: it announced a write only when a peer stored it in
-    place, so a write that arrives as samples reached no picture. It announces
-    itself the same way now.
-  - ✅ **both** — `editors/tempo_map` **did not sound, and the picture was an
-    unreadable clip.** They were one thing, in the arrangement both clients
-    share: a `Sequence` advanced its cursor by each item's stated `duration`,
-    and a `Sequence` states none — so the four bars, themselves sequences, all
-    landed on the first beat. The piece was one chord and three seconds long
-    instead of sixteen beats. An item that states no length is now as long as
-    what it lays down, measured **unmixed**, since mute and solo say what is
-    heard and never where anything is. What is left of the picture is the
-    ruler, and it was written down as "A time axis is labelled by one tempo,
-    and a piece can have several" in `clients/gui/PLAN.md`, "Found by use" —
-    fixed the same day, where its ✅ carries the record.
-  - ✅ **both** — `editors/composed`, **`drag: draw` neither drew nor
-    sounded.** The host was right and nobody listened: while one pixel is worth
-    more than one sample it refuses the stroke and *says so*, and this take is
-    three seconds in a 900-pixel window — 168 samples a pixel, so the pencil was
-    dead at the zoom the window opens at. Both twins now subscribe to the host
-    and print the refusal, and both say a zoom comes first. Measured after:
-    refused at the opening zoom with the reason, and the stroke lands once the
-    wheel has been over the trace.
-    **Since 2026-09-07 the window says it too**: the host's status bar draws
-    the refusal along the bottom edge, so the example's printing is a second
-    reading of a message the person can now see without a terminal.
-  - ✅ **page only, and it was the page's** — `editors/multitrack`, **the clips
-    of the `takes` and `spectrum` lanes were not drawn.** Their `dur` came from
-    `Source.length`, which neither client has — a `Source` is a handle on a
-    payload, not the payload — so every one of those clips was a clip of
-    `undefined` samples and drew nothing. The page keeps the takes it built and
-    reads the length off them, the way the script reads it off its own list.
-  - ✅ **both, by construction** — `notation/score_editor`, **selecting a note
-    to give it a dynamic or an articulation reported an id the model does not
-    own.** It was the host's hit test, so it was every client's: a press took
-    the **smallest box** under it, and a staff line is a hairline the width of
-    the system whose box is thinner than a notehead's. Every note written *on* a
-    line rather than in a space answered with the staff — measured on the
-    example's own page, 24 of its 48 noteheads. The page already says which ids
-    sound, so a sounding element now wins over anything drawn across it and the
-    tightest box only decides between those; 0 of 48 after.
-  - ✅ **the sweep's own fault** — **buttons that seemed to change nothing when
-    pressed**, from a mechanical pass over all 80 pages. All five drive their
-    page correctly; what could not see them was the pass, which read a canvas
-    with `toDataURL` — empty on a WebGL surface unless it was made with
-    `preserveDrawingBuffer`, so every host window read as inert and the five
-    that wrote no log line were the ones left standing. Driven again with the
-    pixels captured as screenshots: `panels/stack` flips to the spectrogram,
-    `panels/two-hosts` boots both and A stops answering its knob while B goes
-    on, `editors/patch2` opens the FaustDef, `components/authored` sounds,
-    removes and mounts again.
-
-    Two things the re-check did find, both fixed with it: `panels/two-hosts`
-    drew host B's knob at 220 under a heading saying it plays 330 (the panel
-    hard-coded the value), and closed the host by reaching past the instance to
-    its bridge, which leaves the event drain running; and `editors/patch2`
-    refused the second view in silence while the first was open — the line
-    saying to close it first had been printed earlier, which is not where a
-    reader is looking. **What both pages also say now**: a closed view leaves
-    its last frame on the canvas, because the canvas is the document's and
-    nothing clears it — the reason a working close reads as nothing happening.
-
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --
@@ -223,18 +130,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   the model's side**: if a region is two objects rather than one, swapping what
   fills a slot while keeping the slot is a copy by construction, and the verb's
   shape follows that answer.
-
-- ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
-  *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track
-  are legal and ordinary; the lane draws coincident members as a single clip with
-  layered bodies, which is the piano roll's logic over placements it does not fit, and the
-  two placements stop being addressable. A defect of the picture, not a question
-  about drops -- which is what it was filed as until 2026-09-03. **The same
-  subject from the branch's side:** "Dropping a clip where another one already
-  sits makes the lane draw as one layered clip, so both appear to vanish into
-  one" (`clients/gui/PLAN.md`, Found by use) is this rule seen while using it,
-  reduced to two lanes and one drag. One question, two entries, and it is
-  `O21`'s layered regions that decide it.
 
 
 ## 2. Fixes that need a decision first
@@ -321,31 +216,6 @@ watching it, which is the one kind of verification this project has no automatio
 for — CI runs no example, and a plan's checkbox says a thing shipped, never that
 a person saw it work.
 
-- ⬜ **A manual and visual review of the whole thing, by the user, done
-  together.** *This is the one that comes first in time, whatever order the rest
-  of this file is read in.*
-
-  **Why it leads.** Nothing in this project runs an example. CI does not, the
-  test suites do not, and a signature change breaks them at a call site no build
-  ever reaches — which is why `CLAUDE.md` calls the examples the manual test
-  surface and not a decoration. Everything the last phases shipped was accepted
-  by a page, a suite or a measurement, and all three of those check what somebody
-  thought to check. What they cannot report is a picture that is *correct and
-  wrong*: a widget that lands where nobody would put it, a take that sounds right
-  and looks off by a frame, an editor whose gesture is legal and unpleasant,
-  prose in a book that no longer describes what the reader sees.
-
-  **What it is.** The user runs the examples and the pages and says what is
-  wrong; I sit alongside, reproduce, and either fix on the spot or write the
-  entry down. Both example directories, both clients, the host native and in a
-  browser — with the pairs read against each other, since "the same example in
-  two languages" is a claim this has never had a person check.
-
-  **What comes out of it.** Not a checkbox. Each finding goes, the day it is
-  found, into the "Found by use" list of the plan that owns it, with its own
-  checkbox; the ones that turn out to be designs go to "Future directions". This
-  entry closes when the pass is done, and section 1 is expected to grow from it.
-
 - ⬜ **Nobody has watched the release gate stop anything** *(root `PLAN.md`,
   `R12`, the `⚠` clause)*. `R12` shipped: `verify` runs the full feature matrix
   and the tests, `build` and both `publish-*` jobs `needs:` it, and a
@@ -427,12 +297,7 @@ its plan; the plan is where its acceptance is read.
   UMP-over-our-own-transport direction has no date. It is listed so that
   "unscheduled" reads as a decision rather than an oversight.
 
-### The branch's own, and they are the near work
-
-- ⬜ **`AP7`'s by-eye check** *(`clients/gui/PLAN.md`, AP track)*. Every step
-  is in and tested; what is left is looking at it: the samples editor drawn,
-  a sample moved and undone in `edit_samples.py` and its page, the multitrack's
-  undo in `edit_multitrack.py` and its page, and `clausters-gui --session`.
+### The near work
 
 - ⬜ **`/graph_moveSlot` - a slot instance changes parent without being made
   again** *(`PLAN.md`, Future directions)*. A server verb with its client end
@@ -441,8 +306,8 @@ its plan; the plan is where its acceptance is read.
   hangs off the node -- a curve's mapped buses, its readers, the ports a curve
   owns. `clausters_editing::instance` reproduces the rebuild on purpose
   (`a_clip_that_changed_track_is_made_again`), so the verb lands as one arm of
-  one match. Taken beside `AP7` rather than after it: the audio editor does not
-  need it, and the multitrack is the application a person is already using.
+  one match. The audio editor does not need it, and the multitrack is the application a
+  person is already using.
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**
@@ -463,18 +328,6 @@ its plan; the plan is where its acceptance is read.
   region of notes fires voices, so it keeps a queue on `/sched_atTransport` and a
   re-cue on a locate -- which is now near `O24` rather than before it, and small
   enough to land with the multitrack's roll lane.
-
-- ⬜ **`G34` - the multitrack is one widget, and it owns the arrangement**
-  *(`clients/gui/PLAN.md`)*. Designed 2026-09-08 after the same defect arrived
-  twice in two days as a playback bug: a clip's placement leaves the host under
-  one of three tags, the *gesture* picks which, and a reader that takes one is
-  silently wrong from the first marquee. Two independent readers got it wrong,
-  one of them the host's **own** document owner. The cause is that a multitrack
-  has no owner the way a `pianoroll` has one, so `track` and `clip` become data
-  in a heavy `multitrack` widget's props and the report becomes the arrangement
-  rather than the gesture. **`O24`'s multitrack waits on it** - the application
-  cannot be written against a widget tree with no owner - so this comes first of
-  the two.
 
 - ⬜ **The A track — what a signal measures, and the layers that show it**
   *(`clients/gui/PLAN.md`, "A track")*. `A1`/`A2` shipped (mean square in the
@@ -558,23 +411,6 @@ its plan; the plan is where its acceptance is read.
   a curve cannot be edited without an arrangement. The third data kind of the
   mapping question above.
 
-- ⬜ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
-  *(`clients/python/PLAN.md`, Future directions)*. **The direction is decided**
-  (2026-09-03: a track's notes are members with ids); what is left is a design
-  and a typing, and it is the one that reaches furthest: it is the arrangement model in both clients plus the bridge
-  that writes the document. The crate is already written for the other model (a
-  lane is a projection; `SetMembers` is the roll's edit as a member list with
-  ids), and as an aggregate a note — and an OSC marker — gains the id that today
-  it lacks. **Related, and it converges here rather than standing on its own:**
-  "A clip's body and a composed view edit the same data by two roads" in the
-  same list — the generic-editor track closed leaving a note's edit spelled
-  twice, once as the tree's `SetMembers` and once as the events domain, and
-  which of the two is the real model is this question. **What changed under it on
-  2026-09-06:** the entry names "the bridge that writes the document" as part of
-  its reach, and that bridge is `form/document.py` / `.ts`, which `O21`(d)/(e)
-  delete outright - `form` ends with no path into the crate and leaves no
-  forwarding stub. So the bridge is no longer a thing to redesign; what the entry
-  still owns is which model a note's edit belongs to.
 
 ### The larger questions, and the plans' own Future directions
 
