@@ -37,6 +37,7 @@ pub mod tree;
 
 use std::collections::HashMap;
 
+use clausters_apps::editing::{Editing, Effect, Member, MemberId, Stepped};
 use clausters_apps::multitrack::editor::MultitrackEditor;
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
@@ -44,8 +45,8 @@ use clausters_document::history::Direction;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MULTITRACK;
 use clausters_document::{
-    Against, Document, Intent, NodeId, Opaque, Outcome, Rules, Session, TimeUnit, apply_logged,
-    log::Log,
+    Against, Document, Intent, NodeId, Opaque, Outcome, Rules, Session, TimeUnit, apply_logged_in,
+    log::TREE,
 };
 use serde_json::Value;
 
@@ -108,9 +109,12 @@ pub struct Owner {
     /// history, so a piece's edit and a tree's edit undo in the order they were
     /// made rather than in two orders.
     pub piece: Multitrack,
-    /// The undo stack — the crate's, so an inverse is read out of the document
-    /// rather than remembered by the gesture that made it.
-    pub log: Log,
+    /// **The editing context**: the one undo order the tree, the piece and the
+    /// multitrack editor share — the applications crate's, as a client's is, so
+    /// an inverse is read out of what was edited rather than remembered by the
+    /// gesture that made it, and a piece's edit and a tree's undo in the order
+    /// they were made.
+    pub editing: Editing,
     /// The session this document came from, when it came from one: the sources
     /// its samples live in, which is what a save has to write back.
     pub session: Option<Session>,
@@ -151,8 +155,14 @@ pub struct Owner {
     /// And which node each **lane header** configures. See
     /// [`Owner::bind_header`] for why it is not the same map.
     headers: HashMap<i32, NodeId>,
-    /// The piece's identity in [`Owner::log`]'s pile — the second structure.
-    piece_structure: clausters_document::history::StructureId,
+    /// The tree, as a member of [`Owner::editing`]: the crate does not apply the
+    /// document's edits, so a step hands its payloads back to be applied here.
+    tree: MemberId,
+    /// The piece, as a member of [`Owner::editing`] — joined whether or not a
+    /// window is ever opened over it, so its identity does not depend on what
+    /// was edited first. A step hands its payloads back to be applied to
+    /// [`Owner::piece`].
+    piece_member: MemberId,
     /// The widget drawing the whole piece, when the tree has one.
     ///
     /// Not a map, because there is nothing to map: the multitrack names its
@@ -161,17 +171,9 @@ pub struct Owner {
     /// the other direction — writing an applied edit back onto the picture.
     multitrack: Option<i32>,
     /// **The multitrack editor** over the piece, once a window has been opened
-    /// for it ([`Owner::open_editor`]): the applications crate's, which reads
-    /// and answers every gesture on that window.
-    pub editor: Option<MultitrackEditor>,
-    /// **The version the editor's conversation is at** -- what the host names
-    /// back on its next gesture, and what an answer states.
-    ///
-    /// Not the piece's own counter, which moves once per edit of the document:
-    /// a split is more than one, so the two part on the first. It is the
-    /// history's, as a client's editor keeps it: the version a changed turn
-    /// answered with, and one more for each step of the history.
-    pub conversed: i64,
+    /// for it ([`Owner::open_editor`]): a member of [`Owner::editing`] under the
+    /// piece's key, so it is the same structure in the order as the piece.
+    editor_member: Option<MemberId>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -199,18 +201,30 @@ impl Owner {
     /// An owner of `document`, with no session behind it (a composition built
     /// in memory) and no grid.
     pub fn new(document: Document) -> Self {
-        let mut log = Log::new();
-        // The second structure in the same pile, registered whether or not this
-        // owner turns out to hold a piece: one history is what makes an undo
-        // walk the two descriptions in the order the hand made them, and
-        // registering lazily would mean an id that depends on what was edited
-        // first.
-        let piece_structure = log.history_mut().register(MULTITRACK);
+        let mut editing = Editing::new();
+        // The tree, and the piece as the second structure in the same order,
+        // joined whether or not this owner turns out to hold a piece: one
+        // history is what makes an undo walk the two descriptions in the order
+        // the hand made them, and joining lazily would mean an id that depends
+        // on what was edited first.
+        let tree = editing.join(
+            "tree",
+            Member::External {
+                domain: TREE.into(),
+            },
+        );
+        let piece_member = editing.join(
+            "piece",
+            Member::External {
+                domain: MULTITRACK.into(),
+            },
+        );
         Self {
             document,
             piece: Multitrack::default(),
-            piece_structure,
-            log,
+            editing,
+            tree,
+            piece_member,
             session: None,
             rules: Rules::none(),
             units_per_beat: 48_000.0,
@@ -220,8 +234,7 @@ impl Owner {
             nodes: HashMap::new(),
             headers: HashMap::new(),
             multitrack: None,
-            editor: None,
-            conversed: 0,
+            editor_member: None,
         }
     }
 
@@ -472,12 +485,11 @@ impl Owner {
     pub fn open_editor(&mut self, window: i32, title: &str, size: (i64, i64)) -> serde_json::Value {
         use clausters_apps::multitrack::{Transport, TransportIds};
 
-        self.conversed = self.piece.version as i64;
         let mut editor = MultitrackEditor::new(
             self.piece.clone(),
             self.units_per_second,
             clausters_editing::playback::DEFAULT_BPM,
-            self.conversed,
+            self.editing.version(),
         );
         editor.chrome(
             None,
@@ -496,9 +508,45 @@ impl Owner {
         editor.set_segments(self.segments());
         let def = editor.window(window + 1, window + 2);
         editor.set_window(Some(window));
-        self.editor = Some(editor);
+        // **One editor over the piece**: opening the window again replaces the
+        // editor in its seat rather than seating a second one.
+        match self.editor_member {
+            Some(member) => {
+                if let Some(Member::Multitrack(held)) = self.editing.member_mut(member) {
+                    **held = editor;
+                }
+            }
+            None => {
+                self.editor_member = Some(
+                    self.editing
+                        .join("piece", Member::Multitrack(Box::new(editor))),
+                );
+            }
+        }
         self.bind_multitrack(window + 1);
         def
+    }
+
+    /// The multitrack editor over the piece, once a window has been opened for
+    /// it.
+    pub fn editor(&self) -> Option<&MultitrackEditor> {
+        match self.editing.member(self.editor_member?)? {
+            Member::Multitrack(editor) => Some(editor),
+            _ => None,
+        }
+    }
+
+    /// The multitrack editor, to hand it what the owner holds.
+    pub fn editor_mut(&mut self) -> Option<&mut MultitrackEditor> {
+        match self.editing.member_mut(self.editor_member?)? {
+            Member::Multitrack(editor) => Some(editor),
+            _ => None,
+        }
+    }
+
+    /// The editor's member in [`Owner::editing`], once there is one.
+    pub fn editor_member(&self) -> Option<MemberId> {
+        self.editor_member
     }
 
     /// **The joins the session holds**, by source: the segments each is made
@@ -573,37 +621,6 @@ impl Owner {
             );
         }
         learned.len()
-    }
-
-    /// **Records an editor's turn** in the one history the tree records into,
-    /// so a piece's edit and a tree's undo in the order they were made.
-    pub fn record_piece(&mut self, record: &clausters_apps::multitrack::editor::Record) {
-        use clausters_document::history::{Entry, Step};
-
-        let mut entry: Option<Entry> = None;
-        for leg in &record.legs {
-            let Ok(forward) = serde_json::from_value::<Step>(leg.forward.clone()) else {
-                continue;
-            };
-            let backward = Opaque(leg.backward.clone());
-            let next = match entry.take() {
-                Some(e) => e.and(self.piece_structure, forward, backward),
-                None => Entry::new(
-                    record.label.clone(),
-                    self.piece_structure,
-                    forward,
-                    backward,
-                ),
-            };
-            entry = Some(if leg.key.is_empty() {
-                next
-            } else {
-                next.keyed(leg.key.clone())
-            });
-        }
-        if let Some(entry) = entry {
-            self.log.history_mut().record(entry);
-        }
     }
 
     /// **The piece's clips, as they now stand** — the one payload every
@@ -812,8 +829,8 @@ impl Owner {
             }
             out.push(self.report(outcome));
         }
-        if let Some(entry) = entry {
-            self.log.record(entry);
+        if let (Some(entry), Some(structure)) = (entry, self.editing.structure(self.tree)) {
+            self.editing.record_entry(entry.generic(structure));
         }
         out
     }
@@ -986,14 +1003,20 @@ impl Owner {
     /// `label` is what the undo stack shows for it — the vocabulary a user
     /// reads ("draw", "move a clip"), not the wire's.
     pub fn apply(&mut self, intent: &Intent, against: &Against, label: &str) -> Applied {
-        let outcome = apply_logged(
-            &mut self.document,
-            intent,
-            against,
-            &self.rules,
-            &mut self.log,
-            label,
-        );
+        let (document, rules) = (&mut self.document, &self.rules);
+        let mut outcome = None;
+        self.editing.record_with(self.tree, |history, structure| {
+            let applied =
+                apply_logged_in(document, intent, against, rules, history, structure, label);
+            let recorded = applied.applied;
+            outcome = Some(applied);
+            recorded
+        });
+        // A tree that is not in the order records nothing and still edits.
+        let outcome = match outcome {
+            Some(outcome) => outcome,
+            None => clausters_document::apply(&mut self.document, intent, against, &self.rules),
+        };
         self.report(outcome)
     }
 
@@ -1020,12 +1043,15 @@ impl Owner {
         use clausters_document::log::{Entry, Step};
 
         let outcome = clausters_document::apply(&mut self.document, intent, against, &self.rules);
-        if outcome.applied {
-            self.log.record(Entry::new(
+        if outcome.applied
+            && let Some(structure) = self.editing.structure(self.tree)
+        {
+            let entry = Entry::new(
                 label,
                 Step::Edit(outcome.effective.clone()),
                 inverse.clone(),
-            ));
+            );
+            self.editing.record_entry(entry.generic(structure));
         }
         self.report(outcome)
     }
@@ -1055,37 +1081,42 @@ impl Owner {
     /// and keeping the legs a structure owns are rules, and this is the third
     /// caller that would otherwise write them again.
     fn walk(&mut self, direction: Direction) -> Vec<Applied> {
-        let Some(walked) = self.log.history_mut().walk(direction) else {
-            return Vec::new();
-        };
-        self.replay(&walked.legs)
+        let stepped = self.editing.step(direction);
+        self.carry(&stepped)
     }
 
     pub fn can_undo(&self) -> bool {
-        self.log.can_undo()
+        self.editing.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        self.log.can_redo()
+        self.editing.can_redo()
     }
 
-    /// Applies a run of the pile's own legs with the checks off — the shape an
-    /// undo or a redo needs, since what the log holds is by definition against
-    /// the state as it was left, and snapping something twice would move it.
+    /// **Carries out a step the context took**, on the descriptions this owner
+    /// holds: the payloads the step hands back for the piece and for the tree,
+    /// applied with the checks off — what the history holds is by definition
+    /// against the state as it was left, and snapping something twice would
+    /// move it. The multitrack editor's own copy of the piece was stepped by
+    /// the context already.
     ///
-    /// **Each leg says which structure it is over**, which is the whole reason
-    /// the two descriptions share one history: a piece's move and a tree's
-    /// stroke walk back in the order the hand made them, not in two orders.
-    fn replay(
-        &mut self,
-        legs: &[(clausters_document::history::StructureId, Vec<Opaque>)],
-    ) -> Vec<Applied> {
-        let tree = self.log.structure();
+    /// **Each effect says which member it is for**, which is the whole reason
+    /// the two descriptions share one order: a piece's move and a tree's stroke
+    /// walk back in the order the hand made them, not in two orders.
+    pub fn carry(&mut self, stepped: &Stepped) -> Vec<Applied> {
         let mut out = Vec::new();
-        for (structure, loads) in legs {
-            for load in loads {
-                if *structure == self.piece_structure {
-                    let Some(intent) = clausters_document::multitrack::edit::intent_of(load) else {
+        if !stepped.stepped {
+            return out;
+        }
+        for effect in &stepped.effects {
+            let Effect::External { member, payloads } = effect else {
+                continue;
+            };
+            for load in payloads {
+                let load = Opaque(load.clone());
+                if *member == self.piece_member {
+                    let Some(intent) = clausters_document::multitrack::edit::intent_of(&load)
+                    else {
                         continue;
                     };
                     let outcome = clausters_document::multitrack::edit::apply(
@@ -1099,8 +1130,8 @@ impl Owner {
                         version: self.piece.version,
                         applied: outcome.applied,
                     });
-                } else if *structure == tree {
-                    let Some(intent) = clausters_document::log::intent_of(load) else {
+                } else if *member == self.tree {
+                    let Some(intent) = clausters_document::log::intent_of(&load) else {
                         continue;
                     };
                     let outcome = clausters_document::apply(
@@ -2001,7 +2032,7 @@ mod window_verb_tests {
         let told = host
             .owner
             .as_ref()
-            .and_then(|o| o.editor.as_ref())
+            .and_then(|o| o.editor())
             .map_or(0, |e| e.meters().len());
         assert_eq!(told, 1, "the editor knows the track's buses");
         let meters = &host.registry().get(view).expect("the piece").props["meters"];
@@ -2248,7 +2279,9 @@ mod window_verb_tests {
 
         // A route no gesture took moves the piece.
         if let Some(owner) = host.owner.as_mut() {
-            owner.conversed += 5;
+            for _ in 0..5 {
+                owner.editing.moved();
+            }
         }
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         let message = host.event_message(view, seq, points(0.75));

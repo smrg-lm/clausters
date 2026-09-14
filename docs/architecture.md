@@ -951,7 +951,9 @@ history it keeps — a piece shares one undo order with the boxes entered out of
 — makes the minted source, sends the transport's steps and opens the box. Both clients open it as a
 member of an editing context (`clausters_apps::editing`, reached through
 `clausters_apps_editing_*` / `EditingCore`), whose verbs cross as JSON; the
-standalone host holds it in its `Owner`. The transport
+standalone host links the same context in its `Owner`, where the tree and the
+piece are external members beside the editor, so a stroke on the tree and a box
+moved on the piece undo in one order there too. The transport
 verbs, a minted source's two servers and entering a box move here next, in the
 order `crates/clausters-document/PLAN.md` gives for the applications crate.
 

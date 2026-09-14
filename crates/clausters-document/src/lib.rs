@@ -75,7 +75,8 @@ pub use events::{Event, Events, EventsIntent};
 pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{
-    Entry, Log, MemorySpill, Redone, Spill, Step, Tree, Undone, apply_logged, inverse_of,
+    Entry, Log, MemorySpill, Redone, Spill, Step, Tree, Undone, apply_logged, apply_logged_in,
+    inverse_of,
 };
 pub use multitrack::edit::{MULTITRACK, MultitrackIntent, Piece, SpanKind};
 pub use multitrack::{

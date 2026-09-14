@@ -360,7 +360,7 @@ impl Host {
             return;
         };
         let piece = owner.piece.clone();
-        let Some(editor) = owner.editor.as_mut() else {
+        let Some(editor) = owner.editor_mut() else {
             return;
         };
         if editor.meters() == meters.as_slice() {
@@ -426,12 +426,14 @@ impl Host {
             .as_ref()?
             .samples_to_beats(position.max(0.0).round() as i64);
         let owner = self.owner.as_mut()?;
-        let editor = owner.editor.as_mut()?;
-        let (clock, window) = (editor.controls()?.clock, editor.window_id()?);
         // The end the clock reads is the piece's, which an undo can move
         // without a turn of the editor's.
-        if editor.piece().version != owner.piece.version {
-            editor.set_piece(owner.piece.clone());
+        let stale = owner.editor()?.piece().version != owner.piece.version;
+        let piece = stale.then(|| owner.piece.clone());
+        let editor = owner.editor_mut()?;
+        let (clock, window) = (editor.controls()?.clock, editor.window_id()?);
+        if let Some(piece) = piece {
+            editor.set_piece(piece);
         }
         let text = editor.clock(beat);
         if self.clock_shown.as_deref() == Some(text.as_str()) {

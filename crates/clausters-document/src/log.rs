@@ -310,9 +310,10 @@ impl Entry {
         self.changes.is_empty()
     }
 
-    /// This entry as the pile holds it: every leg over the one structure a
-    /// [`Log`] has, each carrying the key that decides a merge.
-    fn generic(&self, structure: StructureId) -> history::Entry {
+    /// This entry as the pile holds it: every leg over `structure` — the one a
+    /// [`Log`] has, or the one a caller registered the document as in a history
+    /// of its own — each carrying the key that decides a merge.
+    pub fn generic(&self, structure: StructureId) -> history::Entry {
         let mut legs = self.changes.iter();
         // An empty entry is refused by `History::record`, so the fold below
         // needs a first leg and this is where that is decided.
@@ -565,14 +566,35 @@ pub fn apply_logged(
     label: impl Into<String>,
 ) -> Outcome {
     let structure = log.structure();
+    apply_logged_in(
+        document,
+        intent,
+        against,
+        rules,
+        log.history_mut(),
+        structure,
+        label,
+    )
+}
+
+/// [`apply_logged`] over a history the caller holds, where the document is
+/// registered as `structure` — what an editing context that orders the document
+/// with other structures records it through.
+pub fn apply_logged_in(
+    document: &mut Document,
+    intent: &Intent,
+    against: &Against,
+    rules: &Rules,
+    history: &mut History,
+    structure: StructureId,
+    label: impl Into<String>,
+) -> Outcome {
     let mut tree = Tree {
         document,
         against: *against,
         rules: *rules,
     };
-    let applied = log
-        .history_mut()
-        .apply(structure, &mut tree, &payload(intent), label);
+    let applied = history.apply(structure, &mut tree, &payload(intent), label);
     Outcome {
         // The effective payload is whatever the tree's own `apply` put
         // there, so it reads back as an intent unless the edit was refused for

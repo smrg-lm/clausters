@@ -2114,7 +2114,7 @@ impl Host {
         if self
             .owner
             .as_ref()
-            .is_some_and(|o| o.draws_piece() && o.editor.is_some())
+            .is_some_and(|o| o.draws_piece() && o.editor().is_some())
             && self.answer_piece(def_id, message)
         {
             return true;
@@ -2255,10 +2255,12 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let version = owner.conversed;
         let piece = owner.piece.clone();
         let (table, lengths) = (owner.buffer_table(), owner.buffer_lengths());
-        let Some(editor) = owner.editor.as_mut() else {
+        let Some(member) = owner.editor_member() else {
+            return false;
+        };
+        let Some(editor) = owner.editor_mut() else {
             return false;
         };
         editor.set_piece(piece);
@@ -2267,26 +2269,33 @@ impl Host {
         // **The message a client would have received**, whole: its stamp, and
         // the version the host was drawing when the hand made the edit -- which
         // is what lets the conversation refuse one that a route the hand never
-        // saw has overtaken, here as in a script.
-        let outcome = editor.event(
+        // saw has overtaken, here as in a script. The turn is the editing
+        // context's: it records the entry and moves the version.
+        let Some(turned) = owner.editing.event(
+            member,
             &Event {
                 addr: message.addr.clone(),
                 args: message.args.iter().map(document::piece::atom).collect(),
             },
-            version,
-        );
+        ) else {
+            return false;
+        };
+        let clausters_apps::editing::Turned {
+            outcome, stepped, ..
+        } = turned;
+        let clausters_apps::editing::Outcome::Multitrack(outcome) = outcome else {
+            return false;
+        };
         if outcome.turn == Kind::Nothing {
             return false;
         }
         if outcome.turn == Kind::Step {
-            return self.step_piece(def_id, outcome.seq, outcome.redo);
+            return self.step_piece(def_id, stepped, outcome.answer);
         }
-        if outcome.changed {
-            owner.piece = editor.piece().clone();
-            owner.conversed = outcome.version;
-        }
-        if let Some(record) = &outcome.record {
-            owner.record_piece(record);
+        if outcome.changed
+            && let Some(edited) = owner.editor().map(|editor| editor.piece().clone())
+        {
+            owner.piece = edited;
         }
         let minted: Vec<_> = outcome
             .minted
@@ -2345,12 +2354,12 @@ impl Host {
             // track, whose turn starts by handing the table over again). A
             // client's editor is handed it before every call (`_sync_core`).
             let (version, piece, table, lengths) = (
-                owner.conversed,
+                owner.editing.version(),
                 owner.piece.clone(),
                 owner.buffer_table(),
                 owner.buffer_lengths(),
             );
-            let settled = owner.editor.as_mut().map(|editor| {
+            let settled = owner.editor_mut().map(|editor| {
                 editor.set_piece(piece);
                 editor.set_sources(table);
                 editor.set_lengths(lengths);
@@ -2363,41 +2372,32 @@ impl Host {
         true
     }
 
-    /// **A step of the history, asked of the piece's window**: walked here,
-    /// where the one history is, then the window corrected and the stamp
-    /// answered -- the order a client's editor answers one in.
-    fn step_piece(&mut self, def_id: i32, seq: i64, redo: bool) -> bool {
+    /// **A step of the history, asked of the piece's window**: taken by the
+    /// editing context inside the turn, carried out here on what the owner
+    /// holds, then every window the crate corrected told and the stamp answered
+    /// -- with the crate's reason when nothing could apply the step. The order a
+    /// client's editor answers one in.
+    fn step_piece(
+        &mut self,
+        def_id: i32,
+        stepped: Option<clausters_apps::editing::Stepped>,
+        answer: Option<clausters_editing::conversation::Answer>,
+    ) -> bool {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let applied = if redo { owner.redo() } else { owner.undo() };
-        let moved = !applied.is_empty();
+        let applied = stepped.as_ref().map_or_else(Vec::new, |s| owner.carry(s));
         self.adopt(def_id, &applied);
         self.replay_writes(def_id, &applied);
-        let Some(owner) = self.owner.as_mut() else {
-            return true;
-        };
-        if moved {
-            owner.conversed += 1;
-        }
-        let (version, piece, table, lengths) = (
-            owner.conversed,
-            owner.piece.clone(),
-            owner.buffer_table(),
-            owner.buffer_lengths(),
-        );
-        let answers = owner.editor.as_mut().map(|editor| {
-            editor.set_piece(piece);
-            editor.set_sources(table);
-            editor.set_lengths(lengths);
-            let resync = moved.then(|| editor.resync_all(version));
-            (resync, editor.acknowledge(seq, version, None))
-        });
-        if let Some((resync, acknowledged)) = answers {
-            if let Some(resync) = resync {
-                self.tell(resync);
+        if let Some(stepped) = stepped
+            && stepped.stepped
+        {
+            for corrected in stepped.corrections {
+                self.tell(corrected.answer);
             }
-            self.tell(acknowledged);
+        }
+        if let Some(answer) = answer {
+            self.tell(answer);
         }
         true
     }

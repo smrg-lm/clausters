@@ -1094,7 +1094,7 @@ clients and the standalone host green, and each is its own commit.
    last chunk's `/done` is awaited, so a write past the end is refused rather
    than lost. `SamplesDomain.project` asks for the steps and walks them with the
    runner, which is the path an undo takes too.
-4. ⬜ **The undo order moves into the crate.** Today each endpoint keeps the
+4. ✅ **The undo order moves into the crate.** Today each endpoint keeps the
    history -- `Editing` in the clients, the `Owner`'s history in the host --
    while the multitrack editor hands back the entry to record. With two
    applications in the crate the history is the crate's: one order over the
@@ -1186,6 +1186,15 @@ clients and the standalone host green, and each is its own commit.
      `clausters_apps_multitrack_editor_*` and `clausters_apps_samples_editor_*`,
      with `MultitrackEditorCore` and `SamplesEditorCore` in wasm and the Python
      binding, are removed: an editor is opened only as a member of a context.
+   - ✅ *The standalone host (2026-09-14).* The `Owner`'s log is an `Editing`:
+     the tree and the piece join as external members when the owner is made,
+     and the multitrack editor joins under the piece's key when its window
+     opens, so the three are one order. A turn of the editor goes through
+     `Editing::event`; a step is `Editing::step`, carried out on the tree and the
+     piece the owner holds (`Owner::carry`) and answered with the corrections the
+     crate computed; a tree edit records through the context with
+     `record_with`, over the document's `apply_logged_in`, or `record_entry` for
+     the one whose inverse the hand holds.
 
 **Not in these steps**, so their absence is read as a decision:
 

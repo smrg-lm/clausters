@@ -281,6 +281,11 @@ impl Editing {
         (self.seats.len() - 1) as MemberId
     }
 
+    /// A member, to read.
+    pub fn member(&self, member: MemberId) -> Option<&Member> {
+        self.seats.get(member as usize).map(|seat| &seat.member)
+    }
+
     /// A member, to read or to hand the facts it draws from.
     pub fn member_mut(&mut self, member: MemberId) -> Option<&mut Member> {
         self.seats
@@ -305,6 +310,38 @@ impl Editing {
             return false;
         };
         let taken = self.record_at(structure, record, coalesce);
+        if taken {
+            self.version += 1;
+        }
+        taken
+    }
+
+    /// **Records an entry already built over structures of this context** —
+    /// what an embedder in Rust hands over when it builds its entries with a
+    /// vocabulary's own types (the document's log, say) rather than as JSON.
+    /// Answers whether the history took it, and moves the version when it did.
+    pub fn record_entry(&mut self, entry: Entry) -> bool {
+        let taken = self.history.record(entry);
+        if taken {
+            self.version += 1;
+        }
+        taken
+    }
+
+    /// **Applies and records through a vocabulary's own door**: `apply` is
+    /// handed the history and `member`'s structure, and answers whether it
+    /// recorded — what an embedder in Rust does when the vocabulary applies and
+    /// records in one call (the document's `apply_logged_in`). The version moves
+    /// when it did.
+    pub fn record_with(
+        &mut self,
+        member: MemberId,
+        apply: impl FnOnce(&mut History, StructureId) -> bool,
+    ) -> bool {
+        let Some(structure) = self.structure(member) else {
+            return false;
+        };
+        let taken = apply(&mut self.history, structure);
         if taken {
             self.version += 1;
         }
@@ -871,6 +908,66 @@ mod tests {
                 payloads: vec![json!({"points": [0.0]})],
             }]
         );
+    }
+
+    /// **An entry an embedder built** is recorded under its structure, moves the
+    /// version, and walks back like any other.
+    #[test]
+    fn an_entry_built_in_rust_joins_the_order() {
+        let mut editing = Editing::default();
+        let curve = editing.join(
+            "curve",
+            Member::External {
+                domain: "points".into(),
+            },
+        );
+        let structure = editing.structure(curve).unwrap();
+        assert!(editing.member(curve).is_some());
+        let entry = Entry::new(
+            "bend",
+            structure,
+            Step::Edit(Opaque(json!({"points": [1.0]}))),
+            Opaque(json!({"points": [0.0]})),
+        );
+        assert!(editing.record_entry(entry));
+        assert_eq!(editing.version(), 2);
+        let back = editing.step(Direction::Undo);
+        assert_eq!(
+            back.effects,
+            [Effect::External {
+                member: curve,
+                payloads: vec![json!({"points": [0.0]})]
+            }]
+        );
+    }
+
+    /// **A vocabulary that applies and records in one call** does it through
+    /// the context's history, and the version moves only when it recorded.
+    #[test]
+    fn an_edit_recorded_through_a_door_of_its_own_moves_the_version() {
+        let mut editing = Editing::default();
+        let tree = editing.join(
+            "tree",
+            Member::External {
+                domain: "tree".into(),
+            },
+        );
+        assert!(!editing.record_with(tree, |_, _| false));
+        assert_eq!(
+            editing.version(),
+            FIRST_VERSION,
+            "nothing recorded, nothing moved"
+        );
+        assert!(editing.record_with(tree, |history, structure| {
+            history.record(Entry::new(
+                "move",
+                structure,
+                Step::Edit(Opaque(json!({"x": 1}))),
+                Opaque(json!({"x": 0})),
+            ))
+        }));
+        assert_eq!(editing.version(), 2);
+        assert!(editing.can_undo());
     }
 
     /// **A step nothing could apply is not a step**: the cursor goes back, the
