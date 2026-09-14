@@ -452,8 +452,8 @@ impl WebApp {
             theme,
         );
         // The frame is drawn: the host's status log can be let go of, so the
-        // fetch below has this canvas' host to itself.
-        drop(inputs);
+        // fetch below has this canvas' host to itself. (`inputs` borrows it
+        // and holds nothing to release; its borrow ended at the render.)
         drop(statuses);
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot

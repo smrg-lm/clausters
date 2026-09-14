@@ -51,7 +51,7 @@ use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::widget::Widget;
 use super::widget::element::{Key as HostKey, Live, Loaded, SlotKind};
-use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
+use super::{BusSource, ClientId, Host, HostEffect, ServerLink};
 
 mod bridge;
 mod bulk;
