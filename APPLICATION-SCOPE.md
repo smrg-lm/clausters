@@ -1182,6 +1182,10 @@ clients and the standalone host green, and each is its own commit.
      `stepped` carrying a step's effects out, `refusal` for the crate's reason. A
      page has no object address, so a structure a page holds is keyed by a
      per-object number (`keyOf`) where the Python client uses `id()`.
+   - ✅ *The editor handles go (2026-09-14, core ABI **v64**).*
+     `clausters_apps_multitrack_editor_*` and `clausters_apps_samples_editor_*`,
+     with `MultitrackEditorCore` and `SamplesEditorCore` in wasm and the Python
+     binding, are removed: an editor is opened only as a member of a context.
 
 **Not in these steps**, so their absence is read as a decision:
 

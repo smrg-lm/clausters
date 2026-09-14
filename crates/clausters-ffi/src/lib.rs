@@ -436,7 +436,11 @@ pub use time::*;
 /// carries no bound of its own. An open answers the structure, and `record`
 /// takes `coalesce` and answers the version. **Breaking** for a caller of the
 /// one-argument door.
-pub const CORE_ABI_VERSION: u32 = 63;
+/// **v64 an editor is only a member.** `clausters_apps_multitrack_editor_*` and
+/// `clausters_apps_samples_editor_*` are **removed**: both clients open their
+/// editors in an editing context (`clausters_apps_editing_*`), which holds the
+/// history they share. **Breaking** for a caller of the editor handles.
+pub const CORE_ABI_VERSION: u32 = 64;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

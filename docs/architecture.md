@@ -948,9 +948,10 @@ transport row's buttons and the window's space bar are the editor's, so a click,
 a key and a script's `toggle` are one path. It answers rather than performs what
 belongs to a running system: a client or the host records the entry in the
 history it keeps — a piece shares one undo order with the boxes entered out of it
-— makes the minted source, sends the transport's steps and opens the box. Both clients reach it through one
-handle (`clausters_apps_multitrack_editor_*` / `MultitrackEditorCore`) whose
-verbs cross as JSON; the standalone host holds it in its `Owner`. The transport
+— makes the minted source, sends the transport's steps and opens the box. Both clients open it as a
+member of an editing context (`clausters_apps::editing`, reached through
+`clausters_apps_editing_*` / `EditingCore`), whose verbs cross as JSON; the
+standalone host holds it in its `Owner`. The transport
 verbs, a minted source's two servers and entering a box move here next, in the
 order `crates/clausters-document/PLAN.md` gives for the applications crate.
 

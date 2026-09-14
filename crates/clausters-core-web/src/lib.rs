@@ -1353,32 +1353,6 @@ pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources
     clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
 }
 
-/// **A multitrack editor**: a piece, the window it is drawn in, and one view's
-/// end of the conversation with the host. Its verbs cross through `call`, as
-/// JSON.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = MultitrackEditorCore)]
-pub struct JsMultitrackEditor(clausters_apps::multitrack::editor::MultitrackEditor);
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_class = MultitrackEditorCore)]
-impl JsMultitrackEditor {
-    /// An editor over the piece `request` names — `piece`, `rate`, `defaultBpm`,
-    /// `version`, `link`, `transport`, `title`, `w`, `h` — or an error for a
-    /// request that names none.
-    #[wasm_bindgen(constructor)]
-    pub fn new(request: &str) -> Result<JsMultitrackEditor, JsError> {
-        clausters_apps::multitrack::editor::new_json(request)
-            .map(JsMultitrackEditor)
-            .ok_or_else(|| JsError::new("the request names no piece"))
-    }
-
-    /// One verb, as `clausters_apps::multitrack::editor::call_json` documents.
-    pub fn call(&mut self, request: &str) -> String {
-        clausters_apps::multitrack::editor::call_json(&mut self.0, request)
-    }
-}
-
 /// **An editing context**: one undo order over every editor opened in it. Its
 /// verbs cross through `call`, as JSON.
 #[cfg(target_arch = "wasm32")]
@@ -1404,31 +1378,6 @@ impl JsEditing {
 impl Default for JsEditing {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// **A samples editor**: a take, the measures its picture stacks, and the window
-/// it is drawn in. Its verbs cross through `call`, as JSON.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = SamplesEditorCore)]
-pub struct JsSamplesEditor(clausters_apps::samples::editor::SamplesEditor);
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_class = SamplesEditorCore)]
-impl JsSamplesEditor {
-    /// An editor over the take `request` names — `buffer`, `channels`, `name`,
-    /// `layers`, `rate`, `tempo`, `title`, `w`, `h` — or an error saying why it
-    /// cannot be one.
-    #[wasm_bindgen(constructor)]
-    pub fn new(request: &str) -> Result<JsSamplesEditor, JsError> {
-        clausters_apps::samples::editor::new_json(request)
-            .map(JsSamplesEditor)
-            .map_err(|e| JsError::new(&e))
-    }
-
-    /// One verb, as `clausters_apps::samples::editor::call_json` documents.
-    pub fn call(&mut self, request: &str) -> String {
-        clausters_apps::samples::editor::call_json(&mut self.0, request)
     }
 }
 

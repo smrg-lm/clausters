@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 63
+CORE_ABI_VERSION = 64
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -319,14 +319,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_names.restype = ctypes.c_size_t
-    lib.clausters_apps_multitrack_editor_new.argtypes = [u8p_early, ctypes.c_size_t]
-    lib.clausters_apps_multitrack_editor_new.restype = ctypes.c_void_p
-    lib.clausters_apps_multitrack_editor_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_apps_multitrack_editor_free.restype = None
-    lib.clausters_apps_multitrack_editor_call.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_apps_multitrack_editor_call.restype = ctypes.c_size_t
     lib.clausters_apps_editing_new.argtypes = []
     lib.clausters_apps_editing_new.restype = ctypes.c_void_p
     lib.clausters_apps_editing_free.argtypes = [ctypes.c_void_p]
@@ -335,14 +327,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_call.restype = ctypes.c_size_t
-    lib.clausters_apps_samples_editor_new.argtypes = [u8p_early, ctypes.c_size_t]
-    lib.clausters_apps_samples_editor_new.restype = ctypes.c_void_p
-    lib.clausters_apps_samples_editor_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_apps_samples_editor_free.restype = None
-    lib.clausters_apps_samples_editor_call.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_apps_samples_editor_call.restype = ctypes.c_size_t
     lib.clausters_apps_samples_measures.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -1756,52 +1740,6 @@ def multitrack_names(piece: dict) -> dict:
     return json.loads(raw) if raw else {"rows": [], "boxes": [], "curves": []}
 
 
-class MultitrackEditorCore:
-    """**The multitrack editor's turns** (`clausters_apps_multitrack_editor_*`):
-    a piece, the window it is drawn in, and one view's end of the conversation
-    with the host.
-
-    Every verb crosses through `call`, as JSON: ``sync`` hands over what the
-    caller holds (the piece, the buffer table, the meters, the cursor, the
-    window), ``window`` composes the window, ``props`` corrects one widget,
-    ``event`` reads and answers one message from the host, ``apply`` puts a
-    step of the history back, and ``resync``, ``settle``, ``announce`` and
-    ``acknowledge`` answer the host.
-
-    Args:
-        request: ``piece``, ``rate``, ``defaultBpm``, ``version`` (the history's
-            counter), and the window's ``link``, ``transport``, ``title``,
-            ``w`` and ``h``.
-
-    Raises:
-        ValueError: the request names no piece.
-    """
-
-    def __init__(self, request: dict):
-        body = json.dumps(request).encode("utf-8")
-        self._handle = lib().clausters_apps_multitrack_editor_new(as_u8(body), len(body))
-        if not self._handle:
-            raise ValueError("the request names no piece")
-
-    def __del__(self):
-        self.free()
-
-    def free(self) -> None:
-        """Free the editor."""
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_apps_multitrack_editor_free(ctypes.c_void_p(handle))
-
-    def call(self, verb: str, **args) -> dict:
-        """One verb, with its arguments; the answer, as a dict."""
-        if not self._handle:
-            return {}
-        body = json.dumps({"verb": verb, **args}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_multitrack_editor_call,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
-
-
 class EditingCore:
     """**An editing context** (`clausters_apps_editing_*`): one undo order over
     every editor opened in it.
@@ -1834,50 +1772,6 @@ class EditingCore:
             return {}
         body = json.dumps({"verb": verb, **args}).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_call,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
-
-
-class SamplesEditorCore:
-    """**The samples editor's window** (`clausters_apps_samples_editor_*`): a
-    take, the measures its picture stacks, and the window it is drawn in.
-
-    Every verb crosses through `call`, as JSON: ``sync`` hands over the facts
-    the caller holds (``buffer``, ``channels``, ``name``, ``rate``, ``tempo``,
-    ``title``, ``w``, ``h``), ``layers`` reads or replaces the measure stack,
-    ``window`` composes the window and ``props`` corrects one widget.
-
-    Args:
-        request: the same facts, plus ``layers``.
-
-    Raises:
-        ValueError: the request is not one, or its measure stack is refused.
-    """
-
-    def __init__(self, request: dict):
-        measures = request.get("layers")
-        if measures is not None:
-            samples_measures(measures)
-        body = json.dumps(request).encode("utf-8")
-        self._handle = lib().clausters_apps_samples_editor_new(as_u8(body), len(body))
-        if not self._handle:
-            raise ValueError("not a samples editor request")
-
-    def __del__(self):
-        self.free()
-
-    def free(self) -> None:
-        """Free the editor."""
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_apps_samples_editor_free(ctypes.c_void_p(handle))
-
-    def call(self, verb: str, **args) -> dict:
-        """One verb, with its arguments; the answer, as a dict."""
-        if not self._handle:
-            return {}
-        body = json.dumps({"verb": verb, **args}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_samples_editor_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 

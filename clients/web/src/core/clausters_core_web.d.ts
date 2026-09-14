@@ -338,26 +338,6 @@ export class Instance {
 }
 
 /**
- * **A multitrack editor**: a piece, the window it is drawn in, and one view's
- * end of the conversation with the host. Its verbs cross through `call`, as
- * JSON.
- */
-export class MultitrackEditorCore {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * One verb, as `clausters_apps::multitrack::editor::call_json` documents.
-     */
-    call(request: string): string;
-    /**
-     * An editor over the piece `request` names — `piece`, `rate`, `defaultBpm`,
-     * `version`, `link`, `transport`, `title`, `w`, `h` — or an error for a
-     * request that names none.
-     */
-    constructor(request: string);
-}
-
-/**
  * **One piece, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
@@ -624,25 +604,6 @@ export class SampleClockModel {
      * The local-time span the held anchors cover.
      */
     readonly span: number;
-}
-
-/**
- * **A samples editor**: a take, the measures its picture stacks, and the window
- * it is drawn in. Its verbs cross through `call`, as JSON.
- */
-export class SamplesEditorCore {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * One verb, as `clausters_apps::samples::editor::call_json` documents.
-     */
-    call(request: string): string;
-    /**
-     * An editor over the take `request` names — `buffer`, `channels`, `name`,
-     * `layers`, `rate`, `tempo`, `title`, `w`, `h` — or an error saying why it
-     * cannot be one.
-     */
-    constructor(request: string);
 }
 
 /**
@@ -1598,13 +1559,11 @@ export interface InitOutput {
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
-    readonly __wbg_multitrackeditorcore_free: (a: number, b: number) => void;
     readonly __wbg_pieceplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
-    readonly __wbg_sampleseditorcore_free: (a: number, b: number) => void;
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_steprunner_free: (a: number, b: number) => void;
@@ -1684,8 +1643,6 @@ export interface InitOutput {
     readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly multitrackeditorcore_call: (a: number, b: number, c: number) => [number, number];
-    readonly multitrackeditorcore_new: (a: number, b: number) => [number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1745,8 +1702,6 @@ export interface InitOutput {
     readonly sampleclockmodel_span: (a: number) => number;
     readonly samplesMeasures: (a: number, b: number) => [number, number];
     readonly samples_to_secs: (a: number, b: number) => number;
-    readonly sampleseditorcore_call: (a: number, b: number, c: number) => [number, number];
-    readonly sampleseditorcore_new: (a: number, b: number) => [number, number, number];
     readonly scheduler_clear: (a: number) => void;
     readonly scheduler_isEmpty: (a: number) => number;
     readonly scheduler_len: (a: number) => number;
