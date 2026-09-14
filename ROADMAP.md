@@ -299,16 +299,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`/graph_moveSlot` - a slot instance changes parent without being made
-  again** *(`PLAN.md`, Future directions)*. A server verb with its client end
-  already waiting: a clip that changes track is freed and made again, because a
-  slot's wiring is baked into its `out` controls, and what that loses is what
-  hangs off the node -- a curve's mapped buses, its readers, the ports a curve
-  owns. `clausters_editing::instance` reproduces the rebuild on purpose
-  (`a_clip_that_changed_track_is_made_again`), so the verb lands as one arm of
-  one match. The audio editor does not need it, and the multitrack is the application a
-  person is already using.
-
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**
   *(`clients/python/PLAN.md`; `clients/web/PLAN.md`)*. Opened 2026-09-08 by the

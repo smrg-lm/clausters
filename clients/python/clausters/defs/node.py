@@ -477,6 +477,18 @@ class Group(Node):
                      node_id, *_flatten_controls(ports))
         return Group.from_id(node_id, srv)
 
+    def move_slot(self, instance) -> "Group":
+        """Moves this slot (a group from `add_slot`) into another running
+        instance (``/graph_moveSlot``) — a clip dragged to another track.
+
+        The slot is not built again: the server re-wires it to the new
+        instance's private buses, so its ports, whatever is mapped onto them and
+        the slots nested inside it all stay. The new instance must declare the
+        same slot with the same members, which two instances of one GraphDef
+        always do. Answers this group."""
+        self._server().send_msg("/graph_moveSlot", self.id, _target_id(instance))
+        return self
+
     def voice(self, ports=None) -> "Group":
         """Spawns a per-voice sub-graph (``/graph_newVoice``) inside this running
         GraphDef instance, wired to its shared private buses — the slot named

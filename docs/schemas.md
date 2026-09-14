@@ -137,7 +137,7 @@ A control bus lives permanently in the shared segment, so anyone can read its va
 
 OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on arrival; a **future** timetag is converted to a position on the server's sample clock and the whole bundle fires **sample-accurately**: the engine splits the audio block at the event's exact sample, so a `/synth_new` scheduled mid-block starts on that very frame. Bundles with equal times run in arrival order; late bundles run immediately (and are logged). Nested bundles are scheduled independently by their own timetags.
 
-Schedulable inside a timed bundle: `/synth_new`, `/node_set`, `/node_setRange`, `/node_fill`, `/node_map`, `/node_mapAudio`, `/node_mapRange`, `/node_mapAudioRange`, `/node_free`, `/node_before`, `/node_after`, `/node_order`, `/group_head`, `/group_tail`, `/group_new`, `/group_name`, `/group_freeAll`, `/group_deepFree`, `/bus_set`, `/bus_setRange`, `/bus_fill`, `/node_ugenCmd`, `/group_sortMode`, `/group_parallel`, `/graph_new`, `/graph_addSlot`, `/graph_newVoice`. Anything else (defs, buffers, queries, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
+Schedulable inside a timed bundle: `/synth_new`, `/node_set`, `/node_setRange`, `/node_fill`, `/node_map`, `/node_mapAudio`, `/node_mapRange`, `/node_mapAudioRange`, `/node_free`, `/node_before`, `/node_after`, `/node_order`, `/group_head`, `/group_tail`, `/group_new`, `/group_name`, `/group_freeAll`, `/group_deepFree`, `/bus_set`, `/bus_setRange`, `/bus_fill`, `/node_ugenCmd`, `/group_sortMode`, `/group_parallel`, `/graph_new`, `/graph_addSlot`, `/graph_moveSlot`, `/graph_newVoice`. Anything else (defs, buffers, queries, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
 
 **`/sched_clear`** flushes the whole timed-bundle queue: every bundle waiting on the sample clock is dropped (their heap freed off the audio thread), and the command replies `/done /sched_clear`. Use it to abort a scheduled score — the scsynth panic button.
 
@@ -911,6 +911,12 @@ A GraphDef splits into a **shared** part (members with no slot) and its **slots*
 `/graph_addSlot instanceID slot id [port value]...` builds one more of a slot as a **sub-group at the head of the instance** (the auto-sort orders it before the shared mixer that reads its bus), wired to the instance's own private buses, applying that slot's `defaults` and the given overrides. `/node_set slotID port value...` resolves against the sub-graph's surface; `/node_free slotID` frees just that one. Adding a slot the def does not have (or naming an unknown instance) `/fail`s.
 
 `"voice": true` is the slot named `voice`, spelled the way it was before slots had names, and `/graph_newVoice instanceID id [port value]...` is `/graph_addSlot` on it. Both keep working unchanged.
+
+### Moving a slot to another instance: `/graph_moveSlot`
+
+`/graph_moveSlot slotID instanceID` moves a slot built by `/graph_addSlot` into another running instance — a clip dragged to another track — **without building it again**. A slot's wiring is baked into its members' bus controls when it is built, so moving the group alone (`/group_head`) would leave it writing the instance it came from; this moves the sub-group to the head of the new instance and resolves every bus reference in it again against that instance's private buses, including the buses handed to the graphs nested in it and to their own slots. Nothing is freed, so what hangs off the nodes stays: the slot's id, the values set on its ports, a `/graph_map` onto one of them, the slots inside it.
+
+`instanceID` may be an instance or a slot group that is one nested graph, as for `/graph_addSlot`. The new instance must declare the same slot with the same members — two instances of one GraphDef always do — and a slot cannot move into anything nested inside itself; either is a `/fail`, and so is a `slotID` that is not a slot. Moving a slot to the instance it is already in does nothing.
 
 ### Driving a port from a bus: `/graph_map`
 

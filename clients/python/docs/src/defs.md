@@ -609,6 +609,10 @@ chain: one question — how many of these are there right now — whose answer
 changes while the graph is sounding, which is why it cannot be a member list.
 `voice=True` is the slot named `"voice"`, spelled the way it was before slots
 had names, and it is what a MIDI note spawns (`instance.voice()`).
+A slot that was built can also change instance: `clip.move_slot(other_track)`
+moves it into another instance of the same def — a clip dragged to another
+track — and the server re-wires it to that instance's buses instead of building
+it again, so its ports and whatever is mapped onto them stay.
 
 ```python
 track = GraphDef("track")

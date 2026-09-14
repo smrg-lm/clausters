@@ -269,6 +269,10 @@ def test_group_new_and_graph_build_their_own_message():
     assert iface.sent[-1] == ("/graph_new", ["chain", inst.id, 1, 0, "gain", 0.8])
     voice = inst.voice({"freq": 440.0})
     assert iface.sent[-1] == ("/graph_newVoice", [inst.id, voice.id, "freq", 440.0])
+    other = Group.graph("chain", server=srv)
+    slot = inst.add_slot("clips")
+    assert slot.move_slot(other) is slot
+    assert iface.sent[-1] == ("/graph_moveSlot", [slot.id, other.id])
 
 
 def test_a_wait_for_done_ignores_another_commands_done():

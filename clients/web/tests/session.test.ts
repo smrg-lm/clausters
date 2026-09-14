@@ -167,6 +167,21 @@ test("`use` scopes the ambient session, and restores the previous one", () =>
         b.session.close();
     }));
 
+test("a slot moves to another instance by naming both", () =>
+    withCleanDefault(async () => {
+        const { session, packets } = await fakeSession();
+        session.use(() => {
+            const track = Group.graph("chain");
+            const other = Group.graph("chain");
+            const clip = track.addSlot("clips");
+            assert.equal(clip.moveSlot(other), clip);
+            const last = decodePacket(packets.at(-1)!)[0];
+            assert.equal(last.addr, "/graph_moveSlot");
+            assert.deepEqual(last.args, [clip.id, other.id]);
+        });
+        session.close();
+    }));
+
 test("every resource constructor resolves the same ambient server", () =>
     withCleanDefault(async () => {
         const { session, packets } = await fakeSession();

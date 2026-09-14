@@ -812,6 +812,135 @@ fn freeing_a_slot_reclaims_what_was_nested_in_it() {
     assert!(!t.graph_instances.contains_key(&700));
 }
 
+/// Two `host` instances, each with a `parts` slot in it: two tracks of one def,
+/// and a clip on the first.
+fn two_hosts(t: &mut CmdTranslator) {
+    for id in [700, 800] {
+        run(
+            t,
+            "/graph_new",
+            vec![
+                OscType::String("host".into()),
+                OscType::Int(id),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        );
+    }
+    run(
+        t,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(700),
+            OscType::String("parts".into()),
+            OscType::Int(710),
+        ],
+    );
+}
+
+/// **A moved slot writes the bus of the instance it moved into**, and is the
+/// same nodes it was: the nested graph inside it is re-wired rather than made
+/// again, and a port set on it before the move still holds after.
+#[test]
+fn a_moved_slot_is_wired_to_its_new_instance_and_keeps_its_nodes() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    two_hosts(&mut t);
+    let mix_of = |t: &CmdTranslator, id: i32| {
+        let sink = t.graph_instances.get(&id).unwrap().shared_nodes[&0];
+        control(t, sink, 0)
+    };
+    let (first, second) = (mix_of(&t, 700), mix_of(&t, 800));
+    assert_ne!(first, second, "two instances, two private buses");
+
+    let child = t.graph_voices.get(&710).unwrap().children[&1];
+    let inner = t.graph_instances.get(&child).unwrap().shared_nodes[&0];
+    assert_eq!(control(&t, inner, 0), first);
+    run(
+        &mut t,
+        "/node_set",
+        vec![
+            OscType::Int(710),
+            OscType::String("part/gain".into()),
+            OscType::Float(0.3),
+        ],
+    );
+
+    let cmds = run(
+        &mut t,
+        "/graph_moveSlot",
+        vec![OscType::Int(710), OscType::Int(800)],
+    );
+    assert!(
+        !cmds
+            .iter()
+            .any(|c| matches!(c, Cmd::AddSynth { .. } | Cmd::AddGroup { .. })),
+        "nothing is made again"
+    );
+    assert_eq!(t.mirror.parent(710), Some(800));
+    assert_eq!(t.graph_voices.get(&710).unwrap().children[&1], child);
+    assert_eq!(
+        control(&t, inner, 0),
+        second,
+        "it writes the new instance's bus"
+    );
+    assert_eq!(
+        t.graph_instances.get(&child).unwrap().bus_index["out"],
+        second as usize,
+        "and the nested graph knows the bus it was handed"
+    );
+    assert_eq!(
+        control(&t, inner, 1),
+        0.6,
+        "the port set before the move holds"
+    );
+    assert!(t.graph_instances.get(&700).unwrap().voices.is_empty());
+    assert!(t.graph_instances.get(&800).unwrap().voices.contains(&710));
+
+    // Freeing the old instance no longer reaches it; freeing the new one does.
+    run(&mut t, "/node_free", vec![OscType::Int(700)]);
+    assert!(t.graph_voices.contains_key(&710));
+    run(&mut t, "/node_free", vec![OscType::Int(800)]);
+    assert!(!t.graph_voices.contains_key(&710));
+    assert!(!t.graph_instances.contains_key(&child));
+}
+
+/// **A move names a slot and an instance that can hold it**, and anything
+/// else is refused with the reason.
+#[test]
+fn a_slot_moves_only_where_it_can_be_held() {
+    let mut t = CmdTranslator::new(SR);
+    load_nested(&mut t);
+    load_defs(&mut t);
+    two_hosts(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("chain".into()),
+            OscType::Int(900),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let refused = |t: &mut CmdTranslator, slot: i32, to: i32| {
+        let mut cmds = Vec::new();
+        t.translate(
+            &msg(
+                "/graph_moveSlot",
+                vec![OscType::Int(slot), OscType::Int(to)],
+            ),
+            &mut cmds,
+        )
+        .expect_err("refused")
+    };
+    assert!(refused(&mut t, 700, 800).contains("not a slot"));
+    assert!(refused(&mut t, 710, 900).contains("no 'parts' slot"));
+    let child = t.graph_voices.get(&710).unwrap().children[&1];
+    assert!(refused(&mut t, 710, child).contains("inside it"));
+    assert_eq!(t.mirror.parent(710), Some(700), "and nothing moved");
+}
+
 /// **A graph that contains itself is refused rather than recursed.** Depth is
 /// what says so, because a cycle is not otherwise expressible: a member names a
 /// def, and a def may name itself.

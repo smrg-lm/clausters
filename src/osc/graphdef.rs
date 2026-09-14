@@ -390,6 +390,9 @@ pub struct GraphVoice {
     /// Which slot this fills. A voice is `"voice"`.
     pub slot: String,
     pub surface: ResolvedSurface,
+    /// Member index → node id, for the slot's one-node members — what
+    /// `/graph_moveSlot` re-wires against the instance it moves into.
+    pub nodes: HashMap<usize, i32>,
     /// Member index → sub-instance group id, as in [`GraphInstance::children`].
     pub children: HashMap<usize, i32>,
 }

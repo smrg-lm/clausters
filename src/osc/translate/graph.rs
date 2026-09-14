@@ -1,4 +1,5 @@
-//! Instancing a GraphDef: `/graph_new`, `/graph_addSlot` and `/graph_newVoice`.
+//! Instancing a GraphDef: `/graph_new`, `/graph_addSlot` and `/graph_newVoice`,
+//! and moving a slot to another instance with `/graph_moveSlot`.
 //!
 //! A GraphDef is a wiring, not a sound: the spec names member defs, the
 //! private buses between them and the surface ports a client sets. Building
@@ -505,6 +506,7 @@ impl CmdTranslator {
                         instance,
                         slot: name.to_string(),
                         surface,
+                        nodes: node_of,
                         children: child_of,
                     },
                 );
@@ -661,6 +663,207 @@ impl CmdTranslator {
                 "{id} fills the '{}' slot with several graphs; name the one to add to",
                 voice.slot
             )),
+        }
+    }
+
+    /// `/graph_moveSlot slotID instanceID`: **a slot changes instance without
+    /// being made again** — a clip dragged to another track.
+    ///
+    /// A slot's wiring is baked into its members' bus controls when it is built,
+    /// so moving the group alone would leave it writing the instance it came
+    /// from. The move is therefore one operation: the group goes to the head of
+    /// the new instance (where `/graph_addSlot` would have built it), and every
+    /// bus reference in it — its own members, and the buses handed down to the
+    /// graphs nested in it and to *their* slots — is resolved again against the
+    /// new instance's buses. Nothing is freed, so whatever hangs off the nodes
+    /// stays: a `/graph_map` onto one of its ports, the readers inside it, a
+    /// value the hand set.
+    ///
+    /// The new instance must declare the slot with the same members, since the
+    /// nodes are what they are; two tracks of one def always do. The slot keeps
+    /// its resolved surface, its ports and its id.
+    pub(in crate::osc::translate) fn graph_move_slot(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let [OscType::Int(slot_id), OscType::Int(target)] = msg.args.as_slice() else {
+            return Err("expected: slotID, instanceID".into());
+        };
+        let slot_id = *slot_id;
+        let Some(voice) = self.graph_voices.get(&slot_id) else {
+            return Err(format!("{slot_id} is not a slot"));
+        };
+        let (from, slot) = (voice.instance, voice.slot.clone());
+        let to = self.slot_instance(*target)?;
+        if to == from {
+            return Ok(());
+        }
+        let Some(old) = self.graph_instances.get(&from) else {
+            return Err(format!("GraphDef instance {from} not found"));
+        };
+        let Some(new) = self.graph_instances.get(&to) else {
+            return Err(format!("GraphDef instance {to} not found"));
+        };
+        let (old_def, def) = (Arc::clone(&old.def), Arc::clone(&new.def));
+        let bus_index = new.bus_index.clone();
+        let members = |d: &GraphDefSpec| -> Vec<serde_json::Value> {
+            d.members
+                .iter()
+                .filter(|m| m.slot() == Some(slot.as_str()))
+                .map(|m| serde_json::to_value(m).unwrap_or_default())
+                .collect()
+        };
+        // A slot moved into something inside itself would be its own ancestor.
+        let mut up = Some(to);
+        while let Some(node) = up {
+            if node == slot_id {
+                return Err(format!(
+                    "{slot_id} cannot move into {to}, which is inside it"
+                ));
+            }
+            up = self.mirror.parent(node);
+        }
+        if !def.has_slot(&slot) {
+            return Err(format!("instance {to} has no '{slot}' slot"));
+        }
+        if members(&old_def) != members(&def) {
+            return Err(format!(
+                "instance {to}'s '{slot}' slot is not built of the same members as {from}'s"
+            ));
+        }
+
+        cmds.push(Cmd::MoveNode {
+            id: slot_id,
+            target: to,
+            place: Place::Head,
+        });
+        let _ = self.mirror.move_node(slot_id, to, Place::Head);
+        let voice = self.graph_voices.get_mut(&slot_id).expect("checked above");
+        voice.instance = to;
+        // The members are matched by position within the slot, so a def that
+        // lists them at other indices still names the same nodes.
+        let index_in = |d: &GraphDefSpec| -> Vec<usize> {
+            d.members
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.slot() == Some(slot.as_str()))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let renumber: HashMap<usize, usize> =
+            index_in(&old_def).into_iter().zip(index_in(&def)).collect();
+        let renumbered = |map: &HashMap<usize, i32>| -> HashMap<usize, i32> {
+            map.iter().map(|(i, id)| (renumber[i], *id)).collect()
+        };
+        voice.nodes = renumbered(&voice.nodes);
+        voice.children = renumbered(&voice.children);
+        let (nodes, children) = (voice.nodes.clone(), voice.children.clone());
+        if let Some(inst) = self.graph_instances.get_mut(&from) {
+            inst.voices.remove(&slot_id);
+        }
+        if let Some(inst) = self.graph_instances.get_mut(&to) {
+            inst.voices.insert(slot_id);
+        }
+
+        self.rewire(&def, &nodes, &children, &bus_index, cmds);
+        self.resort_from(Some(from), cmds);
+        self.resort_from(Some(to), cmds);
+        Ok(())
+    }
+
+    /// Resolves every bus reference of these members again against
+    /// `bus_index`: the bus controls of the one-node members, their maps, and
+    /// the buses handed to the nested graphs — which re-wires those graphs'
+    /// own members and slots in turn. What a build bakes, re-baked.
+    fn rewire(
+        &mut self,
+        def: &GraphDefSpec,
+        nodes: &HashMap<usize, i32>,
+        children: &HashMap<usize, i32>,
+        bus_index: &HashMap<String, usize>,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        for (&mi, &node) in nodes {
+            let member = &def.members[mi];
+            let mut touched = false;
+            for (cname, cval) in &member.controls {
+                let ControlValue::Bus(b) = cval else {
+                    continue;
+                };
+                let (name, channel) = bus_channel(b);
+                let Some(&first) = bus_index.get(name).filter(|_| name != "OUT") else {
+                    continue;
+                };
+                let Some(index) = self
+                    .node_defs
+                    .get(&node)
+                    .and_then(|d| d.control_index(cname))
+                else {
+                    continue;
+                };
+                let value = (first + channel) as f32;
+                cmds.push(Cmd::SetControl {
+                    id: node,
+                    index,
+                    value,
+                });
+                touched |= self.mirror.set_control(node, index, value);
+            }
+            for (cname, bname) in &member.maps {
+                let (Some(index), Some(&bus)) = (
+                    self.node_defs
+                        .get(&node)
+                        .and_then(|d| d.control_index(cname)),
+                    bus_index.get(bname.as_str()),
+                ) else {
+                    continue;
+                };
+                cmds.push(Cmd::MapControl {
+                    id: node,
+                    index,
+                    bus: bus as i32,
+                    audio: false,
+                });
+                touched |= self.mirror.set_map(node, index, bus as i32, false);
+            }
+            if touched {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        for (&mi, &child) in children {
+            let mut given = HashMap::new();
+            for (child_bus, value) in &def.members[mi].controls {
+                if let ControlValue::Bus(b) = value {
+                    let (bus, channel) = bus_channel(b);
+                    if let Some(&first) = bus_index.get(bus).filter(|_| bus != "OUT") {
+                        given.insert(child_bus.clone(), first + channel);
+                    }
+                }
+            }
+            let Some(inst) = self.graph_instances.get_mut(&child) else {
+                continue;
+            };
+            // Only the buses the child was handed move; the ones it allocated
+            // are its own and stay where they are.
+            for (name, index) in given {
+                if let Some(held) = inst.bus_index.get_mut(&name) {
+                    *held = index;
+                }
+            }
+            let child_def = Arc::clone(&inst.def);
+            let child_buses = inst.bus_index.clone();
+            let shared = inst.shared_nodes.clone();
+            let nested = inst.children.clone();
+            let slots: Vec<i32> = inst.voices.iter().copied().collect();
+            self.rewire(&child_def, &shared, &nested, &child_buses, cmds);
+            for id in slots {
+                let Some(voice) = self.graph_voices.get(&id) else {
+                    continue;
+                };
+                let (nodes, children) = (voice.nodes.clone(), voice.children.clone());
+                self.rewire(&child_def, &nodes, &children, &child_buses, cmds);
+            }
         }
     }
 

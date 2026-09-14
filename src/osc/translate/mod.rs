@@ -1061,6 +1061,7 @@ impl CmdTranslator {
             // instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
             "/graph_addSlot" => self.graph_slot(msg, cmds),
+            "/graph_moveSlot" => self.graph_move_slot(msg, cmds),
             "/graph_map" => self.graph_map(msg, cmds),
             // spawn a per-voice sub-graph inside an instance.
             "/graph_newVoice" => self.graph_voice(msg, cmds),

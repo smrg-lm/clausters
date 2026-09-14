@@ -21,7 +21,7 @@
 //! # Taken from the reference client
 //!
 //! Every message here is the one the Python client's objects send for the same
-//! op — `Group.graph`, `Group`, `Group.add_slot`, `Synth`, `Node.set`,
+//! op — `Group.graph`, `Group`, `Group.add_slot`, `Group.move_slot`, `Synth`, `Node.set`,
 //! `Buffer.from_samples`, `Buffer.free`, `Server.transport_group` — with the
 //! same add actions and the same order, so replacing that client's applier
 //! with this one changes nothing a server can see.
@@ -282,6 +282,14 @@ impl Applier {
                     let mut args = vec![OscType::Int(node)];
                     args.extend(self.ports(&ports));
                     steps.push(send("/node_set", args));
+                }
+            }
+            Op::Move { handle, target } => {
+                if let (Some(slot), Some(instance)) = (self.node(&handle), self.node(&target)) {
+                    steps.push(send(
+                        "/graph_moveSlot",
+                        vec![OscType::Int(slot), OscType::Int(instance)],
+                    ));
                 }
             }
             Op::Map { handle, port, bus } => {
@@ -595,6 +603,75 @@ mod tests {
             graph.args[3],
             OscType::Int(1000),
             "the piece inside the transport's group"
+        );
+    }
+
+    /// **A move names both nodes from the table**, and a move whose slot or
+    /// instance has nothing behind it sends nothing.
+    #[test]
+    fn a_move_is_one_message_naming_both_nodes() {
+        let mut applier = Applier::new(Endpoint::default());
+        let mut spaces = ids();
+        let made = applier
+            .apply(
+                vec![
+                    Op::Transport {
+                        handle: "transport".into(),
+                    },
+                    Op::Graph {
+                        handle: "piece".into(),
+                        parent: "transport".into(),
+                        graph: "mt.piece.2".into(),
+                        ports: Ports::new(),
+                    },
+                    Op::Slot {
+                        handle: "track:1".into(),
+                        target: "piece".into(),
+                        slot: "tracks".into(),
+                        ports: Ports::new(),
+                    },
+                    Op::Slot {
+                        handle: "track:2".into(),
+                        target: "piece".into(),
+                        slot: "tracks".into(),
+                        ports: Ports::new(),
+                    },
+                    Op::Slot {
+                        handle: "clip:3".into(),
+                        target: "track:1".into(),
+                        slot: "clips.1".into(),
+                        ports: Ports::new(),
+                    },
+                ],
+                &mut spaces,
+            )
+            .unwrap();
+        assert!(!made.is_empty());
+        let steps = applier
+            .apply(
+                vec![
+                    Op::Move {
+                        handle: "clip:3".into(),
+                        target: "track:2".into(),
+                    },
+                    Op::Move {
+                        handle: "clip:9".into(),
+                        target: "track:2".into(),
+                    },
+                ],
+                &mut spaces,
+            )
+            .unwrap();
+        let [Step::Send(moved)] = &steps[..] else {
+            panic!("one message: {steps:?}")
+        };
+        assert_eq!(moved.addr, "/graph_moveSlot");
+        assert_eq!(
+            moved.args,
+            vec![
+                OscType::Int(applier.node("clip:3").unwrap()),
+                OscType::Int(applier.node("track:2").unwrap()),
+            ]
         );
     }
 

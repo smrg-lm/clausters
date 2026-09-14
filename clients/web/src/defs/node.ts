@@ -342,6 +342,21 @@ export class Group extends Node {
     }
 
     /**
+     * Moves this slot (a group from `addSlot`) into another running instance
+     * (`/graph_moveSlot`) — a clip dragged to another track.
+     *
+     * The slot is not built again: the server re-wires it to the new
+     * instance's private buses, so its ports, whatever is mapped onto them and
+     * the slots nested inside it all stay. The new instance must declare the
+     * same slot with the same members, which two instances of one GraphDef
+     * always do. Answers this group.
+     */
+    moveSlot(instance: NodeLike): this {
+        this.srv().sendMsg("/graph_moveSlot", ["i", this.id], ["i", nodeId(instance)]);
+        return this;
+    }
+
+    /**
      * Spawns a per-voice sub-graph (`/graph_newVoice`) inside this running
      * GraphDef instance, wired to its shared private buses — the slot named
      * `"voice"`, spelled the way it was before slots had names, and what a MIDI

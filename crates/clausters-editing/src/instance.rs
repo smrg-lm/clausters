@@ -39,13 +39,12 @@
 //!
 //! # What a `set` cannot express is torn down, and only that
 //!
-//! Two things. A clip whose source changed **width** is a different wiring — a
-//! mono take is panned into its track and a stereo one is balanced — and a
-//! clip that changed **track**, because a clip is a slot *inside* a track's
-//! group and the node carries no track id to update. The second one goes away
-//! when the server grows a verb for it (`/graph_moveSlot`, in the server's
-//! plan); until then this reproduces the rebuild exactly, which is why it is
-//! written down here rather than left as something each client discovered.
+//! One thing: a clip whose source changed **width** is a different wiring — a
+//! mono take is panned into its track and a stereo one is balanced — so it is
+//! another clip def and is made again. A clip that changed **track** is not
+//! torn down: a clip is a slot *inside* a track's group, and the server moves a
+//! slot to another instance and re-wires it there (`/graph_moveSlot`), so its
+//! readers and the curves mapped onto its ports go with it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -177,6 +176,14 @@ pub enum Op {
         slot: String,
         /// Its ports.
         ports: Ports,
+    },
+    /// Move a slot instance into another graph instance, re-wired there and
+    /// not made again: what hangs off its nodes stays.
+    Move {
+        /// The slot.
+        handle: Handle,
+        /// The instance it moves into.
+        target: Handle,
     },
     /// A synth of `def`, in `target`.
     Synth {
@@ -575,6 +582,10 @@ impl Instance {
     }
 
     fn tracks(&mut self, planned: &[PlannedTrack], ops: &mut Vec<Op>) {
+        let clips: BTreeSet<u64> = planned
+            .iter()
+            .flat_map(|track| track.clips.iter().map(|clip| clip.region.0))
+            .collect();
         let mut seen = BTreeSet::new();
         for track in planned {
             let id = track.track.0;
@@ -616,7 +627,7 @@ impl Instance {
                 }
             }
             self.curves(&track_handle(id), false, id, 0, &track.curves, ops);
-            self.clips(id, &track.clips, ops);
+            self.clips(id, &track.clips, &clips, ops);
         }
         let gone: Vec<u64> = self
             .tracks
@@ -670,7 +681,13 @@ impl Instance {
         }
     }
 
-    fn clips(&mut self, track: u64, planned: &[PlannedClip], ops: &mut Vec<Op>) {
+    fn clips(
+        &mut self,
+        track: u64,
+        planned: &[PlannedClip],
+        planned_all: &BTreeSet<u64>,
+        ops: &mut Vec<Op>,
+    ) {
         let mut seen = BTreeSet::new();
         for clip in planned {
             let id = clip.region.0;
@@ -678,14 +695,22 @@ impl Instance {
             let ports = hand_ports(&[("gain", clip.gain), ("mute", clip.mute)], &clip.curves);
             let held = self.clips.get(&id).cloned();
             // **What a `set` cannot express.** A source of another width is
-            // another clip def, and a clip that changed track is a slot in
-            // another group -- the node carries no track id to update, so
-            // setting it would leave it sounding through the track it came
-            // from while the picture drew it on the new one.
+            // another clip def, so that clip is made again. A clip that changed
+            // track is a slot in another group -- the node carries no track id
+            // to update, so a set would leave it sounding through the track it
+            // came from -- and the server moves it there, re-wired, with its
+            // readers and the maps on its ports still on it.
             let held = match held {
-                Some(held) if held.slot != clip.slot || held.track != track => {
+                Some(held) if held.slot != clip.slot => {
                     self.free_clip(id, true, ops);
                     None
+                }
+                Some(held) if held.track != track => {
+                    ops.push(Op::Move {
+                        handle: clip_handle(id),
+                        target: track_handle(track),
+                    });
+                    Some(held)
                 }
                 other => other,
             };
@@ -723,10 +748,14 @@ impl Instance {
             self.curves(&clip_handle(id), true, id, generation, &clip.curves, ops);
             self.readers(id, clip, ops);
         }
+        // A clip the plan holds on another track is not gone: it moves when
+        // that track is reached, whichever comes first.
         let gone: Vec<u64> = self
             .clips
             .iter()
-            .filter(|(id, held)| held.track == track && !seen.contains(id))
+            .filter(|(id, held)| {
+                held.track == track && !seen.contains(id) && !planned_all.contains(id)
+            })
             .map(|(id, _)| *id)
             .collect();
         for id in gone {
@@ -861,14 +890,14 @@ impl Instance {
                 Some(held) => {
                     if held.owner != owner || held.owner_generation != generation {
                         // **The map belongs to the node, not to the curve.** A
-                        // clip that changed track is a new node -- a clip is a
-                        // slot inside its track's group -- and the port that
-                        // was mapped went away with the old one, while the
-                        // curve went on writing a bus nobody reads. The hand
-                        // does not send that port either (`hand_ports` leaves
-                        // it to the curve), so the box came back at the def's
-                        // own default: a clip dragged to another track lost its
-                        // envelope and played flat out.
+                        // clip whose source changed width is a new node, and
+                        // the port that was mapped went away with the old one
+                        // while the curve went on writing a bus nobody reads.
+                        // The hand does not send that port either (`hand_ports`
+                        // leaves it to the curve), so the box would come back
+                        // at the def's own default -- which is how a clip
+                        // dragged to another track played flat out, when that
+                        // was a rebuild too.
                         ops.push(Op::Map {
                             handle: owner.to_string(),
                             port: curve.port.clone(),
@@ -1158,13 +1187,22 @@ mod tests {
     }
 
     fn sources() -> HashMap<clausters_document::SourceId, SourceInfo> {
-        [(
-            clausters_document::SourceId(77),
-            SourceInfo {
-                buffer: 12,
-                channels: 1,
-            },
-        )]
+        [
+            (
+                clausters_document::SourceId(77),
+                SourceInfo {
+                    buffer: 12,
+                    channels: 1,
+                },
+            ),
+            (
+                clausters_document::SourceId(78),
+                SourceInfo {
+                    buffer: 13,
+                    channels: 2,
+                },
+            ),
+        ]
         .into_iter()
         .collect()
     }
@@ -1251,13 +1289,25 @@ mod tests {
         }
     }
 
-    /// **A clip that changed track is made again, not set** *(2026-09-11)*. A
-    /// clip is a slot inside its track's group, so the node carries no track id
-    /// to update: a box dragged onto a muted track stayed audible and one
-    /// dragged off it stayed silent, which reads as the mute travelling with
-    /// the box — it is the box that never left.
+    /// The same box, re-pointed at a source of another width: another clip
+    /// def, so the one change a move cannot carry.
+    fn rewidened(piece: &Multitrack) -> Multitrack {
+        let mut piece = piece.clone();
+        let held = &mut piece.tracks[0].lanes[0].regions[0];
+        let automation = std::mem::take(&mut held.automation);
+        *held = region(3, 78);
+        held.automation = automation;
+        piece
+    }
+
+    /// **A clip that changed track is moved there, not set and not made
+    /// again.** A clip is a slot inside its track's group, so the node carries
+    /// no track id a set could update: a box dragged onto a muted track stayed
+    /// audible and one dragged off it stayed silent (2026-09-11). It used to be
+    /// freed and made again, which took with it everything hanging off the
+    /// node; the server moves a slot now.
     #[test]
-    fn a_clip_that_changed_track_is_made_again() {
+    fn a_clip_that_changed_track_is_moved_there() {
         let piece = piece();
         let mut instance = Instance::new();
         instance.reconcile(&planned(&piece), 0.5);
@@ -1267,6 +1317,94 @@ mod tests {
         moved.tracks[1].lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
 
+        assert!(
+            ops.iter().any(|op| matches!(op, Op::Move { handle, target }
+                                         if handle == "clip:3" && target == "track:10")),
+            "moved onto the new track: {ops:?}"
+        );
+        assert!(
+            !ops.iter().any(|op| matches!(op,
+                Op::Free { handle, .. } | Op::Slot { handle, .. } | Op::Set { handle, .. }
+                    if handle == "clip:3")),
+            "neither freed, made again nor set: {ops:?}"
+        );
+        assert_eq!(
+            instance.reconcile(&planned(&moved), 0.5),
+            Vec::new(),
+            "and the table says where it is now"
+        );
+    }
+
+    /// **A move does not depend on which track is reached first.** A box going
+    /// to an earlier track is met on the new track before the old one lets go
+    /// of it, and a box going to a later one is left by the old track first —
+    /// neither of which may read as the box being gone.
+    #[test]
+    fn a_clip_moved_to_an_earlier_track_is_moved_too() {
+        let mut piece = piece();
+        let region = piece.tracks[0].lanes[0].regions.remove(0);
+        piece.tracks[1].lanes[0].regions.push(region);
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&piece), 0.5);
+
+        let mut moved = piece.clone();
+        let region = moved.tracks[1].lanes[0].regions.remove(0);
+        moved.tracks[0].lanes[0].regions.push(region);
+        let ops = instance.reconcile(&planned(&moved), 0.5);
+
+        assert!(
+            ops.iter().any(|op| matches!(op, Op::Move { handle, target }
+                                         if handle == "clip:3" && target == "track:1")),
+            "{ops:?}"
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, Op::Free { handle, .. } if handle == "clip:3")),
+            "{ops:?}"
+        );
+    }
+
+    /// **What hangs off a moved clip stays on it**: its readers are inside its
+    /// group, and a curve's map is on its port, so neither is made again — which
+    /// is the whole reason for a move rather than a rebuild.
+    #[test]
+    fn a_moved_clip_keeps_its_readers_and_its_curve() {
+        let mut piece = piece();
+        piece.tracks[0].lanes[0].regions[0]
+            .automation
+            .push(gain_curve(5, 1.0));
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&piece), 0.5);
+
+        let mut moved = piece.clone();
+        let region = moved.tracks[0].lanes[0].regions.remove(0);
+        moved.tracks[1].lanes[0].regions.push(region);
+        let ops = instance.reconcile(&planned(&moved), 0.5);
+
+        assert!(
+            !ops.iter().any(|op| matches!(op,
+                Op::Free { handle, .. } | Op::Slot { handle, .. }
+                    if handle.starts_with("reader:3:") || handle == "curve:5")),
+            "the readers and the curve node stay: {ops:?}"
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, Op::Map { .. } | Op::Unmap { .. })),
+            "the map is still on the port: {ops:?}"
+        );
+    }
+
+    /// **A clip whose source changed width is made again**: a mono take is
+    /// panned into its track and a stereo one balanced, so it is another clip
+    /// def — the one change neither a set nor a move expresses.
+    #[test]
+    fn a_clip_of_another_width_is_made_again() {
+        let piece = piece();
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&piece), 0.5);
+
+        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
+
         let freed = ops
             .iter()
             .position(|op| matches!(op, Op::Free { handle, .. } if handle == "clip:3"))
@@ -1274,16 +1412,12 @@ mod tests {
         let made = ops
             .iter()
             .position(|op| {
-                matches!(op, Op::Slot { handle, target, .. }
-                                    if handle == "clip:3" && target == "track:10")
+                matches!(op, Op::Slot { handle, target, slot, .. }
+                                    if handle == "clip:3" && target == "track:1"
+                                    && *slot == mixer::clip_slot(2))
             })
-            .expect("and it is made on the new track");
+            .expect("and it is made again as a stereo clip");
         assert!(freed < made, "freed before it is made again");
-        assert!(
-            !ops.iter()
-                .any(|op| matches!(op, Op::Set { handle, .. } if handle == "clip:3")),
-            "a set would leave it sounding through the track it came from"
-        );
     }
 
     /// **A rebuilt clip's readers are made again with it** *(2026-09-11)*. They
@@ -1295,10 +1429,7 @@ mod tests {
         let mut instance = Instance::new();
         instance.reconcile(&planned(&piece), 0.5);
 
-        let mut moved = piece.clone();
-        let region = moved.tracks[0].lanes[0].regions.remove(0);
-        moved.tracks[1].lanes[0].regions.push(region);
-        let ops = instance.reconcile(&planned(&moved), 0.5);
+        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
 
         assert!(
             ops.iter()
@@ -1317,8 +1448,7 @@ mod tests {
     /// map belongs to the node and not to the curve: the port that was mapped
     /// went away with the old clip while the curve went on writing a bus nobody
     /// reads, and since the hand does not send that port either, the box came
-    /// back at the def's own default — a clip dragged to another track lost its
-    /// envelope and played flat out.
+    /// back at the def's own default and played flat out.
     #[test]
     fn a_curve_whose_owner_was_rebuilt_is_mapped_again() {
         let mut piece = piece();
@@ -1328,10 +1458,7 @@ mod tests {
         let mut instance = Instance::new();
         instance.reconcile(&planned(&piece), 0.5);
 
-        let mut moved = piece.clone();
-        let region = moved.tracks[0].lanes[0].regions.remove(0);
-        moved.tracks[1].lanes[0].regions.push(region);
-        let ops = instance.reconcile(&planned(&moved), 0.5);
+        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
 
         assert!(
             ops.iter()

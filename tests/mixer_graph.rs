@@ -328,6 +328,85 @@ fn a_port_at_any_level_reaches_the_strip_it_names() {
     }
 }
 
+/// **A box moved to another track sounds through that track, and keeps what
+/// was on it.** `/graph_moveSlot` re-wires the clip to the new track's mix bus
+/// rather than making it again, so a box dragged onto a muted track goes
+/// silent, dragged back it is heard again -- and a port mapped onto a control
+/// bus before the move is still driven after it.
+#[test]
+fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    let (piece, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let other = 911;
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(piece),
+            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::Int(other),
+            OscType::String(mixer::MUTE.into()),
+            OscType::Float(1.0),
+        ],
+    );
+    // The clip's gain from a control bus, the way a curve drives it.
+    let bus = 40;
+    send(
+        &mut s,
+        "/bus_set",
+        vec![OscType::Int(bus), OscType::Float(0.5)],
+    );
+    send(
+        &mut s,
+        "/graph_map",
+        vec![
+            OscType::Int(clip),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Int(bus),
+        ],
+    );
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let before = peaks(&mut s, 8).0;
+    assert!(before > 0.1, "it starts audible: {before}");
+
+    let heard_after = |s: &mut NrtSession, to: i32| {
+        send(
+            s,
+            "/graph_moveSlot",
+            vec![OscType::Int(clip), OscType::Int(to)],
+        );
+        s.settle_for(2);
+        let _settling = peaks(s, 40);
+        peaks(s, 8).0
+    };
+    let muted = heard_after(&mut s, other);
+    assert!(muted < 1e-3, "on the muted track it is silent: {muted}");
+    assert!(fails(&mut s).is_empty(), "{:?}", fails(&mut s));
+    let back = heard_after(&mut s, track);
+    assert!(
+        (back - before).abs() < 1e-3,
+        "back on its track it is what it was, the mapped gain included: {back} vs {before}"
+    );
+
+    // Still the bus's to drive: the map went with the node.
+    send(
+        &mut s,
+        "/bus_set",
+        vec![OscType::Int(bus), OscType::Float(0.25)],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let halved = peaks(&mut s, 8).0;
+    assert!(
+        (halved - before / 2.0).abs() < 0.02,
+        "the bus still drives the moved clip's gain: {halved} vs {before}"
+    );
+}
+
 /// **A curve drives a port, and the port is a control of a node three levels
 /// down.** The whole of what a piece's automation is: a table read at the
 /// transport's own position, written to a control bus, mapped onto whatever the

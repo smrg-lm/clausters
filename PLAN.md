@@ -1935,7 +1935,20 @@ milestone, carrying a checkbox like everything unresolved, and leaving this
 list when a milestone absorbs it (the milestone is then the record, and says
 where it came from).
 
-- ⬜ **`/graph_moveSlot`: a slot instance changes parent without being made again** *(named 2026-09-11, with `crates/clausters-document/PLAN.md`'s `O28`)*. A clip is a slot inside its track's graph instance, and a slot's wiring is **baked into its `out` controls when it is instantiated**, so moving the node with `/node_move` would leave it writing the track it came from. Today the only answer is to free it and add it again, and the cost of that is not the node: it is everything hanging off it -- the control buses a curve had mapped to its ports (the map names a node, so it goes with the old one), the readers under it, and the ports the hand does not send because a curve owns them, which is how a box dragged to another track came back at the def's own default. The verb is one operation and not two: re-parent the node **and** re-bake the wiring of that one slot against its new parent's private buses. `out0`/`out1` are ordinary controls and `MoveNode` already exists on the audio thread, so what is missing is the bookkeeping that knows which buses the new parent hands it. It is what lets the instance projection do what a monolithic DAW does when a region changes playlist: move a pointer. **Where it lands is now one place**: `clausters_editing::instance` reproduces the rebuild deliberately (`a_clip_that_changed_track_is_made_again`), so the verb arriving is that one arm of that one match, and the test that states today's behaviour is where tomorrow's is stated instead.
+- ✅ **`/graph_moveSlot`: a slot instance changes parent without being made again** *(named 2026-09-11, with `crates/clausters-document/PLAN.md`'s `O28`)*. A clip is a slot inside its track's graph instance, and a slot's wiring is **baked into its `out` controls when it is instantiated**, so moving the node with `/node_move` would leave it writing the track it came from. Today the only answer is to free it and add it again, and the cost of that is not the node: it is everything hanging off it -- the control buses a curve had mapped to its ports (the map names a node, so it goes with the old one), the readers under it, and the ports the hand does not send because a curve owns them, which is how a box dragged to another track came back at the def's own default. The verb is one operation and not two: re-parent the node **and** re-bake the wiring of that one slot against its new parent's private buses. `out0`/`out1` are ordinary controls and `MoveNode` already exists on the audio thread, so what is missing is the bookkeeping that knows which buses the new parent hands it. It is what lets the instance projection do what a monolithic DAW does when a region changes playlist: move a pointer. **Where it lands is now one place**: `clausters_editing::instance` reproduces the rebuild deliberately (`a_clip_that_changed_track_is_made_again`), so the verb arriving is that one arm of that one match, and the test that states today's behaviour is where tomorrow's is stated instead.
+
+  **Done 2026-09-14.** `/graph_moveSlot slotID instanceID` moves the slot group
+  to the head of the new instance and re-wires every bus reference in it --
+  its members' bus controls and maps, and the buses handed down to the graphs
+  nested in it and to their slots -- against the new instance's buses; nothing
+  is freed. The new instance must declare the slot with the same members. The
+  slot's record now keeps its nodes by member (`GraphVoice::nodes`), which is
+  what the re-wiring walks. `clausters_editing::instance` answers a clip that
+  changed track with `Op::Move` instead of a free and a slot, so its readers
+  and the maps on its ports stay (`a_clip_that_changed_track_is_moved_there`);
+  a source of another width is still made again. Heard in
+  `tests/mixer_graph.rs` (`a_moved_box_sounds_through_its_new_track_and_keeps_its_map`),
+  and both clients have the verb (`Group.move_slot` / `Group.moveSlot`).
 
 - ⬜ **The transport's edges are square, so a stop and a play are clicks**
   *(found by ear 2026-09-11 while the multitrack example played, and then
