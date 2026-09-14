@@ -138,7 +138,11 @@ class Sources:
         for source, entry in self.table().items():
             held = self.buffers[source]
             entry = dict(entry)
-            entry["frames"] = max(0, int(getattr(held, "frames", 0) or 0))
+            # A length only where the object states one as a number: a
+            # timeline's `frames` is not a count, and 0 is read as unknown.
+            frames = getattr(held, "frames", 0)
+            known = isinstance(frames, (int, float)) and not isinstance(frames, bool)
+            entry["frames"] = max(0, int(frames)) if known else 0
             out[source] = entry
         return out
 
@@ -422,7 +426,7 @@ class MultitrackEditor(Editor):
             for track, (bus, channels) in playback.meters.items()]
         self._core.call(
             "sync", piece=self.structure.write(),
-            sources={str(k): v for k, v in self.bridge.sources.table().items()},
+            sources={str(k): v for k, v in self.bridge.sources.held().items()},
             meters=meters, cursor=self.cursor, window=self._window,
             controls=self._controls)
 

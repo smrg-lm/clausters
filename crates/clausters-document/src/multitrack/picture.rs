@@ -670,6 +670,7 @@ pub fn read_join(
     tempo: &clausters_core::tempomap::TempoMap,
     taken: &[SourceId],
     parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,
+    frames_of: &dyn Fn(SourceId) -> Option<u64>,
 ) -> Result<Vec<MultitrackIntent>, &'static str> {
     let mut held: Vec<(NodeId, NodeId, &Region)> = Vec::new();
     for name in names {
@@ -773,7 +774,13 @@ pub fn read_join(
         // join of joins nested one source inside another until the server
         // refused it (found 2026-09-13: `sources are stitched more than 4
         // deep`).
-        let mut pieces = segments_of(*source, frames(*start), frames(start + duration), parts_of)?;
+        let mut pieces = segments_of(
+            *source,
+            frames(*start),
+            frames(start + duration),
+            parts_of,
+            frames_of,
+        )?;
         let last = pieces.len() - 1;
         for (k, piece) in pieces.iter_mut().enumerate() {
             if k == 0 {
@@ -834,8 +841,24 @@ fn segments_of(
     from: u64,
     to: u64,
     parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,
+    frames_of: &dyn Fn(SourceId) -> Option<u64>,
 ) -> Result<Vec<Part>, &'static str> {
     let Some(parts) = parts_of(source) else {
+        // **A box trimmed past the end of its take is refused here**, as an
+        // edit with its reason, rather than minted into a source the server
+        // then refuses to stitch -- which left the piece holding a joined box
+        // over nothing (found 2026-09-13). A trim is not bounded by its take,
+        // so this is the first place the two meet. One frame over is the
+        // rounding of seconds to frames, and is cut rather than refused.
+        let mut to = to;
+        if let Some(length) = frames_of(source)
+            && to > length
+        {
+            if from >= length || to - length > 1 {
+                return Err("one of these boxes reads past the end of its take");
+            }
+            to = length;
+        }
         return Ok(vec![Part {
             source: SourceRef {
                 source,

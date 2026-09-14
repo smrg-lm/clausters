@@ -635,7 +635,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         }
         this.coreCall("sync", {
             piece: this.structure.write(),
-            sources: this.bridge.sources.table(),
+            sources: this.bridge.sources.held(),
             meters,
             cursor: this.cursor ?? null,
             window: this.windowId,

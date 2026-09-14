@@ -492,6 +492,7 @@ impl Owner {
             size,
         );
         editor.set_sources(self.buffer_table());
+        editor.set_lengths(self.buffer_lengths());
         editor.set_segments(self.segments());
         let def = editor.window(window + 1, window + 2);
         editor.set_window(Some(window));
@@ -528,6 +529,15 @@ impl Owner {
         self.takes
             .iter()
             .map(|(id, take)| (*id, i64::from(take.bufnum)))
+            .collect()
+    }
+
+    /// **How many frames each take holds**, where the session said: what lets
+    /// the editor refuse a join over a box that reads past its take.
+    pub fn buffer_lengths(&self) -> HashMap<clausters_document::SourceId, u64> {
+        self.takes
+            .iter()
+            .filter_map(|(id, take)| take.frames.filter(|f| *f > 0).map(|f| (*id, f)))
             .collect()
     }
 
@@ -2267,14 +2277,16 @@ mod window_verb_tests {
         };
         let (mut host, def_id, view) = with_piece(piece);
         // The take the two boxes read, as a session's open would have resolved
-        // it: without this the join is over samples nobody loaded.
+        // it: without this the join is over samples nobody loaded. Four
+        // seconds, since the boxes read all four: a take stated shorter is a
+        // join past its end, which the editor refuses.
         if let Some(owner) = host.owner.as_mut() {
             owner.takes.insert(
                 clausters_document::SourceId(1),
                 super::sources::Take {
                     bufnum: 7,
                     channels: Some(2),
-                    frames: Some(96_000),
+                    frames: Some(192_000),
                 },
             );
         }

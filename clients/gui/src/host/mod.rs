@@ -2240,12 +2240,13 @@ impl Host {
         };
         let version = owner.conversed;
         let piece = owner.piece.clone();
-        let table = owner.buffer_table();
+        let (table, lengths) = (owner.buffer_table(), owner.buffer_lengths());
         let Some(editor) = owner.editor.as_mut() else {
             return false;
         };
         editor.set_piece(piece);
         editor.set_sources(table);
+        editor.set_lengths(lengths);
         // **The message a client would have received**, whole: its stamp, and
         // the version the host was drawing when the hand made the edit -- which
         // is what lets the conversation refuse one that a route the hand never
@@ -2326,11 +2327,16 @@ impl Host {
             // clip's props: `source=-1` until the box was moved to another
             // track, whose turn starts by handing the table over again). A
             // client's editor is handed it before every call (`_sync_core`).
-            let (version, piece, table) =
-                (owner.conversed, owner.piece.clone(), owner.buffer_table());
+            let (version, piece, table, lengths) = (
+                owner.conversed,
+                owner.piece.clone(),
+                owner.buffer_table(),
+                owner.buffer_lengths(),
+            );
             let settled = owner.editor.as_mut().map(|editor| {
                 editor.set_piece(piece);
                 editor.set_sources(table);
+                editor.set_lengths(lengths);
                 editor.settle(version)
             });
             if let Some(settled) = settled {
@@ -2357,10 +2363,16 @@ impl Host {
         if moved {
             owner.conversed += 1;
         }
-        let (version, piece, table) = (owner.conversed, owner.piece.clone(), owner.buffer_table());
+        let (version, piece, table, lengths) = (
+            owner.conversed,
+            owner.piece.clone(),
+            owner.buffer_table(),
+            owner.buffer_lengths(),
+        );
         let answers = owner.editor.as_mut().map(|editor| {
             editor.set_piece(piece);
             editor.set_sources(table);
+            editor.set_lengths(lengths);
             let resync = moved.then(|| editor.resync_all(version));
             (resync, editor.acknowledge(seq, version, None))
         });

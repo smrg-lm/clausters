@@ -171,6 +171,9 @@ pub struct MultitrackEditor {
     rate: f64,
     default_bpm: f64,
     sources: HashMap<SourceId, i64>,
+    /// How many frames each take holds, where the caller said: what refuses a
+    /// join over a box that reads past the end of its take.
+    lengths: HashMap<SourceId, u64>,
     /// **The segments each join this editor knows is made of**: the ones it
     /// minted, and the ones a caller opened a session with. Read-only objects
     /// -- a join is replaced, never edited -- so they are kept as they were
@@ -204,6 +207,7 @@ impl MultitrackEditor {
             rate,
             default_bpm,
             sources: HashMap::new(),
+            lengths: HashMap::new(),
             segments: HashMap::new(),
             meters: Vec::new(),
             link: None,
@@ -286,6 +290,12 @@ impl MultitrackEditor {
     /// Which buffer each source was read into.
     pub fn set_sources(&mut self, sources: HashMap<SourceId, i64>) {
         self.sources = sources;
+    }
+
+    /// How many frames each take holds. A take left out is one whose length
+    /// is not known, and a join over it is not checked against it.
+    pub fn set_lengths(&mut self, lengths: HashMap<SourceId, u64>) {
+        self.lengths = lengths;
     }
 
     /// Where each track's meters are read from, as last told.
@@ -563,6 +573,7 @@ impl MultitrackEditor {
         let tempo = projection::tempo_map(&self.piece, self.default_bpm);
         let table = Table {
             buffers: &self.sources,
+            lengths: &self.lengths,
             segments: &self.segments,
         };
         let look = Look {
@@ -675,6 +686,7 @@ impl MultitrackEditor {
             let tempo = projection::tempo_map(&self.piece, self.default_bpm);
             let table = Table {
                 buffers: &self.sources,
+                lengths: &self.lengths,
                 segments: &self.segments,
             };
             let look = Look {
@@ -809,10 +821,11 @@ pub struct BoxContents {
 /// The tag the host's space bar reaches a window with.
 pub const PLAY_KEY: &str = "play";
 
-/// **The editor's two tables as one**: which buffer each source was read into,
-/// and the segments each join it knows is made of.
+/// **The editor's tables as one**: which buffer each source was read into, how
+/// many frames each take holds, and the segments each join it knows is made of.
 struct Table<'a> {
     buffers: &'a HashMap<SourceId, i64>,
+    lengths: &'a HashMap<SourceId, u64>,
     segments: &'a HashMap<SourceId, Vec<clausters_document::session::Part>>,
 }
 
@@ -835,6 +848,10 @@ impl projection::Buffers for Table<'_> {
 
     fn parts(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
         self.segments.get(&source).cloned()
+    }
+
+    fn frames(&self, source: SourceId) -> Option<u64> {
+        self.lengths.get(&source).copied()
     }
 }
 
@@ -955,6 +972,7 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             }
             if request.get("sources").is_some() {
                 editor.set_sources(projection::table(&get("sources")));
+                editor.set_lengths(projection::lengths(&get("sources")));
             }
             if let Ok(meters) = serde_json::from_value::<Vec<Meter>>(get("meters")) {
                 editor.set_meters(meters);

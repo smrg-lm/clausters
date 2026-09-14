@@ -115,6 +115,54 @@ pub trait Buffers {
     fn parts(&self, _source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
         None
     }
+
+    /// **How many frames `source` holds**, when this caller knows -- or `None`.
+    ///
+    /// What lets a join be refused as an edit instead of applied and left
+    /// hollow: a box trimmed past the end of its take reads frames the take
+    /// does not have, and a stitch asking for them is refused by the server
+    /// after the piece already holds the joined box. Defaulted to unknown, which
+    /// checks nothing.
+    fn frames(&self, _source: SourceId) -> Option<u64> {
+        None
+    }
+}
+
+/// **A source table with the takes' lengths beside it**, as a request carries
+/// one: `{"<id>": {"buffer", "channels", "frames"}}`.
+pub struct Held {
+    /// Which buffer each source was read into.
+    pub buffers: HashMap<SourceId, i64>,
+    /// How many frames each holds, where the table said.
+    pub lengths: HashMap<SourceId, u64>,
+}
+
+impl Held {
+    /// Both tables off one request value.
+    pub fn of(sources: &Value) -> Self {
+        Self {
+            buffers: table(sources),
+            lengths: lengths(sources),
+        }
+    }
+}
+
+impl Buffers for Held {
+    fn bufnum(&self, source: SourceId) -> i64 {
+        self.buffers.bufnum(source)
+    }
+
+    fn taken(&self) -> Vec<SourceId> {
+        self.buffers.taken()
+    }
+
+    fn source(&self, bufnum: i64) -> Option<SourceId> {
+        self.buffers.source(bufnum)
+    }
+
+    fn frames(&self, source: SourceId) -> Option<u64> {
+        self.lengths.get(&source).copied()
+    }
 }
 
 impl Buffers for HashMap<SourceId, i64> {
@@ -684,6 +732,7 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
                 look.tempo,
                 &look.sources.taken(),
                 &|source| look.sources.parts(source),
+                &|source| look.sources.frames(source),
             ) {
                 Ok(intents) => Reading::of(intents),
                 Err(why) => Reading::refused(why),
@@ -749,14 +798,32 @@ pub fn intake_value(
     let Ok(piece) = serde_json::from_value::<Multitrack>(piece.clone()) else {
         return Intake::nothing();
     };
-    let table = table(sources);
+    let held = Held::of(sources);
     let tempo = tempo_map(&piece, default_bpm);
     let look = Look {
         tempo: &tempo,
         rate,
-        sources: &table,
+        sources: &held,
     };
     intake(&piece, tag, values, &look)
+}
+
+/// **How many frames each source holds**, off the same table [`table`] reads:
+/// an entry's `frames`, where it states a positive one. A zero is what a
+/// client writes for a length it does not know, so it is left out rather than
+/// read as an empty take.
+pub fn lengths(sources: &Value) -> HashMap<SourceId, u64> {
+    let Some(entries) = sources.as_object() else {
+        return HashMap::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(id, entry)| {
+            let id = id.parse::<u64>().ok()?;
+            let frames = entry.get("frames")?.as_u64().filter(|f| *f > 0)?;
+            Some((SourceId(id), frames))
+        })
+        .collect()
 }
 
 /// The instance plan's source table as the buffer question this crate asks.
@@ -1258,6 +1325,80 @@ mod tests {
             "as long as what the boxes show"
         );
         assert_eq!(content.as_window().map(|w| w.duration), Some(1.5));
+    }
+
+    /// **A join over a box that reads past its take is refused as an edit**
+    /// (found 2026-09-13). A trim is not bounded by its take, so a box can
+    /// play past the end of the samples; minted, that join was a source the
+    /// server refused to stitch, and the piece held a joined box over nothing.
+    /// A caller that knows the take's length refuses it with its reason; one
+    /// that does not checks nothing, as before.
+    #[test]
+    fn a_join_past_the_end_of_a_take_is_refused() {
+        let mut piece = swapped();
+        // The box in front plays from 1.5 s for three quarters of a second,
+        // up to 2.25 s of a take that is two.
+        let front = piece.tracks[0].lanes[0]
+            .regions
+            .iter_mut()
+            .find(|r| r.id == NodeId(11))
+            .expect("the tail, in front");
+        let mut back = front.position;
+        front.length = Beat(0.75);
+        back.0 += 0.75;
+        let source = match &mut front.content {
+            Content::Window { window, .. } => {
+                window.start = 1.5;
+                window.source.samples().map(|s| s.source)
+            }
+            _ => None,
+        }
+        .expect("a window onto a take");
+        piece.tracks[0].lanes[0]
+            .regions
+            .iter_mut()
+            .find(|r| r.id == NodeId(10))
+            .expect("the head, behind")
+            .position = back;
+        let tempo = TempoMap::new(1.0);
+        let held = Held {
+            buffers: HashMap::new(),
+            lengths: HashMap::from([(source, 96_000)]),
+        };
+        let known = Look {
+            tempo: &tempo,
+            rate: 48_000.0,
+            sources: &held,
+        };
+        let refused = reading(&piece, "join", &[json!("10"), json!("11")], &known);
+        assert!(refused.intents.is_empty(), "{:?}", refused.intents);
+        assert_eq!(
+            refused.refusal,
+            Some("one of these boxes reads past the end of its take")
+        );
+
+        // Not knowing the length checks nothing.
+        let sources = HashMap::new();
+        let joined = read(
+            &piece,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&tempo, &sources),
+        );
+        assert_eq!(joined.len(), 1, "joined as before: {joined:?}");
+    }
+
+    /// **Lengths are read off the table a request carries**, and a zero -- a
+    /// client's word for a length it does not know -- is left out.
+    #[test]
+    fn a_table_states_the_lengths_it_knows() {
+        let sources = json!({
+            "1": {"buffer": 4, "channels": 1, "frames": 96000},
+            "2": {"buffer": 5, "channels": 2, "frames": 0},
+            "3": {"buffer": 6, "channels": 2},
+        });
+        assert_eq!(lengths(&sources), HashMap::from([(SourceId(1), 96_000)]));
+        assert_eq!(table(&sources).len(), 3);
     }
 
     /// **A join over a joined box is flat** *(asked for by the user
