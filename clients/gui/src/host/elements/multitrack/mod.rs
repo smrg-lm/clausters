@@ -23,7 +23,7 @@
 //! score editor edit.
 
 use clausters_core::osc::OscType;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
@@ -231,6 +231,15 @@ pub struct Multitrack {
     /// a picture, not a second implementation of one: what changes between the
     /// standalone view and this is the axis it is handed, and nothing else.
     takes: HashMap<i32, SignalElement>,
+    /// **The takes already asked for**, by server buffer number.
+    ///
+    /// A front's per-repaint walk asks for what is new in here and nothing
+    /// else ([`Samples::ask_takes`]): asking for every take on every frame
+    /// re-mapped and re-summarized each one per repaint, and on a leg that
+    /// downloads, started the download again the moment it finished. A take
+    /// leaves this set when its samples are known to have changed under it
+    /// ([`Samples::forget_take`]), which is how it is asked for again.
+    asked: HashSet<i32>,
     /// **The roll bodies, by box name** — a box whose contents are notes rather
     /// than samples.
     ///
@@ -286,6 +295,7 @@ impl Default for Multitrack {
             label: None,
             view: Presentation::Signal,
             takes: HashMap::new(),
+            asked: HashSet::new(),
             rolls: HashMap::new(),
             pending: HashMap::new(),
             grab: None,
@@ -626,5 +636,20 @@ impl Samples for Multitrack {
             .entry(bufnum)
             .or_insert_with(|| take_body(bufnum, view))
             .bulk(data)
+    }
+
+    fn ask_takes(&mut self, all: bool) -> Vec<i32> {
+        let takes = self.needs().takes;
+        let fresh = takes
+            .iter()
+            .copied()
+            .filter(|bufnum| all || !self.asked.contains(bufnum))
+            .collect();
+        self.asked.extend(takes);
+        fresh
+    }
+
+    fn forget_take(&mut self, bufnum: i32) -> bool {
+        self.asked.remove(&bufnum)
     }
 }

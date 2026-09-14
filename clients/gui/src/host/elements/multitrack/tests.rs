@@ -2009,6 +2009,37 @@ fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
         Some((0, Part::Body))
     );
 }
+/// **A take is asked for once, and again when it is forgotten.** A front
+/// asks on every repaint; asking for every take each time re-mapped and
+/// re-summarized all of them per frame (found 2026-09-13, reading the walk).
+/// A box over a new buffer is asked for on the next repaint, and a take whose
+/// samples were just made is asked for again after the host forgets it.
+#[test]
+fn a_take_is_asked_for_once_and_again_when_forgotten() {
+    let mut mt = piece();
+    assert_eq!(mt.ask_takes(true), vec![0], "a window being built asks all");
+    assert!(
+        mt.ask_takes(false).is_empty(),
+        "a repaint asks nothing more"
+    );
+    assert_eq!(mt.ask_takes(true), vec![0], "a rebuild still asks all");
+
+    // A join names a new buffer: the next repaint asks for it and no other.
+    let joined = from_props(&props(
+        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "noise", 0, 500, 0, "", 0, "j", "noise", 500, 500, 0, "", 3]}"#,
+    ));
+    mt.clips = joined.clips;
+    assert_eq!(mt.ask_takes(false), vec![3]);
+    assert!(mt.ask_takes(false).is_empty());
+
+    // Its stitch is done: forgotten, it is asked for once more.
+    assert!(mt.forget_take(3), "it had been asked for");
+    assert!(!mt.forget_take(7), "a take it never asked for is not its");
+    assert_eq!(mt.ask_takes(false), vec![3]);
+    assert!(mt.ask_takes(false).is_empty());
+}
+
 /// **Buffer 0 is a buffer.** It is the first one an allocator hands out, so
 /// a zero sentinel would make the first take a script loads the one take it
 /// cannot draw — which is exactly how this was found, by eye, on the first

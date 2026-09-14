@@ -1019,6 +1019,30 @@ impl Host {
         self.window_defs.keys().copied().collect()
     }
 
+    /// **A buffer's samples were just made** (`/done /buffer_stitch bufnum`):
+    /// every element that asked for that take forgets it, so the next walk
+    /// asks again. Returns the windows that had one, for a front to redraw.
+    ///
+    /// A join's box names its buffer in the same turn the stitch is sent, so
+    /// the first ask can find it unallocated, or published and not yet copied
+    /// into; this is the second ask, made when the samples are there. Any other
+    /// message is not this one and touches nothing.
+    pub fn forget_stitched(&mut self, msg: &OscMessage) -> Vec<i32> {
+        let [OscType::String(command), OscType::Int(bufnum)] = msg.args.as_slice() else {
+            return Vec::new();
+        };
+        if msg.addr != "/done" || command != "/buffer_stitch" {
+            return Vec::new();
+        }
+        let mut touched = Vec::new();
+        for (def_id, tree) in &mut self.window_defs {
+            if forget_take_views(tree, *bufnum) > 0 {
+                touched.push(*def_id);
+            }
+        }
+        touched
+    }
+
     /// The size table window `def_id` lays out and paints with: this host's
     /// logical [`metrics`](Self::metrics) resolved to that window's physical
     /// pixels. Every layout, paint and hit-test site of a window reads *this*
@@ -3291,6 +3315,21 @@ pub(crate) fn refresh_buffer_views(
     refreshed
 }
 
+/// **Tells every element of this tree that asked for take `bufnum` to forget
+/// it**, returning how many had.
+fn forget_take_views(widget: &mut widget::Widget, bufnum: i32) -> usize {
+    let mut forgot = 0;
+    if let Some(el) = widget.kind.as_samples_mut()
+        && el.forget_take(bufnum)
+    {
+        forgot += 1;
+    }
+    for child in &mut widget.children {
+        forgot += forget_take_views(child, bufnum);
+    }
+    forgot
+}
+
 /// **Puts a span another peer wrote into every element of this tree drawing
 /// server buffer `bufnum`**, returning how many took it.
 ///
@@ -3472,6 +3511,44 @@ mod tests {
             addr: GUI_DEF.into(),
             args: vec![OscType::Int(id), OscType::String(json.into())],
         })
+    }
+
+    /// **A join is asked for again when its stitch is done.** Its box names
+    /// the buffer in the turn the stitch is sent, so the first ask can find
+    /// the buffer empty; the server's `/done` is when the samples are there.
+    #[test]
+    fn a_stitched_take_is_asked_for_again() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","title":"w","children":[
+                    {"id":10,"type":"multitrack",
+                     "lanes":["one","",100,0,0,1,1],
+                     "clips":["j","one",0,10,0,"",3]}]}"#,
+            ),
+            from(),
+        );
+        let ask = |host: &mut Host| {
+            host.window_def_mut(1)
+                .and_then(|t| t.find_mut(10))
+                .and_then(|w| w.kind.as_samples_mut())
+                .map(|el| el.ask_takes(false))
+                .expect("a multitrack")
+        };
+        assert_eq!(ask(&mut host), vec![3], "the first repaint asks");
+        assert!(ask(&mut host).is_empty(), "and the next does not");
+
+        let done = |command: &str, bufnum: i32| OscMessage {
+            addr: "/done".into(),
+            args: vec![OscType::String(command.into()), OscType::Int(bufnum)],
+        };
+        assert!(host.forget_stitched(&done("/buffer_alloc", 3)).is_empty());
+        assert!(host.forget_stitched(&done("/buffer_stitch", 4)).is_empty());
+        assert!(ask(&mut host).is_empty(), "nothing else forgets it");
+
+        assert_eq!(host.forget_stitched(&done("/buffer_stitch", 3)), vec![1]);
+        assert_eq!(ask(&mut host), vec![3], "made, it is asked for again");
     }
 
     /// **A window's playhead reads the counter the host was told to read.** The

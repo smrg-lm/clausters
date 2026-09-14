@@ -283,6 +283,13 @@ impl App {
         // the leg it came in on (`Host::on_server_reply`, which the page's leg
         // calls too).
         self.host.on_server_reply(from, &msg);
+        // A join's samples are there now: the windows drawing it map it again
+        // on the repaint this asks for.
+        for def_id in self.host.forget_stitched(&msg) {
+            if let Some(ws) = self.windows.get(&def_id) {
+                ws.gpu.window.request_redraw();
+            }
+        }
         match msg.addr.as_str() {
             "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.

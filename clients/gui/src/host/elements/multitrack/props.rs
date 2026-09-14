@@ -79,6 +79,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .and_then(Presentation::parse)
             .unwrap_or(Presentation::Signal),
         takes: HashMap::new(),
+        asked: std::collections::HashSet::new(),
         rolls: parse_notes(props)
             .into_iter()
             .map(|(name, notes)| (name, roll_body(&notes)))

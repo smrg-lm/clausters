@@ -416,10 +416,16 @@ fn load_bulk(
     };
     let needs_slot = widget.kind.needs().slot.is_some();
     // **The plural asker.** An element drawing several server buffers names
-    // them all; the fetch machine is keyed by buffer, so one download serves
-    // every view waiting on it and a duplicate costs nothing.
+    // them all when the window is built, and on a repaint only the ones it has
+    // not asked for yet: every take on every frame re-mapped and re-summarized
+    // each one per repaint.
     if let Some(id) = owner {
-        for bufnum in widget.kind.needs().takes {
+        let takes = widget
+            .kind
+            .as_samples_mut()
+            .map(|el| el.ask_takes(!again))
+            .unwrap_or_default();
+        for bufnum in takes {
             out.buffers.push((id, bufnum, false));
         }
     }

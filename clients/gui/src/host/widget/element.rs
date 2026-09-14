@@ -480,8 +480,9 @@ pub struct Needs {
     /// back has to be told apart: a `bulk` want is *the* source and arrives
     /// unlabelled ([`Samples::bulk`]), while these arrive by number
     /// ([`Samples::bulk_of`]) so the element can put each where it belongs.
-    /// Duplicates cost nothing — the fetch machine is keyed by buffer and one
-    /// download serves every view waiting on it.
+    /// The fetch machine is keyed by buffer, so one download serves every view
+    /// waiting on it; a front asks for these through
+    /// [`Samples::ask_takes`], which answers each take once.
     pub takes: Vec<i32>,
     /// The GPU slot this element claims, for a view that cannot draw into the
     /// shared mesh. `None` — the default — is an element that draws.
@@ -2208,6 +2209,29 @@ pub trait Samples {
     /// each one labelled, because "the samples" is not an answer when there are
     /// six of them. `false` — the default — is an element that asked for none.
     fn bulk_of(&mut self, _bufnum: i32, _data: Loaded) -> bool {
+        false
+    }
+
+    /// **The [`Needs::takes`] to ask for now**, marking them asked.
+    ///
+    /// `all` is a window being built or redefined, which asks for every one;
+    /// otherwise it is a front's per-repaint walk, which gets only the takes
+    /// not asked for yet — a box that just appeared over a new buffer — and an
+    /// empty list on every other frame. Empty by default: an element that
+    /// declares no takes has none to ask for.
+    fn ask_takes(&mut self, _all: bool) -> Vec<i32> {
+        Vec::new()
+    }
+
+    /// **The samples of take `bufnum` have changed under this element**, so
+    /// the next walk asks for it again. Returns whether this element had asked
+    /// for it.
+    ///
+    /// What makes the per-repaint walk safe to ask once: a join's box names its
+    /// buffer in the same turn the stitch is sent, so the first ask can find
+    /// the buffer empty, or published and not yet copied into. The host
+    /// forgets it when the server says the stitch is done.
+    fn forget_take(&mut self, _bufnum: i32) -> bool {
         false
     }
 

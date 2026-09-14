@@ -221,6 +221,11 @@ impl WebApp {
         // A page has one server leg and no player apart from it.
         self.host
             .on_server_reply(crate::host::instance::Leg::Server, &msg);
+        // A join's samples are there now: the canvases drawing it ask for them
+        // again on the draw this requests.
+        for def_id in self.host.forget_stitched(&msg) {
+            self.request_redraw(def_id);
+        }
         match msg.addr.as_str() {
             "/bus_stream.reply" => {
                 if !self.stream_seen {

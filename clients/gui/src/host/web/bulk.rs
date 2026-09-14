@@ -42,9 +42,16 @@ fn collect_bulk(
     };
     // **The plural asker**, exactly as the native walk collects it: an element
     // drawing several server buffers names them all, and the fetch machine's
-    // buffer key means one download serves every view waiting on it.
+    // buffer key means one download serves every view waiting on it. A redraw
+    // asks only for the takes not asked for yet, since asking for a take that
+    // finished downloading starts the download again.
     if let Some(id) = id {
-        for bufnum in widget.kind.needs().takes {
+        let takes = widget
+            .kind
+            .as_samples_mut()
+            .map(|el| el.ask_takes(!again))
+            .unwrap_or_default();
+        for bufnum in takes {
             buffer_refs.push((id, bufnum, false));
         }
     }
