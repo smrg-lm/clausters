@@ -45,10 +45,11 @@ projection" (`O21`-`O24`).
 **multitrack editor** is done: `O25`-`O33` put its projections, its
 conversation, its playback and the application itself in the shared crates, run
 by the standalone host and bound by both clients, and a saved session opens and
-sounds from all three. **What is taken next is the audio editor**, which is
-`APPLICATION-SCOPE.md`'s `AP7` (decided 2026-09-13 with the user): the second
-application, written in `crates/clausters-apps` beside the multitrack, with its
-steps in that milestone. The score editor is not started.
+sounds from all three. **What is taken next is `APPLICATION-SCOPE.md`'s
+`AP7`**: the `SamplesEditor` that exists today moved into
+`crates/clausters-apps` beside the multitrack, as it is, so that one undo order
+can be worked out over two applications. The audio editor itself and the score
+editor are not started; the audio editor is a track of its own after `AP8`.
 
 Two things deferred to `O24` still have no step of their own: `AP5`'s catalogue
 views (building `waveform`, `bpf` and `pianoroll` from the shared code, so the
@@ -452,12 +453,12 @@ its plan; the plan is where its acceptance is read.
 ### The branch's own, and they are the near work
 
 - ⬜ **`AP7` - a second application, to prove the abstraction**
-  *(`APPLICATION-SCOPE.md`)*. **Taken next.** The second application is the
-  **audio editor** (decided 2026-09-13), ported from the Python client's
-  `SamplesEditor` into `crates/clausters-apps` the way the multitrack was, in
-  the steps that milestone lists: the window, the conversation, the write, entering
-  a box from the multitrack, and the undo order moving into the crate. It is what
-  lets the standalone host enter a box.
+  *(`APPLICATION-SCOPE.md`)*. **Taken next.** The Python client's
+  `SamplesEditor`, moved as it is into `crates/clausters-apps` the way the
+  multitrack was, in the steps that milestone lists: the window, the
+  conversation, the write, and the undo order moving into the crate. What it is
+  taken for is the last one: one history over the edits of two applications,
+  and the same one when an application runs alone.
 
 - ⬜ **`AP8` - the pass over the packages, and the plans keep what is worth
   keeping** *(`APPLICATION-SCOPE.md`)*. The branch's closing milestone: what of

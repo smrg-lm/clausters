@@ -1007,31 +1007,34 @@ this milestone stops being "prove it against the one thing we have". Whether it
 is still a milestone of its own or is absorbed by `O24`'s audio editor is
 decided there.
 
-**Decided 2026-09-13 with the user: the second application is the audio
-editor, and it is written in `crates/clausters-apps` as an application of its
-own** — its own module, beside `multitrack` and never inside it, one per
-application. It is what the multitrack's `O32` stopped short of on purpose
-(`crates/clausters-document/PLAN.md`, `O32` step 5): a box entered out of a
-piece opens an editor for what it holds, and today that editor is each
-client's `SamplesEditor` — a window over one take, a stroke read with the
-inverse it carries, a correction that reloads the picture — written twice and
-absent from the standalone host. Porting it from the Python client, the way the
-multitrack was, gives three things at once:
+**Decided 2026-09-13 with the user, narrowed 2026-09-14: the second application
+is the `SamplesEditor` that exists today, moved into `crates/clausters-apps`
+as it is** — its own module, beside `multitrack` and never inside it, one per
+application. Today it is each client's: a window over one take, a stroke read
+with the inverse it carries, a correction that reloads the picture — written
+twice. Porting it from the Python client, the way the multitrack was, gives two
+things:
 
-- **the standalone host can enter a box**, which today it logs and does not do,
-  because it has no audio editor to open;
-- **the undo order can move into the crate.** A piece shares one history with
-  the boxes entered out of it, and while those editors were the clients' the
-  multitrack editor had to hand its entries back to whoever kept them. With both
-  applications in the crate the history can be the crate's, and the clients'
-  `Editing` and `Application` shrink to what a language owns;
 - **the abstraction gets its second consumer**, which is what this milestone was
-  written for.
+  written for;
+- **the undo order can move into the crate.** This is the question the milestone
+  is taken for: how one history interleaves the edits of different applications,
+  **without each application keeping a history of its own when it runs alone**.
+  While the editors were the clients', the multitrack editor handed its entries
+  back to whoever kept them; with two applications in the crate the history can
+  be the crate's, and the clients' `Editing` and `Application` shrink to what a
+  language owns.
 
-The acceptance above stands, read for the audio editor: written with the
-supported surface, one program in two languages, and an undo that walks a
-stroke drawn inside a box and a box dragged on the piece as one order — now
-from the standalone host too.
+**It is not the audio editor, and it does not grow.** The audio editor — its
+name, cut/copy/paste over segments, mix, and a history that spills large edits
+to disk — is a track of its own, started after `AP8`, and nothing of it is
+decided here. The multitrack does not edit samples or process audio files, so
+entering a box from a piece is not part of this milestone either: it was a way
+to try the `SamplesEditor`, not a function of the multitrack.
+
+The acceptance above stands, read for this port: written with the supported
+surface, one program in two languages, and an undo that walks edits made in two
+applications as one order.
 
 **The reference is `clients/python/examples/editors/edit_samples.py` and the
 Python client's `SamplesEditor`** (`clients/python/clausters/gui/editing/samples.py`
@@ -1066,32 +1069,27 @@ clients and the standalone host green, and each is its own commit.
    the run for a mono take, and for an interleaved one the span read, the
    channel spliced in and the run written back -- which today is
    `SamplesDomain.project` in each client. Both clients run the steps against
-   their server; the standalone host runs them against the session that owns
-   the takes, which is where the picture reads.
-4. ⬜ **Entering a box.** The multitrack already answers what a box opens as
-   (`box_contents`); now what opens is this application. In both clients
-   `enter` opens the crate's editor over the source's buffer instead of each
-   client's own `SamplesEditor`; the standalone host opens it too, where
-   `host/mod.rs` logs today that entering a box needs an audio editor it does
-   not have.
-5. ⬜ **The undo order moves into the crate.** A piece and the boxes entered out
-   of it share one history, which today each endpoint keeps -- `Editing` in the
-   clients, the `Owner`'s history in the host -- while the multitrack editor
-   hands back the entry to record. With both applications in the crate the
-   history is the crate's: one order across the piece and its boxes, walked by
-   the crate, and the clients' `Editing` and `Application` keep only what a
-   language owns. The multitrack editor stops handing entries back.
-6. ⬜ **The recorded exchange.** An exchange in `clients/web/tests/editing-vectors.json`,
-   generated through the Python client and replayed through the web client and
-   against the standalone host, as `O32` step 6 and `O33` did for the
-   multitrack: a box entered, a stroke drawn in it, a single sample moved, a box
-   dragged on the piece, and undo and redo walking the three in the order they
-   were made.
+   their server.
+4. ⬜ **The undo order moves into the crate.** Today each endpoint keeps the
+   history -- `Editing` in the clients, the `Owner`'s history in the host --
+   while the multitrack editor hands back the entry to record. With two
+   applications in the crate the history is the crate's: one order over the
+   edits of every application that shares it, walked by the crate, and **the
+   same history when an application runs alone** rather than one of its own.
+   The clients' `Editing` and `Application` keep only what a language owns, and
+   the multitrack editor stops handing entries back. How the order is shared,
+   and what an application open alone holds, is what this step works out.
 
-**Not in these steps**, so their absence is read as a decision: the audio editor
-as an **analysis tool** -- panes and layers on Sonic Visualiser's shape
-(`crates/clausters-document/PLAN.md`, `O24`) -- and the catalogue views `AP5`
-left without a home. Both build on this application once it exists.
+**Not in these steps**, so their absence is read as a decision:
+
+- **entering a box from a piece** -- the multitrack does not edit samples, and
+  opening a take's editor from it was a way to try that editor. The standalone
+  host goes on logging an entered box;
+- **the audio editor** -- its name, cut/copy/paste over segments, mix, a history
+  that keeps large edits on disk as well as in memory, and the analysis panes
+  and layers on Sonic Visualiser's shape (`crates/clausters-document/PLAN.md`,
+  `O24`). A track of its own, started after `AP8`;
+- the catalogue views `AP5` left without a home.
 
 ### AP8 - The pass over the packages, and the plans keep what is worth keeping
 
