@@ -1146,6 +1146,14 @@ clients and the standalone host green, and each is its own commit.
    open alone behaving as it does now. Commits: the context in the crate; the C
    and wasm doors; Python; web; the host.
 
+   - ✅ *The context in the crate (2026-09-14).* `clausters_apps::editing`:
+     `Editing::join` takes a member in under a key, `event` reads, records and
+     answers (an undo asked of a window is the context's step, acknowledged),
+     `step` hands each leg to its members and puts the cursor back when nothing
+     applied, `record` takes an external member's entry, and `call_json` is the
+     door. `SamplesEditor::resync_all` corrects its window after a step, as the
+     multitrack editor's does. Nothing binds it yet.
+
 **Not in these steps**, so their absence is read as a decision:
 
 - **entering a box from a piece** -- the multitrack does not edit samples, and

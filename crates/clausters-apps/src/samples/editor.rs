@@ -198,6 +198,14 @@ impl SamplesEditor {
         ))
     }
 
+    /// **Every widget of the window, corrected**, with nothing to retire — what
+    /// a history step leaves behind, and what a second window over the take is
+    /// told when another one wrote it.
+    pub fn resync_all(&self, version: i64) -> Answer {
+        let corrections = self.widget.map_or_else(Vec::new, |w| resync(i64::from(w)));
+        conversation::answer(0, version, None, corrections)
+    }
+
     /// Answers the stamp a [`Kind::Step`] carried, once the caller has walked.
     pub fn acknowledge(&self, seq: i64, version: i64, reason: Option<String>) -> Answer {
         conversation::answer(seq, version, reason, Vec::new())
