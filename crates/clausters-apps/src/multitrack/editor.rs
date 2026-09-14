@@ -171,6 +171,11 @@ pub struct MultitrackEditor {
     rate: f64,
     default_bpm: f64,
     sources: HashMap<SourceId, i64>,
+    /// **The segments each join this editor knows is made of**: the ones it
+    /// minted, and the ones a caller opened a session with. Read-only objects
+    /// -- a join is replaced, never edited -- so they are kept as they were
+    /// made, and a later join over a box that windows one reads through them.
+    segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -199,6 +204,7 @@ impl MultitrackEditor {
             rate,
             default_bpm,
             sources: HashMap::new(),
+            segments: HashMap::new(),
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -254,7 +260,30 @@ impl MultitrackEditor {
         self.piece = piece;
     }
 
-    /// Which server buffer each source was read into.
+    /// **The joins a caller holds**, by source -- the segments each is made
+    /// of, added to the ones this editor minted itself: what a standalone host
+    /// opening a session with joins in it hands over.
+    pub fn set_segments(
+        &mut self,
+        segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
+    ) {
+        self.segments.extend(segments);
+    }
+
+    /// **Remembers the segments a minted join is made of**, so a join over a
+    /// box that windows it reads through to its takes.
+    fn learn(&mut self, minted: &Value) {
+        let Ok(made) = serde_json::from_value::<clausters_document::multitrack::edit::MintedSource>(
+            minted.clone(),
+        ) else {
+            return;
+        };
+        if let clausters_document::session::Location::Segments { parts } = made.source.location {
+            self.segments.insert(made.id, parts);
+        }
+    }
+
+    /// Which buffer each source was read into.
     pub fn set_sources(&mut self, sources: HashMap<SourceId, i64>) {
         self.sources = sources;
     }
@@ -480,6 +509,9 @@ impl MultitrackEditor {
             minted: minted(payload),
             ..Applied::default()
         };
+        if let Some(source) = &out.minted {
+            self.learn(source);
+        }
         if let Some((true, _)) = self.edit(payload) {
             out.applied = true;
             out.piece = serde_json::to_value(&self.piece).ok();
@@ -529,10 +561,14 @@ impl MultitrackEditor {
     /// The window over the editor's state, handed to `f`.
     fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
         let tempo = projection::tempo_map(&self.piece, self.default_bpm);
+        let table = Table {
+            buffers: &self.sources,
+            segments: &self.segments,
+        };
         let look = Look {
             tempo: &tempo,
             rate: self.rate,
-            sources: &self.sources,
+            sources: &table,
         };
         f(&Window {
             piece: &self.piece,
@@ -637,10 +673,14 @@ impl MultitrackEditor {
         }
         let taken = {
             let tempo = projection::tempo_map(&self.piece, self.default_bpm);
+            let table = Table {
+                buffers: &self.sources,
+                segments: &self.segments,
+            };
             let look = Look {
                 tempo: &tempo,
                 rate: self.rate,
-                sources: &self.sources,
+                sources: &table,
             };
             projection::intake(&self.piece, tag, values, &look)
         };
@@ -661,7 +701,10 @@ impl MultitrackEditor {
         let mut legs = Vec::new();
         let mut moved = false;
         for payload in &taken.payloads {
-            out.minted.extend(minted(payload));
+            if let Some(source) = minted(payload) {
+                self.learn(&source);
+                out.minted.push(source);
+            }
             let Some((applied, current)) = self.edit(payload) else {
                 continue;
             };
@@ -765,6 +808,35 @@ pub struct BoxContents {
 
 /// The tag the host's space bar reaches a window with.
 pub const PLAY_KEY: &str = "play";
+
+/// **The editor's two tables as one**: which buffer each source was read into,
+/// and the segments each join it knows is made of.
+struct Table<'a> {
+    buffers: &'a HashMap<SourceId, i64>,
+    segments: &'a HashMap<SourceId, Vec<clausters_document::session::Part>>,
+}
+
+impl projection::Buffers for Table<'_> {
+    fn bufnum(&self, source: SourceId) -> i64 {
+        projection::Buffers::bufnum(self.buffers, source)
+    }
+
+    /// A join's id is taken whether or not a buffer is behind it yet: ids are
+    /// never reused, so nothing may mint one a join already has.
+    fn taken(&self) -> Vec<SourceId> {
+        let mut taken = projection::Buffers::taken(self.buffers);
+        taken.extend(self.segments.keys().copied());
+        taken
+    }
+
+    fn source(&self, bufnum: i64) -> Option<SourceId> {
+        projection::Buffers::source(self.buffers, bufnum)
+    }
+
+    fn parts(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
+        self.segments.get(&source).cloned()
+    }
+}
 
 /// The source a payload minted, when it names one.
 fn minted(payload: &Value) -> Option<Value> {
@@ -1010,6 +1082,81 @@ mod tests {
 
     fn position(editor: &MultitrackEditor) -> f64 {
         editor.piece().tracks[0].lanes[0].regions[0].position.0
+    }
+
+    /// **The editor joins cuts of its own joins flat** *(found 2026-09-13 by
+    /// the user: a join of joins was refused as nested more than four deep)*.
+    /// The first join mints a source and the editor keeps its segments; a
+    /// second join over the joined box reads through them, so what it mints
+    /// names the take and never the first join.
+    #[test]
+    fn the_editor_joins_cuts_of_its_own_joins_flat() {
+        let over_take = |id: u64, at: f64, start: f64| {
+            let mut region = Region::new(
+                NodeId(id),
+                Beat(at),
+                Beat(1.0),
+                Content::Unknown(Value::Null),
+            );
+            region.content = Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start,
+                duration: 1.0,
+            });
+            region
+        };
+        // The take's halves swapped, and behind them a box that does not read
+        // on from the second.
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.lanes[0].regions = vec![
+            over_take(12, 0.0, 1.0),
+            over_take(13, 1.0, 0.0),
+            over_take(14, 2.0, 1.5),
+        ];
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let mut editor = MultitrackEditor::new(piece, SR, 60.0, 1);
+        editor.set_sources(HashMap::from([(SourceId(1), 7)]));
+        editor.chrome(None, Transport::Unnumbered, "piece", (1000, 560));
+        editor.window(40, 41);
+        editor.set_window(Some(39));
+
+        let first = editor.event(&event(40, 1, 0, "join", vec![json!("12"), json!("13")]), 1);
+        let [made] = first.minted.as_slice() else {
+            panic!("the first join mints: {:?}", first.minted);
+        };
+        let made = made["id"].clone();
+
+        let second = editor.event(
+            &event(40, 2, 0, "join", vec![json!("12"), json!("14")]),
+            first.version,
+        );
+        let [minted] = second.minted.as_slice() else {
+            panic!("the second join mints: {:?}", second.minted);
+        };
+        assert_ne!(
+            minted["id"], made,
+            "a new object, not the first join edited"
+        );
+        let parts = minted["location"]["parts"]
+            .as_array()
+            .unwrap_or_else(|| panic!("segments in {minted}"));
+        assert_eq!(
+            parts.len(),
+            3,
+            "the first join's two spans, then the take's"
+        );
+        assert!(
+            parts.iter().all(|p| p["source"]["source"] == json!(1)),
+            "every segment names the take, none the first join: {parts:?}"
+        );
     }
 
     /// **A move is applied, recorded with its inverse and acknowledged**, and

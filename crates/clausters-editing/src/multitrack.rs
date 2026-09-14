@@ -105,6 +105,16 @@ pub trait Buffers {
     /// the other written beside it — which is the second table this trait
     /// exists to prevent.
     fn source(&self, bufnum: i64) -> Option<SourceId>;
+
+    /// **The segments a source is made of**, when it is a join this caller
+    /// knows -- a take and a span of it, per part -- or `None` for a take.
+    ///
+    /// What lets a join over a box that is itself a join read through to the
+    /// takes, so the source it mints is one flat list rather than a join of
+    /// joins. Defaulted to none: a caller that knows no joins states none.
+    fn parts(&self, _source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
+        None
+    }
 }
 
 impl Buffers for HashMap<SourceId, i64> {
@@ -673,6 +683,7 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
                 look.rate,
                 look.tempo,
                 &look.sources.taken(),
+                &|source| look.sources.parts(source),
             ) {
                 Ok(intents) => Reading::of(intents),
                 Err(why) => Reading::refused(why),
@@ -1247,6 +1258,116 @@ mod tests {
             "as long as what the boxes show"
         );
         assert_eq!(content.as_window().map(|w| w.duration), Some(1.5));
+    }
+
+    /// **A join over a joined box is flat** *(asked for by the user
+    /// 2026-09-13, after a join of joins was refused as nested more than four
+    /// deep: "los segmentos no deberían anidarse como estructura de datos, son
+    /// punteros de dos dimensiones a un buffer o archivo... join une segmentos
+    /// creando un nuevo objeto segmentos")*. A box over a join reads through to
+    /// the takes it is made of, so every part the new join states names a take.
+    #[test]
+    fn a_join_over_a_joined_box_names_only_takes() {
+        use clausters_document::session::Part;
+
+        // Source 8 is the swapped halves joined: the take's second second, then
+        // its first, with a seam between.
+        let part = |start: u64, end: u64, fade_in: u64, fade_out: u64| Part {
+            source: SourceRef {
+                source: SourceId(7),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: Some(clausters_document::Range { start, end }),
+            },
+            fade_in,
+            fade_out,
+            channels: None,
+        };
+        struct Table(HashMap<SourceId, i64>, Vec<Part>);
+        impl Buffers for Table {
+            fn bufnum(&self, source: SourceId) -> i64 {
+                self.0.bufnum(source)
+            }
+            fn source(&self, bufnum: i64) -> Option<SourceId> {
+                self.0.source(bufnum)
+            }
+            fn parts(&self, source: SourceId) -> Option<Vec<Part>> {
+                (source == SourceId(8)).then(|| self.1.clone())
+            }
+        }
+        let table = Table(
+            HashMap::new(),
+            vec![part(48_000, 96_000, 0, 480), part(0, 48_000, 480, 0)],
+        );
+        // A box over the join reading across its seam (0.5 s to 1.5 s of it),
+        // and beside it a box over the take.
+        let window = |source: u64, start: f64| {
+            Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source: SourceId(source),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start,
+                duration: 1.0,
+            })
+        };
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        let mut over_join = Region::new(
+            NodeId(20),
+            Beat(0.0),
+            Beat(1.0),
+            Content::Unknown(Value::Null),
+        );
+        over_join.content = window(8, 0.5);
+        let mut over_take = Region::new(
+            NodeId(21),
+            Beat(1.0),
+            Beat(1.0),
+            Content::Unknown(Value::Null),
+        );
+        over_take.content = window(7, 0.0);
+        track.lanes[0].regions = vec![over_join, over_take];
+        let piece = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let tempo = TempoMap::new(1.0);
+        let look = Look {
+            tempo: &tempo,
+            rate: 48_000.0,
+            sources: &table,
+        };
+        let intents = read(&piece, "join", &[json!("20"), json!("21")], &look);
+        let [
+            MultitrackIntent::JoinRegions {
+                source: Some(minted),
+                ..
+            },
+        ] = intents.as_slice()
+        else {
+            panic!("a join that mints its source: {intents:?}");
+        };
+        let Location::Segments { parts } = &minted.source.location else {
+            panic!("a join is segments: {:?}", minted.source.location);
+        };
+        assert!(
+            parts.iter().all(|p| p.source.source == SourceId(7)),
+            "every part names the take, none the join: {parts:?}"
+        );
+        assert_eq!(
+            parts,
+            &vec![
+                // The half second of the join's first part the box shows.
+                part(72_000, 96_000, 0, 480),
+                // The half second of its second, its own seam kept, and cut
+                // where the next box starts.
+                part(0, 24_000, 480, 480),
+                // The box over the take, cut where it meets the join's box.
+                part(0, 48_000, 480, 0),
+            ]
+        );
     }
 
     /// **The header's toggle makes the automation it is asked to show** *(asked

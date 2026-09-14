@@ -492,11 +492,35 @@ impl Owner {
             size,
         );
         editor.set_sources(self.buffer_table());
+        editor.set_segments(self.segments());
         let def = editor.window(window + 1, window + 2);
         editor.set_window(Some(window));
         self.editor = Some(editor);
         self.bind_multitrack(window + 1);
         def
+    }
+
+    /// **The joins the session holds**, by source: the segments each is made
+    /// of, which the multitrack editor reads through when a hand joins a box
+    /// that is itself a join.
+    pub fn segments(
+        &self,
+    ) -> HashMap<clausters_document::SourceId, Vec<clausters_document::session::Part>> {
+        self.session
+            .as_ref()
+            .map(|session| {
+                session
+                    .sources
+                    .iter()
+                    .filter_map(|(id, source)| match &source.location {
+                        clausters_document::session::Location::Segments { parts } => {
+                            Some((*id, parts.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Which server buffer each of the session's sources was read into.

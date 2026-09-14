@@ -669,6 +669,7 @@ pub fn read_join(
     rate: f64,
     tempo: &clausters_core::tempomap::TempoMap,
     taken: &[SourceId],
+    parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,
 ) -> Result<Vec<MultitrackIntent>, &'static str> {
     let mut held: Vec<(NodeId, NodeId, &Region)> = Vec::new();
     for name in names {
@@ -765,20 +766,24 @@ pub fn read_join(
             let after = &spans[i + 1];
             after.0 != *source || (after.1 - (start + duration)).abs() > frame
         };
-        parts.push(Part {
-            source: SourceRef {
-                source: *source,
-                lifetime: Lifetime::Session,
-                generation: 0,
-                range: Some(Range {
-                    start: frames(*start),
-                    end: frames(start + duration),
-                }),
-            },
-            fade_in: if cut_before { seam } else { 0 },
-            fade_out: if cut_after { seam } else { 0 },
-            channels: None,
-        });
+        // **Flat, whatever the box windows.** A segment names a take and a
+        // span of it, and a join is a new list of those -- never a list of
+        // lists. A box over a join reads through to the takes that join is
+        // made of, cut to what the box shows; built over the join itself, a
+        // join of joins nested one source inside another until the server
+        // refused it (found 2026-09-13: `sources are stitched more than 4
+        // deep`).
+        let mut pieces = segments_of(*source, frames(*start), frames(start + duration), parts_of)?;
+        let last = pieces.len() - 1;
+        for (k, piece) in pieces.iter_mut().enumerate() {
+            if k == 0 {
+                piece.fade_in = if cut_before { seam } else { 0 };
+            }
+            if k == last {
+                piece.fade_out = if cut_after { seam } else { 0 };
+            }
+        }
+        parts.extend(pieces);
     }
     let total: f64 = spans.iter().map(|(_, _, duration, _)| duration).sum();
     Ok(vec![MultitrackIntent::JoinRegions {
@@ -813,6 +818,70 @@ pub fn read_join(
             },
         }),
     }])
+}
+
+/// **The segments frames `from`..`to` of `source` are**: one span of the
+/// source itself when it is a take, or -- when it is a join `parts_of` knows --
+/// the spans of the takes that join is made of that fall inside, each cut to
+/// the span and keeping its own seam's fade only where that seam is kept.
+///
+/// Not recursive, and it does not need to be: a join's parts name takes, since
+/// every join is made flat, so what this returns names takes too. A part that
+/// states no range cannot be cut, and a span past the end of the join reads
+/// nothing; both are refused rather than joined around.
+fn segments_of(
+    source: SourceId,
+    from: u64,
+    to: u64,
+    parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,
+) -> Result<Vec<Part>, &'static str> {
+    let Some(parts) = parts_of(source) else {
+        return Ok(vec![Part {
+            source: SourceRef {
+                source,
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: Some(Range {
+                    start: from,
+                    end: to,
+                }),
+            },
+            fade_in: 0,
+            fade_out: 0,
+            channels: None,
+        }]);
+    };
+    let mut out = Vec::new();
+    let mut at = 0u64;
+    for part in parts {
+        let Some(range) = part.source.range else {
+            return Err(
+                "one of these boxes is a join whose parts do not say which frames they are",
+            );
+        };
+        let (lo, hi) = (at, at + range.len());
+        at = hi;
+        let (a, b) = (from.max(lo), to.min(hi));
+        if a >= b {
+            continue;
+        }
+        let mut piece = part.clone();
+        piece.source.range = Some(Range {
+            start: range.start + (a - lo),
+            end: range.start + (b - lo),
+        });
+        if a != lo {
+            piece.fade_in = 0;
+        }
+        if b != hi {
+            piece.fade_out = 0;
+        }
+        out.push(piece);
+    }
+    if out.is_empty() {
+        return Err("one of these boxes reads past the end of the join it is a window onto");
+    }
+    Ok(out)
 }
 
 /// The lane a region is on, and the region.
