@@ -46,9 +46,6 @@ use crate::turn::{Event, Kind, Record, int};
 /// what an edit means by *unstated* when it names the state it was made against.
 pub const FIRST_VERSION: i64 = 1;
 
-/// The most values one write carries, where the caller did not say.
-pub const DEFAULT_CHUNK: usize = 8192;
-
 /// A member's number in its context.
 pub type MemberId = u32;
 
@@ -177,13 +174,15 @@ pub enum Effect {
         /// What applying it did: the piece as it now stands, a source minted.
         applied: multitrack::Applied,
     },
-    /// A write to a take's buffer, as the steps a runner walks.
+    /// Writes to a take's buffer, in order: `write` payloads, which the member
+    /// turns into steps (its `write` verb) with the bound of the server the take
+    /// is on.
     #[serde(rename_all = "camelCase")]
     Samples {
         /// The member.
         member: MemberId,
-        /// The steps.
-        steps: Value,
+        /// The payloads.
+        payloads: Vec<Value>,
     },
     /// Payloads an external member applies, in order.
     #[serde(rename_all = "camelCase")]
@@ -218,24 +217,22 @@ pub struct Stepped {
 pub struct Editing {
     history: History,
     version: i64,
-    chunk: usize,
     seats: Vec<Seat>,
     keys: HashMap<String, StructureId>,
 }
 
 impl Default for Editing {
     fn default() -> Self {
-        Self::new(DEFAULT_CHUNK)
+        Self::new()
     }
 }
 
 impl Editing {
-    /// An empty context, whose writes carry at most `chunk` values a message.
-    pub fn new(chunk: usize) -> Self {
+    /// An empty context.
+    pub fn new() -> Self {
         Self {
             history: History::new(),
             version: FIRST_VERSION,
-            chunk: chunk.max(1),
             seats: Vec::new(),
             keys: HashMap::new(),
         }
@@ -266,6 +263,12 @@ impl Editing {
         self.history.redo_label()
     }
 
+    /// The structure `member` is in the order: the identity every member with
+    /// its key shares, and what a client names that structure's widgets by.
+    pub fn structure(&self, member: MemberId) -> Option<StructureId> {
+        self.seats.get(member as usize).map(|seat| seat.structure)
+    }
+
     /// **Takes a member in**, as the structure `key` names: the identity a
     /// member with the same key already has, or a new one.
     pub fn join(&mut self, key: &str, member: Member) -> MemberId {
@@ -286,20 +289,21 @@ impl Editing {
     }
 
     /// **Records an entry** under `member`'s structure — what an external
-    /// member hands over for an edit it applied itself. Answers whether the
-    /// history took it, and moves the version when it did.
-    pub fn record(&mut self, member: MemberId, record: &Record) -> bool {
+    /// member hands over for an edit it applied itself — continuing the entry
+    /// before it when `coalesce` says the hand has not stopped. Answers whether
+    /// the history took it, and moves the version when it did.
+    pub fn record(&mut self, member: MemberId, record: &Record, coalesce: bool) -> bool {
         let Some(structure) = self.seats.get(member as usize).map(|s| s.structure) else {
             return false;
         };
-        let taken = self.record_at(structure, record);
+        let taken = self.record_at(structure, record, coalesce);
         if taken {
             self.version += 1;
         }
         taken
     }
 
-    fn record_at(&mut self, structure: StructureId, record: &Record) -> bool {
+    fn record_at(&mut self, structure: StructureId, record: &Record, coalesce: bool) -> bool {
         let mut entry: Option<Entry> = None;
         for leg in &record.legs {
             let Ok(forward) = serde_json::from_value::<Step>(leg.forward.clone()) else {
@@ -316,7 +320,10 @@ impl Editing {
                 next.keyed(leg.key.clone())
             });
         }
-        entry.is_some_and(|entry| self.history.record(entry))
+        entry.is_some_and(|entry| {
+            self.history
+                .record(if coalesce { entry.continuing() } else { entry })
+        })
     }
 
     /// **One message to a member**, read, recorded and answered.
@@ -333,7 +340,7 @@ impl Editing {
             Member::External { .. } => return None,
         };
         if let Some(record) = outcome.record().cloned() {
-            self.record_at(structure, &record);
+            self.record_at(structure, &record, false);
         }
         let mut corrections = Vec::new();
         if outcome.changed() {
@@ -394,7 +401,6 @@ impl Editing {
         let Some(walked) = self.history.walk(direction) else {
             return out;
         };
-        let chunk = self.chunk;
         let mut applied = false;
         for (structure, payloads) in &walked.legs {
             let mut written = false;
@@ -414,13 +420,13 @@ impl Editing {
                             });
                         }
                     }
-                    Member::Samples(editor) if !written => {
+                    Member::Samples(_) if !written => {
                         written = true;
-                        for payload in payloads {
-                            let steps = editor.write(&payload.0, chunk);
-                            applied |= steps.as_array().is_some_and(|s| !s.is_empty());
-                            out.effects.push(Effect::Samples { member, steps });
-                        }
+                        applied |= !payloads.is_empty();
+                        out.effects.push(Effect::Samples {
+                            member,
+                            payloads: payloads.iter().map(|p| p.0.clone()).collect(),
+                        });
                     }
                     Member::External { .. } if !written => {
                         written = true;
@@ -495,15 +501,15 @@ struct RecordedLeg {
 ///
 /// - `openMultitrack` — `key`, and what a multitrack editor is built from
 ///   (`clausters_apps::multitrack::editor::new_json`, the version aside):
-///   `{"member"}`, or `{"error"}`.
+///   `{"member", "structure"}`, or `{"error"}`.
 /// - `openSamples` — `key`, and what a samples editor is built from
-///   (`clausters_apps::samples::editor::new_json`): `{"member"}`, or
-///   `{"error"}`.
-/// - `external` — `key`, `domain`: `{"member"}`.
+///   (`clausters_apps::samples::editor::new_json`): `{"member", "structure"}`,
+///   or `{"error"}`.
+/// - `external` — `key`, `domain`: `{"member", "structure"}`.
 /// - `event` — `member`, `addr`, `args`: a [`Turned`], or `null`.
 /// - `step` — `direction` (`"undo"` or `"redo"`): a [`Stepped`].
-/// - `record` — `member`, `label`, `legs` (`forward`, `backward`, `key`):
-///   `{"recorded"}`.
+/// - `record` — `member`, `label`, `legs` (`forward`, `backward`, `key`),
+///   `coalesce`: `{"recorded", "version"}`.
 /// - `member` — `member`, and a verb of that member's own door with its
 ///   arguments, the version filled in: what that door answers. `event` and
 ///   `apply` are the context's and answer `{}` here.
@@ -530,16 +536,11 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
     }
     match verb.as_str() {
         "openMultitrack" => match multitrack::new_json(&request.to_string()) {
-            Some(editor) => {
-                json!({ "member": editing.join(&key, Member::Multitrack(Box::new(editor))) })
-                    .to_string()
-            }
+            Some(editor) => joined(editing, &key, Member::Multitrack(Box::new(editor))),
             None => json!({ "error": "the request names no piece" }).to_string(),
         },
         "openSamples" => match samples::new_json(&request.to_string()) {
-            Ok(editor) => {
-                json!({ "member": editing.join(&key, Member::Samples(editor)) }).to_string()
-            }
+            Ok(editor) => joined(editing, &key, Member::Samples(editor)),
             Err(error) => json!({ "error": error }).to_string(),
         },
         "external" => {
@@ -547,7 +548,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 .as_str()
                 .unwrap_or_default()
                 .to_string();
-            json!({ "member": editing.join(&key, Member::External { domain }) }).to_string()
+            joined(editing, &key, Member::External { domain })
         }
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
@@ -561,6 +562,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             to_json(&editing.step(direction))
         }
         "record" => {
+            let coalesce = get(&request, "coalesce").as_bool().unwrap_or(false);
             let recorded = serde_json::from_value::<Recorded>(request.clone()).ok();
             let taken = recorded.is_some_and(|r| {
                 let record = Record {
@@ -575,9 +577,9 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                         })
                         .collect(),
                 };
-                editing.record(member, &record)
+                editing.record(member, &record, coalesce)
             });
-            json!({ "recorded": taken }).to_string()
+            json!({ "recorded": taken, "version": editing.version() }).to_string()
         }
         "member" => {
             let inner = get(&request, "call")
@@ -610,6 +612,14 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         .to_string(),
         _ => "{}".into(),
     }
+}
+
+/// A member taken in, as the door answers it: its number and the structure it
+/// is in the order.
+fn joined(editing: &mut Editing, key: &str, member: Member) -> String {
+    let member = editing.join(key, member);
+    let structure = editing.structure(member).map(|s| s.0);
+    json!({ "member": member, "structure": structure }).to_string()
 }
 
 /// A turn's answer as JSON.
@@ -715,7 +725,7 @@ mod tests {
             .effects
             .iter()
             .filter_map(|e| match e {
-                Effect::Samples { steps, .. } => Some(steps[0]["send"]["args"][2].clone()),
+                Effect::Samples { payloads, .. } => Some(payloads[0]["values"].clone()),
                 _ => None,
             })
             .collect()
@@ -738,7 +748,7 @@ mod tests {
         let undone = editing.step(Direction::Undo);
         assert!(undone.stepped);
         assert_eq!(undone.version, 3);
-        assert_eq!(written(&undone), [json!({"b": [0.0]})]);
+        assert_eq!(written(&undone), [json!([0.0])]);
         assert_eq!(
             undone.corrections,
             [Corrected {
@@ -756,7 +766,7 @@ mod tests {
             "the window reads the take again"
         );
         let redone = editing.step(Direction::Redo);
-        assert_eq!(written(&redone), [json!({"b": [0.5]})]);
+        assert_eq!(written(&redone), [json!([0.5])]);
     }
 
     /// **Two applications in one context walk one order**: a box moved, a
@@ -789,11 +799,7 @@ mod tests {
         assert_eq!(position(&mut editing, piece), 2.0);
 
         let back = editing.step(Direction::Undo);
-        assert_eq!(
-            written(&back),
-            [json!({"b": [0.0]})],
-            "the stroke, in between"
-        );
+        assert_eq!(written(&back), [json!([0.0])], "the stroke, in between");
         assert_eq!(position(&mut editing, piece), 2.0);
 
         editing.step(Direction::Undo);
@@ -802,7 +808,7 @@ mod tests {
 
         editing.step(Direction::Redo);
         let forward = editing.step(Direction::Redo);
-        assert_eq!(written(&forward), [json!({"b": [0.5]})]);
+        assert_eq!(written(&forward), [json!([0.5])]);
     }
 
     /// **Two windows over one take are one structure**: a stroke in one is
@@ -840,7 +846,7 @@ mod tests {
                 key: String::new(),
             }],
         };
-        assert!(editing.record(curve, &record));
+        assert!(editing.record(curve, &record, false));
         assert_eq!(editing.version(), 2);
         editing
             .event(take, &event(50, 1, "draw", stroke(0.5, 0.0)))
@@ -871,7 +877,7 @@ mod tests {
                 key: String::new(),
             }],
         };
-        editing.record(piece, &record);
+        editing.record(piece, &record, false);
         let version = editing.version();
         let refused = editing.step(Direction::Undo);
         assert!(!refused.stepped);

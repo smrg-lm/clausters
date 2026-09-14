@@ -1158,6 +1158,12 @@ clients and the standalone host green, and each is its own commit.
      context is not copied for a sizing pass the way an editor is, so the C door
      runs a verb once and keeps its answer until the filling call takes it. No
      client uses it yet, and the editor handles stay until they do.
+   - ✅ *What a client needs of it (2026-09-14, core ABI **v63**).* A step hands a
+     take's writes back as `write` payloads, which the member turns into steps
+     with the bound of the server the take is on, so a context carries no bound
+     and `clausters_apps_editing_new` takes no argument. An open answers the
+     structure as well as the member, since a client names a structure's widgets
+     by it, and `record` takes `coalesce` and answers the version.
 
 **Not in these steps**, so their absence is read as a decision:
 

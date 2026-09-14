@@ -77,10 +77,9 @@ export class EditingCore {
      */
     call(request: string): string;
     /**
-     * A context whose writes carry at most `chunk` values a message (0 for the
-     * default).
+     * An empty context.
      */
-    constructor(chunk: number);
+    constructor();
 }
 
 /**
@@ -1639,7 +1638,7 @@ export interface InitOutput {
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
-    readonly editingcore_new: (a: number) => number;
+    readonly editingcore_new: () => number;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

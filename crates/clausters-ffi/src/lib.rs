@@ -430,7 +430,13 @@ pub use time::*;
 /// whose turns and history steps it takes. A verb runs once across its sizing
 /// and filling calls, since a history is not copied for a sizing pass.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 62;
+/// **v63 a take's step is its writes.** `clausters_apps_editing_new` takes no
+/// argument: a step hands a take's writes back as payloads, which the member
+/// turns into steps with the bound of the server the take is on, so a context
+/// carries no bound of its own. An open answers the structure, and `record`
+/// takes `coalesce` and answers the version. **Breaking** for a caller of the
+/// one-argument door.
+pub const CORE_ABI_VERSION: u32 = 63;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

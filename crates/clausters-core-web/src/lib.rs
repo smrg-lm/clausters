@@ -1388,21 +1388,22 @@ pub struct JsEditing(clausters_apps::editing::Editing);
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = EditingCore)]
 impl JsEditing {
-    /// A context whose writes carry at most `chunk` values a message (0 for the
-    /// default).
+    /// An empty context.
     #[wasm_bindgen(constructor)]
-    pub fn new(chunk: usize) -> JsEditing {
-        let chunk = if chunk == 0 {
-            clausters_apps::editing::DEFAULT_CHUNK
-        } else {
-            chunk
-        };
-        JsEditing(clausters_apps::editing::Editing::new(chunk))
+    pub fn new() -> JsEditing {
+        JsEditing(clausters_apps::editing::Editing::new())
     }
 
     /// One verb, as `clausters_apps::editing::call_json` documents.
     pub fn call(&mut self, request: &str) -> String {
         clausters_apps::editing::call_json(&mut self.0, request)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Default for JsEditing {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

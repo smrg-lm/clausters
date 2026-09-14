@@ -204,20 +204,11 @@ pub unsafe extern "C" fn clausters_apps_samples_measures(
 /// answer a sizing call computed and has not handed over yet.
 pub struct FfiEditing(Mutex<(Editing, Option<(String, String)>)>);
 
-/// **An editing context**: one undo order over every editor opened in it.
-/// `chunk` is the most values one write carries (0 for the default). Free with
-/// [`clausters_apps_editing_free`].
+/// **An editing context**: one undo order over every editor opened in it. Free
+/// with [`clausters_apps_editing_free`].
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_apps_editing_new(chunk: usize) -> *mut FfiEditing {
-    let chunk = if chunk == 0 {
-        context::DEFAULT_CHUNK
-    } else {
-        chunk
-    };
-    Box::into_raw(Box::new(FfiEditing(Mutex::new((
-        Editing::new(chunk),
-        None,
-    )))))
+pub extern "C" fn clausters_apps_editing_new() -> *mut FfiEditing {
+    Box::into_raw(Box::new(FfiEditing(Mutex::new((Editing::new(), None)))))
 }
 
 /// Frees a context created by [`clausters_apps_editing_new`], with every
@@ -300,11 +291,11 @@ mod tests {
     /// opens are two members, not four.
     #[test]
     fn a_sized_verb_runs_once() {
-        let e = clausters_apps_editing_new(0);
+        let e = clausters_apps_editing_new();
         let first = call(e, r#"{"verb": "openSamples", "key": "a", "buffer": 1}"#);
         let second = call(e, r#"{"verb": "openSamples", "key": "b", "buffer": 2}"#);
-        assert_eq!(first, r#"{"member":0}"#);
-        assert_eq!(second, r#"{"member":1}"#);
+        assert!(first.starts_with(r#"{"member":0,"#), "{first}");
+        assert!(second.starts_with(r#"{"member":1,"#), "{second}");
         unsafe { clausters_apps_editing_free(e) };
     }
 }
