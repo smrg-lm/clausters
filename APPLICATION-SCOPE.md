@@ -1033,6 +1033,66 @@ supported surface, one program in two languages, and an undo that walks a
 stroke drawn inside a box and a box dragged on the piece as one order — now
 from the standalone host too.
 
+**The reference is `clients/python/examples/editors/edit_samples.py` and the
+Python client's `SamplesEditor`** (`clients/python/clausters/gui/editing/samples.py`
+and the `Editor`/`Editing` it stands on), read call by call, as `O32` read
+`edit_multitrack.py`. Each part is deleted from both clients as it crosses,
+rather than delegated.
+
+**Steps, in order** *(written 2026-09-14 with the user)*. Each leaves both
+clients and the standalone host green, and each is its own commit.
+
+1. ⬜ **The window.** `clausters_apps::samples::{window, props}`: the one
+   `waveform` over the take -- its buffer, channels, the measures it stacks
+   (`peak`, `rms`), the time ruler, rate, tempo and label -- and the gesture plan
+   a take is edited with (a drag selects, Alt draws, Ctrl grabs one sample), and
+   the correction a write answers with (`reload`, since the host's picture of a
+   server buffer does not see a write made from the other side). Bound through
+   the C ABI and wasm like the multitrack's; both clients' `SamplesView.build`
+   and `props` call it, and `measures`/`MEASURES` move with it.
+2. ⬜ **The conversation.** `clausters_apps::samples::editor::SamplesEditor`: one
+   view's end of the conversation, as the multitrack's editor is -- a `draw` or a
+   `sample` read through `clausters_editing::samples` (a client still decodes the
+   `f32` blob, which is the wire's framing), checked against the version, the
+   inverse taken **from the reading** rather than kept between two calls, a
+   refusal or an overtaken edit answered with the picture -- every turn an
+   outcome. A handle over one JSON door, `clausters_apps_samples_editor_{new,free,call}`
+   and its wasm class. Both clients' `SamplesEditor` hand every message to it,
+   and `SamplesDomain.request`/`current` go; the "Found by use" entry about
+   `SamplesDomain` smuggling the inverse closes here. The history stays with the
+   caller in this step, as it did for the multitrack's (`O32` step 2).
+3. ⬜ **The write.** What an applied stroke does to the server buffer, as steps
+   the runner carries out (`clausters_editing::run`): a `/buffer_setRange` of
+   the run for a mono take, and for an interleaved one the span read, the
+   channel spliced in and the run written back -- which today is
+   `SamplesDomain.project` in each client. Both clients run the steps against
+   their server; the standalone host runs them against the session that owns
+   the takes, which is where the picture reads.
+4. ⬜ **Entering a box.** The multitrack already answers what a box opens as
+   (`box_contents`); now what opens is this application. In both clients
+   `enter` opens the crate's editor over the source's buffer instead of each
+   client's own `SamplesEditor`; the standalone host opens it too, where
+   `host/mod.rs` logs today that entering a box needs an audio editor it does
+   not have.
+5. ⬜ **The undo order moves into the crate.** A piece and the boxes entered out
+   of it share one history, which today each endpoint keeps -- `Editing` in the
+   clients, the `Owner`'s history in the host -- while the multitrack editor
+   hands back the entry to record. With both applications in the crate the
+   history is the crate's: one order across the piece and its boxes, walked by
+   the crate, and the clients' `Editing` and `Application` keep only what a
+   language owns. The multitrack editor stops handing entries back.
+6. ⬜ **The recorded exchange.** An exchange in `clients/web/tests/editing-vectors.json`,
+   generated through the Python client and replayed through the web client and
+   against the standalone host, as `O32` step 6 and `O33` did for the
+   multitrack: a box entered, a stroke drawn in it, a single sample moved, a box
+   dragged on the piece, and undo and redo walking the three in the order they
+   were made.
+
+**Not in these steps**, so their absence is read as a decision: the audio editor
+as an **analysis tool** -- panes and layers on Sonic Visualiser's shape
+(`crates/clausters-document/PLAN.md`, `O24`) -- and the catalogue views `AP5`
+left without a home. Both build on this application once it exists.
+
 ### AP8 - The pass over the packages, and the plans keep what is worth keeping
 
 The milestone that makes deleting this file legal.
@@ -1040,9 +1100,9 @@ The milestone that makes deleting this file legal.
 - **Docs:** `docs/architecture.md` gains the application scope and its place in
   the four layers; `docs/gui-protocol.md` takes whatever the diff and the derived
   id change on the wire; the Python book's composition chapter and the web
-  book's equivalent follow **- both of those are gone, deleted 2026-09-06 with
-  `FormEditor`, and what replaces them is `form.md` in each book plus whatever
-  `O24` writes** ; `docs/bindings.md` and the parity tests take every new
+  book's equivalent follow **- the chapters built on `FormEditor` were deleted
+  with it on 2026-09-06, and `composition.md` in each book is now the document's
+  own chapter, beside `form.md`** ; `docs/bindings.md` and the parity tests take every new
   symbol. `scripts/check-docs.sh` before committing anything a book reads.
 - **Decisions:** `docs/decisions.md` records the two worth recording - the
   application as the unit that owns the id space and the screen state, and a
