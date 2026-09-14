@@ -51,6 +51,7 @@ one. Each row says which.
 
 | Example | Why |
 |---|---|
+| `editors/load_multitrack` | reopens the session `editors/edit_multitrack.py` writes into `examples/out/`; the page writes no session, since a tab has no filesystem to write its takes into, so there is nothing for a page to reopen |
 | `editors/session` | drives the GUI host as a **separate process** over the session's transport, which is what a page has instead of, not as well as: its host is a canvas in the same page |
 | `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |
 | `io/embedded` | the in-process embedded server through the bundled native library — the page's engine is that same server compiled to wasm, so every page is this example |

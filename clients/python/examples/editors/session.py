@@ -66,7 +66,6 @@ import wave
 from clausters import Session as Server
 from clausters.multitrack import (Multitrack, Content, Lane, Region, Session,
                                    Source, Span, Tempo, Track, View)
-from clausters.defs.buffer import Buffer
 from clausters.document import MULTITRACK, domain_edit
 from clausters.play import play
 
@@ -255,15 +254,12 @@ def reopen(server=None) -> tuple:
     """
     with open(path) as f:
         reopened = Session.read(json.load(f))
-    buffers = {}
-    for id, source in reopened.sources.items():
-        if source.path is None or server is None:
-            continue
-        where = source.path
-        if not os.path.isabs(where):
-            where = os.path.join(OUT, where)
-        buffers[id] = Buffer.read(where, server=server.server)
-    return reopened, buffers
+    if server is None:
+        return reopened, {}
+    #: The table is loaded by the shared crate, the same load the GUI host runs
+    #: on `--session`: relative paths against the session's own folder, and a
+    #: volatile source left out with a warning.
+    return reopened, reopened.load(server.server, beside=OUT)
 
 
 def run() -> None:
