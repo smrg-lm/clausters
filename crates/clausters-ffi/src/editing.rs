@@ -164,6 +164,35 @@ pub unsafe extern "C" fn clausters_editing_stitch(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **A session's sources, loaded**: the steps that read every take and stitch
+/// every join into the buffers the caller set aside.
+///
+/// `request` is `{"session", "beside", "buffers"}` as JSON and the answer is
+/// `clausters_editing::load::plan_json`'s: what each source became, the steps to
+/// walk through a runner, what will not load and why, and the numbers left
+/// over.
+///
+/// Sizes with a null `out` and fills with a second call.
+///
+/// # Safety
+/// `request` must be null or readable for `request_len` bytes, and `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_load(
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+        return 0;
+    };
+    let answer = clausters_editing::load::plan_json(&request);
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 /// **What is sounding of a piece**, held across edits.
 ///
 /// The instance projection's state: an opaque handle, because it is the one

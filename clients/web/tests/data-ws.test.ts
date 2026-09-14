@@ -11,7 +11,9 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
@@ -20,6 +22,7 @@ import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
+import { Session } from "../src/multitrack.ts";
 import { Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
@@ -277,5 +280,72 @@ test("a join plays as one buffer and says what it is made of", { skip: !hasServe
         join.free();
         one.free();
         two.free();
+    });
+});
+
+test("a saved session loads its takes and then its join", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        // The same test the Python client runs: reopening a session is reading
+        // it and loading it, and the join plays the spans the document states.
+        const folder = await mkdtemp(join(tmpdir(), "clausters-load-"));
+        try {
+            for (const [name, samples] of [
+                ["one.wav", [1.0, 2.0, 3.0, 4.0]],
+                ["two.wav", [5.0, 6.0, 7.0, 8.0]],
+            ] as const) {
+                const written = await Buffer.fromSamples(new Float32Array(samples), 1, 0, { server });
+                await written.write(join(folder, name), { sampleFormat: "float" });
+                written.free();
+            }
+
+            const window = (region: number, source: number) => ({
+                id: region, position: 0.0, length: 1.0,
+                content: { fill: "window", window: {
+                    source: { source, lifetime: "session", generation: 0 },
+                    start: 0.0, duration: 1.0 } },
+            });
+            const span = (source: number, start: number, end: number) => ({
+                source: { source, lifetime: "session", generation: 0, range: { start, end } },
+            });
+            const take = (name: string) => ({
+                location: { at: "file", path: name }, lifetime: "session", channels: 1, frames: 4,
+            });
+            const saved = Session.read({
+                format: 2,
+                multitrack: { tracks: [{ id: 10, name: "t", lanes: [
+                    { id: 11, regions: [window(20, 3), window(21, 4)] }] }] },
+                sources: {
+                    "1": take("one.wav"),
+                    "2": take("two.wav"),
+                    "3": { location: { at: "segments", parts: [span(2, 2, 4), span(1, 0, 2)] },
+                           lifetime: "session", channels: 1, frames: 4 },
+                    "4": { location: { at: "volatile" }, lifetime: "temporary" },
+                },
+            });
+
+            const before = server.buffers.inUse;
+            const loaded = await saved.load(server, { beside: folder });
+            assert.deepEqual([...loaded.keys()].sort(), [1, 2, 3], "the takes only the join reads load too");
+            assert.equal(server.buffers.inUse, before + 3, "what the load did not take is given back");
+            assert.equal(loaded.get(1)!.frames, 4);
+            assert.equal(loaded.get(1)!.path, join(folder, "one.wav"));
+
+            const joined = loaded.get(3)!;
+            assert.deepEqual(Array.from(await joined.getSamples({ start: 0, count: 4 })), [7.0, 8.0, 1.0, 2.0]);
+            assert.deepEqual(
+                (await joined.parts()).map((p) => [p.source, p.start, p.frames]),
+                [[loaded.get(2)!.bufnum, 2, 2], [loaded.get(1)!.bufnum, 0, 2]],
+            );
+            for (const buffer of loaded.values()) buffer.free();
+
+            // A file that is not there is the server's refusal of its read, and
+            // the load leaves nothing of itself behind.
+            await rm(join(folder, "two.wav"));
+            const inUse = server.buffers.inUse;
+            await assert.rejects(() => saved.load(server, { beside: folder }));
+            assert.equal(server.buffers.inUse, inUse);
+        } finally {
+            await rm(folder, { recursive: true, force: true });
+        }
     });
 });

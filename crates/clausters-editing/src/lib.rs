@@ -38,6 +38,7 @@ pub mod conversation;
 pub mod events;
 pub mod instance;
 pub mod intake;
+pub mod load;
 pub mod multitrack;
 pub mod playback;
 pub mod points;

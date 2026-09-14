@@ -56,10 +56,15 @@
  */
 
 import {
+    StepRunner,
     multitrackNames as coreNames,
     multitrackProps as coreProps,
 } from "./core/clausters_core_web.js";
-import { FIRST_VERSION, SESSION_FORMAT } from "./document.ts";
+import { Buffer } from "./defs/buffer.ts";
+import type { Server } from "./defs/server/index.ts";
+import { resolveServer } from "./defs/wire.ts";
+import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
+import { runSteps } from "./steps.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
@@ -1371,6 +1376,57 @@ export class Session {
         session.extra = rest(written, "format", "multitrack", "arrangement", "views",
                              "document", "sources", "provenance");
         return session;
+    }
+
+    /**
+     * Loads the sources the piece names into `server`: every take read from its
+     * file, and every join stitched from the takes it is made of once those are
+     * there.
+     *
+     * What each source *is* in a running system is not the document's to decide,
+     * and loading is the half of reopening a session that says it: a server
+     * buffer per source. What is read and in what order is the shared crate's
+     * (`editingLoad`), so a session opens the same here, in the Python client
+     * and in the GUI host.
+     *
+     * `beside` is the folder a relative path is read against — the session
+     * file's own, on **the server's** filesystem. The answer maps source id to
+     * {@link Buffer} for every source that loaded; a source that cannot — a
+     * volatile one, one the table does not hold, a join over a take that did not
+     * load — is left out and named in a warning. Rejects when the server refuses
+     * a read or a stitch (a file that is not there), after freeing what the load
+     * had made.
+     */
+    async load(
+        server?: Server,
+        { beside = ".", timeout }: { beside?: string; timeout?: number } = {},
+    ): Promise<Map<number, Buffer>> {
+        const srv = resolveServer(server);
+        const aside = [...this.sources.keys()].map(() => srv.buffers.alloc());
+        const plan = editingLoad(this.write(), beside, aside);
+        if (plan.error !== undefined) {
+            for (const bufnum of aside) srv.buffers.free(bufnum);
+            throw new Error(`clausters: ${plan.error}`);
+        }
+        for (const bufnum of plan.unused) srv.buffers.free(bufnum);
+        for (const [id, why] of plan.unresolved) {
+            console.warn(`clausters: source ${id} is not loadable: ${why}`);
+        }
+        const buffers = new Map<number, Buffer>();
+        for (const [id, take] of Object.entries(plan.takes)) {
+            const buffer = new Buffer(take.buffer, take.frames, Math.max(1, take.channels), 0.0, srv);
+            if (take.path !== undefined) buffer.path = take.path;
+            buffers.set(Number(id), buffer);
+        }
+        try {
+            await runSteps(srv, new StepRunner(), plan.steps, { to: "samples", timeout });
+        } catch (error) {
+            for (const buffer of buffers.values()) buffer.free();
+            throw error;
+        }
+        // The shape is the file's, so it is read back rather than trusted.
+        for (const buffer of buffers.values()) await buffer.info(timeout);
+        return buffers;
     }
 }
 

@@ -31,11 +31,8 @@ barrier. A buffer's fill waiting for its allocation is one of those steps,
 stated once, and every endpoint carries out the same list.
 """
 
-from array import array
-
 from ... import _native
-from ...base import _osclib
-from ...errors import CommandError
+from ..._steps import run_steps
 from ..transport import Transport
 
 __all__ = ["Playback"]
@@ -137,33 +134,7 @@ class Playback:
         reply is handed back, which releases the rest. Which reply releases
         what is the runner's, as it is the page's and the GUI host's.
         """
-        runner = self._runner
-        runner.call("push", to="sound", steps=steps)
-        while True:
-            ready = runner.call("ready")
-            messages = ready.get("messages", [])
-            awaiting = ready.get("awaiting")
-            if awaiting is None:
-                for message in messages:
-                    self.server.send_msg(message["addr"], *[_arg(a) for a in message["args"]])
-                return
-            if not messages:
-                raise CommandError("the runner waits on a step nothing was sent for")
-            *first, last = messages
-            for message in first:
-                self.server.send_msg(message["addr"], *[_arg(a) for a in message["args"]])
-            expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
-                      else ("/done", "/fail"))
-            raddr, rargs = self.server.request(
-                last["addr"], *[_arg(a) for a in last["args"]], expect=expect)
-            answer = runner.call("reply", **{"from": "sound"}, addr=raddr,
-                                 args=[_tagged(a) for a in rargs])
-            if answer.get("reply") == "refused":
-                raise CommandError(f"{last['addr']} failed: {rargs}")
-            if answer.get("reply") != "released":
-                raise CommandError(
-                    f"{last['addr']} was answered by {raddr} {rargs}, "
-                    "which is not what it waits on")
+        run_steps(self.server, self._runner, steps)
 
     # ---- the transport ----
 
@@ -231,31 +202,3 @@ class Playback:
         """Free the piece's instance. The piece itself is untouched: what a
         playback holds is nodes, and nodes are not the composition."""
         self._run(self._piece.close(self.server.ids))
-
-
-def _arg(arg: dict):
-    """One step argument as the value `send_msg` encodes to its tag."""
-    if "i" in arg:
-        return int(arg["i"])
-    if "h" in arg:
-        return _osclib.Int64(int(arg["h"]))
-    if "f" in arg:
-        return float(arg["f"])
-    if "b" in arg:
-        return array("f", arg["b"]).tobytes()
-    return str(arg["s"])
-
-
-def _tagged(value) -> dict:
-    """One reply argument in the tagged shape the runner reads -- the other
-    direction of `_arg`. A reply carries ints, floats and strings; anything
-    else is handed over as its text."""
-    if isinstance(value, bool):
-        return {"i": int(value)}
-    if isinstance(value, _osclib.Int64):
-        return {"h": value.value}
-    if isinstance(value, int):
-        return {"i": value}
-    if isinstance(value, float):
-        return {"f": value}
-    return {"s": str(value)}

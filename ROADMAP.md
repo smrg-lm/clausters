@@ -456,8 +456,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The branch's own, and they are the near work
 
-- ⬜ **`O25`-`O30` - the projections: one implementation per question, whoever asks it** *(`crates/clausters-document/PLAN.md`)*. **Taken next**, decided 2026-09-11 with the user. Each editable structure is one model with three endpoints and an edit may start at any of them; the crate already holds one implementation of an edit and of an inverse, and each client re-implements the rest -- measured at 4,574 lines of Python against 5,350 of TypeScript, with the largest duplicated block being the *conversation* between host and client rather than any projection. The order is leaves before trunk, and `O25`-`O29` shipped on 2026-09-11 and 2026-09-12: what is left is `O30`, the host editing a multitrack with no client in the process, which is the requirement that settled where any of it lives. What is left of `O30` and of `O31` is one thing: a session saved by one endpoint is **loaded** into a server by the host alone, so neither client can open one and sound it -- the load moves into the shared crate and both clients bind it (decided 2026-09-14 with the user). Then `AP7`, the audio editor, which is what lets the standalone host enter a box and the undo order move into the crate. `O28` reproduced the rebuild a clip that changes track still needs, because the server verb for it does not exist yet -- `/graph_moveSlot` (`PLAN.md`, Future directions), now one arm of one match.
-
 - ⬜ **`AP7` - a second application, to prove the abstraction**
   *(`APPLICATION-SCOPE.md`)*. Written before the turn, and the turn gives it its
   subject: the second application is one of the three, not an invented one, so it

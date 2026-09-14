@@ -1128,6 +1128,16 @@ export function editingDefaultBpm(): number;
 export function editingIntake(domain: string, tag: string, request: string): string;
 
 /**
+ * JS face: **a session's sources, loaded** — the steps that read every take
+ * and stitch every join into the buffers the caller set aside.
+ *
+ * `request` is `{"session", "beside", "buffers"}` as JSON; the answer is what
+ * each source became, the steps, what will not load and why, and the numbers
+ * left over.
+ */
+export function editingLoad(request: string): string;
+
+/**
  * JS face: **what a source made of spans comes to** — the buffer a join is,
  * resolved against the caller's table.
  *
@@ -1581,6 +1591,7 @@ export interface InitOutput {
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingDefaultBpm: () => number;
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 59
+CORE_ABI_VERSION = 60
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -247,6 +247,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_stitch.restype = ctypes.c_size_t
+    lib.clausters_editing_load.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_load.restype = ctypes.c_size_t
     lib.clausters_editing_instance_new.restype = ctypes.c_void_p
     lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_instance_reconcile.argtypes = [
@@ -1416,6 +1420,27 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
     raw = size_then_fill(_lib.clausters_editing_stitch, as_u8(body), len(body),
                          as_u8(table), len(table))
     return json.loads(raw) if raw else None
+
+
+def editing_load(session: dict, beside: str, buffers: list) -> dict:
+    """**A session's sources, loaded** — the steps that read every take and
+    stitch every join into the buffers set aside (`clausters_editing_load`).
+
+    Args:
+        session: the session as the crate writes it.
+        beside: the folder its relative paths are read against.
+        buffers: buffer numbers set aside; one per source in the table is
+            always enough.
+
+    Returns:
+        ``{"takes": {id: {"buffer", "channels", "frames"}}, "steps",
+        "unresolved": [[id, why]], "unused": [n]}``, or ``{"error"}`` when
+        ``session`` is not one.
+    """
+    body = json.dumps({"session": session, "beside": str(beside),
+                       "buffers": [int(n) for n in buffers]}).encode("utf-8")
+    raw = size_then_fill(lib().clausters_editing_load, as_u8(body), len(body))
+    return json.loads(raw) if raw else {"error": "the load answered nothing"}
 
 
 def editing_default_bpm() -> float:

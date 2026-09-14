@@ -415,7 +415,12 @@ pub use time::*;
 /// piece's own graph and the GUI host a group of its own, and said which by
 /// passing `target` and `bind_transport`. **Breaking**: a caller of the
 /// three-argument door is a caller of a signature that no longer exists.
-pub const CORE_ABI_VERSION: u32 = 59;
+/// **v60 a session is loaded once.** `clausters_editing_load` plans the reads
+/// and the stitches that put a saved session's sources into a server, as steps
+/// for the runner. Only the GUI host could open a session and sound it; a
+/// client loaded each take by hand and could not load a join at all.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 60;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

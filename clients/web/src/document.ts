@@ -28,6 +28,7 @@ import {
     domainCoalesceKey as coreDomainCoalesceKey,
     editingIntake as coreEditingIntake,
     editingStitch as coreEditingStitch,
+    editingLoad as coreEditingLoad,
     domainEdit as coreDomainEdit,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
@@ -579,6 +580,32 @@ export function editingStitch(
     const answer = coreEditingStitch(JSON.stringify(source), JSON.stringify(held));
     if (!answer || answer === "null") return undefined;
     return JSON.parse(answer) as Stitch;
+}
+
+/** What {@link editingLoad} answers: a session's sources, as a load. */
+export interface Loading {
+    /** What each source became, by source id; 0 where the table states no width or length. */
+    takes: Record<string, { buffer: number; channels: number; frames: number; path?: string }>;
+    /** The steps to walk through a runner: each read and stitch, then its `/done`. */
+    steps: unknown[];
+    /** `[source, why]` for every source that will not load. */
+    unresolved: [number, string][];
+    /** The buffer numbers the load did not take. */
+    unused: number[];
+    /** Set, and nothing else is, when the request named no session. */
+    error?: string;
+}
+
+/**
+ * **A session's sources, loaded** — the steps that read every take and stitch
+ * every join into the buffers set aside.
+ *
+ * `session` is the session as the crate writes it, `beside` the folder its
+ * relative paths are read against, and `buffers` the numbers set aside: one per
+ * source in the table is always enough.
+ */
+export function editingLoad(session: unknown, beside: string, buffers: number[]): Loading {
+    return JSON.parse(coreEditingLoad(JSON.stringify({ session, beside, buffers }))) as Loading;
 }
 
 /** What {@link domainEdit} answers: both directions of one edit. */

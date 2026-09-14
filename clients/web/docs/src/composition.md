@@ -516,29 +516,33 @@ session never claims to own the user's file.
 ## Reopening: structures, not a description
 
 `Session.read` gives the piece and its table back, and by itself that is half a
-verb: every take is a bare source number and nothing has loaded it. Resolving
-the table is the other half, and it is the caller's, because what a source *is*
-in a running system — a buffer to allocate, a file to map — is not the
-document's to decide:
+verb: every take is a bare source number and nothing has loaded it. `load` is
+the other half — what a source *is* in a running system is not the document's to
+decide, so it is said by loading the table into a server:
 
 ```ts
 const session = Session.read(saved);
-const buffers = new Map();
-for (const [id, source] of session.sources) {
-    if (source.path) buffers.set(id, await Buffer.read(`${folder}/${source.path}`));
-}
+const buffers = await session.load(server, { beside: folder });
 ```
 
-Each file the table names is read onto the server **once per source** — two clips
-over one take are two windows onto one buffer, and reading it twice gives them
-two buffers that drift apart on the first edit. A *volatile* source comes back
-frozen rather than as a lie. A file that has moved comes back frozen too, and the
-rest of the piece opens: half a session is worth opening. And a generator whose
-reference `defs` does not have keeps what it last **rendered** as its floor,
-which is the same thing a host with no language attached shows.
+The answer is a `Buffer` per source, keyed by source id — the same table an
+editor takes as its `sources`. `beside` is the session's folder on **the
+server's** filesystem, which is the one that reads the files. Each take is read
+**once per source**: two clips over one take are two windows onto one buffer, and
+reading it twice gives them two buffers that drift apart on the first edit. A
+**join** is stitched from the takes it is made of, after they have loaded, so it
+plays the spans the file states; a take only a join reads is loaded for it. What
+is read and in what order is the shared crate's, so the Python client and the GUI
+host open the same session the same way.
 
-Reading a file is asynchronous here and not in the Python client (a page's
-`Buffer.read` goes to the worker that owns the filesystem), so the `await` is the
+A *volatile* source is left out with a warning rather than returned as a lie,
+and the rest of the piece opens: half a session is worth opening. A file that is
+not there is the server's refusal of its read, and `load` rejects after freeing
+what it had made. And a generator whose reference `defs` does not have keeps what
+it last **rendered** as its floor, which is the same thing a host with no
+language attached shows.
+
+Loading is asynchronous here and not in the Python client, so the `await` is the
 language's and not a different call.
 
 ## Mixing is the composition's

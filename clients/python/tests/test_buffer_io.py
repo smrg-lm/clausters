@@ -228,3 +228,82 @@ def test_a_join_plays_as_one_buffer_and_says_what_it_is_made_of():
     join.free()
     one.free()
     two.free()
+
+
+def _swapped_session() -> dict:
+    """A session whose one box is a join of two takes, the second take's tail
+    first, beside a box over samples that were never written down."""
+    def window(region, source):
+        return {"id": region, "position": 0.0, "length": 1.0,
+                "content": {"fill": "window", "window": {
+                    "source": {"source": source, "lifetime": "session",
+                               "generation": 0},
+                    "start": 0.0, "duration": 1.0}}}
+
+    def span(source, start, end):
+        return {"source": {"source": source, "lifetime": "session",
+                           "generation": 0, "range": {"start": start, "end": end}}}
+
+    def take(name):
+        return {"location": {"at": "file", "path": name}, "lifetime": "session",
+                "channels": 1, "frames": 4}
+
+    return {
+        "format": 2,
+        "multitrack": {"tracks": [{"id": 10, "name": "t", "lanes": [
+            {"id": 11, "regions": [window(20, 3), window(21, 4)]}]}]},
+        "sources": {
+            "1": take("one.wav"),
+            "2": take("two.wav"),
+            "3": {"location": {"at": "segments",
+                               "parts": [span(2, 2, 4), span(1, 0, 2)]},
+                  "lifetime": "session", "channels": 1, "frames": 4},
+            "4": {"location": {"at": "volatile"}, "lifetime": "temporary"},
+        },
+    }
+
+
+def test_a_saved_session_loads_its_takes_and_then_its_join(tmp_path):
+    """Reopening a session is reading it and loading it: every take its join
+    reads is read from the file beside the session, the join is stitched once
+    they are there, and it plays the spans the document states."""
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        from clausters.errors import CommandError
+        from clausters.multitrack import Session as Saved
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    server = session.server
+    for name, samples in (("one.wav", [1.0, 2.0, 3.0, 4.0]),
+                          ("two.wav", [5.0, 6.0, 7.0, 8.0])):
+        written = Buffer.from_samples(samples, server=server)
+        written.write(str(tmp_path / name), sample_format="float")
+        written.free()
+
+    saved = Saved.read(_swapped_session())
+    before = server.buffers.in_use
+    with pytest.warns(UserWarning, match="volatile"):
+        loaded = saved.load(server, beside=str(tmp_path))
+
+    assert sorted(loaded) == [1, 2, 3], "the takes only the join reads load too"
+    assert server.buffers.in_use == before + 3, "what the load did not take is given back"
+    assert (loaded[1].frames, loaded[1].channels) == (4, 1)
+    assert loaded[1].path == str(tmp_path / "one.wav")
+
+    join = loaded[3]
+    assert list(join.get_samples(0, 4)) == pytest.approx([7.0, 8.0, 1.0, 2.0])
+    assert [(p.source, p.start, p.frames) for p in join.parts()] == [
+        (loaded[2].bufnum, 2, 2), (loaded[1].bufnum, 0, 2)]
+    for buffer in loaded.values():
+        buffer.free()
+
+    # A file that is not there is the server's refusal of its read, and the
+    # load leaves nothing of itself behind.
+    (tmp_path / "two.wav").unlink()
+    in_use = server.buffers.in_use
+    with pytest.warns(UserWarning), pytest.raises(CommandError):
+        saved.load(server, beside=str(tmp_path))
+    assert server.buffers.in_use == in_use

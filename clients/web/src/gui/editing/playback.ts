@@ -37,20 +37,14 @@
  */
 
 import { PiecePlayback, StepRunner } from "../../core/clausters_core_web.js";
-import type { MsgArg } from "../../base/osc.ts";
 import type { Server } from "../../defs/server/index.ts";
+import { runSteps } from "../../steps.ts";
+import type { Step } from "../../steps.ts";
 import type { GuiHost } from "../host.ts";
 import { Transport } from "../transport.ts";
 import type { MultitrackEditor } from "./multitrack.ts";
 
-/** One argument of a step, tagged as the crate encoded it. */
-export type StepArg = { i: number } | { h: number } | { f: number } | { s: string } | { b: number[] };
-
-/** **One step**, as the applier states it. */
-export type Step =
-    | { send: { addr: string; args: StepArg[] } }
-    | { await: { command: string; index: number | null } }
-    | { sync: number };
+export type { Step, StepArg } from "../../steps.ts";
 
 export class Playback {
     readonly editor: MultitrackEditor;
@@ -192,49 +186,7 @@ export class Playback {
         if (error !== undefined) throw new Error(`clausters: ${error}`);
         const runner = this.runner;
         if (runner === null) throw new Error("clausters: the playback is not prepared");
-        const call = (request: object): Record<string, unknown> =>
-            JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
-        call({ verb: "push", to: "sound", steps });
-        for (;;) {
-            const ready = call({ verb: "ready" }) as {
-                messages?: { addr: string; args: StepArg[] }[];
-                awaiting?: { step: Step } | null;
-            };
-            const messages = ready.messages ?? [];
-            const awaiting = ready.awaiting ?? null;
-            if (awaiting === null) {
-                for (const message of messages) {
-                    this.server.sendMsg(message.addr, ...message.args.map(stepArg));
-                }
-                return;
-            }
-            const last = messages.pop();
-            if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
-            for (const message of messages) {
-                this.server.sendMsg(message.addr, ...message.args.map(stepArg));
-            }
-            const reply =
-                "sync" in awaiting.step
-                    ? await this.server.request(last.addr, last.args.map(stepArg), {
-                          expect: ["/server_sync.reply"],
-                      })
-                    : await this.server.request(last.addr, last.args.map(stepArg), {
-                          expect: ["/done", "/fail"],
-                          cmd: last.addr,
-                      });
-            const answered = call({
-                verb: "reply",
-                from: "sound",
-                addr: reply.addr,
-                args: reply.args.map(tagged),
-            });
-            if (answered.reply === "refused") {
-                throw new Error(`clausters: ${last.addr} failed: ${reply.args.slice(1).join(" ")}`);
-            }
-            if (answered.reply !== "released") {
-                throw new Error(`clausters: ${last.addr} was answered by ${reply.addr}, which is not what it waits on`);
-            }
-        }
+        await runSteps(this.server, runner, steps);
     }
 
     // ---- the transport ----
@@ -341,24 +293,4 @@ export class Playback {
     close(): void {
         if (this.piece !== null) void this.run(this.piece.close(this.server.ids));
     }
-}
-
-/** One step argument, tagged as the crate encoded it. */
-function stepArg(arg: StepArg): MsgArg {
-    if ("i" in arg) return ["i", arg.i];
-    if ("h" in arg) return ["h", BigInt(arg.h)];
-    if ("f" in arg) return ["f", arg.f];
-    if ("b" in arg) return new Uint8Array(Float32Array.from(arg.b).buffer);
-    return arg.s;
-}
-
-/**
- * One reply argument in the tagged shape the runner reads — the other direction
- * of `stepArg`. A reply carries ints, floats and strings; a JS number is tagged
- * by whether it is integral, which is what those replies hold.
- */
-function tagged(value: number | string | Uint8Array | boolean | null): StepArg {
-    if (typeof value === "boolean") return { i: value ? 1 : 0 };
-    if (typeof value === "number") return Number.isInteger(value) ? { i: value } : { f: value };
-    return { s: String(value) };
 }

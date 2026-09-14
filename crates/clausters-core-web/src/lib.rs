@@ -1410,6 +1410,18 @@ pub fn editing_stitch(source: &str, held: &str) -> String {
     clausters_editing::sources::stitch_json(source, held)
 }
 
+/// JS face: **a session's sources, loaded** — the steps that read every take
+/// and stitch every join into the buffers the caller set aside.
+///
+/// `request` is `{"session", "beside", "buffers"}` as JSON; the answer is what
+/// each source became, the steps, what will not load and why, and the numbers
+/// left over.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = editingLoad)]
+pub fn editing_load(request: &str) -> String {
+    clausters_editing::load::plan_json(request)
+}
+
 /// JS face: **what is sounding of a piece**, held across edits.
 ///
 /// The instance projection's state. The other two projections are functions of

@@ -1146,6 +1146,73 @@ class Session:
         source.editing = dict(source.editing, confirmed=True)
         return True
 
+    def load(self, server=None, *, beside: str = ".",
+             timeout: "float | None" = None) -> dict:
+        """Loads the sources the piece names into ``server``: every take read
+        from its file, and every join stitched from the takes it is made of
+        once those are there.
+
+        What each source *is* in a running system is not the document's to
+        decide, and loading is the half of reopening a session that says it:
+        a server buffer per source. What is read and in what order is the
+        shared crate's (`clausters._native.editing_load`), so a session opens
+        the same here, in the web client and in the GUI host.
+
+        Args:
+            server: the server to load into; the default one when omitted.
+            beside: the folder a relative path is read against -- the session
+                file's own, which is what keeps a session directory movable.
+            timeout: how long each read may take.
+
+        Returns:
+            Source id -> `clausters.Buffer`, for every source that loaded. A
+            source that cannot -- a volatile one, one the table does not hold,
+            a join over a take that did not load -- is left out and named in
+            a warning.
+
+        Raises:
+            CommandError: when the server refuses a read or a stitch -- a file
+                that is not there -- after freeing what the load had made.
+
+        RT only (it waits on each buffer's ``/done``).
+        """
+        import warnings
+
+        from . import _native
+        from ._steps import run_steps
+        from .defs.buffer import Buffer, _resolve
+        from .errors import CommandError
+
+        srv = _resolve(server)
+        aside = [srv.buffers.alloc() for _ in self.sources]
+        plan = _native.editing_load(self.write(), str(beside), aside)
+        if "error" in plan:
+            for bufnum in aside:
+                srv.buffers.free(bufnum)
+            raise ValueError(plan["error"])
+        for bufnum in plan["unused"]:
+            srv.buffers.free(int(bufnum))
+        for id, why in plan["unresolved"]:
+            warnings.warn(f"source {id} is not loadable: {why}", stacklevel=2)
+        buffers = {}
+        for id, take in plan["takes"].items():
+            buffer = Buffer(int(take["buffer"]), int(take["frames"]),
+                            max(1, int(take["channels"])), server=srv)
+            if "path" in take:
+                buffer.path = str(take["path"])
+            buffers[int(id)] = buffer
+        try:
+            run_steps(srv, _native.StepRunner(), plan["steps"], to="samples",
+                      timeout=timeout)
+        except CommandError:
+            for buffer in buffers.values():
+                buffer.free()
+            raise
+        # The shape is the file's, so it is read back rather than trusted.
+        for buffer in buffers.values():
+            buffer.info(timeout=timeout)
+        return buffers
+
     def write(self) -> dict:
         """The session as the crate's JSON."""
         out: dict = {"format": self.format}
