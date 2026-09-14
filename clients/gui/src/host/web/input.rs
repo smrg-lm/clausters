@@ -37,6 +37,16 @@ fn to_key(key: &Key) -> Option<HostKey> {
     }
 }
 
+/// Whether this is the space bar, however the shell spelled it: `Named(Space)`
+/// or the character it typed (the native front's `is_space`).
+fn is_space(key: &Key) -> bool {
+    match key {
+        Key::Named(NamedKey::Space) => true,
+        Key::Character(c) => c == " ",
+        _ => false,
+    }
+}
+
 impl WebApp {
     /// Snapshots the gesture context for one canvas: its framebuffer size, its
     /// modifier keys, and the heavy views' row counts (channel splits
@@ -187,6 +197,11 @@ impl WebApp {
     /// there and has no window to close here.
     pub(super) fn on_key(&mut self, def: i32, key: &Key) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            // No pointer has been over the canvas yet, so nothing is focused and
+            // nothing is under it: the window's own keys are all that is left.
+            if is_space(key) {
+                self.play_key(def);
+            }
             return;
         };
         // The focus consumes the key first — Tab walks the ring, a focused
@@ -224,6 +239,17 @@ impl WebApp {
                 self.apply_gesture_effects(effects);
                 return;
             }
+        }
+        // The transport and the save, which the native front answers among its
+        // window keys: a focused field and a widget under the cursor have had
+        // the key, so what is left is the window's.
+        if is_space(key) {
+            self.play_key(def);
+            return;
+        }
+        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("s")) && ctx.ctrl {
+            self.window_verb(def, "save");
+            return;
         }
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
@@ -284,6 +310,38 @@ impl WebApp {
             _ => return,
         };
         self.apply_gesture_effects(effects);
+    }
+
+    /// The space bar: play the take the cursor is over and stop what is
+    /// playing, or — over nothing a take answers for, or with no pointer over
+    /// the canvas yet — the window's own `play`, which a multitrack editor reads
+    /// as play/pause. The browser twin of the native front's `play_key`.
+    fn play_key(&mut self, def: i32) {
+        if let Some((ctx, (cx, cy))) = self.gesture_ctx(def)
+            && let Some(slot) = self.canvases.get_mut(&def)
+            && let Some(effects) = slot.gestures.play_key(&mut self.host, &ctx, cx, cy)
+        {
+            self.apply_gesture_effects(effects);
+            return;
+        }
+        // **A piece is the window's, not the pointer's**, as on the desktop: its
+        // readers follow the transport, so the window is told and whoever edits
+        // the piece answers.
+        self.window_verb(def, clausters_apps::multitrack::editor::PLAY_KEY);
+    }
+
+    /// A verb addressed to the **window** rather than to anything under the
+    /// cursor, built and delivered as the native front does: a host that owns
+    /// the document answers it, and every other one queues it for the page.
+    fn window_verb(&mut self, def: i32, verb: &str) {
+        let seq = self.host.outbox.borrow_mut().stamp(def, def);
+        let args = vec![clausters_core::osc::OscType::String(verb.into())];
+        let message = self.host.event_message(def, seq, args);
+        if self.host.deliver(def, &message) {
+            self.request_redraw(def);
+        } else {
+            self.queue(message);
+        }
     }
 
     /// Whether this instance is the one holding `id`'s canvas — how
