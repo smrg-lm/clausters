@@ -425,7 +425,12 @@ pub use time::*;
 /// stacks and the window's chrome, and composes and corrects the window; each
 /// client composed it for itself. `clausters_apps_samples_measures` checks a
 /// measure stack. **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 61;
+/// **v62 one undo order across applications.** `clausters_apps_editing_*` holds
+/// an editing context: the history, the version and the editors opened in it,
+/// whose turns and history steps it takes. A verb runs once across its sizing
+/// and filling calls, since a history is not copied for a sizing pass.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 62;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

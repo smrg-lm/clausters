@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 61
+CORE_ABI_VERSION = 62
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -327,6 +327,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_multitrack_editor_call.restype = ctypes.c_size_t
+    lib.clausters_apps_editing_new.argtypes = [ctypes.c_size_t]
+    lib.clausters_apps_editing_new.restype = ctypes.c_void_p
+    lib.clausters_apps_editing_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_apps_editing_free.restype = None
+    lib.clausters_apps_editing_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_editing_call.restype = ctypes.c_size_t
     lib.clausters_apps_samples_editor_new.argtypes = [u8p_early, ctypes.c_size_t]
     lib.clausters_apps_samples_editor_new.restype = ctypes.c_void_p
     lib.clausters_apps_samples_editor_free.argtypes = [ctypes.c_void_p]
@@ -1790,6 +1798,44 @@ class MultitrackEditorCore:
             return {}
         body = json.dumps({"verb": verb, **args}).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_multitrack_editor_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+
+class EditingCore:
+    """**An editing context** (`clausters_apps_editing_*`): one undo order over
+    every editor opened in it.
+
+    Every verb crosses through `call`, as JSON: ``openMultitrack`` and
+    ``openSamples`` open an editor under a key and answer its ``member``,
+    ``external`` takes in a structure the crate does not apply, ``event`` reads
+    and records a member's message, ``step`` walks the history, ``record``
+    takes an external member's entry, ``member`` reaches one editor's own verbs,
+    and ``state`` answers the version and what an undo or a redo would be
+    called.
+
+    Args:
+        chunk: the most values one write carries; 0 for the default.
+    """
+
+    def __init__(self, chunk: int = 0):
+        self._handle = lib().clausters_apps_editing_new(int(chunk))
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the context, with every editor opened in it."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_apps_editing_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **args):
+        """One verb, with its arguments; the answer, parsed."""
+        if not self._handle:
+            return {}
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 

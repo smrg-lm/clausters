@@ -66,6 +66,24 @@ export class Document {
 }
 
 /**
+ * **An editing context**: one undo order over every editor opened in it. Its
+ * verbs cross through `call`, as JSON.
+ */
+export class EditingCore {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb, as `clausters_apps::editing::call_json` documents.
+     */
+    call(request: string): string;
+    /**
+     * A context whose writes carry at most `chunk` values a message (0 for the
+     * default).
+     */
+    constructor(chunk: number);
+}
+
+/**
  * One editing context's history, the JS face of
  * [`clausters_document::History`].
  *
@@ -1577,6 +1595,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_document_free: (a: number, b: number) => void;
+    readonly __wbg_editingcore_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
@@ -1619,6 +1638,8 @@ export interface InitOutput {
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
+    readonly editingcore_new: (a: number) => number;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

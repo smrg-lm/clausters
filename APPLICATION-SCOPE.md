@@ -1153,6 +1153,11 @@ clients and the standalone host green, and each is its own commit.
      applied, `record` takes an external member's entry, and `call_json` is the
      door. `SamplesEditor::resync_all` corrects its window after a step, as the
      multitrack editor's does. Nothing binds it yet.
+   - ✅ *The C and wasm doors (2026-09-14).* `clausters_apps_editing_{new,free,call}`
+     (core ABI **v62**), `EditingCore` in wasm and in the Python binding. A
+     context is not copied for a sizing pass the way an editor is, so the C door
+     runs a verb once and keeps its answer until the filling call takes it. No
+     client uses it yet, and the editor handles stay until they do.
 
 **Not in these steps**, so their absence is read as a decision:
 
