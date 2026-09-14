@@ -501,7 +501,7 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     curveEditor.apply("/gui_event", [curveWid, 1, 0, "points",
         0.0, 300.0, 1, 0.0, 2.0, 900.0, 1, 0.0]);
     roll.apply("/gui_event", [rollWid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
-    assert.equal(context.history.undoLabel, "edit the notes");
+    assert.equal(context.undoLabel, "edit the notes");
 
     // The notes go back first: one pile, walked in the order the edits landed.
     assert.equal(roll.undo(), true);

@@ -149,7 +149,7 @@ class Score:
     def project(self, structure, payload) -> bool:
         """Put one payload of a history step back onto this score.
 
-        What `clausters.gui.editing.Editing.distribute` asks of whatever was
+        What `clausters.gui.editing.Editing.carry` asks of whatever was
         registered for a structure — a `clausters.gui.editing.Domain` for an
         editor, and this for a page, which is a **state** rather than a payload
         in a vocabulary.

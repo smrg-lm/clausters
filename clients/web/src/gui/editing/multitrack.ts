@@ -40,9 +40,8 @@ import type { Server } from "../../defs/server/index.ts";
 import { Buffer, type Part } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
-import {
-    MultitrackEditorCore, editingDefaultBpm,
-} from "../../core/clausters_core_web.js";
+import { editingDefaultBpm } from "../../core/clausters_core_web.js";
+import { keyOf } from "./context.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
@@ -264,14 +263,14 @@ export class Bridge {
  * A piece's vocabulary, as the **history** walks it.
  *
  * It reads no gesture and decides no edit: a gesture is the editor's turn, and
- * the turn is the crate's (`MultitrackEditorCore`). What is left is what the
+ * the turn is the crate's (`EditingCore`). What is left is what the
  * history registers a structure for — putting a step back onto the piece — and
  * that goes through the same editor, so an undo and an edit apply by one rule.
  */
 export class MultitrackDomain extends Domain<Multitrack> {
     override readonly name = MULTITRACK;
     readonly bridge: Bridge;
-    /** The editor whose core applies a step, set by the editor this was made for. */
+    /** The editor this domain was made for. */
     editor: MultitrackEditor | null = null;
 
     constructor(bridge: Bridge) {
@@ -292,19 +291,30 @@ export class MultitrackDomain extends Domain<Multitrack> {
         return undefined;
     }
 
-    project(piece: Multitrack, payload: unknown): boolean {
-        // **A source the edit makes is made before the edit lands.** A join
-        // over fragments mints the source its box is a window onto, and a box
-        // over a source nothing answers for is left out of the plan — so
-        // realizing it after the piece already names it would be one pass of
-        // silence. It runs again on a redo, which is right: the source is gone
-        // the moment nothing windows it.
-        this.mint((payload as { source?: unknown })?.source);
-        if (this.editor === null) return false;
-        const applied = this.editor.applyStep(payload);
-        if (applied.applied !== true) return false;
-        this.writeBack(piece, applied.piece as Record<string, unknown>);
-        return true;
+    /**
+     * Never asked: a step of the history over the piece is applied by the
+     * context, which hands back what it did ({@link MultitrackDomain.stepped}).
+     */
+    project(_piece: Multitrack, _payload: unknown): boolean {
+        return false;
+    }
+
+    /**
+     * Carry out a step of the history the context applied to the piece: a
+     * source the edit mints, and the piece as it now stands written back onto
+     * the object the page holds.
+     *
+     * **The source first.** A join over fragments mints the source its box is a
+     * window onto, and a box over a source nothing answers for is left out of the
+     * plan — so realizing it after the piece names it would be one pass of
+     * silence. It runs again on a redo, which is right: the source is gone the
+     * moment nothing windows it.
+     */
+    stepped(piece: Multitrack, applied: Record<string, unknown>): void {
+        this.mint(applied.minted);
+        if (applied.applied === true && applied.piece !== undefined && applied.piece !== null) {
+            this.writeBack(piece, applied.piece as Record<string, unknown>);
+        }
     }
 
     /**
@@ -441,7 +451,7 @@ export class MultitrackView extends View<Multitrack> {
 
     build(editor: Editor<Multitrack>): GuiNode {
         // **The window is the application's**, composed in the shared crate
-        // (`MultitrackEditorCore`), so this page, the Python client and the
+        // (`EditingCore`), so this page, the Python client and the
         // standalone host open the same one. What is left here is the two ids a
         // hand's gestures come back on.
         //
@@ -575,26 +585,29 @@ export class MultitrackEditor extends Editor<Multitrack> {
         });
         this.bridge = bridge;
         domain.editor = this;
-        // **The editor's turns, in the shared crate**: what a message is, what
-        // a gesture does to the piece, the window, and the answer.
-        this.core = new MultitrackEditorCore(JSON.stringify({
+        // **The editor's turns, in the shared crate**: a member of this piece's
+        // editing context, which reads a message, records what a gesture did
+        // and takes the steps of the one order the piece shares with whatever
+        // else is open in it.
+        const opened = this.editing.open("openMultitrack", keyOf("piece", piece), {
             piece: piece.write(),
             rate: this.bridge.rate,
             defaultBpm: this.bridge.bpm,
-            version: this.version,
             link: link ?? null,
             transport: server !== undefined,
             title,
             w: this.size[0],
             h: this.size[1],
-        }));
+        }, piece, domain);
+        this.member = opened.member;
+        this.structureId = opened.identity;
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }
     }
 
-    /** The editor's turns, in the shared crate. */
-    private readonly core: MultitrackEditorCore;
+    /** This editor's member in its editing context. */
+    private readonly member: number;
 
     /** The transport row's ids, once the window has numbered them. */
     private controls: { rewind: number; play: number; stop: number; clock: number } | null =
@@ -616,10 +629,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * @internal
      */
     coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
-        return JSON.parse(this.core.call(JSON.stringify({ verb, ...args }))) as Record<
-            string,
-            unknown
-        >;
+        return this.editing.member(this.member, verb, args);
     }
 
     /**
@@ -643,38 +653,17 @@ export class MultitrackEditor extends Editor<Multitrack> {
         });
     }
 
-    /**
-     * One payload of a history step, applied by the core.
-     *
-     * @internal
-     */
-    applyStep(payload: unknown): Record<string, unknown> {
-        this.syncCore();
-        return this.coreCall("apply", { payload });
-    }
-
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         this.syncCore();
-        const outcome = this.coreCall("event", {
-            addr,
-            args: plain([...rawArgs]),
-            version: this.version,
-        }) as Outcome;
+        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const outcome = (turned.outcome ?? {}) as Outcome;
         if (outcome.turn === "closed") return this.closedWindow();
         if (outcome.turn === "step") {
-            // **What it answers is whether anything moved**, and a step nobody
-            // could apply says why: the entry named a structure nothing in this
-            // context can write to, and it is still there rather than stepped
-            // over.
-            const stepped = outcome.redo === true ? this.redo() : this.undo();
-            const reason = !stepped && this.app.unreachable !== null
-                ? `${this.app.unreachable}: nothing here can put that edit back`
-                : null;
-            this.echo.send(this.coreCall("acknowledge", {
-                seq: outcome.seq ?? 0,
-                version: this.version,
-                reason,
-            }) as unknown as Answer);
+            // **The step is the context's, already taken**; what is left is
+            // carrying it out, and the acknowledgement the crate wrote — with the
+            // reason when nothing could apply it.
+            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
+            this.echo.send(outcome.answer);
             return stepped;
         }
         return this.take(outcome);
@@ -687,11 +676,12 @@ export class MultitrackEditor extends Editor<Multitrack> {
     protected override route(args: readonly unknown[]): boolean {
         this.syncCore();
         const [wid, tag, ...values] = args;
-        return this.take(this.coreCall("event", {
-            addr: "/gui_event",
-            args: plain([wid, 0, 0, tag, ...values]),
-            version: this.version,
-        }) as Outcome);
+        const turned = this.editing.event(
+            this.member,
+            "/gui_event",
+            plain([wid, 0, 0, tag, ...values]) as unknown[],
+        );
+        return this.take((turned.outcome ?? {}) as Outcome);
     }
 
     /**
@@ -704,15 +694,9 @@ export class MultitrackEditor extends Editor<Multitrack> {
         for (const minted of outcome.minted ?? []) domain.mint(minted);
         const changed = outcome.changed === true;
         if (changed) {
-            const record = outcome.record;
-            if (record !== undefined) {
-                this.editing.history.record(
-                    record.legs.map((leg) => ({ structure: this.registered(), ...leg }) as RecordedLeg),
-                    { label: record.label },
-                );
-            }
+            // **The entry is already recorded and the version moved**: both are
+            // the context's. What is left is the object the page holds.
             domain.writeBack(this.structure, outcome.piece ?? {});
-            this.version = outcome.version ?? this.version;
             this.dirty = true;
             this.editing.changed();
         }
@@ -738,14 +722,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
     override reflectStep(): void {
         this.dirty = true;
         this.syncCore();
-        this.echo.send(this.coreCall("resync", { version: this.version }) as unknown as Answer);
+        this.echo.send(this.coreCall("resync") as unknown as Answer);
     }
 
     /** Another view of this piece edited it: bring this window in step. */
     override adopt(): void {
         if (this.host === null || this.windowId === null) return;
         this.syncCore();
-        this.echo.send(this.coreCall("resync", { version: this.version }) as unknown as Answer);
+        this.echo.send(this.coreCall("resync") as unknown as Answer);
     }
 
     // ---- the piece, heard ----
@@ -806,7 +790,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     async toggle(): Promise<void> {
         this.syncCore();
-        this.take(this.coreCall("toggle", { version: this.version }) as Outcome);
+        this.take(this.coreCall("toggle") as Outcome);
         await this.transported;
     }
 
@@ -841,7 +825,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     rewind(): void {
         this.syncCore();
-        this.take(this.coreCall("rewind", { version: this.version }) as Outcome);
+        this.take(this.coreCall("rewind") as Outcome);
     }
 
     /** Play the piece from where the position cursor is. */
@@ -857,7 +841,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
     /** Halt and go back to the mark the position cursor is on. */
     stop(): void {
         this.syncCore();
-        this.take(this.coreCall("stop", { version: this.version }) as Outcome);
+        this.take(this.coreCall("stop") as Outcome);
     }
 
     /**
@@ -897,7 +881,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
     private answerWithThePicture(): void {
         if (this.host === null || this.windowId === null) return;
         this.syncCore();
-        this.echo.send(this.coreCall("settle", { version: this.version }) as unknown as Answer);
+        this.echo.send(this.coreCall("settle") as unknown as Answer);
     }
 
     /**

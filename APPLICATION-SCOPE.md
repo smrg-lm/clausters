@@ -1176,6 +1176,12 @@ clients and the standalone host green, and each is its own commit.
      moves the version by. The window notification stays the client's
      (`Editing.turn` and `adopt`), since an external member's view is the
      client's to redraw.
+   - ✅ *Web (2026-09-14).* The same port, name for name: `Editing` over
+     `EditingCore`, `MultitrackEditor` and `SamplesEditor` as its members, a
+     curve, a timeline and a score as external members, `Application.step` and
+     `stepped` carrying a step's effects out, `refusal` for the crate's reason. A
+     page has no object address, so a structure a page holds is keyed by a
+     per-object number (`keyOf`) where the Python client uses `id()`.
 
 **Not in these steps**, so their absence is read as a decision:
 

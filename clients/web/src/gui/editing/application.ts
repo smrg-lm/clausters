@@ -37,6 +37,7 @@ import { CAPACITY, GuiIdAllocator } from "../ids.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
+import type { Stepped } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import type { Echo } from "./echo.ts";
 import { log } from "./trace.ts";
@@ -326,48 +327,33 @@ export class Application {
      * any edit, so a step is one answer per window rather than two.
      */
     /**
-     * What the **last** step could not reach, when a walk was refused because no
-     * participant held the structure the entry names — the label of the edit
-     * that is waiting, for whoever wants to say why nothing happened. `null`
+     * Why the last step did not move, when it could not: the entry it reached is
+     * one nothing in the context could put back, as the crate says it. `null`
      * after a step that landed, and after one there was nothing to take.
      */
-    unreachable: string | null = null;
+    refusal: string | null = null;
 
     step(direction: "undo" | "redo", walker: Drawing): boolean {
         const context = this.context;
         if (context === null) return false;
-        this.unreachable = null;
-        const history = context.history;
-        const waiting = direction === "undo" ? history?.undoLabel : history?.redoLabel;
-        const before: [string | undefined, string | undefined] | null =
-            history === null ? null : [history.undoLabel, history.redoLabel];
-        const legs = context.step(direction);
-        if (legs === undefined) {
-            log.debug("%s   nothing stepped (at %s)", direction, before);
+        return this.stepped(context, context.step(direction), walker);
+    }
+
+    /**
+     * Carry out a step the context **already took** — by {@link Application.step},
+     * or inside a turn whose message was an undo — and say whether anything
+     * moved. A step nothing could apply is not a step: the crate put the cursor
+     * back, and {@link Application.refusal} is why.
+     */
+    stepped(context: Editing, stepped: Stepped, walker: Drawing): boolean {
+        this.refusal = null;
+        if (stepped.stepped !== true) {
+            this.refusal = stepped.reason ?? null;
+            log.debug("step   nothing moved (%s)", this.refusal);
             return false;
         }
-        if (!context.distribute(legs, walker)) {
-            // **A step nobody could apply is not a step.** The walk moves the
-            // pile's cursor before anything is projected, so an entry naming a
-            // structure no participant holds — a box whose window was closed —
-            // was stepped *over*: the edit stayed and the order lost it, which
-            // is the one thing a history may not do. So the cursor goes back and
-            // the answer is "nothing happened", which is true and recoverable:
-            // open that window and the entry is still on top, waiting.
-            context.step(direction === "undo" ? "redo" : "undo");
-            this.unreachable = waiting ?? null;
-            log.debug("%s   nothing could apply it (at %s)", direction, before);
-            return false;
-        }
-        log.debug(
-            "%s   %s -> %s",
-            direction,
-            before,
-            history === null ? null : [history.undoLabel, history.redoLabel],
-        );
-        // **Once for the walk, not once per window.** The version is the
-        // context's, and every view reports the same one.
-        context.version += 1;
+        context.carry(stepped);
+        log.debug("step   -> version %s", stepped.version);
         walker.reflectStep();
         return true;
     }

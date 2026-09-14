@@ -25,7 +25,7 @@
  * axis, one ruler, one selection, one playhead, one upload of the samples.
  *
  * **A stroke lands on one channel.** What a write does to the buffer is the
- * shared crate's (`SamplesEditorCore`, `write`): a mono take takes the run as
+ * shared crate's (`EditingCore`, a samples member's `write`): a mono take takes the run as
  * flat samples (`/buffer_setRange`), and one channel of a take with more is
  * written by frames of that channel alone (`/buffer_setRangeChannel`), so the
  * other channels are never touched. This page walks those steps against the
@@ -38,7 +38,7 @@ import { SAMPLES } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import type { Buffer } from "../../defs/buffer.ts";
-import { SamplesEditorCore, StepRunner, samplesMeasures } from "../../core/clausters_core_web.js";
+import { StepRunner, samplesMeasures } from "../../core/clausters_core_web.js";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -128,7 +128,7 @@ function floats(blob: unknown): number[] {
  * A span of samples' vocabulary: the crate's `samples`, over frames the server
  * holds.
  *
- * **What a gesture means is the application's** (`SamplesEditorCore`): the run
+ * **What a gesture means is the application's** (`EditingCore`): the run
  * a stroke wrote and the run it replaced are read there in one reading, so
  * nothing waits here between two calls. What is left is the write itself, onto
  * the buffer this page holds — a stroke's, and a step of the history's.
@@ -192,7 +192,7 @@ export class SamplesDomain extends Domain<Buffer> {
  * server buffer.
  *
  * **The window is the application's**, composed in the shared crate
- * (`SamplesEditorCore`): the waveform, the gesture plan a take is edited with (a
+ * (`EditingCore`): the waveform, the gesture plan a take is edited with (a
  * drag selects, Alt draws, Ctrl grabs one sample), the label and the correction
  * a write answers with. What is left here is the id a hand's gestures come back
  * on.
@@ -233,8 +233,8 @@ export class SamplesView extends View<Buffer> {
  * what is seen, with no copy in between.
  */
 export class SamplesEditor extends Editor<Buffer> {
-    /** The window, in the shared crate: the take, the measures and the chrome. */
-    private readonly core: SamplesEditorCore;
+    /** This editor's member in its editing context. */
+    private readonly member: number;
 
     /**
      * The runner a write's steps are walked through.
@@ -263,9 +263,19 @@ export class SamplesEditor extends Editor<Buffer> {
             view,
         });
         domain.editor = this;
-        this.core = new SamplesEditorCore(
-            JSON.stringify({ ...this.facts(), layers: view.layers, version: this.version }),
+        // **The editor, in the shared crate**: a member of this take's editing
+        // context, holding the take, the measures and the chrome the window is
+        // composed from, and reading every message. A take is named by its
+        // buffer, so two windows over one are one structure in the order.
+        const opened = this.editing.open(
+            "openSamples",
+            `buffer:${Math.trunc(take.bufnum)}`,
+            { ...this.facts(), layers: view.layers },
+            take,
+            domain,
         );
+        this.member = opened.member;
+        this.structureId = opened.identity;
     }
 
     /** What this page holds about the take and the window. */
@@ -291,10 +301,7 @@ export class SamplesEditor extends Editor<Buffer> {
      * @internal
      */
     coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
-        return JSON.parse(this.core.call(JSON.stringify({ verb, ...args }))) as Record<
-            string,
-            unknown
-        >;
+        return this.editing.member(this.member, verb, args);
     }
 
     /**
@@ -311,24 +318,14 @@ export class SamplesEditor extends Editor<Buffer> {
 
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         this.syncCore();
-        const outcome = this.coreCall("event", {
-            addr,
-            args: plain([...rawArgs]),
-            version: this.version,
-        }) as Outcome;
+        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const outcome = (turned.outcome ?? {}) as Outcome;
         if (outcome.turn === "closed") return this.closedWindow();
         if (outcome.turn === "step") {
-            // **What it answers is whether anything moved**, and a step nobody
-            // could apply says why.
-            const stepped = outcome.redo === true ? this.redo() : this.undo();
-            const reason = !stepped && this.app.unreachable !== null
-                ? `${this.app.unreachable}: nothing here can put that edit back`
-                : null;
-            this.echo.send(this.coreCall("acknowledge", {
-                seq: outcome.seq ?? 0,
-                version: this.version,
-                reason,
-            }) as unknown as Answer);
+            // **The step is the context's, already taken**; what is left is
+            // carrying it out, and the acknowledgement the crate wrote.
+            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
+            this.echo.send(outcome.answer);
             return stepped;
         }
         return this.take(outcome);
@@ -341,11 +338,12 @@ export class SamplesEditor extends Editor<Buffer> {
     protected override route(args: readonly unknown[]): boolean {
         this.syncCore();
         const [wid, tag, ...values] = args;
-        return this.take(this.coreCall("event", {
-            addr: "/gui_event",
-            args: plain([wid, 0, 0, tag, ...values]),
-            version: this.version,
-        }) as Outcome);
+        const turned = this.editing.event(
+            this.member,
+            "/gui_event",
+            plain([wid, 0, 0, tag, ...values]) as unknown[],
+        );
+        return this.take((turned.outcome ?? {}) as Outcome);
     }
 
     /**
@@ -356,17 +354,9 @@ export class SamplesEditor extends Editor<Buffer> {
         if (outcome.turn === undefined || outcome.turn === "nothing") return false;
         const changed = outcome.changed === true;
         if (changed) {
-            // **The write is this page's to carry out**: the samples are in the
-            // server's buffer, and the crate answered what to write there.
+            // The entry is already recorded and the version moved: both are the
+            // context's. The write is this page's to carry out.
             (this.domain as SamplesDomain).project(this.structure, outcome.edit);
-            const record = outcome.record;
-            if (record !== undefined) {
-                this.editing.history.record(
-                    record.legs.map((leg) => ({ structure: this.registered(), ...leg }) as RecordedLeg),
-                    { label: record.label },
-                );
-            }
-            this.version = outcome.version ?? this.version;
             this.dirty = true;
             this.editing.changed();
         }

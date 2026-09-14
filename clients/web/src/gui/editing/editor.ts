@@ -34,11 +34,12 @@ import {
     viewNotAnEdit,
 } from "../../core/clausters_core_web.js";
 import { TempoMap } from "../../base/time.ts";
-import type { Intent, RecordedLeg, Selection } from "../../document.ts";
+import type { Intent, Selection } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "./context.ts";
+import type { RecordingLeg } from "./context.ts";
 import type { Adopting, Applier } from "./context.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
@@ -434,13 +435,12 @@ export class Editor<S = unknown> implements Adopting {
         return this.givenContext ?? Editing.of(this.structure as object);
     }
 
-    /** The version — the counter the host names back on its next gesture. */
+    /**
+     * The version — the counter the host names back on its next gesture. The
+     * context's, moved by its turns, steps and records and never here.
+     */
     protected get version(): number {
         return this.editing.version;
-    }
-
-    protected set version(value: number) {
-        this.editing.version = Math.trunc(value);
     }
 
     /**
@@ -642,10 +642,7 @@ export class Editor<S = unknown> implements Adopting {
             // belongs to a structure whose window is closed, and it is still
             // there waiting for it. Saying so is the difference between a dead
             // button and one that is telling you where to press it.
-            if (!stepped && this.app.unreachable !== null) {
-                this.reason =
-                    `${this.app.unreachable}: that edit belongs to a window that is not open`;
-            }
+            if (!stepped && this.app.refusal !== null) this.reason = this.app.refusal;
             this.acknowledge(seq, this.reason ?? undefined);
             return stepped;
         }
@@ -842,17 +839,18 @@ export class Editor<S = unknown> implements Adopting {
         if (!this.domain.project(this.structure, payload)) return false;
         log.debug("record [%s] %s", label, (payload as { intent?: unknown }).intent);
         if (before !== null && before !== undefined) {
-            this.editing.history.record(
+            this.editing.record(
                 [{
                     structure: this.registered(),
-                    forward: { edit: payload as Intent },
+                    forward: { edit: payload },
                     backward: before,
                     key: this.domain.coalesceKey(payload),
                 }],
                 { label, coalesce },
             );
+        } else {
+            this.editing.moved();
         }
-        this.version += 1;
         this.dirty = true;
         const moved = { structure: this.registered(), payload };
         this.editing.changed();
@@ -871,7 +869,7 @@ export class Editor<S = unknown> implements Adopting {
      */
     protected editAll(payloads: readonly unknown[], label: string): boolean {
         if (this.domain === null) return false;
-        const legs: RecordedLeg[] = [];
+        const legs: RecordingLeg[] = [];
         let moved = false;
         for (const payload of payloads) {
             const before = this.domain.current(this.structure, payload);
@@ -883,14 +881,14 @@ export class Editor<S = unknown> implements Adopting {
                     forward: { edit: payload as Intent },
                     backward: before,
                     key: this.domain.coalesceKey(payload),
-                } as RecordedLeg);
+                });
             }
             this.editing.changed();
         }
         if (!moved) return false;
         log.debug("record [%s] %d leg(s)", label, legs.length);
-        if (legs.length > 0) this.editing.history.record(legs, { label });
-        this.version += 1;
+        if (legs.length > 0) this.editing.record(legs, { label });
+        else this.editing.moved();
         this.dirty = true;
         return true;
     }
@@ -1034,17 +1032,17 @@ export class Editor<S = unknown> implements Adopting {
 
     /** Whether there is an edit to step back over. */
     get canUndo(): boolean {
-        return this.editing.history.canUndo;
+        return this.editing.canUndo;
     }
 
     /** Whether there is an undone edit to step forward into. */
     get canRedo(): boolean {
-        return this.editing.history.canRedo;
+        return this.editing.canRedo;
     }
 
     /** What an undo would be called, for a menu item. */
     get undoLabel(): string | undefined {
-        return this.editing.history.undoLabel;
+        return this.editing.undoLabel;
     }
 
     /**
@@ -1054,6 +1052,6 @@ export class Editor<S = unknown> implements Adopting {
      * about to move.
      */
     get redoLabel(): string | undefined {
-        return this.editing.history.redoLabel;
+        return this.editing.redoLabel;
     }
 }

@@ -232,14 +232,14 @@ export class Score {
             // `forward` is a **step** and `backward` is a bare payload: the pile
             // hands an inverse back as what it holds, and wrapping it a second
             // time hands the reader a leg it cannot read.
-            context.history.record(
+            context.record(
                 [
                     {
                         structure: this.structure,
                         // The payload is this domain's own vocabulary and
                         // the pile never reads it; the arrangement's `Intent` is
                         // only what the type happens to name.
-                        forward: { edit: { mei: after } as unknown as Intent },
+                        forward: { edit: { mei: after } },
                         backward: { mei: before },
                     },
                 ],
@@ -252,7 +252,7 @@ export class Score {
     /**
      * Put one payload of a history step back onto this score.
      *
-     * What {@link Editing.distribute} asks of whatever was registered for a
+     * What {@link Editing.carry} asks of whatever was registered for a
      * structure — a `Domain` for an editor, and this for a page, which is a
      * **state** rather than a payload in a vocabulary.
      */
@@ -284,12 +284,12 @@ export class Score {
      * be an edit to something else entirely, since the order is one.
      */
     get canUndo(): boolean {
-        return this.editing.history.canUndo;
+        return this.editing.canUndo;
     }
 
     /** @see {@link Score.canUndo} */
     get canRedo(): boolean {
-        return this.editing.history.canRedo;
+        return this.editing.canRedo;
     }
 
     /**
@@ -311,8 +311,10 @@ export class Score {
 
     private step(direction: "undo" | "redo"): boolean {
         const context = this.editing;
-        const legs = context.step(direction);
-        return legs === undefined ? false : context.distribute(legs, this);
+        const stepped = context.step(direction);
+        if (stepped.stepped !== true) return false;
+        context.carry(stepped);
+        return true;
     }
 
     /**

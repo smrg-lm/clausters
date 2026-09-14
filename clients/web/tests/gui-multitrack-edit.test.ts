@@ -561,6 +561,26 @@ test("entering a box opens its contents on the piece's history", async () => {
  * is a test that passes against a client nobody has.
  */
 class Take extends FakeTake {
+    /** The server a take's writes go to: `/buffer_setRange`, laid into the frames. */
+    readonly server = {
+        bulkChunk: (): Promise<number> => Promise.resolve(8192),
+        sendMsg: (addr: string, ...args: unknown[]): void => {
+            assert.equal(addr, "/buffer_setRange");
+            const bytes = args[args.length - 1] as Uint8Array;
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            const at = (arg: unknown) => (Array.isArray(arg) ? Number(arg[1]) : Number(arg));
+            const start = at(args[1]);
+            for (let i = 0; i * 4 < bytes.byteLength; i += 1) {
+                if (start + i < this.frames.length) this.frames[start + i] = view.getFloat32(i * 4, true);
+            }
+        },
+        request: (addr: string, args: unknown[]): Promise<{ addr: string; args: unknown[] }> => {
+            this.server.sendMsg(addr, ...args);
+            const at = (arg: unknown) => (Array.isArray(arg) ? Number(arg[1]) : Number(arg));
+            return Promise.resolve({ addr: "/done", args: [addr, at(args[0])] });
+        },
+    };
+
     constructor(n = 16) {
         super();
         this.frames = new Array(n).fill(0.0);
@@ -662,7 +682,7 @@ test("a box closed does not block the piece's undo", async () => {
     assert.equal(ed.undo(), true, "the piece can put back an edit made inside a box");
     await settled();
     assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "and it is the stroke");
-    assert.equal(ed.app.unreachable, null);
+    assert.equal(ed.app.refusal, null);
 
     // ...and the order keeps going, which is the half that was actually broken:
     // a refused step put the cursor back, so everything behind it was walled off.

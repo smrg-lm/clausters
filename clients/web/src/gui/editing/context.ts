@@ -9,11 +9,18 @@
  * this is the same argument one level up: an editor asks the *data* for its
  * editing context instead of building one of its own.
  *
- * What a context owns is everything that is true of the work rather than of a
- * window: the {@link History} over it, the version, and the list of views to
- * tell when one of them edits. What stays a view's is what a view can see — its
- * selection, its zoom, which layer the hand is on. Those never enter a history
- * either, which is the same line drawn twice.
+ * **The context is the shared crate's** (`EditingCore`): the history, the
+ * version, and its **members** — the multitrack and samples editors opened in
+ * it, whose turns and steps it takes, and the structures the crate does not
+ * apply (a curve, a timeline, a score), which join as external members and get
+ * their legs back. No application holds a history of its own: one opened alone
+ * is a context of one, and two opened in the same one walk one order. What is
+ * here is what a language owns — the objects each member edits, what puts a
+ * step back onto them, and the windows to tell.
+ *
+ * What stays a view's is what a view can see — its selection, its zoom, which
+ * layer the hand is on. Those never enter a history either, which is the same
+ * line drawn twice.
  *
  * The context is reached through {@link Editing.of}, which keeps it in a
  * `WeakMap` keyed by the structure: what is edited is loose objects, so the
@@ -22,15 +29,10 @@
  * own rule asks for — a history is session state, never serialized, and it goes
  * when the data goes.
  *
- * **The arrangement's context is a subclass**, not this one: a held `Document`,
- * the node index and the id to mint next are the tree's and live with
- * whoever holds a tree. What is here is what is true of editing
- * anything.
- *
  * @module
  */
 
-import { History } from "../../document.ts";
+import { EditingCore } from "../../core/clausters_core_web.js";
 
 /**
  * The version an unedited context is at. One rather than zero, because zero is
@@ -43,24 +45,30 @@ import { History } from "../../document.ts";
  */
 export const FIRST_VERSION = 1;
 
-/**
- * What a context needs of a view: something with a window it can bring back in
- * step. {@link Editor} is the one that implements it.
- */
 /** What can put one payload of a history step back onto a structure. */
 export interface Applier {
     project(structure: never | object, payload: unknown): boolean;
 }
 
+/**
+ * What carries a step out for a member: an {@link Applier}, and — for a member
+ * whose structure the crate applied the step to itself — what writes that back
+ * onto the object a page holds.
+ */
+export interface StepHandler extends Applier {
+    stepped?(structure: never | object, applied: Record<string, unknown>): void;
+}
+
+/**
+ * What a context needs of a view: something with a window it can bring back in
+ * step. {@link Editor} is the one that implements it.
+ */
 export interface Adopting {
     /**
      * Another view of this composition edited it: bring this window in step.
      *
-     * It carries nothing. It used to carry the turn's intents so a view could
-     * adopt a placement or a length as a prop instead of redrawing — but what
-     * {@link Editor.adopt} does is already props, one correction per widget and
-     * never a redefine, so the intents would only have narrowed *which* widgets.
-     * They were passed for months and read by nobody.
+     * It carries nothing: what {@link Editor.adopt} does is already props, one
+     * correction per widget and never a redefine.
      */
     adopt(): void;
     /**
@@ -74,57 +82,106 @@ export interface Adopting {
     dataChanged?(): void;
 }
 
+/** One leg of an entry a page records for an external member. */
+export interface RecordingLeg {
+    /** The structure, by the identity the context named it. */
+    structure: number;
+    /** `{"edit": <payload>}`. */
+    forward: unknown;
+    /** The payload that puts it back. */
+    backward: unknown;
+    /** What makes two edits the same thing done the same way. */
+    key?: string | null;
+}
+
+/** One thing a step does, for a page to carry out. */
+export interface Effect {
+    /** `"multitrack"`, `"samples"` or `"external"`. */
+    kind: string;
+    /** The member it is for. */
+    member: number;
+    /** A multitrack member's: what applying the step did to the piece. */
+    applied?: Record<string, unknown>;
+    /** A take's writes, or an external member's payloads. */
+    payloads?: unknown[];
+}
+
+/** **What a step of the order came to.** */
+export interface Stepped {
+    /** Whether anything moved. */
+    stepped?: boolean;
+    /** Why nothing did, where the crate says. */
+    reason?: string;
+    /** What each member carries out. */
+    effects?: Effect[];
+    /** The version after the step. */
+    version?: number;
+}
+
+/** **What one message to a member came to.** */
+export interface Turned {
+    /** The member's own outcome: its entry is recorded, its answer is to send. */
+    outcome?: Record<string, unknown>;
+    /** The step an undo or a redo asked for, already taken. */
+    stepped?: Stepped;
+    /** The version after the turn. */
+    version?: number;
+}
+
 /** Where a structure's context lives, keyed by the object it belongs to. */
 export const contexts = new WeakMap<object, Editing>();
 
+/** Each object's key in a context, since a page has no object address. */
+const keys = new WeakMap<object, number>();
+let nextKey = 1;
+
 /**
- * One structure's history, and the views drawing it.
+ * A key naming `object` for as long as it lives — what a member declares when
+ * the structure is a page's object rather than something the crate can name.
+ */
+export function keyOf(prefix: string, object: object): string {
+    let key = keys.get(object);
+    if (key === undefined) {
+        key = nextKey++;
+        keys.set(object, key);
+    }
+    return `${prefix}:${key}`;
+}
+
+/**
+ * One editing context: its history, its members, and the views drawing them.
  *
- * Not built through `new`: {@link Editing.of} is the door, so two editors over
- * one thing cannot end up with two.
+ * Not built through `new` for an editor: {@link Editing.of} is the door, so two
+ * editors over one thing cannot end up with two. A context built by hand is one
+ * a page hands several editors (`context`) so they share an order.
  */
 export class Editing {
-    /**
-     * The pile: one editing context, one order over whatever is registered in
-     * it. A dedicated roll or a standalone curve opened over this composition
-     * registers itself **here**, which is what makes one undo walk one order
-     * across all of them.
-     */
-    readonly history: History;
+    /** The context itself, in the shared crate. */
+    #core: EditingCore | null = new EditingCore();
     /**
      * The version — the counter a view reports to its host and the host names
-     * back on its next gesture. It moves on every edit and on every redefine.
+     * back on its next gesture. The crate's: read back from every turn, step and
+     * record, and never moved here.
      */
     version = FIRST_VERSION;
+    /** The member each object first joined as, and the identity it was named. */
+    protected readonly structures = new Map<object, { member: number; identity: number }>();
     /**
-     * The views drawing this composition, weakly: an editor that goes away
-     * takes its window with it, and a context does not keep one alive.
+     * What carries a step out for each member. Kept **here** rather than on a
+     * window, because the order is the context's: a step must reach a structure
+     * whether or not a window over it is open.
      */
-    /**
-     * What each structure was registered in the pile as. One identity per
-     * structure and not per view: two windows over one thing are one structure
-     * in the order, and minting a second identity for the second window would
-     * leave its undo walking legs that name somebody else.
-     */
-    /**
-     * What each structure was registered in the pile as, and **what can put an
-     * edit back onto it**. The applier is held here because the pile's scope is
-     * this context while a window's is a window: see {@link Editing.distribute}.
-     */
-    protected readonly structures = new Map<object, { id: number; applier: Applier | null }>();
+    protected readonly handlers = new Map<
+        number,
+        { structure: object; handler: StepHandler | null }
+    >();
     protected readonly attached = new Set<WeakRef<Adopting>>();
     /**
      * How deep the current turn is, and whether anything moved in it. One
-     * gesture can reach here twice — {@link Editing.turn} around an `apply`
-     * that routes an `"undo"` into `undo`, which changes the composition on its
-     * own — and the other windows want *one* redraw, not two.
+     * gesture can reach here twice, and the other windows want *one* redraw.
      */
     protected depth = 0;
     protected changedInTurn = false;
-
-    constructor() {
-        this.history = new History();
-    }
 
     /**
      * The context of this composition, made on first ask.
@@ -141,48 +198,183 @@ export class Editing {
         return context as T;
     }
 
+    #call(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        if (this.#core === null) return {};
+        return JSON.parse(this.#core.call(JSON.stringify({ verb, ...args }))) as Record<
+            string,
+            unknown
+        >;
+    }
+
+    // ---- members ----
+
     /**
-     * This structure's identity in the pile, minted on first ask, with **what
-     * can put an edit back onto it**.
+     * **Open an editor in this context** — `verb` is `"openMultitrack"` or
+     * `"openSamples"` — as the structure `key` names, and answer its member and
+     * identity. `handler` is what carries a step out for it: the editor's
+     * domain. Throws with the crate's reason when it refuses the request.
+     */
+    open(
+        verb: string,
+        key: string,
+        request: Record<string, unknown>,
+        structure: object,
+        handler: StepHandler | null,
+    ): { member: number; identity: number } {
+        const answer = this.#call(verb, { key, ...request });
+        if (typeof answer.error === "string" || answer.member === undefined) {
+            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
+        }
+        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
+        this.handlers.set(opened.member, { structure, handler });
+        if (!this.structures.has(structure)) this.structures.set(structure, opened);
+        return opened;
+    }
+
+    /**
+     * This structure's identity in the order, joining it as an **external
+     * member** on first ask, with **what can put an edit back onto it**.
      *
      * **Once per structure, not once per view.** Two windows over one thing are
      * one structure in the undo order, so a second identity for the second
-     * window would leave its undo walking legs that name somebody else — which
-     * looks exactly like a dead button.
-     *
-     * `applier` is anything answering `project(structure, payload)` — an editor
-     * hands its {@link Domain}, and a `Score` hands itself. It is kept **here**,
-     * beside the identity, because that is the scope the pile has: an entry
-     * names a structure and the order over entries is global, so an entry that
-     * only *some of the time* has somebody to apply it is an entry that blocks
-     * every entry behind it. Registered once and kept, applying an edit stops
-     * depending on whether a window happens to be open.
+     * window would leave its undo walking legs that name somebody else. A
+     * structure an editor opened in the crate already has its identity, and
+     * this answers it.
      */
     identity(structure: object, domain: string, applier: Applier | null = null): number {
         const found = this.structures.get(structure);
         if (found === undefined) {
-            const id = this.history.register(domain);
-            this.structures.set(structure, { id, applier });
-            return id;
+            return this.open("external", keyOf("object", structure), { domain }, structure, applier)
+                .identity;
         }
-        // Registered by something that could not apply (a caller that only
-        // wanted the number); the first that can, wins the slot.
-        if (found.applier === null && applier !== null) found.applier = applier;
-        return found.id;
+        // Joined by something that could not apply (a caller that only wanted
+        // the number); the first that can, wins the slot.
+        const held = this.handlers.get(found.member);
+        if (applier !== null && (held === undefined || held.handler === null)) {
+            this.handlers.set(found.member, { structure, handler: applier });
+        }
+        return found.identity;
     }
 
-    /**
-     * What puts an edit back onto the structure this identity names, with the
-     * structure itself — or `undefined` for one nothing registered.
-     */
-    applierOf(identity: number): { structure: object; applier: Applier } | undefined {
-        for (const [structure, held] of this.structures) {
-            if (held.id === identity && held.applier !== null) {
-                return { structure, applier: held.applier };
-            }
+    /** One verb of a member's own door, with the version filled in by the context. */
+    member(member: number, verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return this.#call("member", { member, call: { verb, ...args } });
+    }
+
+    #memberOf(identity: number): number | undefined {
+        for (const held of this.structures.values()) {
+            if (held.identity === identity) return held.member;
         }
         return undefined;
     }
+
+    // ---- the order ----
+
+    /**
+     * **Record an entry** an external member applied itself: its legs over one
+     * structure. Answers whether the history took it; the version moves when it
+     * did. Throws when the legs name more than one structure — an entry over
+     * several is a turn of an application, which records its own.
+     */
+    record(
+        legs: readonly RecordingLeg[],
+        { label = "edit", coalesce = false }: { label?: string; coalesce?: boolean } = {},
+    ): boolean {
+        if (this.#core === null || legs.length === 0) return false;
+        const structures = new Set(legs.map((leg) => Number(leg.structure)));
+        if (structures.size !== 1) {
+            throw new Error("clausters: an entry recorded here is over one structure");
+        }
+        const member = this.#memberOf([...structures][0]!);
+        if (member === undefined) return false;
+        const answer = this.#call("record", {
+            member,
+            label,
+            coalesce,
+            legs: legs.map((leg) => ({
+                forward: leg.forward,
+                backward: leg.backward,
+                key: leg.key ?? "",
+            })),
+        });
+        this.version = Number(answer.version ?? this.version);
+        return answer.recorded === true;
+    }
+
+    /**
+     * An edit that leaves no entry — one with no inverse to record — still moves
+     * the version. Answers it.
+     */
+    moved(): number {
+        if (this.#core !== null) this.version = Number(this.#call("moved").version ?? this.version);
+        return this.version;
+    }
+
+    /** **One message to a member**, read, recorded and answered by the crate. */
+    event(member: number, addr: string, args: unknown[]): Turned {
+        const turned = this.#call("event", { member, addr, args }) as Turned | null;
+        if (turned === null) return {};
+        this.version = Number(turned.version ?? this.version);
+        return turned;
+    }
+
+    /**
+     * **Take one step of the order.** The step is already taken in the crate;
+     * {@link Editing.carry} is what puts it back onto the objects here.
+     */
+    step(direction: "undo" | "redo"): Stepped {
+        if (this.#core === null) return { stepped: false };
+        const stepped = this.#call("step", { direction }) as Stepped;
+        this.version = Number(stepped.version ?? this.version);
+        return stepped;
+    }
+
+    /**
+     * **Carry a step's effects out** on the structures they name: a piece
+     * written back, a take's writes projected, an external member's payloads
+     * applied.
+     */
+    carry(stepped: Stepped): void {
+        for (const effect of stepped.effects ?? []) {
+            const held = this.handlers.get(Number(effect.member));
+            if (held === undefined || held.handler === null) continue;
+            if (effect.kind === "multitrack") {
+                held.handler.stepped?.(held.structure as never, effect.applied ?? {});
+                continue;
+            }
+            for (const payload of effect.payloads ?? []) {
+                if (payload !== null && typeof payload === "object") {
+                    held.handler.project(held.structure as never, payload);
+                }
+            }
+        }
+    }
+
+    #state(): { canUndo?: boolean; canRedo?: boolean; undoLabel?: string | null; redoLabel?: string | null } {
+        return this.#call("state");
+    }
+
+    /** Whether there is an edit to step back over. */
+    get canUndo(): boolean {
+        return this.#state().canUndo === true;
+    }
+
+    /** Whether there is an undone edit to step forward into. */
+    get canRedo(): boolean {
+        return this.#state().canRedo === true;
+    }
+
+    /** What an undo would be called, for a menu item. */
+    get undoLabel(): string | undefined {
+        return this.#state().undoLabel ?? undefined;
+    }
+
+    /** What a redo would be called, for a menu item. */
+    get redoLabel(): string | undefined {
+        return this.#state().redoLabel ?? undefined;
+    }
+
+    // ---- the views ----
 
     /**
      * Take a view into this data's list, so an edit made in one window can reach
@@ -202,56 +394,6 @@ export class Editing {
             else alive.push(view);
         }
         return alive;
-    }
-
-    /**
-     * Take one step off the pile and give back what each structure must apply —
-     * `undefined` when there was nothing to take.
-     *
-     * The legs come **routed**: one entry per structure, its payloads in the
-     * order it must apply them. Which side of an entry a direction reads and
-     * which legs a structure owns are the crate's ({@link History.walk}),
-     * because every client was writing both for itself.
-     */
-    step(direction: "undo" | "redo"): unknown[] | undefined {
-        return this.history.walk(direction)?.legs;
-    }
-
-    /**
-     * Put a step's legs back onto the structures they name, and say whether
-     * anything moved.
-     *
-     * One entry can name several structures — a stroke over a take and a bend of
-     * the curve above it are one order, and so is an edit to a page beside a
-     * lane — so the legs come routed and each goes to whatever was registered
-     * for that identity.
-     *
-     * **It asks the structures, not the windows**, and that is the whole of why
-     * it is written this way. A pile is ordered and global to this context,
-     * while a window comes and goes: when the applier was a *view*, a box
-     * entered from a piece and then closed left an entry nobody could apply, the
-     * step was refused, and — since a refused step puts the cursor back — every
-     * edit behind it became unreachable too. The pile was not missing one step,
-     * it was **blocked**. What can put an edit back is a structure and its
-     * vocabulary, neither of which is on screen, so that is what
-     * {@link Editing.identity} registers and this is what asks.
-     *
-     * `walker` is kept for callers that pass it and is not read: who drew the
-     * gesture matters to the redraw, which is the turn's, not to this.
-     */
-    distribute(legs: readonly unknown[], _walker?: Adopting): boolean {
-        let stepped = false;
-        for (const leg of legs) {
-            const named = leg as { structure?: number; payloads?: readonly unknown[] };
-            const held = this.applierOf(Number(named.structure ?? -1));
-            if (held === undefined) continue;
-            for (const payload of named.payloads ?? []) {
-                if (payload !== null && typeof payload === "object") {
-                    stepped = held.applier.project(held.structure, payload) || stepped;
-                }
-            }
-        }
-        return stepped;
     }
 
     /** Drop a view whose window is gone. */
@@ -298,13 +440,8 @@ export class Editing {
                         else if (view !== source) view.adopt();
                     }
                     // ...and **every** view is told the data changed, the one
-                    // that made the gesture included. See
-                    // {@link Adopting.dataChanged} for why that is a different
-                    // question from bringing a window in step.
-                    // The source is told whether or not it is **attached**: a
-                    // view attaches when its window opens, and an editor
-                    // driving something off the data is entitled to be told
-                    // before it is on screen.
+                    // that made the gesture included, whether or not it is
+                    // attached. See {@link Adopting.dataChanged}.
                     const tell: Adopting[] = [];
                     for (const held of [...this.attached]) {
                         const view = held.deref();
@@ -318,10 +455,12 @@ export class Editing {
     }
 
     /**
-     * Release the crate's handles. What the data going away leaves behind; a
-     * view closing is not an event of a history.
+     * Release the crate's context, with every editor opened in it. What the
+     * data going away leaves behind; a view closing is not an event of a
+     * history.
      */
     free(): void {
-        this.history.free();
+        this.#core?.free();
+        this.#core = null;
     }
 }
