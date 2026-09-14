@@ -59,10 +59,12 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   keep ids unique host-wide. It is the **client's** job to allocate them — and,
   like node ids, from a **recycling** pool: the Python client assigns a fresh id
   to any widget built without one (and to every window) from a bounded window
-  starting at 1000, and a freed subtree returns its ids to the pool (a redraw
-  re-defining a window frees the old subtree first), so a long live session
-  reuses ids instead of climbing. Hand-picked ids below 1000 never collide with
-  assigned ones.
+  starting at 1000, and a freed subtree returns its ids to the pool, so a long
+  live session reuses ids instead of climbing. Hand-picked ids below 1000 never
+  collide with assigned ones. A client's **editor** does not lease: it names each
+  id after what the widget draws — the structure, its role in the picture, a key
+  — so a widget still in the picture keeps its number across every redraw, which
+  is what the host matches widgets by when it reconciles a def.
 - **`name`** (Python client only) is a **client-side** convenience, never on the
   wire: a widget built with a `name` is bound in the window handle `open` returns,
   so a script addresses it by name (`win["cutoff"].set(…)`) and never writes or
@@ -294,7 +296,7 @@ Three things follow, and they are the whole design:
 
 **Only a route the host never saw makes an edit stale.** The answers lag by construction — the host names the version it was last *told*, and it is told when an acknowledgement arrives — so an event naming a version the owner has already moved past is the ordinary case, not a collision: a drag reporting as it goes, a second gesture begun inside one round trip, a burst of events on any carrier slower than a hand. Those versions are the owner's own answers to this host, and they are applied. What refuses an edit is the document moving by a route no event produced: a script editing the arrangement, a second editor, a re-derivation, a history step. Both reference clients keep one *floor* — the version at which the last such change landed — and refuse an edit naming anything below it, and nothing else. Refusing on the lag instead is refusing the hand for being faster than a poll loop, and it answers each refused event with a snap back to where the gesture started.
 
-**A redefine drops what that window had in flight.** `/gui_def` on an open window replaces its whole tree, so an edit still pending against the old one has nothing left to resolve to — its widget may be gone, or its id may now belong to something else. The host forgets those pendings itself, exactly as `/gui_free` does, and an owner is not expected to acknowledge them.
+**A def drops what that widget had in flight.** A `/gui_def` over a tree the host already draws is reconciled rather than rebuilt, but an edit still pending against what it names is forgotten all the same, exactly as `/gui_free` forgets one: the def states what the widget now is, so an acknowledgement for an edit made against the old one is never coming, and holding it would keep the outbox open forever. An owner is not expected to acknowledge those.
 
 The acknowledgement is a **verb rather than a property** because it is scoped to the conversation and not to the tree: `seq` is per client, so two clients driving one window would collide on a single prop, and it does not round-trip, which a property here has to. It rides *after* the value pushes in the bundle, so the host never retires an edit before the state that edit produced has arrived.
 

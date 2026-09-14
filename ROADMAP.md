@@ -45,17 +45,18 @@ projection" (`O21`-`O24`).
 **multitrack editor** is done: `O25`-`O33` put its projections, its
 conversation, its playback and the application itself in the shared crates, run
 by the standalone host and bound by both clients, and a saved session opens and
-sounds from all three. **What is taken next is `APPLICATION-SCOPE.md`'s
-`AP7`**: the `SamplesEditor` that exists today moved into
-`crates/clausters-apps` beside the multitrack, as it is, so that one undo order
-can be worked out over two applications. The audio editor itself and the score
-editor are not started; the audio editor is a track of its own after `AP8`.
+sounds from all three. **The application-scope track is closed but for one
+check** (`clients/gui/PLAN.md`, AP track): the samples editor is the second
+application in `crates/clausters-apps`, and the undo order over both is the
+crate's editing context, in both clients and the standalone host. What `AP7`
+still owes is its by-eye pass. The audio editor itself is a track of its own that
+no plan holds yet, and the score editor is not started.
 
 Two things deferred to `O24` still have no step of their own: `AP5`'s catalogue
 views (building `waveform`, `bpf` and `pianoroll` from the shared code, so the
 standalone host has the same function), and the manual surface the reconcile
 has never had — no example in either client sends a second `/gui_def` over an
-open window (`APPLICATION-SCOPE.md`, "Found by use").
+open window (`clients/gui/PLAN.md`, "Found by use").
 
 Where the work lives:
 
@@ -66,7 +67,7 @@ Where the work lives:
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
-| `APx` | `APPLICATION-SCOPE.md` (root) | the application scope: ids, the diff, screen state, the core's move to Rust — **temporary, like this file**, and it goes when the branch lands |
+| `APx` | `clients/gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 
 Entries that carry no label are **plan entries, not milestones** — they are named
 by their own title and by the plan that holds them. **A pointer names the plan
@@ -231,26 +232,10 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   about drops -- which is what it was filed as until 2026-09-03. **The same
   subject from the branch's side:** "Dropping a clip where another one already
   sits makes the lane draw as one layered clip, so both appear to vanish into
-  one" (`APPLICATION-SCOPE.md`, Found by use) is this rule seen while using it,
+  one" (`clients/gui/PLAN.md`, Found by use) is this rule seen while using it,
   reduced to two lanes and one drag. One question, two entries, and it is
   `O21`'s layered regions that decide it.
 
-- **The branch's open defects, `APPLICATION-SCOPE.md`, Found by use.** Listed
-  together because they came out of one branch and are read against it; each is
-  written in full there and only named here.
-  - ⬜ **A clip dragged past the first or last lane oscillates back to the start
-    of the track** — no event reaches the client for those frames, so it is the
-    host's own drag.
-  - ⬜ **The playhead draws behind the clips** — not missing, behind; the
-    client's half survives a redefine, the host's paint order has not been read.
-  - ⬜ **A clip cannot be moved between lanes once a split has happened** — the
-    host stops emitting `'lane'` rather than the client refusing it.
-  - ✅ **The crate's client surface was public in one client and private in the
-    other** *(fixed 2026-09-06 by `O21`(d))*. `document.ts` had been a module of
-    its own since it was written; the Python client reached the same surface
-    through `clausters._native`, whose underscore says not to. Kept as the
-    record of how such a gap hides: the only thing using the door was `form`'s
-    converter, so nothing ever asked for a better one.
 
 ## 2. Fixes that need a decision first
 
@@ -444,18 +429,10 @@ its plan; the plan is where its acceptance is read.
 
 ### The branch's own, and they are the near work
 
-- ⬜ **`AP7` - a second application, to prove the abstraction**
-  *(`APPLICATION-SCOPE.md`)*. **Taken next.** The Python client's
-  `SamplesEditor`, moved as it is into `crates/clausters-apps` the way the
-  multitrack was, in the steps that milestone lists: the window, the
-  conversation, the write, and the undo order moving into the crate. What it is
-  taken for is the last one: one history over the edits of two applications,
-  and the same one when an application runs alone.
-
-- ⬜ **`AP8` - the pass over the packages, and the plans keep what is worth
-  keeping** *(`APPLICATION-SCOPE.md`)*. The branch's closing milestone: what of
-  this file and of `APPLICATION-SCOPE.md` survives into the standing plans, and
-  what goes with the branch.
+- ⬜ **`AP7`'s by-eye check** *(`clients/gui/PLAN.md`, AP track)*. Every step
+  is in and tested; what is left is looking at it: the samples editor drawn,
+  a sample moved and undone in `edit_samples.py` and its page, the multitrack's
+  undo in `edit_multitrack.py` and its page, and `clausters-gui --session`.
 
 - ⬜ **`/graph_moveSlot` - a slot instance changes parent without being made
   again** *(`PLAN.md`, Future directions)*. A server verb with its client end

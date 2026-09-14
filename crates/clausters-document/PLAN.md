@@ -193,6 +193,30 @@ The eight that opened with this file were taken one at a time and are in the sec
   on the arrangement and the document saves that — which is the measure of how
   narrowly this misses being urgent.
 
+  **What the application-scope track built, and what it leaves open**
+  *(2026-09-14, closing that track)*. An application layer exists now:
+  `crates/clausters-apps` holds the applications — the window each one composes
+  and what each gesture in it is answered with — and its editing context holds
+  the one undo order over every editor opened in it and the structures the crate
+  does not apply. It sits **beside** this crate's document rather than inside
+  it, and it saves nothing: an application holds no document of its own, and
+  what a window set is made of is still composed at run time by a client or a
+  host. So the track answered what an application *does* and left this entry's
+  question as it was — whether an application has a document, and whose it is —
+  open, on purpose.
+
+- ⬜ **What does a version mean across a load?** *(opened 2026-09-06 on the
+  application-scope track, when a load lowered the staleness floor to
+  `FIRST_VERSION`; that path went with `FormEditor`, and the question did not)*.
+  A floor only rises, which is what makes staleness a monotone test. A load that
+  replaces the composition under an open window leaves edits in flight from the
+  piece that was replaced, and `max(old, new)` is not obviously right either,
+  since the two versions count different histories. Today a context counts per
+  context (`clausters_apps::editing::Editing` starts at `FIRST_VERSION`, and a
+  session opened again is a new context), which answers it for a new window and
+  not for a context whose data is replaced under it. The decision is whether a
+  context's counter is per composition or per session.
+
 ## The milestones
 
 - ✅ **O1 - The document: the tree, and a leaf is opaque.** The crate's types and their serde form: elements with their placements (`onset`, `duration`), aggregates with their two kinds (**concrete** - members relate in time; **logical** - they relate by processing), and a leaf as `(id, kind, opaque config)`. A **source reference** carries its **lifetime** (external / session / temporary) from the start rather than gaining it later, since it is what a save has to read. No client objects, no widget, no OSC, no I/O. **Two properties the shape has to admit, because they are the arrangement's and not the document's to invent.** A generator's *code* is the opaque leaf; **its output is ordinary tree** - a generator may produce any element, generators included - so nothing about being generated makes a subtree a second kind of thing. And a **clang may reference a generator** to fire it live, which means the document expresses structure resolved at run time and not only at render time: a reference that no flattening pass will ever expand. **The tree stays general, and the views carry their own restrictions** - a multitrack lane is a *projection* that may decline to show what its shape does not admit, exactly as an unknown widget is laid out and not painted; nothing here grows a lane, a vertical position or a type-per-container so that a view is easier to write. **[Withdrawn 2026-09-06 - see "The turn: the arrangement stops being a projection". A projection is not free of structure: the lane, the order within it and the placement's identity are durable and undoable, and with nowhere to live they fell into the widget tree, which is where every multitrack defect of the `application-scope` branch comes from. O1's types are not deleted - they become what a region may contain - but the arrangement stops being derived from a general tree.]** The arrangement's own vocabulary (the Aggregate and the other primitives, the temporal traits) is unchanged by this milestone and is refined by iteration in `clausters.form`, which is why the shape has to stay versatile rather than final: the document need not know the model, but it must not be what blocks its refinement. **Acceptance:** a tree round-trips through serde unchanged; an unknown body kind and an unread config blob both survive a load/save cycle **losslessly**, and writing is **deterministic** (the two are the properties that matter, and byte-identity is not one of them: `serde_json` sorts an object's keys, key order in JSON carries no information, and buying its preservation would mean turning `preserve_order` on for every crate in the workspace since features are additive); the Python `clausters.form` tree converts in and out with no loss.
@@ -595,7 +619,7 @@ inventing our own would cost every reader the translation.
   when expanded, so the model word and the view word are one word about one
   thing. *(Decided 2026-09-06; the reasoning and the cost - `lane` is used 1596
   times in the host in two senses, one of which has to be renamed to `channel` -
-  are in `APPLICATION-SCOPE.md`, "The name: `Lane`, not `Playlist`".)*
+  are in `docs/decisions.md`, "A track's contents are a lane, not a playlist".)*
 - **Track** - identity, name, colour, kind (audio / MIDI / bus / folder /
   master), its lanes, its **automation** curves, its routing (inputs, outputs,
   sends) and its authored state (gain, pan, mute, solo, arm). A **folder** track
@@ -642,6 +666,69 @@ DAW session, because that is what a DAW session is good at.
   (`Gap`) so a track is a sequence with derived positions; we keep **absolute
   positions**, as Ardour does. That is the NLE family against the DAW family, and
   we are building a DAW. Recorded so the choice is known to be one.
+
+### Design reference: what the field does, and where we differ
+
+*Read 2026-09-06 on the application-scope track, to check its conclusions against
+prior art rather than to derive them. Context the milestones below are read
+against, not work: what turned into work is in them, named.*
+
+- **Item and Composition.** OpenTimelineIO splits a leaf (clip, gap, transition)
+  from a container (a track orders its children in time, a stack in parallel).
+  Our aggregate's two kinds are concrete and logical — a different axis, chosen
+  knowingly.
+- **Empty space as an object.** OTIO's `Gap` makes a track a sequence (the NLE
+  family, where ripple editing falls out); we keep absolute positions, as Ardour
+  does (the DAW family), because this is a DAW.
+- **Source → Region → Playlist → Track.** Ardour's four levels are the model the
+  turn takes: an immutable source, a region that windows it and has an identity
+  of its own, an ordered list of regions that *is* a track's contents (named
+  `Lane` here — `docs/decisions.md`), and a track that plays one of several.
+  Moving a clip between tracks is then a list operation, not a re-parent.
+- **A clip's three numbers.** OTIO's `source_range`, REAPER's position, length
+  and source offset, and Ardour's region are our placement, length and start —
+  three independent systems agreeing.
+- **The model is authoritative and the view is reconciled.** kdenlive binds its
+  QML timeline to a C++ model through `DelegateModel`; Ardour builds its canvas
+  views from the playlist. That is the host's reconcile under its industry name,
+  and the split of state — positions and structure in the model, selection and
+  drag previews in the view — is the four-layer table again.
+- **Identity by id, order by index.** Tracktion finds a clip by id and indexes it
+  by position; the reconcile matches the same way.
+- **REAPER: the take on the item, and a change of mind.** Its levels are
+  Project → Track → MediaItem → Take → PCM_source, with automation at the track,
+  the item and the take. Takes inside the item answer *an alternative* and do not
+  scale to *assembling a composite*: REAPER 7 added Fixed Item Lanes on top and
+  both now coexist, which is why this crate takes the lane shape. Its `.rpp`
+  writes a source inside each item; a source table plus references, as here, is
+  what lets six regions share one source without repeating it.
+- **The view in the open programs.** LMMS keeps a widget per clip and it works,
+  because its model is authoritative and in-process — the defect here was the
+  widget tree being the only copy of the structure, across a wire. Zrythm's
+  layering and object registries match ours, and its strong timebase types went
+  into `O21`. Live keeps view objects parallel to model objects (`Song.View`,
+  `Track.View`), which `O23`'s view took, and shows two pictures over one model
+  (Session and Arrangement), which says a presentation is per view. Ardour's
+  canvas is a retained scenegraph with three coordinate spaces and no dirty
+  regions, built without scaling because *"single pixels have semantic content"*
+  — this project's never-resolve-finer-than-the-screen rule, reached
+  independently.
+- **What nobody else does.** Every one of them keeps model and view in one
+  process; none sends a view tree over a wire per redraw. The nearest analogues
+  are reconcilers (the DOM, Qt), which is the second road to the same answer.
+
+**Sources.**
+[OpenTimelineIO data model](https://deepwiki.com/AcademySoftwareFoundation/OpenTimelineIO/2.2-timeline-data-model) *
+[kdenlive timeline UI](https://deepwiki.com/KDE/kdenlive/3.2-timeline-ui) *
+[Ardour, working with regions](https://manual.ardour.org/working-with-regions/) *
+[Tracktion `ClipTrack`](https://github.com/Tracktion/tracktion_engine/blob/master/modules/tracktion_engine/model/tracks/tracktion_ClipTrack.h) *
+[ReaScript API](https://www.reaper.fm/sdk/reascript/reascripthelp.html) *
+[Fixed Item Lanes](https://forums.cockos.com/showthread.php?t=283665) *
+[The Ardour Canvas](https://ardour.org/canvas.html) *
+[LMMS architecture](https://github.com/LMMS/lmms/wiki/LMMS-Architecture) *
+[Zrythm architecture](https://deepwiki.com/zrythm/zrythm) *
+[The Live Object Model](https://docs.cycling74.com/legacy/max8/vignettes/live_object_model) *
+[Bitwig clip launcher](https://www.bitwig.com/userguide/latest/the_clip_launcher/)
 
 ### The milestones
 
@@ -935,7 +1022,7 @@ DAW session, because that is what a DAW session is good at.
   reconciling - matching regions by identity within a lane - rather than by
   freeing and rebuilding. `/gui_def` comes to mean *make it look like this*
   rather than *free this and build that*. **This is what
-  `APPLICATION-SCOPE.md`'s AP5 was reaching for**, and it lands here because
+  the application scope's `AP5` was reaching for** (`clients/gui/PLAN.md`), and it lands here because
   reconciling needs something to reconcile against, which is O21.
   **Prerequisite**: what is the host's and survives a reconcile. It was scoped as
   *a list, written before the work starts*; Live answers it better and by
@@ -954,8 +1041,7 @@ DAW session, because that is what a DAW session is good at.
   the zoom and the horizontal scroll, one fact and not two), `scroll`, `quant`,
   `autofit`, `selection`, `selected`, `focused`, `detail` - plus a `TrackView`
   (`height`, `collapsed`, `lanes_shown`, `color`) and a `LaneView` (`height`)
-  looked up **by id**. Every field is one the host already holds or the `AP5`
-  list already named; nothing was invented to fill a shape.
+  looked up **by id**. Every field is one the host already holds or the `AP5` list (`clients/gui/PLAN.md`) already named; nothing was invented to fill a shape.
 
   Three things are decided by where it sits rather than by what is in it:
 
@@ -968,10 +1054,10 @@ DAW session, because that is what a DAW session is good at.
     snapping to a bar, the editor below it to a sixteenth. A format holding one
     would push the second back to being anonymous, which is the thing this
     structure exists to stop. It is also this project's own reading of Live's
-    two pictures over one model, recorded in `APPLICATION-SCOPE.md`.
+    two pictures over one model, recorded in "Design reference" above.
   - **State goes when the thing goes.** `View::prune` drops every entry naming
     an object the piece no longer holds, including a `selected`/`focused`/
-    `detail` that pointed at one. That is `AP3`'s lesson in this structure's
+    `detail` that pointed at one. That is `AP3`'s lesson (`clients/gui/PLAN.md`) in this structure's
     terms, and the reason it is a method rather than a habit: keeping too much
     is worse than today's defect, since a height kept for a track that is not
     the same track is a defect that looks like a feature.
@@ -1038,12 +1124,12 @@ DAW session, because that is what a DAW session is good at.
   exactly like a waveform of silence.
 
   **(d) The client stops holding a picture.** *(Landed 2026-09-07.)* The
-  measurement that gated it is in `APPLICATION-SCOPE.md`'s AP5 cost (1): a
+  measurement that gated it is in `docs/decisions.md`, "The picture has one owner": a
   drag's delta is 21 B/frame and flat, the widget the edit named is 91 B and
   flat, the window is 1.9 kB to 652 kB and grows with the piece. It was expected
   to wait on `O24`'s multitrack, since `Application.publish` had no caller and
   rewriting it would be designing a seam against zero implementors. What forced
-  it instead was `AP5`'s own item (4): retiring the redraw difference takes
+  it instead was `AP5`'s own item (4) (`clients/gui/PLAN.md`): retiring the redraw difference takes
   `gui_difference` out of the C ABI and the wasm, so `publish` cannot compute one
   whether or not anybody calls it.
 
@@ -1283,12 +1369,28 @@ plus this crate under them. The turn deleted a Python/TypeScript driver and
 deleted nothing in Rust. What has to be read again is not the arithmetic but
 **what each of those files takes as its input**: today the structure *is* the
 widget tree (`reparent_clip` moves a `Widget` between two `children` vectors),
-and under a session those become list operations on a lane. The inventory,
-file by file, is in `APPLICATION-SCOPE.md`, "What is already in Rust, and must be
-read again against the new design" - and the rule it ends with holds here: the
+and under a session those become list operations on a lane. The inventory, file by file, is below - and the rule it ends with holds here: the
 host's multitrack code is the most eye-tested part of the project and it is the
 half that was right, so when it changes the question is what its input is, never
 whether the behaviour was correct.
+
+*The inventory, as read on 2026-09-06:*
+
+| Where | Lines | What it already did |
+|---|---|---|
+| `host/placement.rs` | 473 | one geometry for every box on a time axis — a note in a roll and a clip on a lane are the same span, grabbed by the same three parts, snapped by the same grid, moved as a block, quantized, hit-tested in a rect |
+| `host/graphics/track.rs` | 1702 | the lane and its clips as drawn: the body, the header, the grips, the three clip bodies (waveform, roll, curve) |
+| `host/gestures/nav.rs` | 1003 | the lane stack and its bands, `reparent_clip`, edge-scroll while dragging, the vertical view |
+| `host/interact/*` | 1071 | the hit-tests, the drag arithmetic, and every edit-back payload a lane or a clip emits |
+| `host/ruler.rs` | 2267 | the beats/bars/seconds rulers and the tempo map they read |
+| `host/layers.rs`, `scroll.rs`, `play.rs` | 963 | the edit layer of a layered clip, the shared time axis, the playhead |
+| `crates/clausters-document` | 5861 | the document, the intent vocabulary and its one applier, the log and its inverses, the typed selection and clipboard, the session format |
+
+What it said had to be read again was the input of each: the structure was the
+widget tree everywhere; a clip was three numbers and a label where a region is
+more; nothing in the host held a track's identity across a redefine but the
+derived id; and the only door into this crate from either client was
+`clausters.form`'s.
 
 **What this turn does not settle**, and will not be settled in passing: whether
 plugins/processors are in the document at all (the leaf is opaque, and a plugin
@@ -1355,7 +1457,7 @@ The order is leaves before trunk: a projection is a function of a structure and 
 
   **Why `samples` and `events` did not move, stated so the scope is not read as an omission.** A samples view's props are the single word `reload` -- the picture *is* the server's buffer, so what corrects it is "read it again". And an events view shapes its payload out of the **client's own objects** (a `Timeline` of `OscItem`/`MidiItem`, read through `_pitch`, `_velocity`, `_label_of`), which is the irreducibly per-language half this whole track leaves in place: a projection is over a *document* structure, and that one is not. What their twins do share is the GuiDef **builders** (`_flat_notes`/`flatNotes` and the rest of `guidef`), which is a larger duplication belonging to a different question than this one.
 
-- ⬜ **The applications after this one are built on it, and it is not the multitrack's** *(the user, 2026-09-11)*. The three classic applications over one document -- the audio editor, the multitrack editor, the score editor -- and whatever `APPLICATION-SCOPE.md` opens next are each a structure with the same three endpoints and the same four questions. The multitrack is where this design is being worked out because it is the one with every case in it, **not** because the design is its own: a new editor states its projections in `clausters-editing` beside these, and gets the doors, the parity vectors and the standalone host for nothing. An editor that grows a projection of its own in a client is the defect this track exists to retire, whatever structure it draws.
+- ⬜ **The applications after this one are built on it, and it is not the multitrack's** *(the user, 2026-09-11)*. The three classic applications over one document -- the audio editor, the multitrack editor, the score editor -- and whatever opens next are each a structure with the same three endpoints and the same four questions. The multitrack is where this design is being worked out because it is the one with every case in it, **not** because the design is its own: a new editor states its projections in `clausters-editing` beside these, and gets the doors, the parity vectors and the standalone host for nothing. An editor that grows a projection of its own in a client is the defect this track exists to retire, whatever structure it draws.
 
 - ✅ **O27 - The edit ingestion.** *(Closed 2026-09-11.)* A report from the host -- a tag and its values -- becomes payloads in the structure's vocabulary, in the crate, for all four domains. What stays in a client is `project`: writing an applied payload back onto the client's own objects, which is the one thing a language owns. **Acceptance:** `Domain.payload`/`payloads` is a call into the crate in both clients; the gesture vocabularies of the two cannot differ, and a tag the crate does not know is refused identically in both.
 
@@ -1461,7 +1563,7 @@ The order is leaves before trunk: a projection is a function of a structure and 
      **No addressed steps, and the reason is the topology rather than a shortcut.** Only the standalone host has two servers; a client's samples and its sound are one server, and an attach to the server that already holds a buffer is not a verb. So the addressing is the host's, beside `send_to_player`, and neither client changed. A client's `Buffer.stitch` stays the client's builder for the command, as every OSC command's builder is.
   5. ✅ **Entering a box, as far as the multitrack goes** *(narrowed 2026-09-13 with the user)*. What a box opens as is the piece's question and the editor answers it (`box_contents`, the core's `box` verb): the source its region is a window onto and the title a window over it carries. Both clients' `enter` ask it, and `_region`/`_source_of` and `regionNamed`/`sourceOf` went; each still opens its own `SamplesEditor` over the source's buffer, on the piece's history.
 
-     **What opens is another application's, and it is not here.** The editor for what a box holds is the **audio editor**, which is its own application in this crate — `APPLICATION-SCOPE.md`, `AP7`, decided the same day — and is not grown inside the multitrack. Until it exists the standalone host logs an entered box and opens nothing, and the undo order stays with the caller: once the audio editor is the crate's too, the history a piece shares with its boxes can move into the crate with it. *(Narrowed 2026-09-14 with the user: `AP7` moves the existing `SamplesEditor` into the crate to work out one history over two applications, and is not the audio editor; entering a box from a piece is not part of it, since the multitrack does not edit samples. The audio editor is a track of its own after `AP8`.)*
+     **What opens is another application's, and it is not here.** The editor for what a box holds is the **audio editor**, which is its own application in this crate — `clients/gui/PLAN.md`, `AP7`, decided the same day — and is not grown inside the multitrack. Until it exists the standalone host logs an entered box and opens nothing, and the undo order stays with the caller: once the audio editor is the crate's too, the history a piece shares with its boxes can move into the crate with it. *(Narrowed 2026-09-14 with the user: `AP7` moves the existing `SamplesEditor` into the crate to work out one history over two applications, and is not the audio editor; entering a box from a piece is not part of it, since the multitrack does not edit samples. The audio editor is a track of its own after `AP8`.)*
   6. ✅ **The clients hold a handle.** `MultitrackEditor` in both clients forwards every message to `MultitrackEditorCore` and carries out what it answers — the history entry, the piece written back, a minted source, the transport verb, an entered box — and holds no composition and no event wiring. What was left over went: `Bridge`'s frame and beat conversions (`frame_at`, `frames_over`, `beat_at`, `frame_in`, `beat_in` and their twins), which nothing called once the picture and the reading were the crate's, and `Sources.width`.
 
      **The recorded exchange** is `editor_exchange` in `clients/web/tests/editing-vectors.json`, generated by `gen-editing-vectors.py` through the Python client's `MultitrackEditor.apply` and replayed in `editing-parity.test.ts` through the web client's: a box moved, a box split under a name the host minted, the cursor placed on the ruler, play, stop and rewind from the transport row, the space bar, an undo, and an edit made against a picture that is gone. Each turn compares what the client told the host, what it asked the playback to do, and the regions of the piece; widgets are named by role, since which id an allocator hands out is each client's own. The standalone host runs the same editor and is held by its own tests (`the_transport_row_and_the_space_bar_reach_the_editor`, `a_stitch_done_in_the_session_is_attached_once`, and the piece tests `answer_own` already had).

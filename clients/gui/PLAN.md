@@ -699,7 +699,8 @@ Found while reviewing `composer.py`. `clausters.gui.Editor` composes its window 
   grows a large element — though almost none of it is new code: `graphics/track.rs`,
   `placement.rs`, the gesture machine, the rulers, the layers and the playhead
   all stay, and what changes is **what they take as input**, which is exactly
-  what `APPLICATION-SCOPE.md` predicted for `O24`.
+  what the AP track's reading of the host's multitrack code predicted for `O24`
+  (`crates/clausters-document/PLAN.md`).
 
   **Acceptance:** the multitrack example composes a window by describing lanes
   and clips and never registers a handler on one; every gesture — a drag, a
@@ -3578,6 +3579,104 @@ Not part of G11-G16; recorded here because the G11 seam was deliberately shaped 
 
 This intersected the server track and not only the GUI one, which is why it was numbered there. **The one piece of the sketch above that did not ship is the third bullet** — the in-page shared-memory paths — and it is recorded as a track to open under Future directions rather than left here reading as done. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
 
+## AP track — the application scope: the window set, the named id, the reconcile, one undo order
+
+*Opened 2026-09-06 with the user as a plan of its own, `APPLICATION-SCOPE.md`,
+which `AP8` deleted once nothing in it was the only copy: the decisions are in
+`docs/decisions.md`, the reconcile in `docs/gui-protocol.md` and
+`docs/architecture.md`, the design reference and the reading of the host's
+multitrack code in `crates/clausters-document/PLAN.md`, and the track and what
+it found by use here. What shipped is the git history.*
+
+**The inversion.** The editor stops being the unit and the application becomes
+it: an application owns the host, the widget-id space and the loop; an editor is
+one structure bound to one `Domain` and one `View` and owns nothing global. The
+acknowledgement stays each view's, screen state stays the host's and each
+window's, and the undo order is the data's editing context — the applications
+crate's since `AP7`.
+
+**Non-goals it kept.** No second owner of a document (no operational transform,
+no CRDT); shared memory stays a native fast path and never a model the browser
+lacks; the opaque leaf stays opaque; no new widget, gesture or drawing rule.
+
+**What would have made it wrong**, checked rather than felt: a seam that needs a
+second implementor invented to exist (`AP4` refused one); a move into Rust that
+makes the document read an opaque leaf; a second application that needs surface
+added to a client (`AP7` added none); a verb one client has and the other lacks
+at the end (there is none).
+
+- ✅ **AP0 - The seam, in Python only, with nothing moved.** *(2026-09-06)*
+  `Application` took the host and its resolution, the id space, the drain and
+  the walk from `Editor`, which kept the structure, the domain, the view and the
+  unit bridge. Moved in the cheapest language first, because moving it after the
+  core meant moving it in Rust and TypeScript too. Registering a structure at
+  construction was dropped: `structure=None` is legal, and `Editing.of` caches on
+  the object.
+- ✅ **AP1 - A widget id is named, not leased.** *(2026-09-06)*
+  `clausters_core::widgetids::WidgetIds`: one occupancy map, the anonymous lease a
+  hand-built tree takes and the id a view asks for by `(structure, role, key)`.
+  Its four rules — a map and not a hash, a draw names its drawer, an anonymous
+  free cannot take back a named id, a draw with no host is private — are in
+  `docs/decisions.md`.
+- ✅ **AP2 - A redraw is a diff.** *(mechanism 2026-09-06, retired 2026-09-07)*
+  The difference landed and then proved uncomputable outside the host (`AP5`).
+  Its acceptance — editing one clip emits no definition, a scroll and a
+  selection survive — moved to `O23`, where the reconcile holds it.
+- ✅ **AP3 - Screen state is about a thing, and a thing is not its address.**
+  *(2026-09-06)* Rewritten because it contradicted a decision written three
+  times: selection, zoom and layer stay each window's, and `adopt_selection` is a
+  composed view handing its range up, which stays. What was wrong was four tables
+  keyed by `id(object)`, which CPython reuses after a free; they key by the
+  object, weakly. `O23` refined it: screen state reaches neither the document nor
+  the history, and does reach the session file as a view.
+- ✅ **AP4 - A payload is by value or by reference.** *(closed 2026-09-06 by
+  finding it already true)* The seam is `Domain`, and no module of the
+  application core names a vocabulary; by value (`points`, `events`) and by
+  reference (`samples`) are implementations of one interface, and a marker saying
+  which would be machinery nothing reads. How bulk travels is the data-path work,
+  not this track's.
+- ✅ **AP5 - The application core moves to Rust.** *(2026-09-06 to 2026-09-09)*
+  The finding was that **the picture has one owner**: a client-side difference is
+  correct only against an equal copy of what the host draws, and that copy is
+  unreachable, so no client keeps a picture and the host reconciles a def
+  (`widget::reconcile`, with `O23`). `guidiff` was retired from the core and both
+  clients (core ABI v42), `"data": "keep"` carries the bulk, and which widget to
+  publish is the caller's (`docs/decisions.md`, with the measurement). Also moved:
+  the routing table's tag list (`clausters_document::view::NOT_AN_EDIT`, v44),
+  the catalogue views (`view::catalogue`, `clausters_view_props`, v45 — the
+  document crate rather than the host's `tree.rs`, since a client cannot call into
+  the host), and the data half of the undo walk (`History::walk`, v46). The unit
+  bridge and the echo's staleness test were audited: already one rule called
+  twice. The standing reason, said by the user: the editing logic is in Rust so
+  that it is in one place and consistent across clients.
+- ✅ **AP6 - `FormEditor` converges.** *(closed by removal, 2026-09-06)* The
+  target was wrong: a multitrack's own state is authored, durable and undoable,
+  and a projection has nowhere to keep it but the widget tree. `FormEditor` was
+  deleted and the session in `crates/clausters-document` replaced it
+  (`O21`-`O24`); what survived is the measurement that proved the named ids.
+- ⬜ **AP7 - A second application, to prove the abstraction.** *(steps done
+  2026-09-14; open for the by-eye check)* The Python client's `SamplesEditor`,
+  moved as it is into `crates/clausters-apps` to work out one undo order over two
+  applications — not the audio editor, which is a track of its own no plan holds
+  yet. (1) ✅ the window, `clausters_apps::samples::{window, props}`; (2) ✅ the
+  conversation, the inverse taken from the one reading and the words of a turn in
+  `clausters_apps::turn`; (3) ✅ the write, `clausters_editing::samples::write_steps`
+  (`/buffer_setRangeChannel` for one channel of a wider take, the last chunk's
+  `/done` awaited); (4) ✅ the undo order, `clausters_apps::editing::Editing` —
+  members under keys, external members, the context's turn and step — bound as
+  `clausters_apps_editing_*` (v62-v64, the separate editor handles retired), with
+  both clients' `Editing` and the standalone host's `Owner` over it. Not in it:
+  entering a box from a piece, the audio editor, the catalogue views.
+  **Acceptance:** written with the supported surface, one program in two
+  languages, and an undo that walks edits made in two applications as one order —
+  held by the crate's and both clients' tests. **Left: the by-eye check** —
+  `edit_samples.py` and its page (draw, move a sample, undo and redo),
+  `edit_multitrack.py` and its page, and `clausters-gui --session`.
+- ✅ **AP8 - The pass over the packages.** *(2026-09-14)* The durable half of
+  `APPLICATION-SCOPE.md` went where it belongs (above) and the file was deleted.
+  The open question it raised about a version across a load is in
+  `crates/clausters-document/PLAN.md`'s "Open decisions".
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.
@@ -4998,7 +5097,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   answers itself rather than routes -- beside `NOT_AN_EDIT`, not inside a
   domain -- and what an editor does with one is the same open question as
   before. **Related:** "The routing table's tag list is written twice"
-  (`APPLICATION-SCOPE.md`, Found by use) is the list it would join, and since
+  (this file, Found by use) is the list it would join, and since
   2026-09-09 that list is the crate's (`clausters_document::view::NOT_AN_EDIT`),
   so joining it is one line in one place rather than one per client.
 
@@ -6959,3 +7058,81 @@ finished work, where a pending item reads as done.
 
 - ✅ **A buffer that failed to be made is fetched a hundred times a second** *(found 2026-09-13, in the same log)*. When a session's join failed to stitch, the multitrack asked the server for buffer 5 on every frame -- `waits on server buffer 5`, then `buffer 5: 0 frames ... loaded`, then again, about ten ms apart, for as long as the window was open. A reply of zero frames is an answer, and the fetch machine has to hold it as one (drawn empty, asked again only when something says the buffer changed) rather than as a miss to retry.
   **Fixed 2026-09-13, and it was every take, not only the missing one.** The pass each front runs before every repaint is meant to serve only the elements told their resource moved, but it also pushed every `Needs::takes` of the multitrack: natively each take was mapped again and its summary rebuilt per frame (a full pass over the samples where the server wrote no overview), and on a leg that downloads, a finished download started again on the next frame. The repetition was also hiding a race: a join's box names its buffer in the turn `mint_sources` queues the stitch, so the first ask can find the buffer unallocated, or published and not yet copied into, and the next frame repaired it. Now an element answers its takes through `Samples::ask_takes` -- all of them when a window is built, only the ones not yet asked for on a repaint -- and `/done /buffer_stitch n` makes every element that asked for `n` forget it (`Host::forget_stitched`, called by both fronts), so a join is asked for once more when its samples are there. Held by `a_take_is_asked_for_once_and_again_when_forgotten` and `a_stitched_take_is_asked_for_again`.
+
+- ⬜ **The reconcile has no example to see it in** *(found 2026-09-07 on the AP
+  track, going to check it by eye)*. `widget::reconcile` has unit tests and no
+  manual test surface: no example in either client sends a second `/gui_def` over
+  an open window, so the behaviour that fixed the track's opening complaint cannot
+  be watched happening. The by-eye pass belongs in the multitrack's example — a
+  lane zoomed in, a clip added to another lane, and the zoom still there.
+
+- ✅ **A change of shape redefined the whole window, so an edit in one lane cost
+  every other lane its screen state** *(found 2026-09-06 by the user, by eye:
+  splitting a clip reset the vertical zoom of every lane)*. First narrowed to a
+  redefine of the smallest subtree whose shape moved, which needed the host to
+  splice a non-window def into the drawn tree at all — the client measured two
+  defs and zero window rebuilds while the host drew nothing new; an eye on the
+  window is what caught it. Then answered at the root by the reconcile (`AP5`).
+
+- ✅ **A set was addressed to a widget the redefine beside it had just removed**
+  *(found 2026-09-06 in the log)*. Two generated tests exonerated the walk and the
+  wire, because the defect was in the premise both were written under: the
+  picture the difference compared was the client's, and the widget was freed in
+  the host's. Closed 2026-09-07 by removing the sentence: a publish is one
+  `/gui_def`, with no set beside it.
+
+- ✅ **A clip dragged past the first or last lane oscillated back to the start**
+  *(found 2026-09-06 by the user, by eye)*. The drag is the host's
+  `elements::multitrack` now, with the row index clamped
+  (`a_drag_past_the_last_lane_stops_at_it`).
+
+- ✅ **The playhead drew behind the clips** *(found 2026-09-06 by the user)*. It
+  stopped being a lane prop: the navigation group's line is drawn in the overlay
+  pass, over every row, so no redefine can put it behind anything.
+
+- ✅ **A clip could not change lanes once a split had happened** *(found
+  2026-09-06 by the user)*. Closed with a test rather than by the subject going:
+  `a_half_left_by_a_split_still_changes_lanes`.
+
+- ✅ **Dropping a clip onto another drew the lane as one layered clip** *(found
+  2026-09-06 by the user)*. The rule that collapsed simultaneous members went
+  with `FormEditor`; two regions at one offset draw as two overlapping boxes,
+  because that is what they are.
+
+- ✅ **Screen state was keyed by an address** *(found 2026-09-06, fixed the same
+  day)*. Four tables under `id(object)` handed a freed object's state to the next
+  one at that address; keyed by the object, weakly. Every one of them read
+  correctly and failed only after a free.
+
+- ✅ **An `Application` built with no version callable read its editors before it
+  had any** *(found and fixed 2026-09-06)*. The list is made first; every editor
+  passed a callable, so only a test constructing one alone reached it.
+
+- ✅ **The routing table's tag list was written twice** *(found 2026-09-06,
+  lowered 2026-09-09)*. It is `clausters_document::view::NOT_AN_EDIT`, read once
+  by each client.
+
+- ✅ **`GuiHost.redefine` and `Application` existed in Python and not in the web
+  client** *(found 2026-09-06 and 2026-09-07, closed 2026-09-09 by `W30`)*. Found
+  only because somebody writing a wire word needed the door: a gap that costs
+  nothing to have is a gap nothing will find, which is why the two clients are
+  read against each other verb by verb.
+
+- ✅ **The undo walk was each client's** *(found 2026-09-06, settled 2026-09-09,
+  taken to the crate by `AP7`)*. Its data half became `History::walk`; the rest
+  became the editing context's turn and step.
+
+- ✅ **`SamplesDomain` held the inverse between two calls that did not mention
+  it** *(found 2026-09-06, closed 2026-09-14 by `AP7` step 2)*. The gesture is
+  read once in the application's editor, and the inverse comes off that reading.
+
+- ✅ **A publish that redefined widgets did not always tell the host its
+  version** *(moot 2026-09-06 with `FormEditor`)*. Kept for the observation: the
+  pairing was a convention at five call sites rather than a mechanism where the
+  redefinition is decided.
+
+- ✅ **`Echo.raise_floor` was called by nothing** *(fixed 2026-09-07)*. The verb
+  stayed and the assignable floor went, in both clients: a floor that can be
+  assigned is not a floor, and the protocol test moved onto the path an editor
+  takes.
+

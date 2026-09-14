@@ -1402,9 +1402,9 @@ impl Host {
         widget::flatten_tree_axes(&mut node);
         // Keep the verbatim JSON: the source of truth for persistence and reload.
         self.def_json.insert(id, bytes.clone());
-        // A redefine replaces the window's whole tree, so an edit still in
-        // flight against the old one has nothing left to resolve to: its widget
-        // may be gone, or worse, its id may now belong to something else. Drop
+        // A def states what this widget now is, reconciled or not, so an edit
+        // still in flight against what it was has nothing left to resolve to:
+        // its widget may be gone, or its id may name something else now. Drop
         // the pending set here for the same reason `/gui_free` does — an
         // acknowledgement that is never coming holds the outbox open forever,
         // and the new tree is authoritative by definition.

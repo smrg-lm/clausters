@@ -12,7 +12,7 @@ the host reconciles it against the only copy that is true.
 What is left to check here is therefore not arithmetic but **granularity**,
 which is what the change hands to the caller: a `/gui_def` names any widget, so
 an edit publishes the one it touched. The measurement at the bottom is what
-says that matters, and it is the one `APPLICATION-SCOPE.md`'s AP5 gates on --
+says that matters, and it is what decided that a client holds no picture --
 the cost of publishing the widget an edit named does not grow with the piece,
 and the cost of publishing the window does.
 """
@@ -153,7 +153,7 @@ def test_a_window_republished_after_it_closed_is_no_special_case():
 
 # ---- what a redraw costs, which is what makes the granularity load-bearing ----
 #
-# The measurement `APPLICATION-SCOPE.md`'s AP5 asks for. What it asserts is the
+# The measurement the granularity of a redraw was decided by. What it asserts is the
 # **shape** of the answer rather than a byte count, because the shape is the
 # load-bearing part: the cost of publishing the widget an edit named does not
 # grow with the piece, and the cost of publishing the window does.

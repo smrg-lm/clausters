@@ -803,7 +803,7 @@ impl Owner {
     /// undoes the way it was made.
     ///
     /// The inverse of each is read out of the document *before* that one lands,
-    /// which is the same rule [`apply_logged`] follows — it is spelled out here
+    /// which is the same rule [`apply_logged_in`] follows — it is spelled out here
     /// only because there is no one-call form for a transaction.
     pub fn apply_all(
         &mut self,

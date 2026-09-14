@@ -1824,8 +1824,8 @@ So what the port owes is a `publish` that forwards to `define` or
 `redefine`, and the granularity that goes with it: publish the widget the
 edit named, not the window, because the window is megabytes a second of JSON
 at drag rates on a large piece. It also owes `GuiHost.redefine` itself, which
-is the door for a part and which this client does not have — see
-`APPLICATION-SCOPE.md`'s "Found by use".
+is the door for a part and which this client does not have — see the AP track's "Found by use" in
+`clients/gui/PLAN.md`.
 
 It is a **recorded** divergence rather than an accidental one, and it is now
 a much cheaper one to close.
@@ -1859,7 +1859,7 @@ argument `AP0` made when it wrote the seam in Python only, and it held: the
 difference this client bound and never called was deleted on 2026-09-07 before
 the port could copy it. So this waits on
 
-- **`APPLICATION-SCOPE.md`** — `AP5`'s remainder, `AP7` and `AP8`. `AP5` is what
+- **`clients/gui/PLAN.md`'s AP track** — `AP5`'s remainder, `AP7` and `AP8`. `AP5` is what
   decides what an application still owns; `AP8` is the pass over the packages,
   and a parity reading before the docs and the bindings tables are settled is a
   reading against a moving target.

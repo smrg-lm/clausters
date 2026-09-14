@@ -2260,6 +2260,10 @@ shape: the arithmetic is small, but its being in one place is the point.
 
 ## GUI widget ids are allocated client-side and recycled; a name is the stable handle
 
+*(Refined since: a widget that draws part of a structure takes an id **named**
+after what it draws rather than a lease — see "A widget id is named after what
+it draws, not leased" below. What follows still holds for a tree built by hand.)*
+
 Context (the client's GUI ergonomics): a high-level client should not make the
 user pick and thread integer widget ids — the audio-server side never does (a
 script writes `Synth("beep", {"freq": 440})`, and the client's
@@ -8099,3 +8103,151 @@ The general form, worth stating because sharing will reach other shapes: what
 is published for a peer to *look at* is a rendering, and what the server keeps
 is the thing itself. A publication that replaces its subject is a bug however
 equal the two look from outside.
+
+## An application owns a window set, and an editor owns one structure
+
+An editor used to own everything global about a session on screen — the host,
+the window, the widget-id pool, the acknowledgement, the undo walk — while what
+several views actually share (the history, the version, the views to tell) sat
+one level down, in the editing context the *data* owns. Three things followed: a
+widget id was a lease rather than an identity, everything global was written
+once per language, and there was no layer that meant "an application", so a
+bundle of views that is not the multitrack had nowhere to be built.
+
+So the two swapped places. An **application** (`Application`, in both clients)
+owns the window set: the host and how it is resolved, the widget-id space, the
+socket drain and the wait and close surface. An **editor** is one structure
+bound to a domain and a view, and owns nothing global.
+
+Two things stayed where they were, and the reasons are what a later pass would
+otherwise undo. The **acknowledgement** is one view's end of the conversation:
+the staleness floor rises when the version moved and no event of *this* view
+moved it, so two windows sharing a floor would each silence the other's check.
+And **screen state** — selection, zoom, which layer the hand is on — is the
+host's by the four-layer rule and each window's; what a client keeps is a
+read-back value, keyed by the object **weakly**, never by its address: CPython
+reuses an address the moment an object is freed (196 times out of 200 in a
+straight loop), so a table keyed by `id()` hands its state to whatever lands
+there next. The undo order is neither the editor's nor the application's; it is
+the editing context's (below).
+
+## A widget id is named after what it draws, not leased
+
+Pooled ids recycled across redraws, so an edit-back in flight, a correction on
+its way out, or the host's own state on a widget landed on whatever took the
+number next — the recurring visualization failure. The earlier decision above
+solved a script's ergonomics (a name to hold instead of an integer) and left an
+editor's redraw churning.
+
+So a view asks for an id **by name** — the structure's identity, the widget's
+role in the picture, and a key within the role — and gets the same number for
+as long as the widget keeps being drawn. `clausters_core::widgetids::WidgetIds`
+is one occupancy map with two doors: the anonymous lease a hand-built tree
+takes, and the named id. Four rules come with it, each of which reads like
+something to simplify:
+
+- **A name is a map, not a hash.** A 31-bit space and a thousand live widgets is
+  a collision every few thousand sessions, and a collision is two widgets
+  answering to one number — silent, and indistinguishable from the defect the
+  table exists to remove.
+- **A draw names its drawer.** One table serves a whole host and a host carries
+  more than one editor; a draw that did not say whose it was let one editor's
+  redraw retire another's widgets.
+- **An anonymous free cannot take back a named id.** A host frees a redefined
+  subtree widget by widget while the names still hold those ids; releasing one
+  there would hand one number to two widgets. A named id leaves only when its
+  drawer retires it.
+- **A draw with no host is private to its drawer** and numbers from the start,
+  so drawing one picture twice gives one tree. On a host that would be wrong,
+  because the leases there belong to every window the client has open.
+
+Measured when the multitrack's widgets took it: two draws of one composition
+gave the same ids, and a redraw of the same piece cost zero definitions and zero
+sets. It is also what the host matches widgets by when it reconciles a def
+(below).
+
+## The picture has one owner: the host reconciles a def
+
+The client used to send the difference between the tree it last sent and the
+tree it would send now. That is correct only if its copy equals what the host
+draws, and it cannot: the host mutates on its own every frame (a drag writes an
+offset, a wheel writes a window), screen state reports nothing on purpose, and
+a `/gui_def` can fail with nothing said. Versioning the picture puts the client
+back to whole redefines on every drag; narrowing that means the client modelling
+the host's rules, in two languages. And moving the difference into the host
+reproduces the defect one process over, since the host writes its widgets
+without writing the last document it was handed.
+
+So **no client keeps a picture.** A `/gui_def` over a tree the host already
+draws means *make it look like this*: the host walks the tree it holds beside
+the one it was handed, matches a widget by id wherever it moved to and by
+position for the bodies the wire does not address — only where the type agrees
+— and carries its own state across: the window on the axis, the selection, the
+active layer, what is hidden. The def still wins on any key it states. Bulk is
+kept by being **asked for** (`"data": "keep"`), because silence already means a
+clip with no body. Paths were considered and rejected: a path encodes a position,
+and re-parenting a clip is the multitrack's commonest gesture. The redraw
+difference was retired from the core and from both clients.
+
+What decided the granularity, measured over one clip dragged for 60 frames:
+
+| piece | the old delta | the widget the edit named | the whole window |
+|---|---|---|---|
+| 4 lanes × 4 clips | 21 B/frame | 91 B | 1.9 kB |
+| 8 × 16 | 21 B | 91 B | 13 kB |
+| 24 × 40 | 21 B | 91 B | 97 kB |
+| 64 × 100 | 21 B | 91 B | 652 kB |
+
+The window grows with the piece — 39 MB/s of JSON at drag rates on the largest —
+and the widget the edit named does not. So which widget to publish is the
+**caller's** argument: an editor knows which node its intent touched, and
+nothing inside a publish can.
+
+The field's name for this is reconciliation (the DOM's, Qt's `DelegateModel`,
+kdenlive's timeline); it arrived here from a bug report, a lane split that reset
+the zoom of every other lane in the window.
+
+## One undo order, held by the applications crate's editing context
+
+A piece and a take edited beside it, or two windows over one take, have to walk
+one history. The history sat in each client's editing context and in the
+standalone host's own log, while the multitrack editor handed its entries back
+to whoever kept them — the chaining around one pile written three times.
+
+So `clausters_apps::editing::Editing` holds the history, the version and its
+**members**, and no application holds a history of its own: an editor is
+opened *in* a context, and one opened alone is a context of one. The context
+owns the editors behind one handle; two handles referring to each other would
+have left the turn → record → step chaining in every endpoint, and a borrow
+across handles that wasm cannot keep. A member declares a **key** — a take by
+its buffer, a piece by the piece — and a second member with the same key is the
+same structure. Structures the crate does not apply (a client's curve, its
+notes, a score, the host's tree) join as **external members** whose legs come
+back to be applied.
+
+A turn records the entry and moves the version. A step hands each leg to the
+members holding its structure and, when nothing could apply it, puts the cursor
+back and says why — a step over an entry nobody holds would otherwise lose that
+edit from the order. A take's step comes back as its writes rather than as
+steps, because the transport bound a write is chunked by belongs to the server
+the take is on. And the C door runs a verb once across its sizing and filling
+calls: a history is not copied for a sizing pass the way an editor is.
+
+## A track's contents are a lane, not a playlist
+
+The field's structure for a track's contents is Ardour's **playlist**, inherited
+from Pro Tools: an ordered list of regions, several per track, one of them
+played — which is what takes, comping and alternate versions are. The structure
+is right and the name is not: in ordinary use a playlist is a list of songs, a
+word that has to be decoded before it means anything here, which is exactly what
+this project's naming rules refuse.
+
+So the structure is Ardour's and the name is ours, **`Lane`**: a track holds
+several lanes, and a lane is an ordered list of regions. A track with three lanes
+draws as three rows, so the model's word and the view's word are one word about
+one thing. And it is the **lane** shape rather than takes inside the item, on
+evidence: REAPER kept takes inside the item for twenty years and had to add
+*Fixed Item Lanes* on top for real comping, and both models now coexist in it.
+The cost, stated when it was decided: `lane` also named a channel row inside a
+multichannel clip body in the host, and that sense is the one renamed to
+`channel`.

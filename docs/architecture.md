@@ -946,16 +946,37 @@ reason, the entry to record, a source the edit minted, where the cursor was
 placed, a box that was entered, and what the transport is asked to do — the
 transport row's buttons and the window's space bar are the editor's, so a click,
 a key and a script's `toggle` are one path. It answers rather than performs what
-belongs to a running system: a client or the host records the entry in the
-history it keeps — a piece shares one undo order with the boxes entered out of it
-— makes the minted source, sends the transport's steps and opens the box. Both clients open it as a
+belongs to a running system: the editing context records the entry in the one
+history it holds, and a client or the host makes the minted source and sends the
+transport's steps. Both clients open it as a
 member of an editing context (`clausters_apps::editing`, reached through
 `clausters_apps_editing_*` / `EditingCore`), whose verbs cross as JSON; the
 standalone host links the same context in its `Owner`, where the tree and the
 piece are external members beside the editor, so a stroke on the tree and a box
-moved on the piece undo in one order there too. The transport
-verbs, a minted source's two servers and entering a box move here next, in the
-order `crates/clausters-document/PLAN.md` gives for the applications crate.
+moved on the piece undo in one order there too.
+
+### The application in each client, and the picture the host owns
+
+On the client side an **application** (`clausters.gui.editing.Application` and
+its web twin) owns a window set: the host and how it is resolved, the widget-id
+space, the socket drain and the wait and close surface. An editor is one
+structure bound to a `Domain` and a `View` and owns nothing global. The
+acknowledgement stays each view's (`Echo`), because a staleness floor is one
+view's end of the conversation, and the undo order is the editing context's
+above, reached through the data (`Editing.of`), so two windows over one thing
+walk one order.
+
+A widget that draws part of a structure takes an id **named** after what it
+draws — the structure's identity, its role and a key — through
+`clausters_core::widgetids::WidgetIds`, and keeps it for as long as it is drawn;
+a tree built by hand takes an anonymous lease from the same map. That is what the
+host **reconciles** a def by (`widget::reconcile`): a `/gui_def` over a tree it
+already draws is matched widget to widget — by id wherever a widget moved, by
+position for the bodies the wire does not address — and the host's own state
+(the window on the axis, the selection, the active layer, what is hidden) is
+carried across, with `"data": "keep"` carrying the bulk. So no client keeps a
+copy of the picture, and a redraw publishes the widget its edit touched rather
+than the window. `docs/decisions.md` records why for each of the three.
 
 ### Playback time in a session: read, never computed
 

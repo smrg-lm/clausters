@@ -45,6 +45,12 @@ region, lane, track, automation - with three classic applications over it
 (audio editor, multitrack editor, score editor). See that crate's `PLAN.md`,
 "The turn: the arrangement stops being a projection" (`O21`-`O24`).
 
+**The seam under them was reworked after, on the application-scope track**
+(`clients/gui/PLAN.md`, AP track): an `Application` owns a window set, a widget id
+is named after what it draws rather than leased, the host reconciles a def so no
+client keeps a picture, and the undo order is the applications crate's editing
+context, which `Editing` binds. The reasons are in `docs/decisions.md`.
+
 ## Context
 
 Clausters is the Rust audio server (scsynth-style) controlled over OSC. Today the only client in the repo is `clients/python/clausters.py`: the **low-level transport layer** (embed cdylib / shm / render), stdlib-only, with the boundary rule "only flat data crosses" (bytes in, `array('f')`/floats/ints out). There is no high-level layer: building defs, resources, events and sequencing is currently left to the user.
