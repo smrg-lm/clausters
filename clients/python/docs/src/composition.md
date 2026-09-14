@@ -445,9 +445,12 @@ from clausters.multitrack import Session, Source
 session = Session(arrangement=piece, provenance={"script": "song.py"})
 session.sources[7] = Source.file("takes/vocal.wav", lifetime="external")
 
-written = session.write()
-session = Session.read(written)
+session.save("song.json")
+session = Session.open("song.json")
 ```
+
+`save` writes the crate's JSON and `open` reads it back; `write` and `read` are
+the same two steps without the file, for a caller that keeps it elsewhere.
 
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
@@ -484,15 +487,14 @@ decide, so it is said by loading the table into a server:
 ```python
 from clausters.multitrack import Session
 
-with open(path) as f:
-    session = Session.read(json.load(f))
-
-buffers = session.load(server, beside=os.path.dirname(path))
+session = Session.open(path)
+buffers = session.load(server)
 ```
 
 The answer is a `Buffer` per source, keyed by source id — the same table an
 editor takes as its `sources`. Each take is read from its file **once per
-source**: two clips over one take are two windows onto one buffer, and reading
+source**, a relative path against the folder the session was opened from: two
+clips over one take are two windows onto one buffer, and reading
 it twice gives them two buffers that drift apart on the first edit. A **join**
 is stitched from the takes it is made of, after they have loaded, so it plays
 the spans the file states; a take only a join reads is loaded for it. What is

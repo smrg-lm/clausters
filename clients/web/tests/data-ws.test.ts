@@ -310,7 +310,7 @@ test("a saved session loads its takes and then its join", { skip: !hasServer }, 
             const take = (name: string) => ({
                 location: { at: "file", path: name }, lifetime: "session", channels: 1, frames: 4,
             });
-            const saved = Session.read({
+            const written = Session.read({
                 format: 2,
                 multitrack: { tracks: [{ id: 10, name: "t", lanes: [
                     { id: 11, regions: [window(20, 3), window(21, 4)] }] }] },
@@ -322,9 +322,13 @@ test("a saved session loads its takes and then its join", { skip: !hasServer }, 
                     "4": { location: { at: "volatile" }, lifetime: "temporary" },
                 },
             });
+            // Saved beside its takes and opened again, so the load finds them
+            // against the folder the session came from.
+            const saved = await Session.open(await written.save(join(folder, "piece.json")));
+            assert.equal(saved.path, join(folder, "piece.json"));
 
             const before = server.buffers.inUse;
-            const loaded = await saved.load(server, { beside: folder });
+            const loaded = await saved.load(server);
             assert.deepEqual([...loaded.keys()].sort(), [1, 2, 3], "the takes only the join reads load too");
             assert.equal(server.buffers.inUse, before + 3, "what the load did not take is given back");
             assert.equal(loaded.get(1)!.frames, 4);
@@ -342,7 +346,7 @@ test("a saved session loads its takes and then its join", { skip: !hasServer }, 
             // the load leaves nothing of itself behind.
             await rm(join(folder, "two.wav"));
             const inUse = server.buffers.inUse;
-            await assert.rejects(() => saved.load(server, { beside: folder }));
+            await assert.rejects(() => saved.load(server));
             assert.equal(server.buffers.inUse, inUse);
         } finally {
             await rm(folder, { recursive: true, force: true });

@@ -64,10 +64,42 @@ import { Buffer } from "./defs/buffer.ts";
 import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
 import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
+import * as opfs from "./engine/opfs.ts";
 import { runSteps } from "./steps.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
+
+/** Whether this is node rather than a browser (a real `process.versions.node`). */
+function underNode(): boolean {
+    const proc = (globalThis as { process?: { versions?: { node?: string } } }).process;
+    return typeof proc?.versions?.node === "string";
+}
+
+/** A file's text: from the disk under node, from the page's storage in a tab. */
+async function readText(path: string): Promise<string> {
+    if (underNode()) {
+        const { readFile } = await import("node:fs/promises");
+        return readFile(path, "utf8");
+    }
+    return new TextDecoder().decode(await opfs.readFile(path));
+}
+
+/** Writes a file's text where {@link readText} reads it. */
+async function writeText(path: string, text: string): Promise<void> {
+    if (underNode()) {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(path, text);
+        return;
+    }
+    await opfs.writeFile(path, new TextEncoder().encode(text));
+}
+
+/** The folder a path is in, `.` for a bare name. */
+function folderOf(path: string): string {
+    const cut = path.lastIndexOf("/");
+    return cut < 0 ? "." : cut === 0 ? "/" : path.slice(0, cut);
+}
 
 /** Everything in `written` except the keys this build knows. */
 function rest(written: Extra, ...known: string[]): Extra {
@@ -1273,6 +1305,40 @@ export class Session {
      */
     provenance?: unknown;
     extra: Extra = {};
+    /**
+     * The file this session was opened from or last saved to, or `null`. Not
+     * written into the file: where a session is is not what it says.
+     */
+    path: string | null = null;
+
+    /**
+     * A session read from the file at `path`, remembering where it came from:
+     * {@link Session.load} reads relative paths against that file's folder, and
+     * {@link Session.save} writes back to it.
+     *
+     * The path is on the filesystem `Buffer.read` names — the disk under node,
+     * and the page's own storage (`opfs`) in a tab.
+     */
+    static async open(path: string): Promise<Session> {
+        const session = Session.read(JSON.parse(await readText(path)) as Extra);
+        session.path = path;
+        return session;
+    }
+
+    /**
+     * Writes the session to `path`, or back to the file it was opened from or
+     * last saved to, and answers where it went. Rejects when there is no `path`
+     * and the session was never opened or saved.
+     */
+    async save(path?: string): Promise<string> {
+        const target = path ?? this.path;
+        if (target === null) {
+            throw new Error("clausters: this session has nowhere to save to: give it a path");
+        }
+        await writeText(target, JSON.stringify(this.write(), null, 1));
+        this.path = target;
+        return target;
+    }
 
     /** The source a reference names, if the table has it. */
     source(id: number): Source | undefined {
@@ -1390,7 +1456,9 @@ export class Session {
      * and in the GUI host.
      *
      * `beside` is the folder a relative path is read against — the session
-     * file's own, on **the server's** filesystem. The answer maps source id to
+     * file's own, on **the server's** filesystem; when omitted, the folder of
+     * the file the session was opened from or saved to, else the current one.
+     * The answer maps source id to
      * {@link Buffer} for every source that loaded; a source that cannot — a
      * volatile one, one the table does not hold, a join over a take that did not
      * load — is left out and named in a warning. Rejects when the server refuses
@@ -1399,8 +1467,9 @@ export class Session {
      */
     async load(
         server?: Server,
-        { beside = ".", timeout }: { beside?: string; timeout?: number } = {},
+        { beside, timeout }: { beside?: string; timeout?: number } = {},
     ): Promise<Map<number, Buffer>> {
+        beside ??= this.path === null ? "." : folderOf(this.path);
         const srv = resolveServer(server);
         const aside = [...this.sources.keys()].map(() => srv.buffers.alloc());
         const plan = editingLoad(this.write(), beside, aside);

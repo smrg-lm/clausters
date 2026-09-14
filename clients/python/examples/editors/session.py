@@ -55,7 +55,6 @@ root::
 """
 
 # %%
-import json
 import math
 import os
 import struct
@@ -218,9 +217,7 @@ session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
 #: rather than pretending.
 session.sources[2] = Source.volatile()
 
-path = os.path.join(OUT, "session.json")
-with open(path, "w") as f:
-    f.write(json.dumps(session.write(), indent=1))
+path = session.save(os.path.join(OUT, "session.json"))
 print(f"wrote {path} ({os.path.getsize(path)} B)")
 
 # %% [markdown]
@@ -252,14 +249,13 @@ def reopen(server=None) -> tuple:
     and the region that names it comes back placed and silent rather than the
     whole file failing.
     """
-    with open(path) as f:
-        reopened = Session.read(json.load(f))
+    reopened = Session.open(path)
     if server is None:
         return reopened, {}
     #: The table is loaded by the shared crate, the same load the GUI host runs
-    #: on `--session`: relative paths against the session's own folder, and a
-    #: volatile source left out with a warning.
-    return reopened, reopened.load(server.server, beside=OUT)
+    #: on `--session`: relative paths against the folder the session was opened
+    #: from, and a volatile source left out with a warning.
+    return reopened, reopened.load(server.server)
 
 
 def run() -> None:

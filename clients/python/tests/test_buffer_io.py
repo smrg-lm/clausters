@@ -283,10 +283,13 @@ def test_a_saved_session_loads_its_takes_and_then_its_join(tmp_path):
         written.write(str(tmp_path / name), sample_format="float")
         written.free()
 
-    saved = Saved.read(_swapped_session())
+    # Saved beside its takes and opened again, so the load finds them against
+    # the folder the session came from.
+    saved = Saved.open(Saved.read(_swapped_session()).save(tmp_path / "piece.json"))
+    assert saved.path == str(tmp_path / "piece.json")
     before = server.buffers.in_use
     with pytest.warns(UserWarning, match="volatile"):
-        loaded = saved.load(server, beside=str(tmp_path))
+        loaded = saved.load(server)
 
     assert sorted(loaded) == [1, 2, 3], "the takes only the join reads load too"
     assert server.buffers.in_use == before + 3, "what the load did not take is given back"
@@ -305,5 +308,5 @@ def test_a_saved_session_loads_its_takes_and_then_its_join(tmp_path):
     (tmp_path / "two.wav").unlink()
     in_use = server.buffers.in_use
     with pytest.warns(UserWarning), pytest.raises(CommandError):
-        saved.load(server, beside=str(tmp_path))
+        saved.load(server)
     assert server.buffers.in_use == in_use

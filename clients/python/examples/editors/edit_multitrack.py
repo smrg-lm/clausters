@@ -72,7 +72,6 @@ Needs a display and a GPU adapter.
 """
 
 # %%
-import json
 import os
 
 from clausters import Buffer, Session, Synth
@@ -240,10 +239,7 @@ saved.sources[ID["comp"]] = Source(location={"at": "segments", "parts": [
     part("saw", HALF, HALF, fade_in=FADE),
 ]}).shaped(1, 2 * HALF, SR)
 
-session_path = os.path.join(OUT, "edit_multitrack.json")
-with open(session_path, "w") as f:
-    f.write(json.dumps(saved.write(), indent=1))
-print(f"wrote {session_path}")
+print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 
 # %% [markdown]
 # ## One verb

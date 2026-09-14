@@ -485,9 +485,14 @@ session.arrangement = piece;
 session.provenance = { page: "song.html" };
 session.sources.set(7, Source.file("takes/vocal.wav", "external"));
 
-const written = session.write();
-const reopened = Session.read(written);
+await session.save("song.json");
+const reopened = await Session.open("song.json");
 ```
+
+`save` writes the crate's JSON and `open` reads it back; `write` and `read` are
+the same two steps without the file, for a caller that keeps it elsewhere. The
+file is on the same filesystem `Buffer.read` names: the disk under node, and the
+page's own storage (`opfs`) in a tab.
 
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
@@ -521,13 +526,14 @@ the other half — what a source *is* in a running system is not the document's 
 decide, so it is said by loading the table into a server:
 
 ```ts
-const session = Session.read(saved);
-const buffers = await session.load(server, { beside: folder });
+const session = await Session.open(path);
+const buffers = await session.load(server);
 ```
 
 The answer is a `Buffer` per source, keyed by source id — the same table an
-editor takes as its `sources`. `beside` is the session's folder on **the
-server's** filesystem, which is the one that reads the files. Each take is read
+editor takes as its `sources`. A relative path is read against the folder the
+session was opened from, on **the server's** filesystem, which is the one that
+reads the files. Each take is read
 **once per source**: two clips over one take are two windows onto one buffer, and
 reading it twice gives them two buffers that drift apart on the first edit. A
 **join** is stitched from the takes it is made of, after they have loaded, so it

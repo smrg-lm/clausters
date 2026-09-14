@@ -55,6 +55,8 @@ Usage::
     piece.tracks.append(drums)
 """
 
+import json
+import os
 from dataclasses import dataclass, field
 
 from .document import FIRST_VERSION, SESSION_FORMAT
@@ -1096,6 +1098,35 @@ class Session:
     #: lose the reference.
     provenance: "dict | None" = None
     extra: dict = field(default_factory=dict)
+    #: The file this session was opened from or last saved to, or ``None``.
+    #: Not written into the file: where a session is is not what it says.
+    path: "str | None" = field(default=None, compare=False, repr=False)
+
+    @classmethod
+    def open(cls, path) -> "Session":
+        """A session read from the file at ``path``, remembering where it came
+        from: `load` reads relative paths against that file's folder, and
+        `save` writes back to it."""
+        with open(path) as f:
+            session = cls.read(json.load(f))
+        session.path = str(path)
+        return session
+
+    def save(self, path=None) -> str:
+        """Writes the session to ``path``, or back to the file it was opened
+        from or last saved to, and answers where it went.
+
+        Raises:
+            ValueError: when there is no ``path`` and the session was never
+                opened or saved.
+        """
+        target = str(path) if path is not None else self.path
+        if target is None:
+            raise ValueError("this session has nowhere to save to: give it a path")
+        with open(target, "w") as f:
+            f.write(json.dumps(self.write(), indent=1))
+        self.path = target
+        return target
 
     def source(self, id: int) -> "Source | None":
         """The source a reference names, if the table has it."""
@@ -1146,7 +1177,7 @@ class Session:
         source.editing = dict(source.editing, confirmed=True)
         return True
 
-    def load(self, server=None, *, beside: str = ".",
+    def load(self, server=None, *, beside: "str | None" = None,
              timeout: "float | None" = None) -> dict:
         """Loads the sources the piece names into ``server``: every take read
         from its file, and every join stitched from the takes it is made of
@@ -1162,6 +1193,8 @@ class Session:
             server: the server to load into; the default one when omitted.
             beside: the folder a relative path is read against -- the session
                 file's own, which is what keeps a session directory movable.
+                When omitted, the folder of the file the session was opened
+                from or saved to, else the current one.
             timeout: how long each read may take.
 
         Returns:
@@ -1183,6 +1216,8 @@ class Session:
         from .defs.buffer import Buffer, _resolve
         from .errors import CommandError
 
+        if beside is None:
+            beside = os.path.dirname(self.path) if self.path else "."
         srv = _resolve(server)
         aside = [srv.buffers.alloc() for _ in self.sources]
         plan = _native.editing_load(self.write(), str(beside), aside)
