@@ -63,6 +63,10 @@ on the stack as one history.
 column per channel, in decibels, over what that track produces <i>after</i> its
 clips, its curves and its fader — with the peak it reached held beside it.
 
+<b>The last box is loud on purpose</b>, so the meter has something to fill: it
+reaches full scale and the top of the column is red, where the boxes before it
+sit in the green and the amber.
+
 <b>The curves are heard.</b> The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the
 <code>gain</code> port of the node it sits on — the same port the header's knob
@@ -81,7 +85,7 @@ there.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_multitrack.py,
-      call for call: the same four takes rendered offline, the same piece
+      call for call: the same five takes rendered offline, the same piece
       written plainly, and the same one `edit` over it.
 
       The platform's differences are the usual two: the host is the wasm one in
@@ -133,7 +137,8 @@ there.</div>
 
       // source id -> the take it names, so the piece and the table below are
       // written against one list.
-      const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp" };
+      const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
+                        6: "loud" };
 
       const HALF = Math.floor((TAKE_DUR * SR) / 2);
       const FADE = Math.floor(0.010 * SR);
@@ -147,6 +152,10 @@ there.</div>
           glide: await gentake("t_glide", sine(line(220.0, 440.0, TAKE_DUR)).mul(0.5)),
           saw: await gentake("t_saw", saw(110.0).mul(0.5)),
           pink: await gentake("t_pink", pinkNoise().mul(0.5)),
+          // Deliberately hot, to have something that fills a meter: centred, a
+          // mono take comes out 3 dB down a side (the pan law), so 1.4 reads as
+          // full scale on the track's meter and the last box is the red one.
+          loud: await gentake("t_loud", sine(330.0).mul(1.4)),
         };
 
         const session = await Session.embed({ tempo: 1.0, latency: 0.1 });
@@ -197,7 +206,8 @@ there.</div>
           new Track({
             id: 12, name: "tone",
             lanes: [new Lane({
-              id: 13, regions: [box(22, 2.0, 2, "glide"), box(24, 8.0, 5, "comp")],
+              id: 13, regions: [box(22, 2.0, 2, "glide"), box(24, 8.0, 5, "comp"),
+                                box(25, 10.0, 6, "loud")],
             })],
           }),
           // **The fader is the track's own field**, like its width: what a
