@@ -1443,6 +1443,13 @@ pub fn editing_default_bpm() -> f64 {
 pub struct JsStepRunner(clausters_editing::run::Runner);
 
 #[cfg(target_arch = "wasm32")]
+impl Default for JsStepRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = StepRunner)]
 impl JsStepRunner {
     /// A runner holding nothing.
@@ -1558,6 +1565,13 @@ impl JsPiecePlayback {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Instance)]
 pub struct JsInstance(clausters_editing::instance::Instance);
+
+#[cfg(target_arch = "wasm32")]
+impl Default for JsInstance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = Instance)]
