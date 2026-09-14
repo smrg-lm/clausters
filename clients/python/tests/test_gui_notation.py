@@ -243,7 +243,7 @@ def test_a_page_and_a_roll_walk_one_order():
     timeline = Timeline([(0.0, Event(midinote=72, dur=1.0))])
     # One context for both — what a window drawing the two would build.
     editor = edit(timeline, sample_rate=48_000.0, tempo=2.0,
-                  context=Editing.of(s))
+                  context=Editing.of(s), open=False)
 
     s.transpose(nid, -2)
     payload = editor.domain.payload(timeline, "notes", [0.0, 24_000.0, 67, 100, 0])
