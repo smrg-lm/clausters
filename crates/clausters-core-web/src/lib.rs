@@ -33,6 +33,7 @@ use clausters_core::{
     envshape, measure, osc,
     peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
+    resample,
     rng::Rng,
     scale,
     tempoclock::{self, Scheduler},
@@ -1293,6 +1294,23 @@ pub fn channel_stats(samples: &[f32], channels: usize, channel: usize) -> Vec<f3
     }
     let (peak, rms) = measure::channel_stats(samples, channels, channel);
     vec![peak, rms]
+}
+
+/// JS face: the **true peak** of one channel of an interleaved buffer, in
+/// linear amplitude — the reconstructed peak rather than the largest sample.
+///
+/// The ITU-R BS.1770-4 Annex 2 filter at 4×, which is what makes the reading
+/// dBTP: a signal whose samples all read below full scale can still reconstruct
+/// above it, by up to about 3 dB, and every converter sees that peak. Always at
+/// or above [`channel_stats`]'s peak; `-1` for a channel the buffer does not
+/// have.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn true_peak(samples: &[f32], channels: usize, channel: usize) -> f32 {
+    if channels == 0 || channel >= channels {
+        return -1.0;
+    }
+    resample::true_peak(samples, channels, channel)
 }
 
 /// JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` —

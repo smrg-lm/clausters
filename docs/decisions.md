@@ -8298,3 +8298,76 @@ measurement floor. The audio thread reuses the stamp the CPU meter already
 takes, so a block gains no clock read at all — only two relaxed atomic
 read-modify-writes — and a worker pays one bracket per stage rather than per
 subtree.
+
+## Two reconstruction filters: the standard's for the number, a designed one for the picture
+
+`clausters_core::resample` carries two polyphase tables where one would have
+looked like enough, and the reason is that they answer different questions.
+
+**The measurement takes the standard's.** `PHASES_4X` is ITU-R BS.1770-4,
+Annex 2's own table — the order-48, 4-phase interpolating FIR the recommendation
+prints — transcribed rather than designed, because a number this project calls
+dBTP has to be the number the recommendation defines. It is not a filter anybody
+would design today: its four branches sum to 1.0016, 0.9730, 0.9730 and 1.0016
+rather than to one apiece, it ripples about a fifth of a decibel across the
+passband, and its images are down only 40 dB. The Appendix says why in as many
+words — "since we are not going to listen to the output of our over-sampler, but
+only use it to display a reading … we probably do not have the same precision
+requirements" — and the measured figures are asserted in the module's tests, so
+what is carried is the standard's filter and not a plausible transcription of
+it. (That distinction is not theoretical: the table was first written from
+memory, and it took a numerical check against the recommendation's own text to
+establish that it happened to be right.)
+
+**The drawing cannot use it.** A waveform zoomed past its samples draws the
+reconstruction between them, and the BS.1770 filter's centre falls half a
+sub-sample off the grid: **none of its phases is a passthrough**, so the curve
+misses its own dots by up to 0.09. `PHASES_8X` is therefore designed, in the
+form that makes the property structural — the fractional-delay
+`sinc(k − d) · kaiser(k − d)`, where `d = 0` leaves every term but `x[i]` a sinc
+at an integer, so phase 0 **is** the sample, exactly. Eight phases rather than
+four for the second reason the Appendix gives: the residual error of a true-peak
+reading is the *grid* and not the filter, and the recommendation tabulates it —
+0.554 dB of worst-case under-read at 4×, 0.136 dB at 8×.
+
+**And the reconstruction is a layer over the samples, never a replacement for
+them.** The first cut drew the curve *instead of* the straight segments once a
+zoom crossed into the polyline regime, and a waveform's amplitude jumped there.
+Measured, the jump is not a transition artefact at all: the envelope of the
+samples sits below the envelope of the signal by a **fixed** amount that is the
+signal's own inter-sample content — 0.21 dB for a band-limited 440 Hz
+sawtooth, 3.01 dB for a tone at a quarter of the sample rate — and the same at
+1, 8 or 64 samples per pixel. So no threshold removes it: the two pictures
+measure different things, and swapping one for the other is a jump by
+construction.
+
+The field's two conventions each avoid it by never swapping. An **audio
+editor** draws samples at every zoom — Audacity's manual: the envelope is "the
+tallest peak in the area that pixel represents", and zoomed in "the waveform can
+now be clearly seen as joining together many individual sample points". An
+**oscilloscope** draws the reconstruction, as a selectable display mode ("most
+digital oscilloscopes offer a choice of either of two interpolation processes:
+linear or sin(x)/x"). The one editor that draws both, iZotope RX, draws them
+**together**: "Show analog waveform plots the analog waveform in red under
+digital sample values (blue)". That is the shape taken here. The reconstruction
+is the `signal` **measure** — a layer in the same stack as `peak` and `rms`, in
+an ink of its own — so the sample picture under it is continuous at every zoom
+and the curve is *added* where the samples are separate points. Where it is
+drawn, the sample layer keeps its dots and drops only the straight segment the
+curve stands in for. It is on by default (`"peak signal"`), as it is in RX.
+
+Zoomed out the layer draws nothing yet. Drawing it there means the envelope of
+the *reconstructed* signal at every zoom, which belongs in the peak pyramid as a
+plane computed once when the cache is built — the same move the mean square
+made — and not in a reconstruction of every visible sample on every frame.
+
+**What this is not.** It is not two implementations of one rule, which is the
+thing the shared core exists to prevent: it is one mechanism (`Interpolator`
+over a phase table) and two tables, each named for what it is for. A caller that
+wants the standard's number asks for `BS1770`; a drawing asks for `FINE`; the
+choice is visible at the call site rather than hidden in a constant.
+
+The 12.04 dB attenuation the standard specifies before oversampling is skipped,
+and the recommendation authorizes exactly that: it is headroom for integer
+arithmetic, and "this step is not necessary if the calculations are performed in
+floating point".

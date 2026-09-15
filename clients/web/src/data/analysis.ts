@@ -16,6 +16,7 @@
 
 import {
     channel_stats,
+    true_peak,
     correlation as coreCorrelation,
     lissajous as coreLissajous,
 } from "../core/clausters_core_web.js";
@@ -53,6 +54,25 @@ export function lissajous(left: Float32Array, right: Float32Array): Float32Array
  * two numbers the server and the Python client report for the same audio. An
  * empty pair for a channel the buffer does not have.
  */
+/**
+ * The **true peak** of one channel of an interleaved buffer, in linear
+ * amplitude — the reconstructed peak rather than the largest sample.
+ *
+ * A signal whose samples all read below full scale can still reconstruct above
+ * it, by up to about 3 dB, and every converter sees that peak. The filter is
+ * the one ITU-R BS.1770-4 Annex 2 specifies, at 4×, which is what makes a
+ * reading dBTP — so this is the number a delivery specification means when it
+ * asks for one, and it is never below {@link channelStats}'s peak. `-1` for a
+ * channel the buffer does not have.
+ */
+export function truePeak(
+    samples: Float32Array,
+    channels: number,
+    channel: number,
+): number {
+    return true_peak(samples, channels, channel);
+}
+
 export function channelStats(
     samples: Float32Array,
     channels: number,

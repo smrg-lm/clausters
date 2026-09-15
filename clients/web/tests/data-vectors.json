@@ -302,5 +302,40 @@
         ]
       ]
     }
+  ],
+  "truePeak": [
+    {
+      "case": "fs_over_four_at_45",
+      "channels": 1,
+      "truePeak": [
+        1.427734375
+      ],
+      "samplePeak": 1.0
+    },
+    {
+      "case": "sine440",
+      "channels": 1,
+      "truePeak": [
+        1.0014725923538208
+      ],
+      "samplePeak": 0.9999999896333157
+    },
+    {
+      "case": "quiet_sine",
+      "channels": 1,
+      "truePeak": [
+        0.2503681480884552
+      ],
+      "samplePeak": 0.24999999740832893
+    },
+    {
+      "case": "stereo",
+      "channels": 2,
+      "truePeak": [
+        1.427734375,
+        0.14277343451976776
+      ],
+      "samplePeak": 1.0
+    }
   ]
 }

@@ -359,12 +359,16 @@ its plan; the plan is where its acceptance is read.
   enough to land with the multitrack's roll lane.
 
 - ⬜ **The A track — what a signal measures, and the layers that show it**
-  *(`clients/gui/PLAN.md`, "A track")*. `A1`/`A2` shipped (mean square in the
-  pyramid, the RMS layer and the `measure` prop); everything after them is open —
-  band-limited reconstruction and true peak, the loudness family, the loudness
-  layer and its read-out, and the two milestones that make the layer stack
-  explicit and publish its rules from the clients. **Related:** the audio
-  editor's layers below land on this track's stack rules.
+  *(`clients/gui/PLAN.md`, "A track")*. `A1`-`A3` shipped (mean square in the
+  pyramid, the RMS layer and the `measure` prop, and the band-limited
+  reconstruction with true peak — the drawn curve between the samples and the
+  dBTP number over it); what is open is the **loudness family** (`A4`), the
+  loudness layer and its read-out (`A5`), and the two milestones that make the
+  layer stack explicit and publish its rules from the clients (`A6`, `A7`).
+  `A4` is the next one and needs nothing new under it: `A3` left the
+  reconstruction, and K-weighting is filters and gating over the samples
+  themselves. **Related:** the audio editor's layers below land on this track's
+  stack rules.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

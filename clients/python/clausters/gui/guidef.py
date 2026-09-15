@@ -866,11 +866,16 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       time), ``"spectrum"`` (magnitude against frequency), ``"spectrogram"``
       (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
       goniometer of a stereo pair).
-    - ``measure`` — **what the picture measures**: ``"peak"`` (the default, the
-      min/max envelope the signal reached), ``"rms"`` (the symmetric body of the
-      level it held, drawn in the body color role), or **both** as one
-      space-separated string — ``"peak rms"``, the classic editor picture, the
-      level drawn inside the envelope. It is a factor of the view rather than a
+    - ``measure`` — **what the picture measures**: ``"peak"`` (the min/max
+      envelope the signal reached), ``"rms"`` (the symmetric body of the level
+      it held, drawn in the body color role), ``"signal"`` (the band-limited
+      reconstruction between the samples, drawn once they are separate points,
+      with the peaks that leave full scale marked), or **several** as one
+      space-separated string. The default is ``"peak signal"``: the envelope,
+      and the reconstruction over it where there is room — a layer, never a
+      replacement, so the amplitude does not jump as a zoom crosses into the
+      samples. ``"peak"`` alone is the bare samples, dots joined by straight
+      lines. It is a factor of the view rather than a
       widget of its own: one body, drawn once per measure by the same renderer,
       which is also what keeps the axis, the ruler, the selection and the
       upload single. A source whose peak cache was built before the measure
@@ -1421,10 +1426,10 @@ def waveform(*, autofit: bool | None = None,
     (default 1): **every** channel is kept and drawn — stacked lanes sharing the
     time axis by default, or per-color overlaid traces with ``overlay=True``.
 
-    ``measure`` chooses what the picture measures — ``"peak"`` (the default
-    envelope), ``"rms"`` (the level body), or **both as one space-separated
-    string**: ``"peak rms"``, the classic editor picture, the level drawn
-    inside the envelope. A stack is a prop of *one* view and not two views
+    ``measure`` chooses what the picture measures — ``"peak"`` (the envelope),
+    ``"rms"`` (the level body), ``"signal"`` (the reconstruction between the
+    samples, a layer over them), or **several as one space-separated string**.
+    The default is ``"peak signal"``. A stack is a prop of *one* view and not two views
     layered — a view paints its own field before it draws, so the second would
     hide the first (see `signal`, and the multitrack editor's signal view,
     whose ``layers`` is this prop).

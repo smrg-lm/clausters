@@ -99,6 +99,7 @@ pub mod peaks;
 pub mod pvprog;
 pub mod ratio;
 pub mod registry;
+pub mod resample;
 pub mod rng;
 pub mod scale;
 pub mod shm;

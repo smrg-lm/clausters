@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: true peak</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 52rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 52rem; white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(76vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>views/truepeak.py</code>: <b>what happened between the samples</b>, drawn
+and measured.
+
+The largest <b>sample</b> is not the largest value of the signal. A peak can
+fall between two samples, and every converter sees it — so a signal whose
+samples all read at full scale can be three decibels over it. Zoomed in far
+enough that the samples are separate points, the <code>waveform</code> draws the
+band-limited <b>curve</b> between them rather than straight segments, and marks
+every peak that leaves full scale; <code>data.truePeak</code> reports the same
+fact as a number, with the filter ITU-R BS.1770-4 Annex 2 specifies, so the
+figure is the one a delivery specification means by dBTP.
+
+Three takes, read against each other. The first is the standard's own worst
+case: a tone at a <b>quarter of the sample rate</b>, sampled at 45°, whose
+samples sit at exactly ±1 while the signal between them reaches √2. The second
+is that tone six decibels down. The third is an ordinary signal — a band-limited
+<b>sawtooth at 440 Hz</b> — which is there to show the size of the effect in
+music rather than in a test tone: its signal sits <b>0.2 dB</b> above its
+samples, not 3. It makes no sound.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/truepeak.py, call for
+      call: the same two takes, the same two numbers, the same two lanes.
+
+      Serve clients/web (the package root) and open
+      /examples/views/truepeak.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Session, data, gui } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const FRAMES = 240;
+
+      /** A tone at fs/4 sampled at 45 degrees: +a, +a, -a, -a, ... */
+      function quarterRate(amp) {
+        return Float32Array.from({ length: FRAMES }, (_, i) =>
+          Math.floor(i / 2) % 2 === 0 ? amp : -amp,
+        );
+      }
+
+      /**
+       * A band-limited sawtooth: the harmonics up to Nyquist, summed -- what a
+       * real take of one holds, as against the ideal ramp, which no sampled
+       * signal is.
+       */
+      function sawtooth(freq, amp, rate = 48000) {
+        const out = Float32Array.from({ length: FRAMES }, (_, i) => {
+          const t = i / rate;
+          let v = 0;
+          for (let h = 1; freq * h < rate / 2; h++) {
+            v += (-1) ** (h + 1) * (2 / (h * Math.PI))
+              * Math.sin(2 * Math.PI * freq * h * t);
+          }
+          return v;
+        });
+        let peak = 0;
+        for (const v of out) peak = Math.max(peak, Math.abs(v));
+        return out.map((v) => (v * amp) / peak);
+      }
+
+      async function run() {
+        $("start").disabled = true;
+
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        // Two takes of one tone: at full scale, where the signal between the
+        // samples leaves it, and six decibels down, where nothing does.
+        const over = quarterRate(1.0);
+        const clean = quarterRate(0.5);
+        const saw = sawtooth(440.0, 1.0);
+        const overTake = await Buffer.fromSamples(over, 1, { server });
+        const cleanTake = await Buffer.fromSamples(clean, 1, { server });
+        const sawTake = await Buffer.fromSamples(saw, 1, { server });
+        await server.sync();
+
+        // The numbers, before the picture: the sample peak and the true peak
+        // of each take, through the shared core.
+        const db = (a) => (a > 0 ? 20 * Math.log10(a) : -Infinity);
+        const report = (name, samples) => {
+          const [samplePeak] = data.channelStats(samples, 1, 0);
+          const peak = data.truePeak(samples, 1, 0);
+          log(`${name.padStart(6)}: samples ${db(samplePeak).toFixed(2)} dBFS `
+            + `| signal ${db(peak).toFixed(2)} dBTP`);
+        };
+        report("over", over);
+        report("clean", clean);
+        report("saw", saw);
+
+        // The picture: both takes at sample zoom, so the curve regime is
+        // entered -- the dots are the samples, the line between them is the
+        // reconstruction, and the marks are the peaks that left full scale.
+        const win = await gui.view(
+          { title: "True peak: between the samples", w: 760, h: 620, layout: "col" },
+          gui.waveform({ buffer: overTake.bufnum, name: "over",
+                         label: "fs/4 at 45 deg, full scale", rulerY: true }),
+          gui.waveform({ buffer: cleanTake.bufnum, name: "clean",
+                         label: "the same tone, -6 dB", rulerY: true }),
+          gui.waveform({ buffer: sawTake.bufnum, name: "saw",
+                         label: "440 Hz sawtooth, full scale", rulerY: true }),
+        ).open($("stage"));
+        log("zoom into the first lane until the sample dots separate: the "
+          + "curve between them leaves the +-1 band, and the marks say where");
+        win.onClosed(() => log("closed"));
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

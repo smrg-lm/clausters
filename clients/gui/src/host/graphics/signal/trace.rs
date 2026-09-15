@@ -28,12 +28,17 @@ use clausters_core::peaks;
 
 use crate::waveform::WaveformData;
 
+use clausters_core::resample;
+
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Mesh};
 use crate::host::theme::Theme;
 
-/// At or below this many samples per pixel the trace is drawn as a polyline
-/// through the raw samples rather than as min/max columns.
+/// At or below this many samples per pixel a trace **with no sample dots** is
+/// drawn as a polyline through the raw samples rather than as min/max columns,
+/// and a column this narrow measures the line between samples rather than the
+/// band around it. A trace with dots crosses where they appear instead
+/// ([`samples_are_drawn`]), so its picture changes character exactly once.
 pub const LINE_THRESHOLD: f64 = 2.0;
 
 /// **How close the level may come to the envelope before it stops being a
@@ -210,11 +215,12 @@ impl<'a> Trace<'a> {
     }
 }
 
-/// **What a column measures.** The two are pictures of one span, not two
-/// sources: `Peak` is the extent the signal reached (the min/max envelope every
-/// editor draws), `Rms` the level it held there — the body an editor draws
-/// *inside* that envelope. One function draws either, placed once per measure,
-/// which is what lets a view show both without a second renderer.
+/// **What a column measures.** These are pictures of one span, not of
+/// different sources: `Peak` is the extent the signal reached (the min/max
+/// envelope every editor draws), `Rms` the level it held there — the body an
+/// editor draws *inside* that envelope — and `Signal` what the waveform did
+/// **between** the samples. One function draws any of them, placed once per
+/// measure, which is what lets a view show several without a second renderer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Measure {
     /// The min/max envelope: what the signal reached.
@@ -222,6 +228,21 @@ pub enum Measure {
     Peak,
     /// The symmetric body about zero at `sqrt(mean square)`: what it held.
     Rms,
+    /// **The reconstruction**: the band-limited signal the samples are of,
+    /// drawn between them once they are separate points, with the peaks that
+    /// leave full scale marked.
+    ///
+    /// It is a **layer over** the sample picture and never a replacement for
+    /// it, which is the whole of why it is a measure: the samples' own
+    /// envelope and polyline are continuous across every zoom, and this is
+    /// drawn on top of them in its own ink, so nothing about the picture
+    /// *changes* when the reconstruction becomes available — something is
+    /// added. iZotope RX, the one editor that draws this at all, states the
+    /// same shape: the analog waveform is plotted "in red under digital sample
+    /// values (blue)". Replacing the one with the other is what makes a
+    /// waveform's amplitude appear to jump at a zoom threshold, since the two
+    /// differ by a fixed amount that is the signal's own inter-sample content.
+    Signal,
 }
 
 impl Measure {
@@ -232,6 +253,7 @@ impl Measure {
         match name {
             "peak" => Some(Measure::Peak),
             "rms" => Some(Measure::Rms),
+            "signal" => Some(Measure::Signal),
             _ => None,
         }
     }
@@ -241,6 +263,7 @@ impl Measure {
         match self {
             Measure::Peak => "peak",
             Measure::Rms => "rms",
+            Measure::Signal => "signal",
         }
     }
 }
@@ -263,14 +286,21 @@ impl Measure {
 pub struct Measures(u8);
 
 impl Default for Measures {
+    /// **The envelope, and the reconstruction over it.** The reconstruction
+    /// only draws where the samples are separate points, so at every other zoom
+    /// the default is the envelope every editor draws; where they are, it is
+    /// the dots and the signal through them rather than straight segments --
+    /// the default iZotope RX ships, and the picture a reader zooming in to the
+    /// samples is asking for. A view that wants the bare samples says
+    /// `measure: "peak"`.
     fn default() -> Self {
-        Measures::of(Measure::Peak)
+        Measures(Measures::of(Measure::Peak).0 | Measures::of(Measure::Signal).0)
     }
 }
 
 impl Measures {
     /// Every measure there is, in drawing order — back to front.
-    pub const ALL: [Measure; 2] = [Measure::Peak, Measure::Rms];
+    pub const ALL: [Measure; 3] = [Measure::Peak, Measure::Rms, Measure::Signal];
 
     /// The set holding exactly one measure.
     pub fn of(m: Measure) -> Self {
@@ -317,6 +347,11 @@ pub fn measure_color(theme: &Theme, measure: Measure, series: Color) -> Color {
     match measure {
         Measure::Peak => series,
         Measure::Rms => theme.trace_body,
+        // The reconstruction is read *against* the samples it is drawn over,
+        // so it takes an ink of its own rather than the series colour -- the
+        // same reason a level body does, and the same shape RX states (the
+        // analog waveform "in red under digital sample values (blue)").
+        Measure::Signal => theme.trace_signal,
     }
 }
 
@@ -339,8 +374,15 @@ pub struct TraceStyle {
     /// affordances read as the same kind of target the day the second one
     /// becomes draggable.
     pub dot_radius: f32,
-    /// What each column measures — the envelope, or the level inside it.
+    /// What each column measures — the envelope, the level inside it, or the
+    /// reconstruction over both.
     pub measure: Measure,
+    /// **Every measure this view draws**, not only this one. A layer needs it
+    /// for the one case where layers are not independent: the straight line
+    /// between two samples exists because nothing better is available, so when
+    /// the reconstruction is drawn over it the sample layer keeps its dots and
+    /// drops the line.
+    pub layers: Measures,
     /// **The window a level is averaged over**, in samples
     /// ([`BODY_WINDOW_SECS`] at the source's rate) — resolved by the caller,
     /// because the trace works in samples and only the caller knows the rate.
@@ -350,6 +392,15 @@ pub struct TraceStyle {
     /// rate, has nothing better to offer and nothing that moves under a zoom
     /// it does not have.
     pub body_window: f64,
+    /// **The ink an inter-sample over is marked in** — the meter's clip lamp,
+    /// because it is the same statement about the same signal. Transparent
+    /// (the default) marks none, which is what a view with no amplitude
+    /// meaning wants.
+    pub over: Color,
+    /// The glyph scale the over figure is written at — the placement's caption
+    /// scale, handed over like every other size here, so a drawing never reads
+    /// a size table of its own. `0` writes no figure.
+    pub over_text: f32,
     /// **How much of the samples exists**, in frames — `None` for the
     /// ordinary case, where all of it does.
     ///
@@ -405,7 +456,10 @@ impl TraceStyle {
             color,
             width,
             dot_radius: 0.0,
+            over: [0.0, 0.0, 0.0, 0.0],
+            over_text: 0.0,
             measure: Measure::Peak,
+            layers: Measures::of(Measure::Peak),
             body_window: 0.0,
             written: None,
         }
@@ -414,6 +468,21 @@ impl TraceStyle {
     /// The same trace, marking each sample once they are far enough apart.
     pub fn with_dots(mut self, radius: f32) -> Self {
         self.dot_radius = radius;
+        self
+    }
+
+    /// The same trace, marking the peaks **between** its samples that leave
+    /// full scale — see [`draw_channel`].
+    pub fn with_overs(mut self, over: Color, text: f32) -> Self {
+        self.over = over;
+        self.over_text = text;
+        self
+    }
+
+    /// The same trace, told **every** measure the view draws — so a layer can
+    /// answer for what is under it (see [`TraceStyle::layers`]).
+    pub fn with_layers(mut self, layers: Measures) -> Self {
+        self.layers = layers;
         self
     }
 
@@ -500,9 +569,33 @@ pub fn draw_channel(
     // envelope is and nowhere else — past the crossing the trace is the
     // polyline through the samples themselves and there is nothing left for a
     // level to be a reading of.
-    let columns = per_px > LINE_THRESHOLD || !trace.has_raw();
+    // **One moment, and it is the dots'.** The picture of the samples changes
+    // exactly once as a zoom comes in: when the samples become separate points.
+    // Before that it is the envelope, and past it it is the dots, the segments
+    // between them and the reconstruction over them -- all at once, so a reader
+    // never sees the waveform change character and only then see why. A style
+    // with no dots has no such moment and keeps the old crossing.
+    let sample_zoom = if style.dot_radius > 0.0 {
+        samples_are_drawn(per_px, style.dot_radius)
+    } else {
+        per_px <= LINE_THRESHOLD
+    };
+    let columns = !sample_zoom || !trace.has_raw();
+    // The reconstruction is a layer over **resolvable** samples. Zoomed out, a
+    // picture of it would be the envelope of the reconstructed signal, which
+    // needs that envelope stored beside the samples' own (the peak pyramid)
+    // -- not a reconstruction of every sample on every frame. Until then it
+    // draws nothing here, and the sample envelope under it is unchanged: a
+    // layer that is absent is not a picture that jumped.
+    if style.measure == Measure::Signal && columns {
+        mesh.set_clip(outer);
+        return;
+    }
     if style.measure == Measure::Rms {
-        if columns && !body_merges(trace, ch, &src, rect, cols, cw, per_px, style.body_window) {
+        if columns
+            && per_px > LINE_THRESHOLD
+            && !body_merges(trace, ch, &src, rect, cols, cw, per_px, style.body_window)
+        {
             draw_body(mesh, rect, trace, ch, &src, &y_at, style, cols, cw, per_px);
         }
         mesh.set_clip(outer);
@@ -519,7 +612,11 @@ pub fn draw_channel(
             if style.written.is_some_and(|w| src(x) >= w) {
                 break;
             }
-            let (lo, hi) = trace.column(ch, per_px, src(x), src(x + cw));
+            let (lo, hi) = if per_px <= LINE_THRESHOLD && trace.has_raw() {
+                line_column(trace, ch, src(x), src(x + cw), frames)
+            } else {
+                trace.column(ch, per_px, src(x), src(x + cw))
+            };
             if lo > hi {
                 prev = None;
                 continue;
@@ -562,10 +659,32 @@ pub fn draw_channel(
         // points of it are data.
         let spacing = (x_of(1.0) - x_of(0.0)).abs();
         let dots = dots_fit(spacing, style.dot_radius);
+        // **Never finer than the screen**: the reconstruction is drawn where
+        // there are pixels for a curve and nowhere else.
+        let step = curve_step(spacing);
+        if style.measure == Measure::Signal {
+            // Where the sub-samples are closer than the screen shows, the stride
+            // is the whole interval: the curve is then its two endpoints, the
+            // same pixels, and the layer still appears at the same moment as
+            // the dots.
+            let step = step.unwrap_or(resample::FINE.factor());
+            draw_signal(
+                mesh, rect, trace, ch, first, last, end, step, &x_of, &y_at, style,
+            );
+            mesh.set_clip(outer);
+            return;
+        }
+        // **The sample layer keeps its line only where nothing better is
+        // drawn.** The straight segment between two samples exists because no
+        // reconstruction is available; where the `Signal` layer draws one over
+        // it, the segment is a second, wrong line between the same two dots,
+        // so it goes and the dots stay -- the shape iZotope RX draws, samples
+        // as points and the analog waveform as the curve through them.
+        let line = !style.layers.has(Measure::Signal);
         let mut prev: Option<[f32; 2]> = None;
         for f in first..=last.max(first) {
             let p = [x_of(f as f64), y_at(trace.at(ch, f as f64))];
-            if let Some(q) = prev {
+            if let (true, Some(q)) = (line, prev) {
                 mesh.line(q, p, style.width, style.color);
             }
             if dots {
@@ -575,6 +694,165 @@ pub fn draw_channel(
         }
     }
     mesh.set_clip(outer);
+}
+
+/// **A column narrower than two samples, measured as the line between them.**
+///
+/// The ordinary column is the min/max of the samples it touches, and under two
+/// samples a pixel wide that is the two samples *around* it -- so every pixel
+/// between them draws the whole vertical span, a band where a line belongs, and
+/// the picture changed character before the dots appeared. Reading the straight
+/// line between the samples at the column's two edges (and any sample strictly
+/// inside) rasterizes exactly the segment the sample regime draws, so the
+/// envelope and the line are one picture until the dots say the samples are
+/// separate points.
+fn line_column(trace: &Trace, ch: usize, s0: f64, s1: f64, frames: usize) -> (f32, f32) {
+    let last = frames.saturating_sub(1) as f64;
+    let at = |s: f64| {
+        let s = s.clamp(0.0, last);
+        let a = s.floor();
+        let t = (s - a) as f32;
+        let va = trace.at(ch, a);
+        let vb = trace.at(ch, (a + 1.0).min(last));
+        va + (vb - va) * t
+    };
+    let (mut lo, mut hi) = {
+        let (a, b) = (at(s0), at(s1));
+        (a.min(b), a.max(b))
+    };
+    let mut f = s0.floor() + 1.0;
+    while f < s1 && f <= last {
+        let v = trace.at(ch, f);
+        lo = lo.min(v);
+        hi = hi.max(v);
+        f += 1.0;
+    }
+    (lo, hi)
+}
+
+/// **The `Signal` layer**: the band-limited reconstruction through the
+/// visible samples, with the peaks between them that leave full scale marked,
+/// and how far past full scale the loudest went written once.
+///
+/// It draws **no dots** -- they are the sample layer's, under it -- and its
+/// ink is its own ([`measure_color`]), so the curve is read *against* the
+/// samples rather than instead of them.
+// The rect, the source, the channel, the visible span, the stride, two
+// coordinate maps and a style: distinct inputs to one pass, clearer flat.
+#[allow(clippy::too_many_arguments)]
+fn draw_signal(
+    mesh: &mut Mesh,
+    rect: Rect,
+    trace: &Trace,
+    ch: usize,
+    first: usize,
+    last: usize,
+    end: usize,
+    step: usize,
+    x_of: &impl Fn(f64) -> f32,
+    y_at: &impl Fn(f32) -> f32,
+    style: TraceStyle,
+) {
+    // The loudest inter-sample over on screen, for the one figure.
+    let mut worst = 0.0f32;
+    let mut sub = [0.0f32; resample::MAX_FACTOR];
+    for f in first.max(1)..=last.max(first) {
+        let q = [x_of(f as f64 - 1.0), y_at(trace.at(ch, f as f64 - 1.0))];
+        let p = [x_of(f as f64), y_at(trace.at(ch, f as f64))];
+        let count = reconstruct(trace, ch, f - 1, end, &mut sub);
+        let mut at = q;
+        let mut k = step;
+        while k < count {
+            let x = x_of(f as f64 - 1.0 + k as f64 / count as f64);
+            let to = [x, y_at(sub[k])];
+            mesh.line(at, to, style.width, style.color);
+            // **An over between two samples, marked where it is.** Neither
+            // sample need have left full scale, so nothing reading samples has
+            // anything to report -- the one thing a sample picture structurally
+            // cannot show.
+            if sub[k].abs() > 1.0 && style.over[3] > 0.0 {
+                let h = style.width * 3.0;
+                let top = if sub[k] > 0.0 {
+                    rect.y
+                } else {
+                    rect.y + rect.h - h
+                };
+                mesh.rect(
+                    Rect::new(x - style.width, top, style.width * 2.0, h),
+                    style.over,
+                );
+                worst = worst.max(sub[k].abs());
+            }
+            at = to;
+            k += step;
+        }
+        mesh.line(at, p, style.width, style.color);
+    }
+    // **How far past full scale the loudest went**, in dBTP, once for the
+    // view -- the question a lit clip lamp raises, and the same answer.
+    if worst > 1.0 && style.over_text > 0.0 {
+        let text = format!("{:+.1}", 20.0 * worst.log10());
+        let w = crate::host::font::width(&text, style.over_text);
+        if w < rect.w {
+            crate::host::font::text(
+                mesh,
+                &text,
+                rect.x + rect.w - w - 2.0,
+                rect.y + 2.0,
+                style.over_text,
+                style.over,
+            );
+        }
+    }
+}
+
+/// **Whether the curve between two samples is worth drawing, and how finely.**
+///
+/// `None` while the samples are close enough that a straight segment and the
+/// reconstruction land on the same pixels -- which is most zoom levels, and
+/// where drawing a curve would be arithmetic nobody can see. Otherwise the
+/// stride through [`resample::FINE`]'s sub-samples: every one where the samples
+/// are far apart, every second or fourth where they are nearer, so the curve is
+/// never resolved finer than the screen can show it.
+fn curve_step(spacing: f32) -> Option<usize> {
+    let factor = resample::FINE.factor();
+    // Two device pixels per drawn segment is the floor: below that the segments
+    // are shorter than the stroke is wide.
+    let segments = (spacing / 2.0).floor() as usize;
+    if segments < 2 {
+        return None;
+    }
+    Some((factor / segments.min(factor)).max(1))
+}
+
+/// The reconstruction of the interval **starting at sample `f`**, into `out`.
+///
+/// Returns how many sub-samples were written (`FINE`'s factor, or `0` where
+/// there is nothing to reconstruct). The window is read through the trace
+/// itself, with the samples outside the take taken as silence -- the edge
+/// policy `clausters_core::resample` documents, so the curve at the very start
+/// of a take is the same curve the measurement reads there.
+fn reconstruct(trace: &Trace, ch: usize, f: usize, frames: usize, out: &mut [f32]) -> usize {
+    let filter = resample::FINE;
+    let factor = filter.factor().min(out.len());
+    if factor == 0 {
+        return 0;
+    }
+    let mut window = [0.0f32; resample::TAPS];
+    for (k, slot) in window.iter_mut().enumerate() {
+        // The same centred window the core reads: `GUARD - 1` samples before
+        // this one, itself, and `GUARD` after.
+        let at = f as isize + 1 + k as isize - resample::GUARD as isize;
+        *slot = if at < 0 || at as usize >= frames {
+            0.0
+        } else {
+            trace.at(ch, at as f64)
+        };
+    }
+    for (p, slot) in out.iter_mut().enumerate().take(factor) {
+        *slot = filter.phase_at(&window, p);
+    }
+    factor
 }
 
 /// **The span a column's level is averaged over**: its own, or the fixed window
@@ -732,6 +1010,193 @@ mod tests {
             let b = pyr.column(0, 128.0, s0, s0 + 128.0);
             assert_eq!(a, b, "column {c} over [{s0}, {s1})");
         }
+    }
+
+    /// **The curve between two samples is the signal's, not the renderer's.**
+    /// Zoomed in far enough that the samples are separate points, the drawing
+    /// reconstructs the band-limited signal between them -- so a peak that
+    /// falls between two samples is *drawn*, where the straight segment this
+    /// replaced flattened it. The same fact a true-peak reading reports as a
+    /// number.
+    #[test]
+    fn a_zoomed_in_trace_draws_the_signal_between_its_samples() {
+        // The classic inter-sample peak: a sine at a quarter of the sample
+        // rate, sampled at 45 degrees. Every sample is at +-1 and the signal
+        // between them reaches sqrt(2).
+        let samples: Vec<f32> = (0..64)
+            .map(|i| if (i / 2) % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        let mut sub = [0.0f32; resample::MAX_FACTOR];
+        let trace = Trace::samples(&samples, 1);
+        let n = reconstruct(&trace, 0, 20, samples.len(), &mut sub);
+        assert_eq!(n, resample::FINE.factor());
+        assert_eq!(sub[0], samples[20], "the first sub-sample is the sample");
+        let between = sub.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(
+            between > 1.3,
+            "the signal between the samples overshoots them: {between}"
+        );
+    }
+
+    /// **An over between two samples is marked where it is.** Neither sample
+    /// left full scale, so a picture of the samples has nothing to show and a
+    /// meter watching them has nothing to report -- which is the whole claim a
+    /// true-peak reading makes, drawn.
+    #[test]
+    fn a_peak_between_two_samples_is_marked() {
+        // The classic case: every sample at +-1, the signal between them at
+        // sqrt(2). Drawn wide enough that the curve regime is entered.
+        let samples: Vec<f32> = (0..32)
+            .map(|i| if (i / 2) % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(0.0, 0.0, 640.0, 100.0);
+        let n = samples.len() as f64;
+        let draw = |over: Color| {
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &trace,
+                0,
+                |x| (x - rect.x) as f64 / rect.w as f64 * n,
+                |s| rect.x + (s / n) as f32 * rect.w,
+                |v| rect.y + rect.h * 0.5 * (1.0 - v.clamp(-1.0, 1.0)),
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0)
+                    .with_measure(Measure::Signal)
+                    .with_overs(over, 1.0),
+            );
+            mesh.vertex_count()
+        };
+        let marked = draw([1.0, 0.0, 0.0, 1.0]);
+        let plain = draw([0.0, 0.0, 0.0, 0.0]);
+        assert!(
+            marked > plain,
+            "the overs and their figure are drawn: {marked} against {plain}"
+        );
+    }
+
+    /// **The reconstruction is a layer, never a replacement** -- which is what
+    /// keeps a waveform's amplitude from jumping at a zoom threshold. Zoomed
+    /// out the `Signal` layer draws nothing and the envelope under it is the
+    /// same picture it always was; zoomed in it draws the curve, and the
+    /// sample layer keeps its dots and drops only the straight segment the
+    /// curve now stands in for.
+    #[test]
+    fn the_reconstruction_is_a_layer_over_the_samples() {
+        let samples: Vec<f32> = (0..4096).map(|i| (i as f32 * 0.9).sin()).collect();
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(0.0, 0.0, 400.0, 100.0);
+        let draw = |frames: f64, measure: Measure, layers: Measures| {
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &trace,
+                0,
+                |x| (x - rect.x) as f64 / rect.w as f64 * frames,
+                |s| rect.x + (s / frames) as f32 * rect.w,
+                |v| rect.y + rect.h * 0.5 * (1.0 - v),
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0)
+                    .with_dots(2.0)
+                    .with_measure(measure)
+                    .with_layers(layers),
+            );
+            mesh.vertex_count()
+        };
+        let both = Measures::parse("peak signal").unwrap();
+        let bare = Measures::of(Measure::Peak);
+
+        // Zoomed out: the envelope is the envelope, whatever is layered on it.
+        let wide = 4096.0;
+        assert_eq!(
+            draw(wide, Measure::Signal, both),
+            0,
+            "no reconstruction zoomed out"
+        );
+        assert_eq!(
+            draw(wide, Measure::Peak, both),
+            draw(wide, Measure::Peak, bare),
+            "and the sample picture under it is unchanged"
+        );
+
+        // Zoomed in to separate points: the curve is drawn, and the sample
+        // layer gives up its straight segments but not its dots.
+        let close = 20.0;
+        assert!(draw(close, Measure::Signal, both) > 0, "the curve is drawn");
+        let dots_only = draw(close, Measure::Peak, both);
+        let with_lines = draw(close, Measure::Peak, bare);
+        assert!(
+            dots_only > 0 && dots_only < with_lines,
+            "the dots stay and the segments go: {dots_only} against {with_lines}"
+        );
+    }
+
+    /// The layer's wire name, and the default a view gets: the envelope with
+    /// the reconstruction over it.
+    #[test]
+    fn the_signal_measure_parses_and_is_on_by_default() {
+        assert_eq!(Measure::parse("signal"), Some(Measure::Signal));
+        assert_eq!(Measure::Signal.name(), "signal");
+        assert_eq!(Measures::default().name(), "peak signal");
+        assert!(!Measures::parse("peak").unwrap().has(Measure::Signal));
+    }
+
+    /// **The waveform changes character once, where the dots appear.** Above
+    /// that zoom a column under two samples wide measures the line between the
+    /// samples rather than the band around them, so the picture is one thin
+    /// line on both sides of the old crossing; at that zoom the sample regime --
+    /// dots, segments, the reconstruction -- begins, all together.
+    #[test]
+    fn the_picture_changes_where_the_dots_appear_and_nowhere_else() {
+        let radius = 3.0f32;
+        let at_dots = drawable_per_px(radius);
+        assert!(
+            samples_are_drawn(at_dots, radius),
+            "the dots' own zoom draws them"
+        );
+        assert!(
+            !samples_are_drawn(at_dots * 1.5, radius),
+            "and a little further out does not"
+        );
+        assert!(
+            at_dots < LINE_THRESHOLD,
+            "the crossing moved in, past the old one"
+        );
+
+        // Between the two, a column that straddles a sample is a sliver of the
+        // ramp -- half a step either side of it -- and not the two whole steps
+        // the ordinary column spans by reading both samples around it.
+        let samples: Vec<f32> = (0..400).map(|i| i as f32 / 400.0).collect();
+        let trace = Trace::samples(&samples, 1);
+        let step = 1.0 / 400.0;
+        let (lo, hi) = line_column(&trace, 0, 10.75, 11.25, samples.len());
+        assert!(
+            (hi - lo - step * 0.5).abs() < step * 0.01,
+            "half a sample of the ramp spans half a step: {}",
+            hi - lo
+        );
+        let (lo, hi) = trace.column(0, 0.5, 10.75, 11.25);
+        assert!(
+            hi - lo >= step * 0.99,
+            "where the ordinary column spans the whole step: {}",
+            hi - lo
+        );
+    }
+
+    /// **Never finer than the screen.** The curve is drawn where it can be
+    /// seen and the straight segment is kept where it would be the same
+    /// picture, which is what keeps a zoomed-out view from paying for
+    /// arithmetic nobody can look at.
+    #[test]
+    fn the_curve_is_drawn_only_where_there_are_pixels_for_it() {
+        assert_eq!(curve_step(1.0), None, "samples a pixel apart: a line");
+        assert_eq!(curve_step(3.0), None, "one segment is not a curve");
+        assert!(curve_step(20.0).is_some(), "far apart: the curve");
+        // And the stride thins with the room: wide apart, every sub-sample.
+        assert_eq!(curve_step(200.0), Some(1));
+        let mid = curve_step(8.0).unwrap();
+        assert!(mid > 1, "nearer, every second or fourth: {mid}");
     }
 
     /// Zoomed out, the trace costs the rect's pixels — not the source's
@@ -1147,11 +1612,12 @@ mod tests {
             "deep zoom marks each sample: {marked} vs {bare}"
         );
         // 100 samples over the same width: 2 px apart, so a row of dots would
-        // just thicken the line. None are drawn, and the picture is the line
-        // it was.
+        // just thicken the line. None are drawn -- and the zoom where they do
+        // not fit is not yet the sample picture either, so a radius that cannot
+        // fit changes nothing at all: two such radii draw the same geometry.
         assert_eq!(
             draw(100, 3.0),
-            draw(100, 0.0),
+            draw(100, 2.0),
             "dots that would touch are not drawn"
         );
     }

@@ -154,6 +154,29 @@ points = lissajous(left, right)                       # (x, y) per frame
 r = correlation(left, right)                          # -1 … +1, or None
 ```
 
+**And what happened *between* the samples.** The largest sample is not the
+largest value of the signal: a peak can fall between two of them, and every
+converter sees it. That is the **true peak**, and it reads up to about 3 dB
+above the sample peak — the standard's own worst case is a tone at a quarter of
+the sample rate whose samples all sit at full scale while the signal between
+them reaches `sqrt(2)`.
+
+```python
+from clausters import ipc
+
+sample_peak, rms = ipc.channel_stats(samples, channels)
+true_peak = ipc.true_peak(samples, channels)      # one per channel
+```
+
+The filter is the one ITU-R BS.1770-4 Annex 2 specifies, so this is the number a
+delivery specification means when it asks for dBTP (and -1 dBTP is the ceiling
+those specifications name). The GUI draws the same fact rather than reporting
+it: zoomed in past the samples, a waveform draws the reconstructed **curve**
+between them and marks the peaks that leave full scale, which is the one thing a
+picture of the samples structurally cannot show. That is the `signal` measure,
+on by default beside `peak` — a layer over the samples rather than a picture
+that replaces them, so the amplitude does not jump as a zoom reaches them.
+
 **To *see* the bus, name it instead**: `scope(bus)` opens an oscilloscope window
 on it, and a `scope` widget in a GuiDef puts one inside a window you compose. The
 framing and the trigger that make a periodic signal stand still are the host's,

@@ -226,7 +226,7 @@ pub fn draw_scope(
     // measure, the envelope under the level body.
     for measure in measures.iter() {
         let color = trace::measure_color(d.theme, measure, d.theme.trace);
-        trace_row(d, body, history, 1, 0, (min, max), color, measure);
+        trace_row(d, body, history, 1, 0, (min, max), color, measure, measures);
     }
 }
 
@@ -337,6 +337,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
                 (p.min, p.max),
                 trace::measure_color(d.theme, measure, color),
                 measure,
+                p.measures,
             );
         }
     }
@@ -365,9 +366,10 @@ fn trace_row(
     domain: (f32, f32),
     color: Color,
     measure: trace::Measure,
+    layers: trace::Measures,
 ) {
     let (min, max) = domain;
-    let (mesh, m, _theme) = d.parts();
+    let (mesh, m, theme) = d.parts();
     let frames = samples.len() / channels.max(1);
     if frames < 2 {
         return;
@@ -384,7 +386,9 @@ fn trace_row(
         |v| row.y + row.h * (1.0 - fraction(v, min, max)),
         trace::TraceStyle::new(color, m.trace_w)
             .with_dots(m.point_radius)
-            .with_measure(measure),
+            .with_measure(measure)
+            .with_layers(layers)
+            .with_overs(theme.meter_clip, m.caption_scale),
     );
 }
 
@@ -610,6 +614,7 @@ mod tests {
                 (min, max),
                 [1.0, 1.0, 1.0, 1.0],
                 trace::Measure::Peak,
+                trace::Measures::of(trace::Measure::Peak),
             );
             mesh.extent().expect("the row drew").h
         };

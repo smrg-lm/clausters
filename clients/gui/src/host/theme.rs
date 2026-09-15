@@ -103,6 +103,12 @@ theme_roles! {
     /// through wherever the two overlap. A stack's own `opacity` still applies
     /// on top of it.
     trace_body = [0.85, 0.94, 0.70, 0.62];
+    /// **The reconstruction** drawn over a signal's samples (the `signal`
+    /// measure): the band-limited waveform between them. An ink of its own
+    /// because it is read *against* the samples it is drawn over -- the shape
+    /// iZotope RX states, the analog waveform in a colour apart from the
+    /// digital samples -- and warm so it does not read as another channel.
+    trace_signal = [0.98, 0.55, 0.35, 0.95];
     /// A curve's grabbable break-point.
     point = [0.90, 0.93, 0.95, 1.0];
 

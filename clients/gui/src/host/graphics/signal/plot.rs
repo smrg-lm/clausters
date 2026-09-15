@@ -330,6 +330,8 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                 )
                 .with_dots(m.point_radius)
                 .with_measure(measure)
+                .with_layers(p.measures)
+                .with_overs(theme.meter_clip, m.caption_scale)
                 .with_rate(p.sample_rate)
                 .with_written(p.written),
             );

@@ -1173,17 +1173,21 @@ export function signal(
         editable?: boolean;
         overlay?: boolean;
         /**
-         * **What the picture measures**: `"peak"` (the default, the min/max
-         * envelope the signal reached), `"rms"` (the symmetric body of the
-         * level it held), or both as one space-separated string —
-         * `"peak rms"`, the classic editor picture, the level drawn inside the
-         * envelope. A factor of the view rather than a widget of its own: one
+         * **What the picture measures**: `"peak"` (the min/max envelope the
+         * signal reached), `"rms"` (the symmetric body of the level it held),
+         * `"signal"` (the band-limited reconstruction between the samples,
+         * drawn once they are separate points, with the peaks that leave full
+         * scale marked), or several as one space-separated string. The
+         * default is `"peak signal"`: the envelope, and the reconstruction
+         * over it where there is room — a layer, never a replacement, so the
+         * amplitude does not jump as a zoom crosses into the samples.
+         * `"peak"` alone is the bare samples, dots joined by straight lines. A factor of the view rather than a widget of its own: one
          * body, drawn once per measure by the one renderer, which is what keeps
          * the axis, the ruler, the selection and the upload single. A peak
          * cache built before the measure existed draws no body rather than
          * zeros.
          */
-        measure?: "peak" | "rms" | "peak rms" | "rms peak";
+        measure?: string;
         /**
          * **Inside a `clip`**, and only there: where on the clip's own time
          * this body sits (`at`) and how much of it it covers (`dur`). A clip
@@ -1897,15 +1901,15 @@ export function waveform(
         /** The top of the value domain (see `min`). */
         max?: number;
         /**
-         * What the picture measures: `"peak"` (the default envelope), `"rms"`
-         * (the level body), or **both as one space-separated string** —
-         * `"peak rms"`, the classic editor picture, the level drawn inside the
-         * envelope. A stack is a prop of *one* view and not two views layered:
+         * What the picture measures: `"peak"` (the envelope), `"rms"` (the
+         * level body), `"signal"` (the reconstruction between the samples, a
+         * layer over them), or **several as one space-separated string**. The
+         * default is `"peak signal"`. A stack is a prop of *one* view and not two views layered:
          * a view paints its own field before it draws, so the second would hide
          * the first (see `signal`, and the multitrack editor's signal view,
          * whose `layers` is this prop).
          */
-        measure?: "peak" | "rms" | "peak rms" | "rms peak";
+        measure?: string;
         /**
          * The samples are **being written into as they are drawn** — a take you
          * are recording. The picture stops at the buffer's write frontier and
@@ -2001,7 +2005,7 @@ export function plot(
         dbCeil?: number;
         freqScale?: string;
         /** What the columns measure — see `signal`. */
-        measure?: "peak" | "rms";
+        measure?: string;
         label?: string;
         /**
          * The axis pair written the long way, merged over the flat chrome
@@ -2174,7 +2178,7 @@ export function scope(
         ruler?: boolean | string;
         rulerY?: boolean | string;
         /** What the columns measure — see `signal`. */
-        measure?: "peak" | "rms";
+        measure?: string;
         label?: string;
         /**
          * The axis pair written the long way, merged over the flat chrome

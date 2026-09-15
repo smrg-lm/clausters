@@ -1480,6 +1480,18 @@ export function sheetToMei(sheet: string): string;
 export function svgToDisplayList(svg: string): string;
 
 /**
+ * JS face: the **true peak** of one channel of an interleaved buffer, in
+ * linear amplitude — the reconstructed peak rather than the largest sample.
+ *
+ * The ITU-R BS.1770-4 Annex 2 filter at 4×, which is what makes the reading
+ * dBTP: a signal whose samples all read below full scale can still reconstruct
+ * above it, by up to about 3 dB, and every converter sees that peak. Always at
+ * or above [`channel_stats`]'s peak; `-1` for a channel the buffer does not
+ * have.
+ */
+export function true_peak(samples: Float32Array, channels: number, channel: number): number;
+
+/**
  * JS face: one unary builtin by name (`"midicps"`, `"cpsmidi"`, `"dbamp"`,
  * ...), computed in `f32` exactly as the server's UGens compute it.
  */
@@ -1755,6 +1767,7 @@ export interface InitOutput {
     readonly tempomap_tempoAt: (a: number, b: number) => number;
     readonly tempomap_truncateFrom: (a: number, b: number) => void;
     readonly tempomap_version: (a: number) => number;
+    readonly true_peak: (a: number, b: number, c: number, d: number) => number;
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;

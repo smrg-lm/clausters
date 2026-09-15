@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 64
+CORE_ABI_VERSION = 65
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -216,6 +216,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_float),
     ]
     lib.clausters_core_stats.restype = ctypes.c_int
+    # The true peak: the reconstructed peak of one channel (ABI v65), where the
+    # call above reports the largest sample.
+    lib.clausters_core_true_peak.argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.c_size_t,
+        ctypes.c_size_t,
+    ]
+    lib.clausters_core_true_peak.restype = ctypes.c_float
     # The axis a break-point curve is drawn against (ABI v38): the kept axis
     # goes in and comes out through the same two doubles.
     lib.clausters_core_curve_axis.argtypes = [
@@ -3648,6 +3655,23 @@ def correlation(left, right) -> float | None:
     out = array("f", (0.0,))
     rc = lib().clausters_core_correlation(_ptr(a), _ptr(b), len(a), _ptr(out))
     return None if rc != 0 else out[0]
+
+
+def true_peak(samples, channels: int = 1, channel: int = 0) -> float:
+    """The **true peak** of one channel of an interleaved buffer, in linear
+    amplitude — the *reconstructed* peak rather than the largest sample.
+
+    A signal whose samples all read below full scale can still reconstruct above
+    it, by up to about 3 dB, and every converter sees that peak. The filter is
+    the one ITU-R BS.1770-4 Annex 2 specifies, at 4×, which is what makes a
+    reading dBTP — so this is the number a delivery specification means when it
+    asks for one. It is never below the peak `clausters.ipc.channel_stats`
+    reports, and the two together are the whole of "did this clip": one says
+    what the samples reached, this says what the signal did between them."""
+    a, _ = _as_array(samples)
+    if channels <= 0 or not 0 <= channel < channels:
+        raise ValueError(f"channel {channel} of {channels}")
+    return float(lib().clausters_core_true_peak(_ptr(a), len(a), channels, channel))
 
 
 def lissajous(left, right) -> list[tuple[float, float]]:

@@ -34,6 +34,7 @@ import {
     deinterleave,
     interleave,
     lissajous,
+    truePeak,
 } from "../src/data/index.ts";
 
 await loadCore();
@@ -60,6 +61,12 @@ interface Vectors {
         correlation: number | null;
         points: number;
         head: number[][];
+    }[];
+    truePeak: {
+        case: string;
+        channels: number;
+        truePeak: number[];
+        samplePeak: number;
     }[];
 }
 
@@ -226,6 +233,44 @@ test("correlation and the Lissajous projection match the Python client", () => {
             assert.equal(points[i * 2 + 1], y, `${vector.case}: point ${i} y`);
         });
     }
+});
+
+// ---- parity: the true peak ----
+
+test("the true peak matches the Python client, and exceeds the sample peak", () => {
+    // The generator's own signals, rebuilt here rather than shipped as numbers.
+    const fs4 = Float32Array.from({ length: 512 }, (_, i) =>
+        Math.floor(i / 2) % 2 === 0 ? 1 : -1,
+    );
+    const sources: Record<string, Float32Array> = {
+        fs_over_four_at_45: fs4,
+        sine440: SIGNALS.sine440.subarray(0, 1024),
+        quiet_sine: SIGNALS.sine440.subarray(0, 1024).map((v) => 0.25 * v),
+        stereo: Float32Array.from({ length: 1024 }, (_, i) =>
+            i % 2 === 0 ? fs4[i / 2] : 0.1 * fs4[(i - 1) / 2],
+        ),
+    };
+    for (const vector of vectors.truePeak) {
+        const samples = sources[vector.case];
+        for (let c = 0; c < vector.channels; c++) {
+            const got = truePeak(samples, vector.channels, c);
+            assert.ok(
+                Math.abs(got - vector.truePeak[c]) < 1e-6,
+                `${vector.case} ch ${c}: ${got} vs ${vector.truePeak[c]}`,
+            );
+        }
+        // And the claim the measurement exists to make: the reconstruction is
+        // never below the largest sample, and on the standard's own worst case
+        // it is 3 dB above it.
+        assert.ok(vector.truePeak[0] >= vector.samplePeak - 1e-6, vector.case);
+    }
+    const worst = vectors.truePeak.find((v) => v.case === "fs_over_four_at_45")!;
+    const over = 20 * Math.log10(worst.truePeak[0] / worst.samplePeak);
+    assert.ok(Math.abs(over - 3.01) < 0.25, `the inter-sample peak: ${over} dB`);
+});
+
+test("a channel the buffer does not have has no true peak", () => {
+    assert.equal(truePeak(SIGNALS.sine440.subarray(0, 64), 2, 2), -1);
 });
 
 test("a mismatched pair has no correlation and no projection", () => {

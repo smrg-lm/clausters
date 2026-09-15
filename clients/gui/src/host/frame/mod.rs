@@ -101,8 +101,9 @@ pub(crate) struct WaveformSlot {
 ///   pass.
 /// - [`Owed::Samples`] — the **samples themselves** (`/buffer_getRange`, folded
 ///   by [`WaveformData::set_window`]), for the zoom below which no summary is
-///   worth asking for: past `trace::LINE_THRESHOLD` the trace is the polyline
-///   through the samples, and a bucket is not a sample.
+///   worth asking for: past `trace::LINE_THRESHOLD` a column is the line
+///   between samples and, from where the dots appear, the trace is the samples
+///   themselves -- and a bucket is not a sample.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Owed {
     /// The run of samples to read back, `[a, b)` in frames.

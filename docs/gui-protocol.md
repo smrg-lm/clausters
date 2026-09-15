@@ -397,7 +397,7 @@ it.
 
 | Type | Replaces | How the old name is said |
 |---|---|---|
-| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × what it **measures** (`measure`: `peak` default / `rms` / both at once in one space-separated string, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × what it **measures** (`measure`: `peak` / `rms` / `signal`, several at once in one space-separated string, `"peak signal"` by default, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
 | `notes` | `pianoroll` | unchanged properties |
 | `curve` | `bpf` | unchanged properties |
 | `nodes` | `nodetree` | it is an element, not a widget named after a tree |
@@ -623,11 +623,28 @@ each sample is **marked with a dot** — the line between them is interpolation,
 the dots are the data.
 
 **`measure` is what the picture measures**, and it is a factor of the signal
-element rather than a widget of its own: `peak` (the default — the min/max
-envelope above), `rms` (the symmetric body about zero at the level the signal
-held, drawn in the `trace_body` colour role), or **several at once**, named in
-one space-separated string. It is live on `/gui_set`, because a picture is read
-by turning its measures on and off.
+element rather than a widget of its own: `peak` (the min/max envelope above),
+`rms` (the symmetric body about zero at the level the signal held, drawn in the
+`trace_body` colour role), `signal` (the band-limited reconstruction between the
+samples, below), or **several at once**, named in one space-separated string.
+The default is **`"peak signal"`**. It is live on `/gui_set`, because a picture
+is read by turning its measures on and off.
+
+- **`signal` is what the waveform did between the samples, and it is a layer
+  over them, never a replacement.** Where the samples are separate points it
+  draws the reconstruction through them — the filter `clausters_core::resample`
+  calls `FINE`, whose sub-sample at each sample is that sample exactly, so the
+  curve passes through the dots — in the `trace_signal` colour role, and marks
+  every peak between two samples that leaves full scale, with how far past it
+  the loudest went written once. Where it draws, the `peak` layer keeps its dots
+  and drops only the straight segment the curve stands in for. Zoomed out it
+  draws nothing. The reason it layers rather than takes over: the samples'
+  envelope sits under the signal's by a fixed amount that is the signal's own
+  (a fifth of a decibel for an ordinary sawtooth, three for a tone at a quarter
+  of the sample rate) at *every* zoom, so a picture that swapped one for the
+  other would jump at the swap. It is the shape iZotope RX draws, the analog
+  waveform over the digital samples in a colour apart. `"peak"` alone is the
+  bare samples, dots joined by straight lines, as in any editor.
 
 - **The classic editor picture is `"peak rms"`: one body, a drawing per
   measure.** The level is drawn inside the envelope by the same renderer placed

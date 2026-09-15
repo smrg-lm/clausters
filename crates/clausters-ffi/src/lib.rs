@@ -440,7 +440,12 @@ pub use time::*;
 /// `clausters_apps_samples_editor_*` are **removed**: both clients open their
 /// editors in an editing context (`clausters_apps_editing_*`), which holds the
 /// history they share. **Breaking** for a caller of the editor handles.
-pub const CORE_ABI_VERSION: u32 = 64;
+/// **v65 true peak.** `clausters_core_true_peak` measures the *reconstructed*
+/// peak of one channel of an interleaved buffer — the ITU-R BS.1770-4 Annex 2
+/// filter at 4×, which is what makes a reading dBTP — where
+/// `clausters_core_stats` reports the largest sample. **Additive**, and the
+/// counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 65;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -141,10 +141,36 @@ def main():
         })
     out["stereoField"] = pairs
 
+    # ---- the true peak ----
+    # The reconstructed peak, which is a different number from the largest
+    # sample and has to be the *same* different number in both clients. The
+    # first case is the standard's own: a tone at a quarter of the sample rate,
+    # sampled at 45 degrees, whose samples all sit at full scale while the
+    # signal between them reaches sqrt(2).
+    peaks_true = []
+    fs4 = [1.0 if (i // 2) % 2 == 0 else -1.0 for i in range(512)]
+    for name, samples, channels in [
+        ("fs_over_four_at_45", fs4, 1),
+        ("sine440", sines["sine440"][:1024], 1),
+        ("quiet_sine", [0.25 * v for v in sines["sine440"][:1024]], 1),
+        ("stereo", [v for pair in zip(fs4, [0.1 * v for v in fs4]) for v in pair], 2),
+    ]:
+        buf = array("f", samples)
+        peaks_true.append({
+            "case": name,
+            "channels": channels,
+            "truePeak": [
+                _native.true_peak(buf, channels, c) for c in range(channels)
+            ],
+            "samplePeak": max(abs(v) for v in samples),
+        })
+    out["truePeak"] = peaks_true
+
     path = pathlib.Path(__file__).with_name("data-vectors.json")
     path.write_text(json.dumps(out, indent=2) + "\n")
     print(f"wrote {path} ({len(out['peaks'])} caches, "
-          f"{len(out['peaksStream'])} streamed, {len(out['stereoField'])} pairs)")
+          f"{len(out['peaksStream'])} streamed, {len(out['stereoField'])} pairs, "
+          f"{len(out['truePeak'])} true peaks)")
 
 
 if __name__ == "__main__":

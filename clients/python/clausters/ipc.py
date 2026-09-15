@@ -518,6 +518,32 @@ def read_soundfile(path, start: int = 0, frames: int = -1,
     return samples, n.value, chans.value, rate.value
 
 
+def true_peak(samples, channels: int) -> tuple[float, ...]:
+    """Per-channel **true peak** of an interleaved buffer, in linear amplitude,
+    measured by the shared core (`clausters_core_true_peak`).
+
+    The *reconstructed* peak rather than the largest sample: a signal whose
+    samples all read below full scale can still reconstruct above it, by up to
+    about 3 dB, and every converter sees that peak. The filter is the one
+    ITU-R BS.1770-4 Annex 2 specifies, at 4×, which is what makes a reading
+    dBTP -- so this is the number a delivery specification means when it asks
+    for one, and it is never below `channel_stats`'s peak.
+
+    Returns one value per channel, in channel order, and an empty tuple where
+    the core library is not loadable: a true peak is a measurement a caller
+    asked for, so a silent Python fallback would be a different number wearing
+    its name.
+    """
+    if channels <= 0 or not samples:
+        return ()
+    try:
+        from . import _native
+
+        return tuple(_native.true_peak(samples, channels, c) for c in range(channels))
+    except Exception:
+        return ()
+
+
 def channel_stats(samples, channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Per-channel ``(peak, rms)`` of an interleaved buffer, measured by the
     shared core (`clausters_core_stats`) so the numbers match the server's.

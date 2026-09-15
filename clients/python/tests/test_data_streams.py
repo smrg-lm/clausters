@@ -316,3 +316,57 @@ def test_interleaving_pairs_the_freshest_samples():
             stream.free()
         server.close()
         fake.close()
+
+
+# ---- the true peak: what happened between the samples ----
+
+
+def test_the_true_peak_reads_above_the_sample_peak():
+    """The reconstructed peak, which is the number a delivery specification
+    means by dBTP.
+
+    The standard's own worst case (ITU-R BS.1770-4, Appendix 1 to Annex 2): a
+    tone at a quarter of the sample rate, sampled at 45 degrees. Every sample
+    sits at full scale, so a meter watching samples has nothing to report --
+    and the signal between them reaches sqrt(2), three decibels over.
+    """
+    from array import array
+
+    from clausters import ipc
+
+    x = array("f", [1.0 if (i // 2) % 2 == 0 else -1.0 for i in range(512)])
+    (sample_peak,), _ = ipc.channel_stats(x, 1)
+    (true_peak,) = ipc.true_peak(x, 1)
+    assert sample_peak == 1.0
+    over = 20 * math.log10(true_peak / sample_peak)
+    assert abs(over - 3.01) < 0.25, f"{over} dB over the samples"
+
+
+def test_a_true_peak_is_never_below_the_sample_peak():
+    """Every sample lies on the reconstructed curve, so the measurement can
+    only ever find more than a scan of the samples does."""
+    from array import array
+
+    from clausters import ipc
+
+    x = array("f", [0.8 * math.sin(i * 0.37) + 0.2 * math.sin(i * 1.9)
+                    for i in range(1024)])
+    (sample_peak,), _ = ipc.channel_stats(x, 1)
+    (true_peak,) = ipc.true_peak(x, 1)
+    assert true_peak >= sample_peak - 1e-6
+
+
+def test_each_channel_is_measured_through_its_stride():
+    """One channel of an interleaved buffer, without deinterleaving it, and
+    nothing at all for a request that cannot be met."""
+    from array import array
+
+    from clausters import ipc
+
+    loud = [0.9 * math.sin(i * 0.31) for i in range(512)]
+    quiet = [0.05 * v for v in loud]
+    x = array("f", [v for pair in zip(quiet, loud) for v in pair])
+    peaks = ipc.true_peak(x, 2)
+    assert peaks[0] < 0.2 < 0.8 < peaks[1]
+    assert ipc.true_peak(x, 0) == ()
+    assert ipc.true_peak(array("f", []), 1) == ()

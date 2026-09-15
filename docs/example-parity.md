@@ -395,6 +395,12 @@ in the middle of an example.
 | web | `setSamples` | the other half of the row above |
 | web | `onClosed` | the script's animation loop asks `win.closed` on every turn, which is a property and no call at all; a page's interval has to be told when to stop |
 
+### `views/truepeak`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `onClosed` | the script holds the window with `win.wait()`, which the page cannot do -- a tab may not block -- so the close is a callback there |
+
 ### `views/vumeter`
 
 | Only in | Call | Why |
