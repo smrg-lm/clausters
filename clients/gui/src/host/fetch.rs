@@ -40,9 +40,10 @@ pub(crate) const BUFFER_CHUNK: usize = 4096;
 /// are self-inflicted and a session that zooms four lanes at once loses three
 /// of the four answers.
 ///
-/// A view refused here asks again on the next frame — it re-reads the span it
-/// cannot draw every time it draws — so this queues rather than fails, and the
-/// lanes resolve one after another instead of racing and losing.
+/// Nothing refused here fails: a view re-reads the span it cannot draw every
+/// time it draws, and a whole take waits for a slot with the shape it was
+/// already answered ([`BufferFetches::tick`]). So the takes and the lanes
+/// resolve one after another instead of racing and losing.
 const MAX_IN_FLIGHT: usize = 3;
 
 /// The most samples a view will pull **whole** rather than draw from a summary
@@ -55,10 +56,10 @@ const MAX_IN_FLIGHT: usize = 3;
 /// drawing the summary and reading the run under the eye.
 const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 19;
 
-/// How many asks a buffer's download may refuse **without landing anything**
-/// before it is treated as lost and started over. The frame asks once per
-/// draw, so this is about half a second at sixty frames — long enough that a
-/// working conversation is never restarted between two of its replies, short
+/// How many frames a conversation may go **without landing anything** before
+/// it is treated as lost and asked for again. [`BufferFetches::tick`] runs once
+/// per draw, so this is about half a second at sixty frames — long enough that
+/// a working conversation is never restarted between two of its replies, short
 /// enough that a dropped one is a hesitation rather than the seconds it used
 /// to be.
 const STALLED_ASKS: usize = 30;
@@ -87,11 +88,11 @@ struct BufferFetch {
     total: usize,
     samples: Vec<f32>,
     received: usize,
-    /// How many times a span was refused for this buffer with **no progress**
-    /// in between — see [`BufferFetches::want_span`]. Reset by every reply
-    /// that lands anything.
+    /// How many frames this download has gone with **no progress** — the clock
+    /// is [`BufferFetches::tick`], and every reply that lands anything resets
+    /// it.
     stalled: usize,
-    /// What `received` was at the last such refusal, which is what says whether
+    /// What `received` was at the last tick, which is what says whether
     /// anything landed since.
     stalled_at: usize,
     /// **What this download is**, when it is a span: the frame it starts at
@@ -185,12 +186,27 @@ pub(crate) struct BufferFetches {
     queued: HashMap<i32, (usize, usize)>,
     /// The channel count each queued span was announced with.
     channels: HashMap<i32, usize>,
+    /// **Buffers whose shape came back while the carrier was already full**,
+    /// by buffer number: the download is owed and starts as soon as one of the
+    /// [`MAX_IN_FLIGHT`] slots frees. Drained by [`Self::tick`].
+    waiting: HashMap<i32, Waiting>,
     /// The summary walks under way, by buffer number.
     peaks: HashMap<i32, PeaksWalk>,
     /// **The finer grids asked for**, one per view — `(def_id, widget_id)`,
     /// because two views of one take are at two zooms over two spans and each
     /// gets its own answer.
     details: HashMap<(i32, i32), DetailAsk>,
+}
+
+/// **A whole download that has not started yet**: the shape `/buffer_query.reply`
+/// already answered, kept so the download needs no second query when a slot
+/// frees. What it is *not* is a refusal — every widget waiting on this buffer
+/// is still registered and is served the moment it arrives.
+struct Waiting {
+    channels: usize,
+    sample_rate: f64,
+    /// Flat samples: frames times channels, which is what the download asks for.
+    total: usize,
 }
 
 /// **A finer summary asked for one view**, over the span it is showing.
@@ -204,7 +220,7 @@ struct DetailAsk {
     start: usize,
     frames: usize,
     bucket: usize,
-    /// Frames since it was asked, in ticks of [`BufferFetches::tick_peaks`].
+    /// Frames since it was asked, in ticks of [`BufferFetches::tick`].
     stalled: usize,
 }
 
@@ -222,7 +238,7 @@ struct PeaksWalk {
     end: usize,
     bucket: usize,
     channels: usize,
-    /// Frames since the last answer, in ticks of [`BufferFetches::tick_peaks`].
+    /// Frames since the last answer, in ticks of [`BufferFetches::tick`].
     stalled: usize,
 }
 
@@ -275,13 +291,12 @@ impl BufferFetches {
     /// until the next input would leave a reply sitting in the ring, and the
     /// window would fill in only when the pointer happened to move.
     ///
-    /// Native-only because that is who asks: a page is woken by its own events
-    /// (a socket message, a frame callback) and never chooses when to sleep, so
-    /// the browser front has no wake-up to schedule and this would read as dead
-    /// code there — which is exactly what the wasm build reported.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Both fronts ask, for the same reason under two names: the native loop
+    /// schedules a wake-up, and the browser canvas asks for another animation
+    /// frame — either way, a conversation under way is what keeps the front
+    /// looking.
     pub(crate) fn pending(&self) -> bool {
-        !self.wants.is_empty() || !self.fetches.is_empty()
+        !self.wants.is_empty() || !self.fetches.is_empty() || !self.waiting.is_empty()
     }
 
     /// `/buffer_query.reply` for a buffer we are waiting on: start its download (or finish
@@ -317,6 +332,37 @@ impl BufferFetches {
                 wants: self.wants.remove(&bufnum).unwrap_or_default(),
             };
         }
+        // **The carrier is what bounds this, not the number of takes on
+        // screen.** Our own traffic is what fills the reply ring, and a reply
+        // that does not fit is dropped rather than delayed, so a piece with six
+        // clips used to start six conversations and keep whichever three the
+        // ring happened to hold — the rest drawing an empty box for the rest of
+        // the session. The shape is kept and the download starts when a slot
+        // frees ([`Self::tick`]), which is the same bound a span already keeps.
+        if self.fetches.len() >= MAX_IN_FLIGHT {
+            self.waiting.insert(
+                bufnum,
+                Waiting {
+                    channels,
+                    sample_rate,
+                    total,
+                },
+            );
+            return FetchStep::None;
+        }
+        FetchStep::Request(self.start_whole(bufnum, channels, sample_rate, total))
+    }
+
+    /// **Starts a whole download**: the fetch it is read into, and the first
+    /// `/buffer_getRange` that reads it. One place, because a download starts
+    /// either when its shape arrives or later, when the carrier has room.
+    fn start_whole(
+        &mut self,
+        bufnum: i32,
+        channels: usize,
+        sample_rate: f64,
+        total: usize,
+    ) -> OscMessage {
         self.fetches.insert(
             bufnum,
             BufferFetch {
@@ -331,7 +377,7 @@ impl BufferFetches {
                 window: None,
             },
         );
-        FetchStep::Request(request_chunk(bufnum, 0, total))
+        request_chunk(bufnum, 0, total)
     }
 
     /// **Whether a buffer of `total` samples is worth downloading whole.**
@@ -496,24 +542,6 @@ impl BufferFetches {
             }
             return None;
         }
-        if let Some(fetch) = self.fetches.get_mut(&bufnum) {
-            // **A conversation that has stopped answering is abandoned.** A
-            // reply can be lost with nothing said — the shared ring drops what
-            // does not fit in it, and a page's is 64 KiB — and the fetch it
-            // belonged to would otherwise hold this buffer for the rest of the
-            // session: every later span refused, the view frozen at its
-            // summary, and no error anywhere. A download that is *working*
-            // lands something on every reply, so no progress across this many
-            // asks is the difference that matters. The frame asks again every
-            // time it draws a span it cannot resolve, so this counts frames
-            // without needing a clock.
-            let progressed = fetch.received > fetch.stalled_at;
-            fetch.stalled_at = fetch.received;
-            fetch.stalled = if progressed { 0 } else { fetch.stalled + 1 };
-            if fetch.stalled >= STALLED_ASKS {
-                self.fetches.remove(&bufnum);
-            }
-        }
         if self.fetches.contains_key(&bufnum) {
             // **A patch is kept, a zoom is dropped.** A view that could not
             // read its span asks again on the next frame, so losing one costs
@@ -671,16 +699,58 @@ impl BufferFetches {
         Some(key)
     }
 
-    /// **Asks again for a piece of a summary that never came back.** Called
-    /// once a frame, beside the spans the drawing could not resolve.
+    /// **The frame clock of every conversation with the server**: what never
+    /// came back is asked for again, and what was owed a slot takes one.
+    /// Called once a frame, beside the spans the drawing could not resolve.
     ///
     /// The carrier is allowed to lose a reply — a full ring drops one rather
-    /// than blocking the server — so a walk that has heard nothing for
-    /// [`STALLED_ASKS`] frames repeats its request. There is nothing to undo:
-    /// the answer is folded where the frame it names says it belongs, so a
-    /// duplicate writes the same buckets twice.
-    pub(crate) fn tick_peaks(&mut self) -> Vec<OscMessage> {
+    /// than blocking the server — so *nothing* here may assume that a request
+    /// sent is a reply owed. Three conversations answer to this one clock:
+    ///
+    /// - a **download** that has landed nothing for [`STALLED_ASKS`] frames
+    ///   asks for the chunk it is waiting on again, and a *span* is abandoned
+    ///   instead, because the view that wanted it asks again every time it
+    ///   draws and its span may have moved meanwhile;
+    /// - a **summary walk** repeats its request, with nothing to undo: the
+    ///   answer is folded where the frame it names says it belongs, so a
+    ///   duplicate writes the same buckets twice;
+    /// - a **download owed a slot** starts, which is how a piece with more
+    ///   takes than [`MAX_IN_FLIGHT`] draws all of them rather than the three
+    ///   that happened to fit the ring.
+    pub(crate) fn tick(&mut self) -> Vec<OscMessage> {
         let mut again = Vec::new();
+        // **A conversation that has stopped answering.** A reply can be lost
+        // with nothing said — the shared ring drops what does not fit in it,
+        // and a page's is 64 KiB — and the fetch it belonged to would otherwise
+        // hold this buffer for the rest of the session: the view frozen at its
+        // summary, or empty, and no error anywhere. A download that is
+        // *working* lands something on every reply, so no progress across this
+        // many frames is the difference that matters.
+        let mut abandoned = Vec::new();
+        for (bufnum, fetch) in self.fetches.iter_mut() {
+            let progressed = fetch.received > fetch.stalled_at;
+            fetch.stalled_at = fetch.received;
+            fetch.stalled = if progressed { 0 } else { fetch.stalled + 1 };
+            if fetch.stalled < STALLED_ASKS {
+                continue;
+            }
+            fetch.stalled = 0;
+            match fetch.window {
+                // A span: dropped, and the view asks again on the next frame.
+                Some(_) => abandoned.push(*bufnum),
+                // A whole take: nobody else will ask for it, so it re-asks for
+                // the chunk it is stuck on. The chunks arrive in order, so what
+                // has been received is where to carry on from.
+                None => again.push(request_chunk(
+                    *bufnum,
+                    fetch.origin + fetch.received,
+                    fetch.origin + fetch.total,
+                )),
+            }
+        }
+        for bufnum in abandoned {
+            self.fetches.remove(&bufnum);
+        }
         for (bufnum, walk) in self.peaks.iter_mut() {
             walk.stalled += 1;
             if walk.stalled >= STALLED_ASKS {
@@ -699,6 +769,28 @@ impl BufferFetches {
                     ask.bufnum, ask.bucket, ask.start, ask.frames,
                 ));
             }
+        }
+        // **What was owed a slot takes one.** A buffer nothing waits on any
+        // more (its window closed while it queued) is simply forgotten; the
+        // rest start in buffer order, so a piece fills in left to right rather
+        // than in whatever order a hash map happens to hold.
+        self.waiting
+            .retain(|bufnum, _| self.wants.contains_key(bufnum));
+        let mut ready: Vec<i32> = self
+            .waiting
+            .keys()
+            .copied()
+            .filter(|bufnum| !self.fetches.contains_key(bufnum))
+            .collect();
+        ready.sort_unstable();
+        for bufnum in ready {
+            if self.fetches.len() >= MAX_IN_FLIGHT {
+                break;
+            }
+            let Some(owed) = self.waiting.remove(&bufnum) else {
+                continue;
+            };
+            again.push(self.start_whole(bufnum, owed.channels, owed.sample_rate, owed.total));
         }
         again
     }
@@ -1114,26 +1206,52 @@ mod tests {
 
     /// **A conversation that stopped answering does not hold its buffer for
     /// the session.** A reply can be lost with nothing said — the shared ring
-    /// drops what does not fit — and the view would sit at its summary forever,
-    /// every later ask refused by a download that will never finish.
+    /// drops what does not fit — and the picture would sit at its summary, or
+    /// empty, forever. The two halves answer to one clock and part ways on what
+    /// they do with the silence: a whole take asks again, because nobody else
+    /// will; a span is let go of, because the view asks again every time it
+    /// draws and its span may have moved meanwhile.
     #[test]
-    fn a_download_that_stops_answering_is_started_over() {
+    fn a_conversation_that_stops_answering_is_asked_again() {
         let mut fetches = BufferFetches::default();
         fetches.want(1, 10, 5);
         let FetchStep::Request(_) = fetches.on_info(5, 100_000, 1, 48_000.0) else {
             panic!("a short buffer downloads");
         };
-        // Nothing comes back. Every frame asks for the span it cannot draw and
-        // is refused -- until the ask that gives up on the silence.
+        // Half the take lands, and then nothing does.
+        let FetchStep::Request(_) = fetches.on_data(&range_reply(5, 0, &vec![1.0; BUFFER_CHUNK]))
+        else {
+            panic!("the first chunk asks for the second");
+        };
+        // The first frame sees that chunk land; from there nothing does.
+        for _ in 0..STALLED_ASKS {
+            assert!(fetches.tick().is_empty(), "a download is still believed");
+        }
+        let again = fetches.tick();
+        assert_eq!(
+            ints(&again[0]),
+            vec![5, BUFFER_CHUNK as i32, BUFFER_CHUNK as i32],
+            "and then the chunk it is stuck on is asked for again, from what arrived"
+        );
+
+        // A span that goes quiet is dropped instead, which is what lets the
+        // next frame ask for the span the view is showing *now*.
+        let mut fetches = BufferFetches::default();
+        assert!(fetches.want_span(9, 1000, 512, 1, window(1, 10)).is_some());
         for _ in 0..STALLED_ASKS - 1 {
+            assert!(fetches.tick().is_empty());
             assert!(
-                fetches.want_span(5, 0, 512, 1, window(1, 10)).is_none(),
-                "a download in flight is still believed"
+                fetches.want_span(9, 1000, 512, 1, window(1, 10)).is_none(),
+                "the conversation in flight is still believed"
             );
         }
         assert!(
-            fetches.want_span(5, 0, 512, 1, window(1, 10)).is_some(),
-            "and then the span is asked for again"
+            fetches.tick().is_empty(),
+            "a span is let go of, not re-asked"
+        );
+        assert!(
+            fetches.want_span(9, 1000, 512, 1, window(1, 10)).is_some(),
+            "so the view's next ask starts a conversation of its own"
         );
 
         // A download that is *working* is never restarted: every reply lands
@@ -1145,13 +1263,69 @@ mod tests {
             panic!("expected the first chunk");
         };
         for i in 0..STALLED_ASKS + 4 {
-            assert!(fetches.want_span(6, 0, 512, 1, window(1, 11)).is_none());
+            assert!(fetches.tick().is_empty());
             let FetchStep::Request(_) =
                 fetches.on_data(&range_reply(6, i * BUFFER_CHUNK, &vec![1.0; BUFFER_CHUNK]))
             else {
                 panic!("a download that keeps answering is never restarted");
             };
         }
+    }
+
+    /// **A piece with more takes than the ring holds draws all of them.** Six
+    /// clips used to start six downloads at once, and the reply ring dropped
+    /// whatever did not fit: three takes drawn, three boxes empty for the rest
+    /// of the session, and which three was a race. The shape is answered once
+    /// and the download waits for a slot.
+    #[test]
+    fn more_takes_than_the_carrier_holds_download_one_after_another() {
+        let mut fetches = BufferFetches::default();
+        let frames = 96_000;
+        for bufnum in 0..6 {
+            fetches.want(1, 100 + bufnum, bufnum);
+        }
+        let started: Vec<i32> = (0..6)
+            .filter(|bufnum| {
+                matches!(
+                    fetches.on_info(*bufnum, frames, 1, 48_000.0),
+                    FetchStep::Request(_)
+                )
+            })
+            .collect();
+        assert_eq!(
+            started,
+            vec![0, 1, 2],
+            "only what the carrier holds is asked"
+        );
+        assert!(fetches.pending(), "and the rest are owed, not refused");
+
+        // Nothing has finished, so a frame starts nothing new.
+        assert!(fetches.tick().is_empty());
+
+        // The first take finishes: the next in line takes its slot.
+        fn finish(fetches: &mut BufferFetches, bufnum: i32) {
+            let mut at = 0;
+            loop {
+                match fetches.on_data(&range_reply(bufnum, at, &vec![0.25; BUFFER_CHUNK])) {
+                    FetchStep::Request(_) => at += BUFFER_CHUNK,
+                    FetchStep::Done { .. } => return,
+                    _ => panic!("the download walks its chunks"),
+                }
+            }
+        }
+        for bufnum in 0..3 {
+            finish(&mut fetches, bufnum);
+            let again = fetches.tick();
+            assert_eq!(
+                ints(&again[0])[0],
+                bufnum + 3,
+                "the freed slot goes to the next take, in buffer order"
+            );
+        }
+        for bufnum in 3..6 {
+            finish(&mut fetches, bufnum);
+        }
+        assert!(!fetches.pending(), "and every take is drawn");
     }
 
     /// **A straggler from a conversation that was restarted must not end the
@@ -1222,12 +1396,9 @@ mod tests {
         // Nothing comes back. The frame ticks, and the same piece is asked for
         // again once the silence has gone on long enough.
         for _ in 0..STALLED_ASKS - 1 {
-            assert!(
-                fetches.tick_peaks().is_empty(),
-                "a moment's wait is not a loss"
-            );
+            assert!(fetches.tick().is_empty(), "a moment's wait is not a loss");
         }
-        let again = fetches.tick_peaks();
+        let again = fetches.tick();
         assert_eq!(again.len(), 1);
         assert_eq!(
             ints(&again[0]),
@@ -1237,10 +1408,7 @@ mod tests {
 
         // The rest lands, and the walk ends rather than asking past the take.
         assert!(fetches.on_peaks(3, 10 * 256, 30 * 2 * 3).is_none());
-        assert!(
-            fetches.tick_peaks().is_empty(),
-            "a finished walk ticks nothing"
-        );
+        assert!(fetches.tick().is_empty(), "a finished walk ticks nothing");
         assert!(
             fetches.on_peaks(3, 0, 6).is_none(),
             "and a late answer to a walk that ended is nobody's"
@@ -1305,9 +1473,9 @@ mod tests {
         // The other view's is still waiting, and a lost reply is asked for
         // again on the same clock a walk is.
         for _ in 0..STALLED_ASKS - 1 {
-            assert!(fetches.tick_peaks().is_empty());
+            assert!(fetches.tick().is_empty());
         }
-        let again = fetches.tick_peaks();
+        let again = fetches.tick();
         assert_eq!(again.len(), 1, "the grid nobody answered");
         assert_eq!(ints(&again[0]), vec![7, 64, 0, 8_192]);
 

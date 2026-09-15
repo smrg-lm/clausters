@@ -764,7 +764,7 @@ impl WebApp {
     /// the same clock: a piece of a summary that never came back is asked for
     /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self, def_id: i32) {
-        for msg in self.fetches.tick_peaks() {
+        for msg in self.fetches.tick() {
             self.send_to_server(msg);
         }
         let mut asked: Vec<(i32, i32, usize, Owed)> = Vec::new();
@@ -805,6 +805,14 @@ impl WebApp {
             if let Some(msg) = msg {
                 self.send_to_server(msg);
             }
+        }
+        // **A conversation with the server keeps the canvas drawing.** The tick
+        // above is this canvas' frame, so a page that has asked for a take and
+        // then stands still would never notice a lost reply or take the slot a
+        // finished download freed: the picture would fill in when the pointer
+        // happened to move.
+        if self.fetches.pending() {
+            self.request_redraw(def_id);
         }
     }
 

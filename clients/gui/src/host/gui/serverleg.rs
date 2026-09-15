@@ -613,7 +613,7 @@ impl App {
     /// the same clock: a piece of a summary that never came back is asked for
     /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self) {
-        for msg in self.fetches.tick_peaks() {
+        for msg in self.fetches.tick() {
             self.send_to_server(msg);
         }
         let mut asked: Vec<(i32, i32, i32, usize, Owed)> = Vec::new();
