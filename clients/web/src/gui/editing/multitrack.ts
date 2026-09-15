@@ -762,8 +762,30 @@ export class MultitrackEditor extends Editor<Multitrack> {
                 clock: handle.widget(CLOCK).id,
             };
             void this.tick();
+            this.tellMeters();
         }
         return handle;
+    }
+
+    /**
+     * **Tell the window where the piece's meters are.**
+     *
+     * The window is composed before anything sounds — a piece can be played by
+     * a page that never draws it — so the buses are only known once the
+     * playback has made the tracks. Without this the strips read nothing until
+     * some *unrelated* turn happens to push the picture, which is a gesture
+     * that may never come: the piece plays, the levels move, and every column
+     * stays at the floor.
+     */
+    private tellMeters(): void {
+        const widget = this.pieceWidget;
+        const host = this.host;
+        const view = this.view;
+        if (this.playback === null || widget === null || host === null || view === null) {
+            return;
+        }
+        const { meters } = view.props(this, widget);
+        if (meters !== undefined) host.set(widget, { meters });
     }
 
     /**

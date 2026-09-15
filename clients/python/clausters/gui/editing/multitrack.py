@@ -530,7 +530,24 @@ class MultitrackEditor(Editor):
                                                 ("stop", STOP), ("clock", CLOCK))}
             self._tick()
             self._host.clock.sched(CLOCK_TICK, self._tick)
+            self._tell_meters()
         return window
+
+    def _tell_meters(self) -> None:
+        """**Tell the window where the piece's meters are.**
+
+        The window is composed before anything sounds -- a piece can be played
+        by a script that never draws it -- so the buses are only known once the
+        playback has made the tracks. Without this the strips read nothing until
+        some *unrelated* turn happens to push the picture, which is a gesture
+        that may never come: the piece plays, the levels move, and every column
+        stays at the floor.
+        """
+        if self.playback is None or self.piece_widget is None:
+            return
+        meters = self.view.props(self, self.piece_widget).get("meters")
+        if meters:
+            self._host.set(self.piece_widget, meters=meters)
 
     def _tick(self):
         """The read-out, and the one round trip: the position is the engine's.
