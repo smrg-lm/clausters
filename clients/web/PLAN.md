@@ -3073,6 +3073,34 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A handle whose server stopped keeps a dead carrier, and this client has
+  no way to reopen one** *(the twin of the fix made in `clients/python/PLAN.md`
+  on 2026-09-15, named the same day and deliberately not improvised into the
+  same commit)*. `openCarrier` returns `this.conn` whenever it is set, and
+  nothing ever clears it -- so after `quit()` (which closes the page engine's
+  `AudioContext`, or leaves a socket whose server stopped) a later `boot()` or
+  `attach()` hands back the dead one, and every request fails the way the
+  reference client's did before the fix: a timeout naming the command, then a
+  closed carrier.
+
+  **Why it is not the same one-line change.** In Python an interface knows how
+  to reconnect -- it holds a host and a port, and `_ensure` reopens on the next
+  send -- so dropping the connection is enough. A `Connection` here does not: it
+  is an object, sometimes handed to the constructor by the caller (which is what
+  `tests/server.test.ts` does), and reopening it is the carrier layer's decision
+  rather than the `Server`'s. So the shape is a **`Connection` that can be
+  reopened** (a `reconnect()`, or an `openCarrier` that knows which connections
+  are its own to replace and which were lent to it), and the ownership question
+  is the design part: a handle must not close a connection its caller built,
+  and must not keep one whose server it just stopped.
+
+  What to match once it exists: `quit()` leaves the handle able to `boot()`
+  again, `attach()` starts a new conversation rather than reusing an old one,
+  and a carrier that has nothing to drop is not broken by being asked
+  (`Server._drop_connection` in the reference client). The other half of the
+  Python fix -- waiting for the process to exit -- has no twin by nature: a page
+  launches no process.
+
 - ✅ **Two playback fixes never crossed over, and the page was the older
   program** *(found 2026-09-11 while porting a third; fixed the same day)*.
   `handPorts` (a curve owns the port it names, so the hand does not write it)

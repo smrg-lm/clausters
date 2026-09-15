@@ -261,6 +261,12 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         extra = list(server_args)
         if workers is not None:
             extra = ["--workers", str(workers)] + extra
+        # Whatever this handle was connected to is not what is about to be
+        # started, and a stream carrier holds a connection that only *looks*
+        # alive once its peer is gone (`quit` says the rest). So the new server
+        # gets a new connection, whether the old one was stopped from here or
+        # died on its own.
+        self._drop_connection()
         self._process = ServerProcess(
             self.options, shm=shm, verbose=verbose, port=self.target.port,
             data_dir=data_dir, extra_args=extra, ready_timeout=ready_timeout).start()
@@ -305,6 +311,11 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             raise ServerError(
                 f"no server answers at {self.target.host}:{self.target.port} — "
                 "`boot()` one there, or point this handle where one is running")
+        # The server answering now is not necessarily the one this handle last
+        # spoke to, and a stream carrier cannot tell the difference by itself
+        # (`quit`). Attaching is a new conversation, so it gets a new
+        # connection.
+        self._drop_connection()
         if reconcile:
             self.reconcile(timeout=max(timeout, 1.0))
         if adopt_default and main.server is None:
@@ -758,9 +769,48 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         process this handle booted.
 
         What getting another one costs depends on where it was: a launched
-        process is booted again from here.
+        process is booted again from here -- and this **waits for it to be
+        gone** before returning, so that `boot` on the next line is not racing
+        the old server for the port.
+
+        **The connection goes with it.** A stream carrier cannot find out on
+        its own that its peer has stopped -- the first send after the close
+        lands in the kernel's buffer and succeeds, and only the *second* one
+        raises -- so a handle that kept it would answer the next command with a
+        reply timeout naming nothing, and the one after that with a broken
+        pipe. Since this is the one moment the handle *knows*, it says so
+        (`clausters.base.OscInterface.disconnect`) and the next send opens a
+        fresh connection. Nothing to call by hand, and `boot` on this same
+        handle just works.
         """
         self.send_msg("/server_quit")
+        if self._process is not None:
+            # A process this handle launched: wait for it to be gone before
+            # returning, so a `boot` on the next line finds its port free
+            # rather than racing the old server's exit. `close` then drops the
+            # exit hooks for a process that has already stopped -- and stops
+            # one that ignored the command.
+            self._process.wait_exit()
+            self._process.close()
+            self._process = None
+        # After the wait rather than before it: a server still shutting down
+        # writes its last replies, and a connection closed under it makes it
+        # log a broken pipe on its way out -- an error message for an orderly
+        # stop, which is exactly what a reader should not have to discount.
+        self._drop_connection()
+
+    def _drop_connection(self) -> None:
+        """Ask the carrier to drop its connection, so the next send opens a new
+        one (`clausters.base.OscInterface.disconnect`).
+
+        Asked rather than required, the way the event loop asks a source
+        whether its peer is `gone`: a carrier with nothing to drop says
+        nothing, and one this module never heard of is not broken by being
+        handed a verb it does not have.
+        """
+        drop = getattr(self.interface, "disconnect", None)
+        if drop is not None:
+            drop()
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
         """**This server's** sample-clock reader: an `EmbedSampleClock` when the

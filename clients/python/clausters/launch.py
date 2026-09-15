@@ -232,6 +232,26 @@ class _Process:
         if code is not None:
             raise ServerError(f"{self.kind} exited early (code {code})")
 
+    def wait_exit(self, timeout: float = 5.0) -> bool:
+        """Wait for a process that was asked to stop **over the wire** to
+        actually exit; ``True`` when it did.
+
+        A command that stops a server returns as soon as the packet is sent,
+        and the process then takes a few milliseconds to release its port — so
+        starting another one on that address immediately afterwards raced with
+        the first one dying, and lost: `_probe_port_free` reported the port in
+        use and blamed a stale server from an earlier session. Owning the
+        process is what makes the answer knowable, so only a handle that
+        launched one can wait for it.
+        """
+        if self.proc is None:
+            return True
+        try:
+            self.proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return False
+        return True
+
     def close(self):
         """Stop the process (if running) and drop the exit hooks. Idempotent;
         called automatically on context-manager exit and interpreter shutdown."""

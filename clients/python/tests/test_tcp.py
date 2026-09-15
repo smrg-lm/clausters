@@ -53,6 +53,28 @@ def _unframe(blob: bytes):
     return blob[4:]
 
 
+def test_disconnect_drops_the_connection_and_the_next_send_opens_another():
+    # What a handle does when it *knows* its server is going away
+    # (`Server.quit`): a stream carrier cannot find this out by itself -- the
+    # first send after the peer closed succeeds into the kernel's buffer and
+    # only the second one raises -- so the connection is dropped on purpose and
+    # reopened lazily. Without this, every later request timed out naming
+    # nothing and the one after it raised BrokenPipeError.
+    iface = _iface()
+    first = iface._sock
+    iface.disconnect()
+    assert iface._sock is None
+    assert iface._buf == b""
+
+    reconnected = FakeSocket()
+    iface.start = lambda: setattr(iface, "_sock", reconnected)   # no network
+    iface.send_msg(("127.0.0.1", 57110), "/server_status")
+    assert iface._sock is reconnected, "the next send reconnects"
+    assert first.sent == bytearray(), "nothing went to the dead socket"
+    addr, _ = osc.decode(_unframe(bytes(reconnected.sent)))
+    assert addr == "/server_status"
+
+
 def test_send_msg_is_length_prefixed():
     iface = _iface()
     iface.send_msg(("127.0.0.1", 57110), "/synth_new", "default", 1000, 1, 0)

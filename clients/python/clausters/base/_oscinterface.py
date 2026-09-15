@@ -165,6 +165,22 @@ class OscInterface:
         """
         return None
 
+    def disconnect(self):
+        """**Drop the connection to the peer, keeping this interface usable.**
+
+        Not `close`, which ends the interface: after this, the next send
+        reconnects on its own. It is what a handle calls when it *knows* the
+        server on the other side is going away -- `clausters.defs.Server.quit`
+        sends ``/server_quit`` and then says so here -- because no socket can
+        tell it: a stream whose peer has closed accepts one more send into the
+        kernel's buffer and only then starts raising, so a handle that kept it
+        would lose a command and get a reply timeout that names nothing.
+
+        A carrier with no connection to drop (UDP, a score, an in-process
+        engine) does nothing and is right to: a datagram socket outlives the
+        server it addresses.
+        """
+
     def close(self):
         pass
 
@@ -285,6 +301,9 @@ class OscTcpInterface(OscInterface):
         self._buf = b""
 
     close = stop
+    #: Dropping the connection *is* closing the socket here; `_ensure` opens a
+    #: new one on the next send, so the interface survives its server.
+    disconnect = stop
 
     def gone(self) -> bool:
         """Whether the peer closed this connection.
@@ -413,6 +432,8 @@ class OscWsInterface(OscInterface):
             self._conn = None
 
     close = stop
+    #: As in `OscTcpInterface`: the next send opens a new connection.
+    disconnect = stop
 
     def _ensure(self):
         if self._conn is None:

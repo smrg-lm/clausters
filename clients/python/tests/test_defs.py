@@ -568,6 +568,34 @@ def test_parse_n_info_synth_group_and_absent():
     assert gone.id == 4242 and not gone.exists
 
 
+def test_quit_drops_the_connection_so_the_next_boot_is_reachable():
+    # The sequence that used to strand a handle: quit the server, boot another
+    # on the same address, ask it anything. The carrier held a connection to
+    # the process that had stopped, so the first request timed out and the next
+    # raised BrokenPipeError -- with every command, not just the new one.
+    class _Carrier(_FakeInterface):
+        disconnects = 0
+
+        def disconnect(self):
+            type(self).disconnects += 1
+
+    iface = _Carrier()
+    srv = Server(interface=iface)
+    srv.quit()
+    assert iface.sent[-1][0] == "/server_quit"
+    assert _Carrier.disconnects == 1, "the handle says so; no socket can tell it"
+
+
+def test_a_carrier_without_the_verb_is_not_broken_by_it():
+    # Asked, not required -- the same posture the event loop takes to `gone`:
+    # a carrier with no connection to drop (a score, an in-process engine, one
+    # this module never heard of) is handed nothing it must implement.
+    iface = _FakeInterface()
+    assert not hasattr(iface, "disconnect")
+    Server(interface=iface).quit()
+    assert iface.sent[-1][0] == "/server_quit"
+
+
 def test_load_differences_a_window_of_its_own():
     # The server's counters are cumulative since boot, so the first call has no
     # interval to measure and every one after it reports the share of the time
