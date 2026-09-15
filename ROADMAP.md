@@ -370,6 +370,17 @@ its plan; the plan is where its acceptance is read.
   themselves. **Related:** the audio editor's layers below land on this track's
   stack rules.
 
+- ⬜ **Try cubic instead of straight segments where the samples are joined**
+  *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
+  layer only: the sub-two-sample columns and the joined segments take the same
+  curve, and `signal` stays the reconstruction. **Related:** the entry below.
+
+- ⬜ **The reconstruction draws nothing zoomed out**
+  *(`clients/gui/PLAN.md`, "Found by use")*. A cache-format change rather than
+  a drawing one: the reconstructed envelope as a plane in the peak pyramid,
+  computed once when the cache is built. **Related:** the A track above, whose
+  `A3` left the filter it needs; independent of `A4`.
+
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
