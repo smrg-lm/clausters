@@ -1616,6 +1616,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           bits: int | None = None, hold: float | None = None,
           decay: float | None = None, clip: int | None = None,
           ruler: "bool | str | None" = None, readout: bool | None = None,
+          peak: str | None = None,
           min: float | None = None,
           max: float | None = None, label: str | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
@@ -1664,12 +1665,21 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     it is what a strip of them down the edge of a track header is, where there
     is no room for either and the picture is the whole of what it has to say.
 
+    **Sample peak or true peak.** ``peak`` says what the level on the bus is:
+    ``"sample"`` (the default, the block's largest sample, which is what an
+    audio bus publishes) or ``"true"``, the peak of the reconstructed signal a
+    `true_peak` UGen writes to a control bus. A true peak is read against the
+    **-1 dBTP** ceiling rather than full scale, so the lamp lights where a
+    delivery specification says the signal is too hot. It takes effect with
+    ``rate="control"``: an audio meter reads the published sample peak and
+    stays a sample meter whatever it is told.
+
     The meter is **thin**: it asks for one narrow column per channel and its
     ladder's strip, and stays elastic on the height, since a level is read by
     how far up it goes. ``w`` widens it like any other widget.
     """
     extra = _drop_none(channels=channels, scale=scale, floor_db=floor_db,
-                       bits=bits, hold=hold, decay=decay, clip=clip,
+                       bits=bits, hold=hold, decay=decay, clip=clip, peak=peak,
                        min=min, max=max, label=label, color=color)
     if readout is not None:
         extra["readout"] = 1 if readout else 0

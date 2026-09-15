@@ -68,6 +68,7 @@ sound.</div>
       import { Bus, Session, gui } from "../../dist/index.js";
       import {
         AddAction, Synth, SynthDef, clipCount, control, in_, out, outCtl, sine,
+        truePeak,
       } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -99,11 +100,18 @@ sound.</div>
           outCtl(control("out", 0.0), clipCount(in_(0.0))),
           outCtl(control("out", 0.0).add(1.0), clipCount(in_(1.0))),
         ).send(server);
+        await new SynthDef("peaks",
+          outCtl(control("out", 0.0), truePeak(in_(0.0))),
+          outCtl(control("out", 0.0).add(1.0), truePeak(in_(1.0))),
+        ).send(server);
         await server.sync();
 
         const tone = new Synth("tone", { freq: 330.0 }, { server });
         const overs = Bus.control(2, { server });
         new Synth("overs", { out: overs.index },
+                  { action: AddAction.TAIL, server });
+        const peaks = Bus.control(2, { server });
+        new Synth("peaks", { out: peaks.index },
                   { action: AddAction.TAIL, server });
 
         // Three meters over the same two buses: same signal, same rules. The
@@ -115,7 +123,7 @@ sound.</div>
         // the columns in all three, and a click on any of them puts its own
         // lamps out.
         const win = await gui.view(
-          { title: "A meter, read as a meter", w: 460, h: 460 },
+          { title: "A meter, read as a meter", w: 560, h: 460 },
           gui.panel(
             { layout: "row" },
             gui.meter(0, { channels: 2, name: "mix", label: "mix" }),
@@ -124,6 +132,9 @@ sound.</div>
                            label: "24 bits" }),
             gui.meter(0, { channels: 2, ruler: false, readout: false,
                            clip: overs.index, name: "bare", label: "bare" }),
+            gui.meter(peaks.index, { rate: "control", channels: 2, scale: "db",
+                                     peak: "true", name: "true",
+                                     label: "true peak" }),
           ),
         ).open($("stage"));
         log("a hit every few seconds: the column jumps at once and starts "

@@ -113,6 +113,23 @@ def clip_count(signal, ceiling=1.0, run=3) -> Ugen:
     return Ugen("ClipCount", [signal, ceiling, run])
 
 
+def true_peak(signal, decay=20.0, hold=0.0) -> Ugen:
+    """A **meter's level over the reconstructed signal**: the same ballistics as
+    `meter` -- instantaneous attack, a fall of ``decay`` decibels per second, a
+    peak held ``hold`` seconds -- but what goes in is the block's **true peak**
+    rather than its largest sample.
+
+    The signal between two samples can reach past both: a tone sampled so that
+    every sample sits at full scale can be three decibels over it in between,
+    and every converter sees that. The reconstruction is the filter ITU-R
+    BS.1770-4 Annex 2 specifies, so the reading is in **dBTP** and is never
+    below what `meter` reads off the same signal. Hand the bus to a ``meter``
+    widget with ``rate="control"`` and ``peak="true"``, which reads it against
+    the -1 dBTP ceiling rather than full scale.
+    """
+    return Ugen("TruePeak", [signal, decay, hold])
+
+
 def send_trig(trig, id=0, value=0.0) -> Ugen:
     """On each trigger of ``trig``, sends ``/node_trigger nodeID id value`` to ``/server_notify``
     clients. Output is silence; pass it as a `SynthDef` root."""

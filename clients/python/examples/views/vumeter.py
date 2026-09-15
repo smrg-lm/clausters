@@ -51,7 +51,7 @@ import time
 
 from clausters import Session
 from clausters.defs import (AddAction, Bus, Synth, SynthDef, clip_count,
-                            control, in_, out, out_ctl, sine)
+                            control, in_, out, out_ctl, sine, true_peak)
 from clausters.gui import meter, panel, view
 
 # %% [markdown]
@@ -79,11 +79,16 @@ SynthDef("tone", out(0.0, [sine(control("freq", 330.0)) * control("gain", 0.2),
 SynthDef("overs",
          out_ctl(control("out", 0.0), clip_count(in_(0.0))),
          out_ctl(control("out", 0.0) + 1.0, clip_count(in_(1.0)))).send(server)
+SynthDef("peaks",
+         out_ctl(control("out", 0.0), true_peak(in_(0.0))),
+         out_ctl(control("out", 0.0) + 1.0, true_peak(in_(1.0)))).send(server)
 server.sync()
 
 tone = Synth("tone", {"freq": 330.0}, server=server)
 overs = Bus.control(2, server=server)
 Synth("overs", {"out": overs.index}, action=AddAction.TAIL, server=server)
+peaks = Bus.control(2, server=server)
+Synth("peaks", {"out": peaks.index}, action=AddAction.TAIL, server=server)
 
 # %% [markdown]
 # ## Three meters over the same two buses
@@ -101,8 +106,10 @@ panel(meter(0, channels=2, name="mix", label="mix"),
        name="render", label="24 bits"),
  meter(0, channels=2, ruler=False, readout=False, clip=overs.index,
        name="bare", label="bare"),
+ meter(peaks.index, rate="control", channels=2, scale="db", peak="true",
+       name="true", label="true peak"),
  layout="row"),
-title="A meter, read as a meter", w=460, h=460).open()
+title="A meter, read as a meter", w=560, h=460).open()
 print("the tone ramps past full scale about 8 s in: watch the columns, the "
       "held peak and the lamps. Click a meter to clear its lamps; close the "
       "window to stop")

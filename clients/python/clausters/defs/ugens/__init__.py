@@ -168,6 +168,7 @@ from .io import (
     replace_out,
     send_reply,
     send_trig,
+    true_peak,
 )
 from .buf import (
     buf_channels,
@@ -413,6 +414,7 @@ __all__ = [
     "replace_out",
     "send_reply",
     "send_trig",
+    "true_peak",
     # buf
     "buf_channels",
     "buf_dur",

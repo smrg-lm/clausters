@@ -484,6 +484,24 @@
       ]
     },
     {
+      "name": "ClipCount",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "ceiling",
+          "default": 1.0
+        },
+        {
+          "name": "run",
+          "default": 3.0
+        }
+      ]
+    },
+    {
       "name": "ClipNoise",
       "arity": 0,
       "inputs": []
@@ -2464,6 +2482,24 @@
         {
           "name": "dur",
           "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "TruePeak",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "decay",
+          "default": 20.0
+        },
+        {
+          "name": "hold",
+          "default": 0.0
         }
       ]
     },

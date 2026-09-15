@@ -123,3 +123,60 @@ impl UGen for ClipCount {
         output.fill(self.state.overs() as f32);
     }
 }
+
+/// **A meter's level, over the reconstructed signal.** Inputs: 0 signal, 1 fall
+/// in decibels per second, 2 the seconds a peak is held before it begins to
+/// fall -- the same three [`Meter`] takes, so a script swaps one for the other.
+///
+/// What goes in is not the block's largest sample but its **true peak**: the
+/// signal between the samples, reconstructed with the ITU-R BS.1770-4 Annex 2
+/// filter ([`clausters_core::resample::TruePeakMeter`]). A signal whose samples
+/// all sit at full scale can reach three decibels over it between them, and
+/// every converter sees that; a sample meter cannot. The reading is therefore
+/// in **dBTP**, and it is never below what [`Meter`] reads off the same signal.
+///
+/// The filter's context lives across blocks, so a peak that straddles two of
+/// them is still one peak. It walks the **input's** samples, as [`Meter`] does:
+/// at control rate the output is one number a block and the input is still the
+/// whole block.
+pub struct TruePeak {
+    filter: clausters_core::resample::TruePeakMeter,
+    state: Ballistics,
+}
+
+impl TruePeak {
+    pub fn new() -> Self {
+        Self {
+            filter: clausters_core::resample::TruePeakMeter::new(),
+            state: Ballistics::new(),
+        }
+    }
+}
+
+impl Default for TruePeak {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for TruePeak {
+    fn resume(&mut self) {
+        // A new pass measures its own signal: neither the old pass's held peak
+        // nor the tail of its last block in the filter's window.
+        self.filter.reset();
+        self.state = Ballistics::new();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let peak = self.filter.feed_block(inputs[0]);
+        let seconds = if ctx.sample_rate > 0.0 {
+            output.len() as f32 / ctx.sample_rate
+        } else {
+            0.0
+        };
+        let level = self
+            .state
+            .tick(peak, seconds, at(inputs[1], 0), at(inputs[2], 0));
+        output.fill(level);
+    }
+}

@@ -85,6 +85,9 @@ pub struct Meter {
     /// and no figures, because there is no room for either and the picture is
     /// the whole of what it has to say.
     pub readout: bool,
+    /// **What the level on the bus is** — the largest sample, or the true peak
+    /// of the reconstructed signal a `TruePeak` UGen writes.
+    pub peak: Peak,
     pub label: Option<String>,
     /// What each channel reads, advanced once per tick. The element's own, so
     /// a window that repaints twice does not fall twice.
@@ -97,6 +100,28 @@ struct ChannelState {
     level: f32,
     peak: Ballistics,
     latch: ClipLatch,
+}
+
+/// **What a meter's level is a measurement of.**
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Peak {
+    /// The largest sample: what the engine publishes for an audio bus and what
+    /// the `Meter` UGen reads. The default, as it is in every meter.
+    #[default]
+    Sample,
+    /// The peak of the reconstructed signal between the samples, in dBTP, as a
+    /// `TruePeak` UGen writes it — read against -1 dBTP rather than full scale.
+    True,
+}
+
+impl Peak {
+    fn parse(name: &str) -> Option<Peak> {
+        match name {
+            "sample" => Some(Peak::Sample),
+            "true" => Some(Peak::True),
+            _ => None,
+        }
+    }
 }
 
 pub(super) fn build(
@@ -157,6 +182,11 @@ fn from_props(props: &Map<String, Value>) -> Meter {
         clip: props.get("clip").and_then(Value::as_i64).map(|b| b as i32),
         ruler: ruler_of(props, axis),
         readout: props.get("readout").and_then(parse::truthy).unwrap_or(true),
+        peak: props
+            .get("peak")
+            .and_then(Value::as_str)
+            .and_then(Peak::parse)
+            .unwrap_or_default(),
         label: parse::label(props),
         state: vec![ChannelState::default(); channels],
     };
@@ -201,9 +231,28 @@ impl Meter {
     /// measured against.
     fn ceiling(&self) -> f32 {
         match self.axis {
+            // A true-peak reading is read against the ceiling a true-peak
+            // reading has: -1 dBTP, EBU R128's and every delivery
+            // specification's, since a converter, a rate conversion and an
+            // encoder downstream each move the peak by a fraction of a decibel.
+            MeterAxis::Decibels { .. } if self.reads_true_peak() => {
+                clausters_core::measure::amplitude_of_db(
+                    clausters_core::resample::TRUE_PEAK_CEILING_DBTP,
+                )
+            }
             MeterAxis::Decibels { .. } => CLIP_CEILING,
             MeterAxis::Linear { max, .. } => max,
         }
+    }
+
+    /// **Whether this meter reads a true peak.** Only a control bus can carry
+    /// one: at audio rate the level is the one the engine publishes, which is
+    /// the block's largest *sample*, and calling that a true peak would read
+    /// the lamp against a ceiling the number never meant. So `peak: "true"`
+    /// takes effect with `rate: "control"` over a `TruePeak` bus, and an audio
+    /// meter stays a sample meter whatever it was told.
+    fn reads_true_peak(&self) -> bool {
+        self.peak == Peak::True && self.rate == Rate::Control
     }
 
     /// Puts every lamp out — the hand's verb, and the only one the widget has.
@@ -280,6 +329,13 @@ impl Element for Meter {
                 self.ruler = side_of(v, self.ruler);
                 true
             }
+            "peak" => match v.as_str().and_then(Peak::parse) {
+                Some(p) => {
+                    self.peak = p;
+                    true
+                }
+                None => false,
+            },
             "readout" => match parse::truthy(v) {
                 Some(b) => {
                     self.readout = b;
@@ -627,6 +683,48 @@ mod tests {
         assert!(m.set("readout", &Value::from(1)));
         assert!(m.readout);
         assert!(!m.set("readout", &Value::from("yes")), "a flag is a flag");
+    }
+
+    /// **A meter reads the sample peak unless told otherwise**, and a true peak
+    /// is read against -1 dBTP: a level of -0.5 dBTP lights the lamp that a
+    /// sample reading of the same number would leave dark.
+    #[test]
+    fn a_true_peak_meter_lights_at_minus_one_dbtp() {
+        let near = clausters_core::measure::amplitude_of_db(-0.5);
+        assert_eq!(
+            from_props(&props("{}")).peak,
+            Peak::Sample,
+            "sample by default"
+        );
+
+        // At control rate the level is the control bus's value, which is the
+        // second field of the fixed source.
+        let mut sample = from_props(&props(r#"{"rate":"control","scale":"db"}"#));
+        tick(&mut sample, &Fixed(0.0, near), 0.1);
+        assert!(sample.reads().iter().all(|c| c.clipped.is_none()));
+
+        let mut truth = from_props(&props(r#"{"rate":"control","scale":"db","peak":"true"}"#));
+        tick(&mut truth, &Fixed(0.0, near), 0.1);
+        assert!(
+            truth.reads()[0].clipped.is_some(),
+            "over the true-peak ceiling"
+        );
+    }
+
+    /// **An audio meter is a sample meter whatever it is told**, because the
+    /// level the engine publishes is the largest sample and nothing else.
+    #[test]
+    fn an_audio_meter_cannot_be_told_it_reads_a_true_peak() {
+        let near = clausters_core::measure::amplitude_of_db(-0.5);
+        let mut m = from_props(&props(r#"{"peak":"true"}"#));
+        assert!(!m.reads_true_peak());
+        tick(&mut m, &Fixed(near, 0.0), 0.1);
+        assert!(m.reads()[0].clipped.is_none());
+        assert!(m.set("peak", &Value::from("sample")));
+        assert!(
+            !m.set("peak", &Value::from("loud")),
+            "an unknown word is declined"
+        );
     }
 
     /// With a counting bus the lamp follows the count and not the level, which

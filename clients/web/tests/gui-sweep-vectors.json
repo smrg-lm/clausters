@@ -758,6 +758,116 @@
  },
  {
   "builder": "meter",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "scale",
+  "value": "q",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "scale": "q"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "floor_db",
+  "value": 3.5,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "floor_db": 3.5
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "bits",
+  "value": 7,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "bits": 7
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "hold",
+  "value": 3.5,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "hold": 3.5
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "decay",
+  "value": 3.5,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "decay": 3.5
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "clip",
+  "value": 7,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "clip": 7
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "ruler": "beats"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "readout",
+  "value": true,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "readout": 1
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "peak",
+  "value": "q",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "peak": "q"
+  }
+ },
+ {
+  "builder": "meter",
   "option": "min",
   "value": 3.5,
   "tree": {

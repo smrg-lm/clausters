@@ -140,6 +140,26 @@ export const clipCount = (
 ): Ugen => new Ugen("ClipCount", [signal, ceiling, run]);
 
 /**
+ * A **meter's level over the reconstructed signal**: the same ballistics as
+ * {@link meter} — instantaneous attack, a fall of `decay` decibels per second, a
+ * peak held `hold` seconds — but what goes in is the block's **true peak**
+ * rather than its largest sample.
+ *
+ * The signal between two samples can reach past both: a tone sampled so that
+ * every sample sits at full scale can be three decibels over it in between, and
+ * every converter sees that. The reconstruction is the filter ITU-R BS.1770-4
+ * Annex 2 specifies, so the reading is in **dBTP** and is never below what
+ * {@link meter} reads off the same signal. Hand the bus to a `meter` widget
+ * with `rate: "control"` and `peak: "true"`, which reads it against the -1 dBTP
+ * ceiling rather than full scale.
+ */
+export const truePeak = (
+    signal: Channel,
+    decay: Channel = 20.0,
+    hold: Channel = 0.0,
+): Ugen => new Ugen("TruePeak", [signal, decay, hold]);
+
+/**
  * On each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify`
  * clients. Output is silence; pass it as a `SynthDef` root.
  */

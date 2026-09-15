@@ -167,6 +167,7 @@ export {
     replaceOut,
     sendReply,
     sendTrig,
+    truePeak,
 } from "./io.ts";
 export type { DiskInOptions, DiskOutOptions, PollOptions } from "./io.ts";
 

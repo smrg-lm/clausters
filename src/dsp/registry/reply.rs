@@ -24,6 +24,23 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(crate::dsp::measure::Meter::new()),
     ),
+    // --- the true peak: a meter's level over the reconstructed signal rather
+    //     than over its samples (`dsp::measure`), in dBTP. ---
+    desc(
+        "TruePeak",
+        Fixed(3),
+        &[
+            inp("signal", 0.0),
+            inp_opt("decay", clausters_core::measure::METER_FALL_DB),
+            inp_opt("hold", 0.0),
+        ],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(crate::dsp::measure::TruePeak::new()),
+    ),
     // --- the clip count: how many times the signal was flattened, which is
     //     a run of samples at full scale and not a peak (`dsp::measure`). ---
     desc(

@@ -2089,6 +2089,15 @@ export function plot(
  * it is what a strip of them down the edge of a track header is, where there is
  * no room for either and the picture is the whole of what it has to say.
  *
+ * **Sample peak or true peak.** `peak` says what the level on the bus is:
+ * `"sample"` (the default, the block's largest sample, which is what an audio
+ * bus publishes) or `"true"`, the peak of the reconstructed signal a `truePeak`
+ * UGen writes to a control bus. A true peak is read against the **-1 dBTP**
+ * ceiling rather than full scale, so the lamp lights where a delivery
+ * specification says the signal is too hot. It takes effect with
+ * `rate: "control"`: an audio meter reads the published sample peak and stays a
+ * sample meter whatever it is told.
+ *
  * The meter is **thin**: it asks for one narrow column per channel and its
  * ladder's strip, and stays elastic on the height, since a level is read by how
  * far up it goes. `w` widens it like any other widget.
@@ -2106,6 +2115,7 @@ export function meter(
         clip?: number;
         ruler?: boolean | "left" | "right";
         readout?: boolean;
+        peak?: "sample" | "true";
         min?: number;
         max?: number;
         label?: string;
@@ -2122,6 +2132,7 @@ export function meter(
         clip,
         ruler,
         readout,
+        peak,
         min,
         max,
         label: text,
@@ -2141,6 +2152,7 @@ export function meter(
             ["clip", clip],
             ["ruler", strip(ruler)],
             ["readout", flag(readout)],
+            ["peak", peak],
             ["min", min],
             ["max", max],
             ["label", text],

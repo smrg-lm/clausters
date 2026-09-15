@@ -200,3 +200,62 @@ fn a_control_rate_count_sees_the_run() {
     );
     assert_eq!(out[0], 1.0, "one run inside the block is one over");
 }
+
+// ---- TruePeak ----
+
+fn true_peak(input: &[f32], rate: &str) -> Vec<f32> {
+    render_with_input(
+        &format!(
+            r#"{{"kind": "TruePeak", "rate": "{rate}", "inputs": [{{"ugen": 0}},
+               {{"const": 20.0}}, {{"const": 1.0}}]}}"#
+        ),
+        input,
+    )
+}
+
+/// **The level between the samples.** A tone at a quarter of the sample rate,
+/// sampled at 45 degrees, sits at +-1 on every sample and reaches sqrt(2)
+/// between them: `Meter` reads full scale and `TruePeak` reads three decibels
+/// over it -- the reading a sample meter structurally cannot make.
+#[test]
+fn a_true_peak_reads_what_the_samples_hide() {
+    let x: Vec<f32> = (0..BLOCK_SIZE * 8)
+        .map(|i| if (i / 2) % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
+    let sample = *meter(&x, 20.0, 1.0).last().unwrap();
+    let truth = *true_peak(&x, "ar").last().unwrap();
+    assert_eq!(sample, 1.0, "every sample is at full scale");
+    let over = 20.0 * truth.log10();
+    assert!(
+        (over - 3.01).abs() < 0.25,
+        "the signal between them is sqrt(2): {over:.3} dBTP"
+    );
+}
+
+/// At control rate it still reads the whole block, as `Meter` does: the
+/// output is one number a block and the input is not.
+#[test]
+fn a_control_rate_true_peak_reads_the_whole_block() {
+    let x: Vec<f32> = (0..BLOCK_SIZE * 8)
+        .map(|i| if (i / 2) % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
+    let truth = *true_peak(&x, "kr").last().unwrap();
+    assert!(
+        truth > 1.3,
+        "the block's reconstruction, not one sample: {truth}"
+    );
+}
+
+/// It is never below the sample meter on the same signal: every sample lies on
+/// the reconstructed curve.
+#[test]
+fn a_true_peak_is_never_below_the_sample_meter() {
+    let x: Vec<f32> = (0..BLOCK_SIZE * 16)
+        .map(|i| 0.7 * (i as f32 * 0.37).sin() + 0.2 * (i as f32 * 2.1).sin())
+        .collect();
+    let sample = meter(&x, 20.0, 1.0);
+    let truth = true_peak(&x, "ar");
+    for (s, t) in sample.iter().zip(&truth).step_by(BLOCK_SIZE) {
+        assert!(t >= &(s - 1e-4), "true peak {t} under the sample peak {s}");
+    }
+}
