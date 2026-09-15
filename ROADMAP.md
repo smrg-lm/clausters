@@ -123,6 +123,12 @@ already carry it.
   line in each client. **Distinct from the ownership question in section 2**:
   this one uses the map that is already there.
 
+- ⬜ **The page suite is one browser, and the second one found a defect it had
+  been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
+  disagree about what an API refuses, so a page that is wrong everywhere passes
+  here whenever Chrome is the lenient one. Needs a decision: a rule for how the
+  pages assert, and whether a by-hand Firefox pass joins the release checks.
+
 - ⬜ **The manual ordering family is in neither client: `/node_before`,
   `/node_after`, `/node_order`, `/group_head`, `/group_tail`**
   (`clients/python/PLAN.md`, Found by use). The older half of the subject the

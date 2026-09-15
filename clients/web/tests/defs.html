@@ -147,10 +147,33 @@
         }
         log(`re-booted after quit: ${reborn.groups} group(s), `
           + `${resized.audioBuses} audio buses`);
+
+        // Closing the engine twice **at once** is one close. A session does
+        // exactly this -- it closes the server it owns, which quits the engine
+        // it booted, and then closes the engine itself, without awaiting the
+        // first -- so the second call lands while `context.close()` is still in
+        // flight. An `AudioContext` refuses a second close outright, and with
+        // nobody awaiting it that surfaced as an unhandled rejection at the end
+        // of an otherwise finished run.
+        // Asserted as **one close**, not as "no exception": whether the
+        // second call throws is the browser's to decide (Firefox refuses it,
+        // Chrome shrugs), and this suite is Chrome. What must hold everywhere
+        // is that both callers wait on the same close.
+        const engine = server.engine;
+        const first = engine.close();
+        const second = engine.close();
+        if (first !== second) {
+          throw new Error("two closes at once were two closes");
+        }
+        await Promise.all([first, second]);
+        if (engine.context.state !== "closed") {
+          throw new Error(`the engine did not close: ${engine.context.state}`);
+        }
         server.close();
 
         verdict(`PASS: page carrier def round trip, peak ${peak.toFixed(3)}, `
-          + `tree empty after free, and quit -> boot left the handle usable`);
+          + `tree empty after free, quit -> boot left the handle usable, `
+          + `and two closes at once were one`);
       }
 
       document.getElementById("boot").onclick = () =>

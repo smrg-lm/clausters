@@ -150,6 +150,8 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
     // asked for it, so it reaches that client's listeners and nobody else's.
     const listeners = new Map<number, Set<ReplyListener>>();
     let nextPeer = DEFAULT_PEER;
+    /** The one close, remembered — see `close` below. */
+    let closing: Promise<void> | null = null;
     raw.onReply = (bytes, peer) => {
         const mine = listeners.get(peer);
         if (mine) for (const listener of [...mine]) listener(bytes);
@@ -177,15 +179,25 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
             raw.bufferLoad(index, channels, sampleRate, samples),
         resume: () => raw.context.resume(),
         suspend: () => raw.context.suspend(),
-        close: async () => {
-            // Idempotent on purpose: a session closes the server it owns (which
-            // quits the engine it booted) and then the engine itself, so this
-            // runs twice for one shutdown. An `AudioContext` already closed
-            // throws rather than shrugging, and there is nothing to report.
-            if (raw.context.state === "closed") return;
-            listeners.clear();
-            raw.dispose();
-            await raw.context.close();
+        close: () => {
+            // Idempotent on purpose, and idempotent against **overlap** rather
+            // than only against a second call afterwards: a session closes the
+            // server it owns (which quits the engine it booted) and then the
+            // engine itself, without awaiting the first — so the second call
+            // arrives while `context.close()` is still in flight, when the
+            // state is not yet `"closed"` and a state check waves it through.
+            // An `AudioContext` refuses the second close outright ("Can't
+            // close an AudioContext twice"), and since nobody awaited it, it
+            // surfaced as an unhandled rejection in the page's console at the
+            // end of an otherwise finished run. Remembering the promise is
+            // what makes both callers wait on one close.
+            closing ??= (async () => {
+                if (raw.context.state === "closed") return;
+                listeners.clear();
+                raw.dispose();
+                await raw.context.close();
+            })();
+            return closing;
         },
     };
 }

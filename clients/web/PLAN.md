@@ -3073,6 +3073,28 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The page suite is one browser, and the second one found a defect it had
+  been passing over** *(found 2026-09-16: the user opened
+  `examples/basics/group-order.html` in Firefox and got `Uncaught (in promise)
+  DOMException: Can't close an AudioContext twice` -- the fix is below, the gap
+  is that nothing here would have found it)*. `test.sh` runs every acceptance
+  page under one headless Chrome. That is the right default -- a second browser
+  doubles the slowest part of the suite -- and it is not free: the two engines
+  disagree about what an API **refuses**, so a page that is wrong everywhere
+  passes here whenever Chrome is the lenient one. Two known instances now, and
+  they are the same shape: the wheel's units (recorded above, and answered with
+  a page a person opens by hand) and closing an `AudioContext` twice, which
+  Firefox throws on and Chrome shrugs at.
+
+  What to do about it is a decision, not typing, which is why this is written
+  rather than fixed. The cheap half is a **rule for the pages**: assert the
+  *mechanism* rather than the absence of an exception -- `defs.html` now checks
+  that two concurrent closes are one promise, which fails in either browser,
+  where "it did not throw" only fails in one. The expensive half is a second
+  browser in the suite, and it is worth pricing rather than assuming: a
+  Firefox-only pass over the same pages, run by hand before a release the way
+  the feature matrix is, would probably do.
+
 - ✅ **A handle whose server stopped keeps a dead carrier, and this client had
   no way to reopen one** *(the twin of the fix made in `clients/python/PLAN.md`
   on 2026-09-15, named the same day and fixed the day after, when the user
