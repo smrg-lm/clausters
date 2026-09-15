@@ -38,6 +38,7 @@ import os
 import struct
 import time
 from array import array
+from typing import NamedTuple
 
 from . import _libpath, _native
 from .errors import (
@@ -542,6 +543,57 @@ def true_peak(samples, channels: int) -> tuple[float, ...]:
         return tuple(_native.true_peak(samples, channels, c) for c in range(channels))
     except Exception:
         return ()
+
+
+class Loudness(NamedTuple):
+    """What a loudness measurement reports, as `loudness` returns it."""
+
+    integrated: float
+    """The gated integrated loudness, in LUFS: the programme's loudness."""
+    range: float
+    """The loudness range, in LU: how far the short-term loudness spreads."""
+    momentary_max: float
+    """The loudest 400 ms, in LUFS."""
+    short_term_max: float
+    """The loudest 3 s, in LUFS."""
+
+
+def loudness(samples, channels: int, rate: float,
+             weights=None) -> Loudness | None:
+    """The **loudness** of an interleaved buffer, measured by the shared core
+    (`clausters_core_loudness`) as ITU-R BS.1770 and EBU R 128 define it.
+
+    A peak says how close a signal came to full scale; loudness says how loud
+    it sounds, which is the number a delivery specification asks for (EBU R 128
+    targets -23 LUFS, streaming services around -14). Each channel is
+    K-weighted -- a high shelf for the head and a high-pass under 38 Hz -- and
+    its mean square summed with the channel weights.
+
+    Returns a `Loudness`: the **integrated** loudness (gated at -70 LUFS and
+    10 LU under what that leaves), the **range** (EBU Tech 3342: the spread of
+    the 3 s loudness between its 10th and 95th percentiles), and the loudest
+    **momentary** (400 ms) and **short-term** (3 s) readings. Silence reads
+    ``-inf``, and a range with no spread ``0.0``.
+
+    ``weights`` is one per channel -- ``0.0`` leaves one out, ``1.41`` is a
+    surround -- or ``None`` for the weights BS.1770 gives a layout known by its
+    count: mono, stereo, L R C, L R Ls Rs, L R C Ls Rs, and L R C LFE Ls Rs for
+    six or more.
+
+    ``None`` for a request that cannot be met (no samples, no channels, a rate
+    under 10 Hz, weights that are not one per channel) or where the core library
+    is not loadable: a loudness is a measurement a caller asked for, so a silent
+    Python fallback would be a different number wearing its name.
+    """
+    if channels <= 0 or not samples:
+        return None
+    try:
+        from . import _native
+
+        measured = _native.loudness(samples, channels, rate, weights)
+    except Exception:
+        return None
+    return None if measured is None else Loudness(*measured)
 
 
 def channel_stats(samples, channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:

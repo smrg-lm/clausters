@@ -337,5 +337,96 @@
       ],
       "samplePeak": 1.0
     }
+  ],
+  "loudness": [
+    {
+      "case": "tone_minus_23",
+      "rate": 48000,
+      "channels": 2,
+      "segments": [
+        [
+          4.0,
+          [
+            -23.0,
+            -23.0
+          ]
+        ]
+      ],
+      "weights": null,
+      "integrated": -22.993303652018334,
+      "range": 0.0,
+      "momentaryMax": -22.992779271490875,
+      "shortTermMax": -22.993226710892838
+    },
+    {
+      "case": "two_steps",
+      "rate": 44100,
+      "channels": 2,
+      "segments": [
+        [
+          3.5,
+          [
+            -20.0,
+            -20.0
+          ]
+        ],
+        [
+          3.5,
+          [
+            -30.0,
+            -30.0
+          ]
+        ]
+      ],
+      "weights": null,
+      "integrated": -22.590717045439753,
+      "range": 9.999943099956518,
+      "momentaryMax": -19.993843705051162,
+      "shortTermMax": -19.994291455069668
+    },
+    {
+      "case": "five_channels",
+      "rate": 48000,
+      "channels": 5,
+      "segments": [
+        [
+          3.0,
+          [
+            -28.0,
+            -28.0,
+            -24.0,
+            -30.0,
+            -30.0
+          ]
+        ]
+      ],
+      "weights": null,
+      "integrated": -23.016281352060968,
+      "range": 0.0,
+      "momentaryMax": -23.015753965566695,
+      "shortTermMax": -23.01631021233747
+    },
+    {
+      "case": "weighted",
+      "rate": 48000,
+      "channels": 2,
+      "segments": [
+        [
+          3.0,
+          [
+            -20.0,
+            -6.0
+          ]
+        ]
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ],
+      "integrated": -23.003606653417613,
+      "range": 0.0,
+      "momentaryMax": -23.00307926417271,
+      "shortTermMax": -23.003635513416963
+    }
   ]
 }

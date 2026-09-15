@@ -45,6 +45,27 @@ def signals():
     }
 
 
+LOUDNESS_CASES = [
+    ("tone_minus_23", 48000, 2, [[4.0, [-23.0, -23.0]]], None),
+    ("two_steps", 44100, 2, [[3.5, [-20.0, -20.0]], [3.5, [-30.0, -30.0]]], None),
+    ("five_channels", 48000, 5, [[3.0, [-28.0, -28.0, -24.0, -30.0, -30.0]]], None),
+    ("weighted", 48000, 2, [[3.0, [-20.0, -6.0]]], [1.0, 0.0]),
+]
+
+
+def loudness_programme(rate, channels, segments):
+    """Interleaved 1 kHz sine segments, the phase running on across them."""
+    out = []
+    n = 0
+    for seconds, levels in segments:
+        gains = [10 ** (db / 20) for db in levels]
+        for _ in range(round(seconds * rate)):
+            s = math.sin(2 * math.pi * 1000 * n / rate)
+            out.extend(g * s for g in gains[:channels])
+            n += 1
+    return out
+
+
 def main():
     out = {}
     sines = signals()
@@ -166,11 +187,32 @@ def main():
         })
     out["truePeak"] = peaks_true
 
+    # ---- the loudness ----
+    # BS.1770 and EBU R 128's readings over a K-weighted mean square. Each case
+    # is a 1 kHz tone recipe the TS side rebuilds: (seconds, per-channel dBFS)
+    # segments at a rate, and the weights when they are stated.
+    loud = []
+    for name, rate, channels, segments, weights in LOUDNESS_CASES:
+        buf = array("f", loudness_programme(rate, channels, segments))
+        integrated, rng, m_max, s_max = _native.loudness(buf, channels, rate, weights)
+        loud.append({
+            "case": name,
+            "rate": rate,
+            "channels": channels,
+            "segments": segments,
+            "weights": weights,
+            "integrated": integrated,
+            "range": rng,
+            "momentaryMax": m_max,
+            "shortTermMax": s_max,
+        })
+    out["loudness"] = loud
+
     path = pathlib.Path(__file__).with_name("data-vectors.json")
     path.write_text(json.dumps(out, indent=2) + "\n")
     print(f"wrote {path} ({len(out['peaks'])} caches, "
           f"{len(out['peaksStream'])} streamed, {len(out['stereoField'])} pairs, "
-          f"{len(out['truePeak'])} true peaks)")
+          f"{len(out['truePeak'])} true peaks, {len(out['loudness'])} loudness)")
 
 
 if __name__ == "__main__":

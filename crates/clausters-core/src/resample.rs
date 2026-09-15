@@ -916,4 +916,44 @@ mod tests {
             "no span"
         );
     }
+
+    /// **EBU Tech 3341, Table 1, cases 15-19**: the true-peak minimum
+    /// requirements that are tones, each within +0.2/-0.4 dBTP of what it
+    /// names. Stereo sines tapered with 10 ms fades, as the table asks. Cases
+    /// 20-23 are synthesized at 4x the rate and downsampled through an
+    /// anti-aliasing filter the document does not give, so they are not
+    /// reproduced here.
+    #[test]
+    fn tech3341_true_peak_cases_15_to_19() {
+        let fs = 48_000.0f64;
+        let tone = |divisor: f64, amplitude: f64, phase_deg: f64| {
+            let n = fs as usize;
+            let fade = (0.01 * fs) as usize;
+            let mut x = Vec::with_capacity(2 * n);
+            for i in 0..n {
+                let taper = (i.min(n - 1 - i) as f64 / fade as f64).min(1.0);
+                let s = amplitude
+                    * taper
+                    * (core::f64::consts::TAU * i as f64 / divisor + phase_deg.to_radians()).sin();
+                x.extend([s as f32, s as f32]);
+            }
+            x
+        };
+        for (case, divisor, amplitude, phase, want) in [
+            (15, 4.0, 0.50, 0.0, -6.0),
+            (16, 4.0, 0.50, 45.0, -6.0),
+            (17, 6.0, 0.50, 60.0, -6.0),
+            (18, 8.0, 0.50, 67.5, -6.0),
+            (19, 4.0, 1.41, 45.0, 3.0),
+        ] {
+            let x = tone(divisor, amplitude, phase);
+            for channel in 0..2 {
+                let got = true_peak_db(&x, 2, channel) as f64;
+                assert!(
+                    got <= want + 0.2 && got >= want - 0.4,
+                    "case {case}, channel {channel}: {got:.3} dBTP against {want} +0.2/-0.4"
+                );
+            }
+        }
+    }
 }

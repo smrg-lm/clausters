@@ -1208,6 +1208,18 @@ export function itemId(element_id: string): number;
 export function lissajous(left: Float32Array, right: Float32Array): Float32Array;
 
 /**
+ * JS face: **the loudness** of an interleaved buffer at `rate` Hz, as
+ * `[integrated, range, momentaryMax, shortTermMax]` — LUFS, LU, LUFS, LUFS,
+ * as ITU-R BS.1770 and EBU R 128 measure them.
+ *
+ * `weights` is one per channel (`0` leaves one out, `1.41` is a surround), or
+ * absent for the weights BS.1770 gives a layout known by its count. A reading
+ * with nothing to measure is `-Infinity`, a range with no spread `0`. Empty for
+ * no channels, a rate under 10 Hz, or weights that are not one per channel.
+ */
+export function loudness(samples: Float32Array, channels: number, rate: number, weights?: Float64Array | null): Float64Array;
+
+/**
  * JS face: one range map by name (`"linlin"`, `"linexp"`, `"lincurve"`, ...),
  * with `clip` naming what an out-of-range input is trimmed to (`"minmax"`,
  * `"min"`, `"max"`, `"none"`). `curve` is read only by the bent pair and the
@@ -1646,6 +1658,7 @@ export interface InitOutput {
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly loudness: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
     readonly mel_to_hz: (a: number) => number;

@@ -8371,3 +8371,48 @@ The 12.04 dB attenuation the standard specifies before oversampling is skipped,
 and the recommendation authorizes exactly that: it is headroom for integer
 arithmetic, and "this step is not necessary if the calculations are performed in
 floating point".
+
+## A loudness meter keeps every block without growing, and redesigns the standard's filter
+
+`clausters_core::loudness` measures what ITU-R BS.1770 and EBU R 128 define,
+and every call the documents leave open was taken from the documents themselves
+or from libebur128, the implementation the field treats as the reference. Three
+of those calls are not obvious from the code.
+
+**Gating needs every block, and a meter may not allocate.** The integrated
+loudness is a mean over all the 400 ms blocks since the reset, gated by a
+threshold computed from those same blocks, so a meter has to keep them; a list
+that grows cannot run on an audio thread, and a live meter is the use the
+streaming type exists for. libebur128 answers with a histogram mode — fixed
+bins of loudness, counted — at the price of reading each bin as its centre. The
+bins here are the same idea at 0.01 LU from −70 to +30 LUFS, but each holds the
+**exact sum of its blocks' energies** beside the count, so every mean the
+readings take is exact and the only approximation left is which side of a gate a
+bin falls on, decided by the bin's own mean (exact for blocks that share a
+level, as a test tone's do). The loudness range reads the same structure for its
+percentiles, 0.01 LU apart. The two windows are a ring of 3 s of per-frame
+energy with running sums, and each sum is **replaced** once per window by one
+accumulated fresh since the window began, so a loud passage followed by silence
+leaves no rounding residue. About 0.9 MB a meter at 48 kHz.
+
+**The filters are redesigned by inverting the table, not by carrying
+constants.** BS.1770 publishes the K-weighting at 48 kHz only and asks for "the
+same frequency response" elsewhere. The bilinear transform is invertible in
+closed form — `K² = (1+a1+a2)/(1−a1+a2)`, and the numerator gains out of
+`b0+b1+b2`, `b0−b1+b2`, `b0−b2` — so the analogue section is recovered from the
+standard's coefficients and transformed again at the rate asked for. What
+comes back matches libebur128's literals to nine digits, which is how the
+algebra was checked. One difference is deliberate: libebur128 keeps the
+high-pass numerator at `[1, −2, 1]` at every rate, which moves its passband gain
+with the rate (by about 0.002 dB at 44.1 kHz); here the numerator is redesigned
+with the rest, so the gain is the standard's everywhere.
+
+**The documents, not the reference implementation, where the two disagree.**
+Tech 3342 has required the short-term loudness behind the range to be sampled
+at least 10 times a second since its 2016 revision; libebur128 still takes one
+value a second, as the 2011 text allowed, and so the range here samples at
+10 Hz. And the momentary and short-term maxima are taken at every sample rather
+than at the 100 ms block rate, because Tech 3341's case 13 is written to fail
+exactly that: a 400 ms tone that starts off the block grid is never inside one
+window whole, and a meter that looks every 100 ms reads it up to 0.46 LU low.
+

@@ -387,6 +387,12 @@ in the middle of an example.
 | web | `play` | the other half of the row above |
 | web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
+### `buffers/loudness`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
+
 ### `views/meters`
 
 | Only in | Call | Why |

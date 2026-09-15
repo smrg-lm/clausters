@@ -370,3 +370,76 @@ def test_each_channel_is_measured_through_its_stride():
     assert peaks[0] < 0.2 < 0.8 < peaks[1]
     assert ipc.true_peak(x, 0) == ()
     assert ipc.true_peak(array("f", []), 1) == ()
+
+
+# ---- loudness: how loud it sounds, as broadcast measures it ----
+
+
+def _tone(seconds, levels, rate=48000):
+    """An interleaved 1 kHz sine, one peak level in dBFS per channel (``None``
+    for a silent channel), for ``seconds`` -- EBU Tech 3341's test tone."""
+    from array import array
+
+    gains = [0.0 if db is None else 10 ** (db / 20) for db in levels]
+    out = array("f")
+    for i in range(int(seconds * rate)):
+        s = math.sin(2 * math.pi * 1000 * i / rate)
+        out.extend(g * s for g in gains)
+    return out
+
+
+def test_a_stereo_tone_reads_its_peak_level_in_lufs():
+    """EBU Tech 3341's first case: a stereo 1 kHz sine at -23 dBFS reads
+    -23.0 LUFS, integrated, momentary and short-term alike -- the calibration
+    the -0.691 in BS.1770's formula exists for."""
+    from clausters import ipc
+
+    measured = ipc.loudness(_tone(5.0, [-23.0, -23.0]), 2, 48000)
+    assert measured is not None
+    assert abs(measured.integrated - -23.0) < 0.1
+    assert abs(measured.momentary_max - -23.0) < 0.1
+    assert abs(measured.short_term_max - -23.0) < 0.1
+    assert measured.range < 0.1
+
+
+def test_the_range_is_the_spread_of_the_short_term_loudness():
+    """EBU Tech 3342's first case, shortened: a tone 10 dB quieter after the
+    first spreads the short-term loudness by 10 LU."""
+    from array import array
+
+    from clausters import ipc
+
+    x = array("f", _tone(8.0, [-20.0, -20.0]) + _tone(8.0, [-30.0, -30.0]))
+    measured = ipc.loudness(x, 2, 48000)
+    assert measured is not None
+    assert abs(measured.range - 10.0) < 1.0
+
+
+def test_a_zero_weight_leaves_a_channel_out():
+    """A weight per channel, stated: 0.0 measures nothing of that channel
+    whatever it holds, which is how an LFE is left out."""
+    from clausters import ipc
+
+    loud_second = _tone(2.0, [-20.0, 0.0])
+    silent_second = _tone(2.0, [-20.0, None])
+    assert ipc.loudness(loud_second, 2, 48000, weights=[1.0, 0.0]) == \
+        ipc.loudness(silent_second, 2, 48000, weights=[1.0, 0.0])
+    assert ipc.loudness(loud_second, 2, 48000) != \
+        ipc.loudness(silent_second, 2, 48000)
+
+
+def test_nothing_to_measure_and_a_request_that_cannot_be_met():
+    """Silence reads no loudness at all, and a request the core cannot answer
+    reads nothing rather than a number."""
+    from array import array
+
+    from clausters import ipc
+
+    silence = ipc.loudness(array("f", bytes(4 * 48000)), 1, 48000)
+    assert silence is not None
+    assert silence.integrated == -math.inf and silence.range == 0.0
+    x = _tone(1.0, [-20.0])
+    assert ipc.loudness(x, 0, 48000) is None
+    assert ipc.loudness(x, 1, 4) is None
+    assert ipc.loudness(x, 1, 48000, weights=[1.0, 1.0]) is None
+    assert ipc.loudness(array("f"), 1, 48000) is None

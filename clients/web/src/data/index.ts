@@ -31,5 +31,12 @@ export type { TapWindow } from "./taps.ts";
 export { Peaks } from "./peaks.ts";
 export { RECORDING_PERIOD_MS, RecordingStream } from "./recording.ts";
 export type { TakeLike, TakeShape } from "./recording.ts";
-export { channelStats, correlation, lissajous, truePeak } from "./analysis.ts";
+export {
+    channelStats,
+    correlation,
+    lissajous,
+    loudness,
+    truePeak,
+} from "./analysis.ts";
+export type { Loudness } from "./analysis.ts";
 export { deinterleave, fetchAudio, interleave } from "./samples.ts";

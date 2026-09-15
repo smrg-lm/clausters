@@ -184,6 +184,36 @@ picture of the samples structurally cannot show. That is the `signal` measure,
 on by default beside `peak` — a layer over the samples rather than a picture
 that replaces them, so the amplitude does not jump as a zoom reaches them.
 
+**And how loud it sounds.** A peak says how close a signal came to full scale;
+it says nothing about loudness, since a snare hit and a sustained pad can share
+a peak and sound twenty decibels apart. **Loudness** is the number a delivery
+specification asks for — EBU R 128 targets −23 LUFS for broadcast, streaming
+services publish their own, around −14 — and it is measured the way ITU-R
+BS.1770 defines it: each channel **K-weighted** (a high shelf standing in for
+the head, a high-pass under 38 Hz), its mean square summed over the channels
+with their weights, in LUFS.
+
+```ts
+import { data } from "clausters";
+
+const measured = data.loudness(samples, channels, rate);
+measured.integrated;       // LUFS: the programme's loudness
+measured.range;            // LU: how far its short-term loudness spreads
+measured.momentaryMax;     // LUFS: the loudest 400 ms
+measured.shortTermMax;     // LUFS: the loudest 3 s
+```
+
+The **integrated** loudness is the whole take, in 400 ms blocks gated twice —
+at −70 LUFS, so silence does not pull it down, and 10 LU under what that
+leaves, so the quiet passages do not either. The **range** is EBU Tech 3342's:
+the spread of the 3 s loudness between its 10th and 95th percentiles, so a fade
+or a single gunshot does not decide it. A stereo 1 kHz tone at −23 dBFS reads
+−23.0 LUFS, which is the calibration the formula is built around; silence reads
+`-Infinity`. The channels are weighted by their count — mono, stereo, 5.0 with
+the surrounds at 1.41, and L R C LFE Ls Rs for six, the LFE left out — and a
+layout that count does not describe says so with a `weights` array, one per channel.
+`undefined` for a request that cannot be measured.
+
 **To *see* the bus, name it instead**: `await scope(bus)` opens an
 oscilloscope window on it, and a `scope` widget in a GuiDef puts one inside a
 window you compose. The framing and the trigger that make a periodic signal

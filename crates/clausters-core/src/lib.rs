@@ -51,6 +51,9 @@
 //!   client's allocators enforce the same invariants.
 //! - [`measure`] — the stereo-field measurements (correlation, the Lissajous /
 //!   goniometer projection) every meter and phasescope reads.
+//! - [`loudness`] — BS.1770 loudness and EBU R 128's readings over it
+//!   (momentary, short-term, gated integrated, loudness range), one meter fed
+//!   by blocks that a live bus and a file analysis both drive.
 //! - [`oscil`] — the triggered oscilloscope's window sizing and trigger
 //!   alignment, shared by the GUI host and by a client drawing its own trace.
 //! - [`spectrum`] — the per-frame magnitude curve in decibels (window, FFT,
@@ -88,6 +91,7 @@ pub mod edit;
 pub mod envshape;
 pub mod fft;
 pub mod ids;
+pub mod loudness;
 pub mod measure;
 pub mod mixer;
 #[cfg(feature = "notation")]

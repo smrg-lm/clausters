@@ -30,7 +30,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode,
 use clausters_core::{
     builtins, bundle,
     clocksync::SampleClockModel,
-    envshape, measure, osc,
+    envshape, loudness, measure, osc,
     peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
     resample,
@@ -1311,6 +1311,32 @@ pub fn true_peak(samples: &[f32], channels: usize, channel: usize) -> f32 {
         return -1.0;
     }
     resample::true_peak(samples, channels, channel)
+}
+
+/// JS face: **the loudness** of an interleaved buffer at `rate` Hz, as
+/// `[integrated, range, momentaryMax, shortTermMax]` — LUFS, LU, LUFS, LUFS,
+/// as ITU-R BS.1770 and EBU R 128 measure them.
+///
+/// `weights` is one per channel (`0` leaves one out, `1.41` is a surround), or
+/// absent for the weights BS.1770 gives a layout known by its count. A reading
+/// with nothing to measure is `-Infinity`, a range with no spread `0`. Empty for
+/// no channels, a rate under 10 Hz, or weights that are not one per channel.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn loudness(
+    samples: &[f32],
+    channels: usize,
+    rate: f64,
+    weights: Option<Vec<f64>>,
+) -> Vec<f64> {
+    let measured = match weights {
+        Some(w) if w.len() != channels => None,
+        Some(w) => loudness::loudness_with_weights(samples, &w, rate),
+        None => loudness::loudness(samples, channels, rate),
+    };
+    measured.map_or_else(Vec::new, |l| {
+        vec![l.integrated, l.range, l.momentary_max, l.short_term_max]
+    })
 }
 
 /// JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` —

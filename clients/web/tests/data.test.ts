@@ -34,6 +34,7 @@ import {
     deinterleave,
     interleave,
     lissajous,
+    loudness,
     truePeak,
 } from "../src/data/index.ts";
 
@@ -67,6 +68,17 @@ interface Vectors {
         channels: number;
         truePeak: number[];
         samplePeak: number;
+    }[];
+    loudness: {
+        case: string;
+        rate: number;
+        channels: number;
+        segments: [number, number[]][];
+        weights: number[] | null;
+        integrated: number;
+        range: number;
+        momentaryMax: number;
+        shortTermMax: number;
     }[];
 }
 
@@ -267,6 +279,54 @@ test("the true peak matches the Python client, and exceeds the sample peak", () 
     const worst = vectors.truePeak.find((v) => v.case === "fs_over_four_at_45")!;
     const over = 20 * Math.log10(worst.truePeak[0] / worst.samplePeak);
     assert.ok(Math.abs(over - 3.01) < 0.25, `the inter-sample peak: ${over} dB`);
+});
+
+// ---- parity: the loudness ----
+
+/** The generator's recipe: interleaved 1 kHz sine segments, phase running on. */
+function loudnessProgramme(
+    rate: number,
+    channels: number,
+    segments: [number, number[]][],
+): Float32Array {
+    const out: number[] = [];
+    let n = 0;
+    for (const [seconds, levels] of segments) {
+        const gains = levels.slice(0, channels).map((db) => 10 ** (db / 20));
+        for (let i = 0; i < Math.round(seconds * rate); i++, n++) {
+            const s = Math.sin((2 * Math.PI * 1000 * n) / rate);
+            for (const g of gains) {
+                out.push(g * s);
+            }
+        }
+    }
+    return Float32Array.from(out);
+}
+
+test("the loudness matches the Python client", () => {
+    for (const v of vectors.loudness) {
+        const samples = loudnessProgramme(v.rate, v.channels, v.segments);
+        const got = loudness(samples, v.channels, v.rate, v.weights ?? undefined);
+        assert.ok(got, v.case);
+        for (const key of ["integrated", "range", "momentaryMax", "shortTermMax"] as const) {
+            assert.ok(
+                Math.abs(got[key] - v[key]) < 1e-6,
+                `${v.case} ${key}: ${got[key]} vs ${v[key]}`,
+            );
+        }
+    }
+    // And the claim the calibration makes: a stereo tone at -23 dBFS reads
+    // -23 LUFS (EBU Tech 3341, case 1).
+    const tone = vectors.loudness.find((v) => v.case === "tone_minus_23")!;
+    assert.ok(Math.abs(tone.integrated + 23) < 0.1, `${tone.integrated}`);
+});
+
+test("a loudness request that cannot be met reads nothing", () => {
+    const x = loudnessProgramme(48000, 1, [[0.5, [-20]]]);
+    assert.equal(loudness(x, 0, 48000), undefined);
+    assert.equal(loudness(x, 1, 4), undefined);
+    assert.equal(loudness(x, 1, 48000, [1, 1]), undefined);
+    assert.equal(loudness(new Float32Array(48000), 1, 48000)?.integrated, -Infinity);
 });
 
 test("a channel the buffer does not have has no true peak", () => {

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 65
+CORE_ABI_VERSION = 66
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -223,6 +223,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_size_t,
     ]
     lib.clausters_core_true_peak.restype = ctypes.c_float
+    # The loudness of an interleaved buffer (ABI v66): four doubles out, and
+    # the weights a nullable pointer.
+    lib.clausters_core_loudness.argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.c_size_t,
+        ctypes.c_double, ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+    ]
+    lib.clausters_core_loudness.restype = ctypes.c_int
     # The axis a break-point curve is drawn against (ABI v38): the kept axis
     # goes in and comes out through the same two doubles.
     lib.clausters_core_curve_axis.argtypes = [
@@ -3672,6 +3680,31 @@ def true_peak(samples, channels: int = 1, channel: int = 0) -> float:
     if channels <= 0 or not 0 <= channel < channels:
         raise ValueError(f"channel {channel} of {channels}")
     return float(lib().clausters_core_true_peak(_ptr(a), len(a), channels, channel))
+
+
+def loudness(samples, channels: int, rate: float,
+             weights=None) -> tuple[float, float, float, float] | None:
+    """The **loudness** of an interleaved buffer, as ITU-R BS.1770 and EBU R 128
+    measure it: ``(integrated, range, momentary_max, short_term_max)`` in LUFS,
+    LU, LUFS and LUFS.
+
+    ``weights`` is one per channel (``0.0`` leaves one out, ``1.41`` is a
+    surround), or ``None`` for the weights BS.1770 gives a layout known by its
+    count. A reading with nothing to measure is ``-inf``, a range with no spread
+    ``0.0``; ``None`` for a request that cannot be met (no channels, a rate
+    under 10 Hz, weights that are not one per channel)."""
+    a, _ = _as_array(samples)
+    if channels <= 0:
+        return None
+    w = None
+    if weights is not None:
+        if len(weights) != channels:
+            return None
+        w = (ctypes.c_double * channels)(*weights)
+    out = (ctypes.c_double * 4)()
+    rc = lib().clausters_core_loudness(_ptr(a), len(a), channels, float(rate),
+                                       w, out)
+    return None if rc != 0 else (out[0], out[1], out[2], out[3])
 
 
 def lissajous(left, right) -> list[tuple[float, float]]:

@@ -16,6 +16,7 @@
 
 import {
     channel_stats,
+    loudness as coreLoudness,
     true_peak,
     correlation as coreCorrelation,
     lissajous as coreLissajous,
@@ -47,14 +48,6 @@ export function lissajous(left: Float32Array, right: Float32Array): Float32Array
 }
 
 /**
- * The **peak and RMS** of one channel of an interleaved buffer, as
- * `[peak, rms]` — what a render reports about what it produced.
- *
- * The stride walk measures without deinterleaving first, so these are the same
- * two numbers the server and the Python client report for the same audio. An
- * empty pair for a channel the buffer does not have.
- */
-/**
  * The **true peak** of one channel of an interleaved buffer, in linear
  * amplitude — the reconstructed peak rather than the largest sample.
  *
@@ -73,10 +66,73 @@ export function truePeak(
     return true_peak(samples, channels, channel);
 }
 
+/**
+ * The **peak and RMS** of one channel of an interleaved buffer, as
+ * `[peak, rms]` — what a render reports about what it produced.
+ *
+ * The stride walk measures without deinterleaving first, so these are the same
+ * two numbers the server and the Python client report for the same audio. An
+ * empty pair for a channel the buffer does not have.
+ */
 export function channelStats(
     samples: Float32Array,
     channels: number,
     channel: number,
 ): number[] {
     return [...channel_stats(samples, channels, channel)];
+}
+
+/**
+ * What a loudness measurement reports, as {@link loudness} returns it.
+ */
+export interface Loudness {
+    /** The gated integrated loudness, in LUFS: the programme's loudness. */
+    integrated: number;
+    /** The loudness range, in LU: how far the short-term loudness spreads. */
+    range: number;
+    /** The loudest 400 ms, in LUFS. */
+    momentaryMax: number;
+    /** The loudest 3 s, in LUFS. */
+    shortTermMax: number;
+}
+
+/**
+ * The **loudness** of an interleaved buffer at `rate` Hz, as ITU-R BS.1770 and
+ * EBU R 128 define it.
+ *
+ * A peak says how close a signal came to full scale; loudness says how loud it
+ * sounds, which is the number a delivery specification asks for (EBU R 128
+ * targets -23 LUFS, streaming services around -14). Each channel is K-weighted
+ * — a high shelf for the head and a high-pass under 38 Hz — and its mean square
+ * summed with the channel weights.
+ *
+ * The **integrated** loudness is gated at -70 LUFS and 10 LU under what that
+ * leaves; the **range** is EBU Tech 3342's spread of the 3 s loudness between
+ * its 10th and 95th percentiles; the maxima are the loudest **momentary**
+ * (400 ms) and **short-term** (3 s) readings. Silence reads `-Infinity`, and a
+ * range with no spread `0`.
+ *
+ * `weights` is one per channel — `0` leaves one out, `1.41` is a surround — or
+ * absent for the weights BS.1770 gives a layout known by its count: mono,
+ * stereo, L R C, L R Ls Rs, L R C Ls Rs, and L R C LFE Ls Rs for six or more.
+ * `undefined` for a request that cannot be met: no channels, a rate under
+ * 10 Hz, or weights that are not one per channel.
+ */
+export function loudness(
+    samples: Float32Array,
+    channels: number,
+    rate: number,
+    weights?: readonly number[],
+): Loudness | undefined {
+    const measured = coreLoudness(
+        samples,
+        channels,
+        rate,
+        weights === undefined ? undefined : Float64Array.from(weights),
+    );
+    if (measured.length !== 4) {
+        return undefined;
+    }
+    const [integrated, range, momentaryMax, shortTermMax] = measured;
+    return { integrated, range, momentaryMax, shortTermMax };
 }

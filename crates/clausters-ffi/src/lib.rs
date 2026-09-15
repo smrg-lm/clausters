@@ -445,7 +445,11 @@ pub use time::*;
 /// filter at 4×, which is what makes a reading dBTP — where
 /// `clausters_core_stats` reports the largest sample. **Additive**, and the
 /// counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 65;
+/// **v66 loudness.** `clausters_core_loudness` measures an interleaved buffer
+/// as ITU-R BS.1770 and EBU R 128 do: the gated integrated loudness, the
+/// loudness range and the maximum momentary and short-term loudness.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 66;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

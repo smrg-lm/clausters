@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: loudness</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>buffers/loudness.py</code>: <b>how loud a render sounds, measured the way
+broadcast measures it</b>.
+
+A peak says how close a signal came to full scale; it says nothing about how
+loud it <i>sounds</i>. <b>Loudness</b> does, and it is the number a delivery
+specification asks for: EBU R 128 wants a programme at <b>-23 LUFS</b> with its
+true peak under <b>-1 dBTP</b>. This page renders a short piece offline and
+measures it through the shared core, with the algorithms ITU-R BS.1770 and the
+EBU define: the <b>integrated</b> loudness, gated so that silence and the quiet
+passages do not pull it down; the <b>loudness range</b>, how far the 3 s
+loudness spreads; the loudest <b>momentary</b> (400 ms) and <b>short-term</b>
+(3 s) readings; and the <b>true peak</b> of each channel beside them.
+
+The piece is a verse and a chorus of one arpeggio, eight seconds each, the
+chorus about 20 dB louder than the verse. The integrated loudness sits near the
+chorus, because the verse falls under the relative gate; the range is the
+distance between the two; and the difference between the integrated loudness
+and -23 is the gain R 128 would ask for — reported, not applied, since
+measuring is not editing.
+
+It makes no sound and needs no gesture: an offline render has no
+<code>AudioContext</code> to unlock. Needs <code>./build.sh</code> in
+<code>clients/web</code> first (<code>dist/</code> is git-ignored); serve it
+over HTTP (<code>python3 -m http.server</code>) and open
+<code>/examples/buffers/loudness.html</code>.</div>
+
+      <div class="row">
+        <button id="render">render and measure</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import { Routine, Session, data, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+
+      // EBU R 128's programme loudness and its true-peak ceiling.
+      const TARGET_LUFS = -23.0;
+      const CEILING_DBTP = -1.0;
+
+      // ---- the piece ----
+      // One arpeggio, a verse at `amp` 0.03 and a chorus at 0.3: 64 notes each,
+      // a quarter beat apart, so eight seconds apiece at two beats a second.
+      const piece = new seq.Pbind({
+        freq: new seq.Pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], 22),
+        dur: 0.25,
+        amp: new seq.Pseq([new seq.Pn(0.03, 64), new seq.Pn(0.3, 64)], 1),
+      });
+
+      const PIECE_BEATS = 128 * 0.25;   // two sections of 64 notes, a quarter beat each
+      const TAIL = 1.0;                 // beats: the release, and room
+
+      // ---- render, then measure ----
+      // The clock drives a score the engine's renderer turns into samples. A
+      // render ends at the score's last event, so a `/node_free 0` after the
+      // release is that event -- without it the last note's tail is cut off.
+      // Both measurements read the samples through the shared core, the same
+      // functions the GUI host's meters use.
+      async function run() {
+        $("render").disabled = true;
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        session.play(piece);
+
+        new Routine(function* close() {
+          yield PIECE_BEATS + TAIL;
+          session.server.sendBundle([["/node_free", ["i", 0]]]);
+        }).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
+        session.close();
+        const measured = data.loudness(stats.samples, stats.channels, stats.sampleRate);
+        let dbtp = -Infinity;
+        for (let c = 0; c < stats.channels; c++) {
+          const peak = data.truePeak(stats.samples, stats.channels, c);
+          dbtp = Math.max(dbtp, peak > 0 ? 20 * Math.log10(peak) : -Infinity);
+        }
+
+        const f = (v) => v.toFixed(1).padStart(6);
+        log(`rendered ${stats.duration.toFixed(2)} s`);
+        log(`integrated  ${f(measured.integrated)} LUFS`);
+        log(`range       ${f(measured.range)} LU`);
+        log(`momentary   ${f(measured.momentaryMax)} LUFS max`);
+        log(`short-term  ${f(measured.shortTermMax)} LUFS max`);
+        log(`true peak   ${f(dbtp)} dBTP`);
+        const gain = TARGET_LUFS - measured.integrated;
+        const after = dbtp + gain;
+        log(`to reach ${TARGET_LUFS} LUFS: ${gain >= 0 ? "+" : ""}${gain.toFixed(1)} dB, `
+          + `which puts the true peak at ${after >= 0 ? "+" : ""}${after.toFixed(1)} dBTP `
+          + `(${after <= CEILING_DBTP ? "under" : "over"} the ${CEILING_DBTP} dBTP ceiling)`);
+        $("render").disabled = false;
+      }
+
+      $("render").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
