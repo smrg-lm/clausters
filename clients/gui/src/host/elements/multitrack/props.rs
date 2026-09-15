@@ -62,6 +62,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
+        segments: parse_segments(props),
         meters: parse_meters(props),
         zoom: HashMap::new(),
         curve_zoom: HashMap::new(),
@@ -279,6 +280,35 @@ pub(super) fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> 
         .unwrap_or_default()
 }
 
+/// The `segments` prop: the flat `box source start frames` quadruple array —
+/// the spans each join is made of, in the order they play, grouped by the box
+/// they belong to.
+///
+/// A trailing partial group is dropped rather than half-read, and so is a span
+/// that reads nothing; a box whose spans are all dropped is not named, so it is
+/// drawn from its own buffer as any box is.
+pub(super) fn parse_segments(props: &Map<String, Value>) -> HashMap<String, Vec<super::Span>> {
+    let Some(Value::Array(items)) = props.get("segments") else {
+        return HashMap::new();
+    };
+    let mut out: HashMap<String, Vec<super::Span>> = HashMap::new();
+    for group in items.as_chunks::<4>().0 {
+        let (Some(name), Some(source)) = (group[0].as_str(), group[1].as_i64()) else {
+            continue;
+        };
+        let frames = group[3].as_f64().unwrap_or(0.0);
+        if source < 0 || frames <= 0.0 {
+            continue;
+        }
+        out.entry(name.to_string()).or_default().push(super::Span {
+            source: source as i32,
+            start: group[2].as_f64().unwrap_or(0.0).max(0.0),
+            frames,
+        });
+    }
+    out
+}
+
 /// A name set as a `/gui_set` value: the same space-separated list the prop
 /// takes.
 pub(super) fn names_of(v: &Value) -> Vec<String> {
@@ -466,6 +496,12 @@ impl Multitrack {
             }
             "loops" => {
                 self.loops = names_of(v);
+                true
+            }
+            // **The spans a join is drawn from**, replaced whole like every
+            // other list here.
+            "segments" => {
+                self.segments = parse_segments(&parse::as_array_props("segments", v));
                 true
             }
             // **Where each track's level is read from.** Set like every other

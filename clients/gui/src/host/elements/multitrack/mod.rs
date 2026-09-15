@@ -74,6 +74,17 @@ const GAP: f32 = 4.0;
 /// A lane's thickness when nothing says otherwise.
 const LANE_H: f32 = 96.0;
 
+/// **One span of a join**: a run of one take, as the `segments` prop names it.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Span {
+    /// The server buffer the span reads.
+    pub source: i32,
+    /// The frame of that take the span starts at.
+    pub start: f64,
+    /// How many frames it reads.
+    pub frames: f64,
+}
+
 /// **How far a drag reaches for a neighbour's edge**, in device pixels.
 ///
 /// The same order as the grab margin a box's own edges have
@@ -177,6 +188,14 @@ pub struct Multitrack {
     /// here is what an edge drag may do and how the samples are drawn under a
     /// box longer than they are.
     loops: Vec<String>,
+    /// **The spans each join is made of**, by box name — the `segments` prop.
+    ///
+    /// A box named here is drawn from the takes these spans read, span by span,
+    /// and its own source is never fetched: a join owns no samples, so the
+    /// picture is of the takes it is spans of, which are already drawn, and the
+    /// box is whole the moment the join is made instead of empty until its
+    /// buffer has been built and downloaded.
+    pub(super) segments: HashMap<String, Vec<Span>>,
     /// Which layers are **not drawn**, by curve name. What is hidden is not
     /// edited either, so hiding the layer in hand hands it back to the
     /// placement.
@@ -283,6 +302,7 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             loops: Vec::new(),
+            segments: HashMap::new(),
             meters: HashMap::new(),
             zoom: HashMap::new(),
             curve_zoom: HashMap::new(),
@@ -421,10 +441,16 @@ impl Element for Multitrack {
     }
 
     fn needs(&self) -> Needs {
+        // **A join asks for the takes it reads, not for itself**: its spans
+        // are drawn from those, so its own buffer would be a second download
+        // of samples already on screen.
         let mut takes: Vec<i32> = self
             .clips
             .iter()
-            .map(|c| c.source)
+            .flat_map(|c| match self.segments.get(&c.name) {
+                Some(spans) => spans.iter().map(|s| s.source).collect::<Vec<_>>(),
+                None => vec![c.source],
+            })
             .filter(|n| *n >= 0)
             .collect();
         takes.sort_unstable();

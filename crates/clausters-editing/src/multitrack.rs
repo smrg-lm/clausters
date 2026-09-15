@@ -271,6 +271,49 @@ pub fn lanes(piece: &Multitrack) -> Vec<Value> {
 
 /// The boxes as the widget's flat septuples: name, lane, at, duration, the
 /// frame of its source its own zero reads, label, buffer.
+/// **The spans each join on screen is made of**, as the widget's flat
+/// `box source start frames` quadruples: the take each span reads, the frame
+/// of it the span starts at and how many frames it reads, in the order they
+/// play.
+///
+/// What lets a join be drawn from the takes it is spans of instead of from its
+/// own buffer, which owns no samples and is built on the server after the edit
+/// that made it: the picture is whole the moment the join is, and the join's
+/// buffer is never downloaded. A box whose source is not a join this caller
+/// knows is not named; nor is one with a span this caller cannot resolve to a
+/// buffer and a length, which is then drawn from its own buffer as any box is.
+pub fn segments(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for box_ in picture::boxes(piece) {
+        let Some(parts) = box_.source.and_then(|id| look.sources.parts(id)) else {
+            continue;
+        };
+        let spans: Option<Vec<[Value; 4]>> = parts
+            .iter()
+            .map(|part| {
+                let source = part.source.source;
+                let bufnum = look.sources.bufnum(source);
+                let (start, frames) = match &part.source.range {
+                    Some(range) => (range.start, range.len()),
+                    None => (0, look.sources.frames(source)?),
+                };
+                (bufnum >= 0 && frames > 0).then(|| {
+                    [
+                        json!(box_.region.0.to_string()),
+                        json!(bufnum),
+                        json!(start),
+                        json!(frames),
+                    ]
+                })
+            })
+            .collect();
+        if let Some(spans) = spans {
+            out.extend(spans.into_iter().flatten());
+        }
+    }
+    out
+}
+
 pub fn clips(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
     for box_ in picture::boxes(piece) {
@@ -460,6 +503,7 @@ pub fn props(piece: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("points".into(), Value::Array(points(piece, look)));
     out.insert("hidden".into(), json!(hidden(piece)));
     out.insert("loops".into(), json!(loops(piece)));
+    out.insert("segments".into(), Value::Array(segments(piece, look)));
     out
 }
 

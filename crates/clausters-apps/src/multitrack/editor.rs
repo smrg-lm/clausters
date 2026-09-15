@@ -1085,6 +1085,32 @@ mod tests {
         };
         let made = made["id"].clone();
 
+        // **And the window is told what the join is made of**, so it draws the
+        // joined box from the take it reads rather than waiting for a buffer
+        // the server has yet to build: two spans of buffer 7, the take's second
+        // half and then its first, in the order they play.
+        let props = editor.props(40);
+        let segments = props["segments"]
+            .as_array()
+            .unwrap_or_else(|| panic!("segments in {props:?}"));
+        // Frames, and frames are whole: a span is a count of them.
+        let half = json!(SR as u64);
+        assert_eq!(
+            segments.as_slice(),
+            [
+                json!("12"),
+                json!(7),
+                half.clone(),
+                half.clone(),
+                json!("12"),
+                json!(7),
+                json!(0),
+                half,
+            ]
+            .as_slice(),
+            "the joined box, drawn from the take it is spans of"
+        );
+
         let second = editor.event(
             &event(40, 2, 0, "join", vec![json!("12"), json!("14")]),
             first.version,

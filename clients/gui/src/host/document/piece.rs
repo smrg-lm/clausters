@@ -69,6 +69,10 @@ pub struct Look<'a> {
     pub rate: f64,
     /// The session's samples, once somebody resolved them to server buffers.
     pub takes: Option<&'a Takes>,
+    /// **What each source is**, when the piece came from a session: the table a
+    /// join's spans are read out of, so a join is drawn from the takes it reads.
+    pub sources:
+        Option<&'a std::collections::BTreeMap<SourceId, clausters_document::session::Source>>,
 }
 
 impl Default for Look<'_> {
@@ -77,6 +81,7 @@ impl Default for Look<'_> {
             tempo: TempoMap::new(DEFAULT_TEMPO),
             rate: 48_000.0,
             takes: None,
+            sources: None,
         }
     }
 }
@@ -181,6 +186,19 @@ impl projection::Buffers for Look<'_> {
     /// only thing that reads it back.
     fn source(&self, bufnum: i64) -> Option<SourceId> {
         self.takes?.source_of(i32::try_from(bufnum).ok()?)
+    }
+
+    /// The spans a join is made of, out of the session's own table — the
+    /// same statement a client's editor answers from the joins it minted.
+    fn parts(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
+        match &self.sources?.get(&source)?.location {
+            clausters_document::session::Location::Segments { parts } => Some(parts.clone()),
+            _ => None,
+        }
+    }
+
+    fn frames(&self, source: SourceId) -> Option<u64> {
+        self.takes?.get(source)?.frames
     }
 }
 
@@ -309,6 +327,7 @@ mod tests {
             tempo: TempoMap::new(480.0), // 480 beats a second: 100 frames each
             rate: 48_000.0,
             takes: None,
+            sources: None,
         }
     }
 
@@ -383,6 +402,7 @@ mod tests {
             tempo: tempo_map(&piece),
             rate: 48_000.0,
             takes: None,
+            sources: None,
         };
         // The region at beat 4 lasting 2 beats: it starts one second per beat
         // in, and lasts *two* seconds a beat.
@@ -411,6 +431,7 @@ mod tests {
             tempo: tempo_map(&piece()),
             rate: 48_000.0,
             takes: None,
+            sources: None,
         };
         assert_eq!(look.frame_at(3.0), 3.0 * 48_000.0);
         assert_eq!(look.frames_over(3.0, 2.0), 2.0 * 48_000.0);
@@ -551,6 +572,7 @@ mod tests {
             tempo: TempoMap::new(1.0), // a beat a second
             rate: 48_000.0,
             takes: Some(&takes),
+            sources: None,
         };
         // The piece as a split of region 12 leaves it: the original shortened,
         // and a tail beside it under a name that is not an id.
@@ -595,7 +617,10 @@ mod tests {
                     "the source its buffer number resolves to"
                 );
                 assert_eq!(window.start, 0.5, "half a second in, as the box said");
-                assert_eq!(window.duration, 1.0);
+                // **How much of its source the window reaches**, not what the
+                // box shows: the take holds two seconds, and a region is a view
+                // onto all of it. The box's own second is its length above.
+                assert_eq!(window.duration, 2.0, "the whole take the table knows");
             }
             other => panic!("a window onto the samples it named: {other:?}"),
         }

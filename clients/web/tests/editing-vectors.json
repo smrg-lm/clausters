@@ -352,7 +352,8 @@
         0.0,
         1.0,
         0.0
-      ]
+      ],
+      "segments": []
     }
   },
   {
@@ -503,7 +504,8 @@
         0.0,
         1.0,
         0.0
-      ]
+      ],
+      "segments": []
     }
   },
   {
@@ -670,7 +672,8 @@
         0.0,
         1.0,
         0.0
-      ]
+      ],
+      "segments": []
     }
   },
   {
@@ -2610,6 +2613,7 @@
                   "points": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
+                  "segments": [],
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }
@@ -2974,6 +2978,7 @@
                   "points": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
+                  "segments": [],
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }
@@ -3111,6 +3116,7 @@
                   "points": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
+                  "segments": [],
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }

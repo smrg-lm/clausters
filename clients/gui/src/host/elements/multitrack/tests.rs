@@ -2128,3 +2128,43 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
         "the side is the drag's, not the pointer's"
     );
 }
+
+/// **A join asks for the takes it reads, not for itself** -- and draws from
+/// them -- while a box that is not a join asks for its own buffer as always.
+#[test]
+fn a_join_asks_for_the_takes_its_spans_read_and_not_for_its_own_buffer() {
+    let mt = from_props(&props(
+        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
+            "clips": ["join", "one", 0, 400, 0, "", 9,
+                      "plain", "one", 400, 100, 0, "", 5],
+            "segments": ["join", 7, 200, 200, "join", 7, 0, 200]}"#,
+    ));
+    assert_eq!(
+        mt.needs().takes,
+        vec![5, 7],
+        "the join's spans read buffer 7, and buffer 9 is never fetched"
+    );
+    let spans = &mt.segments["join"];
+    assert_eq!(spans.len(), 2, "in the order they play");
+    assert_eq!(
+        (spans[0].source, spans[0].start, spans[0].frames),
+        (7, 200.0, 200.0)
+    );
+    assert_eq!(
+        (spans[1].source, spans[1].start, spans[1].frames),
+        (7, 0.0, 200.0)
+    );
+}
+
+/// **A span that reads nothing is dropped**, and a box whose spans are all
+/// dropped is not named, so it is drawn from its own buffer.
+#[test]
+fn a_span_that_reads_nothing_is_dropped() {
+    let mt = from_props(&props(
+        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
+            "clips": ["join", "one", 0, 400, 0, "", 9],
+            "segments": ["join", -1, 0, 200, "join", 7, 0, 0, "join", 7]}"#,
+    ));
+    assert!(mt.segments.is_empty());
+    assert_eq!(mt.needs().takes, vec![9], "back to the box's own buffer");
+}

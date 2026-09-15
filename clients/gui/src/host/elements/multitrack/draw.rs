@@ -49,6 +49,49 @@ impl Multitrack {
     /// A box whose lane is gone, whose lane is scrolled off, or which is off
     /// the window is absent rather than reported at zero size: what a caller
     /// wants is what it can draw.
+    /// **A join, drawn from the takes it reads**, one span at a time.
+    ///
+    /// Each span is a run of one take, and it occupies the stretch of the box
+    /// its place in the join says: the join's frame `c` is the span's first,
+    /// so what the box shows at its own time `t` is the take's frame
+    /// `start + (window + t - c)`. Every span is handed to its take's body over
+    /// the part of the box it covers, exactly as a whole box is handed to one,
+    /// so a span scrolls and trims with the box like any other picture of
+    /// those samples. A span whose take has not arrived draws nothing, and the
+    /// box's frame stands under it until it does.
+    fn draw_spans(&self, d: &mut Draw, cr: Rect, local: &View, clip: &Clip, spans: &[Span]) {
+        let (shown_from, shown_to) = (local.start, local.start + local.len);
+        let mut at = 0.0;
+        for span in spans {
+            // The span's stretch of the box, in the box's own time.
+            let from = at - clip.place.start;
+            let to = from + span.frames;
+            at += span.frames;
+            let lo = from.max(shown_from).max(0.0);
+            let hi = to.min(shown_to).min(clip.place.dur);
+            if hi <= lo {
+                continue;
+            }
+            let Some(take) = self.takes.get(&span.source) else {
+                continue;
+            };
+            let x = |t: f64| cr.x + ((t - local.start) / local.len) as f32 * cr.w;
+            let rect = Rect::new(x(lo), cr.y, x(hi) - x(lo), cr.h);
+            let space = TimeSpace::of(
+                View {
+                    start: lo,
+                    len: hi - lo,
+                },
+                clip.place.dur,
+            )
+            .with_window(SourceWindow {
+                start: span.start - from,
+                ..SourceWindow::default()
+            });
+            take.draw_body(d, rect, &space);
+        }
+    }
+
     pub(super) fn boxes_on_screen(
         &self,
         rect: Rect,
@@ -222,7 +265,9 @@ impl Multitrack {
                 looping: self.wraps(&clip.name),
                 ..SourceWindow::default()
             });
-            if let Some(take) = self.takes.get(&clip.source) {
+            if let Some(spans) = self.segments.get(&clip.name) {
+                self.draw_spans(d, cr, &local, clip, spans);
+            } else if let Some(take) = self.takes.get(&clip.source) {
                 take.draw_body(d, cr, &space);
             } else if let Some(roll) = self.rolls.get(&clip.name) {
                 roll.draw_body(d, cr, &space);

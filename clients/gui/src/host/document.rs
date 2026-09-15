@@ -449,6 +449,7 @@ impl Owner {
             tempo: piece::tempo_map(&self.piece),
             rate: self.units_per_second,
             takes: Some(&self.takes),
+            sources: self.session.as_ref().map(|session| &session.sources),
         }
     }
 
