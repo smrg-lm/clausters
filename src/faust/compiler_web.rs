@@ -82,8 +82,13 @@ impl CompilerThread {
     /// `waker` is the socket poke a worker thread uses to end the command
     /// loop's blocking recv. There is no worker thread and no blocking recv in
     /// a page — the host pulls a serving turn before every block — so it is
-    /// accepted and dropped, keeping one call site in `osc::server`.
-    pub fn spawn(_waker: Option<Waker>) -> Self {
+    /// accepted and dropped, keeping one call site in `osc::server`. So is
+    /// `meters`: the compilation runs in the host, not here, so no role slot
+    /// could measure it (`server::meters`).
+    pub fn spawn(
+        _waker: Option<Waker>,
+        _meters: std::sync::Arc<crate::server::meters::Meters>,
+    ) -> Self {
         Self {
             inner: Mutex::new(Inner {
                 pending: Vec::new(),

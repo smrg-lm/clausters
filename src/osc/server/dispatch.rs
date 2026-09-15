@@ -593,6 +593,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/server_errorMode", |s, _, m, _| {
         s.handle_server_error_mode(Args::new(m))
     }),
+    ("/server_load", |s, _, _, f| {
+        s.send_server_load(f);
+        Ok(())
+    }),
     ("/server_notify", |s, _, m, f| {
         s.handle_server_notify(m, f);
         Ok(())

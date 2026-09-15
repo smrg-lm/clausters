@@ -70,6 +70,16 @@ Two sections feed the client's defaults:
   and the blocks that have missed it since boot. Both print as a readable
   block.
 
+  `Server.load()` breaks that one CPU figure down by **role**: the audio block,
+  each DSP worker, the serving turn, the NRT job queue and the Faust compiler.
+  `status()` answers whether the server is keeping up, `load()` answers on
+  what — a def compiling or a soundfile loading costs real time and shows in
+  neither the average nor the peak. The server reports seconds since it booted
+  and the client differences its own interval out of them, so the first call
+  has no `share` to report and the second one does; `format_load(rows)` prints
+  the list. The figure is time the work was in progress, not per cent of a
+  core.
+
   `ServerOptions` also carries the server's **behavior options** — `workers`,
   `tcp`, `ws`, `midi`, `persist`, `max_frame`, `max_clients`, `pin` — which
   have no client-side counterpart: their default `None` emits no flag, so the

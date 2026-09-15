@@ -80,6 +80,30 @@ impl OscServer {
         self.reply(to, "/server_status.reply", args);
     }
 
+    /// Reports where the server's time has gone, one row per role
+    /// (`server::meters`): `/server_load.reply [uptime, n, n x (role, index,
+    /// busy, calls)]`, with `uptime` and `busy` in seconds **since boot**.
+    ///
+    /// **Cumulative on purpose.** A window would have to be reset by whoever
+    /// read it, which is what makes `/server_status`'s peak wrong for two
+    /// pollers at once; here every client differences two replies and owns its
+    /// own interval. `busy` is time the work was in progress, not per cent of
+    /// a core: a DSP worker spinning for its next stage is burning a core and
+    /// is idle by this reading.
+    pub(in crate::osc::server) fn send_server_load(&mut self, to: ClientId) {
+        let meters = self.handle.meters();
+        let mut args = vec![OscType::Double(meters.uptime())];
+        let report = meters.report();
+        args.push(OscType::Int(report.len() as i32));
+        for load in report {
+            args.push(OscType::String(load.role.as_str().into()));
+            args.push(OscType::Int(load.index as i32));
+            args.push(OscType::Double(load.busy));
+            args.push(OscType::Long(load.calls as i64));
+        }
+        self.reply(to, "/server_load.reply", args);
+    }
+
     /// Reports the server's static configuration so a client can size its own
     /// bus/allocator state from the server instead of hardcoding it:
     /// `/server_query.reply [audio_buses, control_buses, output_channels,

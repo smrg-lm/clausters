@@ -36,6 +36,10 @@ impl OscServer {
             });
         }
         let waker = crate::osc::wake::Waker::to(wake_target).ok();
+        // The async threads account their work in the same table the engine
+        // does, which is what makes `/server_load` one reading of the server
+        // rather than one of the audio thread (`server::meters`).
+        let meters = Arc::clone(handle.meters());
         let translator = CmdTranslator::with_limits(
             handle.sample_rate,
             handle.audio_buses,
@@ -48,7 +52,7 @@ impl OscServer {
             handle,
             translator,
             budget: ServeBudget::UNLIMITED,
-            nrt: NrtRunner::spawn(waker.clone()),
+            nrt: NrtRunner::spawn(waker.clone(), Arc::clone(&meters)),
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
@@ -74,7 +78,7 @@ impl OscServer {
             prune_dead_defs: false,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(waker),
+            faust_compiler: CompilerThread::spawn(waker, Arc::clone(&meters)),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -106,6 +110,8 @@ impl OscServer {
     /// wall-clocked client's bundle timetags still land correctly; pass the
     /// current time for live use, or any fixed origin for deterministic runs.
     pub fn headless(info: ServerInfo, handle: EngineHandle, unix_epoch: f64) -> Self {
+        #[cfg(feature = "faust")]
+        let meters = Arc::clone(handle.meters());
         let translator = CmdTranslator::with_limits(
             handle.sample_rate,
             handle.audio_buses,
@@ -142,7 +148,7 @@ impl OscServer {
             prune_dead_defs: false,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(None),
+            faust_compiler: CompilerThread::spawn(None, meters),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -317,6 +323,10 @@ impl OscServer {
     pub fn run(&mut self) -> io::Result<()> {
         self.udp()?;
         loop {
+            // `Role::Net` is the serving turn and never the wait for the next
+            // packet, so the bracket closes before the blocking recv and
+            // reopens on whatever it returns (`server::meters`).
+            let busy = crate::server::meters::stamp();
             if let Flow::Quit = self.drain_ring() {
                 return Ok(());
             }
@@ -333,6 +343,7 @@ impl OscServer {
             self.pump_buffer_streams();
             let now = self.mono_secs();
             self.overviews.flush(now);
+            self.meter_net(busy);
             let socket = self.socket.as_ref().expect("run() checked the socket");
             let (len, from) = match socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
@@ -342,7 +353,9 @@ impl OscServer {
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                     ) =>
                 {
+                    let busy = crate::server::meters::stamp();
                     self.collect_async();
+                    self.meter_net(busy);
                     continue;
                 }
                 // A previous send to a now-closed client port can surface as
@@ -354,12 +367,14 @@ impl OscServer {
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(e),
             };
+            let busy = crate::server::meters::stamp();
             if len == 0 {
                 // A zero-length datagram is a wake: a reader queued a TCP frame
                 // or a disconnect, or a worker thread finished a job
                 // (`crate::osc::wake`). Collect before looping back, since a
                 // finished result is reported from here and nowhere else.
                 self.collect_async();
+                self.meter_net(busy);
                 continue;
             }
             // The single decode entry point for every transport (`crate::osc`).
@@ -367,11 +382,13 @@ impl OscServer {
                 Ok(packet) => packet,
                 Err(e) => {
                     warn!("malformed OSC packet from {from}: {e}");
+                    self.meter_net(busy);
                     continue;
                 }
             };
             let flow = self.handle_packet(packet, ClientId::Udp(from));
             self.collect_async();
+            self.meter_net(busy);
             if let Flow::Quit = flow {
                 return Ok(());
             }
@@ -391,7 +408,9 @@ impl OscServer {
     /// turns, in arrival order. Nothing is dropped and no reply is lost; a
     /// burst becomes latency instead of a missed deadline.
     pub fn step(&mut self) -> bool {
+        let busy = crate::server::meters::stamp();
         if let Flow::Quit = self.drain_ring_limited(self.budget.ring_packets) {
+            self.meter_net(busy);
             return true;
         }
         // Between arriving and being done: a `/buffer_*` command was queued by
@@ -405,7 +424,16 @@ impl OscServer {
         let now = self.mono_secs();
         self.overviews.flush(now);
         self.collect_async();
+        self.meter_net(busy);
         false
+    }
+
+    /// Closes a `Role::Net` bracket. A turn is metered in pieces because the
+    /// blocking recv sits in the middle of one and waiting is not work.
+    fn meter_net(&self, busy: crate::server::meters::Stamp) {
+        self.handle
+            .meters()
+            .add(crate::server::meters::Role::Net, 0, busy.elapsed_nanos());
     }
 
     /// Sets what one [`step`](Self::step) may do. Defaults to

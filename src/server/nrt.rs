@@ -304,7 +304,7 @@ impl NrtThread {
     /// poked after each finished job so the command loop reports it at once
     /// instead of at its next idle tick — a job that took 2 ms was answered
     /// 100 ms later without it.
-    pub fn spawn(waker: Option<Waker>) -> Self {
+    pub fn spawn(waker: Option<Waker>, meters: Arc<crate::server::meters::Meters>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<NrtRequest>();
         let (res_tx, res_rx) = mpsc::channel();
         let handle = std::thread::Builder::new()
@@ -312,11 +312,16 @@ impl NrtThread {
             .spawn(move || {
                 let mut chain = NrtChain::default();
                 while let Ok(req) = req_rx.recv() {
+                    // The bracket is the job: the wait for the next one is not
+                    // work (`server::meters`).
+                    let busy = crate::server::meters::stamp();
+                    let outcome = chain.run(req.index, req.chained, req.job);
+                    meters.add(crate::server::meters::Role::Nrt, 0, busy.elapsed_nanos());
                     let result = NrtResult {
                         cmd: req.cmd,
                         index: req.index,
                         client: req.client,
-                        outcome: chain.run(req.index, req.chained, req.job),
+                        outcome,
                     };
                     if res_tx.send(result).is_err() {
                         break; // receiver gone: we are shutting down
@@ -501,8 +506,8 @@ fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
 }
 
 impl NrtRunner {
-    pub fn spawn(waker: Option<Waker>) -> Self {
-        NrtRunner::Thread(NrtThread::spawn(waker))
+    pub fn spawn(waker: Option<Waker>, meters: Arc<crate::server::meters::Meters>) -> Self {
+        NrtRunner::Thread(NrtThread::spawn(waker, meters))
     }
 
     pub fn inline() -> Self {

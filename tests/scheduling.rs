@@ -337,7 +337,7 @@ fn faust_synths_survive_block_splits() {
     use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
     use clausters::faust::synth::FaustSynth;
 
-    let compiler = CompilerThread::spawn(None);
+    let compiler = CompilerThread::spawn(None, clausters::server::meters::Meters::detached());
     compiler
         .submit(CompileRequest {
             name: "fdc".into(),

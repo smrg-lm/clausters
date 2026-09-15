@@ -2935,6 +2935,71 @@ fn u_cmd_validates_target_and_index() {
     server.quit();
 }
 
+/// `/server_load.reply` lists one row per role and the figures only grow: the
+/// audio row with the blocks the engine runs, the net row with the turns the
+/// server serves. Cumulative is the contract — a client differences two
+/// replies to get a window of its own — so a second poll may never report less
+/// than the first.
+#[test]
+fn server_load_reports_every_role_cumulatively() {
+    let mut server = TestServer::spawn();
+
+    server.send("/server_load", vec![]);
+    let first = server.recv_until("/server_load.reply");
+    let rows = load_rows(&first);
+    let roles: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
+    assert!(roles.contains(&"audio"), "roles: {roles:?}");
+    assert!(roles.contains(&"net"), "roles: {roles:?}");
+    assert!(roles.contains(&"nrt"), "roles: {roles:?}");
+    // This harness runs no worker threads, so there is no `dsp` row to report.
+    assert!(!roles.contains(&"dsp"), "roles: {roles:?}");
+    let audio_first = rows.iter().find(|r| r.0 == "audio").unwrap().clone();
+    assert_eq!(audio_first.3, 0, "no block has run yet");
+
+    // The test is the audio thread here: run some blocks, then poll again.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..64 {
+        server.engine.process_block(&mut out);
+    }
+    server.send("/server_load", vec![]);
+    let second = server.recv_until("/server_load.reply");
+    let rows2 = load_rows(&second);
+    let audio = rows2.iter().find(|r| r.0 == "audio").unwrap();
+    assert_eq!(audio.3, 64, "one call per block");
+    assert!(audio.2 > 0.0, "a block took some time: {}", audio.2);
+
+    let net_first = rows.iter().find(|r| r.0 == "net").unwrap();
+    let net = rows2.iter().find(|r| r.0 == "net").unwrap();
+    assert!(net.3 > net_first.3, "the server served more turns");
+    assert!(net.2 >= net_first.2, "busy time never goes back");
+
+    server.quit();
+}
+
+/// The rows of a `/server_load.reply`: `(role, index, busy, calls)`.
+fn load_rows(reply: &OscMessage) -> Vec<(String, i32, f64, i64)> {
+    let OscType::Double(uptime) = reply.args[0] else {
+        panic!("expected the uptime first, got {:?}", reply.args[0]);
+    };
+    assert!(uptime > 0.0, "the server has been up for some time");
+    let OscType::Int(n) = reply.args[1] else {
+        panic!("expected a row count, got {:?}", reply.args[1]);
+    };
+    assert_eq!(reply.args.len(), 2 + 4 * n as usize, "four fields per row");
+    reply.args[2..]
+        .chunks(4)
+        .map(|row| match row {
+            [
+                OscType::String(role),
+                OscType::Int(index),
+                OscType::Double(busy),
+                OscType::Long(calls),
+            ] => (role.clone(), *index, *busy, *calls),
+            other => panic!("unexpected row {other:?}"),
+        })
+        .collect()
+}
+
 /// S7: `/server_query.reply` reports the boot-time pool capacities and I/O
 /// channels so a client can size its own allocators from the server. The first
 /// six fields stay stable; the S7 fields are appended.

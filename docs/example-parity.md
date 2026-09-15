@@ -51,6 +51,7 @@ one. Each row says which.
 
 | Example | Why |
 |---|---|
+| `basics/server_load` | reads `/server_load`, whose whole content is time measured with a monotonic clock -- and `wasm32` has none, so the engine a page boots reports every role at zero, exactly as it reports zero for `/server_status`'s CPU fields. The *surface* is ported (`Server.load`, `formatLoad`, `loadName`, covered in `tests/server.test.ts` against a native server); what a page cannot do is have anything to look at. The gap is `clients/web/PLAN.md`, Future directions: an engine in a page has no clock |
 | `editors/load_multitrack` | reopens the session `editors/edit_multitrack.py` writes into `examples/out/`; the page writes no session, since a tab has no filesystem to write its takes into, so there is nothing for a page to reopen |
 | `editors/session` | drives the GUI host as a **separate process** over the session's transport, which is what a page has instead of, not as well as: its host is a canvas in the same page |
 | `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |

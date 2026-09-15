@@ -1518,6 +1518,22 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **Two group verbs exist on the wire and in neither client: `/group_parallel`
+  and `/group_sortMode`** *(found 2026-09-15 while writing the `/server_load`
+  example, which wanted a parallel group so the `dsp` rows would move and had
+  nowhere to ask for one)*. Auto-ordered groups (M12) and parallel groups (M13)
+  are two of the server's own additions over scsynth, `docs/schemas.md`
+  documents both, and a client can only reach them by spelling the message --
+  which is what `clients/python/tests/test_session.py` does
+  (`server.send_msg("/group_parallel", band.id, 1)`), and a raw `send_msg` in a
+  *client* test is the tell. So the gap is not cosmetic: a feature the server
+  advertises has no client end, and the example that would teach it cannot be
+  written in the client's own voice. The shape is a pair of verbs on `Group` --
+  the receiver is the group, so it is `group.parallel(True)` /
+  `group.auto_order(True)` rather than an argument to something else -- and per
+  the non-divergence rule they land in **both** clients in the same commit,
+  with `docs/schemas.md`'s wording as the reference for what each one means.
+
 - ✅ **The multitrack example is a driver with an editor in it, and it should be
   `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py
   no sirve más como está. Había que rehacerlo con edit y sin todos los callbacks

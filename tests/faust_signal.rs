@@ -30,7 +30,7 @@ fn dummy_client() -> clausters::osc::ClientId {
 }
 
 fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {
-    let compiler = CompilerThread::spawn(None);
+    let compiler = CompilerThread::spawn(None, clausters::server::meters::Meters::detached());
     compiler
         .submit(CompileRequest {
             name: name.into(),

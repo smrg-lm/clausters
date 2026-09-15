@@ -144,6 +144,70 @@ export function formatServerInfo(info: ServerInfo): string {
  * mean. In an offline render both measure render speed, since there is no
  * callback.
  */
+/**
+ * One role's share of the server's time, as `/server_load` reports it (the
+ * result of {@link Server.load}).
+ *
+ * The server times **itself** rather than asking the operating system, so the
+ * reading is the same on every platform: each piece of work brackets itself
+ * with a monotonic clock and adds the elapsed time to its role's slot. What is
+ * measured is therefore the *work* — a block, a stage of a parallel group, a
+ * serving turn, an NRT job, a compilation — and not the thread that ran it.
+ *
+ * `busy` is time the work was **in progress**, not per cent of a core: a DSP
+ * worker spinning for its next stage is burning a core and is idle by this
+ * reading.
+ */
+export interface Load {
+    /**
+     * `audio` (the callback's block), `dsp` (a worker thread), `net` (the
+     * serving turn), `nrt` (the job queue) or `faust` (compiling).
+     */
+    role: string;
+    /** Which instance, for a role that has several. Only `dsp` does today. */
+    index: number;
+    /** Seconds of work since the server booted. */
+    busy: number;
+    /** Times the work ran: blocks, stages, turns, jobs, compilations. */
+    calls: number;
+    /**
+     * Fraction of wall time busy **since this client's previous call**, or
+     * `undefined` on the first one, which has no interval to measure.
+     */
+    share?: number;
+}
+
+/**
+ * `role` for a single-instance role, `role index` otherwise.
+ *
+ * @param load - the row to name.
+ */
+export function loadName(load: Load): string {
+    return load.role === "dsp" ? `${load.role} ${load.index}` : load.role;
+}
+
+/**
+ * The readable block {@link Server.load}'s rows print as, one line per role —
+ * the same lines, in the same order, as the Python client's `format_load`.
+ *
+ * A free function for the same reason {@link formatServerStatus} is one.
+ *
+ * @param rows - the reading to render.
+ */
+export function formatLoad(rows: Load[]): string {
+    const lines = ["server load"];
+    for (const row of rows) {
+        const share = row.share === undefined
+            ? "     -"
+            : `${(row.share * 100).toFixed(1).padStart(5)}%`;
+        lines.push(
+            `  ${loadName(row).padEnd(8)} ${share}  ` +
+                `${row.busy.toFixed(3).padStart(9)} s  ${row.calls} calls`,
+        );
+    }
+    return lines.join("\n");
+}
+
 export interface ServerStatus {
     /** Live UGen instances across every playing node. */
     ugens: number;

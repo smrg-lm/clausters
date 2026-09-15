@@ -11,7 +11,7 @@ use crate::osc::ClientId;
 use crate::osc::wake::Waker;
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -66,14 +66,18 @@ impl CompilerThread {
     /// Spawns the worker. `waker`, when the server has a socket front, is
     /// poked after each finished compilation so the command loop replies at
     /// once instead of at its next idle tick (see [`crate::osc::wake`]).
-    pub fn spawn(waker: Option<Waker>) -> Self {
+    pub fn spawn(waker: Option<Waker>, meters: Arc<crate::server::meters::Meters>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<CompileRequest>();
         let (res_tx, res_rx) = mpsc::channel();
         let handle = std::thread::Builder::new()
             .name("faust-compiler".into())
             .spawn(move || {
                 while let Ok(req) = req_rx.recv() {
+                    // The bracket is the compilation; waiting for the next
+                    // request is not work (`server::meters`).
+                    let busy = crate::server::meters::stamp();
                     let outcome = run_request(&req);
+                    meters.add(crate::server::meters::Role::Faust, 0, busy.elapsed_nanos());
                     let result = CompileResult {
                         name: req.name,
                         client: req.client,

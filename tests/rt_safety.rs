@@ -853,7 +853,7 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
     use clausters::faust::synth::FaustSynth;
 
     // Compilation and instantiation allocate freely: network/compiler side.
-    let compiler = CompilerThread::spawn(None);
+    let compiler = CompilerThread::spawn(None, clausters::server::meters::Meters::detached());
     compiler
         .submit(CompileRequest {
             name: "rt_sine".into(),

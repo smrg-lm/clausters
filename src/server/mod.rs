@@ -7,6 +7,7 @@ pub mod clock_axis;
 pub mod defstore;
 pub mod engine;
 pub mod ipc;
+pub mod meters;
 pub mod nrt;
 pub mod nrtsession;
 pub mod render;

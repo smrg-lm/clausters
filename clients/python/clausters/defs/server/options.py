@@ -276,6 +276,60 @@ class ServerInfo:
 
 
 @dataclass
+class Load:
+    """One role's share of the server's time, as ``/server_load`` reports it
+    (the result of `Server.load`).
+
+    The server times **itself** rather than asking the operating system, so
+    the reading is the same on every platform: each piece of work brackets
+    itself with a monotonic clock and adds the elapsed time to its role's
+    slot. What is measured is therefore the *work* -- a block, a stage of a
+    parallel group, a serving turn, an NRT job, a compilation -- and not the
+    thread that ran it.
+
+    ``busy`` is cumulative since the server booted, which is what lets several
+    clients poll the same server without stealing each other's window:
+    ``share`` is computed here, from the previous reading this `Server` took.
+
+    ``busy`` is time the work was **in progress**, not per cent of a core. A
+    DSP worker spinning for its next stage is burning a core and is idle by
+    this reading, which is the honest answer to how much of the block budget a
+    stage took -- a system profiler answers the other question.
+    """
+
+    #: ``audio`` (the callback's block), ``dsp`` (a worker thread), ``net``
+    #: (the serving turn), ``nrt`` (the job queue) or ``faust`` (compiling).
+    role: str
+    #: Which instance, for a role that has several. Only ``dsp`` does today.
+    index: int
+    #: Seconds of work since the server booted.
+    busy: float
+    #: Times the work ran: blocks, stages, turns, jobs, compilations.
+    calls: int
+    #: Fraction of wall time busy **since this client's previous call**, or
+    #: ``None`` on the first one, which has no interval to measure.
+    share: "float | None" = None
+
+    @property
+    def name(self) -> str:
+        """``role`` for a single-instance role, ``role index`` otherwise."""
+        return self.role if self.role != "dsp" else f"{self.role} {self.index}"
+
+
+def format_load(rows: "list[Load]") -> str:
+    """The readable block `Server.load`'s rows print as, one line per role.
+
+    A free function rather than a method because the reading is the *list*,
+    and a list has no ``__str__`` of its own to give it.
+    """
+    lines = ["server load"]
+    for row in rows:
+        share = "     -" if row.share is None else f"{row.share * 100:5.1f}%"
+        lines.append(f"  {row.name:<8} {share}  {row.busy:9.3f} s  {row.calls} calls")
+    return "\n".join(lines)
+
+
+@dataclass
 class ServerStatus:
     """The live counters a running server reports over ``/server_status``
     (read-only; the result of `Server.status`).

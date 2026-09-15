@@ -99,11 +99,13 @@ export {
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
+    formatLoad,
     formatServerInfo,
     formatServerStatus,
+    loadName,
 } from "./options.ts";
-export type { ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
-import type { ServerStatus } from "./options.ts";
+export type { Load, ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
+import type { Load, ServerStatus } from "./options.ts";
 export { ServerQueries } from "./queries.ts";
 export { ServerStreams } from "./streams.ts";
 export { ServerTransport } from "./transport.ts";
@@ -410,6 +412,12 @@ export class Server {
     private syncCounter = 0;
     /** The transport's frame ceiling, read once and cached (`bulkChunk`). */
     private maxFrame: number | null = null;
+    /**
+     * The previous {@link Server.load} reading, so each client differences its
+     * own interval out of the server's cumulative counters instead of
+     * resetting a window other clients share.
+     */
+    private lastLoad: { uptime: number; busy: Map<string, number> } | null = null;
     /**
      * The receiving door this server's connection is read through — the one
      * place a packet is decoded, and the receiver a responder registers with
@@ -1085,6 +1093,60 @@ export class Server {
             actualSampleRate: at(7),
             lateBlocks: msg.args.length > 8 ? at(8) : 0,
         };
+    }
+
+    /**
+     * Where the server's time is going (`/server_load`): one {@link Load} per
+     * role — the audio block, each DSP worker, the serving turn, the NRT job
+     * queue and the Faust compiler.
+     *
+     * {@link Server.status} answers *is the server keeping up*; this answers
+     * *on what*, which is the question a session that has grown heavy
+     * actually asks.
+     *
+     * The server reports seconds **since it booted**, and the `share` of each
+     * row is computed here against this `Server`'s previous call — so two
+     * clients polling at once each measure their own interval, unlike the peak
+     * in `status`. The first call has no interval and leaves `share` unset;
+     * call it twice, a second or so apart, to read a load. `formatLoad` reads
+     * the list out.
+     *
+     * A server in a page reports every role with zero seconds: wasm has no
+     * monotonic clock to bracket work with.
+     *
+     * @param timeout - how long to wait for the reply, in seconds.
+     */
+    async load(timeout?: number): Promise<Load[]> {
+        const msg = await this.request("/server_load", [], {
+            expect: ["/server_load.reply"],
+            timeout,
+        });
+        const uptime = Number(msg.args[0]);
+        const previous = this.lastLoad;
+        const rows: Load[] = [];
+        const count = Number(msg.args[1]);
+        for (let i = 0; i < count; i++) {
+            const at = 2 + 4 * i;
+            const row: Load = {
+                role: String(msg.args[at]),
+                index: Number(msg.args[at + 1]),
+                busy: Number(msg.args[at + 2]),
+                calls: Number(msg.args[at + 3]),
+            };
+            if (previous) {
+                const elapsed = uptime - previous.uptime;
+                const was = previous.busy.get(`${row.role} ${row.index}`);
+                if (elapsed > 0 && was !== undefined) {
+                    row.share = (row.busy - was) / elapsed;
+                }
+            }
+            rows.push(row);
+        }
+        this.lastLoad = {
+            uptime,
+            busy: new Map(rows.map((r) => [`${r.role} ${r.index}`, r.busy])),
+        };
+        return rows;
     }
 
     /**

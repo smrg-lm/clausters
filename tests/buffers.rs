@@ -33,7 +33,7 @@ fn tmp_path(name: &str, ext: &str) -> String {
 }
 
 fn run_nrt(job: NrtJob) -> Result<NrtAction, String> {
-    let nrt = NrtThread::spawn(None);
+    let nrt = NrtThread::spawn(None, clausters::server::meters::Meters::detached());
     nrt.submit(NrtRequest {
         cmd: "/b_test",
         index: 0,

@@ -29,6 +29,7 @@ use crate::dsp::{
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, Reject, SynthNode};
 use crate::server::clock_axis::{DeviceSample, PiecePosition, PositionAnchor, TransportSample};
 use crate::server::ipc::Segment;
+use crate::server::meters::{Meters, Role};
 use crate::server::workers::WorkerPool;
 
 const CMD_FIFO_CAPACITY: usize = 1024;
@@ -494,6 +495,10 @@ pub struct Engine {
     events_tx: Producer<NodeEvent>,
     reply_tx: Producer<ReplyMsg>,
     counters: Arc<Counters>,
+    /// The per-role load table (`/server_load`). The audio thread adds this
+    /// block's own time to `Role::Audio` from the measurement the CPU meter
+    /// already takes, so metering costs no extra clock read here.
+    meters: Arc<Meters>,
     /// EMA state of the CPU meter (fraction of the block budget, ~1 s time
     /// constant); published to `counters.avg_cpu` every block. Compiled out
     /// on wasm32 with the meter itself.
@@ -530,6 +535,7 @@ pub struct EngineHandle {
     /// which is not a clock: it jumps and it wraps. See `server::clock_axis`.
     position_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
+    meters: Arc<Meters>,
     /// The IPC segment when one exists — the network thread reads the audio
     /// taps from here (`/bus_tapStream`) without an engine round-trip.
     segment: Option<Arc<Segment>>,
@@ -605,6 +611,7 @@ pub fn engine_pair_full(
         }
         None => ControlBuses::new(control_buses),
     };
+    let meters = Meters::new(workers);
     let sample_clock = Arc::new(AtomicU64::new(0));
     let transport_clock = Arc::new(AtomicU64::new(0));
     let frozen_clock = Arc::new(AtomicU64::new(0));
@@ -616,7 +623,7 @@ pub fn engine_pair_full(
         level_release: level_release(sample_rate),
         channels,
         tree: NodeTree::with_capacity(limits.max_nodes),
-        pool: WorkerPool::new(workers),
+        pool: WorkerPool::new(workers, &meters),
         buses: Buses::new(control_buses.clone(), audio_buses),
         buffers: empty_pool_with(limits.max_buffers),
         input_channels: 0,
@@ -643,6 +650,7 @@ pub fn engine_pair_full(
         events_tx,
         reply_tx,
         counters: Arc::clone(&counters),
+        meters: Arc::clone(&meters),
         #[cfg(not(target_arch = "wasm32"))]
         avg_cpu: 0.0,
     };
@@ -662,6 +670,7 @@ pub fn engine_pair_full(
         position_clock,
         frozen_clock,
         counters,
+        meters,
         segment,
     };
     (engine, handle)
@@ -832,13 +841,12 @@ impl Engine {
     /// the processing into slices around each event (late ones at offset 0).
     pub fn process_block(&mut self, out: &mut [f32]) {
         debug_assert_eq!(out.len(), BLOCK_SIZE * self.channels);
-        // CPU meter start. `Instant::now` is RT-safe on the platforms we
-        // target: `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no
-        // allocation, no lock, no kernel trap. On wasm32 `Instant::now`
-        // panics (no monotonic clock in the bare target), so the meter is
-        // compiled out and `/server_status` CPU fields read 0 there.
-        #[cfg(not(target_arch = "wasm32"))]
-        let meter_start = std::time::Instant::now();
+        // CPU meter start. The stamp is RT-safe on the platforms we target:
+        // `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no allocation,
+        // no lock, no kernel trap. On wasm32 there is no monotonic clock, so
+        // the stamp is inert and both this meter and `/server_load` read 0
+        // there (`server::meters`).
+        let meter_start = crate::server::meters::stamp();
         self.drain_commands();
         self.flush_pending_garbage();
 
@@ -1065,10 +1073,14 @@ impl Engine {
         // CPU meter end: this block's wall time as a fraction of its real-time
         // budget (`BLOCK_SIZE / sample_rate`). Only meaningful when the caller
         // is paced by an audio device; NRT renders just measure render speed.
+        // The same measurement feeds the per-role table, so the block's share
+        // of `/server_load` costs no second clock read.
+        let elapsed_nanos = meter_start.elapsed_nanos();
+        self.meters.add(Role::Audio, 0, elapsed_nanos);
         #[cfg(not(target_arch = "wasm32"))]
         {
             let budget = BLOCK_SIZE as f64 / self.sample_rate as f64;
-            let busy = (meter_start.elapsed().as_secs_f64() / budget) as f32;
+            let busy = (elapsed_nanos as f64 / 1e9 / budget) as f32;
             // EMA with a ~1 s time constant: alpha = block duration / 1 s.
             self.avg_cpu += (busy - self.avg_cpu) * budget as f32;
             self.counters
@@ -1491,6 +1503,11 @@ impl EngineHandle {
     /// block -- the whole of the device <-> transport axis conversion.
     pub fn current_frozen_total(&self) -> u64 {
         self.frozen_clock.load(Ordering::Relaxed)
+    }
+
+    /// The per-role load table, for `/server_load`.
+    pub fn meters(&self) -> &Arc<Meters> {
+        &self.meters
     }
 
     pub fn counters(&self) -> &Counters {

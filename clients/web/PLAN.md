@@ -2085,6 +2085,21 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
+- ⬜ **An engine in a page has no clock, so every meter it reports reads zero**
+  *(named 2026-09-15 with the server's `M34`, which is where it became visible:
+  the load table joins `/server_status`'s CPU fields in reporting nothing here)*.
+  `Instant::now` panics on `wasm32-unknown-unknown`, so the engine's per-block
+  CPU meter is compiled out and `server::meters` stamps inertly -- a page can
+  ask a native server over WebSocket what its roles cost and cannot ask its own
+  engine, which is the one it actually runs. That is also why
+  `basics/server_load` has no page twin (`docs/example-parity.md`). The fix is
+  not a wasm clock in Rust but a **clock handed down by the host**: the page has
+  `performance.now()` and the worklet has `currentTime`, both monotonic, so the
+  shape is a function pointer installed at boot (beside the other host doors)
+  that `meters::stamp` and the block meter read through, with the native build
+  keeping `Instant`. Worth doing with a second reader in mind -- a page that
+  wants to know why *its own* engine is late has nothing else to read.
+
 - ✅ **The score keeps a second history, and nothing joins the two** *(the port
   of `clients/python/PLAN.md`'s entry of the same name, fixed 2026-09-02 in the
   same commit and by the same calls)*. `Score` registers in `Editing.of(score)`

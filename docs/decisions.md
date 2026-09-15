@@ -8251,3 +8251,50 @@ evidence: REAPER kept takes inside the item for twenty years and had to add
 The cost, stated when it was decided: `lane` also named a channel row inside a
 multichannel clip body in the host, and that sense is the one renamed to
 `channel`.
+
+## The load meter measures roles, and the server times itself
+
+`/server_status` reports the audio thread's per-block load — whether the server
+is keeping up. It cannot say *on what* the time goes, and a session that has
+grown heavy is asking exactly that: a FaustDef compiling, a soundfile loading
+and a burst of commands all cost real time and appear nowhere in that figure.
+Outside the process the answer already exists (the threads are named, so
+`top -H`, `pidstat -t` and `perf` read it), but that is the platform's answer
+and no client can ask for it.
+
+Three choices, none of them forced by the others:
+
+- **The unit is a role, not a thread.** The brackets do not measure threads:
+  they measure a block, a stage of a parallel group, a serving turn, an NRT job,
+  a compilation. So the wire says `dsp 2`, not a thread name or a tid, and an
+  engine in a page — one thread — reports the same rows. The first sketch was
+  `/server_threads`/`Server.threads()`, taken from the diagnostic tools, and it
+  was wrong twice: a thread is an OS construct, which never names an API
+  surface here, and it is not what is being measured.
+- **The server times itself rather than asking the platform.** Each bracket is
+  a monotonic clock read, which is one vDSO call or its equivalent on all three
+  desktop targets (`clock_gettime(CLOCK_MONOTONIC)`, `mach_absolute_time`,
+  `QueryPerformanceCounter`) — no allocation, no lock, no kernel trap, so it is
+  legal on the audio thread, which is the one place the reading is most wanted.
+  Per-thread *CPU* time is the other route and it fails there: on Linux
+  `CLOCK_THREAD_CPUTIME_ID` is a real syscall and not in the vDSO, macOS has no
+  such clock and answers through `thread_info`, Windows through `GetThreadTimes`
+  — three implementations of one number that may not be read where it matters.
+  The consequence is stated rather than hidden: `busy` is time the work was **in
+  progress**, not per cent of a core, so a DSP worker spinning for its next
+  stage is burning a core and reads as idle. That is the right answer to "how
+  much of the block budget did this stage take" and the wrong one to "what is
+  this process doing to my CPU", and the documentation sends the second question
+  to a profiler.
+- **The counters are cumulative and the window belongs to the reader.**
+  `Counters::take_peak_cpu` resets on read, so two clients polling one server
+  steal each other's window — a defect that predates this and that a second
+  reset-on-read meter would have doubled. `/server_load` only grows, and each
+  client differences two replies into an interval of its own (the `share` field
+  both clients compute locally).
+
+The cost, measured with `examples/bench.rs` before and after: under the
+measurement floor. The audio thread reuses the stamp the CPU meter already
+takes, so a block gains no clock read at all — only two relaxed atomic
+read-modify-writes — and a worker pays one bracket per stage rather than per
+subtree.

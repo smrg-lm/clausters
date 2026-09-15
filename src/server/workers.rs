@@ -29,6 +29,7 @@ use std::thread::{self, JoinHandle};
 use crate::dsp::buffer::Buffer;
 use crate::dsp::{Buses, ProcessCtx, TransportCtx};
 use crate::node::NodeTree;
+use crate::server::meters::{Meters, Role, stamp};
 
 const STATE_HOT: u8 = 0;
 const STATE_PARKED: u8 = 1;
@@ -100,15 +101,20 @@ struct Shared {
 unsafe impl Send for Shared {}
 unsafe impl Sync for Shared {}
 
-/// The pool. `WorkerPool::new(0)` is a no-op pool: every stage runs inline,
-/// sequentially — the default for `engine_pair` and the whole test suite.
+/// The pool. `WorkerPool::new(0, …)` is a no-op pool: every stage runs
+/// inline, sequentially — the default for `engine_pair` and the whole test
+/// suite.
 pub struct WorkerPool {
     shared: Option<Arc<Shared>>,
     threads: Vec<JoinHandle<()>>,
 }
 
 impl WorkerPool {
-    pub fn new(workers: usize) -> Self {
+    /// `meters` gets one `Role::Dsp` slot per worker: what a worker took off
+    /// the conductor, bracketed per stage. The conductor's own share of a
+    /// stage is not counted here — it is already inside the block the audio
+    /// slot measures.
+    pub fn new(workers: usize, meters: &Arc<Meters>) -> Self {
         if workers == 0 {
             return Self {
                 shared: None,
@@ -127,9 +133,10 @@ impl WorkerPool {
         let threads = (0..workers)
             .map(|i| {
                 let shared = Arc::clone(&shared);
+                let meters = Arc::clone(meters);
                 thread::Builder::new()
                     .name(format!("clausters-dsp-{i}"))
-                    .spawn(move || worker_main(&shared, i))
+                    .spawn(move || worker_main(&shared, &meters, i))
                     .expect("failed to spawn DSP worker")
             })
             .collect();
@@ -227,7 +234,7 @@ impl Drop for WorkerPool {
     }
 }
 
-fn worker_main(shared: &Shared, me: usize) {
+fn worker_main(shared: &Shared, meters: &Meters, me: usize) {
     IS_WORKER.set(true);
     // Workers process DSP in both RT and NRT renders: same FPU mode as the
     // conductor, or parallel renders would not be sample-identical.
@@ -297,6 +304,10 @@ fn worker_main(shared: &Shared, me: usize) {
             frames: job.frames,
             transport: job.transport,
         };
+        // The bracket is the stage, not the subtree: two clock reads per
+        // stage this worker joins, and what it measures is work rather than
+        // the spinning and parking around it.
+        let busy = stamp();
         loop {
             let k = shared.cursor.fetch_add(1, Ordering::AcqRel);
             if k >= stage.len() {
@@ -307,6 +318,7 @@ fn worker_main(shared: &Shared, me: usize) {
             unsafe { tree.process_index_seq(stage[k], &ctx) };
             shared.remaining.fetch_sub(1, Ordering::Release);
         }
+        meters.add(Role::Dsp, me as u32, busy.elapsed_nanos());
         shared.active.fetch_sub(1, Ordering::Release);
     }
 }

@@ -17,6 +17,7 @@ from clausters.defs import (
     NodeMap,
     Server,
     Synth,
+    format_load,
 )
 from clausters.defs import signals as S
 
@@ -565,6 +566,32 @@ def test_parse_n_info_synth_group_and_absent():
     # isGroup = -1: the node is not there. A state, not an exception.
     gone = parse_n_info([4242, -1, -1, -1, -1])
     assert gone.id == 4242 and not gone.exists
+
+
+def test_load_differences_a_window_of_its_own():
+    # The server's counters are cumulative since boot, so the first call has no
+    # interval to measure and every one after it reports the share of the time
+    # since *this* client's previous call -- which is what lets two clients
+    # poll one server without disturbing each other.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/server_load.reply", 10.0, 3,
+                      "audio", 0, 1.0, 100, "dsp", 0, 0.2, 40, "net", 0, 0.5, 40)
+    first = srv.load()
+    assert [row.name for row in first] == ["audio", "dsp 0", "net"]
+    assert all(row.share is None for row in first)
+
+    iface.queue_reply("/server_load.reply", 12.0, 3,
+                      "audio", 0, 1.4, 130, "dsp", 0, 0.2, 40, "net", 0, 0.6, 55)
+    second = srv.load()
+    assert second[0].share == pytest.approx(0.2)    # 0.4 s of work in 2 s
+    assert second[1].share == pytest.approx(0.0)    # a worker that took no stage
+    assert second[2].share == pytest.approx(0.05)
+    assert second[0].calls == 130 and second[0].busy == pytest.approx(1.4)
+
+    block = format_load(second)
+    assert block.splitlines()[0] == "server load"
+    assert "dsp 0" in block and "20.0%" in block
 
 
 def test_defs_query_collects_until_done():

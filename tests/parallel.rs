@@ -275,6 +275,39 @@ fn workers_survive_many_blocks_and_drop_cleanly() {
     }
 }
 
+/// Each worker accounts the stages it took off the conductor in its own
+/// `Role::Dsp` slot, and the conductor's share stays in `Role::Audio` — one
+/// slot per worker, never a row for a worker the server does not have.
+#[test]
+fn every_worker_accounts_the_stages_it_took() {
+    use clausters::server::meters::Role;
+
+    let graph = torture_graph();
+    let mut rig = Rig::new(3, &graph);
+    rig.render(200);
+
+    let report = rig.handle.meters().report();
+    let dsp: Vec<_> = report.iter().filter(|l| l.role == Role::Dsp).collect();
+    assert_eq!(dsp.len(), 3, "one slot per worker");
+    assert!(
+        dsp.iter().any(|l| l.calls > 0 && l.busy > 0.0),
+        "the workers took stages: {dsp:?}"
+    );
+    let audio = report.iter().find(|l| l.role == Role::Audio).unwrap();
+    assert_eq!(audio.calls, 200, "one call per block");
+
+    // A sequential engine has no worker slots at all: the whole graph is the
+    // conductor's, and that is what the audio row says.
+    let mut alone = Rig::new(0, &graph);
+    alone.render(10);
+    let report = alone.handle.meters().report();
+    assert!(!report.iter().any(|l| l.role == Role::Dsp));
+    assert_eq!(
+        report.iter().find(|l| l.role == Role::Audio).unwrap().calls,
+        10
+    );
+}
+
 #[test]
 fn g_parallel_rejects_missing_or_non_groups() {
     let mut translator = CmdTranslator::new(SR);

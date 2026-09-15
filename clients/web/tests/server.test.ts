@@ -31,7 +31,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Group, Synth } from "../src/defs/node.ts";
-import { Server } from "../src/defs/server/index.ts";
+import { formatLoad, loadName, Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
 import { GraphDef } from "../src/defs/graphdef.ts";
@@ -171,6 +171,33 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         const empty = await server.queryTree();
         assert.equal(empty.id, 0);
         assert.deepEqual(empty.children, []);
+    });
+});
+
+test("the load reads one row per role and differences its own window", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        // The server's counters are cumulative since boot, so the first call
+        // only sets this client's baseline and the second one reports the
+        // share of the interval between them.
+        const first = await server.load();
+        const roles = first.map((row) => row.role);
+        assert.ok(roles.includes("audio"), `roles: ${roles.join(", ")}`);
+        assert.ok(roles.includes("net"), `roles: ${roles.join(", ")}`);
+        assert.ok(roles.includes("nrt"), `roles: ${roles.join(", ")}`);
+        assert.ok(first.every((row) => row.share === undefined));
+
+        await sleep(200);
+        const second = await server.load();
+        const audio = second.find((row) => row.role === "audio")!;
+        assert.ok(audio.calls > 0, "the callback ran blocks");
+        assert.ok(audio.share !== undefined && audio.share >= 0);
+        const before = first.find((row) => row.role === "audio")!;
+        assert.ok(audio.busy >= before.busy, "busy time never goes back");
+
+        assert.equal(formatLoad(second).split("\n")[0], "server load");
+        assert.equal(loadName({ role: "dsp", index: 2, busy: 0, calls: 0 }), "dsp 2");
     });
 });
 

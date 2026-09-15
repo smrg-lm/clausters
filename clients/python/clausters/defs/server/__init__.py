@@ -56,9 +56,11 @@ from .options import (
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TAPS,
     DEFAULT_TAP_FRAMES,
+    Load,
     ServerInfo,
     ServerStatus,
     ServerOptions,
+    format_load,
 )
 from .queries import ServerQueries
 from .streams import ServerStreams
@@ -69,6 +71,8 @@ from .transport import ServerTransport
 # became a package, so `from clausters.defs.server import ...` is unchanged.
 __all__ = [
     "Server",
+    "Load",
+    "format_load",
     "ServerInfo",
     "ServerStatus",
     "ServerOptions",
@@ -184,6 +188,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: is a single counter to model, so there is a single model of it.
         self._sample_clock = None
         self._sync_counter = 0      # ids for /server_sync -> /server_sync.reply round-trips
+        #: the previous `load` reading -- ``(uptime, {(role, index): busy})``
+        #: -- so each client differences its own interval out of the server's
+        #: cumulative counters instead of resetting a shared window.
+        self._last_load: "tuple[float, dict[tuple[str, int], float]] | None" = None
         #: the server's stream-frame ceiling, queried lazily by `_bulk_chunk`.
         self._max_frame: "int | None" = None
         #: the server *process* this handle started and owns (`boot`), if any;
@@ -657,6 +665,42 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             actual_sample_rate=float(args[7]),
             late_blocks=int(args[8]) if len(args) > 8 else 0,
         )
+
+    def load(self, timeout: "float | None" = None) -> "list[Load]":
+        """Where the server's time is going (``/server_load``): one `Load` per
+        role -- the audio block, each DSP worker, the serving turn, the NRT
+        job queue and the Faust compiler.
+
+        `status` answers *is the server keeping up*; this answers *on what*,
+        which is the question a session that has grown heavy actually asks.
+
+        The server reports seconds **since it booted**, and the ``share`` of
+        each row is computed here against this `Server`'s previous call -- so
+        two clients polling at once each measure their own interval, unlike
+        the peak in `status`. The first call has no interval and leaves
+        ``share`` at ``None``; call it twice, a second or so apart, to read a
+        load. ``print(format_load(rows))`` reads the list out.
+
+        Blocking, RT only. A server in a page reports every role with zero
+        seconds: wasm has no monotonic clock to bracket work with.
+        """
+        _, args = self.request("/server_load", timeout=timeout,
+                               expect=("/server_load.reply",))
+        uptime = float(args[0])
+        rows: "list[Load]" = []
+        previous = self._last_load
+        for i in range(int(args[1])):
+            role, index, busy, calls = args[2 + 4 * i:6 + 4 * i]
+            row = Load(role=str(role), index=int(index), busy=float(busy),
+                       calls=int(calls))
+            if previous is not None:
+                elapsed = uptime - previous[0]
+                was = previous[1].get((row.role, row.index))
+                if elapsed > 0.0 and was is not None:
+                    row.share = (row.busy - was) / elapsed
+            rows.append(row)
+        self._last_load = (uptime, {(r.role, r.index): r.busy for r in rows})
+        return rows
 
     def _barrier(self, timeout: "float | None" = None) -> None:
         """`sync`, but a ``/fail`` from the work being waited on ends the wait
