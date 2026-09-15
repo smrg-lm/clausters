@@ -64,6 +64,18 @@ const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 19;
 /// to be.
 const STALLED_ASKS: usize = 30;
 
+/// **How many times a buffer the server says does not exist is asked for
+/// again** before the want is let go of — about twenty seconds at thirty
+/// frames, with [`STALLED_ASKS`] between two asks.
+///
+/// Absence is usually *not yet*: a client names a buffer in the same turn it
+/// sends the command that makes it (a join's stitch, an allocation, a read),
+/// and those complete on the NRT thread after the query is answered. So the
+/// first answer is asked again rather than believed. A buffer that stays absent
+/// was freed, and holding its want for the session would keep a front awake for
+/// nothing.
+const ABSENT_ASKS: usize = 20;
+
 /// A widget waiting on a server buffer fetch. What to build from the finished
 /// samples is read off the widget's kind at completion, so the machine carries
 /// no per-kind parameters.
@@ -190,6 +202,10 @@ pub(crate) struct BufferFetches {
     /// by buffer number: the download is owed and starts as soon as one of the
     /// [`MAX_IN_FLIGHT`] slots frees. Drained by [`Self::tick`].
     waiting: HashMap<i32, Waiting>,
+    /// **Buffers the server answered as absent** (`frames = -1`), by buffer
+    /// number: frames since the last ask, and how many asks have gone out.
+    /// Asked again by [`Self::tick`]; see [`ABSENT_ASKS`].
+    absent: HashMap<i32, (usize, usize)>,
     /// The summary walks under way, by buffer number.
     peaks: HashMap<i32, PeaksWalk>,
     /// **The finer grids asked for**, one per view — `(def_id, widget_id)`,
@@ -296,7 +312,10 @@ impl BufferFetches {
     /// frame — either way, a conversation under way is what keeps the front
     /// looking.
     pub(crate) fn pending(&self) -> bool {
-        !self.wants.is_empty() || !self.fetches.is_empty() || !self.waiting.is_empty()
+        !self.wants.is_empty()
+            || !self.fetches.is_empty()
+            || !self.waiting.is_empty()
+            || !self.absent.is_empty()
     }
 
     /// `/buffer_query.reply` for a buffer we are waiting on: start its download (or finish
@@ -311,6 +330,7 @@ impl BufferFetches {
         if !self.wants.contains_key(&bufnum) || self.fetches.contains_key(&bufnum) {
             return FetchStep::None;
         }
+        self.absent.remove(&bufnum);
         let channels = channels.max(1);
         let total = frames * channels;
         if total == 0 {
@@ -351,6 +371,24 @@ impl BufferFetches {
             return FetchStep::None;
         }
         FetchStep::Request(self.start_whole(bufnum, channels, sample_rate, total))
+    }
+
+    /// `/buffer_query.reply` for a buffer the server **does not have**
+    /// (`frames = -1`): the want stays, nothing is handed to anyone, and the
+    /// buffer is asked for again on the frame clock.
+    ///
+    /// The protocol states absence apart from emptiness, and the two used to be
+    /// one at the door: an unallocated answer became a buffer of no frames, the
+    /// waiting view was handed an empty take in place of whatever it drew, and
+    /// the take was never asked for again. A join a client mints is exactly
+    /// that — its box names the buffer in the turn the stitch is sent, and the
+    /// stitch lands on the NRT thread after the query is answered — so the
+    /// joined box drew nothing, for good.
+    pub(crate) fn on_absent(&mut self, bufnum: i32) {
+        if !self.wants.contains_key(&bufnum) || self.fetches.contains_key(&bufnum) {
+            return;
+        }
+        self.absent.entry(bufnum).or_insert((0, 0));
     }
 
     /// **Starts a whole download**: the fetch it is read into, and the first
@@ -774,6 +812,31 @@ impl BufferFetches {
         // more (its window closed while it queued) is simply forgotten; the
         // rest start in buffer order, so a piece fills in left to right rather
         // than in whatever order a hash map happens to hold.
+        // **What the server said is not there is asked for again**, on the same
+        // clock, and let go of when it stays away (see [`ABSENT_ASKS`]).
+        self.absent
+            .retain(|bufnum, _| self.wants.contains_key(bufnum));
+        let mut gone = Vec::new();
+        for (bufnum, (frames, asks)) in self.absent.iter_mut() {
+            *frames += 1;
+            if *frames < STALLED_ASKS {
+                continue;
+            }
+            *frames = 0;
+            if *asks >= ABSENT_ASKS {
+                gone.push(*bufnum);
+                continue;
+            }
+            *asks += 1;
+            again.push(OscMessage {
+                addr: "/buffer_query".into(),
+                args: vec![OscType::Int(*bufnum)],
+            });
+        }
+        for bufnum in gone {
+            self.absent.remove(&bufnum);
+            self.wants.remove(&bufnum);
+        }
         self.waiting
             .retain(|bufnum, _| self.wants.contains_key(bufnum));
         let mut ready: Vec<i32> = self
@@ -818,6 +881,8 @@ impl BufferFetches {
         }
         self.wants.retain(|_, wants| !wants.is_empty());
         self.details.retain(|(def, _), _| *def != def_id);
+        self.absent
+            .retain(|bufnum, _| self.wants.contains_key(bufnum));
     }
 
     /// Hands the finished interleaved buffer to its waiters.
@@ -1076,7 +1141,7 @@ mod tests {
         let mut fetches = BufferFetches::default();
         fetches.want(1, 10, 5);
         let FetchStep::Done { samples, wants, .. } = fetches.on_info(5, 0, 2, 0.0) else {
-            panic!("an unallocated buffer should finish empty");
+            panic!("a buffer of no frames finishes empty");
         };
         assert!(samples.is_empty());
         assert_eq!(wants.len(), 1);
@@ -1094,6 +1159,54 @@ mod tests {
         };
         let ids: Vec<i32> = wants.iter().map(|w| w.widget_id).collect();
         assert_eq!(ids, vec![30], "only the open window still waits");
+    }
+
+    /// **Absent is not empty.** A buffer the server does not have yet -- a join
+    /// whose stitch is still on the NRT thread when its box is first drawn --
+    /// hands nobody an empty take, and is asked for again until it exists.
+    #[test]
+    fn an_absent_buffer_is_asked_for_again_and_never_handed_over_empty() {
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 10, 8);
+        fetches.on_absent(8);
+        assert!(fetches.pending(), "the want is kept");
+        for _ in 0..STALLED_ASKS - 1 {
+            assert!(fetches.tick().is_empty());
+        }
+        let again = fetches.tick();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].addr, "/buffer_query");
+        assert_eq!(ints(&again[0]), vec![8]);
+
+        // Now it exists: the ordinary conversation, for the view that waited.
+        let FetchStep::Request(_) = fetches.on_info(8, 4, 1, 48_000.0) else {
+            panic!("an answer with frames starts the download");
+        };
+        let FetchStep::Done { samples, wants, .. } = fetches.on_data(&range_reply(8, 0, &[0.5; 4]))
+        else {
+            panic!("expected completion");
+        };
+        assert_eq!(samples.len(), 4);
+        assert_eq!(wants.len(), 1);
+        assert!(!fetches.pending());
+
+        // A buffer that never comes is let go of, and nobody is told it is empty.
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 11, 9);
+        fetches.on_absent(9);
+        let mut asks = 0;
+        for _ in 0..(ABSENT_ASKS + 2) * STALLED_ASKS {
+            asks += fetches.tick().len();
+        }
+        assert_eq!(asks, ABSENT_ASKS, "asked a bounded number of times");
+        assert!(!fetches.pending(), "and then let go of");
+
+        // A window closed while it waited takes its absence with it.
+        let mut fetches = BufferFetches::default();
+        fetches.want(2, 12, 7);
+        fetches.on_absent(7);
+        fetches.drop_def(2);
+        assert!(!fetches.pending());
     }
 
     /// An announced edit is read back as a span and lands as a patch, which

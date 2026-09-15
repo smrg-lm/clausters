@@ -301,9 +301,16 @@ impl App {
                         rate,
                     ] = group
                     {
+                        // **-1 is absence, not emptiness**: the buffer is not
+                        // there yet, and is asked for again rather than drawn
+                        // as a take of no frames (`BufferFetches::on_absent`).
+                        if *frames < 0 {
+                            self.fetches.on_absent(*bufnum);
+                            continue;
+                        }
                         let step = self.fetches.on_info(
                             *bufnum,
-                            (*frames).max(0) as usize,
+                            *frames as usize,
                             (*channels).max(0) as usize,
                             float_arg(rate),
                         );
