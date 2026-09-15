@@ -150,50 +150,14 @@ export class Buffer {
             wait?: boolean;
         } = {},
     ): Promise<Buffer> {
-        const server = resolveServer(on);
-        const first = parts[0];
-        if (!first) throw new Error("a join needs at least one part");
-        const width =
-            channels ??
-            (typeof first.source === "number" ? 0 : first.source.channels);
-        if (!width) {
-            throw new Error(
-                "the join's width: the first part's source does not know its own, " +
-                    "so say how many channels the join has",
-            );
-        }
-        const args: MsgArg[] = [];
-        let frames = 0;
-        for (const part of parts) {
-            const source =
-                typeof part.source === "number" ? part.source : part.source.bufnum;
-            const mapped = part.channels ?? [...Array(width).keys()];
-            if (mapped.length !== width) {
-                throw new Error(
-                    `a part maps ${mapped.length} channels and the join has ` +
-                        `${width}: every part spells its whole map`,
-                );
-            }
-            args.push(
-                ["i", Math.trunc(source)],
-                ["i", Math.trunc(part.start ?? 0)],
-                ["i", Math.trunc(part.frames)],
-                ["i", Math.trunc(part.fadeIn ?? 0)],
-                ["i", Math.trunc(part.fadeOut ?? 0)],
-                ...mapped.map((c): MsgArg => ["i", Math.trunc(c)]),
-            );
-            frames += Math.trunc(part.frames);
-        }
+        if (!wait) return stitchSent(parts, { channels, sampleRate, server: on });
+        const { server, width, frames, args } = stitchParts(parts, { channels, server: on });
         const bufnum = server.buffers.alloc();
         const head: MsgArg[] = [
             ["i", bufnum],
             ["i", width],
             ["f", sampleRate],
         ];
-        if (!wait) {
-            server.sendMsg("/buffer_stitch", ...head, ...args);
-            return new Buffer(bufnum, frames, width, sampleRate, server);
-        }
         try {
             await server.command("/buffer_stitch", [...head, ...args], timeout);
         } catch (error) {
@@ -1128,6 +1092,83 @@ export class Buffer {
         }
         return this.server;
     }
+}
+
+/**
+ * The spans of a join, checked and encoded — everything {@link Buffer.stitch}
+ * does before it has a buffer number to put them under.
+ *
+ * It is a function of the parts and nothing else, which is what lets the two
+ * forms of the verb (waited for, and sent) share one reading of them.
+ */
+function stitchParts(
+    parts: Part[],
+    { channels, server: on }: { channels?: number; server?: Server },
+): { server: Server; width: number; frames: number; args: MsgArg[] } {
+    const server = resolveServer(on);
+    const first = parts[0];
+    if (!first) throw new Error("a join needs at least one part");
+    const width = channels ?? (typeof first.source === "number" ? 0 : first.source.channels);
+    if (!width) {
+        throw new Error(
+            "the join's width: the first part's source does not know its own, " +
+                "so say how many channels the join has",
+        );
+    }
+    const args: MsgArg[] = [];
+    let frames = 0;
+    for (const part of parts) {
+        const source = typeof part.source === "number" ? part.source : part.source.bufnum;
+        const mapped = part.channels ?? [...Array(width).keys()];
+        if (mapped.length !== width) {
+            throw new Error(
+                `a part maps ${mapped.length} channels and the join has ` +
+                    `${width}: every part spells its whole map`,
+            );
+        }
+        args.push(
+            ["i", Math.trunc(source)],
+            ["i", Math.trunc(part.start ?? 0)],
+            ["i", Math.trunc(part.frames)],
+            ["i", Math.trunc(part.fadeIn ?? 0)],
+            ["i", Math.trunc(part.fadeOut ?? 0)],
+            ...mapped.map((c): MsgArg => ["i", Math.trunc(c)]),
+        );
+        frames += Math.trunc(part.frames);
+    }
+    return { server, width, frames, args };
+}
+
+/**
+ * {@link Buffer.stitch} with `wait: false`, **answered on the line that sends**.
+ *
+ * A join owns no samples, so there is nothing to copy and nothing to load: the
+ * buffer number is known the moment the pool hands it out, and the `/done` says
+ * only that the round trip happened. The public verb stays a promise like every
+ * other call on this class — this is the shape a **turn** needs, where the table
+ * a join is written into is read again before any microtask could run, and it is
+ * the shape the Python client's `Buffer.stitch(wait=False)` has.
+ *
+ * @internal
+ */
+export function stitchSent(
+    parts: Part[],
+    {
+        channels,
+        sampleRate = 0.0,
+        server: on,
+    }: { channels?: number; sampleRate?: number; server?: Server } = {},
+): Buffer {
+    const { server, width, frames, args } = stitchParts(parts, { channels, server: on });
+    const bufnum = server.buffers.alloc();
+    server.sendMsg(
+        "/buffer_stitch",
+        ["i", bufnum],
+        ["i", width],
+        ["f", sampleRate],
+        ...args,
+    );
+    return new Buffer(bufnum, frames, width, sampleRate, server);
 }
 
 /** Anything a command can address by buffer number: a handle or the number. */

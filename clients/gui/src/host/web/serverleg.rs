@@ -739,9 +739,26 @@ impl WebApp {
                 .window_def(def_id)
                 .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
         }) else {
-            return log(&format!(
-                "buffer {bufnum} was edited by another peer; nothing here draws it"
+            // **The announcement is the second ask.** Nothing here has a
+            // picture of this buffer with a shape to put a span into — which is
+            // what a join looks like a moment after the edit that minted it:
+            // its box named the buffer in the turn the stitch was sent, the
+            // first ask answered with no frames at all, and a take remembered
+            // as asked is never asked again. The write the server has just
+            // announced is what says the samples are there now.
+            let asked = self.host.forget_take(bufnum);
+            if asked.is_empty() {
+                return log(&format!(
+                    "buffer {bufnum} was edited by another peer; nothing here draws it"
+                ));
+            }
+            log(&format!(
+                "buffer {bufnum} was written by another peer; the views of it ask again"
             ));
+            for def_id in asked {
+                self.request_redraw(def_id);
+            }
+            return;
         };
         let (start, frames) = align_span(start, frames, bucket);
         if let Some(msg) = self

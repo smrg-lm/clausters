@@ -37,7 +37,7 @@ import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { Server } from "../../defs/server/index.ts";
-import { Buffer, type Part } from "../../defs/buffer.ts";
+import { type Part, stitchSent } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import { editingDefaultBpm } from "../../core/clausters_core_web.js";
@@ -349,12 +349,16 @@ export class MultitrackDomain extends Domain<Multitrack> {
      * made: a box over it draws empty and does not play, which is what a source
      * nobody answered for has always meant here.
      *
-     * **Where the two clients differ, and it is the platform's line**: the same
-     * call in the same place, but a page cannot block, so the table is written
-     * when the promise settles rather than on the line that sends. The command
-     * goes out either way at the same point in the same order — `wait: false`,
-     * because a join has nothing to copy and nothing to load, so there is
-     * nothing to wait for but the round trip itself.
+     * **Sent rather than waited on.** This runs inside the answer to a gesture,
+     * and a join owns no samples: there is nothing to copy and nothing to load,
+     * so the buffer number is known the moment it is handed out and blocking on
+     * the `/done` would only stall the hand. **Written over rather than
+     * skipped**: the document has just said what this source is.
+     *
+     * The table is written **on the line that sends**, not when a promise
+     * settles: the picture this same turn pushes is read out of it, so a join
+     * whose buffer arrived a microtask later drew an empty box and never drew
+     * anything else. That is why `stitchSent` exists beside the public promise.
      *
      * @internal
      */
@@ -377,14 +381,14 @@ export class MultitrackDomain extends Domain<Multitrack> {
             fadeOut: part.fadeOut,
             channels: part.channels,
         }));
-        void Buffer.stitch(parts, {
-            channels: made.channels,
-            sampleRate: made.rate,
-            wait: false,
-            server,
-        }).then((buffer) => {
-            this.bridge.sources.buffers.set(Math.trunc(id), buffer);
-        });
+        this.bridge.sources.buffers.set(
+            Math.trunc(id),
+            stitchSent(parts, {
+                channels: made.channels,
+                sampleRate: made.rate,
+                server,
+            }),
+        );
     }
 }
 /**

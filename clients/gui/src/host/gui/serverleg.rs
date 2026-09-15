@@ -833,6 +833,19 @@ impl App {
                 .window_def(def_id)
                 .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
         }) else {
+            // **The announcement is the second ask.** Nothing here has a
+            // picture of this buffer with a shape to put a span into — which is
+            // what a join looks like a moment after the edit that minted it:
+            // its box named the buffer in the turn the stitch was sent, the
+            // first ask answered with no frames at all, and a take remembered
+            // as asked is never asked again. The write the server has just
+            // announced is what says the samples are there now.
+            for def_id in self.host.forget_take(bufnum) {
+                debug!("buffer {bufnum} was written by another peer; the views of it ask again");
+                if let Some(ws) = self.windows.get(&def_id) {
+                    ws.gpu.window.request_redraw();
+                }
+            }
             return;
         };
         let (start, frames) = align_span(start, frames, bucket);

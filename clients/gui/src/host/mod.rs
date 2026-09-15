@@ -1051,9 +1051,23 @@ impl Host {
         if msg.addr != "/done" || command != "/buffer_stitch" {
             return Vec::new();
         }
+        self.forget_take(*bufnum)
+    }
+
+    /// **Every element that asked for this take forgets it**, so the next walk
+    /// asks again; the windows that had one come back, for a front to redraw.
+    ///
+    /// The `/done` above is one way to learn the samples are there, and it only
+    /// reaches whoever *asked* for the stitch. When a **client** owns the piece
+    /// it is the client that sends it, and the host hears about that buffer
+    /// only as the write the server announces to everyone else
+    /// (`/buffer_touched`) — which is the same news under another name, and is
+    /// what makes a join drawn by a client's window fill in rather than stay
+    /// the empty box the first ask answered with.
+    pub fn forget_take(&mut self, bufnum: i32) -> Vec<i32> {
         let mut touched = Vec::new();
         for (def_id, tree) in &mut self.window_defs {
-            if forget_take_views(tree, *bufnum) > 0 {
+            if forget_take_views(tree, bufnum) > 0 {
                 touched.push(*def_id);
             }
         }
@@ -3578,6 +3592,19 @@ mod tests {
 
         assert_eq!(host.forget_stitched(&done("/buffer_stitch", 3)), vec![1]);
         assert_eq!(ask(&mut host), vec![3], "made, it is asked for again");
+
+        // **And the `/done` is not the only way to hear it.** When a *client*
+        // owns the piece it is the client that sends the stitch, so the `/done`
+        // goes to the client and never reaches here; what does reach here is
+        // the write the server announces to every other peer, which is the same
+        // news under another name.
+        assert!(ask(&mut host).is_empty(), "the second ask stands");
+        assert_eq!(host.forget_take(3), vec![1]);
+        assert_eq!(ask(&mut host), vec![3], "written, it is asked for again");
+        assert!(
+            host.forget_take(4).is_empty(),
+            "and a take nobody drew is nobody's"
+        );
     }
 
     /// **A window's playhead reads the counter the host was told to read.** The
