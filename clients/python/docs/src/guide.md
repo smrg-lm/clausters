@@ -42,7 +42,12 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
   name is how you *refer* to the group instead of to a number, comes back in
   every node record, and makes the tree navigable by path
   (`Server.group_at("/mixer/drums")`). That is what lets a mixer's channels, its
-  sends and its master be built out of groups and still be sayable.
+  sends and its master be built out of groups and still be sayable. A group also
+  says **how** its members run: `group.auto_order()` has the server order them
+  by the buses each one reads and writes rather than by the order they were
+  added in, and `group.parallel()` has it run the independent ones on the DSP
+  worker threads (`workers`), bit-identically. Both are the same analysis, and
+  either can be handed back with `False`.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched_at` timing without shared memory.
 - **Introspection** — `Server.query_tree()` and `node.info()` read what is *playing* (the server is asked about every node it holds, a node about itself; every entry of the tree is the same record, and `print(tree)` draws it); `Server.query_defs()`, `query_buffers()` and `query_ugens()` read what the server **holds**: the loaded defs with their control surface, the allocated buffers, and the UGen catalog with named inputs and defaults. Worth asking rather than assuming — the def store persists across restarts, so a server can hold defs this client never sent. All blocking, so never from a routine.
 - `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.

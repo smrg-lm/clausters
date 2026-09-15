@@ -123,25 +123,11 @@ already carry it.
   line in each client. **Distinct from the ownership question in section 2**:
   this one uses the map that is already there.
 
-- ⬜ **Two group verbs exist on the wire and in neither client:
-  `/group_parallel` and `/group_sortMode`** *(`clients/python/PLAN.md`, Found by
-  use)*. Auto-ordered and parallel groups are the server's own additions over
-  scsynth and a client can only reach them by spelling the message -- which a
-  client *test* already does, which is the tell. A pair of verbs on `Group`, in
-  both clients in one commit.
-
-- ⬜ **An engine in a page has no clock, so every meter it reports reads zero**
-  (`clients/web/PLAN.md`, Future directions). The block CPU meter and the load
-  table both stamp inertly on `wasm32`, so a page can ask a native server what
-  its roles cost and not its own engine. Needs a clock handed down by the host
-  (`performance.now()`), not a wasm clock in Rust.
-
-- ⬜ **The disk threads are the one worker the load table cannot see**
-  (`PLAN.md`, Found by use). Every other long-lived thread accounts its work to
-  `/server_load`; `diskin`/`diskout` are spawned from the UGen registry, where
-  nothing reaches the table, so a session bottlenecked on soundfile streaming
-  reads as idle. Needs an aggregated role and a way for a UGen to reach the
-  table at build time -- a small decision, not just typing.
+- ⬜ **The manual ordering family is in neither client: `/node_before`,
+  `/node_after`, `/node_order`, `/group_head`, `/group_tail`**
+  (`clients/python/PLAN.md`, Found by use). The older half of the subject the
+  two group verbs closed: `AddAction` places a node when it is made and nothing
+  moves one afterwards. Verbs on `Node` and `Group`, both clients in one commit.
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make

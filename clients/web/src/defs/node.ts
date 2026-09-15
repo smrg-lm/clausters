@@ -276,6 +276,63 @@ export class Group extends Node {
     }
 
     /**
+     * Orders this group's children by **what they read and write**
+     * (`/group_sortMode`) instead of by the order they were added in, now and
+     * on every later change. Answers this group.
+     *
+     * The server infers the dependency from the buses each def touches: a node
+     * that reads a bus runs after the node that writes it. That is the
+     * bookkeeping `AddAction.BEFORE`/`AddAction.AFTER` are for, done by the
+     * side that already knows the graph — add the members in any order and the
+     * chain comes out right, including after one is freed or retargeted
+     * ({@link Node.map}).
+     *
+     * The two ways of ordering do not mix, and the server says so: inside an
+     * auto-ordered group a manual move (`/node_before`, `/node_after`,
+     * `/node_order`, `/group_head`, `/group_tail` — wire commands this client
+     * has no verb for yet) replies `/fail`. Pass `false` to hand the order
+     * back.
+     *
+     * What the server inferred is readable, which is the point of a rule
+     * nobody typed: {@link Server.queryTree} reports the order it chose and
+     * {@link Server.dumpGraph} the connections it read.
+     *
+     * @param mode - `true` to sort by the buses, `false` for manual order.
+     */
+    autoOrder(mode = true): this {
+        this.srv().sendMsg("/group_sortMode", ["i", this.id], ["i", mode ? 1 : 0]);
+        return this;
+    }
+
+    /**
+     * Runs this group's independent children **at the same time**
+     * (`/group_parallel`), on the server's DSP worker threads. Answers this
+     * group.
+     *
+     * It is the same dependency analysis {@link Group.autoOrder} uses, read for
+     * a different purpose: members that touch no bus in common cannot affect
+     * each other, so they are grouped into stages and a stage's members run on
+     * whatever workers are free. The result is **bit-identical** to running
+     * them one after another — this asks for the same samples sooner, never for
+     * different ones — and an offline render takes it too.
+     *
+     * Two things decide whether it does anything. The server needs worker
+     * threads, which the engine in a page has none of — it is one thread, so
+     * the flag is remembered there and everything stays sequential, exactly as
+     * on a native server started without `--workers`. And the graph needs the
+     * width: a stage with fewer members than workers caps the gain at the
+     * member count, and a graph that already fits in one core gains nothing.
+     * Measure rather than assume.
+     *
+     * @param mode - `true` to run the stages in parallel, `false` for strict
+     *   order.
+     */
+    parallel(mode = true): this {
+        this.srv().sendMsg("/group_parallel", ["i", this.id], ["i", mode ? 1 : 0]);
+        return this;
+    }
+
+    /**
      * A handle on a group that is **already** on the server, named by the id
      * something else reported. Sends nothing.
      */

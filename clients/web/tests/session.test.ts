@@ -75,6 +75,12 @@ async function fakeSession(): Promise<{
 const addrs = (packets: readonly Uint8Array[]): string[] =>
     packets.flatMap((p) => decodePacket(p).map((m) => m.addr));
 
+/** What was sent, address and arguments, in order. */
+const sent = (packets: readonly Uint8Array[]): [string, unknown[]][] =>
+    packets.flatMap((p) =>
+        decodePacket(p).map((m): [string, unknown[]] => [m.addr, m.args])
+    );
+
 /** The default clock, read through a call so no narrowing leaks across it. */
 const defaultClock = (): TempoClock | null => main.defaultClock;
 
@@ -193,6 +199,35 @@ test("every resource constructor resolves the same ambient server", () =>
             assert.equal(group.server, session.server);
         });
         assert.deepEqual(addrs(packets), ["/group_new", "/synth_new", "/graph_new"]);
+        session.close();
+    }));
+
+test("a group orders and parallelizes itself", () =>
+    withCleanDefault(async () => {
+        // The two modes the server's own bus analysis drives, and the shape
+        // they share: a flag on the group, answered by the group so it chains
+        // onto the constructor. Same verbs, same messages, same order as the
+        // reference client's `auto_order`/`parallel`.
+        const { session, packets } = await fakeSession();
+        const group = new Group({ server: session.server });
+
+        assert.equal(group.autoOrder(), group);
+        assert.deepEqual(sent(packets).at(-1), ["/group_sortMode", [group.id, 1]]);
+        group.autoOrder(false);
+        assert.deepEqual(sent(packets).at(-1), ["/group_sortMode", [group.id, 0]]);
+
+        assert.equal(group.parallel(), group);
+        assert.deepEqual(sent(packets).at(-1), ["/group_parallel", [group.id, 1]]);
+        group.parallel(false);
+        assert.deepEqual(sent(packets).at(-1), ["/group_parallel", [group.id, 0]]);
+
+        // Chained onto the creation, which is how a piece reads: one
+        // expression that makes the group and says how it runs.
+        const band = new Group({ server: session.server }).parallel();
+        assert.deepEqual(sent(packets).slice(-2), [
+            ["/group_new", [band.id, 1, 0]],
+            ["/group_parallel", [band.id, 1]],
+        ]);
         session.close();
     }));
 

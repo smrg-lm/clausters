@@ -13,6 +13,11 @@ clausters --nrt score.osc out.wav --workers 3   # faster offline renders too
 /group_parallel groupID mode    # 1 = process children in stages, 0 = strict order
 ```
 
+Both clients spell the command as a verb on the group: `group.parallel()` /
+`group.parallel(false)` in Python and TypeScript alike (`Group.auto_order` /
+`autoOrder` is its pair — see [`auto-order.md`](auto-order.md), the same
+analysis read for the other question).
+
 From the Python client, `workers` is a first-class argument on every path that
 owns the engine: `Session.live(workers=3)` / `Server.boot(workers=3)` for a
 launched server (`None`, the default, emits no flag so the server's own

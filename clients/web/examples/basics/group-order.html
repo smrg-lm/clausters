@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: one analysis, two uses</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The server reads which buses each node touches and infers
+who depends on whom. The same reading answers two different questions, and each
+is a verb on the group:
+
+<code>group.autoOrder()</code> (<code>/group_sortMode</code>) — <i>in what order
+must these run?</i> A node that reads a bus runs after the node that writes it.
+Add the members in any order and the chain comes out right, now and after every
+later change.
+
+<code>group.parallel()</code> (<code>/group_parallel</code>) — <i>which of these
+can run at the same time?</i> Members that touch no bus in common cannot affect
+each other, so the server batches them into stages and the DSP worker threads
+take them. The samples are the same either way.
+
+Four voices write four private buses and one mixer sums them to the output, and
+they are added <b>backwards</b> — the mixer first, so it reads buses nobody has
+written yet. You hear silence, then a chord the moment <code>autoOrder</code>
+lands; the tree below is the server's answer printed back.</div>
+
+      <button id="run">boot and play</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/basics/group_order.py, call for
+      call: the same two defs, the same four voices on four private buses under
+      one mixer, added backwards, sorted by one `autoOrder`.
+
+      The one line that cannot be the same is the session: `Session.embed` is
+      this client's `live`, and it takes no `workers` because the engine in a
+      page is one thread — `parallel` is accepted and remembered there and
+      changes nothing, exactly as on a native server started without
+      `--workers`. That is a platform difference, not a divergence: the flag,
+      the analysis and the samples are identical, and what a page lacks is
+      somewhere else to run a stage. Whether parallel *helps* is a measurement
+      either way, and it belongs to `cargo run --release --example bench`.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/group-order.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        AddAction, Bus, Group, Session, Synth, SynthDef,
+      } from "../../dist/index.js";
+      import { control, in_, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const VOICES = 4;
+      const CHORD = [220.0, 277.0, 330.0, 440.0];
+
+      // ---- the two defs ----
+      // A voice writes its own bus; the mixer reads four of them and sums them
+      // to the output. Nothing here says anything about order -- the buses are
+      // the whole statement, and the server reads them.
+      function voice(name = "voice") {
+        const bus = control("bus", 16.0);
+        const freq = control("freq", 220.0);
+        return new SynthDef(name, out(bus, sine(freq).mul(0.12)));
+      }
+
+      function mixer(name = "mixer") {
+        // One control per bus, rather than one control plus arithmetic: the
+        // analysis reads a bus index that is a constant **or a control** (it
+        // takes the node's current value), and `first + n` is neither -- it is
+        // a signal, which makes the node a barrier the server cannot place.
+        // That is the one thing to get right when writing a def for an
+        // auto-ordered group.
+        const taps = [];
+        for (let n = 0; n < VOICES; n++) {
+          taps.push(in_(control(`b${n}`, 16.0 + n)));
+        }
+        const sig = taps.reduce((a, b) => a.add(b));
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      async function run(seconds = 4.0) {
+        const session = (await Session.embed({ tempo: 1.0 })).activate();
+        await voice().send();
+        await mixer().send();
+        await session.server.sync();
+
+        const bank = new Group().parallel();
+        const buses = [];
+        for (let n = 0; n < VOICES; n++) buses.push(Bus.audio());
+
+        const ports = {};
+        buses.forEach((bus, n) => { ports[`b${n}`] = bus.index; });
+        const mix = new Synth("mixer", ports, { target: bank });
+        const voices = buses.map((bus, n) =>
+          new Synth("voice", { bus: bus.index, freq: CHORD[n] },
+            { target: bank, action: AddAction.TAIL }));
+        await session.server.sync();
+        log("added backwards -- the mixer reads buses nobody has written yet:");
+        log(String(await session.server.queryTree(bank)));
+        await session.run(seconds / 2);      // silence
+
+        bank.autoOrder();
+        await session.server.sync();
+        log("after autoOrder -- the server put the voices in front of it:");
+        log(String(await session.server.queryTree(bank)));
+        await session.run(seconds / 2);      // the chord
+
+        for (const node of [...voices, mix]) node.free();
+        for (const bus of buses) bus.free();
+        session.close();
+      }
+
+      $("run").onclick = () => {
+        $("run").disabled = true;
+        run().catch((err) => log(`failed: ${err}`));
+      };
+    </script>
+  </body>
+</html>

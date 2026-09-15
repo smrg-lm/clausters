@@ -276,6 +276,32 @@ def test_group_new_and_graph_build_their_own_message():
     assert iface.sent[-1] == ("/graph_moveSlot", [slot.id, other.id])
 
 
+def test_a_group_orders_and_parallelizes_itself():
+    # The two modes the server's own analysis drives, and the shape they share:
+    # a flag on the group, answered by the group so it chains onto the
+    # constructor. Both were reachable only by spelling the message until they
+    # became verbs -- a client test doing `send_msg` was the tell.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group(server=srv)
+
+    assert group.auto_order() is group
+    assert iface.sent[-1] == ("/group_sortMode", [group.id, 1])
+    group.auto_order(False)
+    assert iface.sent[-1] == ("/group_sortMode", [group.id, 0])
+
+    assert group.parallel() is group
+    assert iface.sent[-1] == ("/group_parallel", [group.id, 1])
+    group.parallel(False)
+    assert iface.sent[-1] == ("/group_parallel", [group.id, 0])
+
+    # Chained onto the creation, which is how a piece reads: one expression
+    # that makes the group and says how it runs.
+    band = Group(server=srv).parallel()
+    assert iface.sent[-2] == ("/group_new", [band.id, 1, 0])
+    assert iface.sent[-1] == ("/group_parallel", [band.id, 1])
+
+
 def test_a_wait_for_done_ignores_another_commands_done():
     """A ``/done`` names the command it closes, so one left in flight by an
     earlier async send is not the next wait's to take.

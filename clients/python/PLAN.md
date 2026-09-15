@@ -1518,21 +1518,48 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **Two group verbs exist on the wire and in neither client: `/group_parallel`
+- ✅ **Two group verbs exist on the wire and in neither client: `/group_parallel`
   and `/group_sortMode`** *(found 2026-09-15 while writing the `/server_load`
   example, which wanted a parallel group so the `dsp` rows would move and had
-  nowhere to ask for one)*. Auto-ordered groups (M12) and parallel groups (M13)
-  are two of the server's own additions over scsynth, `docs/schemas.md`
-  documents both, and a client can only reach them by spelling the message --
-  which is what `clients/python/tests/test_session.py` does
+  nowhere to ask for one; closed 2026-09-16 when the user asked for both verbs
+  in both clients)*. Auto-ordered groups and parallel groups are two of the
+  server's own additions over scsynth, `docs/schemas.md` documented both, and a
+  client could only reach them by spelling the message -- which is what
+  `clients/python/tests/test_session.py` did
   (`server.send_msg("/group_parallel", band.id, 1)`), and a raw `send_msg` in a
-  *client* test is the tell. So the gap is not cosmetic: a feature the server
-  advertises has no client end, and the example that would teach it cannot be
-  written in the client's own voice. The shape is a pair of verbs on `Group` --
-  the receiver is the group, so it is `group.parallel(True)` /
-  `group.auto_order(True)` rather than an argument to something else -- and per
-  the non-divergence rule they land in **both** clients in the same commit,
-  with `docs/schemas.md`'s wording as the reference for what each one means.
+  *client* test is the tell.
+
+  **What shipped.** `Group.auto_order(mode=True)` and `Group.parallel(mode=True)`
+  in Python, `autoOrder`/`parallel` in TypeScript, each answering the group so it
+  chains onto the constructor (`Group().parallel()`), each taking `False` to hand
+  the mode back. The pair of examples is `basics/group_order.py` /
+  `basics/group-order.html`: four voices on four private buses under one mixer,
+  added **backwards** so the mixer reads buses nobody has written yet, and one
+  `auto_order()` that makes the chord sound -- the two files print the same tree,
+  node id for node id. Both books say a group also decides *how* its members
+  run, and `docs/auto-order.md` and `docs/parallel.md` now name the client verb
+  beside the command.
+
+  **What writing the example taught, and it is in the example**: the analysis
+  reads a bus index that is a constant **or a control**, so a mixer whose inputs
+  are `in_(first + n)` is a barrier the server cannot place -- one control per
+  bus is what makes an auto-ordered def work. The first draft had exactly that
+  bug and printed an unchanged tree.
+
+- ⬜ **The manual ordering family is in neither client either: `/node_before`,
+  `/node_after`, `/node_order`, `/group_head`, `/group_tail`** *(found
+  2026-09-16 while documenting `auto_order`, whose docstring wanted to name the
+  verbs it disables and found there were none -- a dangling `{@link}` in the
+  TypeScript one is what said so out loud)*. The docstrings name the wire
+  commands instead, which is honest and is not the fix: this is the same class
+  of gap the two group verbs were, five commands wide, and it is the older half
+  of the subject — `AddAction` places a node **when it is made**, and nothing in
+  either client moves one afterwards. The shape follows `auto_order`: verbs on
+  `Node` (`before`, `after`, `order`) and on `Group` (`head`, `tail`), each
+  answering the node so they chain, in both clients in one commit. Worth taking
+  with the fact that auto-ordered groups refuse them: a client that has both
+  should say which one a group is under, which is a reading of
+  `Server.query_tree` and not a new command.
 
 - ✅ **The multitrack example is a driver with an editor in it, and it should be
   `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py

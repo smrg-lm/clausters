@@ -16,9 +16,8 @@ which the peak in ``status`` cannot manage.
 
 What the roles are: ``audio`` is the callback's whole block; ``dsp N`` is one
 worker thread (the stages it took off the conductor, so it only appears on a
-server booted with ``workers``, and it only *moves* while a parallel group is
-running -- an ordinary tree is all the conductor's, and shows up under
-``audio``); ``net`` is the serving turn, never the wait for the next packet;
+server booted with ``workers``); ``net`` is the serving turn, never the wait
+for the next packet;
 ``nrt`` is the job queue (soundfiles, ``/buffer_gen``, the editing verbs);
 ``faust`` is compiling a FaustDef -- it already carries seconds before this
 example sends anything, because a server with persisted defs recompiles them
@@ -48,6 +47,20 @@ from clausters.defs import Buffer, format_load
 from clausters.seq import INF, Pbind, Pseq, Pwhite
 
 # %% [markdown]
+# ## The session
+# `workers` gives the server DSP worker threads, which is what makes the
+# `dsp 0` / `dsp 1` rows exist at all. They stay at **zero** through this run,
+# and that is worth reading rather than skipping: a worker takes a stage only
+# inside a parallel group whose members touch **disjoint** buses, and these
+# voices all sum into the output, so the server has nothing it can spread and
+# runs them where it always did -- under `audio`. `basics/group_order.py` is
+# the graph where it can.
+
+# %%
+session = Session.live(tempo=2.0, latency=0.1, workers=2).activate()
+server = session.server
+
+# %% [markdown]
 # ## Something to measure
 # A phrase that keeps arriving, so the audio and net rows have work in them.
 # Nothing here is about the meter -- it is an ordinary pattern.
@@ -59,17 +72,6 @@ phrase = Pbind(
     dur=0.125,
     amp=Pwhite(0.05, 0.12),
 )
-
-# %% [markdown]
-# ## The session
-# `workers` gives the server DSP worker threads, which is what makes the
-# `dsp 0` / `dsp 1` rows exist at all. They stay at zero in this run: a worker
-# takes stages off the conductor only inside a **parallel group**, and this
-# phrase plays in the ordinary tree, so all of its DSP is the `audio` row.
-
-# %%
-session = Session.live(tempo=2.0, latency=0.1, workers=2).activate()
-server = session.server
 
 # %% [markdown]
 # ## Polling it

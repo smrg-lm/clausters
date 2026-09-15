@@ -437,6 +437,56 @@ class Group(Node):
         path, the client does not)."""
         self._server().send_msg("/group_name", self.id, str(name))
 
+    def auto_order(self, mode: bool = True) -> "Group":
+        """Orders this group's children by **what they read and write**
+        (``/group_sortMode``) instead of by the order they were added in, now
+        and on every later change. Answers this group.
+
+        The server infers the dependency from the buses each def touches: a
+        node that reads a bus runs after the node that writes it. That is the
+        bookkeeping `AddAction.BEFORE`/`AddAction.AFTER` are for, done by the
+        side that already knows the graph -- add the members in any order and
+        the chain comes out right, including after one is freed or retargeted
+        (`Node.map`).
+
+        The two ways of ordering do not mix, and the server says so: inside an
+        auto-ordered group a manual move (``/node_before``, ``/node_after``,
+        ``/node_order``, ``/group_head``, ``/group_tail`` -- wire commands this
+        client has no verb for yet) replies ``/fail``. Pass ``False`` to hand
+        the order back.
+
+        What the server inferred is readable, which is the point of a rule
+        nobody typed: `clausters.defs.Server.query_tree` reports the order it
+        chose and `clausters.defs.Server.dump_graph` the connections it read.
+        """
+        self._server().send_msg("/group_sortMode", self.id, 1 if mode else 0)
+        return self
+
+    def parallel(self, mode: bool = True) -> "Group":
+        """Runs this group's independent children **at the same time**
+        (``/group_parallel``), on the server's DSP worker threads. Answers this
+        group.
+
+        It is the same dependency analysis `auto_order` uses, read for a
+        different purpose: members that touch no bus in common cannot affect
+        each other, so they are grouped into stages and a stage's members run
+        on whatever workers are free. The result is **bit-identical** to running
+        them one after another -- this asks for the same samples sooner, never
+        for different ones -- and an offline render takes it too.
+
+        Two things decide whether it does anything. The server needs worker
+        threads (``clausters --workers N``, `clausters.defs.ServerOptions`,
+        ``Session.live(workers=...)``); without them the flag is remembered and
+        everything stays sequential. And the graph needs the width: a stage with
+        fewer members than workers caps the gain at the member count, and a
+        graph that already fits in one core gains nothing. Measure rather than
+        assume.
+
+        Pass ``False`` to return to strict order.
+        """
+        self._server().send_msg("/group_parallel", self.id, 1 if mode else 0)
+        return self
+
     @classmethod
     def from_id(cls, node_id: int, server=None) -> "Group":
         """A handle on a group that is **already** on the server, named by the
