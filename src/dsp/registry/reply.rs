@@ -14,7 +14,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Fixed(3),
         &[
             inp("signal", 0.0),
-            inp_opt("decay", 20.0),
+            inp_opt("decay", clausters_core::measure::METER_FALL_DB),
             inp_opt("hold", 0.0),
         ],
         Kr,
@@ -23,6 +23,23 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(crate::dsp::measure::Meter::new()),
+    ),
+    // --- the clip count: how many times the signal was flattened, which is
+    //     a run of samples at full scale and not a peak (`dsp::measure`). ---
+    desc(
+        "ClipCount",
+        Fixed(3),
+        &[
+            inp("signal", 0.0),
+            inp_opt("ceiling", clausters_core::measure::CLIP_CEILING),
+            inp_opt("run", clausters_core::measure::CLIP_RUN as f32),
+        ],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(crate::dsp::measure::ClipCount::new()),
     ),
     // --- side-effect UGens: reply/observe, no `Out` required. Control or
     //     audio rate; their output is silence (SendTrig/SendReply) or the

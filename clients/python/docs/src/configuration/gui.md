@@ -140,8 +140,9 @@ the same color to within the 8 bits of the notation:
 | `warn` | `#d96b6b` | The negative/warning readout (the phase scope's anti-correlation). |
 | `meter_field` | `#0a0a0d` | The well a meter's column stands in: darker than any panel it sits on, because a column is read against its own empty space. |
 | `meter_low` | `#3dc770` | A meter's column below the alignment level (-18 dBFS): the level a mix works at. |
-| `meter_mid` | `#f2cc40` | Its column between the alignment level and the hot end (-6 dBFS): headroom being used. |
-| `meter_high` | `#eb4738` | Its column in the last decibels before full scale, and the whole of it at or past unity. |
+| `meter_mid` | `#f2cc40` | Its column from the alignment level to the hot end (-6 dBFS): headroom being used. Reached at -12 dBFS and held, so a column using its headroom reads amber rather than green with a cast on it. |
+| `meter_high` | `#eb4738` | Its column from the hot end (-6 dBFS) to the top: the last decibels, where a peak that grows any further clips. A band and not a ramp, or the column would read amber at -6 and red only at full scale. |
+| `meter_clip` | `#ff382e` | The lamp above a meter's column: lit once the signal was flattened and left lit until a hand puts it out. Brighter and flatter than `meter_high`, because it is a latched statement about the past and not another band of the level. |
 | `key_white` | `#dbdee6` | A playable white key. |
 | `key_white_dim` | `#d1d6e0` | The piano roll's dimmer white key. |
 | `key_black` | `#1a1c24` | A black key. |

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a meter, read as a meter</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 52rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 52rem; white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      /* The canvas is an element: the document sizes it and the host draws
+         into whatever it gets. */
+      #stage { align-self: stretch; height: min(76vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>views/vumeter.py</code>: a <b>meter read the way a meter is read</b> —
+decibels, a held peak and a clip lamp that stays lit until it is clicked.
+
+Four rules make a bar a meter, and all four are the shared crate's: the
+<b>peak is the block's</b> (the engine walks every sample and publishes the
+peak, so a reader at a screen's rate still catches a transient), <b>a peak is
+held</b> (the hairline across the column), <b>the scale is decibels</b> down to
+a floor the reader states — the first two meters here are the same two buses on
+the 60 dB strip a mix is read on and on the 144 dB range of a 24-bit render,
+while the third carries neither ladder nor numbers, which is what a strip of
+meters in a track header is — and
+<b>an over is latched</b>. What counts as an over is a <i>run</i> of samples at
+full scale, which only something walking samples can see, so the
+<code>clipCount</code> UGen counts them onto a control bus and the widget
+differences it.
+
+The tone is <b>struck</b> every couple of seconds rather than swelled, because a
+level that rises slowly shows the scale and none of the ballistics. The hits are
+far enough apart that the whole ballistic plays out between them: the column
+starts down at once, the mark waits <code>hold</code> seconds and only then
+walks down at <code>decay</code> decibels a second. Every fourth hit goes past
+full scale. <b>Click a meter to clear its lamps.</b> It makes
+sound.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/vumeter.py, call for
+      call: the same two defs, the same two meters over the same two buses, and
+      the same ramp pushing the gain past unity.
+
+      Serve clients/web (the package root) and open
+      /examples/views/vumeter.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Bus, Session, gui } from "../../dist/index.js";
+      import {
+        AddAction, Synth, SynthDef, clipCount, control, in_, out, outCtl, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      async function run() {
+        $("start").disabled = true;
+
+        // `Session.embed()` opens the engine in this tab and `session.gui()`
+        // gives it the host with its client leg pointed at that server -- the
+        // meters read the levels over that leg.
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        // A stereo tone, and a counter watching what it produces. The tone
+        // writes buses 0 and 1 -- the hardware outputs -- so the meter reads
+        // the levels the engine publishes for them and needs nothing else. The
+        // counter is a second synth at the tail, so it reads the buses after
+        // the tone has written them, and it writes one control bus per channel:
+        // the running count of overs, which is what the widget differences.
+        await new SynthDef("tone",
+          out(0.0, [
+            sine(control("freq", 330.0)).mul(control("gain", 0.2)),
+            sine(control("freq", 330.0).mul(1.5)).mul(control("gain", 0.2)),
+          ]),
+        ).send(server);
+        await new SynthDef("overs",
+          outCtl(control("out", 0.0), clipCount(in_(0.0))),
+          outCtl(control("out", 0.0).add(1.0), clipCount(in_(1.0))),
+        ).send(server);
+        await server.sync();
+
+        const tone = new Synth("tone", { freq: 330.0 }, { server });
+        const overs = Bus.control(2, { server });
+        new Synth("overs", { out: overs.index },
+                  { action: AddAction.TAIL, server });
+
+        // Three meters over the same two buses: same signal, same rules. The
+        // first two differ only in their floor -- the strip a mix is read on,
+        // and the dynamic range of a 24-bit render -- with the numbers on the
+        // outside of each pair (`ruler`). The third carries neither ladder nor
+        // numbers: that is a meter and not a degraded one, and it is what a
+        // strip of them down the edge of a track header is. The lamps sit over
+        // the columns in all three, and a click on any of them puts its own
+        // lamps out.
+        const win = await gui.view(
+          { title: "A meter, read as a meter", w: 460, h: 460 },
+          gui.panel(
+            { layout: "row" },
+            gui.meter(0, { channels: 2, name: "mix", label: "mix" }),
+            gui.meter(0, { channels: 2, bits: 24, ruler: "right",
+                           clip: overs.index, name: "render",
+                           label: "24 bits" }),
+            gui.meter(0, { channels: 2, ruler: false, readout: false,
+                           clip: overs.index, name: "bare", label: "bare" }),
+          ),
+        ).open($("stage"));
+        log("a hit every few seconds: the column jumps at once and starts "
+          + "down, the mark waits and then falls. Every fourth hit clips and "
+          + "lights the lamps -- click a meter to clear them");
+
+        // **Hits, not a swell.** A level that rises and falls slowly shows the
+        // scale and none of the ballistics: the attack, the hold and the fall
+        // are only visible against a transient. So the tone sits at a quiet bed
+        // level and is struck every few seconds -- the column jumps at once
+        // and starts down immediately, the mark stays where it jumped for
+        // `hold` seconds and only then walks down at `decay` decibels a second.
+        // Every fourth hit goes past full scale, which is what the lamps are
+        // waiting for.
+        const BED = 0.03;      // the level between hits
+        const HIT = 0.7;       // a hit that uses its headroom
+        const OVER = 1.35;     // and one that does not have any left
+        // Long enough for the whole ballistic to play out between hits: a hit
+        // every two seconds is a mark that never finishes falling.
+        const PERIOD = 3.5;    // seconds between hits
+
+        let hits = 0;
+        const tick = setInterval(() => {
+          // The hit is one tick long: what the meter shows for the second and
+          // a half after it is the ballistics, not the signal.
+          tone.set({ gain: hits % 4 === 3 ? OVER : HIT });
+          setTimeout(() => tone.set({ gain: BED }), 40);
+          hits += 1;
+        }, PERIOD * 1000);
+        win.onClosed(() => clearInterval(tick));
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

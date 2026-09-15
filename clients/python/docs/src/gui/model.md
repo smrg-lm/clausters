@@ -119,7 +119,7 @@ from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
 | `curve` | break-points, played by the server's own shape math | `points`, `duration`, `exp` |
 | `keys` | a playable keyboard | `min`/`max` (the visible compass), `active_min`/`active_max`, `voice` |
 | `nodes` | the audio server's node graph, live | `group`, `controls` |
-| `meter` | a bus level, read from the shared segment | `bus`, `rate`, `min`, `max` |
+| `meter` | a bus level as a meter is read: the column, the held peak, the clip lamp and the decibel ladder | `bus`, `rate`, `channels`, `scale`, `floor_db`/`bits`, `hold`, `decay`, `clip`, `ruler`, `readout`, `min`, `max` |
 | `score` | an engraved notation page | `display_list`, `playhead`, `editable` |
 | `canvas` | a WGSL shader over the widget area | `shader`, `params`, `buses` |
 | `label` | static text | `text`, `text_size`, `wrap`, `align` |

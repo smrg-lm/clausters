@@ -209,6 +209,7 @@ mod tests {
             &Live {
                 bus: Some(&Ramp),
                 sample_rate: rate,
+                dt: 1.0 / 60.0,
                 histories: &histories,
             },
         );

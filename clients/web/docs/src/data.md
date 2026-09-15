@@ -78,6 +78,55 @@ To *see* the history rather than hold it, name the view instead — a `scope`
 widget at `rate: "control"` plots a control bus's recent past, and the host
 keeps the window.
 
+## What a meter is
+
+A bar that follows a bus is not a meter. Four rules make it one, and all four
+are the shared crate's, so a level reads the same in every window that draws it:
+
+- **The peak is the block's, not a sample of it.** The engine walks every sample
+  of every block and publishes the peak (held with a decay), so a `meter` widget
+  reading once per frame — a frame is a dozen blocks — sees the transient rather
+  than whatever sample it happened to look at. Sampling a control bus written
+  with `outCtl(bus, signal)` is exactly the mistake this avoids: it reads one
+  sample a block and misses the peak. Write `meter(signal)` instead, which puts
+  the same ballistics on any signal:
+
+  ```ts
+  import { SynthDef, control, in_, meter, outCtl } from "clausters/defs";
+
+  new SynthDef("level", outCtl(control("out"), meter(in_(control("bus")))));
+  ```
+
+- **The refresh is the window's.** The widget reads once per frame and never
+  faster; nothing has to be paced for it, and no message is sent at all.
+- **A peak is held.** The loudest reading stays `hold` seconds and then falls at
+  `decay` decibels per second, drawn as a hairline across the column — the mark
+  is still there when an eye gets to it.
+- **The scale is decibels**, down to a floor the reader states: `floorDb`, or
+  the dynamic range of the resolution the piece is rendered at (`bits` 16 is
+  -96 dB, 24 is -144, and a 32-bit float takes 24, its significand).
+  Half of unity is -6 dB, a tenth of the way down a 60 dB strip — a linear
+  column spends nine tenths of its height on the top 20 dB nobody mixes in.
+
+**Clipping is latched.** An over lasts a handful of samples and a reader does
+not, so the lamp over the column stays lit until it is clicked or the pass starts
+again. What counts as an over is a **run** of samples at full scale — a lone
+sample at 1.0 is not clipping, since the engine is floating point and nothing is
+destroyed until a conversion — and only something walking samples can see a run:
+
+```ts
+import { Bus, SynthDef, clipCount, control, in_, outCtl } from "clausters/defs";
+import { meter } from "clausters/gui";
+
+const overs = Bus.control(1, { server });
+new SynthDef("overs", outCtl(control("out"), clipCount(in_(0.0)))).send(server);
+meter(0, { channels: 2, clip: overs.index, bits: 24 });
+```
+
+The number in a lit lamp is how far **past** full scale the signal went, which is
+the question a lit lamp raises: nothing is lost, it has to come down by that
+much before anything converts it.
+
 ## Audio buses
 
 A control bus carries one value per block; an oscilloscope needs the samples. A

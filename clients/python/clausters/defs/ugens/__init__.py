@@ -154,6 +154,7 @@ from .pan import (
     xfade2,
 )
 from .io import (
+    clip_count,
     disk_in,
     disk_out,
     in_,
@@ -398,6 +399,7 @@ __all__ = [
     "stereo_width",
     "xfade2",
     # io
+    "clip_count",
     "disk_in",
     "disk_out",
     "in_",

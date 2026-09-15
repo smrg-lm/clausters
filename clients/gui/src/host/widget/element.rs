@@ -382,6 +382,15 @@ pub struct Live<'a> {
     /// The server's sample rate (`0.0` = unknown; a reader falls back to 48 kHz
     /// rather than dividing by zero).
     pub sample_rate: f64,
+    /// **Seconds since the previous tick** — wall time, measured by the front.
+    ///
+    /// A tick runs once per animation frame and an animation frame is not a
+    /// fixed period, so anything that advances *in time* (a meter's fall, a
+    /// peak's hold) has to be told how much time passed rather than assume a
+    /// rate. It is the front's rather than the element's because only the front
+    /// knows when the previous tick was, and it is wall time rather than the
+    /// engine's clock because what it paces is a picture a person is reading.
+    pub dt: f64,
     /// The **retained past** of every bus something in this window watches. It
     /// is here rather than in the element because a history is the *bus's*: one
     /// per bus however many views watch it, and two views of one bus may
@@ -397,6 +406,19 @@ impl Live<'_> {
             return 0.0;
         }
         self.bus.map_or(0.0, |s| s.control(bus as usize))
+    }
+
+    /// What a level reader advances against for `bus` at `rate` — the same
+    /// rule [`World`] states for a draw, so a tick and a repaint never read one
+    /// differently.
+    pub fn level(&self, bus: i32, rate: super::Rate) -> f32 {
+        if bus < 0 {
+            return 0.0;
+        }
+        match rate {
+            super::Rate::Audio => self.bus.map_or(0.0, |s| s.level(bus)),
+            super::Rate::Control => self.control(bus),
+        }
     }
 
     /// Fills `out` with the newest raw samples of audio bus `bus`, returning

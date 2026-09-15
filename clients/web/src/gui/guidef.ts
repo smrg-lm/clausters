@@ -2047,27 +2047,100 @@ export function plot(
  *
  * At `rate` `"audio"` (the default) it meters an audio bus — bus 0 is the first
  * hardware output, so `meter()` is the console meter on the left out — reading
- * the level the server publishes per block: a peak held with a decay, so a
- * transient is caught even though the display refreshes far slower than the
- * engine. It costs the server nothing to set up, so a mixer's worth of meters
- * is fine. At `"control"` it reads a control bus's value instead. `min`/`max`
- * scale the bar (default `0`/`1`).
+ * the level the server publishes per block. That level is the **peak of every
+ * sample of the block**, held with a decay, so a transient is caught even
+ * though the display refreshes far slower than the engine. At `"control"` it
+ * reads a control bus's value instead: pair that with the `meter` UGen,
+ * which applies the same ballistics to any signal. `channels` meters that many
+ * **adjacent** buses, one column each.
+ *
+ * **The scale.** An audio level is an amplitude, so it is drawn in
+ * **decibels**; a control bus carries whatever the script put there, so it is
+ * drawn over `min`..`max` (default `0`/`1`). `scale` of `"db"` or `"linear"`
+ * settles it either way. A decibel meter bottoms out at `floorDb` (-60 dB, the
+ * strip a mix is read on) or at the dynamic range of a resolution — `bits` 16
+ * is -96 dB, 24 is -144, and a 32-bit float carries a 24-bit significand so it
+ * takes 24 as well. `ruler` puts the numbers on the `"left"` (the default for a
+ * decibel meter) or the `"right"`, and `false` leaves the column bare; a meter
+ * with no room for them drops them by itself.
+ *
+ * **The peak mark** is the hairline across the column: the loudest reading,
+ * held `hold` seconds (1.5 by default) and then falling at `decay` decibels per
+ * second (20, the field's rate). `hold` of 0 draws no mark.
+ *
+ * **The clip lamp** sits over the column and stays lit once the signal was
+ * flattened, until it is clicked or the pass starts again. What counts as an
+ * over is a **run** of samples at full scale, which only something walking
+ * samples can see: point `clip` at the first of `channels` control buses
+ * written by the `clipCount` UGen and the widget differences the count.
+ * With no such bus it lights on the level alone reaching the top of the scale,
+ * which is exact for exceeding full scale and blind to how many samples did.
+ * The lamp takes a share of the meter's height, so it grows with it, and how far
+ * past full scale the signal went is written over the columns, in the size every
+ * line drawn over a picture here is written in.
+ *
+ * `readout` of `false` drops **every number the meter writes** — the level at
+ * its foot and the lamp's figure — and `ruler` of `false` drops the ladder. The
+ * two together are a **bare column**, which is a meter and not a degraded one:
+ * it is what a strip of them down the edge of a track header is, where there is
+ * no room for either and the picture is the whole of what it has to say.
+ *
+ * The meter is **thin**: it asks for one narrow column per channel and its
+ * ladder's strip, and stays elastic on the height, since a level is read by how
+ * far up it goes. `w` widens it like any other widget.
  */
 export function meter(
     bus = 0,
     options: WidgetOptions & {
         rate?: "audio" | "control";
+        channels?: number;
+        scale?: "db" | "linear";
+        floorDb?: number;
+        bits?: number;
+        hold?: number;
+        decay?: number;
+        clip?: number;
+        ruler?: boolean | "left" | "right";
+        readout?: boolean;
         min?: number;
         max?: number;
         label?: string;
     } = {},
 ): GuiNode {
-    const { rate = "audio", min, max, label: text, ...rest } = options;
+    const {
+        rate = "audio",
+        channels,
+        scale,
+        floorDb,
+        bits,
+        hold,
+        decay,
+        clip,
+        ruler,
+        readout,
+        min,
+        max,
+        label: text,
+        ...rest
+    } = options;
     return node("meter", {
         ...rest,
         bus,
         rate,
-        ...drop([["min", min], ["max", max], ["label", text]]),
+        ...drop([
+            ["channels", channels],
+            ["scale", scale],
+            ["floor_db", floorDb],
+            ["bits", bits],
+            ["hold", hold],
+            ["decay", decay],
+            ["clip", clip],
+            ["ruler", strip(ruler)],
+            ["readout", flag(readout)],
+            ["min", min],
+            ["max", max],
+            ["label", text],
+        ]),
     });
 }
 

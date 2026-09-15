@@ -45,9 +45,12 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 /// way: green is headroom, amber is using it, red is about to run out.
 #[derive(Debug, Clone, Copy)]
 pub struct Scale {
-    /// Where the alignment level falls, as a fraction of the height.
+    /// Where the alignment level falls, as a fraction of the height: green
+    /// below it, and the ramp to amber begins.
     pub warn: f32,
-    /// Where the hot end falls.
+    /// Where the column is **fully** amber, and stays so up to `hot`.
+    pub amber: f32,
+    /// Where the hot end falls: the ramp to red begins.
     pub hot: f32,
 }
 
@@ -55,9 +58,17 @@ impl Scale {
     /// The decibel strip, from [`measure::METER_FLOOR_DB`] up to full scale —
     /// what a channel's meter stands on.
     pub fn decibels() -> Self {
+        Self::decibels_from(measure::METER_FLOOR_DB)
+    }
+
+    /// The same three levels on a decibel strip bottoming out at `floor_db` —
+    /// the widget's own floor, which may be the dynamic range of a resolution
+    /// rather than the mixing strip's sixty.
+    pub fn decibels_from(floor_db: f32) -> Self {
         Self {
-            warn: measure::meter_fraction_db(measure::METER_WARN_DB, measure::METER_FLOOR_DB),
-            hot: measure::meter_fraction_db(measure::METER_HOT_DB, measure::METER_FLOOR_DB),
+            warn: measure::meter_fraction_db(measure::METER_WARN_DB, floor_db),
+            amber: measure::meter_fraction_db(measure::METER_AMBER_DB, floor_db),
+            hot: measure::meter_fraction_db(measure::METER_HOT_DB, floor_db),
         }
     }
 
@@ -65,9 +76,11 @@ impl Scale {
     /// in `min..max` — the `meter` widget's own axis, whatever range it was
     /// given.
     pub fn amplitude(min: f32, max: f32) -> Self {
+        let at = |db| fraction(measure::amplitude_of_db(db), min, max);
         Self {
-            warn: fraction(measure::amplitude_of_db(measure::METER_WARN_DB), min, max),
-            hot: fraction(measure::amplitude_of_db(measure::METER_HOT_DB), min, max),
+            warn: at(measure::METER_WARN_DB),
+            amber: at(measure::METER_AMBER_DB),
+            hot: at(measure::METER_HOT_DB),
         }
     }
 }
@@ -90,21 +103,24 @@ pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32
         ]
     };
     let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
+    let amber = scale.amber.clamp(warn, hot);
     if height <= warn {
         theme.meter_low
     } else if height >= hot {
-        // Past the hot end it goes the rest of the way to red by the top, so
-        // the last band is a ramp and not a flat cap.
-        mix(
-            theme.meter_mid,
-            theme.meter_high,
-            (height - hot) / (1.0 - hot).max(1e-6),
-        )
+        // **The red band.** The last six decibels are where a peak that grows
+        // any further clips, and that is a statement, not a gradient: a ramp
+        // from the hot end to the top left the column amber at -6 and red only
+        // at 0, which says the opposite of what the mark means.
+        theme.meter_high
+    } else if height >= amber {
+        // The amber **band**: a column using its headroom reads amber all the
+        // way, rather than arriving at it just as it turns red.
+        theme.meter_mid
     } else {
         mix(
             theme.meter_low,
             theme.meter_mid,
-            (height - warn) / (hot - warn).max(1e-6),
+            (height - warn) / (amber - warn).max(1e-6),
         )
     }
 }
@@ -381,11 +397,17 @@ fn trace_row(
 pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
     let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
-        font::text(
+        // **Truncated to its own widget**, the way a control's caption already
+        // was (`controls::label_strip`): a live view is often narrow -- a meter
+        // is a column -- and a caption drawn at full length runs across the
+        // neighbour, which reads as one unintelligible word rather than as two
+        // labels.
+        font::text_ellipsis(
             mesh,
             text,
             rect.x + m.pad,
             rect.y + m.pad,
+            (rect.w - 2.0 * m.pad).max(0.0),
             m.text_scale,
             theme.text,
         );
@@ -415,6 +437,86 @@ mod tests {
         assert_eq!(fraction(2.0, 0.0, 1.0), 1.0, "above max clamps to 1");
         assert_eq!(fraction(0.0, 0.0, 2.0), 0.0);
         assert_eq!(fraction(5.0, 3.0, 3.0), 0.0, "min == max maps to 0");
+    }
+
+    /// **A meter at its own natural width still carries its ladder.** The rule
+    /// that decides whether the numbers fit used to be "the strip may not take
+    /// half the body", which was right while a meter stretched to its cell and
+    /// wrong the moment it asked for a width of its own -- a strip of numbers
+    /// is wider than two thin columns, so the meter dropped the very ladder its
+    /// width had been computed to include, and the numbers vanished.
+    #[test]
+    fn a_meter_at_its_natural_width_keeps_its_numbers() {
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let channels = [ChannelRead::default(); 2];
+        let draw_at = |mesh: &mut Mesh, ruler| {
+            draw_meter_view(
+                &mut Draw::new(mesh, &m, &theme),
+                // The width a two-channel meter asks for: two thin columns
+                // plus the `ruler_w` role and the padding.
+                Rect::new(
+                    0.0,
+                    0.0,
+                    (m.box_side * 0.5).max(3.0) * 2.0 + m.ruler_w + m.pad,
+                    160.0,
+                ),
+                &MeterView {
+                    channels: &channels,
+                    axis: MeterAxis::Decibels { floor_db: -60.0 },
+                    readout: true,
+                    label: None,
+                    ruler,
+                },
+            );
+        };
+        let mut bare = Mesh::new();
+        draw_at(&mut bare, None);
+        let mut ruled = Mesh::new();
+        draw_at(&mut ruled, Some(crate::host::ruler::Side::Left));
+        assert!(
+            ruled.vertex_count() > bare.vertex_count(),
+            "the ladder is drawn: {} vs {}",
+            ruled.vertex_count(),
+            bare.vertex_count()
+        );
+    }
+
+    /// **`readout` off is a bare column**, which is what a strip of meters in a
+    /// track header is: no ladder, no figures, and the height that would have
+    /// held them given back to the column.
+    #[test]
+    fn a_meter_told_to_carry_no_numbers_carries_none() {
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let channels = [ChannelRead {
+            level: 0.5,
+            mark: 0.7,
+            clipped: Some(1.4),
+        }];
+        let draw_at = |mesh: &mut Mesh, readout| {
+            draw_meter_view(
+                &mut Draw::new(mesh, &m, &theme),
+                Rect::new(0.0, 0.0, 60.0, 160.0),
+                &MeterView {
+                    channels: &channels,
+                    axis: MeterAxis::Decibels { floor_db: -60.0 },
+                    readout,
+                    label: None,
+                    ruler: None,
+                },
+            );
+        };
+        let mut numbered = Mesh::new();
+        draw_at(&mut numbered, true);
+        let mut bare = Mesh::new();
+        draw_at(&mut bare, false);
+        assert!(
+            bare.vertex_count() < numbered.vertex_count(),
+            "the glyphs and their plate are gone: {} vs {}",
+            bare.vertex_count(),
+            numbered.vertex_count()
+        );
     }
 
     #[test]
@@ -537,7 +639,35 @@ mod tests {
             "-18 of 60 is seven tenths up: {}",
             db.warn
         );
-        assert!(db.warn < db.hot && db.hot < 1.0, "{db:?}");
+        assert!(
+            db.warn < db.amber && db.amber < db.hot && db.hot < 1.0,
+            "{db:?}"
+        );
+
+        // **The amber is a band, not the end of a ramp.** A column at -12 dB is
+        // using its headroom, which is the thing the colour exists to say, and
+        // it read as green with a cast on it while the only ramp ran from -18
+        // to -6.
+        let theme = crate::host::theme::Theme::default();
+        let at = |db_level: f32| {
+            column_color(
+                &theme,
+                db,
+                measure::meter_fraction_db(db_level, measure::METER_FLOOR_DB),
+            )
+        };
+        assert_eq!(at(measure::METER_AMBER_DB), theme.meter_mid);
+        assert_eq!(
+            at(-9.0),
+            theme.meter_mid,
+            "amber all the way to the hot end"
+        );
+        // **And the red is a band too**: the last six decibels are where a peak
+        // that grows any further clips, which is a statement and not a
+        // gradient. A ramp there left the column amber at -6 and red only at 0.
+        assert_eq!(at(measure::METER_HOT_DB), theme.meter_high, "red at -6");
+        assert_eq!(at(-3.0), theme.meter_high);
+        assert_eq!(at(0.0), theme.meter_high);
 
         let linear = Scale::amplitude(0.0, 1.0);
         assert!(
@@ -558,10 +688,13 @@ mod tests {
                 .all(|(a, b)| (a - b).abs() < 1e-5),
             "and red at the top: {top:?}"
         );
-        let middle = column_color(&theme, db, (db.warn + db.hot) * 0.5);
+        // The one ramp left is the green-to-amber edge, between the alignment
+        // level and the amber band: the bands are bands, and only the edge
+        // between them is a gradient.
+        let edge = column_color(&theme, db, (db.warn + db.amber) * 0.5);
         assert!(
-            middle != theme.meter_low && middle != theme.meter_mid,
-            "between the two it is a ramp and not a band: {middle:?}"
+            edge != theme.meter_low && edge != theme.meter_mid,
+            "the edge into the amber is a ramp: {edge:?}"
         );
     }
 
@@ -583,4 +716,307 @@ mod tests {
             "and a level and a mark are more than the well"
         );
     }
+}
+
+// ---- the whole meter: columns, held peaks, the clip lamp and the ladder ----
+
+/// **What a meter's height measures.** A level is an amplitude and is read in
+/// decibels; anything else a bus carries is read over the range the widget was
+/// given, and the two are different axes rather than two settings of one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MeterAxis {
+    /// Decibels, from `floor_db` up to full scale — what a meter of a signal
+    /// stands on. The floor is the reader's question: the 60 dB strip a mix is
+    /// read on, or the dynamic range of the resolution the piece is rendered
+    /// at (`clausters_core::measure::floor_db_for_bits`).
+    Decibels { floor_db: f32 },
+    /// A plain value over `min..max` — a control bus carrying something that is
+    /// not an amplitude, where a decibel would be a reading of nothing.
+    Linear { min: f32, max: f32 },
+}
+
+impl MeterAxis {
+    /// How high a column stands for `value`, over `0..1`.
+    pub fn fraction(self, value: f32) -> f32 {
+        match self {
+            MeterAxis::Decibels { floor_db } => measure::meter_fraction(value, floor_db),
+            MeterAxis::Linear { min, max } => fraction(value, min, max),
+        }
+    }
+
+    /// Where the two colour levels fall on this axis.
+    pub fn scale(self) -> Scale {
+        match self {
+            MeterAxis::Decibels { floor_db } => Scale::decibels_from(floor_db),
+            MeterAxis::Linear { min, max } => Scale::amplitude(min, max),
+        }
+    }
+
+    /// The reading, as the corner says it: decibels below full scale, or the
+    /// value itself.
+    pub fn readout(self, value: f32) -> String {
+        match self {
+            MeterAxis::Decibels { floor_db } => {
+                let db = db_of(value);
+                if db <= floor_db {
+                    "-INF".to_string()
+                } else {
+                    format!("{db:.1}")
+                }
+            }
+            MeterAxis::Linear { .. } => fmt(value),
+        }
+    }
+}
+
+/// An amplitude in decibels below full scale; `-INF` reads as a very negative
+/// number rather than as one nothing can compare.
+pub fn db_of(amplitude: f32) -> f32 {
+    let a = amplitude.abs();
+    if a <= 0.0 {
+        f32::NEG_INFINITY
+    } else {
+        20.0 * a.log10()
+    }
+}
+
+/// **What one channel of a meter reads this frame.**
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ChannelRead {
+    /// The level now, in the axis' own units.
+    pub level: f32,
+    /// The held peak — the mark that waits to be read.
+    pub mark: f32,
+    /// The latched over, if the lamp is lit: the loudest level seen since it
+    /// lit, which is what the number in the lamp says.
+    pub clipped: Option<f32>,
+}
+
+/// One meter, whole: the columns, their held peaks, the lamp over each and the
+/// decibel ladder beside them.
+pub(crate) struct MeterView<'a> {
+    pub channels: &'a [ChannelRead],
+    pub axis: MeterAxis,
+    /// Whether the meter writes **numbers over its columns**: the reading at
+    /// the foot and the figure a lit lamp raises. Off is a bare column, which
+    /// is what a strip of meters in a header is.
+    pub readout: bool,
+    pub label: Option<&'a str>,
+    /// Which side the numbers fall on, or `None` for a meter with no ladder.
+    pub ruler: Option<crate::host::ruler::Side>,
+}
+
+/// **The share of a meter's height the clip lamp takes.** A lamp is a mark over
+/// a column, so it is a proportion of the column and not a fixed strip: a tall
+/// meter with a hairline for a lamp has a mark nobody notices, and a short one
+/// with a fixed strip loses a chunk of its scale to it.
+const LAMP_SHARE: f32 = 0.04;
+
+/// **The narrowest a column may be squeezed to** before the drawing gives
+/// something else up instead. Three device pixels still reads as a column;
+/// below that it is a line.
+const MIN_COLUMN: f32 = 3.0;
+
+/// The height the clip lamp takes off the top of the body: [`LAMP_SHARE`] of
+/// it, never thinner than a few hairlines and **never taller than one line of
+/// caption**. A lamp is a *mark*, not a panel: what it has to say it says by
+/// being lit, and the number it raises is written over the column on the plate
+/// every overlaid line in this host is written on.
+fn lamp_h(body_h: f32, m: &crate::host::metrics::Metrics) -> f32 {
+    let floor = m.divider_w * 3.0;
+    (body_h * LAMP_SHARE).clamp(floor, font::height(m.caption_scale).max(floor))
+}
+
+/// Draws a [`MeterView`] into `rect`.
+///
+/// The order the body is cut in is the drawing's whole argument. The **lamp
+/// strip comes off the top first** and is reserved whether or not anything is
+/// lit, because a lamp that pushed the column down as it lit would move the
+/// picture at exactly the moment a reader is looking at it. The **ladder comes
+/// off its side next**, and only if what is left is still wider than the strip
+/// it took — an element owns its space, and a meter squeezed to a few pixels
+/// drops its numbers and stays a meter rather than becoming a ruler with no
+/// column. What remains is shared by the channels, one column each.
+pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
+    label_strip(d, view.label, rect);
+    let m = d.m;
+    let mut body = body_rect(rect, view.label.is_some(), m);
+    if body.w <= 0.0 || body.h <= 0.0 || view.channels.is_empty() {
+        return;
+    }
+    let lamps = matches!(view.axis, MeterAxis::Decibels { .. });
+    let lamp = lamps.then(|| {
+        let h = lamp_h(body.h, m).min(body.h * 0.5);
+        body.y += h;
+        body.h -= h;
+        Rect::new(body.x, body.y - h, body.w, h)
+    });
+    // **The reading gets a strip of its own, at the bottom.** It used to be
+    // written in the body's top corner, where the lamp's number also goes, so
+    // on a narrow meter the two landed on each other. The bottom is also where
+    // a meter's reading belongs: the loud end of the scale is the end a mark is
+    // drawn at, and the number is read after it.
+    // The strip's **height** is taken here, before anything else is laid out,
+    // so the ladder's ticks and the columns end where the reading begins. Where
+    // it is written is settled later, once the ladder has taken its side: the
+    // number belongs under the **columns**, not under the ladder's last label.
+    let value = {
+        let h = super::controls::readout_h(m.caption_scale, m);
+        (view.readout && body.h > h * 4.0).then(|| {
+            body.h -= h;
+            body.y + body.h
+        })
+    };
+    let strip = view.ruler.and_then(|side| {
+        let floor = match view.axis {
+            MeterAxis::Decibels { floor_db } => floor_db as f64,
+            MeterAxis::Linear { .. } => return None,
+        };
+        let want = crate::host::ruler::db_strip_w(floor, body.h, m);
+        // **The columns keep their minimum and the ladder takes the rest.** The
+        // rule was half the body, which was right while a meter stretched to
+        // its cell and wrong the moment it asked for a width of its own: a
+        // strip of numbers is wider than a few thin columns, so a meter at its
+        // own natural width dropped the very ladder that width included. What a
+        // column cannot give up is its own thin column.
+        let least = view.channels.len() as f32 * MIN_COLUMN
+            + (view.channels.len().saturating_sub(1)) as f32 * m.divider_w;
+        if body.w - want < least {
+            return None;
+        }
+        let at = match side {
+            crate::host::ruler::Side::Left => {
+                let x = body.x;
+                body.x += want;
+                x
+            }
+            crate::host::ruler::Side::Right => body.x + body.w - want,
+        };
+        body.w -= want;
+        Some((Rect::new(at, body.y, want, body.h), side))
+    });
+    if body.w <= 0.0 || body.h <= 0.0 {
+        return;
+    }
+    let scale = view.axis.scale();
+    let n = view.channels.len();
+    let gaps = (n - 1) as f32 * m.divider_w;
+    let column = ((body.w - gaps) / n as f32).max(1.0);
+    for (i, ch) in view.channels.iter().enumerate() {
+        let x = body.x + i as f32 * (column + m.divider_w);
+        let cell = Rect::new(x, body.y, column, body.h);
+        let (mesh, m, theme) = d.parts();
+        draw_column(
+            mesh,
+            m,
+            theme,
+            cell,
+            view.axis.fraction(ch.level),
+            view.axis.fraction(ch.mark),
+            scale,
+        );
+        if let Some(lamp) = lamp {
+            draw_lamp(
+                d,
+                Rect::new(x, lamp.y, column, lamp.h),
+                ch.clipped.is_some(),
+            );
+        }
+    }
+    let (mesh, m, theme) = d.parts();
+    mesh.border(body, m.divider_w, theme.accent);
+    if let (Some((strip, side)), MeterAxis::Decibels { floor_db }) = (strip, view.axis) {
+        let ticks = crate::host::ruler::db_ticks(floor_db as f64, body.h as f64, d.m);
+        let edge = match side {
+            crate::host::ruler::Side::Left => body.x,
+            crate::host::ruler::Side::Right => body.x + body.w,
+        };
+        crate::host::ruler::draw_ticks_v_side(d, edge, strip, body, &ticks, side);
+    }
+    // **The lamps are per channel; the number is one, and it is written over
+    // the columns.** Which channel was flattened is worth a lamp of its own,
+    // but *how far past full scale* is a question about the signal — and a
+    // column is a few pixels wide, so a number per column would be a number
+    // nobody can read and a column wide enough for one would be width spent on
+    // nothing.
+    if view.readout && lamp.is_some() {
+        let worst = view
+            .channels
+            .iter()
+            .filter_map(|c| c.clipped)
+            .fold(f32::NEG_INFINITY, f32::max);
+        draw_lamp_number(d, body, worst);
+    }
+    // The reading is the loudest channel's: one number for the widget, which is
+    // the question a glance asks of a stereo pair.
+    if let Some(top) = value {
+        let loudest = view
+            .channels
+            .iter()
+            .fold(0.0f32, |acc, ch| acc.max(ch.level));
+        let text = view.axis.readout(loudest);
+        let (mesh, m, theme) = d.parts();
+        let w = font::width(&text, m.caption_scale).min(body.w);
+        font::text_ellipsis(
+            mesh,
+            &text,
+            body.x + (body.w - w) * 0.5,
+            top + m.pad * 0.5,
+            body.w,
+            m.caption_scale,
+            theme.text,
+        );
+    }
+}
+
+/// The lamp over one column: dark while nothing has clipped, lit red once
+/// something has, and left lit until a hand puts it out.
+fn draw_lamp(d: &mut Draw, cell: Rect, lit: bool) {
+    let (mesh, _, theme) = d.parts();
+    if cell.w <= 0.0 || cell.h <= 0.0 {
+        return;
+    }
+    mesh.rect(
+        cell,
+        if lit {
+            theme.meter_clip
+        } else {
+            theme.meter_field
+        },
+    );
+}
+
+/// **How far past full scale it went**, written over the columns — and nothing
+/// at all while nothing is lit.
+///
+/// In decibels *over* full scale rather than the level itself, because that is
+/// the question a lit lamp raises: the server works in floating point, so a
+/// signal that passed unity is not lost — it is a signal that has to come down
+/// by this much before anything converts it.
+fn draw_lamp_number(d: &mut Draw, body: Rect, peak: f32) {
+    let over = db_of(peak);
+    if !over.is_finite() {
+        return;
+    }
+    let text = format!("{:+.1}", over.max(0.0));
+    // The caption scale on the translucent plate, centred at the top of the
+    // column where the loud end of the scale is: the same line every other
+    // drawing in this host writes over a picture. Not inside the lamp -- a lamp
+    // big enough to hold a number is a panel, and a number scaled to a lamp is
+    // the one part of a meter that changes size for no reason a reader could
+    // name.
+    let (scale, w, pad) = {
+        let m = d.m;
+        (
+            m.caption_scale,
+            font::width(&text, m.caption_scale),
+            m.divider_w * 2.0,
+        )
+    };
+    if w > body.w || font::height(scale) > body.h {
+        return;
+    }
+    let x = body.x + (body.w - w) * 0.5;
+    let color = d.theme.text;
+    super::plate_text(d, &text, x, body.y + pad, body.w, scale, color);
 }

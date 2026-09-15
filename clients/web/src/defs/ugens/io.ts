@@ -112,6 +112,34 @@ export const meter = (
 ): Ugen => new Ugen("Meter", [signal, decay, hold]);
 
 /**
+ * **How many times the signal was flattened**, counted since the pass began: a
+ * run of `run` consecutive samples at or over `ceiling` is one over, however
+ * long it goes on.
+ *
+ * The count and not a flag, because the flag is a *reader's* state — a meter's
+ * red lamp stays lit until a hand puts it out, and two windows watching one bus
+ * each have their own — while the count is the signal's. Pair it with
+ * {@link outCtl} and hand the bus to a `meter` widget's `clip`: the widget
+ * differences the count and lights up on an over it has not seen.
+ *
+ * A single sample at full scale is **not** clipping. The engine runs in
+ * floating point, so a sample at 1.0 destroys nothing until the signal is
+ * converted or reaches a converter; what a red lamp reports is a waveform that
+ * was flattened, and the signature of that is a run. Three is the field's
+ * number, and `run` of 1 is the pessimistic meter that lights on any sample
+ * touching full scale.
+ *
+ * It runs per **sample**, unlike {@link meter}: the run is the whole of what
+ * distinguishes a flattened peak from a peak that legitimately reached full
+ * scale, and a block peak has already lost it.
+ */
+export const clipCount = (
+    signal: Channel,
+    ceiling: Channel = 1.0,
+    run: Channel = 3,
+): Ugen => new Ugen("ClipCount", [signal, ceiling, run]);
+
+/**
  * On each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify`
  * clients. Output is silence; pass it as a `SynthDef` root.
  */

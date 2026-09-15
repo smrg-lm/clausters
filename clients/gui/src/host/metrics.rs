@@ -83,6 +83,14 @@ fn hairline(v: f32) -> f32 {
 /// concession, because the ruler and clip captions ship at 1.5 and the reduced
 /// caption has no other rung between 1 and 2.
 fn glyph(v: f32) -> f32 {
+    glyph_scale(v)
+}
+
+/// The same quantization, for a scale computed from the room a drawing has
+/// rather than read from the table -- a lamp's number sized to the strip it is
+/// written across. The rule is the font's and not the table's, so it holds
+/// wherever a scale comes from.
+pub(crate) fn glyph_scale(v: f32) -> f32 {
     (v * 2.0).round().max(2.0) / 2.0
 }
 

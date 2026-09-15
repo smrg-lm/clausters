@@ -269,7 +269,7 @@ pub(crate) fn set_rate(slot: &mut Rate, v: &Value) -> bool {
 }
 
 /// An optional f32 prop: `None` when absent (the plot's auto-fit sides).
-pub(super) fn opt_number(props: &serde_json::Map<String, Value>, key: &str) -> Option<f32> {
+pub(crate) fn opt_number(props: &serde_json::Map<String, Value>, key: &str) -> Option<f32> {
     props.get(key).and_then(Value::as_f64).map(|n| n as f32)
 }
 

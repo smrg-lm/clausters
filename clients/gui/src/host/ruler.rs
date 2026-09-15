@@ -1190,6 +1190,106 @@ pub(crate) fn amp_strip_w(
     metrics.ruler_w.max(ticks_width(&ticks, metrics))
 }
 
+/// **The decibel ladder of a meter's strip**: the marks from full scale down to
+/// `floor_db`, over a column `height_px` device pixels tall.
+///
+/// A meter's axis is linear *in decibels*, so its ladder is a regular step and
+/// not the 1-2-5 progression a value axis walks or the outward crowd
+/// [`amp_ticks`] thins — the same reason the three exist separately. The step
+/// is the coarsest of the field's (3, 6, 12, 24, 48 dB) that still gives every
+/// mark a line of text to itself, so a tall meter is read in sixes and a short
+/// one in twenty-fours rather than in a ladder nobody can read. The floor is
+/// always marked, since where a meter bottoms out is the one number that says
+/// what scale it is on at all.
+pub(crate) fn db_ticks(floor_db: f64, height_px: f64, metrics: &Metrics) -> Vec<Tick> {
+    let floor = floor_db.min(-1.0);
+    if height_px <= 0.0 {
+        return Vec::new();
+    }
+    let g = Gaps::of(metrics);
+    let px_per_db = height_px / -floor;
+    const STEPS: [f64; 6] = [3.0, 6.0, 12.0, 24.0, 48.0, 96.0];
+    let step = STEPS
+        .into_iter()
+        .find(|s| s * px_per_db >= g.label_v())
+        .unwrap_or(-floor);
+    let mut out = Vec::new();
+    let mut db = 0.0;
+    // The floor is always marked, so the last rung above it stops where it
+    // would crowd the floor's own label rather than at a fixed fraction of the
+    // step: at the bottom of the scale those two are the only pair whose gap is
+    // not the step, and a number written over another is worse than a rung
+    // missing.
+    while db > floor && (db - floor) * px_per_db >= g.label_v() {
+        out.push(Tick {
+            frac: ((db - floor) / -floor).clamp(0.0, 1.0),
+            label: Some(format!("{}", db.round() as i64)),
+        });
+        db -= step;
+    }
+    out.push(Tick {
+        frac: 0.0,
+        label: Some(format!("{}", floor.round() as i64)),
+    });
+    out
+}
+
+/// The width a **decibel** strip asks for, never below the `ruler_w` role: the
+/// same question [`value_strip_w`] answers, for the ladder [`db_ticks`] draws.
+pub(crate) fn db_strip_w(floor_db: f64, height_px: f32, metrics: &Metrics) -> f32 {
+    let ticks = db_ticks(floor_db, height_px as f64, metrics);
+    metrics.ruler_w.max(ticks_width(&ticks, metrics))
+}
+
+/// Which side of what it measures a vertical strip is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Side {
+    Left,
+    Right,
+}
+
+/// [`draw_ticks_v`] on either side of the body: the ticks point **into** the
+/// strip and the labels stack against the body's edge, mirrored for the right.
+///
+/// A meter is the widget that needs the choice — a column is narrow and which
+/// hand the numbers fall on is the layout's, not the drawing's — and the
+/// mirror is here rather than there so one routine owns where a tick and its
+/// number sit relative to the axis they name.
+pub(crate) fn draw_ticks_v_side(
+    d: &mut Draw,
+    body_edge: f32,
+    strip: Rect,
+    row: Rect,
+    ticks: &[Tick],
+    side: Side,
+) {
+    if row.h <= 4.0 {
+        return;
+    }
+    let (mesh, metrics, theme) = d.parts();
+    let scale = metrics.caption_scale;
+    let line = font::height(scale);
+    let labelled = row.h >= line;
+    for tick in ticks {
+        let y = row.y + row.h * (1.0 - tick.frac as f32);
+        let w = if tick.label.is_some() { 8.0 } else { 4.0 };
+        let tick_x = match side {
+            Side::Left => body_edge - w,
+            Side::Right => body_edge,
+        };
+        mesh.rect(Rect::new(tick_x, y, w, metrics.divider_w), theme.ruler_line);
+        if let Some(label) = tick.label.as_ref().filter(|_| labelled) {
+            let lw = font::width(label, scale);
+            let lx = match side {
+                Side::Left => (body_edge - LABEL_GAP - lw).max(strip.x),
+                Side::Right => (body_edge + LABEL_GAP).min(strip.x + strip.w - lw),
+            };
+            let ty = (y - 3.0).clamp(row.y, row.y + row.h - line);
+            font::text(mesh, label, lx, ty, scale, theme.ruler_text);
+        }
+    }
+}
+
 pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, row: Rect, ticks: &[Tick]) {
     if row.h <= 4.0 {
         return;

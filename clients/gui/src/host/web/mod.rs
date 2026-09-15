@@ -258,6 +258,8 @@ struct WebApp {
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
+    /// How long the last tick was, for whatever advances in time.
+    tick_clock: live::TickClock,
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
     /// evidence the bus stream is flowing; logging every frame would spam).
     stream_seen: bool,
@@ -287,6 +289,7 @@ impl WebApp {
             stream_sync_pending: false,
             server_rate: 0.0,
             tick: None,
+            tick_clock: Default::default(),
             stream_seen: false,
             fetches: BufferFetches::default(),
         }
@@ -505,6 +508,7 @@ impl WebApp {
     /// then repaint.
     fn on_tick(&mut self) {
         let mut wants_clock = false;
+        let dt = self.tick_clock.delta();
         // Applied after the loop: registering an axis' length borrows the
         // host, which the loop holds a tree of.
         let mut extents: Vec<(i32, frame::Extent)> = Vec::new();
@@ -531,6 +535,7 @@ impl WebApp {
                 &Live {
                     bus: Some(&source),
                     sample_rate: self.server_rate,
+                    dt,
                     histories: &slot.histories,
                 },
             );

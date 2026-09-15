@@ -144,6 +144,8 @@ pub(super) struct App {
     /// another. A block of notes rides it in the same JSON a `/gui_set notes`
     /// takes, which is the carrier every non-scalar already uses.
     pub(super) text_clipboard: crate::host::clipboard::Clip,
+    /// How long the last tick was, for whatever advances in time.
+    tick_clock: crate::host::live::TickClock,
 }
 
 impl App {
@@ -173,6 +175,7 @@ impl App {
             #[cfg(feature = "midi")]
             midi_warned: false,
             text_clipboard: crate::host::clipboard::Clip::default(),
+            tick_clock: Default::default(),
         }
     }
 
@@ -191,6 +194,7 @@ impl App {
             return;
         };
         let sample_rate = shm.sample_rate();
+        let dt = self.tick_clock.delta();
         let window = live::retention_window(sample_rate, shm.window_limit());
         for (def_id, ws) in &mut self.windows {
             let Some(tree) = self.host.window_def_mut(*def_id) else {
@@ -208,6 +212,7 @@ impl App {
                 &Live {
                     bus: Some(shm.as_ref()),
                     sample_rate,
+                    dt,
                     histories: &ws.histories,
                 },
             );

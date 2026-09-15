@@ -939,3 +939,37 @@ mod tests {
         );
     }
 }
+
+/// **How long since the last tick** — the one thing a time-based element
+/// cannot read for itself.
+///
+/// A tick runs once per animation frame, and an animation frame is not a fixed
+/// period: a window that misses one, a display at 120 Hz and a page throttled
+/// in a background tab all tick at rates nothing declares. So the front
+/// measures the interval and hands it over (`Live::dt`), and a meter's fall
+/// is the same fall on all of them.
+///
+/// The delta is **clamped**: a tick after a long stall (a window that was
+/// hidden, a page that was in another tab) reports the cap rather than the
+/// whole gap, so what comes back is a picture catching up and not a meter that
+/// fell to silence while nobody was looking.
+#[derive(Debug, Default)]
+pub struct TickClock {
+    last: Option<web_time::Instant>,
+}
+
+impl TickClock {
+    /// The longest interval one tick is allowed to be worth, in seconds.
+    const CAP: f64 = 0.25;
+
+    /// Seconds since the previous call — `0.0` on the first, which advances
+    /// nothing.
+    pub fn delta(&mut self) -> f64 {
+        let now = web_time::Instant::now();
+        let dt = self
+            .last
+            .map_or(0.0, |last| now.duration_since(last).as_secs_f64());
+        self.last = Some(now);
+        dt.min(Self::CAP)
+    }
+}

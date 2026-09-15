@@ -153,6 +153,7 @@ export {
 } from "./pan.ts";
 
 export {
+    clipCount,
     diskIn,
     diskOut,
     inCtl,

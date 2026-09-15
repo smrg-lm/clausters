@@ -409,8 +409,9 @@ fn level_release(sample_rate: f32) -> f32 {
     10.0f32.powf(-LEVEL_RELEASE_DB_PER_SEC / 20.0 * block_secs)
 }
 
-/// Release rate of a held bus level, in dB per second.
-pub const LEVEL_RELEASE_DB_PER_SEC: f32 = 20.0;
+/// Release rate of a held bus level, in dB per second: the shared core's, so
+/// the level a bus publishes falls at the rate every meter drawing it falls at.
+pub const LEVEL_RELEASE_DB_PER_SEC: f32 = clausters_core::measure::METER_FALL_DB;
 
 /// Audio-thread half. `process_block` does not allocate, lock or do I/O.
 pub struct Engine {

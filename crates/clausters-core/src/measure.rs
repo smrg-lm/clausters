@@ -310,6 +310,16 @@ impl Ballistics {
     }
 }
 
+/// **How fast a meter falls**, in decibels per second.
+///
+/// Twenty is the field's number for a peak meter, and it is the one number that
+/// makes a meter legible as a *rate*: the slope on screen is the same whatever
+/// the level, so an eye reads how fast a sound is dying rather than a shape.
+/// The server publishes its bus levels already held at this rate, the `Meter`
+/// UGen defaults to it, and a mark drawn in a window falls at it -- which is
+/// the whole reason it is here and not three times over.
+pub const METER_FALL_DB: f32 = 20.0;
+
 /// **Where a meter's floor is**, in decibels. Sixty below unity is the field's
 /// span for a peak meter: quiet enough that a fade reads as a fade to the end,
 /// short enough that the loud half of the scale keeps most of the strip.
@@ -352,6 +362,17 @@ pub fn meter_fraction_db(db: f32, floor_db: f32) -> f32 {
 /// that the peaks above it have somewhere to go. Below it a meter is showing
 /// a level that is *working*, and the colour says so.
 pub const METER_WARN_DB: f32 = -18.0;
+
+/// **Where a meter's column is fully amber**, in decibels below full scale.
+///
+/// The third mark, and the one that makes the other two readable. Green ends at
+/// the alignment level ([`METER_WARN_DB`]) and red begins in the last six
+/// ([`METER_HOT_DB`]); a single ramp between them would spend the whole span
+/// between -18 and -6 getting there, so a signal at -12 -- which is a signal
+/// **using its headroom**, the thing the colour exists to say -- still read as
+/// green with a cast on it. So the amber is reached here and held until the
+/// red: the bands are bands, and only the edges between them are ramps.
+pub const METER_AMBER_DB: f32 = -12.0;
 
 /// **Where a meter is warning**, in decibels below full scale.
 ///
@@ -468,5 +489,292 @@ mod ballistics_tests {
         }
         assert!(meter.level() < 0.2);
         assert_eq!(meter.tick(0.5, 0.01, 20.0, 0.0), 0.5);
+    }
+}
+
+// ---- clipping: what counts as an over, and the mark that stays ----
+
+/// **How many consecutive samples at or over full scale count as an over.**
+///
+/// A single sample at full scale is not clipping. The engine runs in `f32`, so
+/// a sample at 1.0 -- or past it -- destroys nothing until the signal is
+/// converted to an integer format or reaches a converter; what a meter's red
+/// mark is actually reporting is a waveform that was **flattened**, and the
+/// signature of that is a *run*. Three is the field's usual number (a hardware
+/// console's over lamp, and a DAW's default); one is the pessimistic reading a
+/// small meter takes, and it is why a mastered piece that legitimately touches
+/// full scale lights every meter it is played on.
+///
+/// Inter-sample peaks are a different measurement and not a different
+/// threshold: true peak (ITU-R BS.1770) oversamples and reads against -1 dBTP,
+/// which is not this.
+pub const CLIP_RUN: u32 = 3;
+
+/// **Where full scale is**, in linear amplitude: the level a run of samples at
+/// or above counts as an over.
+pub const CLIP_CEILING: f32 = 1.0;
+
+/// **Counting overs, sample by sample** -- the rule a meter's red mark reports.
+///
+/// A run of `run` consecutive samples at or above `ceiling` is **one** over,
+/// however long the run goes on: a flattened peak is one event, not one per
+/// sample, or a second of square wave would report forty thousand of them. The
+/// count starts again when the run breaks.
+///
+/// It holds two integers and branches on nothing else, so the audio thread may
+/// feed it sample by sample.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClipCount {
+    /// Samples at or above the ceiling since the last one below it.
+    run: u32,
+    /// Whether the current run has already been counted.
+    counted: bool,
+    /// Overs since the last [`ClipCount::reset`].
+    overs: u32,
+}
+
+impl ClipCount {
+    /// A counter that has seen nothing.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Overs since the counter was last reset.
+    pub fn overs(self) -> u32 {
+        self.overs
+    }
+
+    /// Forgets the count and the run in progress -- a new pass of the
+    /// transport, which is one of the two things that clears a meter's mark.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Feeds one sample. Returns `true` on the sample that **completes** an
+    /// over, which is the one that took the run to `run`.
+    ///
+    /// A `run` of zero is read as one, so a caller that wants the pessimistic
+    /// meter cannot accidentally ask for a rule that counts silence.
+    pub fn feed(&mut self, sample: f32, ceiling: f32, run: u32) -> bool {
+        if sample.abs() < ceiling {
+            self.run = 0;
+            self.counted = false;
+            return false;
+        }
+        self.run = self.run.saturating_add(1);
+        if self.counted || self.run < run.max(1) {
+            return false;
+        }
+        self.counted = true;
+        self.overs = self.overs.saturating_add(1);
+        true
+    }
+
+    /// Feeds a whole block, returning how many overs it completed.
+    pub fn feed_block(&mut self, block: &[f32], ceiling: f32, run: u32) -> u32 {
+        let mut overs = 0;
+        for &sample in block {
+            if self.feed(sample, ceiling, run) {
+                overs += 1;
+            }
+        }
+        overs
+    }
+}
+
+/// **The mark that stays**: a meter's clip indication, which is latched rather
+/// than shown while it lasts.
+///
+/// An over is a handful of samples and a meter is read by a person, so a red
+/// mark that lasted as long as the event would be a mark nobody ever saw. It
+/// stays lit until one of two things happens -- it is [`cleared`](ClipLatch::clear)
+/// by hand, or the count it is watching **goes backwards**, which is what a new
+/// pass of the transport looks like from here.
+///
+/// While lit it also keeps the **loudest level seen since it lit**, which is
+/// what the number inside the mark says: not that something clipped, which the
+/// colour already said, but by how much.
+///
+/// The state is the reader's, not the signal's -- two windows watching one bus
+/// each have their own mark and clear them separately, the way two readers of
+/// one level each have their own eyes.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClipLatch {
+    lit: bool,
+    max: f32,
+    /// The over count as last read, to notice both a rise and a reset.
+    seen: Option<f32>,
+}
+
+impl ClipLatch {
+    /// A mark that is not lit.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether the mark is lit.
+    pub fn lit(self) -> bool {
+        self.lit
+    }
+
+    /// The loudest level seen since it lit, in linear amplitude (`0.0` when it
+    /// is not lit).
+    pub fn max(self) -> f32 {
+        self.max
+    }
+
+    /// Puts the mark out and forgets its level -- the hand's verb, and the
+    /// only one there is.
+    pub fn clear(&mut self) {
+        self.lit = false;
+        self.max = 0.0;
+    }
+
+    /// Advances against what this frame read.
+    ///
+    /// `level` is what the meter reads now and `overs` the count from a
+    /// counting source ([`ClipCount`] on a control bus), when there is one. A
+    /// rise in the count lights the mark; a **fall** clears it, since a count
+    /// that went backwards is a counter that started again. With no count the
+    /// mark lights on the level alone reaching `ceiling`, which is exact for
+    /// *exceeding* full scale and cannot tell one sample from a run -- the
+    /// reason the counting source exists.
+    pub fn tick(&mut self, level: f32, overs: Option<f32>, ceiling: f32) {
+        match overs {
+            Some(count) => {
+                match self.seen {
+                    Some(seen) if count > seen => self.lit = true,
+                    // A count that went backwards is a new pass, and a new pass
+                    // is the other thing that clears the mark.
+                    Some(seen) if count < seen => self.clear(),
+                    _ => {}
+                }
+                self.seen = Some(count);
+            }
+            None => {
+                if level.abs() >= ceiling {
+                    self.lit = true;
+                }
+            }
+        }
+        if self.lit {
+            self.max = self.max.max(level.abs());
+        }
+    }
+}
+
+/// **The dynamic range of a resolution**, in decibels below full scale -- where
+/// a meter's floor belongs when it is drawn for a particular format.
+///
+/// Each bit is `20·log10(2)` = 6.02 dB, so 16 bits reach 96 dB down, 24 reach
+/// 144 and a 32-bit integer 193. **A 32-bit float carries a 24-bit
+/// significand**, so its floor is 24's: pass 24 for it, not 32.
+///
+/// This is a *floor*, not the only one worth drawing: [`METER_FLOOR_DB`] is the
+/// 60 dB strip a mixing meter is read on, and a meter given the whole dynamic
+/// range of the format spends most of its height on a span nobody mixes in. The
+/// two are both right, for different questions.
+pub fn floor_db_for_bits(bits: u32) -> f32 {
+    -(20.0 * core::f32::consts::LN_2 / core::f32::consts::LN_10) * bits.clamp(1, 64) as f32
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+
+    /// A run is one over, however long it runs -- or a square wave would report
+    /// one per sample.
+    #[test]
+    fn a_run_counts_once_and_a_break_starts_again() {
+        let mut c = ClipCount::new();
+        assert_eq!(c.feed_block(&[1.0; 10], CLIP_CEILING, CLIP_RUN), 1);
+        assert_eq!(c.overs(), 1);
+        c.feed_block(&[0.0, 0.5], CLIP_CEILING, CLIP_RUN);
+        assert_eq!(c.feed_block(&[1.0; 3], CLIP_CEILING, CLIP_RUN), 1);
+        assert_eq!(c.overs(), 2, "a second run is a second over");
+    }
+
+    /// Shorter than the run is not an over: one sample at full scale is a
+    /// sample at full scale.
+    #[test]
+    fn a_short_run_is_not_an_over() {
+        let mut c = ClipCount::new();
+        c.feed_block(&[1.0, 0.0, 1.0, 1.0, 0.0], CLIP_CEILING, CLIP_RUN);
+        assert_eq!(c.overs(), 0);
+        // And the pessimistic rule reads the same samples as two overs: the
+        // two runs, not the three samples.
+        let mut one = ClipCount::new();
+        one.feed_block(&[1.0, 0.0, 1.0, 1.0, 0.0], CLIP_CEILING, 1);
+        assert_eq!(one.overs(), 2);
+    }
+
+    /// A run that crosses a block boundary is still one run: the state is the
+    /// counter's, not the block's.
+    #[test]
+    fn a_run_crosses_a_block() {
+        let mut c = ClipCount::new();
+        assert_eq!(c.feed_block(&[1.0, 1.0], CLIP_CEILING, CLIP_RUN), 0);
+        assert_eq!(c.feed_block(&[1.0], CLIP_CEILING, CLIP_RUN), 1);
+    }
+
+    /// The sign does not matter: a negative peak flattens the same way.
+    #[test]
+    fn an_over_is_read_on_the_magnitude() {
+        let mut c = ClipCount::new();
+        c.feed_block(&[-1.0, -1.2, -1.0], CLIP_CEILING, CLIP_RUN);
+        assert_eq!(c.overs(), 1);
+    }
+
+    /// The mark stays lit after the over is gone, and holds the loudest level
+    /// it saw -- which is the whole point of latching it.
+    #[test]
+    fn the_mark_stays_and_remembers_how_far_it_went() {
+        let mut latch = ClipLatch::new();
+        latch.tick(0.5, Some(0.0), CLIP_CEILING);
+        assert!(!latch.lit());
+        latch.tick(1.4, Some(1.0), CLIP_CEILING);
+        assert!(latch.lit());
+        latch.tick(0.2, Some(1.0), CLIP_CEILING);
+        assert!(latch.lit(), "the over is over; the mark is not");
+        assert!((latch.max() - 1.4).abs() < 1e-6);
+        latch.clear();
+        assert!(!latch.lit() && latch.max() == 0.0);
+    }
+
+    /// A count that went backwards is a new pass, and that clears the mark
+    /// without anybody reaching for it.
+    #[test]
+    fn a_count_that_restarts_clears_the_mark() {
+        let mut latch = ClipLatch::new();
+        // The first count read is a baseline and lights nothing: a window
+        // opened on a server that has been running is not reporting its past.
+        latch.tick(0.1, Some(2.0), CLIP_CEILING);
+        assert!(!latch.lit(), "the first read is a baseline");
+        latch.tick(1.0, Some(3.0), CLIP_CEILING);
+        assert!(latch.lit());
+        latch.tick(0.1, Some(0.0), CLIP_CEILING);
+        assert!(!latch.lit(), "the counter started again");
+    }
+
+    /// With no counting source the level alone lights it -- exact for
+    /// exceeding full scale, blind to how many samples did.
+    #[test]
+    fn without_a_count_the_level_lights_it() {
+        let mut latch = ClipLatch::new();
+        latch.tick(0.99, None, CLIP_CEILING);
+        assert!(!latch.lit());
+        latch.tick(1.0, None, CLIP_CEILING);
+        assert!(latch.lit());
+    }
+
+    /// The floor a resolution asks for, at the two depths anybody states.
+    #[test]
+    fn a_resolution_names_its_floor() {
+        assert!((floor_db_for_bits(16) + 96.3).abs() < 0.1);
+        assert!((floor_db_for_bits(24) + 144.5).abs() < 0.1);
+        // And it places a level on that scale: -96 dB is the bottom of a
+        // 16-bit strip and a long way up a 24-bit one.
+        assert!(meter_fraction_db(-96.0, floor_db_for_bits(16)) < 0.01);
+        assert!(meter_fraction_db(-96.0, floor_db_for_bits(24)) > 0.3);
     }
 }

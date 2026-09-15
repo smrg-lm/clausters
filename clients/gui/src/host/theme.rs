@@ -227,12 +227,22 @@ theme_roles! {
     /// A meter's column below the alignment level
     /// (`clausters_core::measure::METER_WARN_DB`): the level a mix works at.
     meter_low = [0.24, 0.78, 0.44, 1.0];
-    /// Its column between the alignment level and the hot end
-    /// (`clausters_core::measure::METER_HOT_DB`): headroom being used.
+    /// Its column from the alignment level to the hot end
+    /// (`clausters_core::measure::METER_HOT_DB`): headroom being used. Reached
+    /// at `METER_AMBER_DB` and held, so a column at -12 dB reads amber rather
+    /// than green with a cast on it.
     meter_mid = [0.95, 0.80, 0.25, 1.0];
-    /// Its column in the last decibels before full scale, and the whole of it
-    /// at or past unity.
+    /// Its column from the hot end (`clausters_core::measure::METER_HOT_DB`)
+    /// to the top: the last decibels, where a peak that grows any further
+    /// clips. A band and not a ramp, or the column would read amber at -6 and
+    /// red only at full scale, which says the opposite of what the mark means.
     meter_high = [0.92, 0.28, 0.22, 1.0];
+    /// The **lamp above a meter's column**: lit when the signal was flattened
+    /// and left lit until a hand puts it out. Brighter and flatter than
+    /// `meter_high`, because it is a latched statement about the past and not
+    /// another band of the level: a cap the same red as the column's top would
+    /// read as the column having grown.
+    meter_clip = [1.0, 0.22, 0.18, 1.0];
 
     // -- The keyboard --
     /// A playable white key.
