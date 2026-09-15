@@ -129,8 +129,28 @@
           throw new Error(`the tree still holds ${empty.children.length} node(s)`);
         }
 
+        // The same handle, after its server stopped: `quit` closes the engine
+        // this handle booted, and the carrier over it is then a carrier to
+        // nothing -- which no send can find out, so the handle has to let go
+        // of it. Before it did, every command after a re-boot failed: the
+        // first with a reply timeout naming the command, the next outright.
+        await server.quit();
+        if (server.engine) throw new Error("quit kept naming a closed engine");
+        await server.boot();
+        const reborn = await server.status();
+        if (!(reborn.groups >= 1)) {
+          throw new Error(`the re-booted server answered ${reborn.groups} group(s)`);
+        }
+        const resized = await server.queryInfo();
+        if (resized.audioBuses !== server.sizing.audioBuses) {
+          throw new Error("the re-booted server did not size the handle");
+        }
+        log(`re-booted after quit: ${reborn.groups} group(s), `
+          + `${resized.audioBuses} audio buses`);
+        server.close();
+
         verdict(`PASS: page carrier def round trip, peak ${peak.toFixed(3)}, `
-          + `tree empty after free`);
+          + `tree empty after free, and quit -> boot left the handle usable`);
       }
 
       document.getElementById("boot").onclick = () =>

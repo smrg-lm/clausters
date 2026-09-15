@@ -123,12 +123,6 @@ already carry it.
   line in each client. **Distinct from the ownership question in section 2**:
   this one uses the map that is already there.
 
-- ⬜ **A handle whose server stopped keeps a dead carrier, and the web client
-  has no way to reopen one** (`clients/web/PLAN.md`, Found by use). The twin of
-  a Python fix already made: there an interface reconnects itself, here a
-  `Connection` is an object the handle may not own, so it needs a reopen verb
-  and an ownership rule first. Until then `quit()` strands a page handle.
-
 - ⬜ **Two group verbs exist on the wire and in neither client:
   `/group_parallel` and `/group_sortMode`** *(`clients/python/PLAN.md`, Found by
   use)*. Auto-ordered and parallel groups are the server's own additions over

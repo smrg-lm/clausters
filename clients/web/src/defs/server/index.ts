@@ -235,6 +235,16 @@ export class Server {
     }
     private recv: OscReceiver | null = null;
     /**
+     * Whether the carrier this handle holds is one **it opened** (in `boot` or
+     * `attach`) rather than one handed to the constructor.
+     *
+     * It is the ownership rule the class already runs on, applied to the
+     * carrier: a handle replaces what it opened and never closes what it was
+     * lent. Only the first kind can be reopened at all -- a connection built
+     * elsewhere came with no recipe for making another.
+     */
+    private openedCarrier = false;
+    /**
      * Whether this handle reached the page's own engine by attaching, which
      * makes it one of the page's allocators rather than a client of its own.
      */
@@ -514,7 +524,27 @@ export class Server {
      * cannot, so `boot` refuses it before we get here.
      */
     private async openCarrier(own: boolean): Promise<Connection> {
-        if (this.conn) return this.conn;
+        // A carrier kept from before may have outlived its server -- `quit`
+        // stopped it, another client did, the process died. Nothing a *send*
+        // does will reveal that (`Connection.gone`), so it is asked here,
+        // before this handle talks into it and reports a timeout that names
+        // the command instead of the carrier.
+        if (this.conn?.gone?.()) {
+            if (!this.openedCarrier) {
+                throw new ServerError(
+                    "the carrier this handle was built with is closed, and a " +
+                        "connection made elsewhere is not this handle's to " +
+                        "replace — build a new one and a Server around it.",
+                );
+            }
+            this.dropCarrier();
+        }
+        if (this.conn) {
+            // A `close()` detached the receiving door and left the carrier:
+            // re-arm it, or this handle would send and hear nothing back.
+            if (!this.recv) this.openReceiver(this.conn);
+            return this.conn;
+        }
         await loadCore();
         if (this.carrierKind === "ws") {
             this.conn = await WsConnection.open(this.carrierUrl);
@@ -532,8 +562,33 @@ export class Server {
             this.audio = await found;
             this.conn = await pageConnection(this.audio);
         }
+        this.openedCarrier = true;
         this.openReceiver(this.conn);
         return this.conn;
+    }
+
+    /**
+     * Lets go of the carrier **this handle opened**, so the next `boot` or
+     * `attach` opens a new one. A carrier handed to the constructor is left
+     * exactly as it was: closing it would end something the caller owns, and
+     * reopening it is not something this handle knows how to do.
+     *
+     * The engine goes with it, when there was one: `quit` closed that
+     * `AudioContext` and nothing restarts it, so a handle that kept naming it
+     * (`Server.engine`, which a second handle attaches to) would be handing
+     * out a dead server.
+     */
+    private dropCarrier(): void {
+        if (!this.openedCarrier) return;
+        this.recv?.remove(this.listener);
+        this.recv?.stop();
+        this.recv = null;
+        this.conn?.close();
+        this.conn = null;
+        this.audio = null;
+        this.ownsEngine = false;
+        this.onPageEngine = false;
+        this.openedCarrier = false;
     }
 
     // ---- coming up, and going down ----
@@ -1304,11 +1359,23 @@ export class Server {
         this.sendMsg("/server_quit");
         await this.connection.quit?.();
         this.booted = false;
+        // The carrier went with it: its other end has stopped, and a page
+        // cannot find that out by sending. Dropping it here is what lets this
+        // same handle `boot()` again on the next line -- the reference
+        // client's `Server.quit` does exactly this, for the same reason.
+        this.dropCarrier();
     }
 
     /**
-     * Detaches this server from its connection (the connection itself, and
-     * any shared in-page engine, keep running). Pending requests reject.
+     * Detaches this server from its connection. Pending requests reject, and
+     * a **shared in-page engine keeps running** — it is the page's, not this
+     * handle's to stop.
+     *
+     * The carrier follows the same ownership rule as everything else here: one
+     * this handle opened (in `boot` or `attach`) is released, so the handle is
+     * a handle again and can `attach()` somewhere; one **handed to the
+     * constructor** is left open, because it is the caller's. Either way this
+     * handle is usable afterwards.
      *
      * **And, if this handle {@link Server.boot}-ed the server, stops it** —
      * the same rule the reference client's `Server.close` follows for the
@@ -1328,6 +1395,13 @@ export class Server {
         this.recycling = null;
         this.recv?.remove(this.listener);
         this.recv?.stop();
+        // Let go of a carrier this handle opened, so the handle is a handle
+        // again -- `attach()` on it opens a new conversation instead of
+        // reusing a door that was just shut. One handed to the constructor is
+        // the caller's and stays open, which is what this verb has always
+        // promised; `openCarrier` re-arms the receiving door on it.
+        this.dropCarrier();
+        this.recv = null;
         for (const p of this.pending) {
             clearTimeout(p.timer);
             p.reject(new ReplyTimeout("the server was closed"));

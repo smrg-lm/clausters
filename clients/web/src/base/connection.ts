@@ -81,6 +81,24 @@ export interface Connection {
     /** Releases the carrier (never stops the shared in-page engine). */
     close(): void;
     /**
+     * Whether the other end is **gone** — the socket closed, the engine
+     * stopped — so this carrier reaches nothing and never will again.
+     *
+     * Asked rather than required: a carrier that cannot tell leaves it out and
+     * is assumed live, the way the reference client's event loop asks a source
+     * whether its peer is `gone` and keeps the ones that do not answer.
+     *
+     * It exists because **a send cannot find this out**. A closed WebSocket
+     * takes a packet and drops it; a dead audio context takes one into a
+     * worklet nobody renders; the reference client's TCP socket accepts one
+     * whole send into the kernel's buffer before it starts raising. In every
+     * case the first command after the end vanishes and the reply times out
+     * naming the command rather than the carrier. `Server.boot`/`attach` ask
+     * this before reusing a carrier they kept, so a handle whose server
+     * stopped opens a new one instead of talking into a corpse.
+     */
+    gone?(): boolean;
+    /**
      * Bring up the server this carrier goes to, if bringing one up is
      * something this carrier can do — what `Server.boot` asks of it.
      *
@@ -190,6 +208,15 @@ export class WsConnection implements Connection {
     close(): void {
         this.socket.close();
     }
+
+    /**
+     * Closed or closing — the socket's own answer, which is the only one
+     * there is: `send` on a closed socket throws nothing a caller sees.
+     */
+    gone(): boolean {
+        return this.socket.readyState === WebSocket.CLOSING ||
+            this.socket.readyState === WebSocket.CLOSED;
+    }
 }
 
 /**
@@ -232,6 +259,11 @@ export async function pageConnection(
             for (const listener of mine) engine.removeReply(listener, peer);
             mine.clear();
         },
+        // The engine is this carrier's other end, so its `AudioContext` is
+        // what "gone" means here: `quit` closes it and nothing restarts it.
+        // Detaching this connection (`close` above) is not the same thing --
+        // the engine goes on rendering for whoever else is on it.
+        gone: () => engine.context.state === "closed",
         // What bringing this carrier's server up means in a tab: the engine is
         // already instantiated (asking for the carrier is what instantiated
         // it), and what is *not* running is the audio — an `AudioContext`

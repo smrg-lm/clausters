@@ -3073,33 +3073,46 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A handle whose server stopped keeps a dead carrier, and this client has
+- ✅ **A handle whose server stopped keeps a dead carrier, and this client had
   no way to reopen one** *(the twin of the fix made in `clients/python/PLAN.md`
-  on 2026-09-15, named the same day and deliberately not improvised into the
-  same commit)*. `openCarrier` returns `this.conn` whenever it is set, and
-  nothing ever clears it -- so after `quit()` (which closes the page engine's
-  `AudioContext`, or leaves a socket whose server stopped) a later `boot()` or
-  `attach()` hands back the dead one, and every request fails the way the
-  reference client's did before the fix: a timeout naming the command, then a
-  closed carrier.
+  on 2026-09-15, named the same day and fixed the day after, when the user
+  asked for it: step through it and fix what persists in the web client)*.
+  `openCarrier` returned `this.conn` whenever it was set, and nothing ever
+  cleared it -- so after `quit()` (which closes the page engine's
+  `AudioContext`) a later `boot()` or `attach()` handed back the dead one, and
+  every request failed the way the reference client's did before its fix: a
+  timeout naming the command, then nothing. `close()` had the same shape from
+  the other side, leaving a stopped receiving door on a carrier it kept.
 
-  **Why it is not the same one-line change.** In Python an interface knows how
-  to reconnect -- it holds a host and a port, and `_ensure` reopens on the next
-  send -- so dropping the connection is enough. A `Connection` here does not: it
-  is an object, sometimes handed to the constructor by the caller (which is what
-  `tests/server.test.ts` does), and reopening it is the carrier layer's decision
-  rather than the `Server`'s. So the shape is a **`Connection` that can be
-  reopened** (a `reconnect()`, or an `openCarrier` that knows which connections
-  are its own to replace and which were lent to it), and the ownership question
-  is the design part: a handle must not close a connection its caller built,
-  and must not keep one whose server it just stopped.
+  **Why it was not the same one-line change**, and what it became instead. In
+  Python an interface knows how to reconnect -- it holds a host and a port --
+  so dropping the connection is enough. A `Connection` here does not: it is an
+  object, sometimes built by the caller and handed to the constructor, and
+  reopening one is not something a `Server` can do in general. So the fix is an
+  **ownership rule plus a capability**, and it is sharper than the reference's:
 
-  What to match once it exists: `quit()` leaves the handle able to `boot()`
-  again, `attach()` starts a new conversation rather than reusing an old one,
-  and a carrier that has nothing to drop is not broken by being asked
-  (`Server._drop_connection` in the reference client). The other half of the
-  Python fix -- waiting for the process to exit -- has no twin by nature: a page
-  launches no process.
+  - `Connection.gone?()` -- optional, asked not required, the same posture the
+    Python event loop takes to a source's `gone`. A `WsConnection` answers from
+    its socket's `readyState`, the in-page carrier from its engine's
+    `AudioContext.state`, a score leaves it out and is assumed live. It exists
+    because **a send cannot find this out**: a closed socket takes a packet and
+    drops it, a dead context takes one into a worklet nobody renders.
+  - `Server.openedCarrier` -- whether the carrier is one this handle opened or
+    one it was lent, which is the class's own ownership rule applied to the
+    carrier. `dropCarrier()` replaces what it opened (and lets go of the engine
+    with it, so `Server.engine` never hands a second handle a closed one) and
+    leaves a lent one exactly as it was.
+  - `boot`/`attach` ask `gone?()` before reusing a kept carrier: a handle
+    replaces its own, and one built around a carrier that has since closed is
+    told so plainly instead of timing out. They also re-arm the receiving door
+    when a `close()` left the carrier without one.
+
+  `quit()` drops the carrier, so `boot()` on the next line works -- which is
+  the reported sequence, and it is now the last phase of `tests/defs.html`:
+  quit, re-boot, `status()` and `queryInfo()`, verified to fail on the build
+  without the fix (`FAIL: quit kept naming a closed engine`) rather than only
+  to pass with it. The other half of the Python fix, waiting for the process
+  to exit, has no twin by nature: a page launches no process.
 
 - ✅ **Two playback fixes never crossed over, and the page was the older
   program** *(found 2026-09-11 while porting a third; fixed the same day)*.
