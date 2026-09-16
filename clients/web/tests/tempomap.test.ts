@@ -23,6 +23,17 @@ test("every clock builds its own map, so nothing has to be passed", () => {
     assert.equal(b.tempo, 2.0);
 });
 
+test("a clock's tempo is a reading, and the verb is setTempo", () => {
+    // Assigning used to re-slope the whole map from beat 0, so a running clock
+    // jumped ahead and fired everything it skipped at once. A tempo change is
+    // written at a place on the map, and only `setTempo` says where.
+    const clock = new TempoClock(2.0);
+    const version = clock.map.version;
+    assert.throws(() => { clock.tempo = 3.0; }, { name: "TypeError", message: /setTempo/ });
+    assert.equal(clock.map.version, version);
+    assert.equal(clock.tempo, 2.0);
+});
+
 test("two clocks handed one map are reading one piece", () => {
     const piece = new TempoMap(1.0);
     piece.push(4.0, 2.0); // written ahead of any clock: the NRT half

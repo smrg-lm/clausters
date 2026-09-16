@@ -87,14 +87,6 @@ class TempoClock:
         #: ordinary case; `tempo_map=` hands it one to **read** instead, which
         #: is how two clocks come to be reading one piece.
         self._map = tempo_map if tempo_map is not None else _native.TempoMap(float(tempo))
-        # The last segment as an affine triple, refreshed on every edit: the
-        # anchor `tempo = x` re-hangs the map from, so assigning a tempo keeps
-        # the beat the clock is on where it already was. `_tempo` is that
-        # segment's tempo -- the *destination* while a ramp is running; the
-        # tempo actually sounding is the `tempo` property, read from the map.
-        self._base_beats = 0.0
-        self._base_secs = 0.0
-        self._tempo = float(tempo)
 
         #: pacing source — *only* used to decide how long to sleep between
         #: events. The default is the OS monotonic clock; pass a
@@ -155,18 +147,19 @@ class TempoClock:
         one being ramped to: the destination is `map.last()`, and a piece whose
         map has changes still ahead of the playhead has not reached them.
 
-        Assigning it changes the slope without pinning the instant, which is
-        what setting the grid does; `set_tempo` is the musical gesture (it keeps
-        the current beat on the second it already fell on).
+        It is a reading, and assigning it raises `AttributeError`: a tempo
+        change is written at a place on the map, and `set_tempo` is the verb
+        that says where (the beat the clock is on, unless ``at`` says
+        otherwise).
         """
         return self._map.tempo_at(self.beats())
 
     @tempo.setter
     def tempo(self, tempo: float):
-        self._map = _native.TempoMap.anchored(
-            float(tempo), self._base_beats, self._base_secs
+        raise AttributeError(
+            "TempoClock.tempo is read-only: it is the tempo sounding at the beat "
+            f"the clock is on. Change it with clock.set_tempo({tempo!r})"
         )
-        self._sync_map()
 
     @property
     def map(self):
@@ -188,7 +181,7 @@ class TempoClock:
         *read* correctly with nothing to invalidate. What a clock cannot see is
         an edit made through another holder while it sleeps: it wakes on the
         wait it had already computed, and only then reads the new map. Its own
-        gestures (`set_tempo`, `tempo`) wake it at once; for an edit written
+        gesture (`set_tempo`) wakes it at once; for an edit written
         from elsewhere, call `resync` on the clocks reading it — or compare
         `map.version`, which is what it is there for.
         """
@@ -197,7 +190,7 @@ class TempoClock:
     @map.setter
     def map(self, tempo_map):
         self._map = tempo_map
-        self._sync_map(wake=True)
+        self._wake_driver()
 
     def dump(self) -> str:
         """The clock as JSON: its name and its tempo map.
@@ -231,24 +224,22 @@ class TempoClock:
         return clock
 
     def resync(self):
-        """Re-read the map and wake the driver — after an edit written through
-        another holder of a **shared** map.
+        """Wake the driver so it re-reads the map — after an edit written
+        through another holder of a **shared** map.
 
-        A clock's own gestures do this for you. This is the call for the other
-        direction: a piece's map edited by an editor, or by a second clock, and
-        this one still asleep on a wait computed before the edit.
+        A clock's own gesture (`set_tempo`) does this for you. This is the call
+        for the other direction: a piece's map edited by an editor, or by a
+        second clock, and this one still asleep on a wait computed before the
+        edit.
         """
-        self._sync_map(wake=True)
+        self._wake_driver()
         return self
 
-    def _sync_map(self, wake: bool = False):
-        """Re-reads the map's last segment into the affine cache, and (for an
-        edit) wakes the driver, which may be asleep on a wait the edit just
-        moved."""
-        self._base_beats, self._base_secs, self._tempo = self._map.last()
-        if wake:
-            with self._cond:
-                self._cond.notify_all()
+    def _wake_driver(self):
+        """Wakes the driver after an edit to the map: it may be asleep on a wait
+        the edit just moved."""
+        with self._cond:
+            self._cond.notify_all()
 
     def beats2secs(self, beats: float) -> float:
         """Convert a beat position to seconds through the piece's time map
@@ -442,7 +433,7 @@ class TempoClock:
             # shape's destination.
             self._map.env(at, [self._map.tempo_at(at), float(tempo)],
                           [float(over)], curve, unit)
-        self._sync_map(wake=True)
+        self._wake_driver()
         return self
 
     def _write_env(self, at: float, env, unit):
@@ -569,7 +560,7 @@ class TempoClock:
         # map is replaced by that single segment rather than gaining a
         # breakpoint. A piece with a tempo curve phase-aligns by sample instead.
         self._map = _native.TempoMap(float(tempo))
-        self._sync_map(wake=True)
+        self._wake_driver()
         if isinstance(self.timebase, SampleClockTimebase):
             self._transport = ("sample", float(origin_sample), tempo)
         else:

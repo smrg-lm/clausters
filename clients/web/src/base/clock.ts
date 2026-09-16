@@ -250,9 +250,9 @@ export class TempoClock {
      * every wait from the map on each pass, so an edit made anywhere is *read*
      * correctly with nothing to invalidate. What a clock cannot see is an edit
      * made through another holder while it sleeps: it wakes on the wait it had
-     * already computed, and only then reads the new map. Its own gestures
-     * ({@link TempoClock.setTempo}, `tempo`) wake it at once; for an edit
-     * written from elsewhere, call {@link TempoClock.resync} on the clocks
+     * already computed, and only then reads the new map. Its own gesture
+     * ({@link TempoClock.setTempo}) wakes it at once; for an edit written
+     * from elsewhere, call {@link TempoClock.resync} on the clocks
      * reading it — or compare `map.version`, which is what it is there for.
      */
     get map(): TempoMap {
@@ -261,7 +261,7 @@ export class TempoClock {
 
     set map(tempoMap: TempoMap) {
         this.tempoMapHeld = tempoMap;
-        this.syncMap(true);
+        this.wakeSoon();
     }
 
     /**
@@ -305,15 +305,16 @@ export class TempoClock {
     }
 
     /**
-     * Re-read the map and wake the driver — after an edit written through
+     * Wake the driver so it re-reads the map — after an edit written through
      * another holder of a **shared** map.
      *
-     * A clock's own gestures do this for you. This is the call for the other
-     * direction: a piece's map edited by an editor, or by a second clock, and
-     * this one still asleep on a wait computed before the edit.
+     * A clock's own gesture ({@link TempoClock.setTempo}) does this for you.
+     * This is the call for the other direction: a piece's map edited by an
+     * editor, or by a second clock, and this one still asleep on a wait
+     * computed before the edit.
      */
     resync(): this {
-        this.syncMap(true);
+        this.wakeSoon();
         return this;
     }
 
@@ -342,14 +343,6 @@ export class TempoClock {
      */
     session: SessionLike | null = null;
 
-    // The last segment as an affine triple, refreshed on every edit: the anchor
-    // `tempo = x` re-hangs the map from, so assigning a tempo keeps the beat the
-    // clock is on where it already was. `tempoCache` is that segment's tempo --
-    // the *destination* while a ramp is running; the tempo actually sounding is
-    // the `tempo` getter, read from the map.
-    private baseBeats = 0;
-    private baseSecs = 0;
-    private tempoCache = 1.0;
     /** The joined `/transport_set` grid, or `null` on this clock's own beats. */
     private transport: { kind: "sample" | "wall"; origin: number; tempo: number } | null = null;
     private readonly queue = new Scheduler();
@@ -386,30 +379,20 @@ export class TempoClock {
      * one being ramped to: the destination is `map.last()`, and a piece whose
      * map has changes still ahead of the playhead has not reached them.
      *
-     * Assigning it changes the slope without pinning the instant, which is what
-     * setting the grid does; {@link TempoClock.setTempo} is the musical gesture
-     * (it keeps the current beat on the second it already fell on).
+     * It is a reading, and assigning it throws a `TypeError`: a tempo change
+     * is written at a place on the map, and {@link TempoClock.setTempo} is the
+     * verb that says where (the beat the clock is on, unless `at` says
+     * otherwise).
      */
     get tempo(): number {
         return this.tempoMapHeld.tempoAt(this.beats());
     }
 
     set tempo(tempo: number) {
-        this.tempoMapHeld = TempoMap.anchored(tempo, this.baseBeats, this.baseSecs)
-            ?? new TempoMap(tempo);
-        this.syncMap();
-    }
-
-    /**
-     * Re-reads the map's last segment into the affine cache, and (for an edit)
-     * wakes the driver, which may be asleep on a wait the edit just moved.
-     */
-    private syncMap(wake = false): void {
-        const [beats, secs, tempo] = this.tempoMapHeld.last();
-        this.baseBeats = beats;
-        this.baseSecs = secs;
-        this.tempoCache = tempo;
-        if (wake) this.wakeSoon();
+        throw new TypeError(
+            "TempoClock.tempo is read-only: it is the tempo sounding at the beat "
+            + `the clock is on. Change it with clock.setTempo(${tempo})`,
+        );
     }
 
     /**
@@ -626,7 +609,7 @@ export class TempoClock {
             tempoEnv(this.tempoMapHeld, at, tempo.levels, tempo.times,
                      tempo.curves ?? curve, unit);
         }
-        this.syncMap(true);
+        this.wakeSoon();
         return this;
     }
 
@@ -718,7 +701,7 @@ export class TempoClock {
         // map is replaced by that single segment rather than gaining a
         // breakpoint. A piece with a tempo curve phase-aligns by sample instead.
         this.tempoMapHeld = new TempoMap(grid.tempo);
-        this.syncMap(true);
+        this.wakeSoon();
         if (this.timebase instanceof SampleClockTimebase) {
             this.transport = { kind: "sample", origin: grid.originSample, tempo: grid.tempo };
             return this;

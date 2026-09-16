@@ -124,9 +124,9 @@ export class TempoMap extends CoreTempoMap {
     }
 
     /**
-     * One constant-tempo segment with `baseBeats` falling on `baseSeconds` —
-     * the affine triple a running clock already holds, so adopting a map
-     * changes no result.
+     * One constant-tempo segment with `baseBeats` falling on `baseSeconds`: a
+     * constant tempo whose grid is placed anywhere on the time axis, not only
+     * at beat 0 on second 0.
      */
     static anchored(
         tempo: number, baseBeats: number, baseSeconds: number,

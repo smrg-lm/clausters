@@ -3653,6 +3653,28 @@ work, where a pending item reads as done.)*
   edits through `edit()` and has the history, so the right-hand column is three:
   `bpf`, `pianoroll`, `pianoroll_midi`.
 
+- ✅ **Assigning a running clock's tempo re-sloped the whole map from beat 0**
+  *(found 2026-09-16 by the user, by ear, in an interactive session: a routine
+  on `TempoClock(2)` with `t.tempo = 3` and later `t.tempo = 4`, heard as a
+  hole and logged by the server as a run of `late bundle ... executing
+  immediately`)*. The setter built `TempoMap.anchored(tempo, base)` from the
+  last segment's start -- beat 0 on second 0 for a clock that never had a
+  gesture -- so the second the clock was on now fell on a later beat: every
+  queued beat in between was due at once, stamped in the past, and the
+  breakpoints before the change were dropped with the old map. It was
+  deliberate ("changes the slope without pinning the instant, which is what
+  setting the grid does"), copied from `Editor.tempo`/`Transport.tempo`, where
+  there is no playhead and replacing the map is a grid; on a clock that is
+  playing it is a seek.
+
+  **Fixed in both clients** by making `TempoClock.tempo` a reading only: the
+  tempo sounding at the beat the clock is on. Assigning it raises
+  (`AttributeError` / `TypeError`) and names `set_tempo`/`setTempo`, which
+  writes the change at a place on the map. The affine cache that existed only
+  for the setter went with it. The views' own `tempo` setters stay: whether a
+  view should hold a map at all is the ownership entry above ("Nothing
+  fundamental holds the tempo map").
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**

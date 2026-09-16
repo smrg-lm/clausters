@@ -2936,11 +2936,9 @@ class TempoMap:
 
     @classmethod
     def anchored(cls, tempo: float, base_beats: float, base_seconds: float) -> "TempoMap":
-        """A one-segment map with ``base_beats`` falling on ``base_seconds``.
-
-        The affine triple a running clock already holds, so a clock that adopts
-        the map it builds answers every conversion with the identical
-        expression it did before.
+        """A one-segment map with ``base_beats`` falling on ``base_seconds``:
+        a constant tempo whose grid is placed anywhere on the time axis, not
+        only at beat 0 on second 0.
         """
         handle = lib().clausters_tempomap_anchored(
             float(tempo), float(base_beats), float(base_seconds)

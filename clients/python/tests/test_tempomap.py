@@ -22,6 +22,18 @@ def test_every_clock_builds_its_own_map():
     assert b.tempo == 2.0
 
 
+def test_a_clocks_tempo_is_a_reading_and_the_verb_is_set_tempo():
+    # Assigning used to re-slope the whole map from beat 0, so a running clock
+    # jumped ahead and fired everything it skipped at once. A tempo change is
+    # written at a place on the map, and only `set_tempo` says where.
+    clock = TempoClock(2.0)
+    version = clock.map.version
+    with pytest.raises(AttributeError, match="set_tempo"):
+        clock.tempo = 3.0
+    assert clock.map.version == version
+    assert clock.tempo == 2.0
+
+
 def test_two_clocks_handed_one_map_are_reading_one_piece():
     piece = TempoMap(1.0)
     piece.push(4.0, 2.0)  # written ahead of any clock: the NRT half
