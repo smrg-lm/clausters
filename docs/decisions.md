@@ -8461,3 +8461,45 @@ window is re-read every tick and overlaps itself, so a meter fed from it would
 count the same audio several times over; the history is de-duplicated by stream
 position, which is what makes one algorithm serve both a file and a bus.
 
+
+## A layer declares its vertical, and a presentation is one layer of a stack
+
+A signal picture used to be a *set* of measures whose order was the type's own —
+the envelope under the level, because an envelope is the outer shape and there
+was nothing to choose. That holds for two readings of one quantity and breaks
+the moment a picture has a bottom: a spectrogram with the wave drawn over it is
+the same body with a different layer underneath, and no ordering by type decides
+between a texture and a curve. So the stack is **declared** (`layers`, back to
+front), and two things follow that were not obvious before it was written down.
+
+**A presentation had to become a layer.** The alternative was two elements on
+one rectangle, and that is the mistake this project already made once: every
+view of a signal paints its field before it draws, so the second is a lid rather
+than a layer (see "A measure is a factor of the signal element"). The
+presentation therefore stopped saying what is drawn and now says only what the
+**default** stack is — `peak signal` for a trace, `spectrogram` for the
+time-frequency view — and everything that used to ask it what the picture was
+asks the stack instead: whether there is a texture, what a live tick
+accumulates, how wide a tap read is, which bulk form is loaded, whether a y zoom
+centres, the y strip's unit, the axis' headroom.
+
+**A layer states its vertical rather than the host inferring one.** `y: "axis"`
+maps through the body's own vertical and *reports* it — the ruler and the cursor
+read-out are that layer's — while `y: "box"` normalizes into the rectangle with
+a scale of its own, which is what the loudness curve was already doing before
+there was a word for it. The default follows what a layer measures, so the
+common stacks need no `y` at all. Two drawn layers claiming the axis for
+**different domains** is refused at both doors (the def fails to build naming
+both; a `/gui_set` leaves the picture as it was and says why), because
+whichever one lost would be drawn on a scale that is not its own — a picture
+that lies about what it shows. Refusing is cheap and recoverable; a silent
+winner is neither.
+
+**And a layered view reads the samples, not a summary.** An STFT is made from
+samples and a peak pyramid is not, so a stack naming both asks for the audio and
+derives both pictures from it, filling a geometry slot and a texture slot under
+one key (the frame holds each kind in a map of its own, so the two do not
+collide). The consequence is stated rather than worked around: a source that is
+a summary and nothing else — a peaks cache, a streamed overview — draws no
+spectrogram layer at all, exactly as an old cache with no mean square draws no
+level body.

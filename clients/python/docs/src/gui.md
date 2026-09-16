@@ -474,7 +474,7 @@ Six names in the old catalog — a waveform, a plot, an oscilloscope, a
 spectroscope, a spectrogram, a goniometer — were six points of one element:
 
 ```python
-signal(view=…, <source>, navigable=…, selectable=…, editable=…, measure=…)
+signal(view=…, <source>, navigable=…, selectable=…, editable=…, layers=…)
 ```
 
 - **`view`** is the presentation: `"trace"` (value against time, the default),
@@ -485,30 +485,67 @@ signal(view=…, <source>, navigable=…, selectable=…, editable=…, measure=
   addressable samples — `data`, `blob`, `buffer`, `path`, `cache` — which is
   what lets a view navigate, slice and select.
 - **the capabilities** are `navigable`, `selectable`, `editable`.
-- **`measure`** is what the picture measures: `"peak"` (the default — the
-  min/max envelope the signal reached) or `"rms"` (the symmetric body of the
-  level it held).
+- **`layers`** is the stack the picture is, back to front: `"peak"` (the
+  min/max envelope the signal reached), `"rms"` (the symmetric body of the
+  level it held), `"signal"` (the reconstruction between the samples),
+  `"momentary"`/`"short"` (the loudness curves) and `"spectrogram"` (the
+  time-frequency texture). `measure` is the same prop under its older name.
 
-### What a picture measures
+### The layer stack
 
-A measure is a *factor* of the view, not a widget of its own — and a view may
-name more than one, which is the classic editor picture: the RMS body drawn
-inside the peak envelope.
+The layers are a *factor* of the view, not a composition of widgets — and the
+order is yours, back to front. The classic editor picture is the RMS body drawn
+inside the peak envelope:
 
 ```python
 from clausters.gui import waveform
 
-waveform(cache="take.clpk", measure="peak rms", label="the take")
+waveform(cache="take.clpk", layers="peak rms", label="the take")
 ```
 
 One view and not two, because **every view of a signal paints its own field
 before it draws**: two of them on one rectangle do not layer, the second hides
-the first. Measuring twice into one body is also what keeps the rest single —
-one axis, one ruler, one selection, one playhead, one upload of the samples —
-and the order is the host's: the envelope is the outer shape, so it goes under
-whatever order you name them in.
+the first. Drawing twice into one body is also what keeps the rest single — one
+axis, one ruler, one selection, one playhead, one upload of the samples.
 
-Three things follow from what the measure is:
+A layer that has something to say about itself is written as a dict instead of a
+name, and then the stack is a list:
+
+```python
+from clausters.gui import spectrogram
+
+spectrogram(path="take.f32", sample_rate=rate, layers=[
+    "spectrogram",                                  # the texture, at the bottom
+    {"draw": "peak", "y": "box", "alpha": 0.6},     # the wave, read through it
+    {"draw": "rms", "y": "box", "alpha": 0.4},      # and the level inside that
+])
+```
+
+- **`alpha`** is that layer's own weight over what is under it — which is what
+  reading one picture *through* another is made of. It is not the widget's
+  `opacity`, which fades everything including the chrome, and it is live:
+  `host.set(id, layers=[…])` re-states the stack between two frames.
+- **`visible` and `solo`** are how you read a stack while you build it. A
+  hidden layer keeps its place in the order, so showing it again puts it back
+  where it was; and where anything solos, only the soloed layers are drawn.
+- **`y`** is which vertical the layer is read on. `"axis"` maps through the
+  body's own — the amplitude or frequency window a zoom opens — and is what the
+  y ruler and the cursor read-out report; `"box"` normalizes into the rectangle
+  with a scale of its own, which is what a loudness curve already does. **Two
+  layers claiming the axis for different quantities is refused**: a spectrogram
+  measures hertz and a wave measures amplitude, so one of the two says
+  `y="box"` and the ruler follows the other. Refused rather than resolved —
+  whichever lost would be drawn on a scale that is not its own, which is a
+  picture that lies about what it shows.
+
+The stack is also the compositing order: the field is painted once, the texture
+is sampled where the stack puts it, and the layers after it draw over it. A
+view that names both reads the **samples** (inline, a mapped file, a server
+buffer) and makes both pictures from them — the pyramid for the traces, the
+analysis for the texture — so a source that is a summary and nothing else (a
+peaks cache) draws no `"spectrogram"` layer.
+
+Three things follow from what the level measure is:
 
 - **The level is averaged over a fixed 50 ms of the source**, not over the pixel
   column it is drawn in — 2400 samples at 48 kHz, the RMS window an audio editor
@@ -542,7 +579,7 @@ whole take before anything has been recorded into it — because past the fronti
 there is no silence, there is no samples yet. The host cannot work this out for
 itself: a frontier alone does not tell a recording from a loaded take that one
 write touched, and you are the one who allocated the buffer.
-- **A cache built before the measure existed draws no body.** Its energy was
+- **A cache built before the level measure existed draws no body.** Its energy was
   never measured, and zeros would say silence over samples that is not
   silent — so the layer is simply absent, and rebuilding the cache
   (`peaks_cache_file`) is what fills it in.

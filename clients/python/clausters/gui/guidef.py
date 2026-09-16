@@ -853,7 +853,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            retention: float | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
            selectable: bool | None = None, editable: bool | None = None,
-           overlay: bool | None = None, measure: str | None = None,
+           overlay: bool | None = None, layers=None, measure: str | None = None,
            fills: bool | None = None,
            loudness_target: float | None = None, loudness_scale: float | None = None,
            loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
@@ -868,20 +868,48 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       time), ``"spectrum"`` (magnitude against frequency), ``"spectrogram"``
       (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
       goniometer of a stereo pair).
-    - ``measure`` — **what the picture measures**: ``"peak"`` (the min/max
-      envelope the signal reached), ``"rms"`` (the symmetric body of the level
-      it held, drawn in the body color role), ``"signal"`` (the band-limited
-      reconstruction between the samples, drawn once they are separate points,
-      with the peaks that leave full scale marked), or **several** as one
-      space-separated string. The default is ``"peak signal"``: the envelope,
-      and the reconstruction over it where there is room — a layer, never a
-      replacement, so the amplitude does not jump as a zoom crosses into the
-      samples. ``"peak"`` alone is the bare samples, dots joined by straight
-      lines. It is a factor of the view rather than a
-      widget of its own: one body, drawn once per measure by the same renderer,
-      which is also what keeps the axis, the ruler, the selection and the
-      upload single. A source whose peak cache was built before the measure
-      existed draws no body rather than a flat line of zeros.
+    - ``layers`` — **the stack the picture is**, back to front. A layer is
+      named by what it draws: ``"peak"`` (the min/max envelope the signal
+      reached), ``"rms"`` (the symmetric body of the level it held, in the body
+      color role), ``"signal"`` (the band-limited reconstruction between the
+      samples, drawn once they are separate points, with the peaks that leave
+      full scale marked), ``"momentary"`` and ``"short"`` (the loudness curves),
+      and ``"spectrogram"`` (the time-frequency texture). Two shapes: a
+      space-separated string (``"peak rms"``) or a list, whose entries may be
+      dicts saying what one layer does with itself —
+      ``{"draw": "rms", "alpha": 0.5, "y": "box", "visible": False,
+      "solo": True}``. The order is yours: ``"rms peak"`` draws the level under
+      the envelope, ``"peak rms"`` over it. The default is the presentation's
+      own — ``"peak signal"`` for a trace, ``"spectrogram"`` for the
+      time-frequency view. ``measure`` is the same prop under its older name.
+
+      It is a factor of the view rather than a composition of widgets: one
+      body, one axis, one ruler, one selection, one playhead and one upload,
+      with a drawing per layer over them — two views on one rectangle are not
+      layers, the second paints its own field over the first. (The
+      `multitrack`'s ``layers`` is the same idea one container down: a curve
+      layered on a clip.)
+
+      - ``alpha`` is the layer's own weight over what is under it, which is
+        what reading one picture *through* another is made of. It is not the
+        node's ``opacity``, which fades a whole widget, chrome included.
+      - ``visible`` and ``solo`` are how a stack is read while you build it: a
+        hidden layer keeps its place in the order, and where anything solos
+        only the soloed layers are drawn.
+      - ``y`` is which vertical the layer is read on. ``"axis"`` maps through
+        the body's own — the amplitude or frequency window a zoom opens — and
+        is what the y ruler and the cursor read-out report; ``"box"``
+        normalizes into the rectangle with a scale of its own. The default
+        follows what the layer measures, so a loudness curve is already in its
+        box. **Two layers claiming the axis for different quantities is
+        refused** (the def fails, a ``set`` is ignored): a spectrogram with a
+        waveform over it says ``y="box"`` on one of the two, and the ruler
+        follows the other.
+
+      A source whose peak cache was built before the level measure existed
+      draws no body rather than a flat line of zeros, and a source that is a
+      summary and nothing else — a peaks cache, a streamed overview — draws no
+      ``"spectrogram"`` layer, since an analysis is made from samples.
 
     - the **source** — ``bus`` (with ``rate``) is forward-only, read live;
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
@@ -938,7 +966,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
-                       measure=measure, at=at, dur=dur, start=start,
+                       layers=layers, measure=measure, at=at, dur=dur, start=start,
                        loudness_target=loudness_target, loudness_scale=loudness_scale,
                        label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),
@@ -1395,7 +1423,7 @@ def waveform(*, autofit: bool | None = None,
              data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
-             measure: str | None = None, fills: bool | None = None,
+             layers=None, measure: str | None = None, fills: bool | None = None,
              loudness_target: float | None = None, loudness_scale: float | None = None,
              loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
              ruler: str | None = None,
@@ -1432,13 +1460,15 @@ def waveform(*, autofit: bool | None = None,
     (default 1): **every** channel is kept and drawn — stacked lanes sharing the
     time axis by default, or per-color overlaid traces with ``overlay=True``.
 
-    ``measure`` chooses what the picture measures — ``"peak"`` (the envelope),
-    ``"rms"`` (the level body), ``"signal"`` (the reconstruction between the
-    samples, a layer over them), or **several as one space-separated string**.
-    The default is ``"peak signal"``. A stack is a prop of *one* view and not two views
-    layered — a view paints its own field before it draws, so the second would
-    hide the first (see `signal`, and the multitrack editor's signal view,
-    whose ``layers`` is this prop).
+    ``layers`` is the stack the picture is, back to front — ``"peak"`` (the
+    envelope), ``"rms"`` (the level body), ``"signal"`` (the reconstruction
+    between the samples), the loudness curves, ``"spectrogram"`` (the texture),
+    as one space-separated string or as a list whose entries may say what a
+    layer does with itself (``alpha``, ``visible``, ``solo``, ``y``). The
+    default is ``"peak signal"``, and ``measure`` is the same prop under its
+    older name; the whole of it is in `signal`. A stack is a prop of *one* view
+    and not two views layered — a view paints its own field before it draws, so
+    the second would hide the first.
     ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
     it also keys the sibling cache the host writes beside the file.
 
@@ -1527,7 +1557,8 @@ def waveform(*, autofit: bool | None = None,
     stays per-view."""
     extra = _drop_none(data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
-                       channels=channels, base_bucket=base_bucket, measure=measure,
+                       channels=channels, base_bucket=base_bucket,
+                       layers=layers, measure=measure,
                        loudness_target=loudness_target, loudness_scale=loudness_scale,
                        color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
@@ -1554,6 +1585,7 @@ def spectrogram(*, autofit: bool | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
                 db_ceil: float | None = None, freq_scale: str | None = None,
                 log_freq: bool | None = None, colormap: int | None = None,
+                layers=None,
                 ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None, tempo_map=None,
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
@@ -1598,12 +1630,19 @@ def spectrogram(*, autofit: bool | None = None,
 
     ``link`` joins a shared navigation group exactly as on the `waveform` —
     the classic composition is a waveform lane and a spectrogram lane of the
-    same render under one ``link``, scrolling and selecting in lockstep."""
+    same render under one ``link``, scrolling and selecting in lockstep.
+
+    ``layers`` puts the texture in a **stack** with everything else a signal
+    view can draw, which is how the wave goes *over* the spectrogram rather
+    than beside it: ``layers=["spectrogram", {"draw": "peak", "y": "box"}]`` is
+    one element, one time axis, one selection, one playhead. The prop is
+    documented whole in `signal`; the ``y`` is what keeps two quantities off
+    one vertical."""
     extra = _drop_none(data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
-                       colormap=colormap, color=color)
+                       colormap=colormap, layers=layers, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, tempo_map=_tempo_map(tempo_map),
                        beat_at=beat_at, quant=quant, autofit=autofit,
@@ -1695,7 +1734,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
 
 
 def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
-          overlay: bool | None = None, measure: str | None = None,
+          overlay: bool | None = None, layers=None, measure: str | None = None,
           loudness_target: float | None = None, loudness_scale: float | None = None,
           loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
           window_ms: float | None = None,
@@ -1719,7 +1758,8 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     instead, one sample per frame tick.
 
     Channels draw as stacked lanes, or as color-coded traces in one field with
-    ``overlay``. ``hold`` freezes the trace. The audio-rate form carries axis
+    ``overlay``. ``layers`` is the stack drawn on the window, the same prop
+    `signal` documents (``measure`` is its older name). ``hold`` freezes the trace. The audio-rate form carries axis
     rulers: ``ruler`` (x, in milliseconds of the window) and ``ruler_y`` (value
     over ``[min, max]``), both shown by default and hidden with ``False`` (or
     ``"off"``). Natively the host reads the samples out of the ``--shm``
@@ -1728,7 +1768,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     bipolar ``-1``/``1``).
     """
     extra = _drop_none(channels=channels, window_ms=window_ms,
-                       trigger=trigger, measure=measure,
+                       trigger=trigger, layers=layers, measure=measure,
                        loudness_target=loudness_target, loudness_scale=loudness_scale,
                        label=label, color=color)
     for key, flag in (("hold", hold), ("overlay", overlay),
@@ -2154,7 +2194,7 @@ def _flat_osc(osc) -> list:
 def plot(*, data=None, blob: int | None = None,
                  path: str | None = None, cache: str | None = None,
                  buffer: int | None = None, channels: int | None = None, view: str | None = None,
-                 overlay: bool | None = None, measure: str | None = None,
+                 overlay: bool | None = None, layers=None, measure: str | None = None,
                  sample_rate: float | None = None,
                  min: float | None = None, max: float | None = None, ruler: str | None = None,
                  ruler_y: str | None = None, fft_size: int | None = None,
@@ -2174,6 +2214,10 @@ def plot(*, data=None, blob: int | None = None,
       server buffer the host fetches over its own leg. The same two sources the
       `waveform` reads: a plot and a waveform are one element seen with and
       without navigation, so they take the same sources.
+
+    ``layers`` is the stack drawn on the field, exactly as on the `waveform`
+    (``measure`` is its older name); a plot is the same element without
+    navigation, so it draws the same layers.
     - ``data`` — a small list of floats inline in the JSON;
     - ``blob`` — the index of a binary blob carried beside the JSON (see
       `samples_to_blob` and `GuiHost.define`).
@@ -2207,7 +2251,7 @@ def plot(*, data=None, blob: int | None = None,
                        blob=blob, path=path, cache=cache, buffer=buffer,
                        channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
-                       measure=measure, label=label, color=color)
+                       layers=layers, measure=measure, label=label, color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        min=min, max=max))
     if overlay is not None:

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the layer stack</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 52rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 52rem; white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(76vh, 560px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>views/layers.py</code>: <b>the layer stack — a spectrogram, the wave over
+it, and the level inside that</b>.
+
+A view of a signal draws several things on one body, and <code>layers</code> is
+the list of them, <b>back to front</b>. It is one element and not three stacked
+widgets, because every view of a signal paints its own field before it draws: a
+second one on the same rectangle would be a lid over the first, not a layer over
+it. One element is also one time axis, one selection, one playhead and one
+upload.
+
+<b>The order is yours</b> — the texture, then the wave, then the level.
+<b>The vertical belongs to one layer</b>: a spectrogram measures hertz and a
+wave measures amplitude, so the texture keeps the axis (the Hz ruler is its) and
+the curves say <code>y: "box"</code>, which normalizes each into the body it is
+drawn on; two layers claiming the axis is <b>refused</b>, and the last button
+asks for it so you can read what comes back. <b>Alpha is per layer</b>: the two
+sliders re-state the stack live, so the curves fade over the texture while the
+picture under them stays where it is — not the widget's <code>opacity</code>,
+which would fade the rulers with it. <b>Solo and hide</b> read a stack while you
+build it: a hidden layer keeps its place in the order.
+
+The take is four seconds of a <b>sweep from 300 Hz to 3 kHz</b> whose level
+steps down halfway, built at 16 kHz: the sweep is a diagonal in the texture and
+the step is a cliff in the wave, so the two layers say visibly different things
+about the same samples. It makes no sound.
+
+Needs <code>./build.sh</code> in <code>clients/web</code> first
+(<code>dist/</code> is git-ignored); serve it over HTTP
+(<code>python3 -m http.server</code>) and open
+<code>/examples/views/layers.html</code>.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/layers.py, call for call:
+      the same take, the same stack, the same four controls re-stating it.
+
+      Serve clients/web (the package root) and open
+      /examples/views/layers.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Session, gui } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The take's own rate. A take carries its rate with it, and 16 kHz is
+      // enough for a sweep that stops at 3 kHz -- it keeps what travels over
+      // the wire small and puts the interesting part of the spectrum in the
+      // lower half of the texture.
+      const RATE = 16000.0;
+
+      /**
+       * A sine sweeping `f0` to `f1`, at full level for the first half of its
+       * length and a quarter of it for the second.
+       */
+      function sweep(seconds, f0, f1) {
+        const frames = Math.round(seconds * RATE);
+        const out = new Float32Array(frames);
+        let phase = 0.0;
+        for (let i = 0; i < frames; i++) {
+          const t = i / frames;
+          phase += (2 * Math.PI * (f0 * (f1 / f0) ** t)) / RATE;
+          out[i] = 0.9 * Math.sin(phase) * (t < 0.5 ? 1.0 : 0.25);
+        }
+        return out;
+      }
+
+      /** The same stack at two weights -- what a slider re-states. */
+      const withAlpha = (peak, rms) => [
+        "spectrogram",
+        { draw: "peak", y: "box", alpha: peak },
+        { draw: "rms", y: "box", alpha: rms },
+      ];
+
+      async function run() {
+        $("start").disabled = true;
+
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        // The take: a sweep whose level steps down halfway. The sweep is a
+        // diagonal in the texture; the step is a cliff in the wave. One source,
+        // two layers saying different things about it.
+        const take = await Buffer.fromSamples(sweep(4.0, 300.0, 3000.0), 1, { server });
+        await server.sync();
+
+        // Back to front: the texture, the envelope over it, the level inside
+        // that. The curves take `y: "box"` because the axis is the texture's --
+        // it is the layer whose quantity the Hz ruler reports.
+        const win = await gui.view(
+          { title: "The layer stack", w: 900, h: 560, layout: "col" },
+          gui.spectrogram({
+            buffer: take.bufnum, sampleRate: RATE, name: "stack",
+            layers: withAlpha(0.7, 0.45), windowSize: 512, freqScale: "linear",
+            label: "one body: the texture, the wave over it, the level inside that",
+          }),
+          gui.panel(
+            { layout: "row", h: 70 },
+            gui.slider({ name: "peak_alpha", label: "wave", min: 0.0, max: 1.0, value: 0.7 }),
+            gui.slider({ name: "rms_alpha", label: "level", min: 0.0, max: 1.0, value: 0.45 }),
+            gui.button({ name: "solo", label: "solo the wave" }),
+            gui.button({ name: "hide", label: "hide the level" }),
+          ),
+        ).open($("stage"));
+
+        // A layer's alpha is a property of the stack, so what a slider sends is
+        // the stack again -- one prop, one message, the picture unchanged
+        // underneath.
+        const state = { peak: 0.7, rms: 0.45, solo: false, hide: false };
+        const restate = () => {
+          const layers = withAlpha(state.peak, state.rms);
+          if (state.hide) layers[2].visible = false;
+          if (state.solo) layers[1].solo = true;
+          win.widget("stack").set({ layers });
+        };
+
+        win.widget("peak_alpha").onEvent((value) => { state.peak = value; restate(); });
+        win.widget("rms_alpha").onEvent((value) => { state.rms = value; restate(); });
+        // On the **click**, not on every event a button emits: `onEvent` fires
+        // for the press *and* the release, so a flag flipped there comes back
+        // to where it started.
+        win.widget("solo").onClick(() => {
+          state.solo = !state.solo;
+          win.widget("solo").set({ label: state.solo ? "the whole stack" : "solo the wave" });
+          restate();
+        });
+        win.widget("hide").onClick(() => {
+          state.hide = !state.hide;
+          win.widget("hide").set({ label: state.hide ? "show the level" : "hide the level" });
+          restate();
+        });
+
+        log("the sliders fade the two curves over the texture; solo leaves the "
+          + "wave alone; sweep a selection across the body and it crosses every "
+          + "layer at once");
+
+        // What the host refuses: the wave measures amplitude and the texture
+        // measures hertz, and asking for both on the vertical axis is refused
+        // rather than resolved -- whichever lost would be drawn on a scale that
+        // is not its own.
+        win.widget("stack").set({ layers: ["spectrogram", "peak"] });
+        const info = await win.widget("stack").query();
+        log(`after asking for two layers on one axis, the stack is still: ${info.props.layers}`);
+
+        win.onClosed(() => log("closed"));
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

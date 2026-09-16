@@ -358,18 +358,6 @@ its plan; the plan is where its acceptance is read.
   re-cue on a locate -- which is now near `O24` rather than before it, and small
   enough to land with the multitrack's roll lane.
 
-- ⬜ **The A track — what a signal measures, and the layers that show it**
-  *(`clients/gui/PLAN.md`, "A track")*. `A1`-`A5` shipped (mean square in the
-  pyramid, the RMS layer and the `measure` prop, band-limited reconstruction
-  with true peak, the loudness family in the core, and the loudness layer with
-  its own LU scale and its read-out, and the layer stack's three rules — order,
-  which layer owns the vertical, and the alpha rule — made explicit in the
-  host, where a spectrogram with a wave over it is one element); what is open
-  is `A7`, which publishes them from the clients and the books: the `layers`
-  builder in both, the layer keys and the axis-claim rule in
-  `docs/gui-protocol.md`, and `gui_layers.py` with its page twin. **Related:** the audio editor's layers below land on this track's stack
-  rules.
-
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
   layer only: the sub-two-sample columns and the joined segments take the same
@@ -378,8 +366,8 @@ its plan; the plan is where its acceptance is read.
 - ⬜ **The reconstruction draws nothing zoomed out**
   *(`clients/gui/PLAN.md`, "Found by use")*. A cache-format change rather than
   a drawing one: the reconstructed envelope as a plane in the peak pyramid,
-  computed once when the cache is built. **Related:** the A track above, whose
-  `A3` left the filter it needs; independent of `A4`.
+  computed once when the cache is built. **Related:** the A track's `A3`, which
+  left the filter it needs (`clients/gui/PLAN.md`); independent of `A4`.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
@@ -388,7 +376,8 @@ its plan; the plan is where its acceptance is read.
   `select_box` step already declines to answer, the lasso, and spectral drawing
   and resynthesis — the last of which is **experimental** in the `G20f` sense,
   promoted or dropped on what it sounds like. It needs the A track's descriptors,
-  which is why the two are read together.
+  which shipped with that track (`clients/gui/PLAN.md`, A track) and are what
+  the spectral half is read against.
 
 - ⬜ **The P track's phase B — the patcher becomes an editing surface**
   *(`clients/gui/PLAN.md`, "P track")*. Phase A is complete at both levels: a
@@ -409,7 +398,9 @@ its plan; the plan is where its acceptance is read.
   several ways, alternating or superimposed) and **edit layers** (what a hand is
   doing, one at a time — non-destructive processing as curves over the waveform,
   seen, heard, then rendered in). The two combine and are not the same axis. It
-  lands on `A6`, which is why the A track is above it here. Two neighbouring
+  lands on the rules `A6` made explicit — the stack's order, the layer that
+  owns the vertical, and the alpha — which shipped and are what the contents
+  are now designed over. Two neighbouring
   entries in the same list are part of the same design and are read with it: "The
   layer stack is one container's, and an audio editor's view has one too", and
   "Many channels are drawn and not yet readable, and a take cannot be created

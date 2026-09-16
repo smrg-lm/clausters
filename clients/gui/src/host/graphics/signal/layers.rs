@@ -462,10 +462,15 @@ fn truthy(v: &Value) -> Option<bool> {
     }
 }
 
-/// A float as a JSON number, which cannot fail for the finite values this
-/// clamps to.
+/// A weight as a JSON number, rounded to a thousandth.
+///
+/// A layer's alpha is a display weight and three decimals is finer than an eye
+/// reads; what the rounding is actually for is the **answer**, since the f32
+/// a client sent comes back as `0.699999988079071` in an f64 field and a query
+/// that reports what was set has to read like it.
 fn json_number(x: f32) -> Value {
-    serde_json::Number::from_f64(x as f64).map_or(Value::Null, Value::Number)
+    let rounded = (x as f64 * 1000.0).round() / 1000.0;
+    serde_json::Number::from_f64(rounded).map_or(Value::Null, Value::Number)
 }
 
 #[cfg(test)]

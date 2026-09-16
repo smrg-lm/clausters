@@ -1118,6 +1118,41 @@ export function plane(
 }
 
 /**
+ * **One layer of a signal picture**, when it says more about itself than its
+ * name: what it draws, and how it sits over the layer under it.
+ *
+ * A stack whose layers are all at their defaults is the space-separated string
+ * (`"peak rms"`); this is the entry form for the rest.
+ */
+export interface SignalLayer {
+    /**
+     * What this layer draws: `"peak"`, `"rms"`, `"signal"`, `"momentary"`,
+     * `"short"` or `"spectrogram"`.
+     */
+    draw: string;
+    /** Its own weight over what is under it, `[0, 1]`. */
+    alpha?: number;
+    /** Whether it is drawn; a hidden layer keeps its place in the order. */
+    visible?: boolean;
+    /** Where anything solos, only the soloed layers are drawn. */
+    solo?: boolean;
+    /**
+     * Which vertical it is read on: `"axis"` maps through the body's own — and
+     * is what the y ruler and the cursor read-out report — while `"box"`
+     * normalizes into the rectangle with a scale of its own. Two layers
+     * claiming the axis for different quantities is refused.
+     */
+    y?: "axis" | "box";
+}
+
+/**
+ * **The layer stack a signal view draws**, back to front: the
+ * space-separated names (`"peak rms"`) for a stack at its defaults, or the
+ * list where a layer states its own.
+ */
+export type SignalLayers = string | (string | SignalLayer)[];
+
+/**
  * **Every view of a signal**, as the one element they are: a presentation of
  * a source, with the capabilities offered over it.
  *
@@ -1193,20 +1228,29 @@ export function signal(
         editable?: boolean;
         overlay?: boolean;
         /**
-         * **What the picture measures**: `"peak"` (the min/max envelope the
-         * signal reached), `"rms"` (the symmetric body of the level it held),
-         * `"signal"` (the band-limited reconstruction between the samples,
-         * drawn once they are separate points, with the peaks that leave full
-         * scale marked), or several as one space-separated string. The
-         * default is `"peak signal"`: the envelope, and the reconstruction
-         * over it where there is room — a layer, never a replacement, so the
-         * amplitude does not jump as a zoom crosses into the samples.
-         * `"peak"` alone is the bare samples, dots joined by straight lines. A factor of the view rather than a widget of its own: one
-         * body, drawn once per measure by the one renderer, which is what keeps
-         * the axis, the ruler, the selection and the upload single. A peak
-         * cache built before the measure existed draws no body rather than
-         * zeros.
+         * **The stack the picture is**, back to front. A layer is named by what
+         * it draws: `"peak"` (the min/max envelope the signal reached), `"rms"`
+         * (the symmetric body of the level it held), `"signal"` (the
+         * band-limited reconstruction between the samples, drawn once they are
+         * separate points, with the peaks that leave full scale marked),
+         * `"momentary"` and `"short"` (the loudness curves) and
+         * `"spectrogram"` (the time-frequency texture) — as one
+         * space-separated string, or as a list whose entries may say what a
+         * layer does with itself ({@link SignalLayer}). The order is yours:
+         * `"rms peak"` draws the level under the envelope, `"peak rms"` over
+         * it. The default is the presentation's own — `"peak signal"` for a
+         * trace, `"spectrogram"` for the time-frequency view.
+         *
+         * A factor of the view rather than a composition of widgets: one body,
+         * one axis, one ruler, one selection, one playhead and one upload,
+         * with a drawing per layer over them — two views on one rectangle are
+         * not layers, the second paints its own field over the first. A peak
+         * cache built before the level measure existed draws no body rather
+         * than zeros, and a source that is a summary and nothing else draws no
+         * `"spectrogram"` layer, since an analysis is made from samples.
          */
+        layers?: SignalLayers;
+        /** The same prop under its older name. */
         measure?: string;
         /**
          * **Inside a `clip`**, and only there: where on the clip's own time
@@ -1230,7 +1274,7 @@ export function signal(
 ): GuiNode {
     const {
         view, cache, path, buffer, data, blob, channels, bus, rate, retention,
-        baseBucket, navigable, selectable, editable, overlay, measure, fills, at, dur,
+        baseBucket, navigable, selectable, editable, overlay, layers, measure, fills, at, dur,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
     } = options;
@@ -1249,6 +1293,7 @@ export function signal(
             ["selectable", flag(selectable)],
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
+            ["layers", layers],
             ["measure", measure],
             ["loudness_target", loudnessTarget],
             ["loudness_scale", loudnessScale],
@@ -1925,14 +1970,17 @@ export function waveform(
         /** The top of the value domain (see `min`). */
         max?: number;
         /**
-         * What the picture measures: `"peak"` (the envelope), `"rms"` (the
-         * level body), `"signal"` (the reconstruction between the samples, a
-         * layer over them), or **several as one space-separated string**. The
-         * default is `"peak signal"`. A stack is a prop of *one* view and not two views layered:
-         * a view paints its own field before it draws, so the second would hide
-         * the first (see `signal`, and the multitrack editor's signal view,
-         * whose `layers` is this prop).
+         * **The stack the picture is**, back to front — `"peak"` (the
+         * envelope), `"rms"` (the level body), `"signal"` (the reconstruction
+         * between the samples), the loudness curves, `"spectrogram"` (the
+         * texture) — as one space-separated string or as a list whose entries
+         * say what a layer does with itself ({@link SignalLayer}). The default
+         * is `"peak signal"`, and the whole of it is in {@link signal}. A stack
+         * is a prop of *one* view and not two views layered: a view paints its
+         * own field before it draws, so the second would hide the first.
          */
+        layers?: SignalLayers;
+        /** The same prop under its older name. */
         measure?: string;
         /**
          * The **loudness** layer's own scale, for the `momentary` and `short`
@@ -1964,7 +2012,7 @@ export function waveform(
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
-        rulerY, bitDepth, min, max, measure, fills,
+        rulerY, bitDepth, min, max, layers, measure, fills,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
     return node("signal", {
@@ -1977,6 +2025,7 @@ export function waveform(
         ...drop([
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
+            ["layers", layers],
             ["measure", measure],
             ["fills", flag(fills)],
             ["loudness_target", loudnessTarget],
@@ -2008,13 +2057,22 @@ export function spectrogram(
         /** The legacy boolean alias of `freqScale`: log against linear. */
         logFreq?: boolean;
         colormap?: number;
+        /**
+         * **The stack the texture is one layer of** — which is how a wave goes
+         * *over* a spectrogram rather than beside it:
+         * `layers: ["spectrogram", { draw: "peak", y: "box" }]` is one element,
+         * one time axis, one selection, one playhead. Documented whole in
+         * {@link signal}; the `y` is what keeps two quantities off one
+         * vertical.
+         */
+        layers?: SignalLayers;
         /** The frequency ruler: `"hz"` (the default) or `"off"`. */
         rulerY?: string;
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, windowSize, hop,
-        dbFloor, dbCeil, freqScale, logFreq, colormap, rulerY, ...timeline
+        dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
@@ -2028,6 +2086,7 @@ export function spectrogram(
             ["freq_scale", freqScale],
             ["log_freq", flag(logFreq)],
             ["colormap", colormap],
+            ["layers", layers],
         ]),
     });
 }
@@ -2053,7 +2112,9 @@ export function plot(
         dbFloor?: number;
         dbCeil?: number;
         freqScale?: string;
-        /** What the columns measure — see `signal`. */
+        /** The layer stack the columns are drawn as — see {@link signal}. */
+        layers?: SignalLayers;
+        /** The same prop under its older name. */
         measure?: string;
         label?: string;
         /**
@@ -2065,7 +2126,7 @@ export function plot(
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
-        min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, measure,
+        min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, layers, measure,
         label: text, axes: pair, ...rest
     } = options;
     // A plot is the trace (or the spectrum) of a signal that does **not**
@@ -2086,6 +2147,7 @@ export function plot(
             ["db_floor", dbFloor],
             ["db_ceil", dbCeil],
             ["freq_scale", freqScale],
+            ["layers", layers],
             ["measure", measure],
             ["label", text],
         ]),
@@ -2259,7 +2321,9 @@ export function scope(
          */
         ruler?: boolean | string;
         rulerY?: boolean | string;
-        /** What the columns measure — see `signal`. */
+        /** The layer stack the columns are drawn as — see {@link signal}. */
+        layers?: SignalLayers;
+        /** The same prop under its older name. */
         measure?: string;
         label?: string;
         /**
@@ -2271,7 +2335,7 @@ export function scope(
 ): GuiNode {
     const {
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
-        ruler, rulerY, measure, label: text, axes: pair,
+        ruler, rulerY, layers, measure, label: text, axes: pair,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...rest
     } = options;
     return node("signal", {
@@ -2290,6 +2354,7 @@ export function scope(
             ["window_ms", windowMs],
             ["trigger", trigger],
             ["hold", flag(hold)],
+            ["layers", layers],
             ["measure", measure],
             ["loudness_target", loudnessTarget],
             ["loudness_scale", loudnessScale],
