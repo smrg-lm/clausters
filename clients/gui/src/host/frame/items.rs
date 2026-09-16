@@ -54,6 +54,8 @@ pub(super) struct SpectralBodyItem {
 pub(super) struct TimelineLook {
     /// The layers, back to front.
     pub(super) layers: crate::host::graphics::signal::layers::Stack,
+    /// What the body's vertical measures, as the element resolved it.
+    pub(super) axis: crate::host::graphics::signal::layers::Domain,
     /// The value domain the traces are mapped through —
     /// [`crate::waveform::DEFAULT_DOMAIN`] is the amplitude axis, and anything
     /// else is a plain value axis (dBFS, bits and percent are full-scale
@@ -262,6 +264,7 @@ pub(super) fn collect_widgets(
                         SlotFrame::Signal {
                             body,
                             layers,
+                            axis,
                             domain,
                             y,
                             overlay,
@@ -271,6 +274,7 @@ pub(super) fn collect_widgets(
                             body,
                             TimelineLook {
                                 layers,
+                                axis,
                                 domain,
                                 y,
                                 overlay,

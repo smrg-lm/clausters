@@ -487,14 +487,17 @@ pub(super) fn draw_timeline_meshes(
         // **The y ruler belongs to the layer that claimed the axis**, which is
         // what makes the claim mean something: a stack with a texture on the
         // axis is ruled in hertz and one with the traces on it in the value
-        // unit, whatever else is drawn over either. A stack where every layer
-        // is in its own box rules nothing here — each of those draws its own.
-        let axis = look.layers.axis_domain().ok().flatten();
+        // unit, whatever else is drawn over either. Where every drawn layer
+        // sits in a box of its own the element's own quantity is what it
+        // reports, since the axis is still there to be zoomed — that
+        // resolution is the element's ([`SlotFrame::Signal::axis`]) and is not
+        // made a second time here.
+        let axis = look.axis;
         if item.editor.ruler_y != RulerY::Off {
             for ch in 0..rows {
                 let row = channel_rect(body, rows, ch);
                 let ticks = match axis {
-                    Some(Domain::Frequency) => ruler::hz_ticks(
+                    Domain::Frequency => ruler::hz_ticks(
                         nyquist,
                         look.look.freq_scale,
                         f_lo,
@@ -503,7 +506,7 @@ pub(super) fn draw_timeline_meshes(
                         look.y.1,
                         m,
                     ),
-                    Some(Domain::Amplitude) => amp_or_value_ticks(
+                    Domain::Amplitude => amp_or_value_ticks(
                         look.domain,
                         item.editor.ruler_y,
                         item.editor.bit_depth,
@@ -642,7 +645,7 @@ pub(super) fn draw_timeline_meshes(
         // The active frequency scale, named over the view (the live views'
         // corner slot) — log/mel/bark are not tellable apart from the tick
         // spacing at a glance. Only where a texture is what the axis measures.
-        if axis == Some(Domain::Frequency) {
+        if axis == Domain::Frequency {
             crate::host::graphics::corner_text(
                 &mut Draw::new(over, m, th),
                 ruler::scale_tag(look.look.freq_scale),
@@ -658,7 +661,7 @@ pub(super) fn draw_timeline_meshes(
             rows,
             inputs,
             match axis {
-                Some(Domain::Frequency) => Vertical::Frequency(nyquist, look.look.freq_scale, f_lo),
+                Domain::Frequency => Vertical::Frequency(nyquist, look.look.freq_scale, f_lo),
                 _ => Vertical::Value(look.domain),
             },
             th,

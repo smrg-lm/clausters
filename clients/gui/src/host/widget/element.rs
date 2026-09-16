@@ -835,6 +835,15 @@ pub enum SlotFrame {
         /// element's presentations and nothing in the fifth is the divergence
         /// this closed.
         domain: (f32, f32),
+        /// **What the body's vertical measures**, resolved: the domain of the
+        /// layer that claimed the axis, and — where every drawn layer sits in
+        /// a box of its own — the presentation's own, since the axis is still
+        /// there to be zoomed and still has to be ruled in some unit.
+        ///
+        /// Resolved by the element rather than re-derived by the frame,
+        /// because the element is what the gestures, the headroom and the y
+        /// strip's unit already ask.
+        axis: crate::host::graphics::signal::layers::Domain,
         /// The vertical window, as a normalized `(start, len)` — of whichever
         /// quantity the stack put on the axis (amplitude, or the frequency a
         /// texture measures).

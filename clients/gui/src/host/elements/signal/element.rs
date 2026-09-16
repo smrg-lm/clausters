@@ -590,6 +590,7 @@ impl SignalElement {
             Presentation::Signal | Presentation::TimeFrequency => Some(SlotFrame::Signal {
                 body,
                 layers: self.layers.clone(),
+                axis: self.axis_domain(),
                 domain: self.domain(),
                 y: self.editor.y_view(),
                 overlay: self.display.overlay,
@@ -695,6 +696,32 @@ mod tests {
                 crate::host::graphics::signal::trace::Measure::Rms
             )),
             Some(0.5)
+        );
+    }
+
+    /// **The axis is ruled even when no layer claims it.** A stack whose
+    /// layers are all in boxes of their own still has a vertical — it is what
+    /// a zoom acts on — so the element answers with its presentation's own
+    /// quantity rather than with nothing, which is what a hidden claimant used
+    /// to leave behind.
+    #[test]
+    fn a_stack_of_boxes_still_rules_the_presentation_s_axis() {
+        use crate::host::elements::signal::Domain;
+        let el = |json: &str| {
+            let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+            w.signal().expect("a signal element").clone()
+        };
+        let boxed = el(
+            r#"{"id":1,"type":"signal","view":"spectrogram","navigable":1,
+                "layers":[{"draw":"spectrogram","y":"box"},{"draw":"peak","y":"box"}]}"#,
+        );
+        assert_eq!(boxed.axis_domain(), Domain::Frequency, "the view's own");
+        let hidden = el(r#"{"id":1,"type":"signal","view":"trace","navigable":1,
+                "layers":[{"draw":"spectrogram","visible":false},{"draw":"peak","y":"box"}]}"#);
+        assert_eq!(
+            hidden.axis_domain(),
+            Domain::Amplitude,
+            "hiding the claimant gives the axis back to the presentation"
         );
     }
 
