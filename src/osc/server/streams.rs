@@ -267,10 +267,17 @@ impl OscServer {
         // to half the tap ring (the tear-free bound of `tap_read_latest`). A
         // stream client may fill a whole frame (minus the OSC envelope); a
         // datagram-bounded one keeps the 32 KB blob cap.
-        let transport_cap = match from {
-            ClientId::Tcp(_) | ClientId::Ws(_) => self.max_frame.saturating_sub(256) / 4,
-            ClientId::Udp(_) | ClientId::Ring(_) => MAX_TAP_WINDOW,
-        };
+        //
+        // **The ring's budget is per serving turn, not per reply**, and that is
+        // the one carrier where the difference bites: one turn pushes a
+        // snapshot per bus into the same 64 KB buffer, so a two-bus
+        // subscription that asked for the whole of it had its second snapshot
+        // dropped -- every turn, always the same bus, and silently, since a
+        // full ring is backpressure rather than an error. A stereo meter in a
+        // page then measured one channel and the silence where the other never
+        // arrived. So the ring's cap is divided by the buses the subscription
+        // lists; a datagram is one packet per bus and keeps the whole of it.
+        let transport_cap = tap_window_cap(from, self.max_frame, buses.len());
         let frames = (*frames).max(1) as usize;
         let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);
         // The new subscription's watches are taken before the old one's are
@@ -539,5 +546,62 @@ impl OscServer {
                 ],
             );
         }
+    }
+}
+
+/// **How wide a tap snapshot may be for `to`**, in samples: what the carrier
+/// can take, given how many buses the subscription lists.
+///
+/// A stream client may fill a whole frame (minus the OSC envelope); a datagram
+/// is one packet per bus and keeps the 32 KB blob cap. The **ring** is the one
+/// carrier whose budget is per serving *turn* rather than per reply: one turn
+/// pushes a snapshot per bus into the same buffer, so a two-bus subscription
+/// that asked for the whole of it had its second snapshot dropped -- every
+/// turn, always the same bus, and silently, since a full ring is backpressure
+/// rather than an error. A stereo meter in a page then measured one channel and
+/// the silence where the other never arrived. So the ring's cap is divided by
+/// the buses, over half the ring, which leaves the other half for everything
+/// else a turn carries.
+fn tap_window_cap(to: ClientId, max_frame: usize, buses: usize) -> usize {
+    match to {
+        ClientId::Tcp(_) | ClientId::Ws(_) => max_frame.saturating_sub(256) / 4,
+        ClientId::Udp(_) => MAX_TAP_WINDOW,
+        ClientId::Ring(_) => {
+            (clausters_core::shm::RING_CAPACITY / 2 / 4 / buses.max(1)).clamp(1, MAX_TAP_WINDOW)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **Every snapshot of a turn has to fit the ring together.** The bug this
+    /// states: two buses at the full cap is 64 KB into a 64 KB buffer, so the
+    /// second was dropped on every turn and the bus it belonged to read as
+    /// silence in the page.
+    #[test]
+    fn a_ring_client_splits_its_budget_between_the_buses() {
+        let ring = ClientId::Ring(0);
+        let one = tap_window_cap(ring, 0, 1);
+        let two = tap_window_cap(ring, 0, 2);
+        assert_eq!(two, one / 2, "one budget, split over the buses of a turn");
+        let bytes = |frames: usize, buses: usize| frames * 4 * buses;
+        assert!(
+            bytes(two, 2) <= clausters_core::shm::RING_CAPACITY / 2,
+            "a turn's snapshots fit in half the ring, leaving room for the rest"
+        );
+        assert!(bytes(tap_window_cap(ring, 0, 8), 8) <= clausters_core::shm::RING_CAPACITY / 2);
+        assert!(tap_window_cap(ring, 0, 64) >= 1, "never zero");
+    }
+
+    /// A datagram is one packet per bus, and a stream client one frame per
+    /// reply: neither shares a budget across the turn, so neither is divided.
+    #[test]
+    fn a_packet_carrier_keeps_its_whole_window() {
+        let peer = "127.0.0.1:57110".parse().expect("an address");
+        assert_eq!(tap_window_cap(ClientId::Udp(peer), 0, 4), MAX_TAP_WINDOW);
+        let ws = ClientId::Ws(0);
+        assert_eq!(tap_window_cap(ws, 65_536, 4), (65_536 - 256) / 4);
     }
 }

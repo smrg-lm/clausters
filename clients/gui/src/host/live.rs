@@ -323,9 +323,33 @@ pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
     // A retained view reads a whole tick's worth per frame, not a display
     // window: the subscription has to carry it or the history never fills.
     if !collect_retention(tree, sample_rate).is_empty() {
-        frames = frames.max(retention_window(sample_rate, 0));
+        frames = frames.max(stream_retention_frames(sample_rate));
     }
     frames
+}
+
+/// **What a retained view asks a `/bus_tapStream` for**, in samples: four
+/// stream periods, which is the slack a page's tick actually needs.
+///
+/// Not [`retention_window`]'s quarter second. That figure is the *native* read
+/// out of the segment's ring, where reading more than elapsed costs a memcpy
+/// nobody notices; here every sample is a byte on a carrier, sent again every
+/// period and for every bus in the subscription. A quarter second of stereo is
+/// 96 KB a period against a 64 KB ring, so the second bus's snapshot was
+/// dropped every turn — silently, since a full ring is backpressure rather
+/// than an error — and a stereo meter read the silence that left behind.
+///
+/// Four periods is the same slack in kind: the history is appended by stream
+/// position, so what a window has to cover is the gap between two *drains*,
+/// and anything longer is retransmission. A hiccup past it lands as the
+/// silence it was, exactly as a longer window's would past its own bound.
+pub(crate) fn stream_retention_frames(sample_rate: f64) -> usize {
+    let sr = if sample_rate > 0.0 {
+        sample_rate
+    } else {
+        48_000.0
+    };
+    ((sr * STREAM_PERIOD_MS as f64 / 1000.0) * 4.0).round() as usize
 }
 
 /// Whether a widget tree holds anything whose picture follows the clock rather
@@ -726,7 +750,7 @@ mod tests {
         // own, and that floor is wider than any display window here.
         assert_eq!(
             tap_stream_frames(&retaining(2.0), rate),
-            retention_window(rate, 0)
+            stream_retention_frames(rate)
         );
     }
 
