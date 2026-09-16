@@ -18,7 +18,8 @@
 use clausters_core::measure;
 
 use super::meters::{self, fraction};
-use super::signal::trace::{self, Measures, Trace, TraceStyle};
+use super::signal::layers::Stack;
+use super::signal::trace::{self, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
@@ -799,7 +800,7 @@ pub(crate) fn draw_take(
     trace: &Trace,
     min: f32,
     max: f32,
-    measures: Measures,
+    layers: &Stack,
     overlay: bool,
     sample_rate: f64,
     written: Option<u64>,
@@ -858,7 +859,7 @@ pub(crate) fn draw_take(
             };
             // One picture per measure, the envelope first and the level body
             // inside it.
-            for measure in measures.iter() {
+            for (measure, alpha) in layers.drawn_measures() {
                 trace::draw_channel(
                     mesh,
                     run_rect,
@@ -868,7 +869,10 @@ pub(crate) fn draw_take(
                     x_of,
                     y_at,
                     TraceStyle::new(
-                        trace::measure_color(theme, measure, theme.selection),
+                        crate::host::theme::with_alpha(
+                            trace::measure_color(theme, measure, theme.selection),
+                            alpha,
+                        ),
                         m.divider_w,
                     )
                     .with_dots(m.point_radius)

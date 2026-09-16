@@ -810,42 +810,41 @@ pub enum SlotFrame {
         source: String,
         params: [f32; crate::canvas::PARAM_COUNT],
     },
-    /// The geometry slot: a trace decimated per frame out of the peak pyramid
-    /// the slot holds, drawn into `body` at the element's vertical window.
+    /// The signal slot: **the layers a signal view draws on its one body** —
+    /// traces decimated per frame out of the peak pyramid the slot holds, the
+    /// time-frequency texture sampled a texel per pixel, or both over each
+    /// other — into `body` at the element's vertical window.
     ///
     /// What is *not* here is as deliberate as what is: the horizontal window is
     /// the **navigation group's** and the row count is the **slot's**, so an
     /// element states neither — it would have to know its own id for the first
     /// and what reached the card for the second. `overlay` is the one thing
     /// about the rows that is the element's: whether they stack or share one.
-    Waveform {
+    Signal {
         body: Rect,
-        /// The **value domain** the geometry is mapped through — the element's
+        /// **The layer stack**, back to front: what is drawn on this body and
+        /// how each layer sits over the one under it. It rides here rather
+        /// than being read off the element at draw time for the reason the
+        /// domain does: the frame draws what the element *stated*, so the
+        /// picture and the chrome around it agree.
+        layers: crate::host::graphics::signal::layers::Stack,
+        /// The **value domain** the traces are mapped through — the element's
         /// `min`/`max`, [`crate::waveform::DEFAULT_DOMAIN`] when it names
         /// neither. It is the element's because the same pair decides what the
         /// mesh renderers draw, and a prop that means something in four of an
         /// element's presentations and nothing in the fifth is the divergence
         /// this closed.
         domain: (f32, f32),
-        /// The amplitude window, as a normalized `(start, len)`.
-        amp: (f64, f64),
-        /// What the picture measures — the envelope, the level inside it, or
-        /// both: one picture per measure, into the one body. It rides here
-        /// rather than being read off the element at draw time for the reason
-        /// the domain does: the frame draws what the element *stated*, so the
-        /// picture and the chrome around it agree.
-        measures: crate::host::graphics::signal::trace::Measures,
+        /// The vertical window, as a normalized `(start, len)` — of whichever
+        /// quantity the stack put on the axis (amplitude, or the frequency a
+        /// texture measures).
+        y: (f64, f64),
         overlay: bool,
         /// **The loudness layer**: the measured curve, its own scale and what
-        /// a span of it measures. Empty where no measure asks for one.
+        /// a span of it measures. Empty where no layer asks for one.
         loudness: crate::host::elements::signal::LoudnessFrame,
-    },
-    /// The texture slot: one uploaded analysis per row, sampled a texel per
-    /// pixel, drawn into `body` at the element's frequency window and look.
-    Spectrogram {
-        body: Rect,
-        /// The frequency window, as a normalized `(start, len)`.
-        freq: (f64, f64),
+        /// How a texture layer is coloured and scaled. Meaningless where the
+        /// stack has none, and cheap enough to state anyway.
         look: TextureLook,
     },
 }

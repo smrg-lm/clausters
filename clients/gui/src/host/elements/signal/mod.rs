@@ -39,7 +39,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::host::graphics::signal::trace;
+use crate::host::graphics::signal::{layers, trace};
 use crate::spectrogram::FreqScale;
 use crate::waveform::WaveformData;
 
@@ -57,6 +57,7 @@ mod freq;
 mod live;
 mod slot;
 pub(crate) use element::build;
+pub use layers::{Domain, Layer, Paint, Stack, Vertical};
 pub use live::LiveState;
 pub use trace::{Measure, Measures};
 
@@ -449,16 +450,15 @@ pub struct Display {
 pub struct SignalElement {
     pub presentation: Presentation,
     pub source: Source,
-    /// **What the picture measures** — the envelope the signal reached, the
-    /// level it held inside it, or both, which is the classic editor picture.
+    /// **The layer stack this picture is**: what is drawn on the one body, in
+    /// what order, at what weight, and which of them the vertical belongs to.
     ///
-    /// A factor of the element rather than a widget of its own, and a *set*
-    /// rather than a scalar: two elements measuring differently on one
-    /// rectangle are not layers, because each paints its own field before it
-    /// draws and the second one hides the first. So the layering is here — one
-    /// body, one axis, one ruler, one upload, a picture per measure
-    /// ([`Measures`]).
-    pub measures: Measures,
+    /// A factor of the element rather than a composition of widgets: two
+    /// elements measuring differently on one rectangle are not layers, because
+    /// each paints its own field before it draws and the second one hides the
+    /// first. So the layering is here — one body, one axis, one ruler, one
+    /// upload, and a [`Stack`] of pictures over them.
+    pub layers: Stack,
     /// **Whether these samples are being written right now** — the `fills` prop.
     ///
     /// The host cannot infer it and must not try. A buffer publishes a write
@@ -537,7 +537,7 @@ impl SignalElement {
         editor.ruler = p.ruler;
         SignalElement {
             presentation: p.presentation,
-            measures: Measures::default(),
+            layers: Stack::of_presentation(p.presentation),
             fills: false,
             written: 0,
             pending: None,
@@ -579,7 +579,7 @@ impl SignalElement {
     /// Whether any measure this element draws is read in LU — the test for
     /// whether a profile is worth measuring at all.
     pub fn wants_loudness(&self) -> bool {
-        self.measures.iter().any(|m| m.is_loudness())
+        self.layers.has_loudness()
     }
 
     /// **The span the read-out names**: the selection where there is one, the
@@ -806,13 +806,38 @@ impl SignalElement {
         self.caps.navigable && self.presentation.is_heavy()
     }
 
-    /// Whether the element's picture *is* a texture — the time-frequency
-    /// presentation, one sample of an uploaded STFT per pixel. The trace has
-    /// two drawings of one signal (the GPU pipeline when it navigates, the mesh
-    /// when it is a clip's take); this one has a single drawing, so a clip
+    /// Whether the element draws a **texture** — a time-frequency layer,
+    /// sampled a texel per pixel off an uploaded STFT. The trace has two
+    /// drawings of one signal (the decimated columns of a navigable view, the
+    /// mesh when it is a clip's take); this one has a single drawing, so a clip
     /// carrying it needs the slot a navigable view would have.
+    ///
+    /// It is the **stack** that answers, not the presentation: a trace view
+    /// with a spectrogram layer under it draws one, and a spectrogram view
+    /// whose stack was replaced by measures does not.
     pub fn is_texture_view(&self) -> bool {
-        self.presentation == Presentation::TimeFrequency
+        self.layers
+            .has(crate::host::graphics::signal::layers::Paint::Spectrogram)
+    }
+
+    /// Whether the element draws any **trace** — a measure of the signal
+    /// against time, which is every layer that is not the texture.
+    pub fn draws_traces(&self) -> bool {
+        self.layers.drawn_measures().next().is_some()
+    }
+
+    /// **What this element's vertical axis measures**, resolved: what the stack
+    /// put on the axis, and — where every layer sits in a box of its own — the
+    /// presentation's own quantity, since the axis is still drawn and still has
+    /// to be in some unit.
+    pub fn axis_domain(&self) -> layers::Domain {
+        if let Ok(Some(domain)) = self.layers.axis_domain() {
+            return domain;
+        }
+        match self.presentation {
+            Presentation::TimeFrequency => layers::Domain::Frequency,
+            _ => layers::Domain::Amplitude,
+        }
     }
 
     /// Whether the element needs a GPU slot of its own, under whatever id
@@ -842,7 +867,7 @@ impl SignalElement {
     /// lane. A spectrogram's measures frequency, which is a value under the
     /// pointer.
     pub fn centres_y_zoom(&self) -> bool {
-        self.presentation == Presentation::Signal
+        self.axis_domain() == layers::Domain::Amplitude
     }
 
     /// Whether the element navigates a **frequency** x axis of its own: a

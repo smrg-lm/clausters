@@ -56,6 +56,7 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
+use crate::host::graphics::signal::layers::Paint;
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -808,36 +809,42 @@ pub(crate) fn render(
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
         let body = item.body;
-        match &item.kind {
-            // A waveform's picture is triangles, and they went into the
-            // window's mesh with the rest of the chrome: nothing to prepare.
-            TimelineKind::Waveform { .. } => {}
-            TimelineKind::Spectrogram { freq, look } => {
-                if let Some(slot) = spectrograms.get_mut(&(item.id, item.key)) {
-                    let nav = chrome_for(inputs, item.id, &item.editor, || {
-                        View::full(slot.total_samples())
-                    })
-                    .nav;
-                    let nav = placed_nav(&nav, item.editor.offset);
-                    let channels = slot.views.len();
-                    for (ch, view) in slot.views.iter_mut().enumerate() {
-                        view.set_display(
-                            look.db_floor,
-                            look.db_ceil,
-                            look.freq_scale,
-                            look.colormap.max(0) as u32,
-                        );
-                        view.set_freq_window(freq.0, freq.1);
-                        view.set_framing(framing_of(channel_rect(body, channels, ch), fb_w, fb_h));
-                        view.upload(
-                            &gpu.device,
-                            &gpu.queue,
-                            renderers,
-                            &nav,
-                            body.w.max(1.0) as u32,
-                        );
-                    }
-                }
+        // The texture layer, when the stack has one: a waveform's picture is
+        // triangles and went into the window's mesh with the rest of the
+        // chrome, so there is nothing to prepare for it here.
+        if item.look.layers.has(Paint::Spectrogram)
+            && let Some(slot) = spectrograms.get_mut(&(item.id, item.key))
+        {
+            let look = &item.look.look;
+            let nav = chrome_for(inputs, item.id, &item.editor, || {
+                View::full(slot.total_samples())
+            })
+            .nav;
+            let nav = placed_nav(&nav, item.editor.offset);
+            let channels = slot.views.len();
+            let rows = if item.look.overlay { 1 } else { channels };
+            let alpha = item.look.layers.alpha_of(Paint::Spectrogram).unwrap_or(1.0);
+            for (ch, view) in slot.views.iter_mut().enumerate() {
+                view.set_display(
+                    look.db_floor,
+                    look.db_ceil,
+                    look.freq_scale,
+                    look.colormap.max(0) as u32,
+                );
+                view.set_alpha(alpha);
+                view.set_freq_window(item.look.y.0, item.look.y.1);
+                view.set_framing(framing_of(
+                    channel_rect(body, rows, ch.min(rows - 1)),
+                    fb_w,
+                    fb_h,
+                ));
+                view.upload(
+                    &gpu.device,
+                    &gpu.queue,
+                    renderers,
+                    &nav,
+                    body.w.max(1.0) as u32,
+                );
             }
         }
     }
@@ -938,21 +945,20 @@ pub(crate) fn render(
             if !apply_scissor(&mut pass, item.clip, fb_w, fb_h) {
                 continue;
             }
-            match &item.kind {
-                TimelineKind::Waveform { .. } => {}
-                TimelineKind::Spectrogram { .. } => {
-                    let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
-                        continue;
-                    };
-                    let channels = slot.views.len();
-                    for (ch, view) in slot.views.iter().enumerate() {
-                        let row = channel_rect(body, channels, ch);
-                        let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
-                        if w >= 1.0 && h >= 1.0 {
-                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                            view.draw(&mut pass, renderers);
-                        }
-                    }
+            if !item.look.layers.has(Paint::Spectrogram) {
+                continue;
+            }
+            let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
+                continue;
+            };
+            let channels = slot.views.len();
+            let rows = if item.look.overlay { 1 } else { channels };
+            for (ch, view) in slot.views.iter().enumerate() {
+                let row = channel_rect(body, rows, ch.min(rows - 1));
+                let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
+                if w >= 1.0 && h >= 1.0 {
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    view.draw(&mut pass, renderers);
                 }
             }
         }

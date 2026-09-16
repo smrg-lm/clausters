@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use super::{Presentation, SignalElement, Source};
+use super::{SignalElement, Source};
 use crate::host::widget::element::{Bulk, Loaded};
 
 impl SignalElement {
@@ -87,9 +87,17 @@ impl SignalElement {
             return None; // a bus is fed forward-only; there is nothing to load
         };
         // A spectral view resolves to analyses, a take to peaks, a plotted
-        // sequence to the samples themselves. The presentation decides the
-        // *form*; `bulk` decides whether a trace is summarized at all.
-        let spectral = self.presentation == Presentation::TimeFrequency;
+        // sequence to the samples themselves. The *stack* decides the form;
+        // `bulk` decides whether a trace is summarized at all.
+        //
+        // **A stack that draws both asks for the samples**, not for the
+        // analyses: an STFT is made from samples and a pyramid is not, so the
+        // one resource both pictures can come out of is the audio itself —
+        // which the element then summarizes for the trace and analyzes for the
+        // texture ([`SignalElement::fill`]). The other way round there is
+        // nothing to derive: a bulk load of analyses has thrown the samples
+        // away, and a peaks cache never had them.
+        let spectral = self.is_texture_view() && !self.draws_traces();
         if spectral {
             if self.is_live() {
                 return None; // a waterfall analyzes what the tick retains
@@ -172,7 +180,7 @@ impl SignalElement {
         if !self.needs_gpu_slot() {
             return None;
         }
-        Some(if self.is_texture_view() {
+        Some(if self.is_texture_view() && !self.draws_traces() {
             SlotKind::Texture {
                 window_size: self.spectral.fft_size,
                 hop: self.spectral.hop,

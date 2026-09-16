@@ -12,7 +12,8 @@ struct Uniforms {
     // z = scale index (0 linear, 1 log, 2 mel, 3 bark); w = normalized
     // log-axis floor (e.g. 20 Hz / Nyquist).
     freq: vec4<f32>,
-    // x = lo_frac, y = hi_frac of the display dB window; z = colormap index.
+    // x = lo_frac, y = hi_frac of the display dB window; z = colormap index;
+    // w = the layer's own alpha (1 where it is the only picture on the body).
     db: vec4<f32>,
     // xy = scale, zw = offset placing the picture inside its viewport. A
     // viewport positions but does not cut, so a view hanging off the window
@@ -130,5 +131,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     // Remap the stored magnitude into the display dB window for contrast.
     let c = clamp((mag - u.db.x) / max(u.db.y - u.db.x, 1e-5), 0.0, 1.0);
-    return vec4<f32>(colormap(c, u.db.z), 1.0);
+    return vec4<f32>(colormap(c, u.db.z), u.db.w);
 }

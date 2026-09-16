@@ -45,29 +45,29 @@ pub(super) struct SpectralBodyItem {
     pub(super) colormap: i32,
 }
 
-/// Which timeline view a placed editor-grade widget is, with its display props.
-pub(super) enum TimelineKind {
-    Waveform {
-        /// The value domain the geometry is mapped through, as the element
-        /// stated it — [`crate::waveform::DEFAULT_DOMAIN`] is the amplitude
-        /// axis, and anything else is a plain value axis (dBFS, bits and
-        /// percent are full-scale amplitude units).
-        domain: (f32, f32),
-        /// The amplitude window, as the element stated it.
-        amp: (f64, f64),
-        overlay: bool,
-        /// What the picture measures, as the element stated it — one drawing
-        /// per measure into the one body.
-        measures: crate::host::graphics::signal::trace::Measures,
-        /// The loudness layer, as the element stated it: the curve it measured,
-        /// the scale it is read on and what its span measures.
-        loudness: crate::host::elements::signal::LoudnessFrame,
-    },
-    Spectrogram {
-        /// The frequency window, as the element stated it.
-        freq: (f64, f64),
-        look: TextureLook,
-    },
+/// **What a placed editor-grade signal view draws**, as the element stated it:
+/// its layer stack and everything the layers are mapped through.
+///
+/// One struct rather than a variant per picture: a view is a *stack*, and the
+/// question "is this a waveform or a spectrogram" stopped being the frame's the
+/// moment one body could carry both.
+pub(super) struct TimelineLook {
+    /// The layers, back to front.
+    pub(super) layers: crate::host::graphics::signal::layers::Stack,
+    /// The value domain the traces are mapped through —
+    /// [`crate::waveform::DEFAULT_DOMAIN`] is the amplitude axis, and anything
+    /// else is a plain value axis (dBFS, bits and percent are full-scale
+    /// amplitude units).
+    pub(super) domain: (f32, f32),
+    /// The vertical window, as the element stated it: amplitude or frequency,
+    /// whichever the stack put on the axis.
+    pub(super) y: (f64, f64),
+    pub(super) overlay: bool,
+    /// The loudness layer, as the element stated it: the curve it measured,
+    /// the scale it is read on and what its span measures.
+    pub(super) loudness: crate::host::elements::signal::LoudnessFrame,
+    /// How a texture layer is coloured and scaled.
+    pub(super) look: TextureLook,
 }
 
 /// A placed timeline view (waveform/spectrogram), copied out of the host tree.
@@ -90,7 +90,7 @@ pub(super) struct TimelineItem {
     /// ([`super::ink_of`]).
     pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
-    pub(super) kind: TimelineKind,
+    pub(super) look: TimelineLook,
     pub(super) editor: EditorProps,
     /// The sample the hand is holding on this view, copied out with the rest —
     /// the overlay pass draws it *over* the picture, since the samples under
@@ -230,7 +230,7 @@ pub(super) fn collect_widgets(
                     // A timeline slot is half an item: the element said where
                     // its picture goes and at what vertical window, the axis
                     // says the rest (the chrome every group member shares).
-                    let mut timeline = |body: Rect, kind: TimelineKind| {
+                    let mut timeline = |body: Rect, look: TimelineLook| {
                         if let Some(editor) = p.widget.kind.editor() {
                             timeline_items.push(TimelineItem {
                                 id,
@@ -240,7 +240,7 @@ pub(super) fn collect_widgets(
                                 clip: p.clip,
                                 ink,
                                 theme: p.widget.theme.clone(),
-                                kind,
+                                look,
                                 editor: editor.clone(),
                                 pending: el.pending_edit().cloned(),
                                 written: el.samples().and_then(Samples::written),
@@ -259,26 +259,25 @@ pub(super) fn collect_widgets(
                             shader: source,
                             params,
                         }),
-                        SlotFrame::Waveform {
+                        SlotFrame::Signal {
                             body,
+                            layers,
                             domain,
-                            amp,
+                            y,
                             overlay,
-                            measures,
                             loudness,
+                            look,
                         } => timeline(
                             body,
-                            TimelineKind::Waveform {
+                            TimelineLook {
+                                layers,
                                 domain,
-                                amp,
+                                y,
                                 overlay,
-                                measures,
                                 loudness,
+                                look,
                             },
                         ),
-                        SlotFrame::Spectrogram { body, freq, look } => {
-                            timeline(body, TimelineKind::Spectrogram { freq, look })
-                        }
                     }
                 }
             }

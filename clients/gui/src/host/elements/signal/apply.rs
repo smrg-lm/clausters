@@ -148,11 +148,27 @@ impl SignalElement {
             // Live, because a picture is read by turning its measures on and
             // off: the same element shows peaks, level, or both between two
             // frames, with nothing rebuilt.
-            "measure" => v
-                .as_str()
-                .and_then(super::Measures::parse)
-                .map(|m| self.measures = m)
-                .is_some(),
+            // Live, because a picture is read by turning its layers on and
+            // off: the same element shows the envelope, the level, a texture
+            // or all three between two frames, with nothing rebuilt.
+            //
+            // **A stack whose axis is claimed twice is refused**, the way the
+            // def that carried one is: the set leaves the picture as it was
+            // and says why, rather than drawing one of the two layers on a
+            // scale that is not its own.
+            "layers" | "measure" => match super::Stack::parse(v) {
+                Some(stack) => match stack.axis_domain() {
+                    Ok(_) => {
+                        self.layers = stack;
+                        true
+                    }
+                    Err(why) => {
+                        crate::host::diag::warn!("gui_set {key}: {why}");
+                        false
+                    }
+                },
+                None => false,
+            },
             // **The samples, live.** An owner that applied an edit pushes the
             // samples that now hold, and the picture becomes the document's
             // again — which is what "the acknowledgement corrects the picture"
@@ -221,7 +237,7 @@ impl SignalElement {
         if handled
             && matches!(
                 key,
-                "measure" | "sample_rate" | "channels" | "data" | "reload"
+                "layers" | "measure" | "sample_rate" | "channels" | "data" | "reload"
             )
         {
             self.refresh_loudness();

@@ -210,16 +210,26 @@ pub(crate) fn signal_element(
 
     el.spectral = spectral_props(props, p.spectral, p.size_prop);
 
-    // What the picture measures -- one name, or several separated by spaces.
-    // An unknown name keeps the preset's, which is the protocol's posture
-    // everywhere else: a value a build does not know reads as a prop that was
-    // not set.
-    if let Some(m) = props
-        .get("measure")
-        .and_then(Value::as_str)
-        .and_then(signal::Measures::parse)
+    // **The layer stack**: the pictures drawn on the one body, back to front.
+    // Two names for one field, as `fft_size`/`window_size` already are -- the
+    // general `layers` and `measure`, which is what a stack of nothing but
+    // measures has always been called. An unknown name keeps the preset's,
+    // which is the protocol's posture everywhere else: a value a build does
+    // not know reads as a prop that was not set.
+    if let Some(stack) = props
+        .get("layers")
+        .or_else(|| props.get("measure"))
+        .and_then(signal::Stack::parse)
     {
-        el.measures = m;
+        // **The axis claim is checked here, and it is the one thing a stack
+        // can get wrong.** Two layers on the body's vertical measuring two
+        // different quantities is refused rather than resolved: whichever of
+        // them lost would be drawn on a scale that is not its own, which is a
+        // picture that lies about what it shows.
+        stack
+            .axis_domain()
+            .map_err(|why| format!("signal: {why}"))?;
+        el.layers = stack;
     }
 
     // The loudness layer's scale and guides, read at construction the way
@@ -241,13 +251,24 @@ pub(crate) fn signal_element(
         overlay: props.get("overlay").and_then(truthy).unwrap_or(false),
         label: label(props),
     };
-    el.editor = EditorProps::parse(props, p.ruler_y);
+    // The y strip's default unit is the axis' own: hertz where a texture is on
+    // it, the value unit where the traces are — so a stack that put a wave on
+    // a spectrogram's body is ruled in the unit the wave is read in.
+    let ruler_y = match el.axis_domain() {
+        signal::Domain::Frequency => RulerY::Hz,
+        _ if p.ruler_y == RulerY::Hz => RulerY::Norm,
+        _ => p.ruler_y,
+    };
+    el.editor = EditorProps::parse(props, ruler_y);
     el.editor.ruler = Ruler::parse_with(props, p.ruler);
     // **Air above full scale, on the axis that measures amplitude.** A
     // time-frequency picture's vertical is hertz and stops at Nyquist; a
     // trace's is a value, and a floating-point signal can leave the ±1 the
     // domain names -- so that one axis can be opened past its domain.
-    el.editor.y_headroom = if el.presentation == signal::Presentation::TimeFrequency {
+    // It follows the **stack's axis**, not the presentation: a body ruled in
+    // hertz is a body with a texture on its axis, whatever else is drawn over
+    // it.
+    el.editor.y_headroom = if el.axis_domain() == signal::Domain::Frequency {
         1.0
     } else {
         crate::viewport::AMP_HEADROOM

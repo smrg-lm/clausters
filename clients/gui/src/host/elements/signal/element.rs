@@ -82,7 +82,7 @@ impl Element for SignalElement {
                             ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
                             ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
                             label: self.display.label.as_deref(),
-                            measures: self.measures,
+                            layers: &self.layers,
                             loudness: self.live_curve(),
                         },
                     );
@@ -95,7 +95,7 @@ impl Element for SignalElement {
                         self.domain().0,
                         self.domain().1,
                         self.display.label.as_deref(),
-                        self.measures,
+                        &self.layers,
                     );
                 }
             }
@@ -148,6 +148,14 @@ impl Element for SignalElement {
                 cursor,
             );
         }
+    }
+
+    /// **What a stack answers a query with**: the layers, in the form they were
+    /// written in — the word list where every layer is at its defaults, the
+    /// array where any of them is not. A script reads back what it set, and a
+    /// script that set nothing reads what the presentation drew.
+    fn info(&self) -> Vec<(String, Value)> {
+        vec![("layers".into(), Value::String(self.layers.to_wire()))]
     }
 
     fn needs(&self) -> Needs {
@@ -339,8 +347,8 @@ impl OnAxis for SignalElement {
 impl Slotted for SignalElement {
     fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
         SignalElement::fill(self)
-            .map(|fill| (SlotKey::SELF, fill))
             .into_iter()
+            .map(|fill| (SlotKey::SELF, fill))
             .collect()
     }
 
@@ -508,16 +516,16 @@ impl SignalElement {
     fn live_curve(&self) -> Option<crate::host::graphics::signal::loudness::LiveCurve> {
         use crate::host::graphics::signal::trace::Measure;
         let state = self.live.loudness.as_ref()?;
-        let readings: Vec<(Measure, Vec<f32>)> = self
-            .measures
-            .iter()
-            .filter(|m| m.is_loudness())
-            .map(|m| {
+        let readings: Vec<(Measure, f32, Vec<f32>)> = self
+            .layers
+            .drawn_measures()
+            .filter(|(m, _)| m.is_loudness())
+            .map(|(m, alpha)| {
                 let run = match m {
                     Measure::Short => &state.short,
                     _ => &state.momentary,
                 };
-                (m, run.iter().copied().collect())
+                (m, alpha, run.iter().copied().collect())
             })
             .collect();
         (!readings.is_empty()).then(|| crate::host::graphics::signal::loudness::LiveCurve {
@@ -555,7 +563,7 @@ impl SignalElement {
             // What the axis can show, not what was asked of it.
             x_view: self.freq_window(sample_rate),
             label: self.display.label.as_deref(),
-            measures: self.measures,
+            layers: &self.layers,
             written: self.written_frames(),
         }
     }
@@ -574,18 +582,18 @@ impl SignalElement {
             ctx.indent,
             ctx.metrics,
         );
+        // **One slot frame for the whole stack**, whatever the base
+        // presentation is: the layers share the body, the axis and the chrome,
+        // and which of them is a texture and which a trace is the stack's to
+        // say rather than the presentation's.
         match self.presentation {
-            Presentation::Signal => Some(SlotFrame::Waveform {
+            Presentation::Signal | Presentation::TimeFrequency => Some(SlotFrame::Signal {
                 body,
+                layers: self.layers.clone(),
                 domain: self.domain(),
-                amp: self.editor.y_view(),
+                y: self.editor.y_view(),
                 overlay: self.display.overlay,
-                measures: self.measures,
                 loudness: self.loudness.frame(),
-            }),
-            Presentation::TimeFrequency => Some(SlotFrame::Spectrogram {
-                body,
-                freq: self.editor.y_view(),
                 look: self.look(),
             }),
             _ => None,
@@ -655,5 +663,128 @@ mod tests {
             "the group's window is chrome for the axis to draw, not a licence \
              to draw this element as somebody else's body"
         );
+    }
+
+    /// **A view's default stack is its presentation's**, and naming one
+    /// replaces it: a spectrogram draws its texture until a stack says what
+    /// else is on the body.
+    #[test]
+    fn the_presentation_states_the_stack_and_a_prop_replaces_it() {
+        use crate::host::graphics::signal::layers::Paint;
+        let el = |json: &str| {
+            let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+            w.signal().expect("a signal element").clone()
+        };
+        let spectral = el(r#"{"id":1,"type":"signal","view":"spectrogram","navigable":1}"#);
+        assert!(spectral.is_texture_view());
+        assert!(!spectral.draws_traces());
+        let trace = el(r#"{"id":1,"type":"signal","view":"trace","navigable":1}"#);
+        assert!(!trace.is_texture_view());
+        assert!(trace.draws_traces());
+
+        // The acceptance case: a texture with the wave over it, on one body.
+        let both = el(r#"{"id":1,"type":"signal","view":"trace","navigable":1,
+                "layers":["spectrogram",{"draw":"peak","y":"box"},{"draw":"rms","y":"box","alpha":0.5}]}"#);
+        assert!(both.is_texture_view() && both.draws_traces());
+        assert_eq!(
+            both.axis_domain(),
+            crate::host::elements::signal::Domain::Frequency
+        );
+        assert_eq!(
+            both.layers.alpha_of(Paint::Measure(
+                crate::host::graphics::signal::trace::Measure::Rms
+            )),
+            Some(0.5)
+        );
+    }
+
+    /// The stack is read back the way it was written, which is what makes it
+    /// queryable at all.
+    #[test]
+    fn a_query_answers_the_stack() {
+        let w = Widget::from_node(
+            1,
+            &GuiNode::parse(br#"{"id":1,"type":"signal","view":"trace","measure":"peak rms"}"#)
+                .unwrap(),
+            &[],
+        )
+        .unwrap();
+        let info: Vec<(String, serde_json::Value)> = w.kind.info();
+        assert_eq!(
+            info.iter().find(|(k, _)| k == "layers").map(|(_, v)| v),
+            Some(&serde_json::json!("peak rms"))
+        );
+    }
+
+    /// **Two layers cannot claim one vertical for two quantities**, and the
+    /// refusal happens at both doors: the def fails to build, and a live set
+    /// leaves the picture as it was.
+    #[test]
+    fn a_second_claim_on_the_axis_is_refused() {
+        let def = GuiNode::parse(
+            br#"{"id":1,"type":"signal","view":"trace","navigable":1,
+                 "layers":["spectrogram","peak"]}"#,
+        )
+        .unwrap();
+        let built = Widget::from_node(1, &def, &[]);
+        assert!(
+            built.is_err(),
+            "a stack with a texture and a wave both on the axis is not a picture"
+        );
+
+        let mut w = Widget::from_node(
+            1,
+            &GuiNode::parse(br#"{"id":1,"type":"signal","view":"trace","navigable":1}"#).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let WidgetKind::Custom(el) = &mut w.kind else {
+            panic!("a signal is an element")
+        };
+        assert!(
+            !el.set("layers", &serde_json::json!(["spectrogram", "peak"])),
+            "and the same stack over the wire is refused too"
+        );
+        assert!(
+            el.set(
+                "layers",
+                &serde_json::json!(["spectrogram", {"draw": "peak", "y": "box"}])
+            ),
+            "...until one of them takes the box"
+        );
+    }
+
+    /// **A stack that draws both fills both slots**, out of the one source: the
+    /// pyramid its traces are decimated from and the analysis its texture is
+    /// sampled from, which is why such a view asks for the samples rather than
+    /// for either summary.
+    #[test]
+    fn a_layered_view_fills_a_geometry_slot_and_a_texture_slot() {
+        use crate::host::widget::element::SlotFill;
+        let ramp: Vec<String> = (0..2048)
+            .map(|k| format!("{:.4}", (k as f32 * 0.01).sin()))
+            .collect();
+        let w = Widget::from_node(
+            1,
+            &GuiNode::parse(
+                format!(
+                    r#"{{"id":1,"type":"signal","view":"trace","navigable":1,
+                         "window_size":256,"hop":128,
+                         "layers":["spectrogram",{{"draw":"peak","y":"box"}}],
+                         "data":[{}]}}"#,
+                    ramp.join(",")
+                )
+                .as_bytes(),
+            )
+            .unwrap(),
+            &[],
+        )
+        .unwrap();
+        let mut el = w.signal().expect("a signal element").clone();
+        let fills = el.fill();
+        assert_eq!(fills.len(), 2, "one picture per slot, out of one source");
+        assert!(matches!(fills[0], SlotFill::Geometry(_)));
+        assert!(matches!(fills[1], SlotFill::Texture(_)));
+        assert!(el.fill().is_empty(), "and neither is uploaded twice");
     }
 }

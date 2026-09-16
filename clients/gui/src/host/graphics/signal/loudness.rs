@@ -24,7 +24,7 @@
 use clausters_core::loudness::Profile;
 
 use crate::host::elements::signal::LoudnessFrame;
-use crate::host::graphics::signal::trace::{self, Measures, Trace, TraceStyle};
+use crate::host::graphics::signal::trace::{self, Trace, TraceStyle};
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 use crate::host::ruler;
@@ -38,8 +38,9 @@ use crate::viewport::View;
 /// draws is the run of them — the same drawing over a different memory, which
 /// is the whole difference between a view of a file and a view of a bus.
 pub(crate) struct LiveCurve {
-    /// One run per loudness measure, oldest reading first.
-    pub readings: Vec<(trace::Measure, Vec<f32>)>,
+    /// One run per loudness layer, oldest reading first, with the weight its
+    /// layer is drawn at.
+    pub readings: Vec<(trace::Measure, f32, Vec<f32>)>,
     /// The view's vertical window, as a normalized `(start, len)` — see
     /// [`LoudnessParams::y`].
     pub y: (f64, f64),
@@ -67,7 +68,7 @@ pub(crate) fn draw_live(d: &mut Draw, body: Rect, curve: &LiveCurve) {
             theme.trace_guide,
         );
     }
-    for (measure, readings) in &curve.readings {
+    for (measure, alpha, readings) in &curve.readings {
         if readings.len() < 2 {
             continue;
         }
@@ -82,7 +83,10 @@ pub(crate) fn draw_live(d: &mut Draw, body: Rect, curve: &LiveCurve) {
             |s| body.x + (s / span) as f32 * body.w,
             y_at,
             TraceStyle::new(
-                trace::measure_color(theme, *measure, theme.trace),
+                crate::host::theme::with_alpha(
+                    trace::measure_color(theme, *measure, theme.trace),
+                    *alpha,
+                ),
                 m.trace_w,
             )
             // A reading is not a sample and is not marked as one: what is
@@ -99,9 +103,9 @@ pub(crate) fn draw_live(d: &mut Draw, body: Rect, curve: &LiveCurve) {
 pub(crate) struct LoudnessParams<'a> {
     /// The curve and the scale, as the element stated them.
     pub layer: &'a LoudnessFrame,
-    /// Everything the view measures — the loudness measures among them are
-    /// what this draws, one curve each.
-    pub measures: Measures,
+    /// **The view's whole stack** — the loudness layers in it are what this
+    /// draws, one curve each, at the weight each of them states.
+    pub layers: &'a super::layers::Stack,
     /// Whether the read-out's span is a selection, which is the one thing the
     /// numbers have to say about themselves.
     pub selection: bool,
@@ -119,7 +123,11 @@ pub(crate) struct LoudnessParams<'a> {
 
 /// Draws the layer over `body`, on the time window `nav`.
 pub(crate) fn draw(d: &mut Draw, body: Rect, nav: &View, p: &LoudnessParams) {
-    let drawn: Vec<trace::Measure> = p.measures.iter().filter(|m| m.is_loudness()).collect();
+    let drawn: Vec<(trace::Measure, f32)> = p
+        .layers
+        .drawn_measures()
+        .filter(|(m, _)| m.is_loudness())
+        .collect();
     if drawn.is_empty() || body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
@@ -136,7 +144,8 @@ pub(crate) fn draw(d: &mut Draw, body: Rect, nav: &View, p: &LoudnessParams) {
     };
     let src = |x: f32| nav.start + nav.len * ((x - body.x) as f64 / body.w.max(1.0) as f64);
     let x_of = |s: f64| body.x + ((s - nav.start) / nav.len.max(f64::MIN_POSITIVE)) as f32 * body.w;
-    for measure in drawn {
+    let measures = p.layers.measures();
+    for (measure, alpha) in drawn {
         let Some(window) = measure.loudness_window() else {
             continue;
         };
@@ -153,9 +162,15 @@ pub(crate) fn draw(d: &mut Draw, body: Rect, nav: &View, p: &LoudnessParams) {
             src,
             x_of,
             y_at,
-            TraceStyle::new(trace::measure_color(theme, measure, theme.trace), m.trace_w)
-                .with_measure(measure)
-                .with_layers(p.measures),
+            TraceStyle::new(
+                crate::host::theme::with_alpha(
+                    trace::measure_color(theme, measure, theme.trace),
+                    alpha,
+                ),
+                m.trace_w,
+            )
+            .with_measure(measure)
+            .with_layers(measures),
         );
     }
     if p.layer.ruler {
@@ -407,7 +422,7 @@ mod tests {
                 &View::full(samples.len()),
                 &LoudnessParams {
                     layer: &e.loudness.frame(),
-                    measures: e.measures,
+                    layers: &e.layers,
                     selection: false,
                     y: (0.0, 1.0),
                 },
@@ -437,7 +452,10 @@ mod tests {
             &View::full(1000),
             &LoudnessParams {
                 layer: &layer.frame(),
-                measures: Measures::parse("momentary").unwrap(),
+                layers: &crate::host::graphics::signal::layers::Stack::parse(&serde_json::json!(
+                    "momentary"
+                ))
+                .unwrap(),
                 selection: false,
                 y: (0.0, 1.0),
             },

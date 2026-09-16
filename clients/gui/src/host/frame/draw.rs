@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::host::graphics::selection;
+use crate::host::graphics::signal::layers::{Domain, Paint};
 use crate::host::widget::{Marker, RulerDir};
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
@@ -433,217 +434,235 @@ pub(super) fn draw_timeline_meshes(
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
         let body = item.body;
+        // **One field, painted once, for the whole stack** — which is the whole
+        // reason the layers are inside one element: a second picture here would
+        // be a lid on the first rather than a layer over it.
         mesh.rect(body, th.view_field);
-        match &item.kind {
-            TimelineKind::Waveform {
-                overlay: overlaid,
-                domain,
-                amp,
-                measures,
-                loudness,
-            } => {
-                let Some(slot) = waveforms.get(&(item.id, item.key)) else {
-                    over.border(body, 1.0, th.view_frame);
-                    continue;
+        let look = &item.look;
+        // What each kind of layer draws from. A stack may name a picture whose
+        // data has not landed yet (or cannot: a peaks cache holds no spectrum),
+        // and then that layer simply draws nothing.
+        let wave = waveforms.get(&(item.id, item.key));
+        let spectro = spectrograms.get(&(item.id, item.key));
+        let textured = look.layers.has(Paint::Spectrogram) && spectro.is_some();
+        // The axis' extent: whichever resolved picture knows it, and they agree
+        // — both are summaries of the one source this element holds.
+        let Some(total) = wave
+            .map(|s| s.view.total_samples())
+            .or_else(|| spectro.map(|s| s.total_samples()))
+        else {
+            over.border(body, 1.0, th.view_frame);
+            continue;
+        };
+        let chrome = chrome_for(inputs, item.id, &item.editor, || View::full(total));
+        let nav = chrome.nav;
+        // The frequency axis of whatever texture is here, for its ruler and for
+        // the rate a spectral view knows nothing else about.
+        let (nyquist, f_lo) = spectro
+            .and_then(|s| s.views.first())
+            .map(|v| (v.stft().nyquist() as f64, v.log_floor() as f64))
+            .unwrap_or((24_000.0, 20.0 / 24_000.0));
+        let rate = match (item.editor.sample_rate, textured) {
+            (r, _) if r > 0.0 => r,
+            (_, true) => nyquist * 2.0,
+            _ => inputs.world.sample_rate,
+        };
+        draw_time_ruler(
+            &mut Draw::new(mesh, m, th),
+            item.rect,
+            body,
+            &nav,
+            rate,
+            &item.editor,
+        );
+        // The rows are the lanes and the channels are the data: the count comes
+        // from whichever picture resolved, and overlaid traces share one row
+        // (and one vertical) however many channels there are.
+        let channels = wave
+            .map(|s| s.view.num_channels())
+            .or_else(|| spectro.map(|s| s.views.len()))
+            .unwrap_or(1)
+            .max(1);
+        let rows = if look.overlay { 1 } else { channels };
+        // **The y ruler belongs to the layer that claimed the axis**, which is
+        // what makes the claim mean something: a stack with a texture on the
+        // axis is ruled in hertz and one with the traces on it in the value
+        // unit, whatever else is drawn over either. A stack where every layer
+        // is in its own box rules nothing here — each of those draws its own.
+        let axis = look.layers.axis_domain().ok().flatten();
+        if item.editor.ruler_y != RulerY::Off {
+            for ch in 0..rows {
+                let row = channel_rect(body, rows, ch);
+                let ticks = match axis {
+                    Some(Domain::Frequency) => ruler::hz_ticks(
+                        nyquist,
+                        look.look.freq_scale,
+                        f_lo,
+                        row.h as f64,
+                        look.y.0,
+                        look.y.1,
+                        m,
+                    ),
+                    Some(Domain::Amplitude) => amp_or_value_ticks(
+                        look.domain,
+                        item.editor.ruler_y,
+                        item.editor.bit_depth,
+                        row.h as f64,
+                        look.y,
+                        m,
+                    ),
+                    _ => Vec::new(),
                 };
-                let chrome = chrome_for(inputs, item.id, &item.editor, || {
-                    View::full(slot.view.total_samples())
-                });
-                let nav = chrome.nav;
-                let rate = if item.editor.sample_rate > 0.0 {
-                    item.editor.sample_rate
-                } else {
-                    inputs.world.sample_rate
-                };
-                draw_time_ruler(
+                ruler::draw_ticks_v(
                     &mut Draw::new(mesh, m, th),
-                    item.rect,
-                    body,
-                    &nav,
-                    rate,
-                    &item.editor,
+                    body.x,
+                    item.rect.x,
+                    row,
+                    &ticks,
                 );
-                let n = slot.view.num_channels();
-                // Overlaid traces share one row (and one amplitude axis).
-                let draw_channels = if *overlaid { 1 } else { n };
-                if item.editor.ruler_y != RulerY::Off {
-                    // The window the element stated for this frame, which is
-                    // the one its picture was uploaded at.
-                    let (y0, y_len) = (amp.0, amp.1);
-                    for ch in 0..draw_channels {
-                        let row = channel_rect(body, draw_channels, ch);
-                        let ticks = amp_or_value_ticks(
-                            *domain,
-                            item.editor.ruler_y,
-                            item.editor.bit_depth,
-                            row.h as f64,
-                            (y0, y_len),
-                            m,
-                        );
-                        ruler::draw_ticks_v(
-                            &mut Draw::new(mesh, m, th),
-                            body.x,
-                            item.rect.x,
-                            row,
-                            &ticks,
-                        );
+            }
+        }
+        // The picture itself, placed on the *local* window: a member of a group
+        // draws its own samples where it sits.
+        let local = placed_nav(&nav, item.editor.offset);
+        if let Some(slot) = wave {
+            // **The picture says when it has stopped resolving.** A column
+            // finer than the summary's bucket can only be drawn from something
+            // finer than the summary, and a view that holds neither draws the
+            // bucket instead — which is correct and is not what the eye asked
+            // for. This is the one place that knows both numbers, so it leaves
+            // the note for the leg to act on, saying which *shape* would settle
+            // it: a finer grid over the span, or the samples themselves where
+            // no grid would do. A view that can answer (mapped samples, a whole
+            // owned buffer, a window or a detail grid already over this span)
+            // leaves nothing.
+            slot.owed
+                .set(owed(&slot.view, &local, body.w as f64, item.written));
+        }
+        // **The stack, back to front.** Everything up to the texture goes into
+        // the base mesh, everything after it into the overlay: the GPU pass
+        // that samples the texture runs between the two, so a layer drawn over
+        // a spectrogram has to be in the mesh that is drawn after it. That is
+        // the whole of the compositing order — one field, one texture, and the
+        // curves before and after it.
+        let measures = look.layers.measures();
+        let mut above_texture = false;
+        let mut loudness_drawn = false;
+        for layer in look.layers.drawn() {
+            match layer.paint {
+                // The texture is uploaded and drawn by the frame's own pass
+                // (it samples a texture, which the window's mesh cannot); what
+                // the walk does with it is note that the layers after it are
+                // over it.
+                Paint::Spectrogram => above_texture |= spectro.is_some(),
+                // **The loudness layers are one group**, drawn where the first
+                // of them sits: they share a scale, a ruler and a read-out, so
+                // splitting them across the order would be three claims on one
+                // axis. A loudness is also the channels summed with their
+                // weights, so it has no lane to sit in and is drawn once over
+                // the whole body.
+                Paint::Measure(measure) if measure.is_loudness() => {
+                    if loudness_drawn {
+                        continue;
                     }
+                    loudness_drawn = true;
+                    let target = if above_texture {
+                        &mut *over
+                    } else {
+                        &mut *mesh
+                    };
+                    crate::host::graphics::signal::loudness::draw(
+                        &mut Draw::new(target, m, th),
+                        body,
+                        &local,
+                        &crate::host::graphics::signal::loudness::LoudnessParams {
+                            layer: &look.loudness,
+                            layers: &look.layers,
+                            selection: item.editor.sel_len > 0.0,
+                            y: look.y,
+                        },
+                    );
                 }
-                // The picture itself, into the base mesh: one row per channel
-                // through the one signal renderer, placed on the *local* window
-                // (a member of a group draws its own samples where it sits).
-                let local = placed_nav(&nav, item.editor.offset);
-                // **The picture says when it has stopped resolving.** A column
-                // finer than the summary's bucket can only be drawn from
-                // something finer than the summary, and a view that holds
-                // neither draws the bucket instead — which is correct and is
-                // not what the eye asked for. This is the one place that knows
-                // both numbers, so it leaves the note for the leg to act on,
-                // saying which *shape* would settle it: a finer grid over the
-                // span, or the samples themselves where no grid would do. A
-                // view that can answer (mapped samples, a whole owned buffer, a
-                // window or a detail grid already over this span) leaves
-                // nothing.
-                slot.owed
-                    .set(owed(&slot.view, &local, body.w as f64, item.written));
-                let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
-                // One picture per measure, into the one body: the envelope the
-                // signal reached, then the level it held drawn inside it.
-                for ch in 0..n {
-                    let row = channel_rect(body, draw_channels, if *overlaid { 0 } else { ch });
-                    for measure in measures.iter() {
-                        crate::waveform::draw_channel(
-                            mesh,
-                            row,
-                            &trace,
-                            ch,
-                            &local,
-                            *domain,
-                            (amp.0, amp.1),
-                            crate::host::graphics::signal::trace::TraceStyle::new(
+                Paint::Measure(measure) => {
+                    let Some(slot) = wave else { continue };
+                    let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
+                    let target = if above_texture {
+                        &mut *over
+                    } else {
+                        &mut *mesh
+                    };
+                    for ch in 0..channels {
+                        let row = channel_rect(body, rows, if look.overlay { 0 } else { ch });
+                        let mut style = crate::host::graphics::signal::trace::TraceStyle::new(
+                            with_alpha(
                                 crate::host::graphics::signal::trace::measure_color(
                                     th,
                                     measure,
                                     th.series(ch),
                                 ),
-                                m.trace_w,
-                            )
-                            .with_dots(m.point_radius)
-                            .with_measure(measure)
-                            .with_layers(*measures)
-                            .with_overs(th.meter_clip, m.caption_scale)
-                            .with_rate(item.editor.sample_rate)
-                            .with_written(item.written),
-                        );
-                    }
-                }
-                // **The loudness layer is drawn once, over the whole body.** It
-                // is the one measure that is not a measure of a channel: a
-                // loudness is the channels summed with their weights, so it has
-                // no lane to sit in and no second copy to draw.
-                crate::host::graphics::signal::loudness::draw(
-                    &mut Draw::new(mesh, m, th),
-                    body,
-                    &local,
-                    &crate::host::graphics::signal::loudness::LoudnessParams {
-                        layer: loudness,
-                        measures: *measures,
-                        selection: item.editor.sel_len > 0.0,
-                        y: (amp.0, amp.1),
-                    },
-                );
-                for ch in 1..draw_channels {
-                    let row = channel_rect(body, draw_channels, ch);
-                    over.rect(Rect::new(row.x, row.y, row.w, 1.0), th.channel_divider);
-                }
-                draw_editor_overlay(
-                    &mut *over,
-                    item,
-                    body,
-                    &chrome,
-                    rate,
-                    draw_channels,
-                    inputs,
-                    Vertical::Value(*domain),
-                    th,
-                );
-            }
-            TimelineKind::Spectrogram { freq, look } => {
-                let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
-                    over.border(body, 1.0, th.view_frame);
-                    continue;
-                };
-                let chrome = chrome_for(inputs, item.id, &item.editor, || {
-                    View::full(slot.total_samples())
-                });
-                let nav = chrome.nav;
-                let (nyquist, f_lo) = slot
-                    .views
-                    .first()
-                    .map(|v| (v.stft().nyquist() as f64, v.log_floor() as f64))
-                    .unwrap_or((24_000.0, 20.0 / 24_000.0));
-                let rate = if item.editor.sample_rate > 0.0 {
-                    item.editor.sample_rate
-                } else {
-                    nyquist * 2.0
-                };
-                draw_time_ruler(
-                    &mut Draw::new(mesh, m, th),
-                    item.rect,
-                    body,
-                    &nav,
-                    rate,
-                    &item.editor,
-                );
-                let n = slot.views.len();
-                for ch in 0..n {
-                    let row = channel_rect(body, n, ch);
-                    if ch > 0 {
-                        over.rect(
-                            Rect::new(row.x, row.y, row.w, m.divider_w),
-                            th.channel_divider,
-                        );
-                    }
-                    if item.editor.ruler_y != RulerY::Off {
-                        let ticks = ruler::hz_ticks(
-                            nyquist,
-                            look.freq_scale,
-                            f_lo,
-                            row.h as f64,
-                            freq.0,
-                            freq.1,
-                            m,
-                        );
-                        ruler::draw_ticks_v(
-                            &mut Draw::new(mesh, m, th),
-                            body.x,
-                            item.rect.x,
+                                layer.alpha,
+                            ),
+                            m.trace_w,
+                        )
+                        .with_dots(m.point_radius)
+                        .with_measure(measure)
+                        .with_layers(measures)
+                        .with_overs(th.meter_clip, m.caption_scale)
+                        .with_rate(item.editor.sample_rate)
+                        .with_written(item.written);
+                        // **Text over a picture stands on a plate**, the same
+                        // ground every caption over a texture already gets: a
+                        // figure written straight onto a spectrogram is
+                        // unreadable wherever the analysis happens to be
+                        // bright.
+                        if above_texture {
+                            style = style.with_plate(th.plate, m.plate_radius);
+                        }
+                        crate::waveform::draw_channel(
+                            target,
                             row,
-                            &ticks,
+                            &trace,
+                            ch,
+                            &local,
+                            look.domain,
+                            look.y,
+                            style,
                         );
                     }
                 }
-                // The active scale, named over the view (the live views'
-                // corner slot) — log/mel/bark are not tellable apart from
-                // the tick spacing at a glance.
-                crate::host::graphics::corner_text(
-                    &mut Draw::new(over, m, th),
-                    ruler::scale_tag(look.freq_scale),
-                    body,
-                );
-                draw_editor_overlay(
-                    &mut *over,
-                    item,
-                    body,
-                    &chrome,
-                    rate,
-                    n,
-                    inputs,
-                    Vertical::Frequency(nyquist, look.freq_scale, f_lo),
-                    th,
-                );
             }
         }
+        for ch in 1..rows {
+            let row = channel_rect(body, rows, ch);
+            over.rect(
+                Rect::new(row.x, row.y, row.w, m.divider_w),
+                th.channel_divider,
+            );
+        }
+        // The active frequency scale, named over the view (the live views'
+        // corner slot) — log/mel/bark are not tellable apart from the tick
+        // spacing at a glance. Only where a texture is what the axis measures.
+        if axis == Some(Domain::Frequency) {
+            crate::host::graphics::corner_text(
+                &mut Draw::new(over, m, th),
+                ruler::scale_tag(look.look.freq_scale),
+                body,
+            );
+        }
+        draw_editor_overlay(
+            &mut *over,
+            item,
+            body,
+            &chrome,
+            rate,
+            rows,
+            inputs,
+            match axis {
+                Some(Domain::Frequency) => Vertical::Frequency(nyquist, look.look.freq_scale, f_lo),
+                _ => Vertical::Value(look.domain),
+            },
+            th,
+        );
     }
 }
 

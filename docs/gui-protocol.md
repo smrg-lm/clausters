@@ -397,7 +397,7 @@ it.
 
 | Type | Replaces | How the old name is said |
 |---|---|---|
-| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × what it **measures** (`measure`: `peak` / `rms` / `signal`, several at once in one space-separated string, `"peak signal"` by default, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × the **layer stack** it draws (`layers`, also spelled `measure`: `peak` / `rms` / `signal` / `momentary` / `short` / `spectrogram`, back to front in one space-separated string or as an array whose entries carry `alpha`, `visible`, `solo` and `y`; the presentation's own by default, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
 | `notes` | `pianoroll` | unchanged properties |
 | `curve` | `bpf` | unchanged properties |
 | `nodes` | `nodetree` | it is an element, not a widget named after a tree |
@@ -622,14 +622,60 @@ zoom is deep enough that consecutive samples stand three `point_radius` apart,
 each sample is **marked with a dot** — the line between them is interpolation,
 the dots are the data.
 
-**`measure` is what the picture measures**, and it is a factor of the signal
-element rather than a widget of its own: `peak` (the min/max envelope above),
-`rms` (the symmetric body about zero at the level the signal held, drawn in the
-`trace_body` colour role), `signal` (the band-limited reconstruction between the
-samples, below), `momentary` and `short` (the **loudness** curves, below), or
-**several at once**, named in one space-separated string. The default is
-**`"peak signal"`**. It is live on `/gui_set`, because a picture is read by
-turning its measures on and off.
+**`layers` is the stack the picture is**, back to front, and it is a factor of
+the signal element rather than a composition of widgets. A layer is named by
+what it draws: `peak` (the min/max envelope above), `rms` (the symmetric body
+about zero at the level the signal held, drawn in the `trace_body` colour role),
+`signal` (the band-limited reconstruction between the samples, below),
+`momentary` and `short` (the **loudness** curves, below), and `spectrogram` (the
+time-frequency texture). `measure` is the **same prop under its older name** —
+one field behind two words, as `fft_size`/`window_size` already are — and it is
+what a stack of nothing but measures has always been called.
+
+The default is the presentation's own: **`"peak signal"`** for a trace and
+**`"spectrogram"`** for the time-frequency view. Both are live on `/gui_set`,
+because a picture is read by turning its layers on and off, and `/gui_query`
+answers `layers` with the form it was given.
+
+- **Two shapes, one prop.** A space-separated string of names is the stack at
+  its defaults, in order (`"peak rms"` draws the level *over* the envelope,
+  `"rms peak"` under it — the order is the author's, not the type's). An array
+  says the same and lets a layer state its own: `{"draw": "rms", "alpha": 0.5,
+  "y": "box", "visible": false, "solo": true}`, where a bare string entry is a
+  layer at its defaults. A `/gui_set` carries the array as a JSON string, the
+  way every structure on this wire does.
+- **`alpha`** is the layer's own weight over the layers under it, `[0, 1]`,
+  multiplying the ink its role is drawn in. It is not the node's `opacity`,
+  which fades a whole subtree, chrome included: what a translucent stack is for
+  is reading one picture *through* another.
+- **`visible` and `solo` are how a stack is read while it is built.** A hidden
+  layer keeps its place in the order, so showing it again puts it back where it
+  was rather than on top; and where any layer solos, only the soloed ones are
+  drawn — the mixer's own verb, one word instead of hiding the others one by
+  one.
+- **`y` is which vertical the layer is read on**, and it is the one thing a
+  stack can get wrong. `"axis"` maps through the body's own vertical — the
+  amplitude or frequency window a zoom opens — and reports it, so the y ruler
+  and the cursor read-out are that layer's; `"box"` normalizes into the
+  rectangle with a scale of its own and reports nothing. The default follows
+  what a layer measures: amplitudes and the texture are on the axis, a loudness
+  reading is in its box. **Two layers claiming the axis for two different
+  quantities is refused** — the def fails to build and a `/gui_set` leaves the
+  picture as it was — because whichever of them lost would be drawn on a scale
+  that is not its own, which is a picture that lies. A spectrogram with a
+  waveform over it therefore says `y: "box"` on the wave (or on the texture),
+  and the ruler follows whichever kept the axis.
+- **A texture under a curve is one element, and the curve is drawn after it.**
+  The stack's order *is* the compositing order: the body's field is painted
+  once, the texture is sampled where the stack puts it, and the layers after it
+  draw over it — including their figures, which stand on the same text plate
+  every caption over a picture already gets. A stack that names both draws both
+  from the one source: the samples are summarized for the traces and analyzed
+  for the texture, which is why such a view reads the **samples** (inline, a
+  mapped file, a server buffer) rather than a summary. A source that is a
+  summary and nothing else — a peaks cache, a streamed overview — has no
+  spectrum to show, and its texture layer draws nothing rather than a picture of
+  something else.
 
 - **`signal` is what the waveform did between the samples, and it is a layer
   over them, never a replacement.** Where the samples are separate points it
@@ -648,13 +694,12 @@ turning its measures on and off.
   bare samples, dots joined by straight lines, as in any editor.
 
 - **The classic editor picture is `"peak rms"`: one body, a drawing per
-  measure.** The level is drawn inside the envelope by the same renderer placed
-  twice, and the order is the host's — the envelope is the outer shape, so it
-  goes under whatever order the names were given in. It is one element and not
-  two because **every view of a signal paints its own field before it draws**:
-  two of them on one rectangle are not layers, the second hides the first. One
-  element is also one axis, one ruler, one selection, one playhead and one
-  upload of the samples.
+  layer.** The level is drawn inside the envelope by the same renderer placed
+  twice, in the order the names were given — the envelope is the outer shape, so
+  it is written first. It is one element and not two because **every view of a
+  signal paints its own field before it draws**: two of them on one rectangle
+  are not layers, the second hides the first. One element is also one axis, one
+  ruler, one selection, one playhead and one upload of the samples.
 - **A level is averaged over a fixed 50 ms of the source, not over the pixel
   column.** A root-mean-square is an average over a *duration*, so averaging
   whatever a column happens to cover would make the body's own values follow the

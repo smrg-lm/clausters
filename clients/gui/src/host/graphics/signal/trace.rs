@@ -391,6 +391,16 @@ impl Measures {
         Measures(1 << m as u8)
     }
 
+    /// The empty set — what a stack with no measure in it folds from.
+    pub fn none() -> Self {
+        Measures(0)
+    }
+
+    /// This set, plus `m`.
+    pub fn with(self, m: Measure) -> Self {
+        Measures(self.0 | Measures::of(m).0)
+    }
+
     /// The wire form: measure names separated by spaces (`"peak"`,
     /// `"peak rms"`). `None` when a name is one this build does not know or the
     /// list is empty — which reads as "the prop was not set" rather than as an
@@ -491,6 +501,12 @@ pub struct TraceStyle {
     /// scale, handed over like every other size here, so a drawing never reads
     /// a size table of its own. `0` writes no figure.
     pub over_text: f32,
+    /// **The ground a figure is written on**, as `(colour, corner radius)` —
+    /// set where this layer draws over a picture of its own (a spectrogram
+    /// under it), where a figure written straight onto the texture is
+    /// unreadable wherever the analysis is bright. `None` writes the text
+    /// bare, which is what a layer over a plain field does.
+    pub plate: Option<(Color, f32)>,
     /// **How much of the samples exists**, in frames — `None` for the
     /// ordinary case, where all of it does.
     ///
@@ -551,8 +567,16 @@ impl TraceStyle {
             measure: Measure::Peak,
             layers: Measures::of(Measure::Peak),
             body_window: 0.0,
+            plate: None,
             written: None,
         }
+    }
+
+    /// The same trace, writing its figures on a plate — what a layer drawn
+    /// over a texture does with text.
+    pub fn with_plate(mut self, color: Color, radius: f32) -> Self {
+        self.plate = Some((color, radius));
+        self
     }
 
     /// The same trace, marking each sample once they are far enough apart.
@@ -893,6 +917,20 @@ fn draw_signal(
         let text = format!("{:+.1}", 20.0 * worst.log10());
         let w = crate::host::font::width(&text, style.over_text);
         if w < rect.w {
+            if let Some((plate, radius)) = style.plate {
+                let h = crate::host::font::height(style.over_text);
+                let inset = style.width;
+                mesh.round_rect(
+                    Rect::new(
+                        rect.x + rect.w - w - 2.0 - inset,
+                        rect.y + 2.0 - inset,
+                        w + 2.0 * inset,
+                        h + 2.0 * inset,
+                    ),
+                    radius,
+                    plate,
+                );
+            }
             crate::host::font::text(
                 mesh,
                 &text,

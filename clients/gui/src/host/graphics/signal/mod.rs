@@ -26,6 +26,7 @@
 //!   draws: whole hops analyzed once, pushed on the back, dropped off the
 //!   front.
 
+pub mod layers;
 pub mod loudness;
 pub mod phasescope;
 pub mod plot;

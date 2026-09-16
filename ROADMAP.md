@@ -362,13 +362,12 @@ its plan; the plan is where its acceptance is read.
   *(`clients/gui/PLAN.md`, "A track")*. `A1`-`A5` shipped (mean square in the
   pyramid, the RMS layer and the `measure` prop, band-limited reconstruction
   with true peak, the loudness family in the core, and the loudness layer with
-  its own LU scale and its read-out); what is open is `A6`, which makes the
-  layer stack's three rules explicit — order, which layer owns the vertical,
-  and the alpha rule — and `A7`, which publishes them from the clients and the
-  books. `A6` is the next one, and `A5` is what it generalizes: the loudness
-  curve is the first layer that brought an axis of its own, so the axis-claim
-  rule now has a concrete case to be stated over rather than a hypothetical
-  one. **Related:** the audio editor's layers below land on this track's stack
+  its own LU scale and its read-out, and the layer stack's three rules — order,
+  which layer owns the vertical, and the alpha rule — made explicit in the
+  host, where a spectrogram with a wave over it is one element); what is open
+  is `A7`, which publishes them from the clients and the books: the `layers`
+  builder in both, the layer keys and the axis-claim rule in
+  `docs/gui-protocol.md`, and `gui_layers.py` with its page twin. **Related:** the audio editor's layers below land on this track's stack
   rules.
 
 - ⬜ **Try cubic instead of straight segments where the samples are joined**

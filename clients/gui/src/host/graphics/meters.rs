@@ -14,13 +14,14 @@ use clausters_core::measure;
 use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
-use super::signal::trace;
+use super::signal::{layers, trace};
 use crate::host::font;
 use crate::host::frame::channel_rect;
 use crate::host::layout::Rect;
 use crate::host::live::TapWindow;
 use crate::host::paint::{Color, Draw};
 use crate::host::ruler;
+use crate::host::theme::with_alpha;
 use crate::host::widget::RulerDir;
 use crate::viewport::{Axis, Unit};
 
@@ -210,7 +211,7 @@ pub fn draw_scope(
     min: f32,
     max: f32,
     label: Option<&str>,
-    measures: trace::Measures,
+    layers: &layers::Stack,
 ) {
     label_strip(d, label, rect);
     let (mesh, m, theme) = d.parts();
@@ -224,8 +225,9 @@ pub fn draw_scope(
     // renderer, so a history longer than the body's pixels summarizes instead
     // of aliasing — which a polyline of its own never did. One pass per
     // measure, the envelope under the level body.
-    for measure in measures.iter() {
-        let color = trace::measure_color(d.theme, measure, d.theme.trace);
+    let measures = layers.measures();
+    for (measure, alpha) in layers.drawn_measures() {
+        let color = with_alpha(trace::measure_color(d.theme, measure, d.theme.trace), alpha);
         trace_row(d, body, history, 1, 0, (min, max), color, measure, measures);
     }
 }
@@ -243,10 +245,9 @@ pub(crate) struct WaveParams<'a> {
     pub ruler: bool,
     pub ruler_y: bool,
     pub label: Option<&'a str>,
-    /// What each column measures — the envelope, or the level inside it. A
-    /// live view reads it like a stored one: the picture is the same renderer
-    /// over a window that happens to be arriving.
-    pub measures: trace::Measures,
+    /// **The layer stack**, back to front — a live view reads it like a stored
+    /// one: the same pictures, over a window that happens to be arriving.
+    pub layers: &'a layers::Stack,
     /// The live loudness curve, when a measure asks for one — drawn over the
     /// whole body, since a loudness is the channels summed and has no lane of
     /// its own.
@@ -338,7 +339,8 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
         } else {
             d.theme.trace
         };
-        for measure in p.measures.iter() {
+        let measures = p.layers.measures();
+        for (measure, alpha) in p.layers.drawn_measures() {
             trace_row(
                 d,
                 row,
@@ -346,9 +348,9 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
                 channels,
                 ch,
                 (p.min, p.max),
-                trace::measure_color(d.theme, measure, color),
+                with_alpha(trace::measure_color(d.theme, measure, color), alpha),
                 measure,
-                p.measures,
+                measures,
             );
         }
     }
@@ -489,7 +491,7 @@ mod tests {
                     ruler: false,
                     ruler_y: false,
                     label: None,
-                    measures: trace::Measures::of(trace::Measure::Peak),
+                    layers: &layers::Stack::of(&[trace::Measure::Peak]),
                     loudness: None,
                 },
             );
@@ -627,7 +629,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measures::default(),
+            &layers::Stack::default(),
         );
         let with_one = empty.vertex_count();
 
@@ -639,7 +641,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measures::default(),
+            &layers::Stack::default(),
         );
         assert!(
             many.vertex_count() > with_one,
@@ -665,7 +667,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measures::default(),
+            &layers::Stack::default(),
         );
         // The field, its border and at most one six-vertex column per pixel.
         let columns = (mesh.vertex_count() as f32 - 60.0) / 6.0;

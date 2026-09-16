@@ -57,7 +57,7 @@ impl SignalElement {
             &data.trace(),
             min,
             max,
-            self.measures,
+            &self.layers,
             self.display.overlay,
             self.editor.sample_rate,
             self.written_frames(),

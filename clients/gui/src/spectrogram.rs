@@ -415,7 +415,8 @@ struct Uniforms {
     /// 3 bark); w = normalized log-axis floor.
     freq: [f32; 4],
     /// x = lo_frac, y = hi_frac of the display dB window within the stored
-    /// reference range (the colour scale); z = colormap index.
+    /// reference range (the colour scale); z = colormap index; w = the layer's
+    /// own alpha.
     db: [f32; 4],
     /// xy = scale, zw = offset of the [`Framing`] that places the picture
     /// inside its viewport — the identity for a view the window shows whole.
@@ -660,7 +661,12 @@ impl SpectrogramRenderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target.format,
-                    blend: None,
+                    // **Alpha-blended, because a texture is a layer.** At the
+                    // opaque default this is the same picture the unblended
+                    // pipeline drew; under a stack it is what lets a
+                    // spectrogram be read through, or read through what is
+                    // over it.
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -698,6 +704,9 @@ pub struct SpectrogramView {
     db_ceil: f32,
     /// 0 = viridis, 1 = magma, 2 = grayscale.
     colormap: u32,
+    /// The weight this texture draws at as one layer of a stack; `1` alone on
+    /// its body.
+    alpha: f32,
     /// The frequency window's start, snapshotted for absolute drag panning.
     drag_freq_start: f64,
     /// Where this view's picture sits inside the viewport it is drawn with.
@@ -723,6 +732,7 @@ impl SpectrogramView {
             db_floor: -90.0,
             db_ceil: 0.0,
             colormap: 0,
+            alpha: 1.0,
             drag_freq_start: 0.0,
             framing: Framing::IDENTITY,
             scratch: Vec::new(),
@@ -792,6 +802,12 @@ impl SpectrogramView {
     /// frequency-axis scale and the colormap (0 = viridis, 1 = magma, 2 =
     /// grayscale). Cheap — everything lands in the shader uniforms, so a live
     /// `/gui_set` retunes the view with zero recompute.
+    /// **The weight this texture is drawn at** as one layer of a stack, in
+    /// `[0, 1]` — a uniform write, like every other display control here.
+    pub fn set_alpha(&mut self, alpha: f32) {
+        self.alpha = alpha.clamp(0.0, 1.0);
+    }
+
     pub fn set_display(&mut self, db_floor: f32, db_ceil: f32, scale: FreqScale, colormap: u32) {
         self.db_floor = db_floor;
         self.db_ceil = db_ceil;
@@ -846,7 +862,7 @@ impl SpectrogramView {
         Uniforms {
             time: [start, len, self.stft.nyquist(), 0.0],
             freq: [d0, d1, self.scale.index() as f32, f_lo],
-            db: [lo, hi, self.colormap as f32, 0.0],
+            db: [lo, hi, self.colormap as f32, self.alpha],
             rect: [
                 self.framing.scale[0],
                 self.framing.scale[1],

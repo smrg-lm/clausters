@@ -21,71 +21,99 @@
 //! `SlotKind` — that is the bulk seam, and it is why an element whose data is
 //! still out there hands back `None` here rather than an empty picture.
 
-use super::{Presentation, SignalElement};
+use super::SignalElement;
 use crate::host::widget::element::SlotFill;
 
 impl SignalElement {
-    /// The content of this element's claimed slot, or `None` when it has
-    /// nothing new for it: it claimed no slot, its picture has not moved since
+    /// **What this element's slots draw from**, or an empty list when it has
+    /// nothing new for them: it claimed none, its picture has not moved since
     /// the last fill, or the data it draws from has not arrived yet.
+    ///
+    /// A stack may need **two** of them — a peak pyramid for its traces and an
+    /// analysis for its texture — and they are two fills rather than one
+    /// because they are two pictures with two shapes; they share a key, since
+    /// the frame holds each kind in a map of its own.
     ///
     /// The rolling case comes first and is the only one that repeats: a
     /// retained waterfall produces columns for as long as its bus runs, where a
     /// stored view fills once and then only when something it is built from
     /// changed.
-    pub fn fill(&mut self) -> Option<SlotFill> {
+    pub fn fill(&mut self) -> Vec<SlotFill> {
         if let Some(roll) = self.live.roll.as_mut() {
             if !roll.is_dirty() {
-                return None;
+                return Vec::new();
             }
             let (window_size, hop, sample_rate) = roll.geometry();
             let capacity = roll.capacity();
-            return Some(SlotFill::Columns {
+            return vec![SlotFill::Columns {
                 columns: roll.take_pending(),
                 window_size,
                 hop,
                 sample_rate,
                 capacity,
-            });
+            }];
         }
         if !self.slot_dirty || self.slot_kind().is_none() {
-            return None;
+            return Vec::new();
         }
-        let data = self.source.data()?;
-        // A **resolved pyramid is the element's data too**: a loader routed it
-        // into the slot when it landed, and the element kept the same `Arc`, so
-        // the slot of a window opened later (or of a new device) is refilled
-        // from here rather than from a resource nobody asks for twice.
-        if let Some(body) = &data.body
-            && self.presentation == Presentation::Signal
+        let Some(data) = self.source.data() else {
+            return Vec::new();
+        };
+        let mut fills = Vec::new();
+        if self.draws_traces() {
+            // A **resolved pyramid is the element's data too**: a loader routed
+            // it into the slot when it landed, and the element kept the same
+            // `Arc`, so the slot of a window opened later (or of a new device)
+            // is refilled from here rather than from a resource nobody asks for
+            // twice.
+            if let Some(body) = &data.body {
+                fills.push(SlotFill::Geometry(body.clone()));
+            } else if !data.samples.is_empty() {
+                // Otherwise the element's *own* samples, which is the only
+                // other data it holds: a resource it named is the loader's, and
+                // filling from nothing here would show an empty picture until
+                // that load lands and replaces it.
+                fills.push(SlotFill::Geometry(std::sync::Arc::new(
+                    crate::waveform::WaveformData::from_interleaved(
+                        &data.samples,
+                        data.channels,
+                        data.base_bucket,
+                    ),
+                )));
+            }
+        }
+        // **The texture is analyzed from whatever samples are here** — the
+        // inline run, or the ones a mapped pyramid is a summary *of*. A source
+        // that arrived as peaks alone (a cache, a streamed overview) has none,
+        // and then the texture layer draws nothing rather than a picture of
+        // something else.
+        if self.is_texture_view()
+            && let Some((samples, channels)) = self.analyzable()
         {
-            self.slot_dirty = false;
-            return Some(SlotFill::Geometry(body.clone()));
-        }
-        // Otherwise the element's *own* samples, which is the only other data it
-        // holds: a resource it named is the loader's, and filling from nothing
-        // here would show an empty picture until that load lands and replaces it.
-        if data.samples.is_empty() {
-            return None;
-        }
-        let fill = if self.presentation == Presentation::Signal {
-            SlotFill::Geometry(std::sync::Arc::new(
-                crate::waveform::WaveformData::from_interleaved(
-                    &data.samples,
-                    data.channels,
-                    data.base_bucket,
-                ),
-            ))
-        } else {
-            SlotFill::Texture(crate::host::frame::stft_channels(
-                crate::host::frame::deinterleave(&data.samples, data.channels),
+            fills.push(SlotFill::Texture(crate::host::frame::stft_channels(
+                crate::host::frame::deinterleave(&samples, channels),
                 self.spectral.fft_size,
                 self.spectral.hop,
                 self.editor.sample_rate,
-            ))
-        };
-        self.slot_dirty = false;
-        Some(fill)
+            )));
+        }
+        if !fills.is_empty() {
+            self.slot_dirty = false;
+        }
+        fills
+    }
+
+    /// **The samples an analysis can be run over**, interleaved: the inline
+    /// run, else the ones a mapped pyramid holds. `None` for a source that is
+    /// a summary and nothing else.
+    fn analyzable(&self) -> Option<(Vec<f32>, usize)> {
+        let data = self.source.data()?;
+        if !data.samples.is_empty() {
+            return Some((data.samples.to_vec(), data.channels.max(1)));
+        }
+        let body = data.body.as_ref()?;
+        let samples = body.block(0, body.total_samples())?;
+        Some((samples, body.num_channels().max(1)))
     }
 }
 
@@ -115,7 +143,7 @@ mod tests {
             r#"{"id":1,"type":"signal","view":"trace","navigable":1,"data":[0.0,1.0,-1.0,0.5,0.0,-0.5,0.25,0.0]}"#,
         );
         assert!(matches!(trace.slot_kind(), Some(SlotKind::Geometry { .. })));
-        let Some(SlotFill::Geometry(data)) = trace.fill() else {
+        let [SlotFill::Geometry(data)] = &trace.fill()[..] else {
             panic!("a navigable trace fills its geometry slot")
         };
         assert_eq!(data.total_samples(), 8);
@@ -132,7 +160,7 @@ mod tests {
             spectral.slot_kind(),
             Some(SlotKind::Texture { .. })
         ));
-        let Some(SlotFill::Texture(stfts)) = spectral.fill() else {
+        let [SlotFill::Texture(stfts)] = &spectral.fill()[..] else {
             panic!("a spectrogram fills its texture slot")
         };
         assert_eq!(stfts.len(), 1);
@@ -146,11 +174,11 @@ mod tests {
     fn a_filled_slot_asks_for_nothing_again() {
         let mut trace =
             element(r#"{"id":1,"type":"signal","view":"trace","navigable":1,"data":[0.0,1.0]}"#);
-        assert!(trace.fill().is_some());
-        assert!(trace.fill().is_none());
+        assert!(!trace.fill().is_empty());
+        assert!(trace.fill().is_empty());
         // ...until something it is built from moves.
         trace.slot_dirty = true;
-        assert!(trace.fill().is_some());
+        assert!(!trace.fill().is_empty());
     }
 
     /// An element with no slot never fills one, however much data it holds —
@@ -161,7 +189,7 @@ mod tests {
             r#"{"id":1,"type":"signal","view":"trace","navigable":0,"data":[0.0,1.0,-1.0,0.5]}"#,
         );
         assert_eq!(take.slot_kind(), None);
-        assert!(take.fill().is_none());
+        assert!(take.fill().is_empty());
     }
 
     /// The rolling case, driven the way a front drives it: retain, tick, then
@@ -244,6 +272,6 @@ mod tests {
             r#"{"id":1,"type":"signal","view":"trace","navigable":1,"path":"take.f32","bulk":true}"#,
         );
         assert!(pending.slot_kind().is_some());
-        assert!(pending.fill().is_none());
+        assert!(pending.fill().is_empty());
     }
 }

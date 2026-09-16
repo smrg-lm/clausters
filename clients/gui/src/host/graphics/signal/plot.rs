@@ -31,7 +31,7 @@
 
 use crate::spectrogram::{FreqScale, Stft};
 
-use super::trace::{self, Measures, Trace, TraceStyle};
+use super::trace::{self, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::frame::{channel_at, channel_rect};
 use crate::host::graphics::controls::body_rect;
@@ -164,8 +164,9 @@ pub struct PlotParams<'a> {
     /// same way the live one reads it.
     pub x_view: (f64, f64),
     pub label: Option<&'a str>,
-    /// What each column measures — the envelope, or the level inside it.
-    pub measures: Measures,
+    /// **The layer stack**, back to front: one picture per layer into the one
+    /// field.
+    pub layers: &'a super::layers::Stack,
     /// How much of the samples exists, for a take being written into as it is
     /// drawn; `None` when all of it does.
     pub written: Option<u64>,
@@ -315,7 +316,8 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         let span = (n - 1) as f64;
         // One picture per measure, into one field: the envelope first and the
         // level body inside it.
-        for measure in p.measures.iter() {
+        let measures = p.layers.measures();
+        for (measure, alpha) in p.layers.drawn_measures() {
             trace::draw_channel(
                 mesh,
                 row,
@@ -325,12 +327,15 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                 |s| row.x + (s / span) as f32 * row.w,
                 |v| row.y + row.h * (1.0 - fraction(v, lo, hi)),
                 TraceStyle::new(
-                    trace::measure_color(theme, measure, theme.series(ch)),
+                    crate::host::theme::with_alpha(
+                        trace::measure_color(theme, measure, theme.series(ch)),
+                        alpha,
+                    ),
                     m.trace_w,
                 )
                 .with_dots(m.point_radius)
                 .with_measure(measure)
-                .with_layers(p.measures)
+                .with_layers(measures)
                 .with_overs(theme.meter_clip, m.caption_scale)
                 .with_rate(p.sample_rate)
                 .with_written(p.written),
@@ -576,6 +581,13 @@ mod tests {
         );
     }
 
+    /// The default stack, borrowed for as long as a test needs it.
+    fn plain() -> &'static crate::host::graphics::signal::layers::Stack {
+        static STACK: std::sync::LazyLock<crate::host::graphics::signal::layers::Stack> =
+            std::sync::LazyLock::new(Default::default);
+        &STACK
+    }
+
     fn params<'a>(samples: &'a [f32], channels: usize) -> PlotParams<'a> {
         PlotParams {
             samples,
@@ -593,7 +605,7 @@ mod tests {
             freq_scale: FreqScale::Log,
             x_view: (0.0, 1.0),
             label: None,
-            measures: Measures::default(),
+            layers: plain(),
             written: None,
         }
     }
@@ -612,6 +624,50 @@ mod tests {
             &p,
         );
         assert!(!m.is_empty(), "a short signal draws a polyline");
+    }
+
+    /// **A layer's alpha is its own, and the order is the one that was
+    /// written.** Two layers at two weights: the vertices come out in the
+    /// stack's order, each run at the weight its layer states — which is what
+    /// makes reading one picture through another a property of the stack
+    /// rather than of the widget's `opacity`.
+    #[test]
+    fn each_layer_is_drawn_at_its_own_weight_in_the_order_it_was_written() {
+        let samples: Vec<f32> = (0..4000).map(|i| (i as f32 * 0.05).sin()).collect();
+        let stack = crate::host::graphics::signal::layers::Stack::parse(&serde_json::json!([
+            {"draw": "rms", "alpha": 0.25},
+            {"draw": "peak", "alpha": 0.75},
+        ]))
+        .unwrap();
+        let mut m = Mesh::new();
+        let mut p = params(&samples, 1);
+        p.min = Some(-1.0);
+        p.max = Some(1.0);
+        p.layers = &stack;
+        draw(
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
+            Rect::new(0.0, 0.0, 300.0, 150.0),
+            &p,
+        );
+        // Each measure's ink has a weight of its own in the theme, so what a
+        // layer's alpha does is *scale* it: the run is found by its role's
+        // alpha times the layer's.
+        let th = Theme::default();
+        let body = th.trace_body[3] * 0.25;
+        let envelope = th.series(0)[3] * 0.75;
+        let alphas: Vec<f32> = m.alphas().collect();
+        let first = alphas
+            .iter()
+            .position(|a| (*a - body).abs() < 1e-3)
+            .expect("the level is drawn at the weight it asked for");
+        let second = alphas
+            .iter()
+            .position(|a| (*a - envelope).abs() < 1e-3)
+            .expect("and so is the envelope");
+        assert!(
+            first < second,
+            "the level was written first, so it is drawn under the envelope"
+        );
     }
 
     #[test]

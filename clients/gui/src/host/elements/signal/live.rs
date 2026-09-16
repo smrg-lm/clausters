@@ -172,19 +172,29 @@ impl SignalElement {
         let Some(bus) = self.source.bus().cloned() else {
             return;
         };
+        // **What a tick accumulates is what the stack draws**, not what the
+        // presentation is named: a live view with a texture under its trace
+        // needs both the rolling transform and the triggered window, and
+        // asking the name for one of them would leave the other layer drawing
+        // nothing. The spectrum and the phase view have no stack of their own
+        // and answer for themselves.
         match self.presentation {
+            Presentation::Phase => return self.tick_phase(live, &bus),
+            Presentation::Spectrum => return self.tick_spectrum(live, &bus),
+            _ => {}
+        }
+        if self.is_texture_view() {
+            self.tick_roll(live, &bus);
+        }
+        if self.draws_traces() {
             // A control-rate trace takes one sample per tick; an audio-rate one
             // re-triggers a whole window out of the tap.
-            Presentation::Signal if !bus.rate.is_audio() => {
-                push_sample(&mut self.live.history, live.control(bus.bus));
-            }
-            Presentation::Signal => {
+            if bus.rate.is_audio() {
                 self.tick_window(live, &bus);
                 self.tick_loudness(live, &bus);
+            } else {
+                push_sample(&mut self.live.history, live.control(bus.bus));
             }
-            Presentation::Phase => self.tick_phase(live, &bus),
-            Presentation::Spectrum => self.tick_spectrum(live, &bus),
-            Presentation::TimeFrequency => self.tick_roll(live, &bus),
         }
     }
 
@@ -207,17 +217,19 @@ impl SignalElement {
             return 0;
         };
         match self.presentation {
-            // A control-rate trace is read as a bus value, one number per tick.
-            Presentation::Signal if !bus.rate.is_audio() => 0,
-            // The trigger searches past the display window, so the raw read is
-            // wider than what is drawn.
-            Presentation::Signal => {
-                oscil::raw_frames(oscil::display_frames(bus.window_ms, sample_rate))
-            }
-            Presentation::Phase => oscil::display_frames(bus.window_ms, sample_rate),
-            Presentation::Spectrum => self.spectral.fft_size,
-            Presentation::TimeFrequency => 0,
+            Presentation::Phase => return oscil::display_frames(bus.window_ms, sample_rate),
+            Presentation::Spectrum => return self.spectral.fft_size,
+            _ => {}
         }
+        // A control-rate trace is read as a bus value, one number per tick, and
+        // a texture layer reads its bus's history rather than a window — so the
+        // read is the traces' when there are any, and nothing otherwise.
+        if !self.draws_traces() || !bus.rate.is_audio() {
+            return 0;
+        }
+        // The trigger searches past the display window, so the raw read is
+        // wider than what is drawn.
+        oscil::raw_frames(oscil::display_frames(bus.window_ms, sample_rate))
     }
 
     /// The audio-rate trace's triggered window: the trigger is searched in the
