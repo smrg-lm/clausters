@@ -129,7 +129,7 @@ already carry it.
   here whenever Chrome is the lenient one. Needs a decision: a rule for how the
   pages assert, and whether a by-hand Firefox pass joins the release checks.
 
-- ⬜ **The manual ordering family is in neither client: `/node_before`,
+- ⬜ **The manual ordering family is in neither client either: `/node_before`,
   `/node_after`, `/node_order`, `/group_head`, `/group_tail`**
   (`clients/python/PLAN.md`, Found by use). The older half of the subject the
   two group verbs closed: `AddAction` places a node when it is made and nothing
