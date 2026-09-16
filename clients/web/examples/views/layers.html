@@ -22,31 +22,39 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>views/layers.py</code>: <b>the layer stack — a spectrogram, the wave over
-it, and the level inside that</b>.
+<code>views/layers.py</code>: <b>the layer stack — every picture a signal view
+can draw, on one body</b>.
 
 A view of a signal draws several things on one body, and <code>layers</code> is
-the list of them, <b>back to front</b>. It is one element and not three stacked
+the list of them, <b>back to front</b>. It is one element and not a pile of
 widgets, because every view of a signal paints its own field before it draws: a
 second one on the same rectangle would be a lid over the first, not a layer over
 it. One element is also one time axis, one selection, one playhead and one
 upload.
 
-<b>The order is yours</b> — the texture, then the wave, then the level.
-<b>The vertical belongs to one layer</b>: a spectrogram measures hertz and a
-wave measures amplitude, so the texture keeps the axis (the Hz ruler is its) and
-the curves say <code>y: "box"</code>, which normalizes each into the body it is
-drawn on; two layers claiming the axis is <b>refused</b>, and the last button
-asks for it so you can read what comes back. <b>Alpha is per layer</b>: the two
-sliders re-state the stack live, so the curves fade over the texture while the
-picture under them stays where it is — not the widget's <code>opacity</code>,
-which would fade the rulers with it. <b>Solo and hide</b> read a stack while you
-build it: a hidden layer keeps its place in the order.
+The panel on the right is the stack itself, a row per layer: a <b>checkbox</b>
+(is it drawn), a <b>fader</b> (its own weight over what is under it) and
+<b>top</b> (move it to the front).
+
+<b>The order is yours, and it is live</b> — <code>top</code> re-states the list
+with that layer last, and the picture re-composites between two frames.
+<b>The vertical belongs to one layer, and here it is the top one</b>: a
+spectrogram measures hertz and a wave measures amplitude, so whichever layer is
+on top takes <code>y: "axis"</code> and the rest take <code>y: "box"</code> —
+raise the wave over the texture and the left ruler goes from hertz to
+amplitude. That the <i>top</i> layer rules is this example's policy, not the
+host's: the host asks only that exactly one layer claim the axis, and refuses a
+stack where two claim it for different quantities. <b>Alpha is per layer</b>,
+and <b>a hidden layer keeps its place</b> — uncheck one and check it again.
+
+The two loudness curves never take the ruler: a loudness is read in LU against
+its own target, so that layer draws its own scale on the right of the body
+(see <code>views/loudness.html</code>). <code>signal</code> is the band-limited
+reconstruction and appears once you have zoomed into the samples.
 
 The take is four seconds of a <b>sweep from 300 Hz to 3 kHz</b> whose level
 steps down halfway, built at 16 kHz: the sweep is a diagonal in the texture and
-the step is a cliff in the wave, so the two layers say visibly different things
-about the same samples. It makes no sound.
+the step is a cliff in the wave. It makes no sound.
 
 Needs <code>./build.sh</code> in <code>clients/web</code> first
 (<code>dist/</code> is git-ignored); serve it over HTTP
@@ -63,7 +71,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
     <!--
       The web sibling of clients/python/examples/views/layers.py, call for call:
-      the same take, the same stack, the same four controls re-stating it.
+      the same take, the same catalogue of layers, the same panel re-stating the
+      stack, and the same last ask that the host refuses.
 
       Serve clients/web (the package root) and open
       /examples/views/layers.html. Build it first: ./build.sh
@@ -79,6 +88,22 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
       // the wire small and puts the interesting part of the spectrum in the
       // lower half of the texture.
       const RATE = 16000.0;
+
+      // Every layer a signal view can draw, with the weight and the checkbox
+      // each one starts at. The order here is the stack's, back to front.
+      const CATALOGUE = [
+        ["spectrogram", "the STFT, as a texture", 1.0, true],
+        ["peak", "the min/max envelope", 0.7, true],
+        ["rms", "the level inside it", 0.45, true],
+        ["signal", "the curve between the samples", 1.0, false],
+        ["momentary", "loudness, 400 ms", 1.0, false],
+        ["short", "loudness, 3 s", 1.0, false],
+      ];
+
+      // The layers read in LU against their own target: they draw their own
+      // scale on the right of the body and never take the view's vertical, so
+      // the search for the top layer skips them.
+      const LOUDNESS = ["momentary", "short"];
 
       /**
        * A sine sweeping `f0` to `f1`, at full level for the first half of its
@@ -96,13 +121,6 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         return out;
       }
 
-      /** The same stack at two weights -- what a slider re-states. */
-      const withAlpha = (peak, rms) => [
-        "spectrogram",
-        { draw: "peak", y: "box", alpha: peak },
-        { draw: "rms", y: "box", alpha: rms },
-      ];
-
       async function run() {
         $("start").disabled = true;
 
@@ -112,64 +130,108 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
         // The take: a sweep whose level steps down halfway. The sweep is a
         // diagonal in the texture; the step is a cliff in the wave. One source,
-        // two layers saying different things about it.
-        const take = await Buffer.fromSamples(sweep(4.0, 300.0, 3000.0), 1, { server });
+        // several layers saying different things about it.
+        const take = await Buffer.fromSamples(sweep(4.0, 300.0, 3000.0), 1, 0.0, { server });
         await server.sync();
 
-        // Back to front: the texture, the envelope over it, the level inside
-        // that. The curves take `y: "box"` because the axis is the texture's --
-        // it is the layer whose quantity the Hz ruler reports.
-        const win = await gui.view(
-          { title: "The layer stack", w: 900, h: 560, layout: "col" },
-          gui.spectrogram({
-            buffer: take.bufnum, sampleRate: RATE, name: "stack",
-            layers: withAlpha(0.7, 0.45), windowSize: 512, freqScale: "linear",
-            label: "one body: the texture, the wave over it, the level inside that",
-          }),
+        // `order` is the list back to front; `state` is what each layer says
+        // about itself. The ruler goes to the layer on top, which is this
+        // example's rule for picking the one that claims the axis.
+        const order = CATALOGUE.map(([name]) => name);
+        const state = Object.fromEntries(
+          CATALOGUE.map(([name, , alpha, on]) => [name, { on, alpha }]),
+        );
+
+        /**
+         * The drawn layer whose quantity the ruler reports: the top one,
+         * skipping the loudness curves, which carry a scale of their own.
+         */
+        const rulerLayer = () =>
+          [...order].reverse().find((n) => state[n].on && !LOUDNESS.includes(n)) ?? "";
+
+        /**
+         * The stack as the panel currently describes it: one entry per layer,
+         * in drawing order, each saying whether it is drawn, at what weight and
+         * on which vertical.
+         */
+        const stack = () => {
+          const top = rulerLayer();
+          return order.map((name) => ({
+            draw: name, alpha: state[name].alpha, visible: state[name].on,
+            y: name === top ? "axis" : "box",
+          }));
+        };
+
+        /**
+         * One layer's controls: is it drawn, at what weight, and move it to the
+         * front.
+         */
+        const row = (name, what, alpha, on) =>
           gui.panel(
-            { layout: "row", h: 70 },
-            gui.slider({ name: "peak_alpha", label: "wave", min: 0.0, max: 1.0, value: 0.7 }),
-            gui.slider({ name: "rms_alpha", label: "level", min: 0.0, max: 1.0, value: 0.45 }),
-            gui.button({ name: "solo", label: "solo the wave" }),
-            gui.button({ name: "hide", label: "hide the level" }),
+            { layout: "col", h: 52 },
+            gui.label(`${name} - ${what}`, { h: 18 }),
+            gui.panel(
+              { layout: "row", h: 26 },
+              gui.toggle({ name: `on_${name}`, value: on, w: 36 }),
+              gui.slider({ name: `alpha_${name}`, min: 0.0, max: 1.0, value: alpha }),
+              gui.button({ name: `top_${name}`, label: "top", w: 54 }),
+            ),
+          );
+
+        const win = await gui.view(
+          { title: "The layer stack", w: 1080, h: 560, layout: "col" },
+          gui.panel(
+            { layout: "row" },
+            gui.spectrogram({
+              buffer: take.bufnum, sampleRate: RATE, name: "stack",
+              layers: stack(), windowSize: 512, freqScale: "linear",
+              label: "one body, one time axis, one selection",
+            }),
+            gui.panel(
+              { layout: "col", w: 320 },
+              gui.label("layers, back to front", { name: "order", h: 20 }),
+              ...CATALOGUE.map(([name, what, alpha, on]) => row(name, what, alpha, on)),
+            ),
           ),
         ).open($("stage"));
 
-        // A layer's alpha is a property of the stack, so what a slider sends is
-        // the stack again -- one prop, one message, the picture unchanged
-        // underneath.
-        const state = { peak: 0.7, rms: 0.45, solo: false, hide: false };
+        // Every control sends the whole list again -- one prop, one message.
+        // That is what makes the order, the weights and the claim one statement
+        // instead of three, and it is why raising a layer also moves the ruler.
         const restate = () => {
-          const layers = withAlpha(state.peak, state.rms);
-          if (state.hide) layers[2].visible = false;
-          if (state.solo) layers[1].solo = true;
-          win.widget("stack").set({ layers });
+          win.widget("stack").set({ layers: stack() });
+          win.widget("order").set({
+            text: `layers, back to front - ruler: ${rulerLayer() || "none"}`,
+          });
         };
 
-        win.widget("peak_alpha").onEvent((value) => { state.peak = value; restate(); });
-        win.widget("rms_alpha").onEvent((value) => { state.rms = value; restate(); });
-        // On the **click**, not on every event a button emits: `onEvent` fires
-        // for the press *and* the release, so a flag flipped there comes back
-        // to where it started.
-        win.widget("solo").onClick(() => {
-          state.solo = !state.solo;
-          win.widget("solo").set({ label: state.solo ? "the whole stack" : "solo the wave" });
-          restate();
-        });
-        win.widget("hide").onClick(() => {
-          state.hide = !state.hide;
-          win.widget("hide").set({ label: state.hide ? "show the level" : "hide the level" });
-          restate();
-        });
-
-        log("the sliders fade the two curves over the texture; solo leaves the "
-          + "wave alone; sweep a selection across the body and it crosses every "
-          + "layer at once");
+        for (const [name] of CATALOGUE) {
+          win.widget(`alpha_${name}`).onEvent((value) => {
+            state[name].alpha = value;
+            restate();
+          });
+          win.widget(`on_${name}`).onEvent((value) => {
+            state[name].on = Boolean(value);
+            restate();
+          });
+          // On the **click**, not on every event a button emits: `onEvent`
+          // fires for the press *and* the release, so a list rotated there
+          // would move twice.
+          win.widget(`top_${name}`).onClick(() => {
+            order.splice(order.indexOf(name), 1);
+            order.push(name);
+            restate();
+          });
+        }
+        restate();
+        log("raise the wave over the texture and the left ruler goes from hertz "
+          + "to amplitude; the faders fade one layer over the others; unchecking "
+          + "a layer and checking it again puts it back where it was");
 
         // What the host refuses: the wave measures amplitude and the texture
         // measures hertz, and asking for both on the vertical axis is refused
         // rather than resolved -- whichever lost would be drawn on a scale that
-        // is not its own.
+        // is not its own, which is what the panel above keeps you out of.
         win.widget("stack").set({ layers: ["spectrogram", "peak"] });
         const info = await win.widget("stack").query();
         log(`after asking for two layers on one axis, the stack is still: ${info.props.layers}`);

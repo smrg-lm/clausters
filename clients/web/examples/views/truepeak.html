@@ -104,9 +104,9 @@ samples, not 3. It makes no sound.</div>
         const over = quarterRate(1.0);
         const clean = quarterRate(0.5);
         const saw = sawtooth(440.0, 1.0);
-        const overTake = await Buffer.fromSamples(over, 1, { server });
-        const cleanTake = await Buffer.fromSamples(clean, 1, { server });
-        const sawTake = await Buffer.fromSamples(saw, 1, { server });
+        const overTake = await Buffer.fromSamples(over, 1, 0.0, { server });
+        const cleanTake = await Buffer.fromSamples(clean, 1, 0.0, { server });
+        const sawTake = await Buffer.fromSamples(saw, 1, 0.0, { server });
         await server.sync();
 
         // The numbers, before the picture: the sample peak and the true peak

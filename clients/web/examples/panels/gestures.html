@@ -104,7 +104,7 @@ right one is switched live by the menu under it.</div>
         // the whole difference between placing audio and looking at it.
         const session = await Session.embed();
         await session.gui();
-        const takeBuf = await Buffer.fromSamples(take.samples, { server: session.server });
+        const takeBuf = await Buffer.fromSamples(take.samples, 1, 0.0, { server: session.server });
         await session.server.sync();
 
         const beat = SR / TEMPO;

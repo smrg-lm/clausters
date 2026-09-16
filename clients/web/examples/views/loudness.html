@@ -112,7 +112,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         const samples = new Float32Array(quiet.length + loud.length);
         samples.set(quiet);
         samples.set(loud, quiet.length);
-        const take = await Buffer.fromSamples(samples, 2, { server });
+        const take = await Buffer.fromSamples(samples, 2, 0.0, { server });
         await server.sync();
 
         // A tone whose level breathes, for the live half: the gain is
