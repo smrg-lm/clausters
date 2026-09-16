@@ -267,7 +267,14 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     label_strip(d, p.label, rect);
     let m = d.m;
     let mut body = body_rect(rect, p.label.is_some(), m);
-    let channels = if p.overlay {
+    // **The rows are the lanes, not the channels**, and the two differ exactly
+    // when the traces are overlaid: one lane holding every channel. Keeping the
+    // distinction in one name is what this drawing got wrong -- a second
+    // `channels` further down shadowed this one, so an overlaid scope reserved
+    // one lane's worth of value axis and then placed its traces in row 0 *of
+    // the channel count*, which is the top half of the body with the rest left
+    // empty.
+    let rows = if p.overlay {
         1
     } else {
         p.window.channels.max(1)
@@ -275,7 +282,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     // Height first: the x strip takes it, and it is what decides how finely the
     // value axis steps and therefore how wide the labels the y strip holds are.
     let takes_x = p.ruler && body.h > m.ruler_h * 2.0;
-    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / channels as f32;
+    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / rows as f32;
     let want_w = ruler::value_strip_w(p.min as f64, p.max as f64, row_h, m);
     let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
@@ -307,7 +314,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
     for ch in 0..channels {
-        let row = channel_rect(body, channels, if p.overlay { 0 } else { ch });
+        let row = channel_rect(body, rows, if p.overlay { 0 } else { ch });
         if ch > 0 && !p.overlay {
             d.mesh.rect(
                 Rect::new(body.x, row.y, body.w, m.divider_w),
@@ -436,6 +443,73 @@ fn fmt(v: f32) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// **Overlaid traces share the whole lane, not its top half.** The rows a
+    /// live view places into are the *lanes*, and with `overlay` there is one
+    /// of them -- a second count of the *channels* shadowed that here, so an
+    /// overlaid scope drew both traces into row 0 of two, leaving the bottom
+    /// half of the body empty with the value ruler squeezed into the top.
+    /// Found by eye on `views/loudness`, the first example to overlay a scope.
+    #[test]
+    fn an_overlaid_live_trace_fills_its_lane() {
+        use super::*;
+        use crate::host::live::TapWindow;
+        use crate::host::metrics::Metrics;
+        use crate::host::paint::Mesh;
+        use crate::host::theme::Theme;
+
+        let (m, theme) = (Metrics::default(), Theme::default());
+        let rect = Rect::new(0.0, 0.0, 200.0, 120.0);
+        let frames = 128;
+        // Two channels of a full-scale ramp: what is drawn reaches both ends of
+        // the value axis, so the ink's extent is the lane's.
+        let samples: Vec<f32> = (0..frames)
+            .flat_map(|i| {
+                let v = (i as f32 / (frames - 1) as f32) * 2.0 - 1.0;
+                [v, v]
+            })
+            .collect();
+        let window = TapWindow {
+            samples,
+            channels: 2,
+            locked: false,
+        };
+        let draw_with = |overlay: bool| {
+            let mut mesh = Mesh::default();
+            let mut d = Draw::new(&mut mesh, &m, &theme);
+            draw_wave(
+                &mut d,
+                rect,
+                &WaveParams {
+                    window: &window,
+                    min: -1.0,
+                    max: 1.0,
+                    window_ms: 10.0,
+                    trigger: 0.0,
+                    overlay,
+                    ruler: false,
+                    ruler_y: false,
+                    label: None,
+                    measures: trace::Measures::of(trace::Measure::Peak),
+                    loudness: None,
+                },
+            );
+            mesh.extent().expect("something was drawn")
+        };
+        let overlaid = draw_with(true);
+        let stacked = draw_with(false);
+        // Both pictures reach the same bottom: the overlaid one is one lane as
+        // tall as the two stacked ones together.
+        assert!(
+            (overlaid.y + overlaid.h - (stacked.y + stacked.h)).abs() < 2.0,
+            "overlaid {overlaid:?} against stacked {stacked:?}"
+        );
+        // And it is not the top half: the ink is taller than one of two lanes.
+        assert!(
+            overlaid.h > rect.h * 0.6,
+            "an overlaid lane is the body, not a row of it: {overlaid:?}"
+        );
+    }
+
     use super::*;
     use crate::host::metrics::Metrics;
     use crate::host::paint::Mesh;
