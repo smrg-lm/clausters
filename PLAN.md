@@ -3037,3 +3037,31 @@ finished work, where a pending item reads as done.
   `/node_free`/`/node_end`. The first version of it timed the first event and
   failed about one run in six on a loaded machine — a flaky test written while
   fixing a defect that presented as a flaky test.
+
+- ⬜ **A wall-clock timetag is placed a block late or early, so a routine's
+  spacing jitters by one device block** *(found 2026-09-16 while checking a
+  report that a routine's first note sounded shorter -- it did not: the output
+  was recorded with `RecordBuf` and every note, the first included, is 329.6 ms
+  long)*. The same recording showed the onsets. A `TempoClock(2)` routine
+  yielding one beat, on the default monotonic timebase, lands its notes
+  **490 to 513 ms** apart; the same routine after `lock_to(server)` lands them
+  **500.0 ms** apart, every one. The spread is one device block (1024 frames,
+  21.3 ms at 48 kHz).
+
+  The cause is in `OscServer::schedule_bundle` (`src/osc/server/dispatch.rs`):
+  the target sample is `current_samples() + delta * sample_rate`, where `delta`
+  is the timetag minus the wall clock **now** and `current_samples()` is the
+  counter **as of the last completed block**. The two terms are read at
+  different instants, and the gap between them -- how far into the current
+  block the packet arrived -- is anywhere from zero to a block, differently for
+  every bundle. A note-on and its release usually arrive together and share the
+  error, which is why lengths stay exact while onsets do not.
+
+  The Python book says the opposite: `timing-models.md` promises wall-clock OSC
+  time "jitter-free *relative* timing". That holds for the timetags the client
+  sends, and this server throws it away on arrival. The fix belongs in the
+  server, not in the promise: place a timetag against an estimate of the wall
+  instant the counter was read at (the `/clock_query` anchor already models
+  exactly that pair), rather than against the moment the packet was handled.
+  Acceptance is an E2E that schedules bundles at a fixed spacing over UDP and
+  reads the onsets back sample-exact.
