@@ -221,7 +221,7 @@ The **edit-back payloads**:
 | `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32`. `position` is on the **timeline's** axis (where the selection starts), so an owner writing onto a clip converts it into the clip's own time |
 | `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel, a **stroke where the samples are not drawn one by one**. Said out loud, because a key or a pencil that silently does nothing teaches that it sometimes does not work |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
-| `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
+| `"view_y"` | `start len` | the vertical display window zoomed or panned. `0, 1` is the whole axis; an **amplitude** axis may be opened **past** it — down to a start under 0 and a length over 1, up to four times the domain — because a floating-point signal can sit above full scale and a view clamped to ±1 draws the part that matters flat against its own edge. A **frequency** axis cannot: there is nothing above Nyquist to open onto |
 | `"view_x"` | `start len` (0..1) | an element's **own** horizontal window zoomed or panned — a navigable `spectrum`'s frequency axis, which is in no navigation group (a group's shared window reports `"view"`) |
 
 **A gesture that moves nothing says nothing.** An axis pressed against a bound — zoomed all the way out, panned to the end, or down at the resolution of what it measures — goes on receiving wheel steps and drag motion, and reports none of them: `"view"`, `"view_x"` and `"view_y"` are emitted when the window actually moved, never once per notch. A script counting events is counting movements.
@@ -626,9 +626,10 @@ the dots are the data.
 element rather than a widget of its own: `peak` (the min/max envelope above),
 `rms` (the symmetric body about zero at the level the signal held, drawn in the
 `trace_body` colour role), `signal` (the band-limited reconstruction between the
-samples, below), or **several at once**, named in one space-separated string.
-The default is **`"peak signal"`**. It is live on `/gui_set`, because a picture
-is read by turning its measures on and off.
+samples, below), `momentary` and `short` (the **loudness** curves, below), or
+**several at once**, named in one space-separated string. The default is
+**`"peak signal"`**. It is live on `/gui_set`, because a picture is read by
+turning its measures on and off.
 
 - **`signal` is what the waveform did between the samples, and it is a layer
   over them, never a replacement.** Where the samples are separate points it
@@ -672,6 +673,44 @@ is read by turning its measures on and off.
   quiet passage rather than as a distant one. Past the polyline threshold there
   is no envelope left to be a reading of, and the samples themselves are what
   remain.
+- **`momentary` and `short` are the loudness, and they are the one measure
+  drawn on an axis of its own.** Peak, level and reconstruction are amplitudes
+  and share the picture's vertical; a loudness reading is in LUFS, so the layer
+  brings its own scale, its own ruler and its own reference line — which is what
+  makes it the concrete case the layer stack's rules are then generalized from.
+  What is drawn is what a meter would have read at each point: the 400 ms window
+  up to it (`momentary`) or the 3 s one (`short`), as ITU-R BS.1770 and EBU
+  R 128 define them, in the `trace_loudness` colour role. Where a column covers
+  many readings it is drawn as the band between the quietest and the loudest,
+  for the reason the envelope is: sampling one reading out of the hundred a
+  pixel spans would make the curve's own shape follow the zoom.
+
+  The scale is **EBU Tech 3341's**, named by its top: `loudness_scale: 9` (the
+  default, the document's own) runs from 18 LU under the target to 9 over it,
+  `18` from 36 under to 18 over. `loudness_target` is the line the curve is read
+  against and the zero of the scale, **-23 LUFS** by default, which is EBU
+  R 128's programme loudness. `loudness_ruler` (on by default) draws the layer's
+  own ruler on the **right** of the body, labelled in LU relative to the target
+  — the left strip being the picture's own axis, and two axes on one strip being
+  two numbers where a reader expects one.
+
+  `loudness_stats` (on by default) writes **the numbers** over the picture: the
+  gated integrated loudness, the loudness range (EBU Tech 3342), the true peak
+  in dBTP and the peak-to-loudness ratio between the last two. They are measured
+  over the **selection** where there is one — marked `SEL`, since a figure that
+  does not say what it measured is a figure a reader will misread — and over the
+  whole take where there is not, which is what an editor's statistics window
+  does. An edit under the layer re-measures only the span it touched (widened by
+  the filters' memory), so the curve and the numbers follow a stroke without a
+  pass over the take.
+
+  Over a **bus** the same measure is a live meter's curve: the host feeds a
+  streaming loudness meter from the bus's retained history — the samples, not
+  the oscilloscope's overlapping display windows — and draws the readings it has
+  taken, at no extra API. It needs the source's **`sample_rate`** to mean
+  anything (a 400 ms window is a count of samples), and a view that states none
+  draws no curve rather than a curve of the wrong length.
+
 - **A source that cannot measure draws no body.** A peak cache written before
   the format carried the mean square (CLPK v1/v2) has an envelope and no
   energy, and zeros would be a measurement — silence — over samples that is

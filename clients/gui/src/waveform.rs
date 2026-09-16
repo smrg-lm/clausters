@@ -29,6 +29,9 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Mesh;
 use crate::host::theme::Theme;
+use clausters_core::peaks::Source as _;
+use clausters_core::{loudness, resample};
+
 use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::TimelineView;
 use crate::viewport::{Axis, Unit, View};
@@ -178,6 +181,44 @@ impl Samples {
 /// measured. One cache line's worth of columns: big enough that the per-call
 /// cost disappears, small enough to sit on the stack in a draw path.
 const STAT_WINDOW: usize = 256;
+
+/// **A channel is a source the core can read**, wherever its samples live.
+///
+/// The pyramid already summarizes through [`peaks::Source`] rather than through
+/// a slice, which is what lets a mapped take be summarized where it lies. The
+/// loudness profile reads the same way and for the same reason: filtering a
+/// ten-minute take must not mean holding one, and the three arms differ only in
+/// where the samples are.
+impl peaks::Source for Samples {
+    fn len(&self) -> usize {
+        Samples::len(self)
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        match self {
+            Self::Owned(s) => (**s).read_into(start, out),
+            Self::Shared(s) => s.read_into(start, out),
+            // A window holds a run and answers for it; outside it there are no
+            // samples to give, and silence is the honest answer a profile then
+            // measures -- the same posture `covers` states.
+            Self::Window {
+                start: from, data, ..
+            } => {
+                let mut offset = 0;
+                for (i, slot) in out.iter_mut().enumerate() {
+                    let at = start + i;
+                    *slot = data
+                        .get(at.wrapping_sub(*from))
+                        .copied()
+                        .filter(|_| at >= *from)
+                        .unwrap_or(0.0);
+                    offset += 1;
+                }
+                let _ = offset;
+            }
+        }
+    }
+}
 
 impl From<Arc<[f32]>> for Samples {
     fn from(samples: Arc<[f32]>) -> Self {
@@ -425,6 +466,76 @@ impl WaveformData {
     /// slot's own and is never asked.
     pub fn pyramid(&self) -> &Pyramid {
         &self.channels[0].pyramid
+    }
+
+    /// **The loudness of this take over its own time axis**, measured once at
+    /// `rate` — the curve a loudness layer draws and the numbers a span answers
+    /// with ([`loudness::Profile`]).
+    ///
+    /// `None` where there is nothing to measure: no channels, no samples (a
+    /// cache-only view has an overview and no audio to filter), or a rate the
+    /// profile cannot block up. It is **not** drawn from the pyramid, and could
+    /// not be: loudness is a K-weighted measurement of the waveform, and a
+    /// summary of extremes is not the waveform.
+    pub fn loudness_profile(&self, rate: f64) -> Option<loudness::Profile> {
+        let sources = self.sources()?;
+        let refs: Vec<&dyn peaks::Source> =
+            sources.iter().map(|s| *s as &dyn peaks::Source).collect();
+        loudness::Profile::analyze(&refs, rate)
+    }
+
+    /// **Re-measures the span an edit touched** in an existing profile, which
+    /// is what keeps a drawn curve following a stroke without re-reading the
+    /// take. Returns whether it landed.
+    pub fn update_loudness(&self, profile: &mut loudness::Profile, start: u64, len: u64) -> bool {
+        let Some(sources) = self.sources() else {
+            return false;
+        };
+        let refs: Vec<&dyn peaks::Source> =
+            sources.iter().map(|s| *s as &dyn peaks::Source).collect();
+        profile.update(&refs, start, len)
+    }
+
+    /// **The true peak of the span `[start, start + len)`**, in linear
+    /// amplitude, over every channel — the loudest reconstructed value in it,
+    /// which is the other half of what a delivery specification asks for.
+    ///
+    /// Read through the same sources the profile is measured from, so a mapped
+    /// take is not copied to be measured. `None` where there are no samples.
+    pub fn true_peak(&self, start: u64, len: u64) -> Option<f32> {
+        let sources = self.sources()?;
+        let mut peak = 0.0f32;
+        let mut window = vec![0.0f32; 4096];
+        for source in sources {
+            let total = peaks::Source::len(source);
+            let (a, b) = (
+                (start as usize).min(total),
+                ((start + len) as usize).min(total),
+            );
+            if b <= a {
+                continue;
+            }
+            let mut meter = resample::TruePeakMeter::new();
+            let mut at = a;
+            while at < b {
+                let n = window.len().min(b - at);
+                source.read_into(at, &mut window[..n]);
+                meter.feed_block(&window[..n]);
+                at += n;
+            }
+            meter.flush();
+            peak = peak.max(meter.peak());
+        }
+        Some(peak)
+    }
+
+    /// Every channel's samples as a source, or `None` where this view holds
+    /// none to read (a cache-only view, or nothing at all).
+    fn sources(&self) -> Option<Vec<&Samples>> {
+        if self.channels.is_empty() || self.channels.iter().any(|c| c.samples.is_empty()) {
+            return None;
+        }
+        Some(self.channels.iter().map(|c| &c.samples).collect())
     }
 
     /// **Writes a run of samples into one channel and refreshes only the peaks

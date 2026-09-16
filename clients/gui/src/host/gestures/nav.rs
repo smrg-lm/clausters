@@ -467,7 +467,12 @@ pub(super) fn set_y_view(
     start: f64,
     len: f64,
 ) {
-    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    let headroom = host
+        .widget_kind(def_id, id)
+        .and_then(WidgetKind::editor)
+        .map_or(1.0, |e| e.y_headroom);
+    let mut axis =
+        crate::viewport::Axis::normalized(crate::viewport::Unit::Norm).with_headroom(headroom);
     axis.set_span(start, len);
     let (start, len) = axis.span();
     let mut moved = true;
@@ -711,7 +716,12 @@ pub(super) fn zoom_timeline_y(
     else {
         return;
     };
-    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    let headroom = host
+        .widget_kind(def_id, id)
+        .and_then(WidgetKind::editor)
+        .map_or(1.0, |e| e.y_headroom);
+    let mut axis =
+        crate::viewport::Axis::normalized(crate::viewport::Unit::Norm).with_headroom(headroom);
     axis.set_span(y0, ylen);
     axis.zoom(factor, anchor);
     let (start, len) = axis.span();

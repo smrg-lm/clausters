@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: loudness</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 52rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 52rem; white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(76vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>views/loudness.py</code>: <b>loudness, drawn over the take it measures —
+and over a bus, live</b>.
+
+A peak says how close a signal came to full scale; it says nothing about how
+loud it <b>sounds</b>. Loudness does, and it is the number a delivery
+specification asks for: EBU R 128 wants a programme at -23 LUFS.
+<code>measure: "peak momentary"</code> puts the loudness curve over the samples
+— what a meter would have read at each point of the take, over the 400 ms
+window up to it. The curve is read against the <b>target line</b> (-23 LUFS) and
+the <b>LU ruler</b> on the right of the body, because a loudness is not an
+amplitude and has no business on the amplitude axis the samples are drawn
+against. The <b>numbers</b> over the picture are the whole of R 128: the
+integrated loudness, the loudness range, the true peak and the ratio between the
+last two; sweep a selection over either half and they re-measure it, marked
+<code>SEL</code>. The same measure over a <b>bus</b> is the live meter's own
+curve, at no extra API.
+
+The take is two halves, three seconds each: a stereo 1 kHz tone at <b>-30
+dBFS</b> then the same tone at <b>-17 dBFS</b>, built at 8 kHz (a take carries
+its own rate, and the example sends it over the wire every run). A stereo tone's peak level in
+dBFS is its loudness in LUFS — that is the calibration BS.1770's -0.691 exists
+for — so the curve sits on -30 and then on -17, and the integrated figure falls
+between them, nearer the loud half because the quiet one is under the relative
+gate. The live half makes sound.
+
+Needs <code>./build.sh</code> in <code>clients/web</code> first
+(<code>dist/</code> is git-ignored); serve it over HTTP
+(<code>python3 -m http.server</code>) and open
+<code>/examples/views/loudness.html</code>.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/loudness.py, call for
+      call: the same take, the same def, the same two lanes measuring the same
+      two things.
+
+      Serve clients/web (the package root) and open
+      /examples/views/loudness.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Session, gui } from "../../dist/index.js";
+      import { Synth, SynthDef, control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The take's own rate. It is **not** the server's: a take carries its
+      // rate with it, and this one is built at 8 kHz because the example sends
+      // it over the wire every run and a 1 kHz tone needs nothing faster. The
+      // measurement is the same one -- BS.1770's filters are redesigned for
+      // whatever rate they are handed, and its windows are seconds rather than
+      // samples.
+      const RATE = 8000.0;
+
+      /** A stereo 1 kHz sine at `db` dBFS per channel, interleaved. */
+      function tone(seconds, db) {
+        const amp = 10 ** (db / 20);
+        const frames = Math.round(seconds * RATE);
+        const out_ = new Float32Array(frames * 2);
+        for (let i = 0; i < frames; i++) {
+          const v = amp * Math.sin((2 * Math.PI * 1000.0 * i) / RATE);
+          out_[i * 2] = v;
+          out_[i * 2 + 1] = v;
+        }
+        return out_;
+      }
+
+      async function run() {
+        $("start").disabled = true;
+
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        // The take: two halves, thirteen decibels apart -- the loud one six
+        // LU over the target, so the curve sits inside its scale rather than on
+        // the ceiling. Both are longer than the short-term window, so either
+        // can be selected and measured alone.
+        const quiet = tone(3.0, -30.0);
+        const loud = tone(3.0, -17.0);
+        const samples = new Float32Array(quiet.length + loud.length);
+        samples.set(quiet);
+        samples.set(loud, quiet.length);
+        const take = await Buffer.fromSamples(samples, 2, { server });
+        await server.sync();
+
+        // A tone whose level breathes, for the live half: the gain is
+        // modulated by a slow sine, so the live curve rises and falls without
+        // anything scheduling it.
+        const voice = sine(control("freq", 440.0))
+          .mul(sine(0.12).mul(0.5).add(0.5).mul(0.22).add(0.02));
+        await new SynthDef("breathe", out(0.0, [voice, voice])).send(server);
+        await server.sync();
+
+        // Both lanes measure the same two things -- the samples (`peak`) and
+        // the loudness over them (`momentary`). The stored lane draws the curve
+        // over the whole take; the live one draws the readings as they arrive.
+        const win = await gui.view(
+          { title: "Loudness: the curve over the samples", w: 860, h: 620,
+            layout: "col" },
+          gui.waveform({ buffer: take.bufnum, sampleRate: RATE,
+                         measure: "peak momentary",
+                         label: "the take: -30 dBFS, then -17 dBFS",
+                         rulerY: true, overlay: true, loudnessStats: true }),
+          gui.scope(0, { channels: 2, measure: "peak momentary", windowMs: 80.0,
+                         overlay: true,
+                         label: "the bus, live: the meter's own curve" }),
+        ).open($("stage"));
+
+        const playing = new Synth("breathe", { freq: 440.0 }, { server });
+        log("the curve over the take sits on -30 and then on -17 LUFS, against "
+          + "the -23 target line; the numbers are the take's until you sweep a "
+          + "selection over one half. The lower lane is the same measure on the "
+          + "bus");
+        win.onClosed(() => {
+          playing.free();
+          log("closed");
+        });
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -297,6 +297,70 @@ pub fn lufs_to_energy(lufs: f64) -> f64 {
     10f64.powf((lufs + 0.691) / 10.0)
 }
 
+/// **The K-weighting and the channel weights as one stage**: frames in, the
+/// weighted energy of each frame out.
+///
+/// It is a type rather than a pair of fields because both faces of this module
+/// run it — [`LoudnessMeter`] over a live bus and [`Profile`] over a whole take
+/// — and a second copy of "filter, square, weight, sum" is how a curve drawn
+/// from a file and a meter watching the same audio would come to disagree.
+#[derive(Clone)]
+pub struct Weighting {
+    filter: KWeighting,
+    weights: Box<[f64]>,
+    /// Per channel: the shelf's two delays, then the high-pass's.
+    state: Box<[[f64; 4]]>,
+}
+
+impl Weighting {
+    /// One weight per channel (`0.0` leaves a channel out), at `rate` Hz.
+    pub fn new(weights: &[f64], rate: f64) -> Self {
+        Self {
+            filter: KWeighting::at(rate),
+            weights: weights.into(),
+            state: vec![[0.0; 4]; weights.len()].into_boxed_slice(),
+        }
+    }
+
+    /// How many channels it weights.
+    pub fn channels(&self) -> usize {
+        self.weights.len()
+    }
+
+    /// The weights, in channel order.
+    pub fn weights(&self) -> &[f64] {
+        &self.weights
+    }
+
+    /// Forgets the filters' memory: a new pass, measured from silence.
+    pub fn reset(&mut self) {
+        self.state.fill([0.0; 4]);
+    }
+
+    /// One frame's **weighted energy**: every channel K-weighted, squared and
+    /// summed with its weight. A frame shorter than the channel count is read
+    /// as far as it goes.
+    #[inline]
+    pub fn frame(&mut self, frame: &[f32]) -> f64 {
+        let mut energy = 0.0f64;
+        for (c, &x) in frame.iter().enumerate().take(self.weights.len()) {
+            let st = &mut self.state[c];
+            let (mut shelf, mut high) = ([st[0], st[1]], [st[2], st[3]]);
+            let y = self
+                .filter
+                .high_pass
+                .step(&mut high, self.filter.shelf.step(&mut shelf, x as f64));
+            // A decaying filter reaches denormals in a silent tail, where
+            // arithmetic slows by orders of magnitude off an FTZ thread
+            // (a Python analysis); libebur128 zeroes them the same way.
+            *st = [shelf[0], shelf[1], high[0], high[1]]
+                .map(|v| if v.abs() < f64::MIN_POSITIVE { 0.0 } else { v });
+            energy += self.weights[c] * y * y;
+        }
+        energy
+    }
+}
+
 /// Blocks kept as a histogram of their loudness, each bin carrying how many
 /// blocks it holds and the exact sum of their energies.
 #[derive(Clone)]
@@ -407,10 +471,8 @@ impl Histogram {
 #[derive(Clone)]
 pub struct LoudnessMeter {
     rate: f64,
-    weights: Box<[f64]>,
-    filter: KWeighting,
-    /// Per channel: the shelf's two delays, then the high-pass's.
-    state: Box<[[f64; 4]]>,
+    /// The K-weighting and the channel weights — the stage [`Profile`] runs too.
+    weighting: Weighting,
     /// The channel-weighted, K-weighted energy of each of the last
     /// `short_len` frames, oldest at `head`.
     ring: Box<[f32]>,
@@ -456,9 +518,7 @@ impl LoudnessMeter {
         assert!(hop > 0, "a loudness meter needs a rate of at least 10 Hz");
         Self {
             rate,
-            weights: weights.into(),
-            filter: KWeighting::at(rate),
-            state: vec![[0.0; 4]; weights.len()].into_boxed_slice(),
+            weighting: Weighting::new(weights, rate),
             ring: vec![0.0; short_len].into_boxed_slice(),
             head: 0,
             momentary_len,
@@ -478,7 +538,7 @@ impl LoudnessMeter {
 
     /// The channel count.
     pub fn channels(&self) -> usize {
-        self.weights.len()
+        self.weighting.channels()
     }
 
     /// The rate, in Hz.
@@ -495,7 +555,7 @@ impl LoudnessMeter {
     /// every block the integrated loudness and the range are taken over. Tech
     /// 3341 resets all of them together.
     pub fn reset(&mut self) {
-        self.state.fill([0.0; 4]);
+        self.weighting.reset();
         self.ring.fill(0.0);
         self.head = 0;
         self.frames = 0;
@@ -511,23 +571,9 @@ impl LoudnessMeter {
 
     /// Feeds an **interleaved** block. A trailing partial frame is ignored.
     pub fn feed(&mut self, samples: &[f32]) {
-        let channels = self.weights.len();
+        let channels = self.weighting.channels();
         for frame in samples.chunks_exact(channels) {
-            let mut energy = 0.0f64;
-            for (c, &x) in frame.iter().enumerate() {
-                let st = &mut self.state[c];
-                let (mut shelf, mut high) = ([st[0], st[1]], [st[2], st[3]]);
-                let y = self
-                    .filter
-                    .high_pass
-                    .step(&mut high, self.filter.shelf.step(&mut shelf, x as f64));
-                // A decaying filter reaches denormals in a silent tail, where
-                // arithmetic slows by orders of magnitude off an FTZ thread
-                // (a Python analysis); libebur128 zeroes them the same way.
-                *st = [shelf[0], shelf[1], high[0], high[1]]
-                    .map(|v| if v.abs() < f64::MIN_POSITIVE { 0.0 } else { v });
-                energy += self.weights[c] * y * y;
-            }
+            let energy = self.weighting.frame(frame);
             self.push(energy as f32);
         }
     }
@@ -658,6 +704,392 @@ pub fn loudness_with_weights(samples: &[f32], weights: &[f64], rate: f64) -> Opt
     let mut meter = LoudnessMeter::with_weights(weights, rate);
     meter.feed(samples);
     Some(meter.summary())
+}
+
+/// The step a [`Profile`] measures on, in seconds: every block of this length
+/// carries the weighted energy of its frames, and every reading a profile
+/// answers is a whole number of them.
+///
+/// 10 ms is a fortieth of a momentary window and Tech 3342's floor for the
+/// range (a short-term value every 100 ms) with room to spare, so it is finer
+/// than any reading taken off it. It is also what a drawing needs and no more:
+/// a curve of a 400 ms sliding window cannot move appreciably inside 10 ms, and
+/// a take an hour long costs 360 000 blocks — under six megabytes with its
+/// running sums, against the gigabyte its samples take.
+pub const PROFILE_HOP_SECONDS: f64 = 0.01;
+
+/// **The loudness of a take over its own time axis**, measured once and read
+/// many times: the curve a view draws, and the numbers a span answers with.
+///
+/// A meter is fed forward and reports where it has got to; a *picture* of a
+/// take asks the opposite question — what was the loudness **there** — at a
+/// thousand places per frame, and again at every zoom. So the pass over the
+/// samples happens once, into [`PROFILE_HOP_SECONDS`] blocks of weighted
+/// energy with their running sums, and every reading afterwards is two
+/// subtractions: a momentary or short-term value anywhere
+/// ([`Profile::window_at`]), the extremes over a pixel column
+/// ([`Profile::column`]), and the gated aggregates over any span
+/// ([`Profile::measure`]).
+///
+/// It is the same arithmetic [`LoudnessMeter`] runs — the one [`Weighting`]
+/// stage, the same windows, the same gates — so a curve drawn from a file and
+/// a meter watching the same audio read the same numbers, and the tests here
+/// assert exactly that rather than trusting it.
+///
+/// **An edit re-measures its own span and no more** ([`Profile::update`]): a
+/// block depends on its samples and on the filters' memory of the few
+/// milliseconds before them, so the work after a stroke is the stroke's
+/// length, not the take's. The readings over it follow, because a reading is a
+/// sum of blocks.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Profile {
+    rate: f64,
+    /// Frames per block: `PROFILE_HOP_SECONDS` at `rate`, at least one.
+    hop: usize,
+    frames: u64,
+    weights: Box<[f64]>,
+    /// The weighted energy **summed** over each block's frames. The last block
+    /// may be short, which is why the sums are energies and not means.
+    blocks: Vec<f64>,
+    /// `prefix[i]` is the energy of the first `i` blocks, so any run of them
+    /// costs one subtraction.
+    prefix: Vec<f64>,
+}
+
+/// How long the filters are re-run before a re-measured span so that their
+/// memory of the samples before it is the same memory they had, in seconds.
+///
+/// The K-weighting is two second-order sections at 1.68 kHz and 38 Hz, and the
+/// slower of them settles in a handful of milliseconds; 100 ms is two orders of
+/// magnitude past that, which is why an update and a fresh analysis agree to
+/// more decimals than a loudness reading has.
+const WARMUP_SECONDS: f64 = 0.1;
+
+impl Profile {
+    /// **Measures a take**: one source per channel, read where it lies, with
+    /// the weights [`channel_weights`] reads off the count. `None` for no
+    /// channels, a weight list that is not one per channel, or a rate too low
+    /// to hold a block (under 50 Hz).
+    pub fn analyze(sources: &[&dyn crate::peaks::Source], rate: f64) -> Option<Profile> {
+        let weights: Vec<f64> = channel_weights(sources.len()).collect();
+        Profile::analyze_with_weights(sources, &weights, rate)
+    }
+
+    /// The same with one weight per channel, stated.
+    pub fn analyze_with_weights(
+        sources: &[&dyn crate::peaks::Source],
+        weights: &[f64],
+        rate: f64,
+    ) -> Option<Profile> {
+        let hop = (PROFILE_HOP_SECONDS * rate).round() as usize;
+        if sources.is_empty() || weights.len() != sources.len() || hop == 0 {
+            return None;
+        }
+        let frames = sources.iter().map(|s| s.len()).min().unwrap_or(0) as u64;
+        let mut profile = Profile {
+            rate,
+            hop,
+            frames,
+            weights: weights.into(),
+            blocks: vec![0.0; frames.div_ceil(hop as u64) as usize],
+            prefix: Vec::new(),
+        };
+        profile.measure_blocks(sources, 0, profile.blocks.len());
+        profile.rebuild_prefix(0);
+        Some(profile)
+    }
+
+    /// The same over an **interleaved** buffer, the shape every other function
+    /// here takes.
+    pub fn from_interleaved(samples: &[f32], channels: usize, rate: f64) -> Option<Profile> {
+        if channels == 0 {
+            return None;
+        }
+        let sources: Vec<crate::peaks::Interleaved<'_>> = (0..channels)
+            .map(|c| crate::peaks::Interleaved::new(samples, channels, c))
+            .collect();
+        let refs: Vec<&dyn crate::peaks::Source> = sources
+            .iter()
+            .map(|s| s as &dyn crate::peaks::Source)
+            .collect();
+        Profile::analyze(&refs, rate)
+    }
+
+    /// The rate the profile was measured at, in Hz.
+    pub fn rate(&self) -> f64 {
+        self.rate
+    }
+
+    /// How many frames it covers.
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    /// The channel count.
+    pub fn channels(&self) -> usize {
+        self.weights.len()
+    }
+
+    /// Whether `sources` are the samples this profile measures: as many
+    /// channels, and as long. A picture built over other samples would be a
+    /// curve of the wrong audio.
+    pub fn describes(&self, channels: usize, frames: u64) -> bool {
+        self.weights.len() == channels && self.frames == frames
+    }
+
+    /// **Re-measures the span an edit touched**, and the filters' settling
+    /// after it: the blocks from `start` to [`WARMUP_SECONDS`] past the end of
+    /// the edit are read again, with the filters warmed over the same span
+    /// before them, and the running sums are rebuilt from there. Returns whether it landed (the run
+    /// has to be inside the samples this profile describes).
+    ///
+    /// Every reading over the re-measured blocks follows from the blocks, which
+    /// is the whole of the rule: a measure's affected span is the edit's span
+    /// widened by the measure's memory, and here the widening costs nothing
+    /// because the readings are sums rather than passes.
+    pub fn update(&mut self, sources: &[&dyn crate::peaks::Source], start: u64, len: u64) -> bool {
+        if sources.len() != self.weights.len() || len == 0 {
+            return false;
+        }
+        let end = start.saturating_add(len);
+        if end > self.frames {
+            return false;
+        }
+        // **The settling after the edit is part of the edit.** The filters
+        // carry a memory of the samples that changed, so the blocks just past
+        // the run read differently even though their own samples did not --
+        // which is the same widening the warm-up applies on the way in, and it
+        // is why a re-measured profile is the profile and not a near one.
+        let settle = (WARMUP_SECONDS * self.rate).round() as u64;
+        let first = (start / self.hop as u64) as usize;
+        let last =
+            (end.saturating_add(settle).div_ceil(self.hop as u64) as usize).min(self.blocks.len());
+        self.measure_blocks(sources, first, last);
+        self.rebuild_prefix(first);
+        true
+    }
+
+    /// The loudness of the window of `seconds` **ending** at frame `frame`, in
+    /// LUFS — which is what a meter would have read there, and the value a
+    /// curve is drawn from.
+    ///
+    /// The window is where the reading is *taken*, so it looks backwards: the
+    /// value at a point is the loudness of the audio up to it, as on a meter.
+    /// A window reaching past the start of the take reads the silence before it,
+    /// as a meter reset there would.
+    pub fn window_at(&self, seconds: f64, frame: u64) -> f64 {
+        let window = self.window_blocks(seconds);
+        if window == 0 {
+            return f64::NEG_INFINITY;
+        }
+        let end = self.block_of(frame);
+        energy_to_lufs(self.window_energy(end, window))
+    }
+
+    /// The **momentary** loudness at `frame`: the 400 ms up to it.
+    pub fn momentary_at(&self, frame: u64) -> f64 {
+        self.window_at(MOMENTARY_SECONDS, frame)
+    }
+
+    /// The **short-term** loudness at `frame`: the 3 s up to it.
+    pub fn short_term_at(&self, frame: u64) -> f64 {
+        self.window_at(SHORT_TERM_SECONDS, frame)
+    }
+
+    /// **The quietest and loudest readings over `[from, to)`**, in LUFS — one
+    /// pixel column of a drawn curve, which covers many readings wherever the
+    /// view is zoomed out.
+    ///
+    /// A column is a band rather than a sampled point for the reason a
+    /// waveform's is: drawing one reading out of the hundred a column covers
+    /// would make the curve's own shape follow the zoom, and hide exactly the
+    /// excursion a reader is looking for. `None` where the span holds no block.
+    pub fn column(&self, seconds: f64, from: u64, to: u64) -> Option<(f32, f32)> {
+        let window = self.window_blocks(seconds);
+        if window == 0 || to <= from || self.blocks.is_empty() {
+            return None;
+        }
+        let first = self.block_of(from).max(1);
+        let last = self.block_of(to).max(first);
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for end in first..=last {
+            let value = energy_to_lufs(self.window_energy(end, window));
+            lo = lo.min(value);
+            hi = hi.max(value);
+        }
+        (hi > f64::NEG_INFINITY || lo.is_finite()).then_some(())?;
+        Some((lo as f32, hi as f32))
+    }
+
+    /// **The aggregates over a span** — the gated integrated loudness, the
+    /// range, and the loudest momentary and short-term readings inside it.
+    ///
+    /// This is what a read-out names over a selection (or over the whole take,
+    /// which is the span from 0). The gating blocks and the short-term values
+    /// are laid out from the span's own start, as a meter reset there would lay
+    /// them out.
+    pub fn measure(&self, start: u64, frames: u64) -> Loudness {
+        let momentary = self.window_blocks(MOMENTARY_SECONDS);
+        let short = self.window_blocks(SHORT_TERM_SECONDS);
+        let step = self.window_blocks(HOP_SECONDS).max(1);
+        let first = self.block_of(start);
+        let last = self.block_of(start.saturating_add(frames));
+        let readings = |window: usize| -> Vec<f64> {
+            let mut out = Vec::new();
+            let mut end = first + window;
+            while end <= last {
+                out.push(self.window_energy(end, window));
+                end += step;
+            }
+            out
+        };
+        let blocks = readings(momentary);
+        let shorts = readings(short);
+        Loudness {
+            integrated: gated(&blocks, RELATIVE_GATE),
+            range: spread(&shorts),
+            momentary_max: blocks
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, |a, e| a.max(energy_to_lufs(e))),
+            short_term_max: shorts
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, |a, e| a.max(energy_to_lufs(e))),
+        }
+    }
+
+    /// How many blocks a window of `seconds` covers.
+    fn window_blocks(&self, seconds: f64) -> usize {
+        (seconds / PROFILE_HOP_SECONDS).round() as usize
+    }
+
+    /// The block boundary a frame falls on, as a count of whole blocks.
+    fn block_of(&self, frame: u64) -> usize {
+        (frame.min(self.frames) / self.hop as u64) as usize
+    }
+
+    /// The **mean** weighted energy of the `window` blocks ending at block
+    /// `end`, over the window's whole duration — so a window reaching past the
+    /// start of the take averages in the silence before it, exactly as a meter
+    /// reset there does.
+    fn window_energy(&self, end: usize, window: usize) -> f64 {
+        let end = end.min(self.blocks.len());
+        let first = end.saturating_sub(window);
+        let energy = self.prefix[end] - self.prefix[first];
+        (energy / (window * self.hop) as f64).max(0.0)
+    }
+
+    /// Reads `[first, last)` of the blocks out of the sources, with the filters
+    /// warmed over the samples before them.
+    fn measure_blocks(&mut self, sources: &[&dyn crate::peaks::Source], first: usize, last: usize) {
+        if first >= last {
+            return;
+        }
+        let channels = self.weights.len();
+        let mut weighting = Weighting::new(&self.weights, self.rate);
+        let warmup = (WARMUP_SECONDS * self.rate).round() as u64;
+        let span_start = first as u64 * self.hop as u64;
+        let mut at = span_start.saturating_sub(warmup);
+        let end = (last as u64 * self.hop as u64).min(self.frames);
+        // One scratch window per channel, read in chunks so a take is never
+        // held in memory to be measured -- the peak pyramid's own posture.
+        const CHUNK: usize = 4096;
+        let mut scratch = vec![vec![0.0f32; CHUNK]; channels];
+        let mut frame = vec![0.0f32; channels];
+        let mut block = (at / self.hop as u64) as usize;
+        let mut acc = 0.0f64;
+        let mut in_block = (at % self.hop as u64) as usize;
+        while at < end {
+            let n = CHUNK.min((end - at) as usize);
+            for (c, buf) in scratch.iter_mut().enumerate() {
+                sources[c].read_into(at as usize, &mut buf[..n]);
+            }
+            for i in 0..n {
+                for (c, buf) in scratch.iter().enumerate() {
+                    frame[c] = buf[i];
+                }
+                let energy = weighting.frame(&frame);
+                // Before the span, the frames only warm the filters.
+                if at + i as u64 >= span_start {
+                    acc += energy;
+                }
+                in_block += 1;
+                if in_block == self.hop {
+                    if block >= first && block < last {
+                        self.blocks[block] = acc;
+                    }
+                    block += 1;
+                    acc = 0.0;
+                    in_block = 0;
+                }
+            }
+            at += n as u64;
+        }
+        // The take's last block may be short, and it is a block all the same.
+        if in_block > 0 && block >= first && block < last {
+            self.blocks[block] = acc;
+        }
+    }
+
+    /// Rebuilds the running sums from block `from` onwards.
+    fn rebuild_prefix(&mut self, from: usize) {
+        self.prefix.resize(self.blocks.len() + 1, 0.0);
+        if from == 0 {
+            self.prefix[0] = 0.0;
+        }
+        for i in from..self.blocks.len() {
+            self.prefix[i + 1] = self.prefix[i] + self.blocks[i];
+        }
+    }
+}
+
+/// BS.1770's gated loudness over block energies: the absolute gate, then the
+/// relative one `relative` LU under what it leaves. `f64::NEG_INFINITY` when
+/// nothing passes.
+fn gated(blocks: &[f64], relative: f64) -> f64 {
+    let absolute: Vec<f64> = blocks
+        .iter()
+        .copied()
+        .filter(|e| energy_to_lufs(*e) >= ABSOLUTE_GATE)
+        .collect();
+    if absolute.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    let mean = absolute.iter().sum::<f64>() / absolute.len() as f64;
+    let gate = energy_to_lufs(mean) + relative;
+    let kept: Vec<f64> = absolute
+        .into_iter()
+        .filter(|e| energy_to_lufs(*e) > gate)
+        .collect();
+    if kept.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    energy_to_lufs(kept.iter().sum::<f64>() / kept.len() as f64)
+}
+
+/// Tech 3342's spread over short-term energies: the absolute gate, the relative
+/// one 20 LU under what it leaves, then the 95th percentile minus the 10th,
+/// by the index rule of the document's MATLAB reference.
+fn spread(shorts: &[f64]) -> f64 {
+    let mut values: Vec<f64> = shorts
+        .iter()
+        .map(|e| energy_to_lufs(*e))
+        .filter(|l| *l >= ABSOLUTE_GATE)
+        .collect();
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mean = values.iter().map(|l| lufs_to_energy(*l)).sum::<f64>() / values.len() as f64;
+    let gate = energy_to_lufs(mean) + RANGE_GATE;
+    values.retain(|l| *l >= gate);
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).expect("finite loudness"));
+    let rank =
+        |p: f64| (((values.len() - 1) as f64 * p + 0.5).floor() as usize).min(values.len() - 1);
+    values[rank(RANGE_PERCENTILES.1)] - values[rank(RANGE_PERCENTILES.0)]
 }
 
 #[cfg(test)]
@@ -1185,6 +1617,179 @@ mod tests {
             loudness(&silent_lfe, 6, FS),
             "the LFE is not measured"
         );
+    }
+
+    // ---- the profile: the same numbers, read anywhere ----
+
+    /// **A profile is the meter, asked backwards.** The meter reports where it
+    /// has got to; the profile answers for any point of the take. So every
+    /// reading of one must be a reading of the other, and this is the test the
+    /// whole type rests on: a meter stopped at a point and the profile asked
+    /// about that point agree to a hundredth of a LU, which is a tenth of the
+    /// tolerance Tech 3341 allows a meter at all.
+    #[test]
+    fn a_profile_reads_what_a_meter_reads_at_the_same_point() {
+        let x = stereo_programme(
+            FS,
+            &[
+                stereo(4.0, Some(-30.0)),
+                stereo(5.0, Some(-14.0)),
+                stereo(4.0, Some(-24.0)),
+            ],
+        );
+        let profile = Profile::from_interleaved(&x, 2, FS).unwrap();
+        for seconds in [3.5, 4.0, 6.25, 9.0, 12.0] {
+            let frames = (seconds * FS) as usize;
+            let mut meter = LoudnessMeter::new(2, FS);
+            meter.feed(&x[..frames * 2]);
+            within(
+                profile.momentary_at(frames as u64),
+                meter.momentary(),
+                0.01,
+                &format!("momentary at {seconds} s"),
+            );
+            within(
+                profile.short_term_at(frames as u64),
+                meter.short_term(),
+                0.01,
+                &format!("short-term at {seconds} s"),
+            );
+        }
+    }
+
+    /// And the aggregates over the whole take are the meter's too — the gating
+    /// the profile runs over its blocks is the gating the meter runs over its
+    /// histogram.
+    #[test]
+    fn a_profile_measures_a_span_as_a_meter_measures_a_pass() {
+        let x = stereo_programme(
+            FS,
+            &[
+                stereo(6.0, Some(-36.0)),
+                stereo(8.0, Some(-18.0)),
+                stereo(6.0, Some(-28.0)),
+            ],
+        );
+        let whole = loudness(&x, 2, FS).unwrap();
+        let measured = Profile::from_interleaved(&x, 2, FS)
+            .unwrap()
+            .measure(0, (x.len() / 2) as u64);
+        within(measured.integrated, whole.integrated, 0.02, "I");
+        within(measured.range, whole.range, 0.2, "LRA");
+        within(measured.momentary_max, whole.momentary_max, 0.05, "max M");
+        within(measured.short_term_max, whole.short_term_max, 0.05, "max S");
+    }
+
+    /// **A span is measured as a meter reset there would measure it**, which is
+    /// what makes the read-out over a selection mean anything: the loud half of
+    /// a take reads the loud half's loudness, not the take's.
+    #[test]
+    fn a_span_is_measured_on_its_own() {
+        let quiet = stereo_programme(FS, &[stereo(8.0, Some(-33.0))]);
+        let loud = stereo_programme(FS, &[stereo(8.0, Some(-16.0))]);
+        let both = [quiet.as_slice(), loud.as_slice()].concat();
+        let profile = Profile::from_interleaved(&both, 2, FS).unwrap();
+        let half = (8.0 * FS) as u64;
+        within(
+            profile.measure(half, half).integrated,
+            -16.0,
+            0.1,
+            "the loud half",
+        );
+        within(
+            profile.measure(0, half).integrated,
+            -33.0,
+            0.1,
+            "the quiet half",
+        );
+    }
+
+    /// **A column is a band, not a sample of the curve**: over a span holding
+    /// a step, it reaches from the quiet reading to the loud one, so a zoomed
+    /// out picture cannot hide the excursion between two pixels.
+    #[test]
+    fn a_column_spans_the_readings_it_covers() {
+        let x = stereo_programme(FS, &[stereo(5.0, Some(-35.0)), stereo(5.0, Some(-15.0))]);
+        let profile = Profile::from_interleaved(&x, 2, FS).unwrap();
+        let (lo, hi) = profile
+            .column(MOMENTARY_SECONDS, (4.0 * FS) as u64, (6.0 * FS) as u64)
+            .expect("a column over the step");
+        within(lo as f64, -35.0, 0.2, "the quiet edge");
+        within(hi as f64, -15.0, 0.2, "the loud edge");
+        // A column inside the quiet tone is the tone, top and bottom alike.
+        let (lo, hi) = profile
+            .column(MOMENTARY_SECONDS, (2.0 * FS) as u64, (3.0 * FS) as u64)
+            .unwrap();
+        within(lo as f64, -35.0, 0.1, "steady, low");
+        within(hi as f64, -35.0, 0.1, "steady, high");
+        assert!(profile.column(MOMENTARY_SECONDS, 100, 100).is_none());
+    }
+
+    /// **An edit re-measures its own span**, and the result is the profile a
+    /// fresh pass would have built — the curve after a stroke is not an
+    /// approximation of the curve, it is the curve.
+    #[test]
+    fn an_edited_span_is_re_measured_exactly() {
+        let mut x = stereo_programme(FS, &[stereo(10.0, Some(-24.0))]);
+        let mut profile = Profile::from_interleaved(&x, 2, FS).unwrap();
+        // A second of the take is replaced by a much louder tone.
+        let (from, len) = ((4.0 * FS) as usize, FS as usize);
+        let loud = stereo_programme(FS, &[stereo(1.0, Some(-12.0))]);
+        x[from * 2..(from + len) * 2].copy_from_slice(&loud[..len * 2]);
+        let sources: Vec<crate::peaks::Interleaved<'_>> = (0..2)
+            .map(|c| crate::peaks::Interleaved::new(&x, 2, c))
+            .collect();
+        let refs: Vec<&dyn crate::peaks::Source> = sources
+            .iter()
+            .map(|s| s as &dyn crate::peaks::Source)
+            .collect();
+        assert!(profile.update(&refs, from as u64, len as u64));
+        let fresh = Profile::from_interleaved(&x, 2, FS).unwrap();
+        for seconds in [3.0, 4.2, 4.9, 5.4, 7.0, 10.0] {
+            let at = (seconds * FS) as u64;
+            within(
+                profile.momentary_at(at),
+                fresh.momentary_at(at),
+                0.001,
+                &format!("momentary at {seconds} s"),
+            );
+            within(
+                profile.short_term_at(at),
+                fresh.short_term_at(at),
+                0.001,
+                &format!("short-term at {seconds} s"),
+            );
+        }
+        let n = (x.len() / 2) as u64;
+        within(
+            profile.measure(0, n).integrated,
+            fresh.measure(0, n).integrated,
+            0.001,
+            "I",
+        );
+    }
+
+    /// Silence has no loudness, and a profile says so rather than drawing a
+    /// floor: every reading is `-inf` and the span measures nothing.
+    #[test]
+    fn a_silent_take_has_no_loudness_anywhere() {
+        let profile = Profile::from_interleaved(&vec![0.0; 48_000 * 2], 2, FS).unwrap();
+        assert_eq!(profile.momentary_at(24_000), f64::NEG_INFINITY);
+        let measured = profile.measure(0, 24_000);
+        assert_eq!(measured.integrated, f64::NEG_INFINITY);
+        assert_eq!(measured.range, 0.0);
+    }
+
+    #[test]
+    fn a_profile_states_what_it_describes() {
+        let x = stereo_programme(FS, &[stereo(1.0, Some(-20.0))]);
+        let profile = Profile::from_interleaved(&x, 2, FS).unwrap();
+        assert!(profile.describes(2, (x.len() / 2) as u64));
+        assert!(!profile.describes(1, (x.len() / 2) as u64));
+        assert!(!profile.describes(2, 999));
+        assert_eq!(profile.rate(), FS);
+        assert!(Profile::from_interleaved(&x, 0, FS).is_none());
+        assert!(Profile::from_interleaved(&x, 2, 20.0).is_none());
     }
 
     #[test]

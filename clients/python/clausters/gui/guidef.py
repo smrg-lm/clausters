@@ -855,6 +855,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            selectable: bool | None = None, editable: bool | None = None,
            overlay: bool | None = None, measure: str | None = None,
            fills: bool | None = None,
+           loudness_target: float | None = None, loudness_scale: float | None = None,
+           loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
            at: float | None = None, dur: float | None = None,
            start: float | None = None, loop: bool | None = None,
            axes: dict | None = None, label: str | None = None,
@@ -937,10 +939,12 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
                        measure=measure, at=at, dur=dur, start=start,
+                       loudness_target=loudness_target, loudness_scale=loudness_scale,
                        label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),
                       ("editable", editable), ("overlay", overlay), ("loop", loop),
-                      ("fills", fills)):
+                      ("fills", fills), ("loudness_ruler", loudness_ruler),
+                      ("loudness_stats", loudness_stats)):
         if flag is not None:
             extra[key] = 1 if flag else 0
     extra.update(_axes(axes))
@@ -1392,6 +1396,8 @@ def waveform(*, autofit: bool | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
              measure: str | None = None, fills: bool | None = None,
+             loudness_target: float | None = None, loudness_scale: float | None = None,
+             loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
              ruler: str | None = None,
              ruler_y: str | None = None, bit_depth: int | None = None,
              min: float | None = None, max: float | None = None,
@@ -1522,6 +1528,7 @@ def waveform(*, autofit: bool | None = None,
     extra = _drop_none(data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, measure=measure,
+                       loudness_target=loudness_target, loudness_scale=loudness_scale,
                        color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        min=min, max=max, autofit=autofit,
@@ -1689,6 +1696,8 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
 
 def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           overlay: bool | None = None, measure: str | None = None,
+          loudness_target: float | None = None, loudness_scale: float | None = None,
+          loudness_ruler: bool | None = None, loudness_stats: bool | None = None,
           window_ms: float | None = None,
           trigger: float | None = None, hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
@@ -1719,8 +1728,12 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     bipolar ``-1``/``1``).
     """
     extra = _drop_none(channels=channels, window_ms=window_ms,
-                       trigger=trigger, measure=measure, label=label, color=color)
-    for key, flag in (("hold", hold), ("overlay", overlay)):
+                       trigger=trigger, measure=measure,
+                       loudness_target=loudness_target, loudness_scale=loudness_scale,
+                       label=label, color=color)
+    for key, flag in (("hold", hold), ("overlay", overlay),
+                      ("loudness_ruler", loudness_ruler),
+                      ("loudness_stats", loudness_stats)):
         if flag is not None:
             extra[key] = 1 if flag else 0
     extra.update(_axes(axes, min=min, max=max, **_strips(ruler=ruler, ruler_y=ruler_y)))

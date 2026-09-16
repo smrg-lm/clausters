@@ -260,8 +260,9 @@ impl RulerY {
 /// One view window as a valid display-axis slice: a non-positive length is the
 /// whole axis, anything else clamps into `[0, 1]` with the shared zoom floor.
 /// The one reading both of an element's own axes go through.
-fn normalized_window(start: f64, len: f64) -> (f64, f64) {
-    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
+    let mut axis =
+        crate::viewport::Axis::normalized(crate::viewport::Unit::Norm).with_headroom(headroom);
     axis.set_span(start, len);
     axis.span()
 }
@@ -452,6 +453,14 @@ pub struct EditorProps {
     pub playhead_loop_len: f64,
     pub y_start: f64,
     pub y_len: f64,
+    /// **How far past its domain the vertical window may be opened**, as a
+    /// multiple of it. It is a property of what the axis *measures* and so it
+    /// is set by the element rather than by the wire: an **amplitude** axis
+    /// takes [`crate::viewport::AMP_HEADROOM`], because a floating-point
+    /// signal can sit above full scale and has to be readable there; a
+    /// **frequency** axis takes 1, because there is nothing above Nyquist to
+    /// open onto.
+    pub y_headroom: f64,
     /// The selection's **second axis**: the value range it is restricted to, in
     /// the element's own units (`sel_max <= sel_min` = the whole domain, which
     /// is no restriction at all).
@@ -520,6 +529,7 @@ impl EditorProps {
             playhead_loop_len: number_f64(props, "playhead_loop_len", 0.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
+            y_headroom: 1.0,
             sel_min: number_f64(props, "sel_min", 0.0),
             sel_max: number_f64(props, "sel_max", 0.0),
             x_start: number_f64(props, "view_start", 0.0),
@@ -557,7 +567,7 @@ impl EditorProps {
     /// (`y_start` would clamp against the *old* `y_len` before the new one
     /// lands).
     pub fn y_view(&self) -> (f64, f64) {
-        normalized_window(self.y_start, self.y_len)
+        normalized_window(self.y_start, self.y_len, self.y_headroom)
     }
 
     /// The selection's value range, or `None` where it is not restricted on
@@ -578,7 +588,7 @@ impl EditorProps {
     /// than in `apply`, for the same reason: one `/gui_set` carrying both keys
     /// must not depend on their order.
     pub fn x_view(&self) -> (f64, f64) {
-        normalized_window(self.x_start, self.x_len)
+        normalized_window(self.x_start, self.x_len, 1.0)
     }
 
     pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {

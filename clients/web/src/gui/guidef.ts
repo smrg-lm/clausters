@@ -1156,6 +1156,26 @@ export function signal(
          * hop, and a `GuiHost.set` of it resizes the history live.
          */
         retention?: number;
+        /**
+         * The **loudness** layer's own scale, for the `momentary` and `short`
+         * measures: `loudnessTarget` is the line the curve is read against and
+         * the zero of the scale (-23 LUFS, EBU R 128's programme loudness, by
+         * default), `loudnessScale` how far over it the scale reaches in LU (9,
+         * EBU Tech 3341's default scale, or 18; the bottom is twice that under
+         * the target), `loudnessRuler` draws the layer's own LU ruler on the
+         * right of the body, and `loudnessStats` writes the numbers over the
+         * picture — the integrated loudness, the range, the true peak and the
+         * ratio between the last two, over the selection where there is one.
+         * A loudness layer needs `sampleRate` to mean anything, since its
+         * windows are counted in samples.
+         */
+        loudnessTarget?: number;
+        /** How far over the target the LU scale reaches (see `loudnessTarget`). */
+        loudnessScale?: number;
+        /** Draw the layer's own LU ruler (see `loudnessTarget`). */
+        loudnessRuler?: boolean;
+        /** Write the loudness numbers over the picture (see `loudnessTarget`). */
+        loudnessStats?: boolean;
         baseBucket?: number;
         navigable?: boolean;
         /**
@@ -1211,6 +1231,7 @@ export function signal(
     const {
         view, cache, path, buffer, data, blob, channels, bus, rate, retention,
         baseBucket, navigable, selectable, editable, overlay, measure, fills, at, dur,
+        loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
     } = options;
     return node("signal", {
@@ -1229,7 +1250,10 @@ export function signal(
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
             ["measure", measure],
-            ["fills", flag(fills)],
+            ["loudness_target", loudnessTarget],
+            ["loudness_scale", loudnessScale],
+            ["loudness_ruler", flag(loudnessRuler)],
+            ["loudness_stats", flag(loudnessStats)],
             ["at", at],
             ["dur", dur],
             ["start", start],
@@ -1911,6 +1935,26 @@ export function waveform(
          */
         measure?: string;
         /**
+         * The **loudness** layer's own scale, for the `momentary` and `short`
+         * measures: `loudnessTarget` is the line the curve is read against and
+         * the zero of the scale (-23 LUFS, EBU R 128's programme loudness, by
+         * default), `loudnessScale` how far over it the scale reaches in LU (9,
+         * EBU Tech 3341's default scale, or 18; the bottom is twice that under
+         * the target), `loudnessRuler` draws the layer's own LU ruler on the
+         * right of the body, and `loudnessStats` writes the numbers over the
+         * picture — the integrated loudness, the range, the true peak and the
+         * ratio between the last two, over the selection where there is one.
+         * A loudness layer needs `sampleRate` to mean anything, since its
+         * windows are counted in samples.
+         */
+        loudnessTarget?: number;
+        /** How far over the target the LU scale reaches (see `loudnessTarget`). */
+        loudnessScale?: number;
+        /** Draw the layer's own LU ruler (see `loudnessTarget`). */
+        loudnessRuler?: boolean;
+        /** Write the loudness numbers over the picture (see `loudnessTarget`). */
+        loudnessStats?: boolean;
+        /**
          * The samples are **being written into as they are drawn** — a take you
          * are recording. The picture stops at the buffer's write frontier and
          * the axis past it stays empty; see `signal`.
@@ -1920,7 +1964,8 @@ export function waveform(
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
-        rulerY, bitDepth, min, max, measure, fills, ...timeline
+        rulerY, bitDepth, min, max, measure, fills,
+        loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
     return node("signal", {
         view: "trace",
@@ -1934,6 +1979,10 @@ export function waveform(
             ["overlay", flag(overlay)],
             ["measure", measure],
             ["fills", flag(fills)],
+            ["loudness_target", loudnessTarget],
+            ["loudness_scale", loudnessScale],
+            ["loudness_ruler", flag(loudnessRuler)],
+            ["loudness_stats", flag(loudnessStats)],
         ]),
     });
 }
@@ -2184,6 +2233,27 @@ export function scope(
         min?: number;
         max?: number;
         /**
+         * The **loudness** layer's own scale, for the `momentary` and `short`
+         * measures: `loudnessTarget` is the line the curve is read against and
+         * the zero of the scale (-23 LUFS, EBU R 128's programme loudness, by
+         * default), `loudnessScale` how far over it the scale reaches in LU (9,
+         * EBU Tech 3341's default scale, or 18; the bottom is twice that under
+         * the target), `loudnessRuler` draws the layer's own LU ruler on the
+         * right of the body, and `loudnessStats` writes the numbers over the
+         * picture — the integrated loudness, the range, the true peak and the
+         * ratio between the last two, over the selection where there is one.
+         * A loudness layer needs `sampleRate` to mean anything, since its
+         * windows are counted in samples.
+         */
+        loudnessTarget?: number;
+        /** How far over the target the LU scale reaches (see `loudnessTarget`). */
+        loudnessScale?: number;
+        /** Draw the layer's own LU ruler (see `loudnessTarget`). */
+        loudnessRuler?: boolean;
+        /** Write the loudness numbers over the picture (see `loudnessTarget`). */
+        loudnessStats?: boolean;
+
+        /**
          * The x ruler (ms of the window) and the y ruler (value): shown by
          * default on the audio-rate form, hidden with `false` or `"off"`.
          */
@@ -2201,7 +2271,8 @@ export function scope(
 ): GuiNode {
     const {
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
-        ruler, rulerY, measure, label: text, axes: pair, ...rest
+        ruler, rulerY, measure, label: text, axes: pair,
+        loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -2220,6 +2291,10 @@ export function scope(
             ["trigger", trigger],
             ["hold", flag(hold)],
             ["measure", measure],
+            ["loudness_target", loudnessTarget],
+            ["loudness_scale", loudnessScale],
+            ["loudness_ruler", flag(loudnessRuler)],
+            ["loudness_stats", flag(loudnessStats)],
             ["label", text],
         ]),
     });

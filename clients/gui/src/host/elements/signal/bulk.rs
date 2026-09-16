@@ -480,6 +480,9 @@ impl SignalElement {
         if wrote {
             self.slot_dirty = true;
             self.refresh_analysis();
+            // The curve follows the stroke: the blocks it covers are measured
+            // again, and nothing else is.
+            self.edit_loudness(start as u64, values.len() as u64);
         }
         wrote
     }
@@ -514,6 +517,7 @@ impl SignalElement {
                     self.refresh_analysis();
                     self.slot_dirty = true;
                 }
+                self.refresh_loudness();
                 true
             }
             // A pyramid is the samples this element holds, whether or not a
@@ -521,6 +525,7 @@ impl SignalElement {
             // and a read of the source (a copy) is answered out of it.
             Loaded::Peaks(peaks) => {
                 source.body = Some(peaks);
+                self.refresh_loudness();
                 // A pyramid also *replaces* one, and a destructive edit is how:
                 // the samples are rewritten and a new pyramid arrives here, so
                 // the slot has to be filled from it or the window keeps drawing
@@ -533,6 +538,7 @@ impl SignalElement {
             Loaded::Samples(samples) => {
                 source.samples = samples;
                 self.refresh_analysis();
+                self.refresh_loudness();
                 self.slot_dirty = true;
                 true
             }
@@ -550,6 +556,7 @@ impl SignalElement {
                         .into();
                     self.refresh_analysis();
                 }
+                self.refresh_loudness();
                 self.slot_dirty = true;
                 true
             }

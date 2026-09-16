@@ -64,6 +64,115 @@ pub use trace::{Measure, Measures};
 /// level-0 summary per 256 source samples.
 pub const DEFAULT_BASE_BUCKET: usize = 256;
 
+/// **What a loudness layer is drawn against**, and what it has measured.
+///
+/// The curve is the one layer whose vertical is not the picture's: peak, level
+/// and reconstruction are amplitudes and share the view's axis, while a
+/// loudness reading is in LUFS and needs a scale of its own. So the scale
+/// travels with the measure, on the element, beside `fft_size` and the rest —
+/// the same rule the track states for a measure's own parameters.
+///
+/// The scale is EBU Tech 3341's, named by its top: the **`+9`** scale runs from
+/// 18 LU under the target to 9 over it (−41 to −14 LUFS at R 128's −23), the
+/// **`+18`** one from 36 under to 18 over. The document makes `+9` the default
+/// and this does too.
+#[derive(Debug, Clone)]
+pub struct LoudnessLayer {
+    /// The target loudness, in LUFS: the line the curve is read against, and
+    /// the zero of the LU scale. EBU R 128's −23 by default.
+    pub target: f64,
+    /// How far over the target the scale reaches, in LU — 9 or 18, the two
+    /// scales Tech 3341 specifies. The bottom is twice that under it.
+    pub scale: f64,
+    /// Whether the layer draws its own LU ruler, on the right of the body —
+    /// the left strip being the picture's own axis.
+    pub ruler: bool,
+    /// Whether the numbers are written beside the curve: the integrated
+    /// loudness, the range, the true peak and the ratio between the last two.
+    pub stats: bool,
+    /// The measured curve, or `None` until there is something to measure it
+    /// from — no loudness measure asked for, no samples, or no sample rate
+    /// stated (a 400 ms window means nothing without one).
+    pub profile: Option<Arc<clausters_core::loudness::Profile>>,
+    /// The aggregates over the span the read-out names, kept with the span
+    /// they were measured over so a selection that has not moved is not
+    /// measured again.
+    pub summary: Option<LoudnessSummary>,
+}
+
+impl Default for LoudnessLayer {
+    fn default() -> Self {
+        LoudnessLayer {
+            target: -23.0,
+            scale: 9.0,
+            ruler: true,
+            stats: true,
+            profile: None,
+            summary: None,
+        }
+    }
+}
+
+impl LoudnessLayer {
+    /// What the frame draws this layer from.
+    pub fn frame(&self) -> LoudnessFrame {
+        LoudnessFrame {
+            profile: self.profile.clone(),
+            domain: self.domain(),
+            target: self.target,
+            ruler: self.ruler,
+            stats: self.stats,
+            summary: self.summary,
+        }
+    }
+
+    /// The scale's bounds in LUFS, bottom first: the target, 2× the scale under
+    /// it and 1× over.
+    pub fn domain(&self) -> (f32, f32) {
+        (
+            (self.target - 2.0 * self.scale) as f32,
+            (self.target + self.scale) as f32,
+        )
+    }
+}
+
+/// **What a span of a take measures**, as the read-out names it: the numbers a
+/// delivery specification asks for, over the selection or over the whole take.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoudnessSummary {
+    /// The span measured, in frames — kept so the same one is not measured
+    /// twice, and so a stale figure can never be drawn as a current one.
+    pub span: (u64, u64),
+    /// The gated integrated loudness, the range and the two maxima.
+    pub loudness: clausters_core::loudness::Loudness,
+    /// The true peak of the span, in dBTP — the other half of R 128, and what
+    /// makes the peak-to-loudness ratio beside it.
+    pub true_peak_db: f32,
+}
+
+/// **What the frame needs to draw a loudness layer**, copied out of the element
+/// with the rest of the picture it states.
+///
+/// It rides the slot frame for the reason the measures and the domain do: the
+/// frame draws what the element *stated*, so the curve, the picture under it
+/// and the chrome around them agree — and the profile is an `Arc`, so stating
+/// it costs a pointer rather than the take.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LoudnessFrame {
+    /// The measured curve, when the element has one.
+    pub profile: Option<Arc<clausters_core::loudness::Profile>>,
+    /// The scale's bounds in LUFS, bottom first.
+    pub domain: (f32, f32),
+    /// The target line, in LUFS.
+    pub target: f64,
+    /// Whether the layer draws its own LU ruler.
+    pub ruler: bool,
+    /// Whether the numbers are written beside the curve.
+    pub stats: bool,
+    /// The aggregates over the span the read-out names.
+    pub summary: Option<LoudnessSummary>,
+}
+
 /// What a signal element draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Presentation {
@@ -385,6 +494,9 @@ pub struct SignalElement {
     /// source: the rolling history, the triggered window, the analysis states,
     /// the rolling transform. Advanced once per tick ([`Self::tick`]) and only
     /// drawn afterwards, so a repaint never advances anything.
+    /// **The loudness layer**: its scale, its guides and what it has measured.
+    /// Inert until a measure asks for it.
+    pub loudness: LoudnessLayer,
     pub live: LiveState,
     /// Whether the element's **claimed GPU slot** has content it has not handed
     /// the frame yet ([`Self::fill`]). True on a fresh element and at every
@@ -457,10 +569,141 @@ impl SignalElement {
             display: Display::default(),
             editor,
             analysis: None,
+            loudness: LoudnessLayer::default(),
             live: LiveState::default(),
             slot_dirty: true,
             reload_asked: false,
         }
+    }
+
+    /// Whether any measure this element draws is read in LU — the test for
+    /// whether a profile is worth measuring at all.
+    pub fn wants_loudness(&self) -> bool {
+        self.measures.iter().any(|m| m.is_loudness())
+    }
+
+    /// **The span the read-out names**: the selection where there is one, the
+    /// whole take where there is not — which is what every editor does with a
+    /// statistics window, RX's included.
+    pub fn loudness_span(&self) -> (u64, u64) {
+        let frames = self.loudness.profile.as_ref().map_or(0, |p| p.frames());
+        let (start, len) = (self.editor.sel_start, self.editor.sel_len);
+        if len > 0.0 {
+            let start = start.max(0.0) as u64;
+            (start, (len as u64).min(frames.saturating_sub(start)))
+        } else {
+            (0, frames)
+        }
+    }
+
+    /// **Measures the take's loudness, at the element's mutation points** —
+    /// never in a frame: a profile is a pass over the samples, and a curve
+    /// re-measured per repaint would cost the take a frame.
+    ///
+    /// It is a no-op wherever there is nothing to do: no loudness measure
+    /// asked for (the profile is dropped, since a layer nobody draws should not
+    /// hold a take's worth of blocks), no samples to read, no rate stated, or a
+    /// profile that already describes exactly these samples.
+    pub fn refresh_loudness(&mut self) {
+        if !self.wants_loudness() {
+            self.loudness.profile = None;
+            self.loudness.summary = None;
+            return;
+        }
+        let rate = self.editor.sample_rate;
+        let channels = self.channels().max(1);
+        let data = self.source.data();
+        let frames = data.map_or(0, |d| match &d.body {
+            Some(body) => body.total_samples() as u64,
+            None => (d.samples.len() / channels) as u64,
+        });
+        let described = self
+            .loudness
+            .profile
+            .as_ref()
+            .is_some_and(|p| p.describes(channels, frames) && p.rate() == rate);
+        if !described {
+            self.loudness.profile = None;
+            self.loudness.summary = None;
+            if rate > 0.0 && frames > 0 {
+                let measured = match data.and_then(|d| d.body.as_ref()) {
+                    Some(body) => body.loudness_profile(rate),
+                    None => data.and_then(|d| {
+                        clausters_core::loudness::Profile::from_interleaved(
+                            &d.samples, channels, rate,
+                        )
+                    }),
+                };
+                self.loudness.profile = measured.map(Arc::new);
+            }
+        }
+        self.refresh_loudness_summary();
+    }
+
+    /// The aggregates over the span the read-out names, measured when the span
+    /// has moved and not otherwise.
+    pub fn refresh_loudness_summary(&mut self) {
+        let Some(profile) = self.loudness.profile.clone() else {
+            self.loudness.summary = None;
+            return;
+        };
+        let span = self.loudness_span();
+        if self.loudness.summary.is_some_and(|s| s.span == span) {
+            return;
+        }
+        if span.1 == 0 {
+            self.loudness.summary = None;
+            return;
+        }
+        let measured = profile.measure(span.0, span.1);
+        // The true peak is the samples' and not the profile's: a peak between
+        // two samples is a property of the waveform, where loudness is a
+        // property of its energy.
+        let peak = match self.source.data().and_then(|d| d.body.as_ref()) {
+            Some(body) => body.true_peak(span.0, span.1),
+            None => self.source.data().map(|d| {
+                let channels = self.channels().max(1);
+                let (a, b) = (
+                    (span.0 as usize * channels).min(d.samples.len()),
+                    ((span.0 + span.1) as usize * channels).min(d.samples.len()),
+                );
+                (0..channels)
+                    .map(|c| clausters_core::resample::true_peak(&d.samples[a..b], channels, c))
+                    .fold(0.0f32, f32::max)
+            }),
+        };
+        self.loudness.summary = Some(LoudnessSummary {
+            span,
+            loudness: measured,
+            true_peak_db: peak.map_or(f32::NEG_INFINITY, |p| {
+                if p > 0.0 {
+                    20.0 * p.log10()
+                } else {
+                    f32::NEG_INFINITY
+                }
+            }),
+        });
+    }
+
+    /// **Re-measures the span an edit touched**, which is what keeps a drawn
+    /// curve following a stroke: the blocks the stroke covers, widened by the
+    /// filters' memory, and the aggregates that read them.
+    pub fn edit_loudness(&mut self, start: u64, len: u64) {
+        let Some(profile) = self.loudness.profile.as_mut() else {
+            return;
+        };
+        let updated = match self.source.data().and_then(|d| d.body.as_ref()) {
+            Some(body) => body.update_loudness(Arc::make_mut(profile), start, len),
+            None => false,
+        };
+        if !updated {
+            // An inline source is re-measured whole: it is the page's own copy
+            // and is small by construction (a take too long to hold is a
+            // mapped one).
+            self.loudness.profile = None;
+        }
+        self.loudness.summary = None;
+        self.refresh_loudness();
     }
 
     /// How many channels the element draws.

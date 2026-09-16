@@ -83,6 +83,7 @@ impl Element for SignalElement {
                             ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
                             label: self.display.label.as_deref(),
                             measures: self.measures,
+                            loudness: self.live_curve(),
                         },
                     );
                 } else {
@@ -158,6 +159,17 @@ impl Element for SignalElement {
         };
         // A control-rate trace reads a bus **value**; every other live view
         // reads recorded samples out of a tap.
+        // **A loudness curve is fed a stream, not a window.** The triggered
+        // window a scope draws is re-read every tick and overlaps itself; a
+        // meter fed that would count the same audio several times. So a view
+        // measuring loudness asks for the bus's *history*, which is
+        // de-duplicated by stream position, and asks for at least the longest
+        // window it reads.
+        if self.wants_loudness() && self.source.bus().is_some_and(|bus| bus.rate.is_audio()) {
+            needs.retention = needs
+                .retention
+                .max(clausters_core::loudness::SHORT_TERM_SECONDS as f32);
+        }
         if let Source::Bus(bus) = &self.source {
             match self.presentation {
                 // The phase view is a stereo pair by construction: a bus and
@@ -491,6 +503,32 @@ impl SignalElement {
     /// and its hover readout read the same ones, so a hairline lands on the
     /// curve under it. A plot over a bus has no samples: it is the case that
     /// draws nothing at all.
+    /// The live loudness curve this element draws, or `None` when no measure
+    /// asks for one or the meter has taken no readings yet.
+    fn live_curve(&self) -> Option<crate::host::graphics::signal::loudness::LiveCurve> {
+        use crate::host::graphics::signal::trace::Measure;
+        let state = self.live.loudness.as_ref()?;
+        let readings: Vec<(Measure, Vec<f32>)> = self
+            .measures
+            .iter()
+            .filter(|m| m.is_loudness())
+            .map(|m| {
+                let run = match m {
+                    Measure::Short => &state.short,
+                    _ => &state.momentary,
+                };
+                (m, run.iter().copied().collect())
+            })
+            .collect();
+        (!readings.is_empty()).then(|| crate::host::graphics::signal::loudness::LiveCurve {
+            readings,
+            y: self.editor.y_view(),
+            domain: self.loudness.domain(),
+            target: self.loudness.target,
+            ruler: self.loudness.ruler,
+        })
+    }
+
     fn plot_params(&self, sample_rate: f64) -> plot::PlotParams<'_> {
         let (samples, channels): (&[f32], usize) = match &self.source {
             Source::Data(data) => (&data.samples, data.channels),
@@ -543,6 +581,7 @@ impl SignalElement {
                 amp: self.editor.y_view(),
                 overlay: self.display.overlay,
                 measures: self.measures,
+                loudness: self.loudness.frame(),
             }),
             Presentation::TimeFrequency => Some(SlotFrame::Spectrogram {
                 body,

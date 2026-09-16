@@ -116,6 +116,19 @@ impl SignalElement {
                 .as_i64()
                 .map(|n| self.spectral.colormap = n as i32)
                 .is_some(),
+            // The loudness layer's own scale and guides — the parameters of a
+            // measure live with the measure, on the element.
+            "loudness_target" => v.as_f64().map(|x| self.loudness.target = x).is_some(),
+            // Tech 3341 specifies two scales and names them by their top; a
+            // number between them is taken at its word, so a script can draw a
+            // strip of its own.
+            "loudness_scale" => v
+                .as_f64()
+                .filter(|x| *x > 0.0)
+                .map(|x| self.loudness.scale = x)
+                .is_some(),
+            "loudness_ruler" => truthy(v).map(|b| self.loudness.ruler = b).is_some(),
+            "loudness_stats" => truthy(v).map(|b| self.loudness.stats = b).is_some(),
             // The chrome.
             "overlay" => truthy(v).map(|b| self.display.overlay = b).is_some(),
             // **Live, and both ways.** A client arms it when it starts
@@ -199,6 +212,21 @@ impl SignalElement {
         // The cached analysis reads the presentation, the size and the rate.
         if handled && matches!(key, "view" | "fft_size" | "window_size" | "sample_rate") {
             self.refresh_analysis();
+        }
+        // **The loudness layer's own mutation points.** Measuring is a pass
+        // over the samples, so it happens where what it reads moved: the
+        // measures themselves (a layer turned on), the rate a window is
+        // counted in, and the samples. The *span* is cheaper and moves far more
+        // often — a hand sweeping a selection — so it is its own point.
+        if handled
+            && matches!(
+                key,
+                "measure" | "sample_rate" | "channels" | "data" | "reload"
+            )
+        {
+            self.refresh_loudness();
+        } else if handled && matches!(key, "sel_start" | "sel_len") {
+            self.refresh_loudness_summary();
         }
         // ...and so does what a claimed slot is built from, plus the channel count
         // that splits the samples into lanes. A `/gui_set` of one of these is a

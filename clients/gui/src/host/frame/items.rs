@@ -59,6 +59,9 @@ pub(super) enum TimelineKind {
         /// What the picture measures, as the element stated it — one drawing
         /// per measure into the one body.
         measures: crate::host::graphics::signal::trace::Measures,
+        /// The loudness layer, as the element stated it: the curve it measured,
+        /// the scale it is read on and what its span measures.
+        loudness: crate::host::elements::signal::LoudnessFrame,
     },
     Spectrogram {
         /// The frequency window, as the element stated it.
@@ -262,6 +265,7 @@ pub(super) fn collect_widgets(
                             amp,
                             overlay,
                             measures,
+                            loudness,
                         } => timeline(
                             body,
                             TimelineKind::Waveform {
@@ -269,6 +273,7 @@ pub(super) fn collect_widgets(
                                 amp,
                                 overlay,
                                 measures,
+                                loudness,
                             },
                         ),
                         SlotFrame::Spectrogram { body, freq, look } => {

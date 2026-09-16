@@ -247,6 +247,10 @@ pub(crate) struct WaveParams<'a> {
     /// live view reads it like a stored one: the picture is the same renderer
     /// over a window that happens to be arriving.
     pub measures: trace::Measures,
+    /// The live loudness curve, when a measure asks for one — drawn over the
+    /// whole body, since a loudness is the channels summed and has no lane of
+    /// its own.
+    pub loudness: Option<super::signal::loudness::LiveCurve>,
 }
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
@@ -340,6 +344,9 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
                 p.measures,
             );
         }
+    }
+    if let Some(curve) = &p.loudness {
+        super::signal::loudness::draw_live(d, body, curve);
     }
     if frames > 0 {
         super::corner_text(d, if p.window.locked { "lock" } else { "free" }, body);

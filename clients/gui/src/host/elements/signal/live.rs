@@ -33,6 +33,106 @@ use crate::host::widget::element::Live;
 /// Most recent control-bus samples a rolling trace keeps and plots.
 pub(crate) const SCOPE_HISTORY: usize = 512;
 
+/// How many loudness readings a live curve keeps — the same depth a rolling
+/// trace keeps of its bus, for the same reason: a curve is read as a shape, and
+/// the shape is the last few hundred readings.
+pub(crate) const LOUDNESS_HISTORY: usize = 512;
+
+/// **What a live loudness layer keeps**: the meter it feeds and the readings it
+/// has taken off it.
+///
+/// This is the live half of the same measurement a stored view reads off a
+/// [`Profile`](clausters_core::loudness::Profile) — the *streaming* face of the
+/// core's one algorithm, fed from the bus's retained history so no sample is
+/// counted twice and none is skipped. A meter fed from the triggered display
+/// window instead would be fed overlapping windows and would read the same
+/// audio several times over, which is why this reads the history and not the
+/// window beside it.
+#[derive(Clone)]
+pub struct LiveLoudness {
+    meter: clausters_core::loudness::LoudnessMeter,
+    channels: usize,
+    rate: f64,
+    /// The stream position just past the newest sample already fed.
+    at: Option<u64>,
+    /// The readings, oldest first: what a meter showed at each tick.
+    pub momentary: VecDeque<f32>,
+    pub short: VecDeque<f32>,
+}
+
+impl LiveLoudness {
+    fn new(channels: usize, rate: f64) -> Self {
+        LiveLoudness {
+            meter: clausters_core::loudness::LoudnessMeter::new(channels, rate),
+            channels,
+            rate,
+            at: None,
+            momentary: VecDeque::new(),
+            short: VecDeque::new(),
+        }
+    }
+
+    /// Whether this state is still the one a bus of `channels` at `rate` wants
+    /// — a `/gui_set` of either is a different measurement, not a continuation
+    /// of this one.
+    fn matches(&self, channels: usize, rate: f64) -> bool {
+        self.channels == channels && self.rate == rate
+    }
+
+    /// Feeds whatever each channel's history has grown since the last tick, and
+    /// takes one reading of each window.
+    ///
+    /// The channels are advanced **together**, by the shortest run any of them
+    /// grew, because a loudness is a sum across the channels of one instant: a
+    /// frame built from one channel's newest samples and another's older ones
+    /// would be a measurement of audio that never existed.
+    fn advance(&mut self, histories: &[&crate::host::live::BusHistory]) {
+        let fresh = histories
+            .iter()
+            .filter_map(|h| {
+                let end = h.end()?;
+                Some(match self.at {
+                    Some(at) => (end.saturating_sub(at) as usize).min(h.samples().len()),
+                    None => h.samples().len(),
+                })
+            })
+            .min()
+            .unwrap_or(0);
+        let end = histories.iter().filter_map(|h| h.end()).min();
+        if fresh > 0 {
+            let channels = self.channels;
+            let mut block = Vec::with_capacity(fresh * channels);
+            for i in 0..fresh {
+                for h in histories {
+                    let samples = h.samples();
+                    block.push(samples[samples.len() - fresh + i]);
+                }
+            }
+            self.meter.feed(&block);
+        }
+        self.at = end;
+        push_sample_capped(
+            &mut self.momentary,
+            self.meter.momentary() as f32,
+            LOUDNESS_HISTORY,
+        );
+        push_sample_capped(
+            &mut self.short,
+            self.meter.short_term() as f32,
+            LOUDNESS_HISTORY,
+        );
+    }
+}
+
+impl fmt::Debug for LiveLoudness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LiveLoudness")
+            .field("channels", &self.channels)
+            .field("readings", &self.momentary.len())
+            .finish()
+    }
+}
+
 /// What a live presentation accumulates from a forward-only source. Empty for a
 /// view over stored samples, which has its past already.
 #[derive(Clone, Default)]
@@ -46,6 +146,9 @@ pub struct LiveState {
     pub spectra: Vec<SpectrumState>,
     /// The rolling time-frequency transform of a retained waterfall.
     pub roll: Option<Waterfall>,
+    /// The streaming loudness meter and its readings, for a view whose
+    /// measures ask for a loudness curve.
+    pub loudness: Option<LiveLoudness>,
 }
 
 impl fmt::Debug for LiveState {
@@ -57,6 +160,7 @@ impl fmt::Debug for LiveState {
             .field("window", &self.window.frames())
             .field("spectra", &self.spectra.len())
             .field("roll", &self.roll.is_some())
+            .field("loudness", &self.loudness.is_some())
             .finish()
     }
 }
@@ -74,7 +178,10 @@ impl SignalElement {
             Presentation::Signal if !bus.rate.is_audio() => {
                 push_sample(&mut self.live.history, live.control(bus.bus));
             }
-            Presentation::Signal => self.tick_window(live, &bus),
+            Presentation::Signal => {
+                self.tick_window(live, &bus);
+                self.tick_loudness(live, &bus);
+            }
             Presentation::Phase => self.tick_phase(live, &bus),
             Presentation::Spectrum => self.tick_spectrum(live, &bus),
             Presentation::TimeFrequency => self.tick_roll(live, &bus),
@@ -150,6 +257,32 @@ impl SignalElement {
         };
     }
 
+    /// **The live loudness curve**: the meter fed from the bus's retained
+    /// history, one reading a tick.
+    ///
+    /// It is the tick's work and not the draw's for the reason every live view
+    /// states: a window that repaints twice must not measure twice, and one
+    /// that repaints never must not lose its readings.
+    fn tick_loudness(&mut self, live: &Live, bus: &super::Bus) {
+        if !self.wants_loudness() || !bus.rate.is_audio() {
+            self.live.loudness = None;
+            return;
+        }
+        let (channels, rate) = (bus.channels.max(1), live.rate());
+        let histories: Vec<&crate::host::live::BusHistory> = (0..channels)
+            .filter_map(|k| live.history(bus.bus + k as i32))
+            .collect();
+        if histories.len() != channels {
+            return;
+        }
+        let state = match self.live.loudness.take() {
+            Some(state) if state.matches(channels, rate) => state,
+            _ => LiveLoudness::new(channels, rate),
+        };
+        let state = self.live.loudness.insert(state);
+        state.advance(&histories);
+    }
+
     /// The goniometer's window: a bus and the one beside it, interleaved. No
     /// trigger — the phase view shows the freshest pairs directly.
     fn tick_phase(&mut self, live: &Live, bus: &super::Bus) {
@@ -222,6 +355,14 @@ impl SignalElement {
         {
             roll.advance(history.samples(), end);
         }
+    }
+}
+
+/// Pushes one value into a rolling history, capped at `cap`.
+fn push_sample_capped(history: &mut VecDeque<f32>, value: f32, cap: usize) {
+    history.push_back(value);
+    while history.len() > cap {
+        history.pop_front();
     }
 }
 

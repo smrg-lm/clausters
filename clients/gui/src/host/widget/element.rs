@@ -836,6 +836,9 @@ pub enum SlotFrame {
         /// picture and the chrome around it agree.
         measures: crate::host::graphics::signal::trace::Measures,
         overlay: bool,
+        /// **The loudness layer**: the measured curve, its own scale and what
+        /// a span of it measures. Empty where no measure asks for one.
+        loudness: crate::host::elements::signal::LoudnessFrame,
     },
     /// The texture slot: one uploaded analysis per row, sampled a texel per
     /// pixel, drawn into `body` at the element's frequency window and look.

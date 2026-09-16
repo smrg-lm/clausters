@@ -393,6 +393,12 @@ in the middle of an example.
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
 
+### `views/loudness`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `onClosed` | the script holds the window with `win.wait()` and frees its synth after it, which the page cannot do -- a tab may not block -- so the close is a callback there |
+
 ### `views/meters`
 
 | Only in | Call | Why |

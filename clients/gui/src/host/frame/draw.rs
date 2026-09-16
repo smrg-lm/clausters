@@ -440,6 +440,7 @@ pub(super) fn draw_timeline_meshes(
                 domain,
                 amp,
                 measures,
+                loudness,
             } => {
                 let Some(slot) = waveforms.get(&(item.id, item.key)) else {
                     over.border(body, 1.0, th.view_frame);
@@ -536,6 +537,21 @@ pub(super) fn draw_timeline_meshes(
                         );
                     }
                 }
+                // **The loudness layer is drawn once, over the whole body.** It
+                // is the one measure that is not a measure of a channel: a
+                // loudness is the channels summed with their weights, so it has
+                // no lane to sit in and no second copy to draw.
+                crate::host::graphics::signal::loudness::draw(
+                    &mut Draw::new(mesh, m, th),
+                    body,
+                    &local,
+                    &crate::host::graphics::signal::loudness::LoudnessParams {
+                        layer: loudness,
+                        measures: *measures,
+                        selection: item.editor.sel_len > 0.0,
+                        y: (amp.0, amp.1),
+                    },
+                );
                 for ch in 1..draw_channels {
                     let row = channel_rect(body, draw_channels, ch);
                     over.rect(Rect::new(row.x, row.y, row.w, 1.0), th.channel_divider);

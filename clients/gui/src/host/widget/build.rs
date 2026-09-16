@@ -222,12 +222,36 @@ pub(crate) fn signal_element(
         el.measures = m;
     }
 
+    // The loudness layer's scale and guides, read at construction the way
+    // `/gui_set` reads them: the parameters of a measure live with the measure.
+    if let Some(x) = opt_number(props, "loudness_target") {
+        el.loudness.target = x as f64;
+    }
+    if let Some(x) = opt_number(props, "loudness_scale").filter(|x| *x > 0.0) {
+        el.loudness.scale = x as f64;
+    }
+    if let Some(b) = props.get("loudness_ruler").and_then(truthy) {
+        el.loudness.ruler = b;
+    }
+    if let Some(b) = props.get("loudness_stats").and_then(truthy) {
+        el.loudness.stats = b;
+    }
+
     el.display = signal::Display {
         overlay: props.get("overlay").and_then(truthy).unwrap_or(false),
         label: label(props),
     };
     el.editor = EditorProps::parse(props, p.ruler_y);
     el.editor.ruler = Ruler::parse_with(props, p.ruler);
+    // **Air above full scale, on the axis that measures amplitude.** A
+    // time-frequency picture's vertical is hertz and stops at Nyquist; a
+    // trace's is a value, and a floating-point signal can leave the ±1 the
+    // domain names -- so that one axis can be opened past its domain.
+    el.editor.y_headroom = if el.presentation == signal::Presentation::TimeFrequency {
+        1.0
+    } else {
+        crate::viewport::AMP_HEADROOM
+    };
 
     // The capabilities the preset welded to the name, as the props they are:
     // whether a view navigates, carries a selection or edits back is a choice
@@ -243,5 +267,9 @@ pub(crate) fn signal_element(
     };
 
     el.refresh_analysis();
+    // Inline samples are measured here, which is the element's first mutation
+    // point: a def that names a loudness measure draws its curve on the frame
+    // it is built for, not on the one after.
+    el.refresh_loudness();
     Ok(el)
 }

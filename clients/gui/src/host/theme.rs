@@ -109,6 +109,19 @@ theme_roles! {
     /// iZotope RX states, the analog waveform in a colour apart from the
     /// digital samples -- and warm so it does not read as another channel.
     trace_signal = [0.98, 0.55, 0.35, 0.95];
+    /// **The loudness curve** drawn over a signal (the `momentary` and `short`
+    /// measures): what a meter would have read at each point of the take.
+    ///
+    /// An ink of its own, and cool where the reconstruction is warm, because it
+    /// is the one layer that does *not* measure the same axis as the picture
+    /// under it -- it is read against its own LU scale and against the target
+    /// line, not against the samples it crosses.
+    trace_loudness = [0.55, 0.78, 0.98, 0.95];
+    /// **The loudness target and the edges of its scale**: the line a delivery
+    /// specification names (EBU R 128's -23 LUFS) and the bounds of the strip
+    /// the curve is drawn in. Quiet, because a guide is read *behind* the
+    /// curve it is a reference for.
+    trace_guide = [0.45, 0.58, 0.72, 0.55];
     /// A curve's grabbable break-point.
     point = [0.90, 0.93, 0.95, 1.0];
 

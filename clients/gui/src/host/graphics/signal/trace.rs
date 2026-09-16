@@ -24,6 +24,7 @@
 //! its vertex count was bounded by the render width, as here. So it is gone,
 //! and `crate::waveform` is now the data and the navigation state alone.
 
+use clausters_core::loudness;
 use clausters_core::peaks;
 
 use crate::waveform::WaveformData;
@@ -106,6 +107,21 @@ pub enum Trace<'a> {
     /// A pyramid-backed source — the editor-grade path, where a column costs a
     /// pyramid read rather than the samples it summarizes.
     Data(&'a WaveformData),
+    /// **A loudness profile**, read as a signal in LU: the curve of what a
+    /// meter would have shown along the take ([`loudness::Profile`]).
+    ///
+    /// It is an arm of this enum rather than a renderer of its own because it
+    /// answers the same two questions every other source does — what did this
+    /// column cover, and what is the value here — so the one renderer draws it
+    /// with nothing but a different vertical map. `floor` is where a reading of
+    /// silence lands, which is the bottom of the scale the layer is drawn on:
+    /// a loudness of `-inf` has no place on an axis and every axis has a
+    /// bottom.
+    Loudness {
+        profile: &'a loudness::Profile,
+        window: f64,
+        floor: f32,
+    },
 }
 
 impl<'a> Trace<'a> {
@@ -122,6 +138,7 @@ impl<'a> Trace<'a> {
         match self {
             Trace::Samples { samples, channels } => samples.len() / channels,
             Trace::Data(data) => data.total_samples(),
+            Trace::Loudness { profile, .. } => profile.frames() as usize,
         }
     }
 
@@ -134,6 +151,10 @@ impl<'a> Trace<'a> {
         match self {
             Trace::Samples { samples, .. } => !samples.is_empty(),
             Trace::Data(data) => data.has_raw(),
+            // A profile answers for any point of the take, at any zoom: its
+            // readings are what it holds, and they are not samples to run out
+            // of.
+            Trace::Loudness { .. } => true,
         }
     }
 
@@ -142,6 +163,9 @@ impl<'a> Trace<'a> {
         match self {
             Trace::Samples { channels, .. } => *channels,
             Trace::Data(data) => data.num_channels(),
+            // A loudness reading is the channels **summed**, with their
+            // weights: one curve for the take, not one per lane.
+            Trace::Loudness { .. } => 1,
         }
     }
 
@@ -169,6 +193,19 @@ impl<'a> Trace<'a> {
                 (lo, hi)
             }
             Trace::Data(data) => data.column(ch, samples_per_px, s0, s1),
+            // The quietest and loudest readings the column covers, so a
+            // zoomed-out curve keeps the excursion between two pixels instead
+            // of sampling one reading out of the hundred it spans.
+            Trace::Loudness {
+                profile,
+                window,
+                floor,
+            } => {
+                let (lo, hi) = profile
+                    .column(*window, s0.max(0.0) as u64, s1.max(0.0) as u64)
+                    .unwrap_or((*floor, *floor));
+                (lo.max(*floor), hi.max(*floor))
+            }
         }
     }
 
@@ -196,6 +233,9 @@ impl<'a> Trace<'a> {
                 Some((sum / (b - a) as f64) as f32)
             }
             Trace::Data(data) => data.column_ms(ch, samples_per_px, s0, s1),
+            // A level of a loudness curve is not a measurement of anything:
+            // the curve is already a level.
+            Trace::Loudness { .. } => None,
         }
     }
 
@@ -211,6 +251,11 @@ impl<'a> Trace<'a> {
                 samples[f * channels + ch]
             }
             Trace::Data(data) => data.samples_at(ch, s.round().max(0.0) as usize),
+            Trace::Loudness {
+                profile,
+                window,
+                floor,
+            } => (profile.window_at(*window, s.max(0.0) as u64) as f32).max(*floor),
         }
     }
 }
@@ -243,6 +288,18 @@ pub enum Measure {
     /// waveform's amplitude appear to jump at a zoom threshold, since the two
     /// differ by a fixed amount that is the signal's own inter-sample content.
     Signal,
+    /// **The momentary loudness**: what a meter would have read at each point
+    /// of the take, over the 400 ms up to it (ITU-R BS.1770 and EBU R 128).
+    ///
+    /// The one measure drawn on an axis of its own. Peak, level and
+    /// reconstruction all measure the signal's *amplitude* and share the
+    /// picture's vertical; loudness is in LU, so this layer brings its own
+    /// scale and its own ruler and is read against the target line rather than
+    /// against the samples it crosses.
+    Momentary,
+    /// **The short-term loudness**: the same reading over the 3 s up to each
+    /// point, which is the curve a loudness track plots.
+    Short,
 }
 
 impl Measure {
@@ -254,6 +311,8 @@ impl Measure {
             "peak" => Some(Measure::Peak),
             "rms" => Some(Measure::Rms),
             "signal" => Some(Measure::Signal),
+            "momentary" => Some(Measure::Momentary),
+            "short" => Some(Measure::Short),
             _ => None,
         }
     }
@@ -264,7 +323,26 @@ impl Measure {
             Measure::Peak => "peak",
             Measure::Rms => "rms",
             Measure::Signal => "signal",
+            Measure::Momentary => "momentary",
+            Measure::Short => "short",
         }
+    }
+
+    /// The loudness window this measure reads, in seconds — `None` for the
+    /// measures of amplitude, which is also the test for *which axis a layer is
+    /// drawn on*: a measure with a window is in LU and brings its own scale.
+    pub fn loudness_window(self) -> Option<f64> {
+        match self {
+            Measure::Momentary => Some(loudness::MOMENTARY_SECONDS),
+            Measure::Short => Some(loudness::SHORT_TERM_SECONDS),
+            _ => None,
+        }
+    }
+
+    /// Whether this measure is read in LU rather than in the picture's own
+    /// vertical.
+    pub fn is_loudness(self) -> bool {
+        self.loudness_window().is_some()
     }
 }
 
@@ -300,7 +378,13 @@ impl Default for Measures {
 
 impl Measures {
     /// Every measure there is, in drawing order — back to front.
-    pub const ALL: [Measure; 3] = [Measure::Peak, Measure::Rms, Measure::Signal];
+    pub const ALL: [Measure; 5] = [
+        Measure::Peak,
+        Measure::Rms,
+        Measure::Signal,
+        Measure::Momentary,
+        Measure::Short,
+    ];
 
     /// The set holding exactly one measure.
     pub fn of(m: Measure) -> Self {
@@ -352,6 +436,12 @@ pub fn measure_color(theme: &Theme, measure: Measure, series: Color) -> Color {
         // same reason a level body does, and the same shape RX states (the
         // analog waveform "in red under digital sample values (blue)").
         Measure::Signal => theme.trace_signal,
+        // The loudness curves are read against their own scale and against the
+        // target line, not against the samples they are drawn over, so they
+        // take an ink of their own -- and one ink for both, because a view
+        // drawing the two draws one curve inside the other, the short-term
+        // reading being the momentary one integrated longer.
+        Measure::Momentary | Measure::Short => theme.trace_loudness,
     }
 }
 
@@ -545,6 +635,15 @@ pub fn draw_channel(
 ) {
     let frames = trace.frames();
     if frames < 2 || rect.w < 1.0 || rect.h <= 0.0 {
+        return;
+    }
+    // **A measure is drawn by the source that can answer it, and by no other.**
+    // A loudness layer is the profile's curve and an amplitude layer is the
+    // samples', so the two never cross: a view whose measures name a loudness
+    // one draws it from a `Loudness` trace (with that trace's own vertical map)
+    // and draws nothing for it from the samples, which is what lets every
+    // caller loop over the measures without knowing which sources it holds.
+    if style.measure.is_loudness() != matches!(trace, Trace::Loudness { .. }) {
         return;
     }
     // **The trace bounds itself to its lane.** It reads a *span* per pixel and

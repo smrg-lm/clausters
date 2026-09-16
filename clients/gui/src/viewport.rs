@@ -84,6 +84,19 @@ impl View {
 /// display units `[0, 1]` rather than samples.
 pub const MIN_SPAN: f64 = 1e-3;
 
+/// **How far past its own domain an amplitude axis may be opened** — the
+/// headroom a signal that leaves full scale is read in.
+///
+/// Every other axis here is bounded by what it addresses: there are no samples
+/// before the take and nothing above Nyquist, so a window wider than the domain
+/// would be a picture of nothing. Amplitude is the exception, and the true-peak
+/// work is what made it one: the engine is floating point, a signal *can* sit
+/// above full scale, and a view clamped to the domain draws the part that
+/// matters flat against its own edge. Four is the ±1 domain seen at ±4, twelve
+/// decibels of air: enough to read an over, little enough that the waveform is
+/// still a waveform.
+pub const AMP_HEADROOM: f64 = 4.0;
+
 /// The width under which a window is treated as degenerate — a range whose
 /// ends coincide, which maps every value to the bottom rather than dividing.
 /// `f32`'s epsilon because the values that reach these axes are `f32` widget
@@ -175,6 +188,10 @@ pub struct Axis {
     /// The narrowest the window may get — one sample on a counted domain, the
     /// zoom floor on a normalized one.
     min_len: f64,
+    /// How many times its own extent the window may be opened to. `1.0` is
+    /// every axis bounded by what it addresses; more is [`AMP_HEADROOM`]'s
+    /// case, where the domain is a convention rather than a limit.
+    headroom: f64,
     pub unit: Unit,
     pub policy: Policy,
     pub reach: Reach,
@@ -193,6 +210,7 @@ impl Axis {
             origin: 0.0,
             extent: 1.0,
             min_len: MIN_SPAN,
+            headroom: 1.0,
             unit,
             policy: Policy::Free,
             reach: Reach::Whole,
@@ -207,6 +225,7 @@ impl Axis {
             origin: 0.0,
             extent: total.max(1) as f64,
             min_len: 1.0,
+            headroom: 1.0,
             unit,
             policy: Policy::Free,
             reach: Reach::Whole,
@@ -227,10 +246,18 @@ impl Axis {
             origin: lo,
             extent,
             min_len: extent * MIN_SPAN,
+            headroom: 1.0,
             unit,
             policy: Policy::Free,
             reach: Reach::Whole,
         }
+    }
+
+    /// The same axis, openable past its own domain by `factor` times its
+    /// extent — see [`AMP_HEADROOM`]. A factor at or under one is no air.
+    pub fn with_headroom(mut self, factor: f64) -> Self {
+        self.headroom = factor.max(1.0);
+        self
     }
 
     pub fn with_policy(mut self, policy: Policy) -> Self {
@@ -320,7 +347,8 @@ impl Axis {
     /// (0..1 across the window) fixed.
     pub fn zoom(&mut self, factor: f64, anchor: f64) {
         let pivot = self.window.start + self.window.len * anchor;
-        self.window.len = (self.window.len * factor).clamp(self.min_len, self.extent);
+        self.window.len =
+            (self.window.len * factor).clamp(self.min_len, self.extent * self.headroom);
         self.window.start = pivot - self.window.len * anchor;
         self.clamp();
     }
@@ -378,14 +406,21 @@ impl Axis {
     }
 
     fn clamp(&mut self) {
-        self.window.len = self
-            .window
-            .len
-            .clamp(self.min_len.min(self.extent), self.extent);
+        let widest = self.extent * self.headroom;
+        self.window.len = self.window.len.clamp(self.min_len.min(self.extent), widest);
         // Against the domain's own bounds, not against zero: a value axis
-        // starts wherever its range does.
-        let last = self.origin + (self.extent - self.window.len).max(0.0);
-        self.window.start = self.window.start.clamp(self.origin, last);
+        // starts wherever its range does. **Opened past the domain** (only an
+        // axis with headroom can be) the rule turns around: the domain no
+        // longer bounds the window, the window contains the domain, so what is
+        // clamped is that the air stays air — the whole domain inside it,
+        // pannable between its two edges.
+        let over = (self.window.len - self.extent).max(0.0);
+        let (first, last) = if over > 0.0 {
+            (self.origin - over, self.origin)
+        } else {
+            (self.origin, self.origin + (self.extent - self.window.len))
+        };
+        self.window.start = self.window.start.clamp(first, last);
     }
 }
 
@@ -439,6 +474,40 @@ mod tests {
         v.zoom(4.0, 0.5, total);
         assert_eq!(v.len, 1000.0);
         assert_eq!(v.start, 0.0);
+    }
+
+    /// **An amplitude axis can be opened past full scale**, which is what a
+    /// signal that leaves it has to be read in: the window grows past the
+    /// domain, the domain stays wholly inside it, and the air is bounded by
+    /// [`AMP_HEADROOM`] rather than by the domain.
+    #[test]
+    fn an_axis_with_headroom_opens_past_its_domain() {
+        let mut axis = Axis::normalized(Unit::Norm).with_headroom(AMP_HEADROOM);
+        axis.zoom(2.0, 0.5);
+        let (start, len) = axis.span();
+        assert!(
+            (len - 2.0).abs() < 1e-9,
+            "opened to twice the domain: {len}"
+        );
+        assert!(
+            start <= 0.0 && start + len >= 1.0,
+            "the domain is inside it"
+        );
+        // All the way out, and no further.
+        for _ in 0..8 {
+            axis.zoom(2.0, 0.5);
+        }
+        let (start, len) = axis.span();
+        assert!((len - AMP_HEADROOM).abs() < 1e-9, "the ceiling: {len}");
+        assert!(
+            start <= 0.0 && start + len >= 1.0,
+            "the domain is still inside"
+        );
+        // And without headroom the same axis stops at its own domain, which is
+        // every other axis here: there is nothing above Nyquist to show.
+        let mut bounded = Axis::normalized(Unit::Hz);
+        bounded.zoom(4.0, 0.5);
+        assert_eq!(bounded.span(), (0.0, 1.0));
     }
 
     #[test]

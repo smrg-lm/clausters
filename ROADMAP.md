@@ -359,15 +359,16 @@ its plan; the plan is where its acceptance is read.
   enough to land with the multitrack's roll lane.
 
 - ⬜ **The A track — what a signal measures, and the layers that show it**
-  *(`clients/gui/PLAN.md`, "A track")*. `A1`-`A4` shipped (mean square in the
+  *(`clients/gui/PLAN.md`, "A track")*. `A1`-`A5` shipped (mean square in the
   pyramid, the RMS layer and the `measure` prop, band-limited reconstruction
-  with true peak, and the loudness family in the core with both clients'
-  one-shot doors); what is open is the loudness layer and its read-out (`A5`),
-  and the two milestones that make the layer stack explicit and publish its
-  rules from the clients (`A6`, `A7`). `A5` is the next one: `A4` left the
-  streaming `LoudnessMeter` for the live curve and the numbers for the
-  read-out, and what it has to settle is the LU axis a layer brings with it.
-  **Related:** the audio editor's layers below land on this track's stack
+  with true peak, the loudness family in the core, and the loudness layer with
+  its own LU scale and its read-out); what is open is `A6`, which makes the
+  layer stack's three rules explicit — order, which layer owns the vertical,
+  and the alpha rule — and `A7`, which publishes them from the clients and the
+  books. `A6` is the next one, and `A5` is what it generalizes: the loudness
+  curve is the first layer that brought an axis of its own, so the axis-claim
+  rule now has a concrete case to be stated over rather than a hypothetical
+  one. **Related:** the audio editor's layers below land on this track's stack
   rules.
 
 - ⬜ **Try cubic instead of straight segments where the samples are joined**

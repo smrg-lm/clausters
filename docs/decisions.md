@@ -8416,3 +8416,48 @@ than at the 100 ms block rate, because Tech 3341's case 13 is written to fail
 exactly that: a 400 ms tone that starts off the block grid is never inside one
 window whole, and a meter that looks every 100 ms reads it up to 0.46 LU low.
 
+## A loudness layer brings its own axis, and its curve is measured once
+
+The loudness curves (`measure: "momentary"` / `"short"`) are the first layer in
+the signal element that does not measure the picture's own quantity. Peak, level
+and reconstruction are amplitudes: they share the view's vertical, and a reader
+compares them directly. A loudness reading is in LUFS, so drawing it against an
+amplitude axis would be a number on a scale it does not belong to.
+
+**So the layer states its scale instead of inferring one.** It is EBU Tech
+3341's, named by its top — `+9` runs from 18 LU under the target to 9 over it,
+`+18` from 36 under to 18 over — with EBU R 128's -23 LUFS as the target and the
+zero of the scale. The layer draws **its own ruler**, on the right of the body,
+labelled in LU relative to that target; the left strip stays the picture's own
+axis, because two axes on one strip are two numbers where a reader expects one.
+This is the concrete case the A track's later milestone generalizes into the
+rule that a layer declares whether it maps through the container's axis or
+normalizes into its box: the question was met by a layer that actually has a
+second domain, rather than decided in the abstract.
+
+**The curve and the numbers come off one measurement.**
+`clausters_core::loudness::Profile` holds the take's weighted energy in 10 ms
+blocks with running sums, so a momentary or short-term reading anywhere is two
+subtractions, a pixel column is the band between the readings it covers, and the
+gated aggregates over any span are a walk over blocks. It is in the **core** and
+not in the host by the placement rule — a client analyzing a rendered file wants
+the same curve — and it runs the same `Weighting` stage the streaming meter
+does, so a drawn curve and a live meter cannot drift apart.
+
+**Which is also why nothing is marked stale.** The A track decided in advance
+that an edit would invalidate the aggregates entirely, and that a read-out would
+therefore have to mark them stale and recompute on demand. That reasoning
+assumed measuring them meant a pass over the samples. Over the profile it does
+not: an edit re-measures only the blocks it touched, widened by the filters'
+memory, and the aggregates that read those blocks follow immediately. The rule
+the decision was made from — *a measure's affected span is the edit's span
+widened by the measure's memory* — is what the incremental update implements;
+the staleness it predicted was a consequence of a cost that turned out not to
+exist.
+
+**Live, the same measure is the meter's own curve**, fed from the bus's retained
+history rather than from the oscilloscope's display window beside it. That
+window is re-read every tick and overlaps itself, so a meter fed from it would
+count the same audio several times over; the history is de-duplicated by stream
+position, which is what makes one algorithm serve both a file and a bus.
+
