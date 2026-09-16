@@ -87,18 +87,27 @@ impl LiveLoudness {
     /// frame built from one channel's newest samples and another's older ones
     /// would be a measurement of audio that never existed.
     fn advance(&mut self, histories: &[&crate::host::live::BusHistory]) {
+        // **A channel that has read nothing yet has grown nothing**, and it
+        // counts in the minimum rather than dropping out of it: skipping it
+        // would take another channel's run as the run *every* channel grew and
+        // then read that many samples off the empty one. The reading waits a
+        // tick instead, which is what "the channels are advanced together"
+        // means when one of them has not started.
         let fresh = histories
             .iter()
-            .filter_map(|h| {
-                let end = h.end()?;
-                Some(match self.at {
-                    Some(at) => (end.saturating_sub(at) as usize).min(h.samples().len()),
-                    None => h.samples().len(),
-                })
+            .map(|h| match (h.end(), self.at) {
+                (None, _) => 0,
+                (Some(end), Some(at)) => (end.saturating_sub(at) as usize).min(h.samples().len()),
+                (Some(_), None) => h.samples().len(),
             })
             .min()
             .unwrap_or(0);
-        let end = histories.iter().filter_map(|h| h.end()).min();
+        // The position every channel has been read up to, which is `None` while
+        // any of them has none: a position taken from the channels that *do*
+        // have one would make the late channel's first samples read as already
+        // consumed. `min` over the options answers exactly that, since `None`
+        // is the smallest.
+        let end = histories.iter().map(|h| h.end()).min().flatten();
         if fresh > 0 {
             let channels = self.channels;
             let mut block = Vec::with_capacity(fresh * channels);
@@ -606,5 +615,66 @@ mod tests {
             },
         );
         assert_eq!(state(&w, 3).window.samples, held, "a held trace is frozen");
+    }
+
+    /// **A channel that has read nothing yet holds the measurement back**, and
+    /// does not take another channel's run as its own. The second bus of a
+    /// stereo meter can be a tick behind the first — a stream that has not
+    /// answered for it yet — and the reading used to take the first channel's
+    /// fresh run as the run *every* channel grew, then index that many samples
+    /// off an empty history: a panic that took the whole host down, in the page
+    /// as surely as in a window.
+    #[test]
+    fn a_channel_with_no_history_yet_holds_the_loudness_back() {
+        let mut tree = Widget::from_node(
+            1,
+            &GuiNode::parse(
+                br#"{"id":1,"type":"signal","view":"trace","bus":0,"rate":"audio",
+                     "channels":2,"retention":0.2,"measure":"peak momentary"}"#,
+            )
+            .unwrap(),
+            &[],
+        )
+        .unwrap();
+        let rate = 48_000.0;
+        let mut histories = HashMap::new();
+        // The first bus answers, the second does not: one history grows and the
+        // other stays empty, which is the race this is about.
+        crate::host::live::update_retention(
+            &tree,
+            rate,
+            512,
+            |bus, out| {
+                if bus != 0 {
+                    return None;
+                }
+                for (k, s) in out.iter_mut().enumerate() {
+                    *s = (k as f32 * 0.01).sin();
+                }
+                Some(511)
+            },
+            &mut histories,
+        );
+        let source = Source {
+            offset: 0.0,
+            fill: |_bus: i32, out: &mut [f32]| out.fill(0.0),
+        };
+        tick_tree(
+            &mut tree,
+            &Live {
+                bus: Some(&source),
+                sample_rate: rate,
+                dt: 1.0 / 60.0,
+                histories: &histories,
+            },
+        );
+        let el = tree.signal().expect("a signal element");
+        assert!(
+            el.live
+                .loudness
+                .as_ref()
+                .is_some_and(|l| l.momentary.iter().all(|v| !v.is_finite() || *v <= 0.0)),
+            "the meter reads silence rather than the other channel's samples"
+        );
     }
 }
