@@ -121,7 +121,8 @@ already carry it.
   from a duration times a tempo; it comes from two positions, and the clock
   already has the verbs (`beats2secs`/`secs2beats`, both through the map). One
   line in each client. **Distinct from the ownership question in section 2**:
-  this one uses the map that is already there.
+  this one uses the map that is already there. It is also one of that entry's
+  decisions to take (`Automation`'s place in the frame).
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
@@ -155,29 +156,29 @@ on each one; none of them is being taken by this file.
 
 - ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
   it reaches for a scalar** *(`clients/python/PLAN.md`, Found by use)*.
-  `Editor.tempo_map` is where a piece's tempo actually lives -- `Editor.tempo`
-  is a reading of it, every beats/units conversion goes through it, and the
-  `tempo_map` axis prop the host draws its beat ruler from is the editor's. A
-  view holding content is the wrong shape, but the editor is the symptom rather
-  than the site: `form` is a frozen secondary module over the fundamental
-  structures, so the map cannot land in an `Aggregate` either. What is missing is what a
-  **fundamental** structure asks when it crosses beats and seconds. Today each
-  answers differently -- `Timeline` has no tempo and takes a map as an argument,
-  `form.element` invents a constant one per call, `clausters-document` refuses
-  it on purpose, and `Automation`, which manages no time at all, converts one
-  inline with a scalar — **its own bug, listed in section 1**, and evidence
-  here only because a structure with no business converting time did so anyway,
-  for want of anything else in reach.
-  **The decision**: who owns it -- the `TempoClock` (cheapest; leaves a piece
-  nobody plays with nowhere to put its tempo), `Timeline` (the closest
-  fundamental structure to "the piece"), or the session. The entry weighs the
-  three. The host needs no change either way: it takes the map as an axis prop
-  and does not care who sent it.
-  **Found while wiring the map to the host** (2026-09-05), which is the fix that
-  made the ownership visible: the removed `FormEditor._adopt_map`, where the
-  clock's map won over the editor's, was a reconciliation that existed only
-  because two non-owners each kept a copy. `O21`'s session is the fourth
-  candidate owner and probably the answer, which the entry should now weigh.
+  **Still open, and no longer the question it names.** Designing it (2026-09-16
+  and 17) answered who owns the map -- a `Timeline`, through the clock it holds
+  internally -- and turned the entry into the design of logical and physical
+  time across the client: a frame, a `Timeline` design, and fifteen decisions
+  to take, each to be reviewed when it is taken up. All of it is read there.
+
+  **What to take first needs no decision:** the `Timeline` core on its own
+  clock, in both clients -- the internal clock and map, `play`/`locate`/
+  `pause`/`stop`, nesting with one parent and `copy()`, a parent's length
+  covering its children's -- which also retires the `Playhead` axis defect
+  the entry lists. Everything else (a timeline on a server's transport, a
+  timeline editor, the views without tempo) is built on it, and each of the
+  entry's decisions is taken when the work that needs it arrives.
+
+  **What it touches, in this file.** The automation fix in section 1 is one
+  of its decisions and can still land alone. The re-cued pass that drops a
+  clip (below), `C54`/`W31`'s events half, "The mapping exists and is private
+  to the `Editor`" and "A roll that sounds shows no cursor" all involve a
+  `Playhead` that becomes internal, so each is re-read against the core before
+  it is taken. `T2` names the server's grid, whose future is one of the
+  decisions. Two entries it produced live elsewhere: "piece" names no
+  structure (`clients/python/PLAN.md`, Found by use) and several transports on
+  one server (root `PLAN.md`, Future directions).
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`

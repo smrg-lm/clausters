@@ -1844,9 +1844,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   (which is monotonic) sound at the old position, and `/sched_clear` is the
   only clear there is, and it is global.
 
-  - **Decided: the server knows only physical time.** The logical grid leaves
+  - **The server knows only physical time.** Whether its logical grid leaves
     it -- the tempo of `/transport_set`, `/transport_locate` by beat,
-    `/transport_play <beat>` and the position in beats.
+    `/transport_play <beat>` and the position in beats -- is decision 6.
   - **Decided: a `Timeline` does not drive physical time.** The transport and a
     timeline are two different things.
   - **How the multitrack avoids the problem today.** It has one playhead, the
@@ -1864,14 +1864,15 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
     stamped `latency` ahead so regenerated events are not late, and content
     that can be re-generated from a position (a plan, not a live routine).
 
-  **Rejected: a score player in the server.** Compiling a timeline to a score
+  **A score player in the server (decision 5).** Compiling a timeline to a score
   the server plays by following the transport was proposed and dropped: **no
   new server structure is created to play a score.** The direction is the
   opposite one -- a score converts to a timeline of events, which is the
   simplest and shares the timeline's logic -- and a timeline following a
   transport does so from the client.
 
-  **Decided: both ways of playing a timeline are valid, and coexist.**
+  **Both ways of playing a timeline are valid, and coexist** (how a timeline
+  goes on a transport is decision 7).
   `tl.play()` plays it on the client's clock -- any destination (a server,
   MIDI, another OSC application), live edits and `set_tempo` heard at once,
   each timeline independent, which is what live coding needs -- and
@@ -1905,6 +1906,14 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   when the structure's `map.version` moves, checked where views already
   refresh.
 
+  **The fixed principle: an editor represents and edits a structure's data,
+  and holds none of it.** For a `Timeline` the data is the notes -- beats,
+  durations, every other parameter -- **and the tempo**: the tempo map is
+  editable data living in the `Timeline` being shown. A ruler in beats is
+  right for a timeline because the structure is in beats, but a ruler only
+  draws the data and never contains it. The detail is settled when the
+  timeline editor with its tempo map is built; the principle is not open.
+
   **Why views held one.** Not by design: a view draws on a physical axis
   (samples, milliseconds) content placed in beats, so it needed a conversion.
   The multitrack driver (July) and `Transport` (`691c9f68`, July, anchoring
@@ -1918,63 +1927,96 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   where it had landed: the conversion a view needed was taken for ownership of
   the data.
 
-  **Decided: the timeline questions.**
+  **Decisions to take.** Fifteen questions raised while designing this entry.
+  Each is **open**: the possibilities are noted, and where the user has stated
+  a position it is recorded as a position, not as a decision -- several were
+  asked out of context and may hold errors. **Each one has to be reviewed at
+  the moment it is taken up**, in the context of the work that needs it,
+  before anything is built on it. Where a paragraph above touches one of
+  them, this list is its status.
 
-  - **A loop reaches the children.** A parent looping a window plays each child
-    looping over the region of the child that corresponds to that window, so
-    the hierarchy of playback holds. The correspondence is computed through
-    physical time -- the window in the parent's beats to seconds through the
-    parent's map, and back to beats through the child's -- since two logical
-    times can only be compared in physical time. There is no retrigger.
-  - **A timeline has no `set_tempo`.** Its clock is hidden, so its tempo is its
-    map, written through the map's own writers; an edit while it plays is heard
-    on the next wake, since the internal clock reads the map it holds.
-    `TempoClock.set_tempo` behaves the same everywhere and is not reinterpreted
-    by any structure.
-  - **An item is anything playable.** A timeline schedules whatever has a
-    play; which playables compile to a score is the transport mode's
-    condition 3, not a restriction on the timeline.
-  - **`TempoClock` is basic, and a structure built on it never changes how it
-    behaves.** A bare clock with routines is live coding with no structure at
-    all -- `TempoClock(2).start()`, a routine, `set_tempo` -- and stays
-    exactly that: its map, `start()`, its gesture. A `Timeline` groups basic
-    structures and uses an ordinary `TempoClock`; what it needs that a clock
-    lacks (a seek) is an addition to the clock, never a change of its
-    behavior. This holds for every structure over the basic ones.
+  *Timeline*
 
-  **Decided: the server's fundamental service is a synchronized physical
-  clock for all its clients.** Each client already synchronizes *with* the
-  server: `lock_to` models the sample counter from `/clock_query`, and
-  `Session.live()` does it by default, so every locked client shares the
-  server's physical axis. What is not done is clients synchronizing *with each
-  other* without the grid -- agreeing on a common origin -- and that, not a
-  logical grid, is what the server should provide first. The grid, if it
-  stays, is a use case and must not read as the server's main function.
+  1. **A loop window shorter than a child.** What a parent does when its loop
+     plays a child again while the child still sounds. Possibilities: restart
+     the child (a retrigger); the child loops over its region that corresponds
+     to the parent's window. Position stated: the latter, which keeps the
+     hierarchy of playback, with the correspondence computed through physical
+     time, since two logical times compare only in physical time.
+  2. **Changing a timeline's tempo while it plays.** Possibilities: an edit of
+     the plan from that beat (what `set_tempo` does on a clock today); a
+     performance adjustment that leaves the plan alone. Position stated: a
+     timeline has no `set_tempo`, since its clock is hidden -- its tempo is its
+     map, edited as data -- and `TempoClock.set_tempo` behaves the same
+     everywhere.
+  3. **What an item can be.** Possibilities: events only; events and
+     timelines; also `Automation` and routines. Position stated: a timeline
+     schedules anything playable.
+  4. **What a bare `TempoClock` remains.** For live coding with no structure:
+     its map as plan or record, and whether it runs from creation or from
+     `start()`. Position stated: a bare clock with routines is the most basic
+     use, as it is today (`TempoClock(2).start()`), and a structure built on a
+     basic one never changes how the basic one behaves; what a `Timeline`
+     needs from a clock (a seek) is an addition.
 
-  **Still open.**
+  *Server and transport*
 
-  - *Server and transport.* (1) Converting a score to a timeline of events:
-    the score's bundles as playable items, so a score plays in real time
-    through the timeline and never through a server structure. (2) Whether the server's grid (`/transport_set`,
-    `join_transport`, `quant` on it) is removed, as decided above, or kept as a
-    secondary use case; the priority below is decided either way. (3) The property that puts a timeline on a
-    transport: its name and `at=` (where the timeline's beat 0 falls on the
-    transport). (3b) Several transports on one server, to play concurrently:
-    today there is one; recorded as a future direction in the root `PLAN.md`. **Decided:** `gui.Transport` is renamed for what it does --
-    coordinating a playback with a view's line -- so "transport" names only the
-    server's.
-  - *Multitrack and views.* (4) Regions in physical time: the document places
-    them in beats, so whether they move to seconds, how existing documents
-    migrate, and that a tempo change moves nothing. (5) Whether the widgets'
-    scalar `tempo=` prop stays as a constant map's shorthand or goes. (6) The
-    redesign of `Editor` and `Transport` without tempo: what they receive and
-    where they ask for a conversion.
-  - *Across.* (7) One unit, beats per second or bpm, and where the other is
-    converted. (8) What `render(tempo=)` and `Session.nrt(tempo=)` mean once
-    the map is a timeline's. (9) `Automation`'s place in the frame (a curve in
-    seconds) and the fix of its scalar. (10) What the work is called in
-    CLAUDE.md, if anything, on which the "piece" rename depends. (11) The web
-    port: `clients/web/PLAN.md` names the shape it must follow.
+  5. **Playing a score in real time.** Possibilities: a score player in the
+     server following the transport (with a window feeder, id remapping, a
+     rule for a locate into a sounding note, and a way to send and update a
+     score); converting a score to a timeline of events. Position stated: no
+     new server structure is created to play a score; a score converts to a
+     timeline of events, which is simplest and shares the timeline's logic.
+  6. **Aligning clients.** What replaces `join_transport` and `quant` on the
+     server's shared grid. Possibilities: remove the logical grid from the
+     server; keep it as a secondary use case. Position stated: the server's
+     fundamental service is a synchronized physical clock for all its clients
+     -- each client already synchronizes with the server (`lock_to`), and
+     clients synchronizing with each other on a common origin is not done --
+     and the grid, if kept, must not read as the server's main function.
+  7. **How a timeline goes on a transport.** The name of the property, `at=`
+     (where the timeline's beat 0 falls on the transport), and what the verbs
+     do there. Possibilities: verbs raise while following; verbs are the
+     transport's commands. Position stated: `tl.play`/`pause`/`locate` work as
+     the multitrack's playback does, the mode is a property of the timeline,
+     and `gui.Transport` is renamed for what it does -- its new name is part of
+     this decision. Several transports on one server is not part of it: it is a
+     future direction in the root `PLAN.md`.
+
+  *Multitrack and views*
+
+  8. **Regions in physical time.** The document places regions in beats
+     today. Possibilities: keep beats; move to seconds, with a migration of
+     existing documents. Position stated: a multitrack's base is seconds; the
+     multitrack and the timeline are two paradigms that must not be confused,
+     tempo in a multitrack only draws rulers, and a timeline editor is a
+     separate thing. Open within it: how documents migrate.
+  9. **The widgets' `tempo=`/`tempo_map=` props.** Possibilities: keep the
+     scalar as a constant map's shorthand; remove. Position stated: remove the
+     current implementation; a ruler may later represent a timeline. The
+     concrete case is the piano roll: `NotesEditor` converts a timeline's beats
+     to samples with a tempo it invented, and the widget converts them back to
+     beats with the same tempo sent as a prop.
+  10. **`Editor` and `Transport` without tempo.** What they receive and where a
+      conversion comes from. The problem: `Editor` is the base class of every
+      editor and hands each one a beats-to-units conversion, needed by the
+      notes editor (a logical structure on a physical axis) and the multitrack
+      (a document in beats), and by no other; `Transport` needs one only to
+      place the playhead line and read the server's position. It is to be
+      decided under the fixed principle above, per structure edited.
+
+  *Across*
+
+  11. **One unit.** Beats per second (`TempoClock`, `TempoMap`) or bpm (the
+      document), and where the other is converted.
+  12. **`render(tempo=)` and `Session.nrt(tempo=)`.** What a session's tempo
+      means once a timeline holds its own map.
+  13. **`Automation`.** Its place in the frame (a curve in seconds) and the fix
+      of its scalar conversion.
+  14. **What the work is called.** CLAUDE.md names it "the composition" / "the
+      piece"; whether it has a name at all. The "piece" rename depends on it.
+  15. **The web port.** The shape it must follow, written in
+      `clients/web/PLAN.md`.
 
 - ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
   2026-09-05 by the user, pressing a button that did nothing)*.
