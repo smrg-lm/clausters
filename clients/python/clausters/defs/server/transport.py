@@ -61,8 +61,10 @@ class ServerTransport:
         what a playhead draws: it jumps to wherever a locate puts it and wraps
         inside ``loop``, a ``(start, end)`` pair of samples or ``None`` when
         looping is off. ``position_sample`` is read from the engine as of its
-        last completed block, so a query issued in the same breath as a locate
-        may still answer the previous place."""
+        last completed block -- except right after a locate, which the server
+        answers with the place it located to until a block has applied it, so a
+        reply in the same breath as a locate (its own broadcast above all) never
+        reports the place the piece is leaving."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         defined = bool(int(args[2]))
         group = int(args[5])

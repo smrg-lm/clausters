@@ -280,3 +280,14 @@ test("a conductor's locate re-plans from where it says", async () => {
     assert.ok(server.calls.some(([verb, axis]) => verb === "clear" && axis === "transport"),
         "the re-cue clears first");
 });
+
+test("with no destination the items go to the transport's server", async () => {
+    // A plan a broadcast writes runs where no session is ambient: the items go
+    // to the server whose transport this is.
+    const server = new TransportServer();
+    const tl = timeline();
+    tl.transport = server;
+    tl.play({ at: 0 }); // no destination named
+    await tl.refresh();
+    assert.deepEqual(server.onsets(), [0, 0.5, 1, 1.5]);
+});

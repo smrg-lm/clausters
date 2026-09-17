@@ -342,6 +342,14 @@ struct Transport {
     /// `None` when looping is off. Held here as well as in the engine so
     /// `/transport_query` can report it without asking the audio thread.
     loop_span: Option<(i64, i64)>,
+    /// A locate this server has **sent** and the engine may not have applied
+    /// yet: `(position, transport clock when it was sent)`. The engine
+    /// publishes its position once per block, so a reply built in the same
+    /// breath as a locate -- its own broadcast above all -- would otherwise
+    /// report the place the piece is leaving, and a follower would re-cue its
+    /// plan from there. Answered with this until the transport clock has
+    /// advanced past the send, which is when a block has applied it.
+    pending_locate: Option<(u64, u64)>,
     /// The group the transport governs, when one is bound (`/transport_group`).
     ///
     /// This is what separates the transport's two intensities. With no group

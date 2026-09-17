@@ -2004,6 +2004,55 @@ fn transport_pushes_on_change_to_notify_clients() {
 
 /// The sample-addressed half of the transport: an editor seeks by frame, and
 /// the beat position follows so the two spellings never disagree.
+/// A locate's **own broadcast** reports the place it located to, not the one
+/// the piece is leaving. The engine publishes its position once per block, so a
+/// reply built in the same breath as the locate would otherwise carry the old
+/// place -- and a follower re-cueing from a broadcast would plan from there.
+#[test]
+fn a_locates_broadcast_carries_the_located_position() {
+    let mut server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+    server.recv_until("/transport_query.reply");
+    server.send("/transport_play", vec![]);
+    server.recv_until("/done");
+    server.recv_until("/transport_query.reply");
+    // The piece rolls a while, so its published position is somewhere else.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..20 {
+        server.engine.process_block(&mut out);
+    }
+
+    server.send("/transport_locateSample", vec![OscType::Long(96_000)]);
+    server.recv_until("/done");
+    let pushed = server.recv_until("/transport_query.reply");
+    assert_eq!(
+        pushed.args[7],
+        OscType::Long(96_000),
+        "no block has applied the locate yet, and the broadcast still says where it goes"
+    );
+
+    // Once a block has run the engine's own reading takes over, from there on.
+    for _ in 0..2 {
+        server.engine.process_block(&mut out);
+    }
+    server.send("/transport_query", vec![]);
+    let OscType::Long(now) = server.recv_until("/transport_query.reply").args[7] else {
+        panic!("position_sample is an int64");
+    };
+    assert!(
+        (96_000..96_000 + 4 * BLOCK_SIZE as i64).contains(&now),
+        "got {now}"
+    );
+    server.quit();
+}
+
 #[test]
 fn transport_locate_sample_moves_the_position_and_its_beat_reading() {
     let mut server = TestServer::spawn();

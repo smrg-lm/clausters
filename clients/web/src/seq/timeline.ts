@@ -1111,8 +1111,11 @@ export class TransportPlayer implements TreeDriver {
         const stub = { clock: node.view as unknown as TempoClock, logicalBeat: beat };
         const previous = setCurrentRoutine(stub as unknown as Stream);
         try {
+            // The transport's own server when nothing else was named: a plan a
+            // broadcast writes runs where no session is ambient, and the server
+            // whose transport this is is the one place the items can be meant for.
             const destination = this.destination
-                ?? (main.resolveServer() as unknown as PlayDestination);
+                ?? (this.server as unknown as PlayDestination);
             (item as TimelineItem).play(destination);
         } finally {
             setCurrentRoutine(previous);

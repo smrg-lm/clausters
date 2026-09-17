@@ -238,3 +238,13 @@ def test_a_conductors_locate_re_plans_from_where_it_says():
     assert tl.position() == pytest.approx(3.0)              # beat 3 at two beats a second
     assert server.onsets() == [0.0]                         # the last item, re-planned
     assert ("clear", "transport") in server.calls[-3:], "the re-cue clears first"
+
+
+def test_with_no_destination_the_items_go_to_the_transports_server():
+    """A plan a broadcast writes runs on the receiver's thread, where no session
+    is ambient: the items go to the server whose transport this is."""
+    server = TransportServer()
+    tl = _timeline()
+    tl.transport = server
+    tl.play(at=0.0)                                   # no destination named
+    assert server.onsets() == [0.0, 0.5, 1.0, 1.5]

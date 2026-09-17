@@ -35,7 +35,12 @@ impl OscServer {
         // The position is read from the engine and the loop from here: the
         // first moves every block and only the audio thread knows it, the
         // second only changes when a client sets it.
-        let position_sample = self.handle.current_transport_position() as i64;
+        let clock = self.handle.current_transport_samples();
+        let position_sample = match t.pending_locate {
+            // Not yet applied: no block has run since it was sent.
+            Some((position, sent_at)) if clock <= sent_at => position as i64,
+            _ => self.handle.current_transport_position() as i64,
+        };
         let (loop_start, loop_end) = t.loop_span.unwrap_or((0, 0));
         vec![
             OscType::Long(origin),
@@ -70,6 +75,7 @@ impl OscServer {
     /// Sends the engine a locate, so the piece moves and not only the number
     /// this server broadcasts.
     fn locate_engine(&mut self, position: u64) {
+        self.transport.pending_locate = Some((position, self.handle.current_transport_samples()));
         self.handle.send(Cmd::TransportLocate { position }).ok();
     }
 
@@ -125,6 +131,9 @@ impl OscServer {
             // could see.
             loop_span: self.transport.loop_span,
             group: self.transport.group,
+            // Setting the grid locates the piece to 0 below, and that locate
+            // records itself.
+            pending_locate: None,
         };
         // Redefining the grid puts the piece back at its start, which is what
         // "stopped at position 0" has always meant -- it just had nowhere to

@@ -925,12 +925,16 @@ class _TransportPlayer:
 
         if isinstance(item, (Routine, Pattern)):
             raise ValueError(f"{type(item).__name__} at beat {beat}: {self._unplayable}")
-        destination = self.destination
+        # The transport's own server when nothing else was named: a plan a
+        # broadcast writes runs on the receiver's thread, where no session is
+        # ambient, and the server whose transport this is is the one place the
+        # items can be meant for.
+        destination = self.destination if self.destination is not None else self.server
         me = main.current_routine
         saved = (me.clock, me._logical_beat)
         me.clock, me._logical_beat = node.view, beat
         try:
-            item.play(destination if destination is not None else main.resolve_server())
+            item.play(destination)
         finally:
             me.clock, me._logical_beat = saved
 
