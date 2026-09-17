@@ -400,12 +400,18 @@ pub(super) fn locate_at(
     // nothing else. The `"locate"` below tells the owner where the reader put
     // it — the host owns where the cursor *is*, the owner owns what it means.
     let roots = host.set_timeline_cursor(id, pos);
+    // What the owner is told is the mark as placed, on its sample, and as a
+    // double: an `f32` holds a whole sample only up to 2^24 of them.
+    let placed = host
+        .timeline_key(id)
+        .and_then(|key| host.timelines().state(key))
+        .map_or(pos, |state| state.cursor);
     emit(
         host,
         out,
         ctx.def_id,
         id,
-        vec![OscType::String("locate".into()), OscType::Float(pos as f32)],
+        vec![OscType::String("locate".into()), OscType::Double(placed)],
     );
     redraw_all(out, &roots);
     out.push(GestureEffect::Redraw(ctx.def_id));

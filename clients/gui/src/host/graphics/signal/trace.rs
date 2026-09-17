@@ -804,13 +804,22 @@ pub fn draw_channel(
         // so it goes and the dots stay -- the shape iZotope RX draws, samples
         // as points and the analog waveform as the curve through them.
         let line = !style.layers.has(Measure::Signal);
+        // **A dot marks a sample of this view, and the view is half-open.** The
+        // line reaches the samples just past each edge so it crosses them, but
+        // a sample lying exactly on the right edge is the first one *after* the
+        // view -- in a box cut in two, the other half's first sample -- and a
+        // dot there drew it in both halves. A tolerance far under a sample
+        // absorbs the pixel map's rounding at the edges.
+        const ON_EDGE: f64 = 1e-6;
+        let (from, to) = (src(rect.x), src(rect.x + rect.w));
         let mut prev: Option<[f32; 2]> = None;
         for f in first..=last.max(first) {
             let p = [x_of(f as f64), y_at(trace.at(ch, f as f64))];
             if let (true, Some(q)) = (line, prev) {
                 mesh.line(q, p, style.width, style.color);
             }
-            if dots {
+            let inside = f as f64 >= from - ON_EDGE && (f as f64) < to - ON_EDGE;
+            if dots && inside {
                 mesh.disc(p[0], p[1], style.dot_radius, style.color);
             }
             prev = Some(p);
@@ -1756,6 +1765,43 @@ mod tests {
             draw(100, 3.0),
             draw(100, 2.0),
             "dots that would touch are not drawn"
+        );
+    }
+
+    /// **A sample on a view's right edge is not the view's.** A view is
+    /// half-open, so a box cut in two does not dot the second half's first
+    /// sample at the end of the first: a view ending exactly on a sample marks
+    /// what a view ending just before it marks, and one past it marks one more.
+    #[test]
+    fn the_sample_on_the_right_edge_is_the_next_views() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let samples: Vec<f32> = (0..16).map(|i| (i as f32 * 0.3).sin()).collect();
+        let trace = Trace::samples(&samples, 1);
+        let dots = |to: f64| {
+            let draw = |radius: f32| {
+                let mut mesh = Mesh::new();
+                draw_channel(
+                    &mut mesh,
+                    rect,
+                    &trace,
+                    0,
+                    |x| (x - rect.x) as f64 / rect.w as f64 * to,
+                    |s| rect.x + (s / to) as f32 * rect.w,
+                    |v| rect.y + rect.h * 0.5 * (1.0 - v),
+                    TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_dots(radius),
+                );
+                mesh.vertex_count()
+            };
+            draw(3.0) - draw(0.0)
+        };
+        assert_eq!(
+            dots(4.0),
+            dots(3.5),
+            "samples 0 to 3 either way, and not the one on the edge"
+        );
+        assert!(
+            dots(4.5) > dots(4.0),
+            "one sample past the edge adds its dot"
         );
     }
 

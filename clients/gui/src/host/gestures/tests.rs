@@ -2222,6 +2222,19 @@ fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
     let effects = g.release(&mut host, &ctx, on_ruler.0, on_ruler.1);
     assert!(has_emit_tag(&effects, 60, "locate"), "the mark was placed");
     assert_eq!(host.focused(), Some((1, 70)), "and the keys stayed");
+
+    // **On a whole sample**, wherever between two the pointer landed: the
+    // playhead that starts from the mark stands on one.
+    for dx in [0.13, 0.37, 0.71] {
+        g.press(&mut host, &ctx, on_ruler.0 + dx, on_ruler.1);
+        g.release(&mut host, &ctx, on_ruler.0 + dx, on_ruler.1);
+        let key = host.timeline_key(60).expect("the ruler is on a group");
+        let cursor = host.timelines().state(key).expect("a group").cursor;
+        assert!(
+            cursor >= 0.0 && cursor.fract() == 0.0,
+            "a whole sample: {cursor}"
+        );
+    }
 }
 
 #[test]

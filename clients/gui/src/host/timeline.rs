@@ -178,7 +178,11 @@ impl GroupState {
             sel_len: editor.sel_len.round(),
             playhead_at: editor.playhead_at,
             playhead: editor.playhead,
-            cursor: editor.cursor,
+            cursor: if editor.cursor < 0.0 {
+                editor.cursor
+            } else {
+                editor.cursor.round()
+            },
             playhead_loop_start: editor.playhead_loop_start,
             playhead_loop_len: editor.playhead_loop_len,
             total: nav.len.max(0.0) as usize,
@@ -905,8 +909,8 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// **Places the position cursor** at `pos` — the group's, so every lane of
-    /// the piece shows the one mark.
+    /// **Places the position cursor** at `pos`, on a whole sample — the group's,
+    /// so every lane of the piece shows the one mark.
     ///
     /// It moves nothing else, and that is the whole rule. The playhead is not
     /// placed: it *starts* from here, and while the transport runs it is the
@@ -921,7 +925,10 @@ impl Host {
         let Some(state) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.cursor = pos;
+        // **On a whole sample**, as the selection is and as the transport the
+        // cursor cues will be: a click lands between two samples, and a mark
+        // drawn there stood beside the playhead that started from it.
+        state.cursor = if pos < 0.0 { pos } else { pos.round() };
         self.timeline_roots(key)
     }
 
