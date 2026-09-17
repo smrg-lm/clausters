@@ -173,10 +173,18 @@ pub enum Cmd {
         time: u64,
         cmds: Vec<Cmd>,
     },
-    /// `/sched_clear`: drop every pending timed bundle. Each drained bundle's
+    /// `/sched_clear`: drop pending timed bundles. Each drained bundle's
     /// `Vec<Cmd>` (with its boxed synths) leaves through the garbage FIFO as
     /// [`Garbage::SpentBundle`], so nothing is freed on the audio thread.
-    ClearSched,
+    ///
+    /// `transport_only` drops the **transport queue alone** and leaves the
+    /// device one standing: that is what a client re-cueing a plan after a
+    /// locate needs, since the transport queue rides a clock that does not
+    /// jump, so what was queued for the old position would otherwise sound
+    /// there.
+    ClearSched {
+        transport_only: bool,
+    },
     /// `/node_ugenCmd`: a typed command addressed to one UGen instance inside a synth.
     /// The payload is inline (no heap), so applying it allocates nothing.
     UGenCommand {
@@ -229,10 +237,15 @@ pub enum Garbage {
     /// the network side so the deallocation (if it is the last `Arc`) never
     /// happens on the audio thread.
     FreedBuffer(Arc<Buffer>),
-    /// The drained shell of an executed scheduled bundle (its heap capacity
-    /// must be freed on the network side) — or, if non-empty, a bundle the
-    /// engine rejected because the schedule queue was full.
+    /// The drained shell of an executed scheduled bundle, or a bundle a
+    /// [`Cmd::ClearSched`] dropped: either way its heap must be freed on the
+    /// network side, and either way it is what the client asked for.
     SpentBundle(Vec<Cmd>),
+    /// A bundle the engine **rejected** because the schedule queue was full —
+    /// the one case worth a warning, and the reason a cleared bundle is not
+    /// one: a clear drops what a client asked to drop, and reporting it as a
+    /// rejection made a re-cue look like an overflow.
+    RejectedBundle(Vec<Cmd>),
 }
 
 /// A timed bundle waiting in the engine's queue.
@@ -286,7 +299,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::SetBuffer { .. }
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
-        | Cmd::ClearSched => [None, None],
+        | Cmd::ClearSched { .. } => [None, None],
         // A nested bundle classifies itself when it is applied, against the
         // tree and the frozen total of that moment; deciding for it here would
         // only duplicate that, at a time when it is not yet due.
@@ -1261,7 +1274,7 @@ impl Engine {
                         // here, once, where the frozen total is known.
                         let at = DeviceSample::new(time).to_transport(self.frozen_total);
                         if self.sched_transport.len() == self.sched_transport.capacity() {
-                            sink.push(Garbage::SpentBundle(cmds));
+                            sink.push(Garbage::RejectedBundle(cmds));
                         } else {
                             // Sorted insert, after equal times, exactly as the
                             // device queue does.
@@ -1270,21 +1283,25 @@ impl Engine {
                                 .insert(pos, ScheduledBundleT { time: at, cmds });
                         }
                     } else if self.sched.len() == self.sched.capacity() {
-                        sink.push(Garbage::SpentBundle(cmds));
+                        sink.push(Garbage::RejectedBundle(cmds));
                     } else {
                         let pos = self.sched.partition_point(|b| b.time <= time);
                         self.sched.insert(pos, ScheduledBundle { time, cmds });
                     }
                 }
-                Cmd::ClearSched => {
+                Cmd::ClearSched { transport_only } => {
                     // `drain` keeps the queue's capacity (no dealloc here); each
                     // bundle's heap is freed on the network side.
-                    for bundle in self.sched.drain(..) {
-                        sink.push(Garbage::SpentBundle(bundle.cmds));
+                    if !transport_only {
+                        for bundle in self.sched.drain(..) {
+                            sink.push(Garbage::SpentBundle(bundle.cmds));
+                        }
                     }
-                    // Both queues: `/sched_clear` drops *every* pending bundle,
-                    // and a governed one left behind would fire on the next
-                    // resume with nothing left to explain it.
+                    // The transport queue goes either way: a bare
+                    // `/sched_clear` drops *every* pending bundle, and a
+                    // governed one left behind would fire on the next resume
+                    // with nothing left to explain it; asked for the transport
+                    // axis alone, it is the only one that goes.
                     for bundle in self.sched_transport.drain(..) {
                         sink.push(Garbage::SpentBundle(bundle.cmds));
                     }

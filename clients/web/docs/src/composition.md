@@ -124,12 +124,12 @@ sounds for exactly that long — the DAW rule, and what resizing a clip changes.
 ## Rendering: the change of state
 
 Rendering a composition **flattens** it — a tree-walk accumulating the nested
-offsets into absolute beats — into a flat `Timeline`, which a `Playhead` then
-plays. A generator contained in it is *bounced* in the same pass: that evaluation,
+offsets into absolute beats — into a flat `Timeline`, which then plays
+itself. A generator contained in it is *bounced* in the same pass: that evaluation,
 the change from a process into a generated element, is the *change of state*.
 
 ```ts
-const playhead = song.render(server, clock);   // live, through a playhead
+const timeline = song.render(server, clock);   // live: the timeline it flattened to
 ```
 
 There is no second rendering path: what differs between destinations is the
@@ -137,7 +137,7 @@ destination, not the flattening.
 
 A **logical** aggregate takes the other path entirely — its `GraphDef` is sent and
 instanced on the server — so `render` there answers with a promise of the
-instance group rather than a playhead. Sending a def is a round trip, and this
+instance group rather than a timeline. Sending a def is a round trip, and this
 client awaits one rather than blocking the page's single thread.
 
 An element is *rendered*, never played: `play` is for what already sounds

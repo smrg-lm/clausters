@@ -187,15 +187,32 @@ impl OscServer {
         }
     }
 
-    /// `/sched_clear`: flushes every pending timed bundle from the engine's
-    /// schedule queue. The bundles' heap (boxed synths and the `Vec` shells)
+    /// `/sched_clear [axis]`: flushes pending timed bundles from the engine's
+    /// schedule queues. The bundles' heap (boxed synths and the `Vec` shells)
     /// leaves through the garbage FIFO, so nothing is dropped on the audio
     /// thread. Replies `/done`.
-    fn handle_sched_clear(&mut self, from: ClientId) {
-        if self.handle.send(Cmd::ClearSched).is_err() {
-            return self.fail(from, "/sched_clear", "command FIFO full");
+    ///
+    /// With no argument it is the panic button it always was: both queues, the
+    /// device one and the transport one. With `"transport"` it drops the
+    /// **transport queue alone**, which is what a client re-cueing a plan after
+    /// a locate asks for — the transport clock does not jump, so bundles queued
+    /// for the position left behind would sound at it, and clearing everything
+    /// would take every other client's score with them.
+    fn handle_sched_clear(&mut self, msg: &OscMessage, from: ClientId) {
+        const ADDR: &str = "/sched_clear";
+        let transport_only = match msg.args.first() {
+            None => false,
+            Some(OscType::String(axis)) if axis == "transport" => true,
+            Some(_) => return self.fail(from, ADDR, "expected no argument or \"transport\""),
+        };
+        if self
+            .handle
+            .send(Cmd::ClearSched { transport_only })
+            .is_err()
+        {
+            return self.fail(from, ADDR, "command FIFO full");
         }
-        self.reply(from, "/done", vec![OscType::String("/sched_clear".into())]);
+        self.reply(from, "/done", vec![OscType::String(ADDR.into())]);
     }
 
     /// `/sched_atTransport <int64 target> <blob packet>` — like
@@ -589,8 +606,8 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_sched_at_transport(m, f);
         Ok(())
     }),
-    ("/sched_clear", |s, _, _, f| {
-        s.handle_sched_clear(f);
+    ("/sched_clear", |s, _, m, f| {
+        s.handle_sched_clear(m, f);
         Ok(())
     }),
     ("/server_cmd", |s, _, m, f| {

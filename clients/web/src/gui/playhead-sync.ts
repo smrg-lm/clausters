@@ -32,14 +32,14 @@ import type { TempoMap } from "../base/time.ts";
 import type { TempoClock } from "../base/clock.ts";
 import { ReplyTimeout } from "../errors.ts";
 import type { GuiHost } from "./host.ts";
-import type { Playhead, Timeline } from "../seq/timeline.ts";
+import type { Timeline } from "../seq/timeline.ts";
 import type { Server } from "../defs/server/index.ts";
 
 /** The widgets a transport draws its line on. */
 export type PlayheadSyncTargets = number | readonly number[] | (() => number | readonly number[]);
 
-/** What a pass is: the `Timeline` a `source` played (or a `Playhead`). */
-export type Pass = Timeline | Playhead;
+/** What a pass is: the `Timeline` a `source` played. */
+export type Pass = Timeline;
 
 /** What holds the tempo map beats are read through. */
 export type MapHolder = { readonly map: TempoMap };
@@ -622,11 +622,11 @@ export class PlayheadSync {
         if (end > head.position() && clock !== null && clock.rolling) {
             if (this.tail === null) {
                 // From the moment the last item was *rendered* — which is a loop
-                // pass or two before anyone noticed — not from now.
-                // A timeline's clock beat *is* its beat, and it holds the beat its
-                // last item fell on.
-                const since = "scannedAt" in head ? head.scannedAt : head.position();
-                this.tail = [since ?? clock.beats(), head.position()];
+                // pass or two before anyone noticed — not from now. A timeline's
+                // clock beat *is* its beat, and it holds the beat its last item
+                // fell on.
+                const scanned = (head as { scannedAt?: number | null }).scannedAt;
+                this.tail = [scanned ?? head.position(), head.position()];
             }
             if ((this.tailPosition() ?? end) < end) return false; // still ringing
         }
@@ -707,8 +707,9 @@ export class PlayheadSync {
     private halt(): void {
         this.tail = null;
         if (this.head !== null && this.head.playing) {
-            if ("pause" in this.head) this.head.pause();
-            else this.head.stop();
+            const pass = this.head as { pause?: () => void; stop: () => void };
+            if (pass.pause !== undefined) pass.pause();
+            else pass.stop();
         }
     }
 }

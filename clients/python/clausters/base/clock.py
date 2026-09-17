@@ -777,7 +777,7 @@ class TempoClock:
     def unsched(self, item):
         """Remove a specific scheduled ``item`` from the queue (by identity),
         leaving the rest in order. Used to cancel one routine — e.g. a
-        `clausters.seq.timeline.Playhead` stopping or seeking — without clearing
+        `clausters.seq.Timeline` stopping or seeking — without clearing
         everything else `clear` would drop."""
         with self._cond:
             key = id(item)

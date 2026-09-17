@@ -2814,6 +2814,89 @@ fn d_load_missing_file_fails() {
     server.quit();
 }
 
+/// `/sched_clear "transport"` drops the **transport queue alone**: a client
+/// re-cueing its plan after a locate clears what it queued for the position it
+/// left, and every other client's scheduled score stands.
+#[test]
+fn clear_sched_on_the_transport_axis_leaves_the_device_queue() {
+    use clausters::rosc::OscBundle;
+
+    let mut server = TestServer::spawn();
+    let at = |node: i32, group: i32| {
+        OscPacket::Bundle(OscBundle {
+            timetag: clausters::rosc::OscTime {
+                seconds: 0,
+                fractional: 0,
+            },
+            content: vec![OscPacket::Message(OscMessage {
+                addr: "/synth_new".into(),
+                args: vec![
+                    OscType::String("default".into()),
+                    OscType::Int(node),
+                    OscType::Int(0),
+                    OscType::Int(group),
+                ],
+            })],
+        })
+    };
+
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+    server.send("/transport_play", vec![]);
+    server.recv_until("/done");
+
+    // One bundle on each axis, both a few blocks out.
+    server.send(
+        "/sched_at",
+        vec![
+            OscType::Long(BLOCK_SIZE as i64 * 6),
+            OscType::Blob(encoder::encode(&at(1000, 0)).unwrap()),
+        ],
+    );
+    server.send(
+        "/sched_atTransport",
+        vec![
+            OscType::Long(BLOCK_SIZE as i64 * 6),
+            OscType::Blob(encoder::encode(&at(1001, 100)).unwrap()),
+        ],
+    );
+    server.recv_until("/done");
+
+    server.send("/sched_clear", vec![OscType::String("transport".into())]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/sched_clear".into())
+    );
+
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..20 {
+        server.engine.process_block(&mut out);
+    }
+    server.send("/node_query", vec![OscType::Int(1000)]);
+    assert_eq!(
+        server.recv_until("/node_query.reply").args[0],
+        OscType::Int(1000),
+        "the device queue's bundle still fired"
+    );
+    server.send("/server_status", vec![]);
+    assert_eq!(
+        server.recv_until("/server_status.reply").args[1],
+        OscType::Int(1),
+        "only the device queue's synth is in the tree"
+    );
+
+    // An axis nobody has is refused rather than taken for the panic button.
+    server.send("/sched_clear", vec![OscType::String("device".into())]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/sched_clear".into()));
+
+    server.quit();
+}
+
 #[test]
 fn clear_sched_flushes_pending_bundles() {
     use clausters::rosc::OscBundle;

@@ -48,18 +48,20 @@ How exact the alignment is follows from the timebase. A clock locked to the serv
 
 ## Following the conductor
 
-A `Playhead` can obey the broadcasts instead of its own buttons:
+A `Timeline` obeys the conductor by being **on** the transport:
 
 ```js
-const playhead = new Playhead(timeline, clock, server);
-await playhead.followTransport(server, { quant: 4 });
+await server.transportGroup(governed.id);   // the transport owns what it plays
+timeline.transport = server;
 ```
 
-From then on the conductor's `transportPlay()` rolls it, `transportStop()` halts it and `transportLocate(beat)` seeks it, alongside every other client following the same server — the server broadcasts *control*, never audio. `quant` snaps each rolling start to a beat boundary, and with the clock joined to the grid that boundary is the shared bar line, so the followers land together rather than each on its own next beat. `unfollowTransport()` releases it.
+From then on `timeline.play`, `pause`, `stop` and `locate` are the transport's own commands, and the timeline plans its items onto the transport's clock (`/sched_atTransport`) from the position it is at — so the conductor's `transportPlay()` rolls it, `transportStop()` freezes it with its queue, and `transportLocateSample(sample)` seeks it, alongside every other client on the same transport. A locate somebody else sent arrives as a broadcast and the plan is written again from where it says; `timeline.transport = null` gives the timeline back its own clock.
 
 The subscription is an [`OscFunc`](responders.md) on the server's receiver, as in the Python client — with the receiver a page already has (its connection to the server) rather than a socket opened for the purpose. Anything else that wants to react to a conductor puts its own responder on the same `/transport_query.reply`.
 
-`examples/transport/sync.html` runs two independent clients on one grid and a playhead following it, which is how to *hear* that a late joiner still lands on the bar.
+**The verbs are queued rather than awaited**, where the reference client's block: the transport's commands are requests, so each verb goes onto one chain and `await timeline.refresh()` settles with it and reads the position back.
+
+`examples/transport/sync.html` runs two independent clients on one grid and a timeline following the conductor, which is how to *hear* that a late joiner still lands on the bar.
 
 ## Freezing a piece
 

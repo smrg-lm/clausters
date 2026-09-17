@@ -28,10 +28,11 @@ import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
+import { Group } from "../src/defs/node.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { SampleClockTimebase } from "../src/base/timebase.ts";
-import { Event, Pbind, Playhead, Pseq, Timeline } from "../src/seq/index.ts";
+import { Event, Pbind, Pseq, Timeline } from "../src/seq/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Synth } from "../src/defs/node.ts";
@@ -308,45 +309,43 @@ test("two clocks join one grid and land on the same bar", {
     });
 });
 
-test("a playhead follows the server's transport over the wire", {
+test("a timeline on the server's transport follows the conductor over the wire", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
         await awaitEngine(server);
-        const anchor = await server.request("/clock_query", [], {
-            expect: ["/clock_query.reply"],
-        });
-        await server.setTransport(Number(anchor.args[0]), 1.0);
+        // The transport owns the nodes it plays, so it needs a group bound —
+        // and the timeline's items are placed under it.
+        const governed = new Group({ server });
+        await server.transportGroup(governed.id);
 
-        const clock = new TempoClock(1.0);
-        await clock.joinTransport(server);
-        clock.start();
         // One item far out of the way: what is asserted is the transport
-        // reacting, not what it renders.
-        const timeline = new Timeline([[100, new Event({ degree: 0 })]]);
-        const playhead = new Playhead(timeline, clock, server);
-        await playhead.followTransport(server);
-        assert.equal(playhead.playing, false, "a stopped transport rolls nothing");
+        // driving the timeline, not what it renders.
+        const timeline = new Timeline([[100, new Event({ degree: 0, target: governed.id })]]);
+        timeline.transport = server;
+        await timeline.refresh();
+        assert.equal(timeline.playing, false, "a stopped transport rolls nothing");
 
-        await server.transportPlay(0);
+        await server.transportPlay();
         await sleep(200);
-        assert.equal(playhead.playing, true, "the conductor's play rolls the page");
+        await timeline.refresh();
+        assert.equal(timeline.playing, true, "the conductor's play rolls the page");
 
-        await server.transportLocate(8.0);
+        await server.transportLocateSample(8 * 48_000);
         await sleep(200);
+        await timeline.refresh();
         assert.ok(
-            Math.abs(playhead.position() - 8.0) < 0.5,
-            `the locate did not move the playhead: ${playhead.position()}`,
+            Math.abs(timeline.position() - 8.0) < 0.5,
+            `the locate did not move the timeline: ${timeline.position()}`,
         );
 
         await server.transportStop();
         await sleep(200);
-        assert.equal(playhead.playing, false, "the conductor's stop halts the page");
+        await timeline.refresh();
+        assert.equal(timeline.playing, false, "the conductor's stop halts the page");
 
-        playhead.unfollowTransport();
-        await server.transportPlay(0);
-        await sleep(200);
-        assert.equal(playhead.playing, false, "an unfollowed playhead ignores it");
-        clock.close();
+        timeline.transport = null;
+        await server.transportGroup(-1);
+        governed.free();
     });
 });

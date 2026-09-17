@@ -2,8 +2,8 @@
 the view's playhead line.
 
 No host and no server: a fake host records the `/gui_set`s, a fake server answers
-the clock query, and the pass is a real `Playhead` driven offline (`clock.render`)
-so the end of a pass is reached deterministically. What is checked is the line —
+the clock query, and the pass is a stub whose end is reached by hand (what a
+real timeline does with its own clock is `test_timeline_play.py`'s). What is checked is the line —
 which of the two numbers is written, in which unit — and the state machine around
 it, not what the widgets do with it.
 """
@@ -13,7 +13,7 @@ import pytest
 from clausters.base import TempoClock
 from clausters.gui.playhead_sync import PlayheadSync
 from clausters.seq.event import Event as SeqEvent
-from clausters.seq.timeline import Playhead, Timeline
+from clausters.seq.timeline import Timeline
 
 SR = 48_000.0
 TEMPO = 2.0          # beats per second (120 bpm)
@@ -55,25 +55,50 @@ class NrtServer(FakeServer):
         time_mode = "score"
 
 
-class Recorder:
-    """A destination that swallows what a pass renders."""
+class Pass:
+    """What a `source` hands back: the timeline it is playing, as `PlayheadSync`
+    reads it — its map, its position, whether it is playing, and whether it ran
+    out. A stub, so a test decides when the plan runs out; what a real timeline
+    does with its own clock is `test_timeline_play.py`'s."""
 
-    def play_event(self, event):
-        return None
+    #: The beats its items sit on — the last one is where a drained plan stops.
+    items = (0.0, 1.0, 2.0)
 
+    def __init__(self, clock, at=0.0):
+        self.clock = clock
+        self.map = PIECE.map
+        self._at = float(at)
+        self.playing = True
+        self.finished = False
+        self.scanned_at = None
 
-def arp() -> Timeline:
-    """Three notes, one per beat: the piece ends at beat 2."""
-    return Timeline([(float(i), SeqEvent(midinote=60 + i, dur=1.0))
-                     for i in range(3)])
+    def position(self):
+        return self._at
+
+    def pause(self):
+        self.playing = False
+
+    def stop(self):
+        self.playing = False
+
+    def locate(self, beat):
+        self._at = float(beat)
+        self.finished = False
+
+    def drain(self):
+        """The plan runs out on its **last item**, which is where a real one
+        leaves its position while that item is still sounding."""
+        self._at = float(self.items[-1])
+        self.playing = False
+        self.finished = True
+        self.scanned_at = self.clock.beats()
 
 
 def transport(host=None, clock=None, **kw) -> PlayheadSync:
     clock = TempoClock(TEMPO) if clock is None else clock
-    dest = Recorder()
 
     def source(at, **_kw):
-        return Playhead(arp(), clock, dest).play(at=at)
+        return Pass(clock, at)
 
     return PlayheadSync(FakeHost() if host is None else host, 7, source=source,
                      structure=PIECE, sample_rate=SR, **kw)
@@ -187,7 +212,7 @@ def test_the_end_of_a_pass_parks_the_cursor_at_the_extent():
     clock = TempoClock(TEMPO)
     tp = transport(host, clock=clock, extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()                          # the pass runs out
+    tp.playhead.drain()                     # the plan runs out
 
     assert tp.update(), "the piece just ended"
     assert not tp.playing
@@ -226,7 +251,7 @@ def test_a_play_puts_the_end_of_the_pass_on_the_application_clock():
     assert delay > 0.0
     assert tick() == delay, "a number keeps it going: the loop reschedules by it"
 
-    clock.render()                          # the pass runs out
+    tp.playhead.drain()                     # the plan runs out
     assert tick() == delay, "the drained scan is what it is there to notice"
     assert tp.position == pytest.approx(3.0), "so the cursor parks at the end"
     assert tick() is None, "and having parked, it stops asking"
@@ -240,7 +265,7 @@ def test_a_transport_with_no_host_clock_keeps_update_manual():
     is the plain call it always was."""
     tp = transport(FakeHost(), clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()
+    tp.playhead.drain()
     assert tp.update()
 
 
@@ -248,7 +273,7 @@ def test_the_end_is_reported_once():
     clock = TempoClock(TEMPO)
     tp = transport(clock=clock, extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()
+    tp.playhead.drain()
     assert tp.update()
     assert not tp.update(), "a parked cursor is not re-sent every pass of the loop"
 
@@ -256,7 +281,7 @@ def test_the_end_is_reported_once():
 def test_without_an_extent_it_parks_on_the_last_item():
     tp = transport(clock=(clock := TempoClock(TEMPO)))
     tp.play(FakeServer(), at=0.0)
-    clock.render()
+    tp.playhead.drain()
     tp.update()
     assert tp.position == pytest.approx(2.0), "the last note's own onset"
 
@@ -290,7 +315,7 @@ def test_the_last_item_keeps_the_line_until_the_piece_actually_ends():
     clock = RollingClock(TEMPO)
     tp = transport(host, clock=clock, extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()                          # the scan drains on the last item
+    tp.playhead.drain()                     # the plan runs out on its last item
 
     anchored = host.last("playhead_at")
     assert not tp.update(), "the last item is still sounding"
@@ -314,7 +339,7 @@ def test_a_pause_inside_the_tail_holds_where_the_music_is():
     clock = RollingClock(TEMPO)
     tp = transport(clock=clock, extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()
+    tp.playhead.drain()
     clock.advance(0.5)
     tp.update()
     tp.pause()
@@ -325,7 +350,7 @@ def test_a_locate_after_the_end_stands():
     """Seeking away from the end must not be undone by the next `update`."""
     tp = transport(clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
-    clock.render()
+    tp.playhead.drain()
     tp.update()
     tp.locate(1.0)
     assert not tp.update()
@@ -379,11 +404,10 @@ def test_resume_does_not_re_render():
     """
     calls = []
     clock = TempoClock(TEMPO)
-    dest = Recorder()
 
     def source(at, **_kw):
         calls.append(at)
-        return Playhead(arp(), clock, dest).play(at=at)
+        return Pass(clock, at)
 
     server = FakeGovernedServer()
     tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR,
@@ -401,11 +425,10 @@ def test_resume_does_not_re_render():
 def test_play_still_re_renders():
     calls = []
     clock = TempoClock(TEMPO)
-    dest = Recorder()
 
     def source(at, **_kw):
         calls.append(at)
-        return Playhead(arp(), clock, dest).play(at=at)
+        return Pass(clock, at)
 
     tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR)
     tp.play(at=0.0)
@@ -416,11 +439,10 @@ def test_play_still_re_renders():
 
 def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():
     clock = TempoClock(TEMPO)
-    dest = Recorder()
     heads = []
 
     def source(at, **_kw):
-        ph = Playhead(arp(), clock, dest).play(at=at)
+        ph = Pass(clock, at)
         heads.append(ph)
         return ph
 
@@ -435,11 +457,10 @@ def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():
 
 def test_an_ungoverned_pause_still_stops_the_playhead():
     clock = TempoClock(TEMPO)
-    dest = Recorder()
     heads = []
 
     def source(at, **_kw):
-        ph = Playhead(arp(), clock, dest).play(at=at)
+        ph = Pass(clock, at)
         heads.append(ph)
         return ph
 

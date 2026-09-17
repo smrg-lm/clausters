@@ -69,7 +69,7 @@ A routine has no position to enter in its middle, so it is played **fresh** each
 
 ## Playing it
 
-A timeline plays itself, on a clock of its own that is born on its beat 0 — so no clock and no playhead are handled:
+A timeline plays itself, on a clock of its own that is born on its beat 0 — so no clock is handled:
 
 ```python
 tl.play(at=0.0, destination=session.server)
@@ -185,19 +185,30 @@ stats = session.server.render()              # the offline render
 
 `clausters.render(timeline)` does the same in one call, on a session nobody holds. The timeline's own map sets the seconds; the `tempo` argument of `render` does not apply to it.
 
-## Following a conductor
+## On a server's transport
 
-Following a server's shared transport is still a `Playhead`'s — a lower-level cursor over a timeline and a clock you hand it — until a timeline can follow a transport itself. `head.follow_transport(server)` binds it to the server's transport so that a conductor's `transport_play` / `transport_stop` / `transport_locate` rolls, halts and seeks *this* playhead too — several clients in lockstep. It is built on the responder layer (an `OscFunc` on the transport broadcast) and the shared grid:
+A timeline plays **either** on its own clock **or** on a server's transport, and the mode is a property of the timeline:
 
 ```python
-from clausters.seq import Playhead
-
-head = Playhead(timeline, clock, server)
-clock.start()
-head.follow_transport(server, quant=4)   # roll when the conductor presses play
+server.transport_group(group.id)     # the transport owns the nodes it plays
+timeline.transport = server          # and from here the transport is the time
 ```
 
-Beat-aligned in plain wall-clock mode, sample-exact when the clock is also `lock_to` the server. See [A DAW-style transport](transport.md) for the conductor side (`Server.transport_play` and friends) and `conductor.py` in [Examples](examples.md).
+The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport's own commands — `/transport_play`, `/transport_stop`, `/transport_locateSample` — exactly as the multitrack's playback uses them. What the timeline adds is the **plan**: every item from the position, stamped on the transport's clock (`/sched_atTransport`) through the timeline's own map. So a pause freezes the queue with the piece rather than stopping a scan, a resume carries the frozen sound on with nothing re-planned, and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead so nothing regenerated is late.
+
+| In transport mode | What it is |
+| --- | --- |
+| `timeline.transport = server` | The mode, and the following: from here a conductor's verbs drive this timeline. `None` gives it back its own clock. |
+| `timeline.transport_at` | Where the timeline's beat 0 falls on the transport, **in seconds** of its position — the transport's axis is physical, so the offset is too. |
+| `play(at=…)` / `play()` | A locate and a roll; with no `at`, a bare roll (the frozen queue carries on). |
+| `pause()` / `stop()` | The transport's stop; `stop` goes back to the mark. |
+| `locate(beat)` | The engine's seek, plus the re-cue. |
+| `position()` / `playing` | What this client last heard — a verb it sent, a broadcast, a `refresh()`. Asking is a round trip and reading a position is not. |
+| `refresh()` | Ask the server where the transport is, and keep it. |
+
+**A conductor drives every follower**, and the mode is the whole of the following: a play, a stop or a locate somebody else sent arrives as a `/transport_query.reply` broadcast, and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each estimating its own. `conductor.py` ([Examples](examples.md)) puts two followers on one transport.
+
+**What the mode refuses**, because it would be a second answer to a question the engine already answers: a `quant` (the start is the transport's — locate where you want it and roll), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position, so it is refused by name. All three are the client-clock mode's.
 
 ## Seeing a timeline as a score
 
@@ -511,4 +522,4 @@ the order they come in.
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
 - [Timing models](timing-models.md) — the timing references a timeline's clock inherits (`quant`, `lock_to`).
 - [Examples](examples.md) — `timeline.py`, a timeline's transport live.
-- [API reference](api.md) — `Timeline`, `Playhead`, `OscItem`, `MidiItem`.
+- [API reference](api.md) — `Timeline`, `OscItem`, `MidiItem`.

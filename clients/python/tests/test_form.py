@@ -321,25 +321,26 @@ def _inner_addr(raw: bytes) -> str:
 
 def test_render_matches_handbuilt_timeline_nrt():
     """A concrete aggregate rendered through the arrangement produces the same score
-    (the same /synth_new start beats) as the equivalent flat timeline played by a
-    Playhead by hand — proving the flatten is correct and the change of state
-    deterministic. NRT only (OscNrtInterface), so no socket and no port clash."""
+    (the same /synth_new start beats) as the equivalent flat timeline played by
+    hand — proving the flatten is correct and the change of state deterministic.
+    NRT only (an offline session), so no socket and no port clash."""
     _embed_or_skip()
-    from clausters.base import OscNrtInterface, TempoClock
-    from clausters.defs import Server
-    from clausters.seq import Playhead, Timeline
+    from clausters import Session
+    from clausters.seq import Timeline
     from clausters.seq.event import Event as SeqEvent
 
     def _starts(build):
-        server = Server(interface=OscNrtInterface())
-        clock = TempoClock(tempo=1.0)
-        build(server, clock)
-        clock.render()
-        return sorted(
-            when
-            for when, raw in server.interface.score.bundles
-            if _inner_addr(raw) == "/synth_new"
-        )
+        session = Session.nrt(tempo=1.0).activate()
+        try:
+            build(session.server, session.clock)
+            session.clock.render()
+            return sorted(
+                when
+                for when, raw in session.server.interface.score.bundles
+                if _inner_addr(raw) == "/synth_new"
+            )
+        finally:
+            session.deactivate()
 
     def by_model(server, clock):
         Aggregate([
@@ -356,7 +357,7 @@ def test_render_matches_handbuilt_timeline_nrt():
             (2.0, SeqEvent(instrument="default", freq=550.0, dur=1.0)),
             (3.0, SeqEvent(instrument="default", freq=660.0, dur=1.0)),
         ])
-        Playhead(tl, clock, server).play()
+        tl.play(destination=server)
 
     assert _starts(by_model) == _starts(by_hand) == [0.0, 2.0, 3.0]
 

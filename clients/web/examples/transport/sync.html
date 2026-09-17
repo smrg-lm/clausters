@@ -21,7 +21,7 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>sync.py</code>, call for call: <b>two independent clients phase-aligned on
-one server's shared transport, and a playhead that obeys the conductor</b>. What
+one server's shared transport, and a timeline that obeys the conductor</b>. What
 the page adds is the <i>hand</i> — the script runs the same sequence start to
 finish, and here each step is a button, so a late join can be pressed late.
 
@@ -39,11 +39,11 @@ conductor <code>boot</code>s the server they share; they only
 <code>attach</code> to it.
 
 The second half is the rolling state. <code>server.transportPlay()</code> /
-<code>transportStop()</code> / <code>transportLocate(beat)</code> are broadcast to
-every client registered for notifications, and
-<code>playhead.followTransport(server)</code> turns those broadcasts into this
-page's transport: the conductor rolls, halts and seeks every follower at once.
-The server broadcasts <i>control</i>, never audio.
+<code>transportStop()</code> / <code>transportLocateSample(sample)</code> move
+the one position the engine holds, and a <code>Timeline</code> <b>on that
+transport</b> (<code>timeline.transport = server</code>) plans its items onto
+it: the conductor rolls, freezes and seeks every follower at once. The server
+owns the time and plays no notes of its own.
 
 <b>What to listen for:</b> press "join late" while the first client is already
 waiting — the two notes still land as one attack on the next bar, and however
@@ -63,7 +63,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
     <script type="module">
       import {
-        Event, Playhead, Routine, Server, TempoClock, Timeline,
+        Event, Group, Routine, Server, TempoClock, Timeline,
       } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -118,10 +118,16 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         // The conductor and the two clients. The conductor brings the shared
         // server up and defines the grid once: beat 0 at sample 0, 2 b/s. Then
         // the two clients join it, each on its own id share.
-        const conductor = await new Server().boot();
+        // Three id shares, not two: the conductor allocates a node of its own
+        // (the governed group), so it takes a share like everybody else.
+        const conductor = await new Server({ share: { index: 0, of: 3 } }).boot();
         await conductor.setTransport(0, 2.0);
-        const a = await makeClient(conductor, { index: 0, of: 2 });
-        const b = await makeClient(conductor, { index: 1, of: 2 });
+        // A transport owns the nodes it plays, which is what lets it freeze
+        // them: the governed group is where the follower's items go.
+        const governed = new Group({ server: conductor });
+        await conductor.transportGroup(governed.id);
+        const a = await makeClient(conductor, { index: 1, of: 3 });
+        const b = await makeClient(conductor, { index: 2, of: 3 });
 
         // The alignment, sampled back-to-back: both clients see the same bar.
         const barA = await nextBarSample(a.server, a.clock);
@@ -130,18 +136,19 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         log(`client B next bar -> sample ${barB}`);
         log(Math.abs(barA - barB) <= 2 ? "aligned to the sample" : "NOT aligned");
 
-        // A playhead that obeys the conductor. The transport's other half: its
-        // rolling state. Client A's playhead follows the shared transport, so
+        // A timeline that obeys the conductor. The transport's other half: its
+        // rolling state. Client A's timeline is **on** the shared transport, so
         // it is the *conductor* that starts, seeks and halts it -- a follower
-        // has no buttons of its own. The timeline is one bar of quarter notes,
+        // has no buttons of its own. The figure is two bars of quarter notes,
         // so a locate is audible as a different place in the same figure.
-        const figure = new Timeline([
-          [0, new Event({ freq: 220.0, amp: 0.15, dur: 0.4 })],
-          [1, new Event({ freq: 277.2, amp: 0.15, dur: 0.4 })],
-          [2, new Event({ freq: 330.0, amp: 0.15, dur: 0.4 })],
-          [3, new Event({ freq: 440.0, amp: 0.15, dur: 0.4 })],
-        ]);
-        const playhead = new Playhead(figure, a.clock, a.server).loop(0, 4);
+        const figure = new Timeline(
+          [220.0, 277.2, 330.0, 440.0, 220.0, 277.2, 330.0, 440.0].map(
+            (freq, beat) => [beat, new Event({
+              freq, amp: 0.15, dur: 0.4, target: governed.id,
+            })],
+          ),
+          { tempo: 2.0 },
+        );
 
         // One note each, quantized to the next bar. The routines start on the
         // same beat, so the notes sound together. Each clock is started before
@@ -154,25 +161,25 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         b.clock.stop();
         log("played; the two notes landed on the same bar");
 
-        // The conductor drives every follower: roll, seek, halt. Each call is
-        // one broadcast, and the playhead never hears a button of its own.
-        a.clock.start();
-        await playhead.followTransport(a.server, { quant: 4 });
-        log("client A: its playhead now follows the conductor's transport");
+        // The conductor drives every follower: roll, seek, halt. Each call
+        // moves the one position the engine holds, and the timeline never
+        // hears a button of its own.
+        figure.transport = a.server;
+        await figure.refresh();
+        log("client A: its timeline is now on the conductor's transport");
 
         await conductor.transportPlay();
         log("conductor: transport play - every follower rolls");
-        await wait(2.5);
+        await wait(2.0);
 
-        await conductor.transportLocate(4.0);
-        log("conductor: locate to beat 4 - every follower seeks");
-        await wait(2.5);
+        await conductor.transportLocateSample(2 * 48_000);
+        log("conductor: locate to the second bar - every follower seeks");
+        await wait(2.0);
 
         await conductor.transportStop();
-        log("conductor: transport stop - every follower halts");
+        log("conductor: transport stop - every follower freezes");
         await wait(0.3);
-        playhead.unfollowTransport();
-        a.clock.stop();
+        figure.transport = null;
 
         // The script's `finally`: the two clients let go of the server, and the
         // conductor -- which booted it -- stops it.

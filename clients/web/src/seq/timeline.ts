@@ -1,30 +1,32 @@
-// Static timelines and a playhead (mirrors `clausters/seq/timeline.py`).
+// Timelines: a plan in logical time, played by itself (mirrors
+// `clausters/seq/timeline.py`).
 //
 // The counterpart to the generative layer (`Routine`, `Pbind`). A routine is a
 // forward-only generator: its musical state lives in the generator's locals,
-// so it cannot be *seeked*. A `Timeline` is the opposite — a **static,
-// editable list of timed items kept sorted by beat**, with random access by
-// time (`indexAt`, `range`). That is what makes DAW-style transport controls
-// possible: a `Playhead` scans the timeline forward as the clock advances, and
-// play / stop / locate / loop re-seek the cursor by time at the boundaries.
+// so it cannot be *seeked*. A `Timeline` is the opposite — an **editable list
+// of timed items kept sorted by beat**, with its own tempo map and random
+// access by time (`indexAt`, `range`). That is what makes DAW-style transport
+// controls possible, and they are the timeline's own: play / pause / stop /
+// locate / loop, on a clock of its own or on a server's transport
+// (`Timeline.transport`).
 //
 // An *item* is anything that can render itself on a destination — it has a
 // `play(destination)` method. `Event` already is one, so a timeline of events
-// renders to whatever destination the playhead holds, exactly like the rest of
-// the client. `OscItem` wraps a raw OSC message, so a timeline can also be a
+// renders to whatever destination the timeline plays on, exactly like the rest
+// of the client. `OscItem` wraps a raw OSC message, so a timeline can also be a
 // plain, editable OSC score.
 //
-// This layer is **client-side**: each playhead has its own local transport
-// over its own timeline, and several clients phase-align through `quant` and
-// the shared `/transport_set` grid. A playhead can also *follow* the server's
-// transport (`followTransport`), which is one conductor's play/stop/locate
-// driving every client — the same local transport, driven from outside.
+// This layer is **client-side** while a timeline plays on its own clock: each
+// has its own local transport, and several clients phase-align through `quant`.
+// On a **server transport** (`Timeline.transport`) the verbs are the
+// transport's own commands and the plan rides the transport's clock, so one
+// conductor's play/stop/locate drives every timeline on it.
 
 import { TempoClock } from "../base/clock.ts";
 import type { Schedulable } from "../base/clock.ts";
 import { TempoMap } from "../base/time.ts";
 import { ManualTimebase, quantDelay } from "../base/timebase.ts";
-import { currentRoutine } from "../base/context.ts";
+import { currentRoutine, setCurrentRoutine } from "../base/context.ts";
 import { main } from "../base/main.ts";
 import { Routine, StopStream, Stream } from "../base/stream.ts";
 import { Event } from "./event.ts";
@@ -40,14 +42,14 @@ export interface TimelineItem {
     play(destination: PlayDestination): unknown;
 }
 
-/** The destination a playhead renders on. `Server` satisfies it. */
+/** The destination a timeline renders on. `Server` satisfies it. */
 export interface PlayDestination extends EventDestination {
     sendBundle(
         messages: readonly TimedMessage[],
         options?: { delayBeats?: number; clock?: TempoClock },
     ): void;
     /**
-     * Raw MIDI at the playhead's beat, on a destination that carries MIDI
+     * Raw MIDI at the timeline's beat, on a destination that carries MIDI
      * (`MidiServer`). Optional because most destinations do not: an
      * `OscItem` on a MIDI port and a `MidiItem` on an OSC server are both
      * mistakes, and each is reported by the destination that cannot answer.
@@ -71,7 +73,7 @@ export class Entry {
 
 /**
  * A raw OSC message as a timeline item: rendering it sends the message at the
- * playhead's current logical beat.
+ * timeline's current logical beat.
  */
 export class OscItem {
     readonly addr: string;
@@ -89,7 +91,7 @@ export class OscItem {
 
 /**
  * Raw MIDI bytes as a timeline item: rendering it emits the message at the
- * playhead's current logical beat through a `MidiServer`.
+ * timeline's current logical beat through a `MidiServer`.
  */
 export class MidiItem {
     readonly message: Uint8Array;
@@ -205,9 +207,16 @@ export class Timeline {
     // Built on first use, so a timeline can be written before the core is
     // loaded: only reading its time needs the map.
     private mapHeld: TempoMap | null;
+    private transportHeld: Server | null = null;
+    /**
+     * **Where this timeline's beat 0 falls on the transport**, in seconds of
+     * the transport's position — the transport's axis is physical, so the
+     * offset is too. Only read in transport mode.
+     */
+    transportAt = 0;
     private readonly tempo: number;
     /** @internal */
-    player: TimelinePlayer | null = null;
+    player: TimelinePlayer | TransportPlayer | null = null;
 
     constructor(
         items?: Iterable<readonly [number, unknown]>,
@@ -363,7 +372,7 @@ export class Timeline {
 
     /**
      * The cursor (index) of the first item at or after `beat` — the seek
-     * primitive a playhead starts and locates with.
+     * primitive `play({ at })` and `locate` start from.
      */
     indexAt(beat: number): number {
         let lo = 0;
@@ -439,6 +448,38 @@ export class Timeline {
     // ---- playing ----
 
     /**
+     * The server whose **transport** plays this timeline, or `null` — the
+     * ordinary case — for its own clock.
+     *
+     * One mode per root, and the same verbs in both: `play`, `pause`, `stop`
+     * and `locate` are the transport's own commands here, exactly as the
+     * multitrack's playback uses them, and the timeline's items are planned
+     * onto the transport's clock (`/sched_atTransport`) from the position it is
+     * at. Setting it needs a **governed group** bound (`Server.transportGroup`),
+     * since that is what makes a transport own the nodes it plays — and what
+     * the timeline's synths are placed under, so a pause freezes them with the
+     * piece.
+     *
+     * Assigning halts whatever was playing: a timeline plays in one place. It
+     * also starts listening to the transport's broadcasts, because the mode
+     * **is** the following: a conductor's roll, freeze and locate drive this
+     * timeline from then on.
+     */
+    get transport(): Server | null {
+        return this.transportHeld;
+    }
+
+    set transport(server: Server | null) {
+        if (this.player !== null) {
+            this.player.halt();
+            this.player.close();
+            this.player = null;
+        }
+        this.transportHeld = server;
+        if (server !== null) (this.playerFor() as TransportPlayer).begin();
+    }
+
+    /**
      * Plays the timeline from beat `at`, on a clock of its own.
      *
      * No `at` resumes where `pause` left it (beat 0 the first time). `quant`
@@ -460,7 +501,7 @@ export class Timeline {
         const player = this.playerFor();
         if (destination !== undefined) player.destination = destination;
         if (at === undefined) {
-            player.play(player.position(), quant);
+            player.resume(quant);
         } else {
             player.mark = at;
             player.play(at, quant);
@@ -533,8 +574,23 @@ export class Timeline {
         return this.player !== null && this.player.finished;
     }
 
-    private playerFor(): TimelinePlayer {
-        this.player ??= new TimelinePlayer(this);
+    /**
+     * Asks where the transport is and keeps the answer; the promise settles
+     * once every verb already asked for has been sent.
+     *
+     * Only a timeline **on a transport** has anything to ask: on its own clock
+     * the position is here. (The reference client blocks instead of answering a
+     * promise, for the reason every request there does.)
+     */
+    async refresh(): Promise<this> {
+        if (this.player !== null) await this.player.refresh();
+        return this;
+    }
+
+    private playerFor(): TimelinePlayer | TransportPlayer {
+        this.player ??= this.transportHeld === null
+            ? new TimelinePlayer(this)
+            : new TransportPlayer(this);
         return this.player;
     }
 
@@ -616,8 +672,8 @@ class ClockView {
         this.node = node;
     }
 
-    private get root(): TempoClock {
-        return this.node.player.clock!;
+    private get root(): TempoClock | null {
+        return this.node.player.clock;
     }
 
     beats2secs(beats: number): number {
@@ -641,7 +697,17 @@ class ClockView {
     beats(): number {
         const routine = currentRoutine();
         if (routine !== null && (routine.clock as unknown) === this) return routine.logicalBeat;
-        return this.localBeat(this.root.beats());
+        return this.localBeat(this.root!.beats());
+    }
+
+    /**
+     * What a `Server` stamps a bundle with when the timeline plays on a
+     * **server transport**: seconds of this node's axis → a sample of the
+     * transport's clock. `null` on a timeline playing on its own clock, where
+     * the ordinary timetag or `/sched_at` path applies.
+     */
+    get schedAxis(): ((secs: number) => number) | null {
+        return this.node.player.schedAxis;
     }
 
     get tempo(): number {
@@ -671,7 +737,7 @@ class ClockView {
         const wrapper = this.node.player.wrappers.get(item);
         if (wrapper !== undefined) {
             this.node.player.wrappers.delete(item);
-            this.root.unsched(wrapper);
+            this.root?.unsched(wrapper);
         }
         return this;
     }
@@ -681,17 +747,19 @@ class ClockView {
         const wrapper = new Routine(translated(item, this));
         player.wrappers.set(item, wrapper);
         player.owned.push([this.node, wrapper]);
-        this.root.schedAbs(this.rootBeat(beat), wrapper);
+        this.root!.schedAbs(this.rootBeat(beat), wrapper);
     }
 
-    // What a Server and a session read, from the root clock.
-    get timebase() { return this.root.timebase; }
-    get pacingOrigin() { return this.root.pacingOrigin; }
-    get startTime() { return this.root.startTime; }
-    get session() { return this.root.session; }
-    get name() { return this.root.name; }
-    get rolling() { return this.root.rolling; }
-    get frozen() { return this.root.frozen; }
+    // What a Server and a session read, from the root clock — `null` where
+    // there is no clock behind the view: a timeline on a server transport has
+    // none, and what it needs instead is the axis above.
+    get timebase() { return this.root?.timebase ?? null; }
+    get pacingOrigin() { return this.root?.pacingOrigin ?? null; }
+    get startTime() { return this.root?.startTime ?? null; }
+    get session() { return this.root?.session ?? null; }
+    get name() { return this.root?.name ?? null; }
+    get rolling() { return this.root?.rolling ?? false; }
+    get frozen() { return this.root?.frozen ?? false; }
 }
 
 /**
@@ -734,11 +802,29 @@ function translated(item: Schedulable, view: ClockView) {
 type Due = [number, () => void, number | null];
 
 /**
+ * What a tree of nodes is driven by: the two players (a clock's and a
+ * transport's) answer the same handful of questions, which is what keeps
+ * nesting, the entry rule and the units in one implementation.
+ */
+interface TreeDriver {
+    readonly timeline: Timeline;
+    destination: PlayDestination | null;
+    readonly clock: TempoClock | null;
+    readonly schedAxis: ((secs: number) => number) | null;
+    rootSecs(beat: number): number;
+    rootBeat(secs: number): number;
+    render(node: TimelineNode, beat: number, item: unknown): void;
+    release(node: TimelineNode | null): void;
+    readonly wrappers: Map<Schedulable, Routine>;
+    owned: [TimelineNode, Routine][];
+}
+
+/**
  * One timeline of a playing tree: where its beat 0 falls on the root's axis of
  * seconds, its cursor, and the children it has entered.
  */
 class TimelineNode {
-    readonly player: TimelinePlayer;
+    readonly player: TreeDriver;
     readonly timeline: Timeline;
     origin: number;
     readonly isRoot: boolean;
@@ -746,7 +832,7 @@ class TimelineNode {
     cursor = 0;
     children: TimelineNode[] = [];
 
-    constructor(player: TimelinePlayer, timeline: Timeline, origin: number, beat: number) {
+    constructor(player: TreeDriver, timeline: Timeline, origin: number, beat: number) {
         this.player = player;
         this.timeline = timeline;
         this.origin = origin;
@@ -831,13 +917,329 @@ class TimelineNode {
 }
 
 /**
+ * A timeline played on a **server transport**: the same verbs, carried out as
+ * the transport's own commands, and the tree planned onto the transport's clock
+ * instead of woken on a clock of its own.
+ *
+ * The transport is state in physical time — frozen nodes, a locate and a loop
+ * exact in the engine — and a timeline is a plan of discrete events in logical
+ * time. So nothing here drives time: `play`, `pause`, `stop` and `locate` are
+ * `/transport_play`, `/transport_stop` and `/transport_locateSample`, and what
+ * this adds is the **plan**: every item from a position, stamped on the
+ * transport's clock through the timeline's own map, so a pause holds the queue
+ * with the piece. A locate clears the transport queue
+ * (`schedClear("transport")`) and re-plans from the new position, `latency`
+ * ahead so nothing regenerated is late.
+ *
+ * **Its verbs are queued, not awaited.** The transport's commands are requests,
+ * and a page waits for an answer instead of blocking on one, so each verb goes
+ * onto one chain in the order it was called and `refresh` is what settles with
+ * it. The reference client, whose requests block, simply sends them.
+ *
+ * @internal
+ */
+export class TransportPlayer implements TreeDriver {
+    readonly timeline: Timeline;
+    destination: PlayDestination | null = null;
+    mark = 0;
+    finished = false;
+    root: TimelineNode | null = null;
+    owned: [TimelineNode, Routine][] = [];
+    readonly wrappers = new Map<Schedulable, Routine>();
+    readonly clock = null;
+    /**
+     * The transport as this client last heard it — from a verb it sent, a
+     * broadcast, or `refresh`. Read rather than asked for, the way
+     * `PlayheadSync` reads the piece: asking is a round trip and reading a
+     * position is not.
+     */
+    private reported: { playing: boolean; positionSample: number } =
+        { playing: false, positionSample: 0 };
+    /**
+     * `[baseSample, baseSecs, rate]` while a plan is being written: what turns
+     * a node's seconds into a sample of the transport's clock.
+     */
+    private stamp: [number, number, number] | null = null;
+    private held = 0;
+    private rate = 0;
+    /**
+     * The position sample this client itself cued, so its own locate's
+     * broadcast is not read as somebody else's.
+     */
+    private cued: number | null = null;
+    private following: OscFunc | null = null;
+    private chain: Promise<unknown> = Promise.resolve();
+
+    /**
+     * The server whose transport this plays on, held rather than read from the
+     * timeline: leaving the mode stops the transport, and the verb that stops
+     * it is queued behind whatever was still in flight.
+     */
+    private readonly server: Server;
+
+    constructor(timeline: Timeline) {
+        this.timeline = timeline;
+        this.server = timeline.transport!;
+    }
+
+    // the root's axis, as the clock player's
+    rootSecs(beat: number): number {
+        return this.timeline.map.secsAt(beat);
+    }
+
+    rootBeat(secs: number): number {
+        return this.timeline.map.beatsAt(secs);
+    }
+
+    get loop(): [number, number] | null {
+        return null;
+    }
+
+    set loop(_span: [number, number] | null) {
+        throw new Error(
+            "a loop on a transport is the engine's, and a timeline's events would "
+                + "have to be re-cued on every wrap: loop it on its own clock "
+                + "(timeline.transport = null) or loop the transport itself",
+        );
+    }
+
+    get schedAxis(): ((secs: number) => number) | null {
+        if (this.stamp === null) return null;
+        const [baseSample, baseSecs, rate] = this.stamp;
+        return (secs: number) => Math.round(baseSample + (secs - baseSecs) * rate);
+    }
+
+    get running(): boolean {
+        return this.reported.playing;
+    }
+
+    /**
+     * Where the piece is, in this timeline's beats, as this client last heard
+     * it — a wrap inside the transport's loop and a locate some other client
+     * sent are both where it says, since both are broadcast. `refresh` asks
+     * again.
+     */
+    position(): number {
+        return this.rootBeat(Math.max(this.pieceSecs(this.reported.positionSample), 0));
+    }
+
+    private pieceSecs(positionSample: number): number {
+        const rate = this.rate || 48_000;
+        return positionSample / rate - this.timeline.transportAt;
+    }
+
+    /** Asks the server where the transport is, and keeps it. */
+    async refresh(): Promise<void> {
+        await this.chain;
+        const state = await this.server.transportState();
+        this.reported = {
+            playing: state.playing,
+            positionSample: Number(state.positionSample),
+        };
+    }
+
+    private queue(work: () => Promise<void>): void {
+        this.chain = this.chain.then(work);
+    }
+
+    private async rateOf(): Promise<number> {
+        this.rate ||= Number((await this.server.queryInfo()).nominalSampleRate);
+        return this.rate;
+    }
+
+    resume(quant?: number): void {
+        refuseQuant(quant);
+        this.reported = { ...this.reported, playing: true };
+        this.queue(async () => {
+            // Nothing is re-planned: a pause froze the transport's queue with
+            // the piece, so what was queued is still queued in its exact
+            // relative place — the whole difference between a resume and a play.
+            await this.server.transportPlay();
+        });
+    }
+
+    play(at: number, quant?: number): void {
+        refuseQuant(quant);
+        this.reported = { ...this.reported, playing: true };
+        this.locate(at, false);
+        this.queue(async () => {
+            await this.server.transportPlay();
+            await this.plan(at);
+        });
+    }
+
+    locate(beat: number, cue = true): void {
+        this.held = beat;
+        this.queue(async () => {
+            const rate = await this.rateOf();
+            const sample = Math.round((this.timeline.transportAt + this.rootSecs(beat)) * rate);
+            this.server.schedClear("transport");
+            await this.server.transportLocateSample(sample);
+            this.reported = { ...this.reported, positionSample: sample };
+            this.cued = sample;
+            if (cue && this.reported.playing) await this.plan(beat);
+        });
+    }
+
+    halt(): void {
+        this.held = this.position();
+        this.reported = { ...this.reported, playing: false };
+        this.queue(async () => {
+            await this.server.transportStop();
+        });
+    }
+
+    hold(beat: number): void {
+        this.locate(beat);
+    }
+
+    /**
+     * Nothing is owned here: a plan holds no routines, and what is queued is
+     * the transport's (cleared by a locate).
+     */
+    release(_node: TimelineNode | null): void {
+        this.owned = [];
+    }
+
+    render(node: TimelineNode, beat: number, item: unknown): void {
+        if (item instanceof Routine || item instanceof Pattern) {
+            throw new Error(
+                `${(item as object).constructor.name} at beat ${beat}: a routine or a `
+                    + "pattern cannot be planned from a position",
+            );
+        }
+        const stub = { clock: node.view as unknown as TempoClock, logicalBeat: beat };
+        const previous = setCurrentRoutine(stub as unknown as Stream);
+        try {
+            const destination = this.destination
+                ?? (main.resolveServer() as unknown as PlayDestination);
+            (item as TimelineItem).play(destination);
+        } finally {
+            setCurrentRoutine(previous);
+        }
+    }
+
+    /**
+     * Writes the whole tree from `at` onto the transport's clock.
+     *
+     * The walk is the clock player's — the same nodes, the same entry rule, the
+     * same units — with the waiting taken out: there is no time to pass here,
+     * since every item names a sample of a clock the engine is running.
+     */
+    private async plan(at: number): Promise<void> {
+        const rate = await this.rateOf();
+        const state = await this.server.transportState();
+        this.stamp = [Number(state.transportSample), this.rootSecs(at), rate];
+        const stub = { clock: null as unknown, logicalBeat: 0 };
+        const previous = setCurrentRoutine(stub as unknown as Stream);
+        try {
+            this.root = new TimelineNode(this, this.timeline, 0, at);
+            this.finished = false;
+            for (;;) {
+                const due = this.root.nextDue();
+                if (due === null) break;
+                stub.logicalBeat = due[2] ?? this.rootBeat(due[0]);
+                due[1]();
+                this.root.prune();
+            }
+        } finally {
+            setCurrentRoutine(previous);
+            this.stamp = null;
+        }
+    }
+
+    // ---- following whoever drives the transport ----
+
+    /**
+     * Listens to the transport's broadcasts, so a **conductor** drives this
+     * timeline too: whoever calls the transport's verbs — this client, a second
+     * one, the multitrack editor next door — makes it roll, freeze and re-plan.
+     *
+     * That is the whole of following now: the plan rides the transport's own
+     * clock, so a roll and a freeze need nothing from here; what a locate needs
+     * is the re-cue, and this is where a locate somebody else sent arrives.
+     */
+    /**
+     * Takes up the transport: the group check and the broadcast listener, both
+     * queued, so a `refresh` settles with them and a refusal reaches the caller
+     * rather than the console.
+     */
+    begin(): void {
+        this.queue(async () => {
+            await this.follow();
+        });
+    }
+
+    async follow(): Promise<this> {
+        if (this.following !== null) return this;
+        const state = await this.server.transportState();
+        if (state.group === null) {
+            throw new Error(
+                "a timeline on a transport needs a governed group: bind one with "
+                    + "server.transportGroup(group) — the transport owns the nodes it plays",
+            );
+        }
+        await this.server.notify(true);
+        this.following = new OscFunc(
+            (msg) => this.broadcast(msg),
+            "/transport_query.reply",
+            { recv: this.server.receiver },
+        );
+        return this;
+    }
+
+    /** Gives up the broadcast listener, if any. */
+    close(): void {
+        this.following?.free();
+        this.following = null;
+    }
+
+    private broadcast(msg: ResponderMessage): void {
+        // /transport_query.reply originSample tempo defined playing position
+        // group transportSample positionSample …
+        if (msg.length < 9) return;
+        const playing = Boolean(Number(msg[4]));
+        const position = Number(msg[8]);
+        this.reported = { playing, positionSample: position };
+        if (!playing) return;
+        const rate = this.rate || 48_000;
+        // What this client cued itself is not news: its own locate broadcasts
+        // too, and re-planning on the echo would write the plan twice.
+        if (this.cued !== null && Math.abs(position - this.cued) < 0.05 * rate) return;
+        this.cued = position;
+        // Somebody else drove it — a conductor's play or locate, a loop's wrap.
+        // The engine does not clear the queue on a locate (a client's own does),
+        // so the re-cue is the pair: clear what was queued for where we were,
+        // and plan again from where it says.
+        this.queue(async () => {
+            this.server.schedClear("transport");
+            await this.plan(this.rootBeat(Math.max(this.pieceSecs(position), 0)));
+        });
+    }
+}
+
+function refuseQuant(quant?: number): void {
+    if (quant) {
+        throw new Error(
+            "quant is the client clock's: on a transport the start is the transport's "
+                + "own, so locate where you want it and roll",
+        );
+    }
+}
+
+/**
  * The engine of a timeline played as a root: its hidden clock, born on the
  * timeline's beat 0, and the routine that wakes the whole tree on it.
  *
  * @internal
  */
-export class TimelinePlayer {
+export class TimelinePlayer implements TreeDriver {
     clock: TempoClock | null = null;
+    /**
+     * A timeline on its own clock stamps on the ordinary axis (a timetag, or
+     * `/sched_at` under a sample timebase): there is no transport to name.
+     */
+    readonly schedAxis = null;
     destination: PlayDestination | null = null;
     loop: [number, number] | null = null;
     mark = 0;
@@ -855,6 +1257,19 @@ export class TimelinePlayer {
     constructor(timeline: Timeline) {
         this.timeline = timeline;
     }
+
+    /** Plays on from where `halt` left it: on a clock, a play from the held beat. */
+    resume(quant?: number): void {
+        this.play(this.position(), quant);
+    }
+
+    /** Nothing to ask: on its own clock the position is here. */
+    refresh(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    /** Nothing to give up: a timeline on its own clock listens to nothing. */
+    close(): void {}
 
     rootSecs(beat: number): number {
         return this.timeline.map.secsAt(beat);
@@ -1010,311 +1425,6 @@ export class TimelinePlayer {
             }
             due[1]();
             this.root.prune();
-        }
-    }
-}
-
-/**
- * A transport over a `Timeline`: play / stop / locate / loop, and a song
- * `position`.
- *
- * The playhead scans the timeline forward as a clock advances, rendering each
- * item on a destination. The forward scan is what `play` runs; the random
- * access lives at the boundaries — `play({ at })` and `locate(beat)` re-seek
- * the cursor by time, which a forward-only routine could never do.
- *
- * Timing rides the clock's logical time like everything else, so a playhead
- * inherits `quant` and a sample-exact timebase for free.
- *
- * A pass ends on its own when the scan reaches the end of the timeline:
- * `playing` goes false and `finished` says the end is why, so a transport
- * reads the end off the playhead instead of timing it.
- */
-export class Playhead {
-    readonly timeline: Timeline;
-    readonly clock: TempoClock;
-    readonly destination: PlayDestination;
-
-    private running = false;
-    private ended = false;
-    private epoch = 0;
-    private routine: Routine | null = null;
-    private loopWindow: [number, number] | null = null;
-    private startBeat = 0;
-    private posBeat = 0;
-    private posClock: number | null = null;
-    /** The responder obeying a server's transport, while following one. */
-    private following: OscFunc | null = null;
-
-    constructor(timeline: Timeline, clock: TempoClock, destination: PlayDestination) {
-        this.timeline = timeline;
-        this.clock = clock;
-        this.destination = destination;
-    }
-
-    // ---- transport ----
-
-    /**
-     * Starts (or restarts) playback from beat `at`, snapping the start to a
-     * `quant` boundary of the clock's grid. Re-seeks the cursor to `at`, so it
-     * doubles as a locate-and-play.
-     */
-    play({ at = 0, quant }: { at?: number; quant?: number } = {}): this {
-        this.startBeat = at;
-        this.posBeat = at;
-        this.posClock = null;
-        this.running = true;
-        this.ended = false;
-        this.epoch += 1;
-        const epoch = this.epoch;
-        if (this.routine !== null) this.clock.unsched(this.routine);
-        this.routine = new Routine(() => this.feed(epoch));
-        this.clock.play(this.routine, quant);
-        return this;
-    }
-
-    /**
-     * Halts the playhead. Items already rendered keep sounding (their releases
-     * are scheduled); no further items are played.
-     */
-    stop(): this {
-        this.posBeat = this.position();
-        this.running = false;
-        this.ended = false; // halted by hand, not ended
-        this.posClock = null;
-        this.epoch += 1;
-        if (this.routine !== null) {
-            this.clock.unsched(this.routine);
-            this.routine = null;
-        }
-        return this;
-    }
-
-    /**
-     * Seeks to `beat`. While playing, restarts the scan from there (random
-     * access); while stopped, sets where the next `play` begins.
-     */
-    locate(beat: number): this {
-        if (this.running) {
-            this.play({ at: beat });
-        } else {
-            this.startBeat = beat;
-            this.posBeat = beat;
-            this.ended = false; // seeking away from the end leaves it behind
-        }
-        return this;
-    }
-
-    /**
-     * Loops the half-open beat window `[start, end)`: when the scan reaches
-     * `end` it wraps back to `start`. Set before or during play.
-     */
-    loop(start: number, end: number): this {
-        this.loopWindow = [start, end];
-        return this;
-    }
-
-    /** Stops looping; the scan plays through to the end. */
-    unloop(): this {
-        this.loopWindow = null;
-        return this;
-    }
-
-    // ---- following the server's shared transport ----
-
-    /**
-     * Makes this playhead obey a `server`'s shared transport: when a conductor
-     * calls `transportPlay` / `transportStop` / `transportLocate`, the server
-     * broadcasts the new state and this playhead rolls / halts / seeks to
-     * match — so several clients run in lockstep on one grid.
-     *
-     * It registers for the server's pushes (`notify`, which `boot`/`attach`
-     * already does) and subscribes to the `/transport_query.reply` broadcasts
-     * through `server.onReply`, then applies the current state once. `quant`
-     * snaps each rolling start to a beat boundary, so every follower lands
-     * together — with the clock joined to the same grid
-     * (`TempoClock.joinTransport`) that boundary is the *shared* bar line.
-     * Release with `unfollowTransport`.
-     *
-     * Beat-aligned in plain wall-clock mode; sample-exact when the clock is
-     * also locked to the server (`Session.lockToServer`).
-     *
-     * `tempoMap`: the piece's {@link TempoMap}, for a piece whose tempo changes
-     * along the way. The shared grid is a contract between clients and can only
-     * state **one** tempo (`/transport_set` is an origin and a scalar), so the
-     * beat position the server broadcasts is a reading of that nominal grid, not
-     * of this piece. Given a map, the position is taken from the transport's
-     * **sample** spelling and converted here — the same seam an editor drives
-     * the transport through — and the broadcast beat is ignored. It needs
-     * `sampleRate` (the engine's) to read that axis; without either, nothing
-     * changes.
-     *
-     * The responder is an `OscFunc` on the server's receiver, as in the
-     * reference client — with the receiver the page already has (the server's
-     * connection) rather than a socket opened for the purpose, which a browser
-     * has no way to bind.
-     */
-    async followTransport(
-        server: Server,
-        {
-            quant,
-            timeout,
-            tempoMap,
-            sampleRate = 0,
-        }: {
-            quant?: number;
-            timeout?: number;
-            tempoMap?: TempoMap | null;
-            sampleRate?: number;
-        } = {},
-    ): Promise<this> {
-        this.unfollowTransport();
-        await server.notify(true, timeout);
-        const rate = Number(sampleRate) || 0;
-        /**
-         * The song position as a beat **of this piece**.
-         *
-         * The broadcast field (index 5) reads the shared grid, which is one
-         * tempo by construction. When the piece has a map, the truthful spelling
-         * is the sample position (index 7) put through it; the two agree exactly
-         * whenever the piece is affine.
-         */
-        const beatOf = (msg: ResponderMessage): number =>
-            tempoMap && rate > 0 && msg.length >= 8
-                ? tempoMap.beatsAt(Number(msg[7]) / rate)
-                : Number(msg[5]);
-        this.following = new OscFunc(
-            (msg) => {
-                // /transport_query.reply originSample tempo defined playing
-                // position group transportSample positionSample ...
-                if (msg.length < 7 || !Number(msg[3])) return;
-                const position = beatOf(msg);
-                if (Number(msg[4])) {
-                    this.play({ at: position, quant });
-                } else {
-                    this.stop();
-                    this.locate(position);
-                }
-            },
-            "/transport_query.reply",
-            { recv: server.receiver },
-        );
-        const state = await server.transportState(timeout);
-        // Gated on the **grid**, not on the state: the state is always there
-        // now, but a playhead runs on beats, and `position` is 0 until a grid
-        // says what a beat is. Applying that would locate to 0 on a server
-        // whose transport is being driven in samples.
-        if (state.tempo !== null) {
-            const at =
-                tempoMap && rate > 0
-                    ? tempoMap.beatsAt(Number(state.positionSample) / rate)
-                    : state.position;
-            if (state.playing) this.play({ at, quant });
-            else this.locate(at);
-        }
-        return this;
-    }
-
-    /**
-     * Stops following a server transport (see `followTransport`): drops the
-     * subscription, leaving the playhead wherever the last broadcast left it.
-     */
-    unfollowTransport(): this {
-        this.following?.free();
-        this.following = null;
-        return this;
-    }
-
-    /**
-     * The current song position, in beats. Interpolated from the clock between
-     * items while playing; the start or last-seek beat while stopped.
-     */
-    /**
-     * The **clock** beat the scan last woke on — the origin `position`
-     * interpolates from, and, once the scan has drained, the beat at which its
-     * last item was rendered. `null` before the first wake.
-     *
-     * A transport reads it to keep a cursor moving after the scan is over: the
-     * piece ends where the last item does, which is a stretch of time later.
-     */
-    get scannedAt(): number | null {
-        return this.posClock;
-    }
-
-    position(): number {
-        if (!this.running || this.posClock === null) return this.posBeat;
-        let pos = this.posBeat + (this.clock.beats() - this.posClock);
-        if (this.loopWindow !== null) {
-            const [start, end] = this.loopWindow;
-            const span = end - start;
-            if (span > 0 && pos >= end) pos = start + ((pos - start) % span);
-        }
-        return pos;
-    }
-
-    /**
-     * Whether the scan is running. It goes false on `stop` **and** when the
-     * scan reaches the end of the timeline, so a transport polls this one flag
-     * instead of comparing `position` against a length of its own.
-     */
-    get playing(): boolean {
-        return this.running;
-    }
-
-    /**
-     * Whether the scan ran off the end, as opposed to being halted by hand or
-     * still playing. It is the *scan* that ended: a loop never ends, and the
-     * last item keeps sounding for its own length — the playhead schedules
-     * items, it does not wait for them.
-     */
-    get finished(): boolean {
-        return this.ended;
-    }
-
-    // ---- the feeder: a cursor walk fed to the clock ----
-
-    private *feed(epoch: number): Generator<number | undefined, void, unknown> {
-        const tl = this.timeline;
-        let cursor = tl.indexAt(this.startBeat);
-        let prev = this.startBeat;
-        while (this.running && epoch === this.epoch) {
-            this.posBeat = prev;
-            this.posClock = this.clock.beats();
-            if (this.loopWindow !== null) {
-                const [start, end] = this.loopWindow;
-                const next = tl.get(cursor);
-                if (next === undefined || next[0] >= end) {
-                    const tail = end - prev;
-                    if (tail > 0) yield tail;
-                    cursor = tl.indexAt(start);
-                    prev = start;
-                    continue;
-                }
-            }
-            const entry = tl.get(cursor);
-            if (entry === undefined) {
-                // Drained: the pass is over, and the transport driving it has
-                // to know without polling a length of its own. The feeder runs
-                // on the clock, so it records the end rather than announcing
-                // it — `playing` goes false, `position` freezes on the last
-                // item.
-                this.running = false;
-                this.ended = true;
-                return;
-            }
-            const [beat, item] = entry;
-            const wait = beat - prev;
-            if (wait > 0) {
-                yield wait;
-                if (!(this.running && epoch === this.epoch)) return;
-                prev = beat;
-                this.posBeat = prev;
-                this.posClock = this.clock.beats();
-            }
-            (item as { play(destination: PlayDestination): unknown }).play(
-                this.destination,
-            );
-            cursor += 1;
         }
     }
 }

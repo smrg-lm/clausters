@@ -207,8 +207,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     Returns:
         A `RenderStats` for every offline path. A timeline on a ``destination``
         returns the timeline; an `Element` on one returns what
-        `clausters.form.render` returns (a `Playhead`, or the instance group
-        of a logical `Group`).
+        `clausters.form.render` returns (the timeline it flattened to, or the
+        instance group of a logical `Group`).
     """
     from .base.stream import Routine, Stream
     from .defs import Expr, FaustDef, GraphDef, SynthDef

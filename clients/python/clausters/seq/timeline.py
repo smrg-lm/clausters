@@ -1,27 +1,27 @@
-"""Static timelines and a playhead (random-access sequencing).
+"""Timelines: a plan in logical time, played by itself (random-access sequencing).
 
 The counterpart to the generative layer (`clausters.base.stream.Routine`,
 `clausters.seq.pattern.Pbind`). A `Routine` is a forward-only generator: its
 musical state lives in the generator's locals, so it cannot be *seeked*. A
-`Timeline` is the opposite — a **static, editable list of timed items kept
-sorted by beat**, with random access by time (`index_at`, `range`). That is what
-makes DAW-style transport controls possible: a `Playhead` scans the timeline
-forward as the clock advances, and **play / stop / locate / loop** re-seek the
-cursor by time at the boundaries.
+`Timeline` is the opposite — an **editable list of timed items kept sorted by
+beat**, with its own tempo map and random access by time (`index_at`, `range`).
+That is what makes DAW-style transport controls possible, and they are the
+timeline's own: **play / pause / stop / locate / loop**, on a clock of its own
+or on a server's transport (`Timeline.transport`).
 
 An *item* is anything that can render itself on a destination — it has a
 `play(destination)` method. `clausters.seq.event.Event` already is one (it plays
 a note on a `Server` or a `MidiServer` — the same double dispatch the patterns
 use), so a timeline of `Event`s renders to OSC *or* MIDI by which destination
-the playhead holds, exactly like the rest of the client. `OscItem` and
+the timeline plays on, exactly like the rest of the client. `OscItem` and
 `MidiItem` wrap a raw OSC message or MIDI bytes, so a timeline can also be a
 plain, editable OSC/MIDI score.
 
-This layer is **client-side**: each playhead has its own local transport over
-its own timeline, and several clients phase-align through `quant` and the shared
-`/transport_set` grid (see the timing docs). A server-broadcast transport (one
-conductor's play/stop/locate driving every client) can layer on top later
-without changing this.
+This layer is **client-side** while a timeline plays on its own clock: each has
+its own local transport, and several clients phase-align through `quant`. On a
+**server transport** (`Timeline.transport`) the verbs are the transport's own
+commands and the plan rides the transport's clock, so one conductor's
+play/stop/locate drives every timeline on it.
 """
 
 import bisect
@@ -46,7 +46,7 @@ class _Entry:
 
 class OscItem:
     """A raw OSC message ``(addr, *args)`` as a timeline item: rendering it sends
-    the message at the playhead's current logical beat through a `Server`."""
+    the message at the timeline's current logical beat through a `Server`."""
 
     def __init__(self, addr, *args):
         self.addr = addr
@@ -58,7 +58,7 @@ class OscItem:
 
 class MidiItem:
     """Raw MIDI bytes as a timeline item: rendering it emits the message at the
-    playhead's current logical beat through a `MidiServer`."""
+    timeline's current logical beat through a `MidiServer`."""
 
     def __init__(self, message):
         self.message = bytes(message)
@@ -165,6 +165,11 @@ class Timeline:
         self.parent = None
         self._map = tempo_map if tempo_map is not None else _native.TempoMap(float(tempo))
         self._player = None
+        self._transport = None
+        #: **Where this timeline's beat 0 falls on the transport**, in seconds
+        #: of the transport's position — the transport's axis is physical, so
+        #: the offset is too. Only read in transport mode.
+        self.transport_at = 0.0
         if items is not None:
             for beat, item in items:
                 self.add(beat, item)
@@ -291,7 +296,7 @@ class Timeline:
 
     def index_at(self, beat) -> int:
         """The cursor (index) of the first item at or after ``beat`` — the seek
-        primitive a playhead uses to start or locate."""
+        primitive `play(at=…)` and `locate` start from."""
         return bisect.bisect_left(self._entries, float(beat), key=lambda e: e.beat)
 
     def range(self, t0, t1) -> list:
@@ -340,6 +345,46 @@ class Timeline:
 
     # ---- playing ----
 
+    @property
+    def transport(self):
+        """The server whose **transport** plays this timeline, or ``None`` —
+        the ordinary case — for its own clock.
+
+        One mode per root, and the same verbs in both: `play`, `pause`, `stop`
+        and `locate` are the transport's own commands here, exactly as the
+        multitrack's playback uses them, and the timeline's items are planned
+        onto the transport's clock (`/sched_atTransport`) from the position it
+        is at. Setting it needs a **governed group** bound
+        (`clausters.defs.Server.transport_group`), since that is what makes a
+        transport own the nodes it plays -- and what the timeline's synths are
+        placed under, so a pause freezes them with the piece.
+
+        Assigning halts whatever was playing: a timeline plays in one place.
+        """
+        return self._transport
+
+    @transport.setter
+    def transport(self, server):
+        if self._player is not None:
+            self._player.halt()
+            self._player.close()
+            self._player = None
+        if server is not None:
+            state = server.transport_state()
+            if state.get("group") is None:
+                raise ValueError(
+                    "a timeline on a transport needs a governed group: bind one "
+                    "with server.transport_group(group) -- the transport owns "
+                    "the nodes it plays")
+        self._transport = server
+        if server is not None:
+            # The mode **is** the following: with the plan on the transport's
+            # own clock, a roll and a freeze need nothing from here, and what a
+            # locate needs is the re-cue -- so the broadcasts are listened to
+            # from the moment the timeline is on the transport, whoever drives
+            # it.
+            self._player_for().follow()
+
     def play(self, at: "float | None" = None, quant=None, destination=None):
         """Play the timeline from beat ``at``, on a clock of its own.
 
@@ -356,7 +401,7 @@ class Timeline:
         if destination is not None:
             player.destination = destination
         if at is None:
-            player.play(player.position(), quant)
+            player.resume(quant)
         else:
             player.mark = float(at)
             player.play(float(at), quant)
@@ -402,8 +447,22 @@ class Timeline:
         return self
 
     def position(self) -> float:
-        """Where the timeline is, in its beats."""
+        """Where the timeline is, in its beats.
+
+        On a server transport it is what this client last heard (a verb it
+        sent, a broadcast, a `refresh`) rather than a round trip, the way
+        `clausters.gui.PlayheadSync` reads the piece."""
         return 0.0 if self._player is None else self._player.position()
+
+    def refresh(self):
+        """Ask where the transport is and keep the answer; returns ``self``.
+
+        Only a timeline **on a transport** has anything to ask: on its own
+        clock the position is here. (In the web client this is a promise, for
+        the reason every request there is one.)"""
+        if self._player is not None:
+            self._player.refresh()
+        return self
 
     @property
     def playing(self) -> bool:
@@ -416,9 +475,10 @@ class Timeline:
         """Whether it stopped because it reached its end (a loop never does)."""
         return self._player is not None and self._player.finished
 
-    def _player_for(self) -> "_Player":
+    def _player_for(self):
         if self._player is None:
-            self._player = _Player(self)
+            self._player = (_Player(self) if self._transport is None
+                            else _TransportPlayer(self))
         return self._player
 
     # ---- capture a pattern into a timeline ----
@@ -500,6 +560,14 @@ class _ClockView:
         return self.local_beat(self._root.beats())
 
     @property
+    def sched_axis(self):
+        """The function a `clausters.defs.Server` stamps a bundle with when the
+        timeline plays on a **server transport**: seconds of this node's axis ->
+        a sample of the transport's clock. ``None`` on a timeline playing on its
+        own clock, where the ordinary timetag or ``/sched_at`` path applies."""
+        return self._node.player.sched_axis
+
+    @property
     def tempo(self):
         return self._node.timeline._map.tempo_at(self.beats())
 
@@ -533,7 +601,10 @@ class _ClockView:
     def __getattr__(self, name):
         if name in ("timebase", "pacing_origin", "start_time", "session", "name",
                     "rolling", "frozen"):
-            return getattr(self._root, name)
+            # ``None`` where there is no clock behind the view: a timeline on a
+            # server transport has none, and what it needs instead is the axis
+            # above.
+            return getattr(self._root, name, None)
         raise AttributeError(name)
 
 
@@ -641,9 +712,275 @@ class _Node:
             c.prune()
 
 
+class _TransportPlayer:
+    """A timeline played on a **server transport**: the same verbs, carried out
+    as the transport's own commands, and the tree planned onto the transport's
+    clock instead of woken on a clock of its own.
+
+    The transport is state in physical time -- frozen nodes, a locate and a
+    loop exact in the engine -- and a timeline is a plan of discrete events in
+    logical time. So nothing here drives time: `play`, `pause`, `stop` and
+    `locate` are `/transport_play`, `/transport_stop` and
+    `/transport_locateSample`, and what this adds is the **plan**: every item
+    from a position, stamped on the transport's clock through the timeline's own
+    map, so a pause holds the queue with the piece. A locate clears the
+    transport queue (`sched_clear("transport")`) and re-plans from the new
+    position, `latency` ahead so nothing regenerated is late.
+    """
+
+    #: What cannot be planned from a position: a routine and a pattern are
+    #: forward-only, so there is nothing to re-generate a pass from.
+    _unplayable = "a routine or a pattern cannot be planned from a position"
+
+    def __init__(self, timeline):
+        self.timeline = timeline
+        self.destination = None
+        self.mark = 0.0
+        self.finished = False
+        self.root = None
+        self.owned = []
+        self.wrappers = {}
+        self.clock = None
+        #: ``(base_sample, base_secs, rate)`` while a plan is being written:
+        #: what turns a node's seconds into a sample of the transport's clock.
+        self._stamp = None
+        self._held = 0.0
+        #: what the last broadcast said, so a conductor's own play and locate
+        #: are told from this client's.
+        #: the position sample this client itself cued, so its own locate's
+        #: broadcast is not read as somebody else's.
+        self._cued = None
+        self._follow = None
+        #: The transport as this client last heard it -- from a verb it sent, a
+        #: broadcast, or `refresh`. Read rather than asked for, the way
+        #: `clausters.gui.PlayheadSync` reads the piece: asking is a round trip
+        #: and reading a position is not.
+        self._reported = {"playing": False, "position_sample": 0}
+
+    # the root's axis, as the clock player's
+    def root_secs(self, beat):
+        return self.timeline._map.secs_at(beat)
+
+    def root_beat(self, secs):
+        return self.timeline._map.beats_at(secs)
+
+    @property
+    def loop(self):
+        return None
+
+    @loop.setter
+    def loop(self, span):
+        raise ValueError(
+            "a loop on a transport is the engine's, and a timeline's events "
+            "would have to be re-cued on every wrap: loop it on its own clock "
+            "(timeline.transport = None) or loop the transport itself")
+
+    @property
+    def sched_axis(self):
+        if self._stamp is None:
+            return None
+        base_sample, base_secs, rate = self._stamp
+        return lambda secs: int(round(base_sample + (secs - base_secs) * rate))
+
+    @property
+    def server(self):
+        return self.timeline._transport
+
+    def _state(self):
+        """Ask the server where the transport is, and remember it."""
+        self._reported = self.server.transport_state()
+        return self._reported
+
+    def refresh(self):
+        """Ask the server for the transport's state and keep it; returns
+        ``self``. What `position` and `playing` answer from."""
+        self._state()
+        return self
+
+    def _rate(self):
+        return float(self.server.query_info().nominal_sample_rate)
+
+    def _piece_secs(self, state):
+        """Where the transport is, in seconds of **this timeline's** axis."""
+        return state.get("position_sample", 0) / self._rate() - self.timeline.transport_at
+
+    def position(self):
+        """Where the piece is, in this timeline's beats, as this client last
+        heard it -- a wrap inside the transport's loop and a locate some other
+        client sent are both where it says, since both are broadcast. `refresh`
+        asks again."""
+        return self.root_beat(max(self._piece_secs(self._reported), 0.0))
+
+    @property
+    def running(self):
+        return bool(self._reported.get("playing"))
+
+    def hold(self, beat):
+        self.locate(beat)
+        return self
+
+    def resume(self, quant=None):  # noqa: D401
+        """Roll again with **nothing re-planned**: a pause froze the transport's
+        queue with the piece, so what was queued is still queued in its exact
+        relative place -- which is the whole difference between a resume and a
+        play here."""
+        self._refuse_quant(quant)
+        self.server.transport_play()
+        self._reported["playing"] = True
+        return self
+
+    def play(self, at, quant=None):
+        self._refuse_quant(quant)
+        self.locate(at, cue=False)
+        self.server.transport_play()
+        self._reported["playing"] = True
+        self._plan(at)
+        return self
+
+    @staticmethod
+    def _refuse_quant(quant):
+        if quant:
+            raise ValueError(
+                "quant is the client clock's: on a transport the start is the "
+                "transport's own, so locate where you want it and roll")
+
+    def locate(self, beat, cue: bool = True):
+        beat = float(beat)
+        self._held = beat
+        server = self.server
+        rate = self._rate()
+        server.sched_clear("transport")
+        sample = int(round((self.timeline.transport_at + self.root_secs(beat)) * rate))
+        server.transport_locate_sample(sample)
+        self._reported["position_sample"] = sample
+        self._cued = sample
+        if cue and self._reported.get("playing"):
+            self._plan(beat)
+        return self
+
+    def halt(self):
+        self._held = self.position()
+        self.server.transport_stop()
+        self._reported["playing"] = False
+        return self
+
+    # ---- following whoever drives the transport ----
+
+    def follow(self):
+        """Listen to the transport's broadcasts, so a **conductor** drives this
+        timeline too: whoever calls the transport's verbs -- this client, a
+        second one, the multitrack editor next door -- makes it roll, freeze and
+        re-plan.
+
+        That is the whole of following now: the plan rides the transport's own
+        clock, so a roll and a freeze need nothing from here; what a locate
+        needs is the re-cue, and this is where a locate somebody else sent
+        arrives. Registered once per transport (see `close`)."""
+        if self._follow is not None:
+            return self
+        from ..base._oscinterface import OscReceiver
+
+        recv = OscReceiver().start()
+        recv.add(self._broadcast)
+        recv.send(self.server.target, "/server_notify", 1)
+        self._follow = recv
+        return self
+
+    def close(self):
+        """Give up the broadcast listener, if any."""
+        if self._follow is not None:
+            self._follow.close()
+            self._follow = None
+        return self
+
+    def _broadcast(self, addr, args, when, src):
+        if addr != "/transport_query.reply" or len(args) < 8:
+            return
+        playing, position = bool(int(args[3])), int(args[7])
+        self._reported = {**self._reported, "playing": playing,
+                          "position_sample": position,
+                          "transport_sample": int(args[6])}
+        if not playing:
+            return
+        rate = self._rate()
+        # What this client cued itself is not news: its own locate broadcasts
+        # too, and re-planning on the echo would write the plan twice.
+        if self._cued is not None and abs(position - self._cued) < 0.05 * rate:
+            return
+        self._cued = position
+        # Somebody else drove it -- a conductor's play or locate, a loop's wrap.
+        # The engine does not clear the queue on a locate (a client's own does),
+        # so the re-cue is the pair: clear what was queued for where we were,
+        # and plan again from where it says.
+        self.server.sched_clear("transport")
+        self._plan(self.root_beat(max(position / rate - self.timeline.transport_at, 0.0)))
+
+    def release(self, node):
+        """Nothing is owned here: a plan holds no routines, and what is queued
+        is the transport's (cleared by a locate)."""
+        self.owned = []
+
+    def render(self, node, beat, item):
+        from .pattern import Pattern
+
+        if isinstance(item, (Routine, Pattern)):
+            raise ValueError(f"{type(item).__name__} at beat {beat}: {self._unplayable}")
+        destination = self.destination
+        me = main.current_routine
+        saved = (me.clock, me._logical_beat)
+        me.clock, me._logical_beat = node.view, beat
+        try:
+            item.play(destination if destination is not None else main.resolve_server())
+        finally:
+            me.clock, me._logical_beat = saved
+
+    def _plan(self, at):
+        """Write the whole tree from ``at`` onto the transport's clock.
+
+        The walk is the clock player's -- the same nodes, the same entry rule,
+        the same units -- with the waiting taken out: there is no time to pass
+        here, since every item names a sample of a clock the engine is running.
+        """
+        state = self._state()
+        rate = self._rate()
+        base = state["transport_sample"] / rate
+        self._stamp = (base * rate, self.root_secs(at), rate)
+        stub = _PlanMoment()
+        previous, main.current_routine = main.current_routine, stub
+        try:
+            self.root = _Node(self, self.timeline, 0.0, float(at))
+            self.finished = False
+            while True:
+                due = self.root.next_due()
+                if due is None:
+                    break
+                stub._logical_beat = due[2] if due[2] is not None else self.root_beat(due[0])
+                due[1]()
+                self.root.prune()
+        finally:
+            main.current_routine = previous
+            self._stamp = None
+        return self
+
+
+class _PlanMoment:
+    """The stand-in for a routine while a plan is written: what a `Moment` reads
+    to stamp an item, with no clock running behind it."""
+
+    __slots__ = ("clock", "_logical_beat")
+
+    def __init__(self):
+        self.clock = None
+        self._logical_beat = 0.0
+
+
 class _Player:
     """The engine of a timeline played as a root: its hidden clock, born on
     the timeline's beat 0, and the routine that wakes the whole tree on it."""
+
+    #: A timeline on its own clock stamps on the ordinary axis (a timetag, or
+    #: `/sched_at` under a sample timebase): there is no transport to name.
+    sched_axis = None
 
     def __init__(self, timeline):
         self.timeline = timeline
@@ -688,6 +1025,11 @@ class _Player:
         if self.clock is not None:
             self.clock.locate(self._held)
 
+    def resume(self, quant=None):
+        """Play on from where `halt` left it: on a clock, that is a play from
+        the held position."""
+        return self.play(self.position(), quant)
+
     def play(self, at, quant=None):
         clock = self._clock_for()
         self.halt()
@@ -726,6 +1068,14 @@ class _Player:
             self.clock.unsched(self._engine)
             self._engine = None
         self.release(None)
+
+    def refresh(self):
+        """Nothing to ask: on its own clock the position is here."""
+        return self
+
+    def close(self):
+        """Nothing to give up: a timeline on its own clock listens to nothing."""
+        return self
 
     def release(self, node):
         """Unschedule the routines a pass started, in ``node``'s subtree (all of
@@ -820,268 +1170,3 @@ class _Recorder:
         beat = Moment.current().beat
         self.timeline.add(beat, Event(event))
         return None
-
-
-class Playhead:
-    """A transport over a `Timeline`: play / stop / locate / loop, and a song
-    `position`.
-
-    The playhead scans the timeline forward as a `clock` advances, rendering each
-    item on a `destination` (a `Server` for OSC, a `MidiServer` for MIDI — the
-    same seam as the rest of the client). The forward scan is what `play` runs;
-    the random access lives at the boundaries — `play(at=…)` and `locate(beat)`
-    re-seek the cursor by time, which a forward-only routine could never do.
-
-    Timing rides the clock's logical time like everything else, so a playhead
-    inherits `quant` (start on a bar), `lock_to` (sample-exact) and
-    `join_transport` (the shared grid) for free.
-
-    A pass ends on its own when the scan reaches the end of the timeline:
-    `playing` goes False and `finished` says the end is why, so a transport
-    reads the end off the playhead instead of timing it.
-
-    Args:
-        timeline: the `Timeline` to play.
-        clock: the `TempoClock` that drives it (start it for live playback;
-            `render` it for offline).
-        destination: where items go — a `Server` or a `MidiServer`.
-    """
-
-    def __init__(self, timeline: Timeline, clock, destination):
-        self.timeline = timeline
-        self.clock = clock
-        self.destination = destination
-        self._running = False
-        self._finished = False     # the scan ran off the end (set by the feeder)
-        self._epoch = 0            # invalidates an in-flight feeder on stop/locate
-        self._routine = None
-        self._loop = None          # (start, end) in beats, or None
-        self._start_beat = 0.0     # the beat the current run started from
-        self._pos_beat = 0.0       # timeline beat at the last wake
-        self._pos_clock = None     # clock beat at the last wake (for interpolation)
-        self._follow = None        # (OscFunc, OscReceiver | None) when following a transport
-
-    # ---- transport ----
-
-    def play(self, at: float = 0.0, quant=None):
-        """Start (or restart) playback from beat ``at``, snapping the start to a
-        ``quant`` beat boundary of the clock's grid (a bar). Re-seeks the cursor
-        to ``at`` by time, so it works as a locate-and-play."""
-        self._start_beat = float(at)
-        self._pos_beat = float(at)
-        self._pos_clock = None
-        self._running = True
-        self._finished = False
-        self._epoch += 1
-        epoch = self._epoch
-        if self._routine is not None:
-            self.clock.unsched(self._routine)
-        self._routine = Routine(lambda: self._feed(epoch))
-        self.clock.play(self._routine, quant)
-        return self
-
-    def stop(self):
-        """Halt the playhead. Items already rendered keep sounding (their
-        releases are scheduled); no further items are played."""
-        self._running = False
-        self._finished = False     # halted by hand, not ended
-        self._epoch += 1
-        if self._routine is not None:
-            self.clock.unsched(self._routine)
-            self._routine = None
-        return self
-
-    def locate(self, beat: float):
-        """Seek the playhead to ``beat``. While playing, restarts the scan from
-        there (random access); while stopped, just sets where the next `play`
-        begins."""
-        if self._running:
-            self.play(at=beat)
-        else:
-            self._start_beat = float(beat)
-            self._pos_beat = float(beat)
-            self._finished = False   # seeking away from the end leaves it behind
-        return self
-
-    def loop(self, start: float, end: float):
-        """Loop the half-open beat window ``[start, end)``: when the scan reaches
-        ``end`` it wraps back to ``start``. Set before or during play."""
-        self._loop = (float(start), float(end))
-        return self
-
-    def unloop(self):
-        """Stop looping; the scan plays through to the end."""
-        self._loop = None
-        return self
-
-    @property
-    def scanned_at(self):
-        """The **clock** beat the scan last woke on — the origin `position`
-        interpolates from, and, once the scan has drained, the beat at which its
-        last item was rendered. ``None`` before the first wake.
-
-        A transport reads it to keep a cursor moving after the scan is over: the
-        piece ends where the last item does, which is a stretch of time later.
-        """
-        return self._pos_clock
-
-    def position(self) -> float:
-        """The current song position, in beats. Interpolated from the clock
-        between items while playing; the start/last-seek beat while stopped."""
-        if not self._running or self._pos_clock is None:
-            return self._pos_beat
-        pos = self._pos_beat + (self.clock.beats() - self._pos_clock)
-        if self._loop is not None:
-            start, end = self._loop
-            span = end - start
-            if span > 0 and pos >= end:
-                pos = start + (pos - start) % span
-        return pos
-
-    @property
-    def playing(self) -> bool:
-        """Whether the scan is running. It goes False on `stop` **and** when the
-        scan reaches the end of the timeline, so a transport can poll this one
-        flag instead of comparing `position` against a length it computed
-        itself."""
-        return self._running
-
-    @property
-    def finished(self) -> bool:
-        """Whether the scan ran off the end of the timeline, as opposed to being
-        halted by hand (`stop`) or still playing. It is the *scan* that ended: a
-        `loop` never ends, and the last item keeps sounding for its own length —
-        the playhead schedules items, it does not wait for them."""
-        return self._finished
-
-    # ---- follow a server's shared transport (DAW conductor) ----
-
-    def follow_transport(self, server, recv=None, quant=None, tempo_map=None,
-                         sample_rate: float = 0.0):
-        """Make this playhead obey a ``server``'s shared transport: when a
-        conductor calls `transport_play` / `transport_stop` /
-        `transport_locate` on the server, the server broadcasts the new state and
-        this playhead rolls / halts / seeks to match — so several clients run in
-        lockstep on the shared grid.
-
-        It registers ``/server_notify`` (so the server's `/transport_query.reply` pushes
-        arrive) and an `clausters.responders.OscFunc` on ``/transport_query.reply``
-        that drives this playhead, then applies the current state once. Pass a
-        started `clausters.base.OscReceiver` as ``recv`` (it must be subscribable
-        on its own socket); one is created if omitted. ``quant`` snaps each
-        rolling start to a beat boundary of the shared grid, so all followers
-        land together. Release with `unfollow_transport`. Returns ``self``.
-
-        Beat-aligned in plain wall-clock mode; sample-exact when the clock is
-        also `lock_to` the server (see the timing docs).
-
-        ``tempo_map``: the piece's `clausters.base.TempoMap`, for a piece whose
-        tempo changes along the way. The shared grid is a contract between
-        clients and can only state **one** tempo (`/transport_set` is an origin
-        and a scalar), so the beat position the server broadcasts is a reading
-        of that nominal grid, not of this piece. Given a map, the position is
-        taken from the transport's **sample** spelling and converted here — the
-        same seam an editor drives the transport through — and the broadcast
-        beat is ignored. It needs ``sample_rate`` (the engine's) to read that
-        axis; without either, nothing changes.
-        """
-        from ..base import OscReceiver
-        from ..responders import OscFunc
-
-        owns_recv = recv is None
-        if recv is None:
-            recv = OscReceiver().start()
-        recv.send(server.target, "/server_notify", 1)
-
-        rate = float(sample_rate or 0.0)
-
-        def beat_of(msg):
-            """The song position as a beat **of this piece**.
-
-            The broadcast field (index 5) reads the shared grid, which is one
-            tempo by construction. When the piece has a map, the truthful
-            spelling is the sample position (index 7) put through it; the two
-            agree exactly whenever the piece is affine.
-            """
-            if tempo_map is None or rate <= 0.0 or len(msg) < 8:
-                return float(msg[5])
-            return tempo_map.beats_at(float(msg[7]) / rate)
-
-        def on_transport(msg, time, src):
-            # msg == ["/transport_query.reply", origin, tempo, defined, playing,
-            #         position, group, transport_sample, position_sample, ...]
-            if len(msg) < 6 or not int(msg[3]):
-                return
-            playing, position = int(msg[4]), beat_of(msg)
-            if playing:
-                self.play(at=position, quant=quant)
-            else:
-                self.stop()
-                self.locate(position)
-
-        func = OscFunc(on_transport, "/transport_query.reply", recv=recv)
-        self._follow = (func, recv if owns_recv else None)
-
-        state = server.transport_state()
-        # Gated on the **grid**, not on the state: the state is always there
-        # now, but a playhead runs on beats, and `position` is 0 until a grid
-        # says what a beat is. Applying that would locate to 0 on a server
-        # whose transport is being driven in samples.
-        if state["tempo"] is not None:
-            at = state["position"]
-            if tempo_map is not None and rate > 0.0:
-                at = tempo_map.beats_at(float(state["position_sample"]) / rate)
-            if state["playing"]:
-                self.play(at=at, quant=quant)
-            else:
-                self.locate(at)
-        return self
-
-    def unfollow_transport(self):
-        """Stop following a server transport (see `follow_transport`): frees the
-        responder and closes the receiver it created. Returns ``self``."""
-        if self._follow is not None:
-            func, owned_recv = self._follow
-            func.free()
-            if owned_recv is not None:
-                owned_recv.close()
-            self._follow = None
-        return self
-
-    # ---- the feeder: a cursor walk fed to the clock ----
-
-    def _feed(self, epoch):
-        tl = self.timeline
-        cursor = tl.index_at(self._start_beat)
-        prev = self._start_beat
-        while self._running and epoch == self._epoch:
-            self._pos_beat = prev
-            self._pos_clock = self.clock.beats()
-            if self._loop is not None:
-                start, end = self._loop
-                if cursor >= len(tl) or tl[cursor][0] >= end:
-                    tail = end - prev
-                    if tail > 0:
-                        yield tail
-                    cursor = tl.index_at(start)
-                    prev = start
-                    continue
-            if cursor >= len(tl):
-                # Drained: the pass is over, and the transport driving it has to
-                # know without polling a length of its own. The feeder runs on
-                # the clock thread, so it records the end rather than announcing
-                # it -- `playing` goes False, `position` freezes on the last item.
-                self._running = False
-                self._finished = True
-                return
-            beat, item = tl[cursor]
-            wait = beat - prev
-            if wait > 0:
-                yield wait
-                if not (self._running and epoch == self._epoch):
-                    return
-                prev = beat
-                self._pos_beat = prev
-                self._pos_clock = self.clock.beats()
-            item.play(self.destination)
-            cursor += 1

@@ -3,9 +3,9 @@
 A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
-timeline is then played by a `clausters.seq.Playhead` — RT (timetagged bundles)
-or NRT (a score for `Session.render`) purely by which destination and clock it
-holds, sample-identical, with no scheduling path of its own. This mirrors
+timeline then plays itself — RT (timetagged bundles) or NRT (a score for
+`Session.render`) purely by which destination it holds and how its clock is
+driven, sample-identical, with no scheduling path of its own. This mirrors
 `Timeline.from_pattern`: the arrangement reuses the sequencing layer rather than
 duplicating it.
 
@@ -86,7 +86,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
 def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
                 mixed: bool = True):
     """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
-    beats — the structure a `Playhead` plays and a transport seeks. ``tempo``
+    beats — the structure that plays itself and a transport seeks. ``tempo``
     is the clock's, in beats per second, and ``tempo_map`` its map when the
     tempo changes along the piece (see `flatten`)."""
     from ..seq.timeline import Timeline
@@ -103,9 +103,9 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     """Render ``element`` onto ``destination``.
 
     A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to
-    a timeline and played through a `Playhead` over ``clock`` — RT (start/run the
-    clock) or NRT (`clock.render()` then ``destination.render()``, or
-    `Session.render`), sample-identical; returns the `Playhead`.
+    a `clausters.seq.Timeline` and played — RT (a live destination) or NRT (a
+    score, drained by `Session.render`), sample-identical; returns the
+    timeline, which is what the transport verbs are on.
 
     A **logical** `Aggregate` is translated to a `clausters.defs.GraphDef`, sent
     (``/def_send graph``) and instanced (``/graph_new``, with ``ports`` overriding the
@@ -114,8 +114,6 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     """
     if isinstance(element, Aggregate) and element.kind == LOGICAL:
         return render_logical(element, destination, ports=ports)
-
-    from ..seq.timeline import Playhead
 
     if not isinstance(element, Aggregate) and element.wraps is None:
         raise ValueError(
@@ -126,9 +124,13 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     tempo = float(getattr(clock, "tempo", 1.0) or 1.0)
     timeline = to_timeline(element, float(element.onset or 0.0), tempo=tempo,
                            tempo_map=getattr(clock, "map", None))
-    playhead = Playhead(timeline, clock, destination)
-    playhead.play(at=at, quant=quant)
-    return playhead
+    # The element was flattened at the clock's tempo, so the timeline is read
+    # by the same function: `form` is a layer over the fundamental structures,
+    # and the tempo it was laid out with is the one it plays by.
+    if getattr(clock, "map", None) is not None:
+        timeline.map = clock.map
+    timeline.play(at=at, quant=quant, destination=destination)
+    return timeline
 
 
 def render_logical(aggregate, server, *, ports=None):

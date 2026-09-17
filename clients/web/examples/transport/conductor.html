@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: a conductor driving several playheads</title>
+    <title>clausters: a conductor driving several timelines</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -21,26 +21,26 @@
   <body>
     <main>
       <div id="note">A conductor's play/stop/locate driving several clients'
-playheads in lockstep.
+timelines in lockstep.
 
-The server hosts a shared transport with a DAW-style rolling state (play / stop
-/ position). A <i>conductor</i> (any client) calls <code>transportPlay</code> /
-<code>transportStop</code> / <code>transportLocate</code>; the server broadcasts
-the new state to every <code>notify</code> client, and each client's
-<code>followTransport</code> rolls, halts or seeks to match. The server only
-broadcasts transport <i>control</i> — it never schedules audio; each client
-rolls its own playhead on the shared grid.
+The server hosts a transport: a governed group, a clock that freezes with it and
+a position a locate moves. A <i>conductor</i> (any client) calls
+<code>transportPlay</code> / <code>transportStop</code> /
+<code>transportLocateSample</code>; every client whose timeline is <b>on that
+transport</b> (<code>timeline.transport = server</code>) rolls, freezes and
+re-cues to match. The server broadcasts transport <i>control</i> and owns the
+time — it plays no notes of its own: each client plans its own items onto the
+transport's clock, which is what makes a freeze hold them and a locate move
+them.
 
-When the followers also lock to the server's sample clock (as here) the
-alignment is sample-exact. Two independent followers run in this one page, each
-taking its own <b>share</b> of the client id space so two of them never hand out
-the same node id.</div>
+Two independent followers run in this one page, each taking its own <b>share</b>
+of the client id space so two of them never hand out the same node id.</div>
 
       <div class="row">
         <button id="run">bring the followers up</button>
         <button id="play" disabled>conductor: play</button>
         <button id="positions" disabled>read both positions</button>
-        <button id="locate" disabled>locate to 0</button>
+        <button id="locate" disabled>locate to the top</button>
         <button id="stop" disabled>conductor: stop</button>
       </div>
       <pre id="log"></pre>
@@ -48,9 +48,9 @@ the same node id.</div>
 
     <!--
       The web sibling of clients/python/examples/transport/conductor.py, call
-      for call: the conductor's grid, two followers each with its own server
-      handle, clock, share, timeline and playhead, and the three transport
-      verbs.
+      for call: the conductor's governed group, two followers each with its own
+      server handle, share and timeline on that transport, and the three
+      transport verbs.
 
       Two differences, both the platform's. The script's conductor **boots a
       server process** and the followers connect to it over sockets; here the
@@ -64,7 +64,7 @@ the same node id.</div>
     -->
     <script type="module">
       import {
-        Server, TempoClock, seq,
+        Event, Group, Server, seq,
       } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -73,12 +73,16 @@ the same node id.</div>
         $("log").scrollTop = $("log").scrollHeight;
       };
 
-      let conductor = null;
+      //: Two beats a second, and the figure is four bars of two notes.
+      const TEMPO = 2.0;
+
+      let conductor = null, governed = null;
       const followers = [];
 
       /**
-       * An independent client: its own server connection and clock, locked and
-       * joined to the shared transport, with a playhead following it.
+       * An independent client: its own server connection, and a timeline **on
+       * the conductor's transport**. No clock and no playhead: the transport is
+       * the time, and the timeline plans its items onto it.
        *
        * `share` is its slice of the client id space: several clients on one
        * server each take one, so two of them never hand out the same node id.
@@ -91,22 +95,19 @@ the same node id.</div>
         // address in this page, the way 57110 is in the script.
         const server = await new Server({ engine: conductor.engine, share })
           .attach({ adoptDefault: false });
-        const clock = new TempoClock(2.0);
-        await clock.lockTo(server);                       // sample-exact timing
-        await clock.joinTransport(server);                // the shared grid
-        const timeline = seq.Timeline.fromPattern(
-          new seq.Pbind({
-            instrument: "default",
-            freq: new seq.Pseq([freq, freq * 1.5]),
-            dur: 0.5,
-            amp: 0.2,
-          }),
-          { dur: 1.0 },
-        );
-        const head = new seq.Playhead(timeline, clock, server).loop(0.0, 1.0);
-        clock.start();
-        await head.followTransport(server, { quant: 2 });  // roll on the next 2-beat boundary
-        return { server, clock, head };
+        const timeline = new seq.Timeline([], { tempo: TEMPO });
+        for (let bar = 0; bar < 4; bar += 1) {
+          for (const [beat, ratio] of [[0.0, 1.0], [0.5, 1.5]]) {
+            timeline.add(bar + beat, new Event({
+              instrument: "default", freq: freq * ratio, dur: 0.4, amp: 0.2,
+              target: governed.id,
+            }));
+          }
+        }
+        // The mode is the following: from here the conductor's verbs drive it.
+        timeline.transport = server;
+        await timeline.refresh();
+        return { server, timeline };
       }
 
       async function run() {
@@ -114,31 +115,37 @@ the same node id.</div>
 
         // The shared server: in a tab it is the engine every client is a client
         // of, where the script boots a process and the followers dial in.
-        conductor = await new Server().boot();
-        await conductor.setTransport(0, 2.0);
+        // Three id shares, not two: the conductor allocates a node of its own
+        // (the governed group), so it takes a share like everybody else.
+        conductor = await new Server({ share: { index: 0, of: 3 } }).boot();
+        // A transport owns the nodes it plays, which is what lets it freeze
+        // them: the governed group is where every follower's items go.
+        governed = new Group({ server: conductor });
+        await conductor.transportGroup(governed.id);
 
-        followers.push(await makeFollower(440.0, { index: 0, of: 2 }));
-        followers.push(await makeFollower(550.0, { index: 1, of: 2 }));
-        log("two followers up, joined to the conductor's grid");
+        followers.push(await makeFollower(440.0, { index: 1, of: 3 }));
+        followers.push(await makeFollower(550.0, { index: 2, of: 3 }));
+        log("two followers up, their timelines on the conductor's transport");
         for (const id of ["play", "positions", "locate", "stop"]) $(id).disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
       $("play").onclick = async () => {
-        await conductor.transportPlay(0.0);
+        await conductor.transportPlay();
         log("conductor: play");
       };
-      $("positions").onclick = () => {
-        const at = followers.map((f) => f.head.position().toFixed(2));
-        log(`  follower positions: ${JSON.stringify(at)}  (advancing together)`);
+      $("positions").onclick = async () => {
+        await Promise.all(followers.map((f) => f.timeline.refresh()));
+        const at = followers.map((f) => f.timeline.position().toFixed(2));
+        log(`  follower positions: ${JSON.stringify(at)}  (one position, not two estimates)`);
       };
       $("locate").onclick = async () => {
-        await conductor.transportLocate(0.0);
-        log("conductor: locate to 0");
+        await conductor.transportLocateSample(0);
+        log("conductor: locate to the top — every follower re-cues its plan");
       };
       $("stop").onclick = async () => {
         await conductor.transportStop();
-        log("conductor: stop — both followers halt where the grid says");
+        log("conductor: stop — the transport freezes, and the plans with it");
       };
     </script>
   </body>

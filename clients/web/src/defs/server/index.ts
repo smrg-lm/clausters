@@ -859,6 +859,17 @@ export class Server {
     ): void {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
         log.debug("-> bundle at beat %s: %s", when.beat ?? when, messages);
+        const axis = (when.clock as { schedAxis?: ((secs: number) => number) | null } | null)
+            ?.schedAxis;
+        if (axis) {
+            // The moment's clock names the **transport** axis: a timeline
+            // playing on a server transport stamps every bundle on the
+            // transport clock, so a pause freezes the queue with the piece and
+            // a locate clears it (`schedClear("transport")`). It is asked
+            // first because it is the one axis a caller states outright.
+            this.sendSchedTransport(axis(when.secs() + this.latency), messages);
+            return;
+        }
         if (this.scoring) {
             // NRT: seconds of the run's logical time — the moment's beat put
             // through its clock, from that clock's origin on that time.
@@ -903,6 +914,35 @@ export class Server {
             "b",
             encodeImmediateBundle(toBundle(messages)),
         ]);
+    }
+
+    /**
+     * `/sched_atTransport` without waiting for its `/done`: a plan is many
+     * bundles, and a round trip each would pace the planning by the network
+     * (`schedAtTransport` is the awaiting spelling).
+     */
+    private sendSchedTransport(sample: number, messages: readonly TimedMessage[]): void {
+        this.sendMsg("/sched_atTransport", ["h", Math.round(sample)], [
+            "b",
+            encodeImmediateBundle(toBundle(messages)),
+        ]);
+    }
+
+    /**
+     * Drops what is queued: with no `axis` every pending timed bundle on this
+     * server (`/sched_clear`, the panic button), and with `"transport"` the
+     * **transport queue alone**.
+     *
+     * The scoped form is what re-cueing after a locate needs: the transport
+     * clock does not jump, so bundles queued for the position that was left
+     * would sound at it, while the bare form would take every other client's
+     * score with them.
+     */
+    schedClear(axis?: "transport"): this {
+        if (axis === undefined) this.sendMsg("/sched_clear");
+        else if (axis === "transport") this.sendMsg("/sched_clear", "transport");
+        else throw new Error(`schedClear: the axis is "transport" or nothing, not ${axis}`);
+        return this;
     }
 
     /**

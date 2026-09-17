@@ -2,7 +2,7 @@
 // and the views' playhead line.
 //
 // No host and no server: a fake host records the sets, a fake server answers the
-// clock query, and the pass is a real `Playhead` driven offline (`clock.render`)
+// clock query, and the pass is a stub whose end is reached by hand (what a real
 // so the end of a pass is reached deterministically. What is checked is the line
 // — which of the two numbers is written, in which unit — and the state machine
 // around it, not what the widgets do with it.
@@ -22,7 +22,7 @@ import { ManualTimebase } from "../src/base/timebase.ts";
 import { TempoMap } from "../src/base/time.ts";
 import { PlayheadSync } from "../src/gui/playhead-sync.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
-import { Playhead, Timeline } from "../src/seq/timeline.ts";
+import { Timeline } from "../src/seq/timeline.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import type { Server } from "../src/defs/server/index.ts";
 
@@ -97,6 +97,56 @@ class RollingClock extends TempoClock {
     }
 }
 
+/**
+ * What a `source` hands back: the timeline it is playing, as `PlayheadSync`
+ * reads it — its map, its position, whether it is playing, and whether it ran
+ * out. A stub, so a test decides when the plan runs out; what a real timeline
+ * does with its own clock is `timeline-play.test.ts`'s.
+ */
+class Pass {
+    /** The beats its items sit on — the last is where a drained plan stops. */
+    static readonly items = [0.0, 1.0, 2.0];
+    readonly map = PIECE.map;
+    playing = true;
+    finished = false;
+    scannedAt: number | null = null;
+    private at: number;
+    readonly clock: TempoClock;
+
+    constructor(clock: TempoClock, at = 0.0) {
+        this.clock = clock;
+        this.at = at;
+    }
+
+    position(): number {
+        return this.at;
+    }
+
+    pause(): void {
+        this.playing = false;
+    }
+
+    stop(): void {
+        this.playing = false;
+    }
+
+    locate(beat: number): void {
+        this.at = beat;
+        this.finished = false;
+    }
+
+    /**
+     * The plan runs out on its **last item**, which is where a real one leaves
+     * its position while that item is still sounding.
+     */
+    drain(): void {
+        this.at = Pass.items[Pass.items.length - 1]!;
+        this.playing = false;
+        this.finished = true;
+        this.scannedAt = this.clock.beats();
+    }
+}
+
 function makeClock(): TempoClock {
     return new TempoClock(TEMPO, { timebase: new ManualTimebase(0), ticker: manualTicker() });
 }
@@ -106,8 +156,7 @@ function makeTransport(
     { clock = makeClock(), extent }: { clock?: TempoClock; extent?: () => number } = {},
 ): PlayheadSync {
     return new PlayheadSync(host as unknown as GuiHost, 7, {
-        source: (at) =>
-            new Playhead(arp(), clock, recorder as never).play({ at }),
+        source: (at) => new Pass(clock, at) as never,
         structure: PIECE,
         sampleRate: SR,
         extent,
@@ -225,7 +274,7 @@ test("the end of a pass parks the cursor at the extent", async () => {
     const clock = makeClock();
     const tp = makeTransport(host, { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     assert.equal(tp.update(), true);
     assert.equal(tp.position, 3.0);
     assert.equal(host.last("playhead"), 3 * BEAT);
@@ -236,7 +285,7 @@ test("the end is reported once", async () => {
     const clock = makeClock();
     const tp = makeTransport(new FakeHost(), { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     assert.equal(tp.update(), true);
     assert.equal(tp.update(), false);
 });
@@ -245,7 +294,7 @@ test("without an extent it parks on the last item", async () => {
     const clock = makeClock();
     const tp = makeTransport(new FakeHost(), { clock });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     assert.equal(tp.update(), true);
     assert.equal(tp.position, 2.0, "the last item's onset");
 });
@@ -260,7 +309,7 @@ test("the last item keeps the line until the piece actually ends", async () => {
     });
     const tp = makeTransport(host, { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render(); // the scan drains on the last item
+    (tp.playhead as unknown as Pass).drain(); // the plan runs out on its last item
 
     const anchored = host.last("playheadAt");
     assert.equal(tp.update(), false, "the last item is still sounding");
@@ -287,7 +336,7 @@ test("a pause inside the tail holds where the music is", async () => {
     });
     const tp = makeTransport(new FakeHost(), { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     clock.advance(0.5);
     tp.update();
     tp.pause();
@@ -298,7 +347,7 @@ test("a locate after the end stands", async () => {
     const clock = makeClock();
     const tp = makeTransport(new FakeHost(), { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     tp.update();
     tp.locate(1.0);
     assert.equal(tp.update(), false, "seeking away from the end is not undone");
@@ -347,7 +396,7 @@ test("a play puts the end of the pass on the application clock", async () => {
     const host = new ClockedHost();
     const clock = makeClock();
     const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
-        source: (at) => new Playhead(arp(), clock, recorder as never).play({ at }),
+        source: (at) => new Pass(clock, at) as never,
         structure: PIECE,
         sampleRate: SR,
         extent: () => 3.0,
@@ -360,7 +409,7 @@ test("a play puts the end of the pass on the application clock", async () => {
     assert.ok(delay > 0);
     assert.equal(tick(), delay, "a number keeps it going: the clock reschedules by it");
 
-    clock.render();                          // the pass runs out
+    (tp.playhead as unknown as Pass).drain();   // the plan runs out
     assert.equal(tick(), delay, "the drained scan is what it is there to notice");
     assert.equal(tp.position, 3.0, "so the cursor parks at the piece's end");
     assert.equal(tick(), undefined, "and having parked, it stops asking");
@@ -375,7 +424,7 @@ test("a transport with no host clock keeps update manual", async () => {
     const clock = makeClock();
     const tp = makeTransport(new FakeHost(), { clock, extent: () => 3.0 });
     await tp.play(fakeServer(), { at: 0.0 });
-    clock.render();
+    (tp.playhead as unknown as Pass).drain();
     assert.equal(tp.update(), true);
 });
 

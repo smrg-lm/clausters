@@ -270,7 +270,7 @@ class Element:
                ports=None):
         """Render this element onto ``destination`` — the change of state to
         sound. A concrete element flattens and plays through a
-        `clausters.seq.Playhead` over ``clock`` (returns the playhead); a logical
+        `clausters.seq.Timeline` (returns the timeline it flattened to); a logical
         `Aggregate` sends and instances a `GraphDef` on the server (returns the
         instance). See `clausters.form.render.render`."""
         from .render import render

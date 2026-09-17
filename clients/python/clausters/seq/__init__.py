@@ -9,7 +9,7 @@ This layer ships:
   ``Pfunc``, ``Pn``, ``Pconst``) plus `Pbind` (an event pattern).
 - `eventstream` — `EventStreamPlayer`.
 - `timeline` — `Timeline` (a static, editable, random-access sequence) and
-  `Playhead` (DAW-style play/stop/locate/loop over it), plus the `OscItem` /
+  its own transport (play/pause/stop/locate/loop) and its own tempo map, plus the `OscItem` /
   `MidiItem` raw-message items, plus `item_data` / `item_from_data`, the one
   description of what an item is as plain data.
 
@@ -20,7 +20,7 @@ A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 from .automation import Automation, add_automation_def
 from .event import Event, rest
 from .eventstream import EventStreamPlayer
-from .timeline import (MidiItem, OscItem, Playhead, Timeline, item_data,
+from .timeline import (MidiItem, OscItem, Timeline, item_data,
                        item_from_data)
 from .pattern import (
     INF,
@@ -44,7 +44,6 @@ __all__ = [
     "add_automation_def",
     "EventStreamPlayer",
     "Timeline",
-    "Playhead",
     "OscItem",
     "MidiItem",
     "item_data",

@@ -530,12 +530,13 @@ impl OscServer {
                     }
                 }
                 Garbage::FreedBuffer(_) => {}
-                Garbage::SpentBundle(cmds) => {
-                    // Empty: the executed shell of a timed bundle. Non-empty:
-                    // the engine's schedule queue was full.
-                    if !cmds.is_empty() {
-                        warn!("engine rejected a timed bundle (schedule queue full)");
-                    }
+                Garbage::SpentBundle(_) => {
+                    // The executed shell of a timed bundle, or one a
+                    // `/sched_clear` dropped: nothing to say, the heap is freed
+                    // by dropping it here.
+                }
+                Garbage::RejectedBundle(_) => {
+                    warn!("engine rejected a timed bundle (schedule queue full)");
                 }
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the

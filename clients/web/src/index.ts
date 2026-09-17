@@ -173,7 +173,7 @@ export * as seq from "./seq/index.ts";
 // The names a piece types without a namespace, as the Python facade exports
 // them; the enumerative half (the value patterns) stays behind `seq`.
 export { Event, rest } from "./seq/event.ts";
-export { Playhead, Timeline } from "./seq/timeline.ts";
+export { Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 // A client's id spaces on a server: the type `Server.ids` answers with.
 export { IdSpaces, loadCore } from "./base/core.ts";

@@ -48,8 +48,8 @@ class ServerTransport:
         `transport`, which still answers ``None`` when none is set.
 
         ``playing`` is whether the transport is rolling. A
-        `clausters.seq.timeline.Playhead` follows this with `follow_transport`.
-        RT only.
+        A `clausters.seq.Timeline` on this transport
+        (`clausters.seq.Timeline.transport`) follows it. RT only.
 
         ``group`` is the governed group (`transport_group`) or ``None`` when
         nothing is bound.

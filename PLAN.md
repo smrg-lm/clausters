@@ -2274,9 +2274,12 @@ where it came from).
   shared-memory segment, the change notifications, and `/gui_headClock`, which
   says which transport a view draws from. A protocol change across the server,
   both clients, the GUI host and the books at once; `/transport_query` and the
-  conductor examples change shape. Worth settling before a timeline's transport
-  property is built, since it decides how that property names the transport it
-  joins.
+  conductor examples change shape.
+
+  **The timeline's transport property was built first, and named to survive
+  this** *(2026-09-17)*: `timeline.transport = server` holds the server, and a
+  server with several transports makes it hold one of them
+  (`server.transport(id)`) with nothing else in the surface moving.
 
 ## Found by use: the running list of fixes
 

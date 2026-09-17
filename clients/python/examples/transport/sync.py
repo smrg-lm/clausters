@@ -13,11 +13,11 @@ hold. It prints the next-bar sample each client computes (they match: that *is*
 the alignment) and plays one note on each at that bar, so the two sound together.
 
 The transport's **second half is its rolling state**, and this shows that too:
-`clausters.defs.Server.transport_play`, `transport_stop` and `transport_locate`
-are broadcast to every client registered for notifications, and
-`clausters.seq.Playhead.follow_transport` turns those broadcasts into a client's
-own playhead — the conductor rolls, halts and seeks every follower at once. The
-server broadcasts *control*, never audio.
+`clausters.defs.Server.transport_play`, `transport_stop` and
+`transport_locate_sample` move the one position the engine holds, and a
+`clausters.seq.Timeline` **on that transport** (``timeline.transport = server``)
+plans its items onto it — the conductor rolls, freezes and seeks every follower
+at once. The server owns the time and plays no notes of its own.
 
 It **runs out of the box**: the conductor `boot`s the shared server (by hand
 that would be ``clausters``, so stop any server already on the port first) and
@@ -41,7 +41,8 @@ import time
 
 from clausters.base import IdShare, Routine, TempoClock
 from clausters.defs import Server
-from clausters.seq import Event, Playhead, Timeline
+from clausters.defs import Group
+from clausters.seq import Event, Timeline
 
 
 # %% [markdown]
@@ -97,9 +98,16 @@ def one_note(server, freq):
 # sample 0, 2 bps. Then the two clients join it, each on its own id share.
 
 # %%
-conductor = Server().boot()       # the shared server; `close` stops it again
+# Three id shares, not two: the conductor allocates a node of its own (the
+# governed group), so it takes a share like everybody else -- two clients and a
+# conductor on one server never hand out the same id.
+conductor = Server(share=IdShare(0, 3)).boot()   # `close` stops it again
 conductor.set_transport(0, 2.0)
-(sa, ca), (sb, cb) = make_client(IdShare(0, 2)), make_client(IdShare(1, 2))
+# A transport owns the nodes it plays, which is what lets it freeze them: the
+# governed group is where every follower's items go.
+governed = Group(server=conductor)
+conductor.transport_group(governed.id)
+(sa, ca), (sb, cb) = make_client(IdShare(1, 3)), make_client(IdShare(2, 3))
 
 # %% [markdown]
 # ## The alignment
@@ -129,43 +137,40 @@ def run():
 
 
 # %% [markdown]
-# ## A playhead that obeys the conductor
-# The transport's other half: its rolling state. Client A's playhead follows
-# the shared transport, so it is the *conductor* that starts, seeks and halts
-# it — a follower has no buttons of its own. The timeline is one bar of quarter
+# ## A timeline that obeys the conductor
+# The transport's other half: its rolling state. Client A's timeline is **on**
+# the shared transport, so it is the *conductor* that starts, seeks and halts it
+# — a follower has no buttons of its own. The figure is two bars of quarter
 # notes, so a locate is audible as a different place in the same figure.
 
 # %%
 figure = Timeline([
-    (0, Event(freq=220.0, amp=0.15, dur=0.4)),
-    (1, Event(freq=277.2, amp=0.15, dur=0.4)),
-    (2, Event(freq=330.0, amp=0.15, dur=0.4)),
-    (3, Event(freq=440.0, amp=0.15, dur=0.4)),
-])
-playhead = Playhead(figure, ca, sa).loop(0, 4)
+    (beat, Event(freq=freq, amp=0.15, dur=0.4, target=governed.id))
+    for beat, freq in enumerate([220.0, 277.2, 330.0, 440.0,
+                                 220.0, 277.2, 330.0, 440.0])
+], tempo=2.0)
 
 
 # %%
 def conduct():
-    """The conductor drives every follower: roll, seek, halt. Each call is one
-    broadcast, and the playhead never hears a button of its own."""
-    ca.start()
-    playhead.follow_transport(sa, quant=4)
-    print("client A: its playhead now follows the conductor's transport")
+    """The conductor drives every follower: roll, seek, halt. Each call moves
+    the one position the engine holds, and the timeline never hears a button of
+    its own."""
+    figure.transport = sa
+    print("client A: its timeline is now on the conductor's transport")
 
     conductor.transport_play()
     print("conductor: transport play - every follower rolls")
-    time.sleep(2.5)
+    time.sleep(2.0)
 
-    conductor.transport_locate(4.0)
-    print("conductor: locate to beat 4 - every follower seeks")
-    time.sleep(2.5)
+    conductor.transport_locate_sample(2 * 48_000)
+    print("conductor: locate to the second bar - every follower seeks")
+    time.sleep(2.0)
 
     conductor.transport_stop()
-    print("conductor: transport stop - every follower halts")
+    print("conductor: transport stop - every follower freezes")
     time.sleep(0.3)
-    playhead.unfollow_transport()
-    ca.stop()
+    figure.transport = None
 
 
 # %%
@@ -177,6 +182,6 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         for s in (sa, sb, conductor):
             s.close()
 else:
-    print("two clients up - run() to play the aligned notes, conduct() to hand "
-          "client A's playhead to the conductor; sa.close(); sb.close(); "
-          "conductor.close() to end")
+    print("two clients up - run() to play the aligned notes, conduct() to put "
+          "client A's timeline on the conductor's transport; sa.close(); "
+          "sb.close(); conductor.close() to end")

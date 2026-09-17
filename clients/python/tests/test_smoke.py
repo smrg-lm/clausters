@@ -28,7 +28,7 @@ def test_package_reexports_what_a_piece_names():
                  "Session", "Server", "GuiHost",
                  "Synth", "Group", "Bus", "Buffer",
                  "SynthDef", "FaustDef", "GraphDef",
-                 "TempoClock", "Routine", "Event", "Timeline", "Playhead",
+                 "TempoClock", "Routine", "Event", "Timeline",
                  "base", "defs", "seq", "form", "gui", "ipc", "launch", "errors"):
         assert name in clausters.__all__, name
         assert hasattr(clausters, name), name

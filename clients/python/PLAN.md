@@ -2029,6 +2029,22 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   are unchanged and documented as the ruler's configuration. The two defects
   above about views copying and replacing a map are fixed.
 
+  **Phase 5 landed 2026-09-17, in both clients.** `Timeline.transport` (and
+  `transport_at`, in seconds of the transport's position) puts a timeline on a
+  server's transport: the verbs are the transport's commands, the plan is
+  stamped on the transport's clock through the timeline's own map, and a
+  broadcast is where a conductor's locate arrives -- so following is the mode
+  rather than a second mechanism. The server grew `/sched_clear "transport"`,
+  the scoped clear the re-cue needs, and stopped reporting a cleared bundle as
+  a rejected one. `Playhead` is **removed** from both clients: it had no users
+  left, `clausters.form`'s render hands back the timeline it flattened to, and
+  the conductor and sync examples are timelines on a transport.
+  `clients/web/examples/transport/sequencing.html` moved too, and its slider
+  now shows the two tempi side by side (decision 2's recipe: truncate the map
+  at the position and write the tempo there). Decisions 2, 6 and 7 are decided
+  below; several transports on one server stays a future direction in the root
+  `PLAN.md`.
+
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
   a position it is recorded as a position, not as a decision -- several were
@@ -2051,7 +2067,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      performance adjustment that leaves the plan alone. Position stated: a
      timeline has no `set_tempo`, since its clock is hidden -- its tempo is its
      map, edited as data -- and `TempoClock.set_tempo` behaves the same
-     everywhere.
+     everywhere. **Decided 2026-09-17 (Phase 5)**: an edit of the plan from
+     where it is -- `map.truncate_from(position)` and `map.push(position,
+     tempo)`, which pins the current instant because the beats before it keep
+     the tempo they were played at. A bare clock's `set_tempo` is the other
+     spelling, on a clock's own map.
   3. **What an item can be.** Possibilities: events only; events and
      timelines; also `Automation` and routines. **Decided 2026-09-17: a
      timeline schedules anything playable**; a child timeline and a routine
@@ -2080,6 +2100,13 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      -- each client already synchronizes with the server (`lock_to`), and
      clients synchronizing with each other on a common origin is not done --
      and the grid, if kept, must not read as the server's main function.
+     **Decided 2026-09-17 (Phase 5): the grid is kept as the secondary case it
+     is.** Nothing about a timeline on a transport goes through it -- the plan
+     is in samples -- so `join_transport` and `quant` are left to the clients
+     that phase-align on a shared origin (`conductor.py`, `sync.py`,
+     `osc_responder.py`), and the books say the server's service is the
+     synchronized physical clock. `T2` (the grid's origin on the transport
+     axis, root `PLAN.md`) stays open and was not dragged in.
   7. **How a timeline goes on a transport.** *(Its name half decided
      2026-09-17, Phase 3: `gui.Transport` becomes `PlayheadSync`, since it keeps
      the views' playhead line in step with what sounds.)* The name of the property, `at=`
@@ -2089,7 +2116,12 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      the multitrack's playback does, the mode is a property of the timeline,
      and `gui.Transport` is renamed for what it does -- its new name is part of
      this decision. Several transports on one server is not part of it: it is a
-     future direction in the root `PLAN.md`.
+     future direction in the root `PLAN.md`. **Decided 2026-09-17 (Phase 5)**:
+     the property is `timeline.transport = server` (`None` for its own clock),
+     the placement is `timeline.transport_at` in **seconds** of the transport's
+     position, and the verbs are the transport's commands. The property was
+     named to survive several transports: it holds the server today and one of
+     its transports tomorrow.
 
   *Multitrack and views*
 

@@ -81,28 +81,26 @@ Now the conductor doing `server.set_transport(0, 3.0)` later in the session re-t
 
 ## Rolling the transport: a conductor with play / stop / locate
 
-The shared transport also carries a DAW-style **rolling state** — whether it is playing and the song position — that a conductor drives and every client's [playhead](timelines.md) obeys. The server holds the state and broadcasts each change; it still never schedules audio, so each client rolls its own playhead on the shared grid.
+The transport also carries a DAW-style **rolling state** — whether it is playing, and the position — that a conductor drives and every timeline **on that transport** obeys. The server holds the state and owns the time; it plays no notes of its own.
 
 A conductor (any client) drives it through the `Server`:
 
 ```python
-server.set_transport(0, 2.0)     # define the grid (stopped at position 0)
-server.transport_play(0.0)       # roll from beat 0 -- every follower starts
-server.transport_locate(16.0)    # seek the song position to beat 16
-server.transport_stop()          # halt every follower
+server.transport_group(group)          # the transport owns the nodes it plays
+server.transport_play()                # roll -- every timeline on it rolls
+server.transport_locate_sample(sample) # seek the position
+server.transport_stop()                # freeze it, and the plans with it
 ```
 
-A follower binds a `Playhead` to the transport with `follow_transport`, and from then on the playhead mirrors the conductor — it rolls on `transport_play`, halts on `transport_stop`, and seeks on `transport_locate`:
+A follower puts its timeline on that transport, and that is the whole of following:
 
 ```python
-from clausters.seq import Playhead
-
-head = Playhead(timeline, clock, server)
-clock.start()
-head.follow_transport(server, quant=4)   # obey the transport; start on a bar
+timeline.transport = server     # needs a governed group bound
 ```
 
-`follow_transport` registers `/server_notify` and an `OscFunc` on `/transport_query.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
+From then on `timeline.play`, `pause`, `stop` and `locate` are the transport's own commands, and the timeline **plans** its items onto the transport's clock (`/sched_atTransport`) from the position it is at — so a freeze holds them with the piece and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead. A locate or a play somebody *else* sent arrives as a broadcast (`/transport_query.reply`, the [responder layer](responders.md)), and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each computing its own. `conductor.py` ([Examples](examples.md)) shows two followers on one transport; `timeline.transport = None` gives it back its own clock.
+
+What the mode refuses, and why: a `quant` (the start is the transport's), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position. Those are the client-clock mode's.
 
 ## A worked example: two clients, one bar
 
@@ -124,10 +122,10 @@ Sampled back to back, the two clients return the same next-bar sample — that e
 
 The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/position state** — enough to lock clients to the same bars, tempo, and rolling playhead. The rest of a DAW's transport is intentionally not here:
 
-- **The server broadcasts transport *control*, it does not schedule audio.** It holds the grid and the rolling state (playing + position) and pushes changes; the actual rolling — which note sounds when — is each client's own `Playhead` on the shared grid (see [Timelines and the playhead](timelines.md)). The audio scheduling stays per-client (via `/sched_at`), so the server never becomes an audio clock.
+- **The server owns the time and broadcasts transport *control*; it does not sequence.** It holds the grid, the rolling state and the position, and pushes changes; which note sounds when is each client's own plan, stamped on the transport's clock (`/sched_atTransport`) or on the device's (`/sched_at`) — see [Timelines](timelines.md).
 - **One grid per server, last-writer-wins.** There is a single shared transport; whoever calls `set_transport` most recently defines it. Several conductors are a coordination choice you make, not something the server arbitrates. (Multiple independently named transports on one server were considered and deferred.)
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
-- **No server-side recording or arrangement.** The timeline a playhead rolls lives in the client; the server holds only the shared position and tempo, not the notes.
+- **No server-side recording or arrangement.** The timeline lives in the client; the server holds only the position, the rolling state and the grid, not the notes.
 
 These are the honest edges of a small, composable feature: shared bars, a shared tempo, and a shared play/stop/position that several clients phase-align on, with each client owning its own playhead and arrangement.
 

@@ -568,11 +568,8 @@ impl Renderer {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
                 Garbage::FreedSynth { id, .. } => self.translator.forget_node(id),
-                Garbage::SpentBundle(cmds) => {
-                    if !cmds.is_empty() {
-                        self.dropped = true;
-                    }
-                }
+                Garbage::SpentBundle(_) => {}
+                Garbage::RejectedBundle(_) => self.dropped = true,
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     self.translator.release_node_id(id);
                     crate::server::engine::report_rejected(id, why, "nrt render");

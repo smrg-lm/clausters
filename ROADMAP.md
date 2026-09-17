@@ -125,21 +125,9 @@ tests, an example and the books.
   `crates/clausters-document/PLAN.md`'s multitrack and the `X` applications
   built on it (`crates/clausters-apps/PLAN.md`).
 
-- ⬜ **Phase 5 — a timeline on a server's transport.** Order: after "Several
-  transports on one server, to play concurrently" (root `PLAN.md`, Future
-  directions) has been looked at, since it decides how the property names a
-  transport. Carries out the tempo entry's "Following a
-  server transport" and "Both ways of playing a timeline are valid, and
-  coexist". Reviews decisions 7 and 6, and re-reads `T2` (root `PLAN.md`, T
-  track; section 4 below), which names the grid decision 6 is about, and
-  reviews decision 6 itself (moved here from Phase 3). Moves the
-  last public `Playhead` users the tempo entry's Phase 2 status names --
-  `follow_transport`, the conductor examples and
-  `clients/web/examples/transport/sequencing.html`, whose live tempo slider
-  reviews decision 2 first.
-
-- ⬜ **Phase 6 — scores and render.** Order: after Phase 5 (a score becomes a
-  timeline, which can then follow a transport). Reviews the tempo
+- ⬜ **Phase 6 — scores and render.** Order: after Phase 4 in reading, since
+  both touch what a document holds; a score becomes a timeline, which can
+  already play on its own clock or on a transport. Reviews the tempo
   entry's decisions 5 and 12.
 
 - ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have

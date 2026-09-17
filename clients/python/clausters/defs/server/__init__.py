@@ -413,6 +413,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         log.debug("-> bundle at beat %s: %s", getattr(when, "beat", when),
                   [m[0] if m else m for m in messages])
 
+        axis = getattr(when.clock, "sched_axis", None)
+        if axis is not None:
+            # The moment's clock names the **transport** axis: a timeline
+            # playing on a server transport stamps every bundle on the
+            # transport clock, so a pause freezes the queue with the piece and
+            # a locate clears it (`sched_clear("transport")`). It is asked
+            # first because it is the one axis a caller states outright.
+            self._send_sched_transport(axis(when.secs() + self.latency), messages)
+            return
+
         if getattr(self.interface, "time_mode", "unix") == "score":
             # NRT: seconds of the run's logical time -- the moment's beat put
             # through its clock, from that clock's origin on that time.
@@ -476,6 +486,30 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
     def _send_sched(self, sample: int, messages):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
         self.send_msg("/sched_at", _osclib.Int64(sample), inner)
+
+    def _send_sched_transport(self, sample: int, messages):
+        """`/sched_atTransport` without waiting for its ``/done``: a plan is
+        many bundles, and a round trip each would pace the planning by the
+        network (`sched_at_transport` is the waiting spelling)."""
+        inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
+        self.send_msg("/sched_atTransport", _osclib.Int64(int(sample)), inner)
+
+    def sched_clear(self, axis: "str | None" = None):
+        """Drop what is queued: with no ``axis`` every pending timed bundle on
+        this server (``/sched_clear``, the panic button), and with
+        ``axis="transport"`` the **transport queue alone**.
+
+        The scoped form is what re-cueing after a locate needs: the transport
+        clock does not jump, so bundles queued for the position that was left
+        would sound at it, while the bare form would take every other client's
+        score with them. Returns ``self``."""
+        if axis is None:
+            self.send_msg("/sched_clear")
+        elif axis == "transport":
+            self.send_msg("/sched_clear", "transport")
+        else:
+            raise ValueError(f'sched_clear: axis is None or "transport", not {axis!r}')
+        return self
 
     def request(self, addr, *args, timeout: "float | None" = None, expect=None):
         """Sends a message and returns the first matching reply ``(addr, args)``

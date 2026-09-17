@@ -4,9 +4,9 @@
 // A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 // accumulates the nested placement offsets into absolute beats, producing a flat
 // `seq.Timeline` of items that each know how to `play(destination)`. That
-// timeline is then played by a `seq.Playhead` — RT (timetagged bundles) or NRT
-// (a score for an offline render) purely by which destination and clock it
-// holds, sample-identical, with no scheduling path of its own. This mirrors
+// timeline then plays itself — RT (timetagged bundles) or NRT (a score for an
+// offline render) purely by which destination it holds and how its clock is
+// driven, sample-identical, with no scheduling path of its own. This mirrors
 // `Timeline.fromPattern`: the arrangement reuses the sequencing layer rather
 // than duplicating it.
 //
@@ -45,7 +45,7 @@ import type { Controls } from "../defs/node.ts";
 import type { Server } from "../defs/server/index.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
 import { Pattern } from "../seq/pattern.ts";
-import { Playhead, Timeline } from "../seq/timeline.ts";
+import { Timeline } from "../seq/timeline.ts";
 import type { PlayDestination } from "../seq/timeline.ts";
 import type { TempoClock } from "../base/clock.ts";
 import { CONCRETE, LOGICAL, Aggregate } from "./aggregate.ts";
@@ -78,12 +78,13 @@ export interface RenderOptions {
 }
 
 /**
- * What {@link render} gives back: the `Playhead` playing a concrete element, or
- * — for a logical `Aggregate`, whose def has to reach the server first — a
- * promise of the instance group. The seam is the destination, not the element,
- * and this is the one place the two paths show through the same name.
+ * What {@link render} gives back: the `Timeline` a concrete element was
+ * flattened into and is playing, or — for a logical `Aggregate`, whose def has
+ * to reach the server first — a promise of the instance group. The seam is the
+ * destination, not the element, and this is the one place the two paths show
+ * through the same name.
  */
-export type RenderResult = Playhead | Promise<Group>;
+export type RenderResult = Timeline | Promise<Group>;
 
 /**
  * Flattens `element` into `[absoluteBeat, item]` pairs, sorted by beat,
@@ -174,13 +175,13 @@ export function render(
         tempo,
         (clock as { map?: TempoMap } | undefined)?.map,
     );
-    const playhead = new Playhead(
-        timeline,
-        clock as TempoClock,
-        destination as PlayDestination,
-    );
-    playhead.play({ at, quant });
-    return playhead;
+    // The element was flattened at the clock's tempo, so the timeline is read
+    // by the same function: `form` is a layer over the fundamental structures,
+    // and the tempo it was laid out with is the one it plays by.
+    const map = (clock as { map?: TempoMap } | undefined)?.map;
+    if (map !== undefined) timeline.map = map;
+    timeline.play({ at, quant, destination: destination as PlayDestination });
+    return timeline;
 }
 
 /**

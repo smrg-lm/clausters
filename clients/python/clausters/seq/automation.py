@@ -93,7 +93,7 @@ class Automation:
             [(0, 200.0, 2, 0), (2, 4000.0, 1, 0)],  # shape 2: exponential
             target=(synth, "cutoff"))
         auto.prepare(server)          # RT: at setup, off the clock thread
-        timeline.add(0, auto)         # played by the Playhead as a Timeline item
+        timeline.add(0, auto)         # and the timeline plays it like any item
     """
 
     #: The unit this object's length is in — **seconds**, because the curve is

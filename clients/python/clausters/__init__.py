@@ -39,8 +39,8 @@ The layers:
   stream, clock, netaddr, the OSC/MIDI destination interfaces and the OSC wire
   encoder.
 - `clausters.seq` — the sequencing layer: events, value patterns and ``Pbind``,
-  the event-stream player, and static timelines with a playhead. `Event`,
-  `rest`, `Timeline` and `Playhead` are re-exported here; the ``P*`` patterns
+  the event-stream player, and timelines that play themselves. `Event`,
+  `rest` and `Timeline` are re-exported here; the ``P*`` patterns
   are not, and stay under `clausters.seq`.
 - `clausters.defs` — the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
@@ -103,7 +103,7 @@ from .base.rand import Rng, choice, current_rng, seed, spawn_rng, uniform
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
-from .seq.timeline import Playhead, Timeline
+from .seq.timeline import Timeline
 from .defs import (
     AddAction,
     Buffer,
@@ -166,7 +166,6 @@ __all__ = [
     "Event",
     "rest",
     "Timeline",
-    "Playhead",
     # the free verbs
     "play",
     "render",

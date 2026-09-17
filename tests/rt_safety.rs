@@ -1210,7 +1210,12 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
         })
         .ok()
         .unwrap();
-    handle.send(Cmd::ClearSched).ok().unwrap();
+    handle
+        .send(Cmd::ClearSched {
+            transport_only: false,
+        })
+        .ok()
+        .unwrap();
 
     assert_no_alloc(|| {
         for _ in 0..100 {
