@@ -10,8 +10,9 @@
 //! # What the caller brings, and why it is not in the document
 //!
 //! Two things, both [`Look`]. **The sample rate**, which puts the multitrack's
-//! seconds on the shared frame axis: a position is `seconds × rate`, and no
-//! tempo is involved, since a multitrack is placed in physical time. And
+//! seconds on the shared frame axis by the core's one rule — a position lands on
+//! a whole sample and a length is the difference of its ends — and no tempo is
+//! involved, since a multitrack is placed in physical time. And
 //! **which server buffer a source was read into**, which is a running server's
 //! fact and never a document's.
 //!
@@ -36,6 +37,9 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value, json};
 
+use clausters_core::tempoclock::{
+    samples_to_secs, samples_to_secs_over, secs_to_samples, secs_to_samples_over,
+};
 use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
@@ -201,17 +205,43 @@ impl Buffers for () {
     }
 }
 
+/// **The one rule a multitrack's seconds cross to a view's samples by**, and
+/// back: the core's. A position lands on a whole sample
+/// ([`secs_to_samples`]), and a length is the difference of its two ends
+/// ([`secs_to_samples_over`]), so a box that ends where the next begins still
+/// does after any number of round trips.
 impl Look<'_> {
-    /// The frame a second lands on — a position or a length alike, since
-    /// nothing between the two axes moves.
+    /// The sample a position in seconds lands on.
     pub fn frame_at(&self, secs: f64) -> f64 {
-        secs * self.rate
+        secs_to_samples(secs, self.rate) as f64
     }
 
-    /// The second a frame falls on: the inverse of
-    /// [`frame_at`](Self::frame_at), and the way an edit comes back.
+    /// How many samples `length` seconds from `start` cover: the difference of
+    /// the two ends, each landed on its sample.
+    pub fn frames_over(&self, start: f64, length: f64) -> f64 {
+        secs_to_samples_over(start, length, self.rate) as f64
+    }
+
+    /// The second a sample position falls on, the sample rounded first: the
+    /// inverse of [`frame_at`](Self::frame_at), and the way an edit comes back.
     pub fn secs_at(&self, frame: f64) -> f64 {
-        frame / if self.rate == 0.0 { 1.0 } else { self.rate }
+        if self.rate <= 0.0 {
+            return 0.0;
+        }
+        samples_to_secs(frame.round_ties_even() as i64, self.rate)
+    }
+
+    /// How many seconds `frames` samples from `at` cover: the difference of the
+    /// two ends' seconds, for the reason [`frames_over`](Self::frames_over) is.
+    pub fn secs_over(&self, at: f64, frames: f64) -> f64 {
+        if self.rate <= 0.0 {
+            return 0.0;
+        }
+        samples_to_secs_over(
+            at.round_ties_even() as i64,
+            frames.round_ties_even() as i64,
+            self.rate,
+        )
     }
 
     fn bufnum(&self, source: Option<SourceId>) -> i64 {
@@ -302,7 +332,7 @@ pub fn clips(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             json!(box_.region.0.to_string()),
             json!(box_.row.0.to_string()),
             json!(look.frame_at(box_.position.0)),
-            json!(look.frame_at(box_.length.0)),
+            json!(look.frames_over(box_.position.0, box_.length.0)),
             json!(box_.start * look.rate),
             json!(box_.label),
             json!(look.bufnum(box_.source)),
@@ -529,8 +559,9 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
         let Ok(row) = text(&group[1]).parse::<u64>() else {
             continue;
         };
-        let position = look.secs_at(number(&group[2]));
-        let length = look.secs_at(number(&group[3]));
+        let (at, dur) = (number(&group[2]), number(&group[3]));
+        let position = look.secs_at(at);
+        let length = look.secs_over(at, dur);
         out.push(picture::Placed {
             name: text(&group[0]),
             row: NodeId(row),
@@ -1131,6 +1162,55 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    /// **Boxes that meet on a sample still meet after the round trip, and
+    /// join** *(found 2026-09-17 by the user: a snap that sometimes missed and a
+    /// join refused)*. The host reports samples; a length crossed on its own
+    /// (`dur / rate`) and its end crossed as `(at + dur) / rate` differ in their
+    /// last bit for most sample counts, which the join read as a gap. Over many
+    /// arbitrary cuts, the halves a report places must end and begin on one
+    /// sample, draw back to the samples they were reported at, and join.
+    #[test]
+    fn halves_placed_at_any_sample_draw_back_there_and_join() {
+        use clausters_document::multitrack::edit::apply;
+        use clausters_document::{Against, Rules};
+        let sources = HashMap::new();
+        let look = look(&sources);
+        for step in 0..200u32 {
+            let at = 7_919.0 * f64::from(step) + 3.0;
+            let cut = 13_331.0 + 97.0 * f64::from(step);
+            let tail = 48_000.0 - cut;
+            let mut piece = halves();
+            let report = [
+                json!("10"),
+                json!("1"),
+                json!(at),
+                json!(cut),
+                json!(0.0),
+                json!(""),
+                json!(-1),
+                json!("11"),
+                json!("1"),
+                json!(at + cut),
+                json!(tail),
+                json!(cut),
+                json!(""),
+                json!(-1),
+            ];
+            for intent in read(&piece, "clips", &report, &look) {
+                apply(&mut piece, &intent, &Against::default(), &Rules::none());
+            }
+            let drawn = clips(&piece, &look);
+            assert_eq!(
+                (number(&drawn[2]), number(&drawn[3]), number(&drawn[9])),
+                (at, cut, at + cut),
+                "drawn back at the samples it was reported at (step {step})"
+            );
+            let joined = reading(&piece, "join", &[json!("10"), json!("11")], &look);
+            assert_eq!(joined.refusal, None, "step {step}: {joined:?}");
+            assert_eq!(joined.intents.len(), 1);
+        }
     }
 
     /// The two halves with the tail moved in front of the head: the gesture

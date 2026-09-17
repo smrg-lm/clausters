@@ -24,8 +24,9 @@
 //! # What the picture is measured in
 //!
 //! The multitrack measures **seconds** and the shared time axis measures
-//! timeline samples, so what crosses between them is the rate alone: a
-//! position or a length is `seconds × rate`. The tempo map the multitrack holds
+//! timeline samples, so what crosses between them is the rate alone, by the
+//! core's one rule: a position lands on a whole sample and a length is the
+//! difference of its ends. The tempo map the multitrack holds
 //! places nothing; a ruler reads it. A region's window into its samples is in
 //! seconds too, which meets the axis the same way.
 
@@ -62,10 +63,10 @@ impl Default for Look<'_> {
 }
 
 impl Look<'_> {
-    /// Where a second falls on the timeline, in frames — a position or a
-    /// length alike.
+    /// Where a second falls on the timeline, in frames: the shared projection's
+    /// rule, which lands it on a whole sample.
     pub fn frame_at(&self, secs: f64) -> f64 {
-        secs * self.rate
+        self.projection().frame_at(secs)
     }
 
     /// This same look, as the shared projection asks for it.
@@ -84,7 +85,7 @@ impl Look<'_> {
     /// The second a frame falls on: the inverse, and the way an edit comes
     /// back.
     pub fn secs_at(&self, frame: f64) -> f64 {
-        frame / self.rate.max(f64::MIN_POSITIVE)
+        self.projection().secs_at(frame)
     }
 }
 

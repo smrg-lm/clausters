@@ -8639,6 +8639,15 @@ the document in beats per minute, divided by 60 wherever the two met. Every
 tempo is now beats per second, the document's included; beats per minute is
 presentation.
 
+**Seconds cross to samples by one rule** (found the day it landed, when boxes
+that met on a sample stopped meeting). A position lands on a whole sample through
+the core's rounding, and a length is the difference of its two ends, each
+crossed (`tempoclock::secs_to_samples_over`); where two boxes meet is asked in
+samples. A length crossed on its own and an end crossed as a sum disagree in the
+last bit, and that bit is a gap. Integer ticks (Ardour's superclock) were weighed
+and not taken: seconds are what the server measures in, and the units stay
+readable; the rule is what makes them unambiguous.
+
 **An old file is migrated once, in Rust.** Format 3 keeps the field names and
 changes what their numbers mean, which is exactly the case the format counter
 exists for. `session::migrate` converts a format-2 file through the tempo map it

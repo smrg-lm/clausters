@@ -15,7 +15,10 @@ pub(super) fn json_arg(v: Value) -> OscType {
     match v {
         Value::String(s) => OscType::String(s),
         Value::Number(n) if n.is_i64() => OscType::Int(n.as_i64().unwrap_or(0) as i32),
-        other => OscType::Float(other.as_f64().unwrap_or(0.0) as f32),
+        // **A double, not a float**: these are positions in samples, and an
+        // `f32` holds a whole sample only up to 2^24 of them -- under six
+        // minutes at 48 kHz -- so a box past that came back somewhere else.
+        other => OscType::Double(other.as_f64().unwrap_or(0.0)),
     }
 }
 

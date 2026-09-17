@@ -731,15 +731,22 @@ pub fn read_join(
         }
         spans.push((source, start, shown, *region));
     }
+    // **Where two boxes meet is asked in samples**, at the view's rate: a
+    // second is a double, and an end and the next start that land on one
+    // sample may still differ in their last bit.
+    let sample = |secs: f64| {
+        if rate > 0.0 {
+            (secs * rate).round_ties_even()
+        } else {
+            secs
+        }
+    };
     for pair in held.windows(2) {
-        let (gap, over) = (
-            pair[1].2.position - pair[0].2.end(),
-            pair[0].2.end() - pair[1].2.position,
-        );
-        if gap.0 > f64::EPSILON {
+        let (end, next) = (sample(pair[0].2.end().0), sample(pair[1].2.position.0));
+        if next > end {
             return Err("there is a gap between these boxes, and a join cannot state silence yet");
         }
-        if over.0 > f64::EPSILON {
+        if end > next {
             return Err("these boxes overlap, and a join cannot state a mix yet");
         }
     }

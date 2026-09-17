@@ -5,7 +5,8 @@
 //! pieces:
 //!
 //! - the free conversions a clock reaches the server's sample clock through
-//!   ([`secs_to_samples`]/[`samples_to_secs`]) and the grid it reads a
+//!   ([`secs_to_samples`]/[`samples_to_secs`], and for a length
+//!   [`secs_to_samples_over`]/[`samples_to_secs_over`]) and the grid it reads a
 //!   position off ([`quant_delay`], [`bar`], [`beat_in_bar`]);
 //! - [`Scheduler`] — a min-heap keyed by beat time with stable insertion
 //!   order, the structure a clock pops due events from.
@@ -29,6 +30,26 @@ pub fn secs_to_samples(secs: f64, sample_rate: f64) -> i64 {
 #[inline]
 pub fn samples_to_secs(samples: i64, sample_rate: f64) -> f64 {
     samples as f64 / sample_rate
+}
+
+/// **How many samples `length` seconds from `start` cover**: the difference of
+/// the two ends, each through [`secs_to_samples`].
+///
+/// A length never crosses on its own. `secs_to_samples(length)` and the
+/// difference of the ends disagree by a sample for some positions, and
+/// `start / rate + length / rate` and `(start + length) / rate` in the last bit,
+/// so two spans that meet on a sample would stop meeting after a round trip.
+/// With this rule, and [`samples_to_secs_over`] going back, they keep meeting.
+#[inline]
+pub fn secs_to_samples_over(start: f64, length: f64, sample_rate: f64) -> i64 {
+    secs_to_samples(start + length, sample_rate) - secs_to_samples(start, sample_rate)
+}
+
+/// **How many seconds `frames` samples from `at` cover**: the difference of the
+/// two ends' seconds, the inverse of [`secs_to_samples_over`].
+#[inline]
+pub fn samples_to_secs_over(at: i64, frames: i64, sample_rate: f64) -> f64 {
+    samples_to_secs(at + frames, sample_rate) - samples_to_secs(at, sample_rate)
 }
 
 /// Beats to wait so a routine starts on the next `quant` boundary of a grid
@@ -157,6 +178,32 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Spans that meet on a sample keep meeting after a round trip**, for
+    /// every cut, where a length crossed on its own drifts by a bit.
+    #[test]
+    fn a_span_crosses_as_the_difference_of_its_ends() {
+        let rate = 48_000.0;
+        for step in 0..1000i64 {
+            let (at, cut, tail) = (7_919 * step + 3, 13_331 + 97 * step, 48_000);
+            let (start, head) = (
+                samples_to_secs(at, rate),
+                samples_to_secs_over(at, cut, rate),
+            );
+            let next = samples_to_secs(at + cut, rate);
+            assert_eq!(secs_to_samples(start, rate), at);
+            assert_eq!(secs_to_samples_over(start, head, rate), cut);
+            assert_eq!(
+                secs_to_samples(start + head, rate),
+                secs_to_samples(next, rate),
+                "the head ends on the sample the tail begins on"
+            );
+            assert_eq!(
+                secs_to_samples_over(next, samples_to_secs_over(at + cut, tail, rate), rate),
+                tail
+            );
+        }
+    }
 
     // The beats<->seconds round trip and the pinned instant are the tempo
     // map's tests (`tempomap::tests`), where the one implementation of that

@@ -209,7 +209,7 @@ impl Multitrack {
             };
             for p in body.points() {
                 args.push(OscType::String(curve.name.clone()));
-                args.push(OscType::Float(p.time as f32));
+                args.push(OscType::Double(p.time));
                 args.push(OscType::Float(p.value));
                 args.push(OscType::Int(p.shape));
                 args.push(OscType::Float(p.curve));
