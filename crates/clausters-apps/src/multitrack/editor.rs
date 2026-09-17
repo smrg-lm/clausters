@@ -63,10 +63,10 @@ pub struct Outcome {
     pub piece: Option<Value>,
     /// The sources an edit minted, in the order the edits named them.
     pub minted: Vec<Value>,
-    /// Where the position cursor was placed, in beats.
+    /// Where the position cursor was placed, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
-    /// The selection a sweep left, in beats.
+    /// The selection a sweep left, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
     /// The box a double click entered, by name.
@@ -75,7 +75,7 @@ pub struct Outcome {
     /// What the transport is asked to do.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transport: Option<TransportVerb>,
-    /// Where the position cursor now is, in beats, when the turn moved it by a
+    /// Where the position cursor now is, in seconds, when the turn moved it by a
     /// verb of its own rather than by a hand on the ruler (which is `locate`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<f64>,
@@ -91,13 +91,13 @@ pub enum TransportVerb {
     Toggle,
     /// Halt and go back to the mark: the position cursor, not the top.
     Stop {
-        /// The mark, in beats.
+        /// The mark, in seconds.
         mark: f64,
     },
-    /// Cue a stopped transport at `beat`, and leave a rolling one alone.
+    /// Cue a stopped transport at `secs`, and leave a rolling one alone.
     Cue {
-        /// Where, in beats.
-        beat: f64,
+        /// Where, in seconds.
+        secs: f64,
     },
 }
 
@@ -120,7 +120,6 @@ pub struct Applied {
 pub struct MultitrackEditor {
     piece: Multitrack,
     rate: f64,
-    default_bpm: f64,
     sources: HashMap<SourceId, i64>,
     /// How many frames each take holds, where the caller said: what refuses a
     /// join over a box that reads past the end of its take.
@@ -149,14 +148,12 @@ pub struct MultitrackEditor {
 }
 
 impl MultitrackEditor {
-    /// An editor over `piece`, drawn on an axis of `rate` frames a second and
-    /// read at `default_bpm` where the piece states no tempo, whose history is
-    /// at `version`.
-    pub fn new(piece: Multitrack, rate: f64, default_bpm: f64, version: i64) -> Self {
+    /// An editor over `piece`, drawn on an axis of `rate` frames a second, whose
+    /// history is at `version`.
+    pub fn new(piece: Multitrack, rate: f64, version: i64) -> Self {
         Self {
             piece,
             rate,
-            default_bpm,
             sources: HashMap::new(),
             lengths: HashMap::new(),
             segments: HashMap::new(),
@@ -259,15 +256,15 @@ impl MultitrackEditor {
         self.meters = meters;
     }
 
-    /// The position cursor, in beats.
+    /// The position cursor, in seconds.
     pub fn cursor(&self) -> Option<f64> {
         self.cursor
     }
 
-    /// Places the position cursor, in beats — a caller's own verb, like a
+    /// Places the position cursor, in seconds — a caller's own verb, like a
     /// rewind.
-    pub fn set_cursor(&mut self, beats: Option<f64>) {
-        self.cursor = beats;
+    pub fn set_cursor(&mut self, secs: Option<f64>) {
+        self.cursor = secs;
     }
 
     /// The window this editor is open in, once it is.
@@ -367,7 +364,7 @@ impl MultitrackEditor {
         })
     }
 
-    /// **What the clock reads** with the piece at `position` beats.
+    /// **What the clock reads** with the piece at `position` seconds.
     pub fn clock(&self, position: f64) -> String {
         format!("{position:8.3} s   of {:.3} s", self.piece.end().0)
     }
@@ -521,20 +518,20 @@ impl MultitrackEditor {
 
     /// The window over the editor's state, handed to `f`.
     fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
-        let tempo = projection::tempo_map(&self.piece, self.default_bpm);
+        let tempo = projection::tempo_map(&self.piece);
         let table = Table {
             buffers: &self.sources,
             lengths: &self.lengths,
             segments: &self.segments,
         };
         let look = Look {
-            tempo: &tempo,
             rate: self.rate,
             sources: &table,
         };
         f(&Window {
             piece: &self.piece,
             look: &look,
+            tempo: &tempo,
             widget,
             ruler,
             link: self.link,
@@ -582,11 +579,10 @@ impl MultitrackEditor {
         }]
     }
 
-    /// The beat a position on the axis falls on: the frame rounded the way
-    /// every client rounds it, then the piece's own map.
-    fn beats_at(&self, units: f64) -> f64 {
-        let tempo = projection::tempo_map(&self.piece, self.default_bpm);
-        tempo.beats_at(samples_to_secs(units.round() as i64, self.rate))
+    /// The second a position on the axis falls on: the frame rounded the way
+    /// every client rounds it.
+    fn secs_at(&self, units: f64) -> f64 {
+        samples_to_secs(units.round() as i64, self.rate)
     }
 
     /// One gesture onto the piece: screen state, the editor's own, or an edit.
@@ -634,14 +630,12 @@ impl MultitrackEditor {
             return (None, Vec::new());
         }
         let taken = {
-            let tempo = projection::tempo_map(&self.piece, self.default_bpm);
             let table = Table {
                 buffers: &self.sources,
                 lengths: &self.lengths,
                 segments: &self.segments,
             };
             let look = Look {
-                tempo: &tempo,
                 rate: self.rate,
                 sources: &table,
             };
@@ -700,7 +694,7 @@ impl MultitrackEditor {
     fn rewound(&mut self, out: &mut Outcome) -> Vec<Correction> {
         self.cursor = Some(0.0);
         out.cursor = Some(0.0);
-        out.transport = Some(TransportVerb::Cue { beat: 0.0 });
+        out.transport = Some(TransportVerb::Cue { secs: 0.0 });
         let Some(widget) = self.widget else {
             return Vec::new();
         };
@@ -740,12 +734,12 @@ impl MultitrackEditor {
             // there. It is not a seek -- the playhead is never placed -- and
             // what it means for a transport is the caller's.
             "locate" if !values.is_empty() => {
-                let beat = self.beats_at(number(&values[0]));
-                self.cursor = Some(beat);
-                out.locate = Some(beat);
+                let secs = self.secs_at(number(&values[0]));
+                self.cursor = Some(secs);
+                out.locate = Some(secs);
             }
             "selection" => {
-                let at = |i: usize| values.get(i).map_or(0.0, |v| self.beats_at(number(v)));
+                let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 let mut selection = json!({ "start": at(0), "len": at(1) });
                 if values.len() >= 4 {
                     // The sweep restricted the value axis too, carried as it
@@ -823,8 +817,6 @@ struct New {
     #[serde(default)]
     rate: f64,
     #[serde(default)]
-    default_bpm: f64,
-    #[serde(default)]
     version: i64,
     #[serde(default)]
     link: Option<i64>,
@@ -847,8 +839,7 @@ fn outcome(outcome: &Outcome) -> String {
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let request: New = serde_json::from_str(request).ok()?;
     let piece: Multitrack = serde_json::from_value(request.piece).ok()?;
-    let mut editor =
-        MultitrackEditor::new(piece, request.rate, request.default_bpm, request.version);
+    let mut editor = MultitrackEditor::new(piece, request.rate, request.version);
     let transport = match request.transport {
         Value::Bool(true) => Transport::Unnumbered,
         Value::Object(_) => serde_json::from_value::<TransportIds>(request.transport)
@@ -963,15 +954,15 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
 mod tests {
     use super::*;
     use clausters_document::multitrack::{Content, Region, Track};
-    use clausters_document::{Beat, Lifetime, NodeId, SegmentRef, SegmentSource, SourceRef};
+    use clausters_document::{Lifetime, NodeId, Second, SegmentRef, SegmentSource, SourceRef};
 
     const SR: f64 = 48_000.0;
 
     fn region(id: u64, at: f64) -> Region {
         let mut region = Region::new(
             NodeId(id),
-            Beat(at),
-            Beat(2.0),
+            Second(at),
+            Second(2.0),
             Content::Unknown(Value::Null),
         );
         region.content = Content::window(SegmentRef {
@@ -997,7 +988,7 @@ mod tests {
             tracks: vec![first, second],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, 60.0, 1);
+        let mut editor = MultitrackEditor::new(piece, SR, 1);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
         editor.chrome(None, Transport::Unnumbered, "piece", (1000, 560));
         editor.window(40, 41);
@@ -1045,8 +1036,8 @@ mod tests {
         let over_take = |id: u64, at: f64, start: f64| {
             let mut region = Region::new(
                 NodeId(id),
-                Beat(at),
-                Beat(1.0),
+                Second(at),
+                Second(1.0),
                 Content::Unknown(Value::Null),
             );
             region.content = Content::window(SegmentRef {
@@ -1073,7 +1064,7 @@ mod tests {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, 60.0, 1);
+        let mut editor = MultitrackEditor::new(piece, SR, 1);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
         editor.chrome(None, Transport::Unnumbered, "piece", (1000, 560));
         editor.window(40, 41);
@@ -1175,7 +1166,7 @@ mod tests {
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 3, .. })));
     }
 
-    /// **The position cursor is kept in beats, told, and is not an edit.**
+    /// **The position cursor is kept in seconds, told, and is not an edit.**
     #[test]
     fn a_locate_places_the_cursor_and_edits_nothing() {
         let mut ed = editor();
@@ -1323,7 +1314,7 @@ mod tests {
         let out = ed.event(&event(50, 4, 1, "click", vec![]), 1);
         assert_eq!(ed.cursor(), Some(0.0));
         assert_eq!(out.cursor, Some(0.0));
-        assert_eq!(out.transport, Some(TransportVerb::Cue { beat: 0.0 }));
+        assert_eq!(out.transport, Some(TransportVerb::Cue { secs: 0.0 }));
         match out.answer {
             Some(Answer::Push { corrections, .. }) => {
                 assert_eq!(corrections[0].widget, 40);
@@ -1333,7 +1324,7 @@ mod tests {
         }
         assert_eq!(
             ed.rewind(1).transport,
-            Some(TransportVerb::Cue { beat: 0.0 })
+            Some(TransportVerb::Cue { secs: 0.0 })
         );
     }
 

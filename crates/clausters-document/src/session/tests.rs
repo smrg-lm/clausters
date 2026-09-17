@@ -329,7 +329,7 @@ fn an_unknown_body_survives_a_save_and_an_open() {
 #[test]
 fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
     use crate::multitrack::{Content, Multitrack, Region, Tempo, Track};
-    use crate::timebase::Beat;
+    use crate::timebase::{Beat, Second};
 
     // Nothing said, nothing written: every session saved before this existed
     // reads back identical, which is what makes the field an addition rather
@@ -340,12 +340,12 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
     assert_eq!(reopen(&plain), plain);
 
     let mut multitrack = Multitrack::new();
-    multitrack.set_tempo(Tempo::at(Beat(0.0), 96.0));
+    multitrack.set_tempo(Tempo::at(Beat(0.0), 1.6));
     let mut track = Track::new(NodeId(80), NodeId(81)).named("drums");
     track.active_lane_mut().unwrap().place(Region::new(
         NodeId(82),
-        Beat(0.0),
-        Beat(4.0),
+        Second(0.0),
+        Second(4.0),
         Content::Composite {
             node: Box::new(Node::new(
                 NodeId(83),
@@ -359,15 +359,15 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
     multitrack.tracks.push(track);
     let session = plain.with_multitrack(multitrack);
     let opened = reopen(&session);
-    assert_eq!(opened.multitrack.end(), Beat(4.0));
-    assert_eq!(opened.multitrack.tempo_at(Beat(2.0)).unwrap().bpm, 96.0);
+    assert_eq!(opened.multitrack.end(), Second(4.0));
+    assert_eq!(opened.multitrack.tempo_at(Beat(2.0)).unwrap().tempo, 1.6);
     assert_eq!(opened, session);
 }
 
 #[test]
 fn a_source_only_a_region_names_is_still_reported_missing() {
     use crate::multitrack::{Content, Multitrack, Region, Track};
-    use crate::timebase::Beat;
+    use crate::timebase::Second;
     use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
 
     // The table is walked against **both** halves. A reader that checked only
@@ -388,15 +388,15 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
     let mut track = Track::new(NodeId(90), NodeId(91));
     track.active_lane_mut().unwrap().place(Region::new(
         NodeId(92),
-        Beat(0.0),
-        Beat(4.0),
+        Second(0.0),
+        Second(4.0),
         Content::window(window(700)),
     ));
     track.lanes.push(crate::multitrack::Lane::new(NodeId(93)));
     track.lanes[1].place(Region::new(
         NodeId(94),
-        Beat(0.0),
-        Beat(4.0),
+        Second(0.0),
+        Second(4.0),
         Content::window(window(701)),
     ));
     multitrack.tracks.push(track);
@@ -435,7 +435,7 @@ fn a_whole_session_round_trips_losslessly() {
     use crate::multitrack::{
         Automation, Content, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
     };
-    use crate::timebase::Beat;
+    use crate::timebase::{Beat, Second};
     use crate::{Lifetime, Point, SegmentRef, SegmentSource, SourceRef};
 
     let window = |source: u64, from: f64| SegmentRef {
@@ -450,14 +450,14 @@ fn a_whole_session_round_trips_losslessly() {
     };
 
     let mut multitrack = Multitrack::new();
-    multitrack.set_tempo(Tempo::at(Beat(0.0), 96.0));
-    multitrack.set_tempo(Tempo::at(Beat(32.0), 120.0).ramping());
+    multitrack.set_tempo(Tempo::at(Beat(0.0), 1.6));
+    multitrack.set_tempo(Tempo::at(Beat(32.0), 2.0).ramping());
     multitrack.set_meter(Meter::at(Beat(0.0), 4, 4));
     multitrack.set_meter(Meter::at(Beat(32.0), 7, 8));
-    multitrack.add_marker(Marker::new(NodeId(1), Beat(0.0)).named("intro"));
-    multitrack.add_marker(Marker::new(NodeId(2), Beat(32.0)).named("B"));
-    multitrack.loop_span = Some(Span::new(Beat(0.0), Beat(32.0)));
-    multitrack.punch = Some(Span::new(Beat(8.0), Beat(16.0)));
+    multitrack.add_marker(Marker::new(NodeId(1), Second(0.0)).named("intro"));
+    multitrack.add_marker(Marker::new(NodeId(2), Second(32.0)).named("B"));
+    multitrack.loop_span = Some(Span::new(Second(0.0), Second(32.0)));
+    multitrack.punch = Some(Span::new(Second(8.0), Second(16.0)));
 
     // A track comped from three takes, playing the second.
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
@@ -469,8 +469,8 @@ fn a_whole_session_round_trips_losslessly() {
         vocals.lanes[lane].place(
             Region::new(
                 NodeId(20 + lane as u64),
-                Beat(0.0),
-                Beat(16.0),
+                Second(0.0),
+                Second(16.0),
                 Content::window(window(source, 0.0)),
             )
             .named(format!("vox {lane}")),
@@ -482,18 +482,18 @@ fn a_whole_session_round_trips_losslessly() {
     let mut guitars = Track::new(NodeId(30), NodeId(31)).named("guitars");
     let mut first = Region::new(
         NodeId(32),
-        Beat(0.0),
-        Beat(20.0),
+        Second(0.0),
+        Second(20.0),
         Content::window(window(200, 0.0)),
     );
-    first.fade_out = Some(Fade::of(Beat(4.0)));
+    first.fade_out = Some(Fade::of(Second(4.0)));
     let mut second = Region::new(
         NodeId(33),
-        Beat(16.0),
-        Beat(16.0),
+        Second(16.0),
+        Second(16.0),
         Content::window(window(201, 2.0)),
     );
-    second.fade_in = Some(Fade::of(Beat(4.0)));
+    second.fade_in = Some(Fade::of(Second(4.0)));
     second.layer = 1;
     second.muted = true;
     guitars.lanes[0].place(first);
@@ -523,8 +523,8 @@ fn a_whole_session_round_trips_losslessly() {
     let mut sections = Track::new(NodeId(40), NodeId(41)).named("sections");
     sections.lanes[0].place(Region::new(
         NodeId(42),
-        Beat(32.0),
-        Beat(16.0),
+        Second(32.0),
+        Second(16.0),
         Content::Composite {
             node: Box::new(Node::new(
                 NodeId(43),
@@ -557,7 +557,7 @@ fn a_whole_session_round_trips_losslessly() {
     // ...and the details a whole-value comparison would not name if it failed.
     let a = &opened.multitrack;
     assert_eq!(a.tracks.len(), 3);
-    assert_eq!(a.end(), Beat(48.0));
+    assert_eq!(a.end(), Second(48.0));
     assert_eq!(
         a.tracks[0].active_lane().unwrap().name.as_deref(),
         Some("take 2")
@@ -572,10 +572,81 @@ fn a_whole_session_round_trips_losslessly() {
     assert_eq!(guitars.regions[1].layer, 1, "which one is on top");
     assert_eq!(
         guitars.regions[0].fade_out.as_ref().unwrap().length,
-        Beat(4.0)
+        Second(4.0)
     );
     assert_eq!(a.tracks[1].automation[0].points[1].data.0["shape"], "exp");
     assert!(a.tracks[2].lanes[0].regions[0].content.as_node().is_some());
-    assert_eq!(a.tempo_at(Beat(40.0)).unwrap().bpm, 120.0);
+    assert_eq!(a.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
     assert_eq!(a.meter_at(Beat(40.0)).unwrap().beats, 7);
+}
+
+/// **A format-2 session opens in seconds**, every beat position taken through
+/// the tempo map it saved: two beats a second up to beat 4, one after.
+#[test]
+fn a_format_2_session_is_migrated_through_its_own_tempo_map() {
+    use serde_json::json;
+    let old = json!({
+        "format": 2,
+        "multitrack": {
+            "tempo": [{"at": 0.0, "bpm": 120.0}, {"at": 4.0, "bpm": 60.0}],
+            "markers": [{"id": 9, "at": 8.0}],
+            "loop_span": {"start": 0.0, "end": 8.0},
+            "tracks": [{
+                "id": 1,
+                "automation": [{"id": 7, "points": [{"at": 6.0, "value": 1.0}]}],
+                "lanes": [{"id": 2, "regions": [{
+                    "id": 3, "position": 2.0, "length": 4.0,
+                    "fade_in": {"length": 1.0}, "fade_out": {"length": 1.0},
+                    "automation": [{"id": 8, "points": [
+                        {"at": 0.0, "value": 0.0}, {"at": 4.0, "value": 1.0}]}],
+                    "content": {"fill": "window", "window": {
+                        "source": {"source": 1, "lifetime": "session"},
+                        "start": 0.5, "duration": 3.0}}
+                }]}]
+            }]
+        },
+        "views": [{"visible": {"start": 0.0, "end": 8.0}, "quant": 1.0}],
+        "sources": {}
+    });
+    let new = migrate(old);
+    assert_eq!(new["format"], FORMAT);
+    let m = &new["multitrack"];
+    assert_eq!(m["tempo"][0]["tempo"], 2.0, "beats per second now");
+    assert!(m["tempo"][0].get("bpm").is_none());
+    assert_eq!(m["tempo"][1]["tempo"], 1.0);
+    assert_eq!(m["markers"][0]["at"], 6.0, "beat 8: two seconds, then four");
+    assert_eq!(m["loop_span"]["end"], 6.0);
+    assert_eq!(m["tracks"][0]["automation"][0]["points"][0]["at"], 4.0);
+    let region = &m["tracks"][0]["lanes"][0]["regions"][0];
+    assert_eq!(region["position"], 1.0);
+    assert_eq!(
+        region["length"], 3.0,
+        "a length is the difference of two positions"
+    );
+    assert_eq!(region["fade_in"]["length"], 0.5);
+    assert_eq!(region["fade_out"]["length"], 1.0);
+    assert_eq!(
+        region["automation"][0]["points"][1]["at"], 3.0,
+        "a region's curve is measured from its own start"
+    );
+    assert_eq!(
+        region["content"]["window"]["start"], 0.5,
+        "what fills a region is not the multitrack's axis"
+    );
+    assert_eq!(new["views"][0]["visible"]["end"], 6.0);
+    assert_eq!(new["views"][0]["quant"], 1.0, "a view's grid stays musical");
+
+    let session = Session::read(new.clone()).expect("it reads");
+    assert_eq!(session.multitrack.end(), crate::Second(4.0));
+    assert_eq!(migrate(new.clone()), new, "a current session is left alone");
+}
+
+/// **A session that stated no tempo is migrated at one beat a second**, the
+/// default every reader of format 2 drew and played it at.
+#[test]
+fn a_format_2_session_with_no_tempo_keeps_its_numbers() {
+    let old = serde_json::json!({"format": 2, "multitrack": {"markers": [{"id": 1, "at": 3.0}]}});
+    let new = migrate(old);
+    assert_eq!(new["multitrack"]["markers"][0]["at"], 3.0);
+    assert_eq!(new["format"], FORMAT);
 }

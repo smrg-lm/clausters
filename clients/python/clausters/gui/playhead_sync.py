@@ -17,10 +17,12 @@ a lane, milliseconds for an engraved page. `PlayheadSync` converts to the first
 itself and takes `to_units` for the second, which is the whole of what a view
 has to say about its units.
 
-**It holds no tempo.** Beats cross to samples through the map of **what plays**:
-the pass `source` returned (a `clausters.seq.Timeline` holds its own map), else
-the ``structure`` it was given. A view represents a structure's data and keeps
-none of it, so a tempo edited on the structure is the one the line follows.
+**It holds no tempo.** A position is in the units of **what plays**: beats,
+crossed to samples through the map of the pass `source` returned (a
+`clausters.seq.Timeline` holds its own map) or of the ``structure`` it was given;
+or seconds, when neither holds a map -- a multitrack, placed in physical time.
+A view represents a structure's data and keeps none of it, so a tempo edited on
+the structure is the one the line follows.
 
 **A pass ends by itself.** A `clausters.seq.Timeline` reports that it finished,
 so `update` parks the cursor at the piece's end without the script timing it.
@@ -64,13 +66,14 @@ class PlayheadSync:
             so what sounds is always the structure as it now stands.
         structure: what is played, asked for its tempo map (``map``) when no
             pass is in flight -- a `clausters.seq.Timeline`, or a callable
-            returning the object that has one. The map is never kept here.
+            returning the object that has one. The map is never kept here. With
+            no structure, or one that holds no map, positions are seconds.
         sample_rate: the engine's sample rate. With the map it fixes the
             beats→samples conversion the anchor is expressed in.
         to_units: ``to_units(beats)`` → the view's own units, for the static
             cursor. Defaults to beats→samples, which is what the timeline views
             use; an engraved page passes its beats→milliseconds.
-        extent: ``extent()`` → the piece's length in beats, where `update` parks
+        extent: ``extent()`` → the piece's length, in its own units, where `update` parks
             the cursor when a pass ends. Read on each use, so a piece that grew
             (a clip dragged past the end) ends where it now ends.
         head_clock: which counter the view's line is drawn from —  ``"device"``
@@ -132,18 +135,15 @@ class PlayheadSync:
     def tempo_map(self):
         """The map beats cross to samples through, asked for on each use: the
         pass in flight's (a `clausters.seq.Timeline` holds its own), else the
-        ``structure``'s. The line sweeps by engine samples from an origin this
-        places, so the origin has to come from the function the sound plays by.
+        ``structure``'s, else ``None`` -- what plays is in seconds. The line
+        sweeps by engine samples from an origin this places, so the origin has
+        to come from the function the sound plays by.
         """
         tempo_map = getattr(self._playhead, "map", None)
         if tempo_map is not None:
             return tempo_map
         structure = self.structure() if callable(self.structure) else self.structure
-        tempo_map = getattr(structure, "map", None)
-        if tempo_map is None:
-            raise ValueError("PlayheadSync: nothing to read a tempo map from; "
-                             "give it the structure it plays")
-        return tempo_map
+        return getattr(structure, "map", None)
 
     def beats_to_samples(self, beats: float) -> float:
         """Beats → samples of the engine clock, through the piece's time map
@@ -152,9 +152,10 @@ class PlayheadSync:
         Where the line's origin comes from, so it must be the map and not a
         ratio: the host sweeps the playhead by engine samples, and a beat placed
         by a frozen tempo would be crossed at a time the clock never plays it
-        at.
+        at. What plays with no map is in seconds, which cross as they are.
         """
-        secs = self.tempo_map().secs_at(float(beats))
+        tempo_map = self.tempo_map()
+        secs = float(beats) if tempo_map is None else tempo_map.secs_at(float(beats))
         return float(_native.secs_to_samples(secs, self.sample_rate))
 
     def _targets(self) -> tuple:
@@ -190,7 +191,7 @@ class PlayheadSync:
 
     @property
     def position(self) -> float:
-        """The transport's position in beats: where the playhead is while it
+        """The transport's position in beats (seconds for what holds no map): where the playhead is while it
         plays, where it got to while the last item is still ringing, and where
         the next `play` starts when neither.
 
@@ -265,9 +266,11 @@ class PlayheadSync:
     def samples_to_beats(self, samples: float) -> float:
         """Samples of the piece → beats, through the same map `beats_to_samples`
         goes the other way — so what the engine reports and what the ruler draws
-        are one function read in two directions."""
+        are one function read in two directions. Seconds, where what plays
+        holds no map."""
         secs = float(samples) / self.sample_rate if self.sample_rate > 0 else 0.0
-        return self.tempo_map().beats_at(secs)
+        tempo_map = self.tempo_map()
+        return secs if tempo_map is None else tempo_map.beats_at(secs)
 
     def _piece_anchor(self):
         """Draw every target's line straight from the piece's position: the

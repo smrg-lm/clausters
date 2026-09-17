@@ -1,14 +1,15 @@
 use super::*;
 use crate::NodeId;
 use crate::multitrack::{Content, Lane, Region, Track};
+use crate::timebase::Second;
 
 fn piece() -> Multitrack {
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
     vocals.lanes.push(Lane::new(NodeId(12)));
     vocals.lanes[0].place(Region::new(
         NodeId(100),
-        Beat(0.0),
-        Beat(4.0),
+        Second(0.0),
+        Second(4.0),
         Content::Composite {
             node: Box::new(crate::Node::new(
                 NodeId(1),
@@ -40,7 +41,7 @@ fn the_piece_round_trips_the_same_whether_or_not_a_view_of_it_exists() {
     let written = serde_json::to_value(&piece).unwrap();
 
     let mut view = View::new().named("arranger");
-    view.visible = Some(Span::new(Beat(0.0), Beat(32.0)));
+    view.visible = Some(Span::new(Second(0.0), Second(32.0)));
     view.track_mut(NodeId(10)).height = Some(96.0);
     view.selected = vec![NodeId(100)];
 
@@ -60,13 +61,13 @@ fn the_piece_round_trips_the_same_whether_or_not_a_view_of_it_exists() {
 fn two_windows_over_one_piece_are_two_views_and_disagree_on_purpose() {
     let arranger = {
         let mut v = View::new().named("arranger");
-        v.visible = Some(Span::new(Beat(0.0), Beat(64.0)));
+        v.visible = Some(Span::new(Second(0.0), Second(64.0)));
         v.quant = Beat(4.0);
         v
     };
     let editor = {
         let mut v = View::new().named("editor");
-        v.visible = Some(Span::new(Beat(8.0), Beat(12.0)));
+        v.visible = Some(Span::new(Second(8.0), Second(12.0)));
         v.quant = Beat(0.25);
         v.detail = Some(NodeId(100));
         v

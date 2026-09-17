@@ -43,7 +43,9 @@
 
 use std::collections::BTreeMap;
 
+use clausters_core::tempomap::{TempoChange, TempoMap};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::multitrack::{Extra, Multitrack};
 use crate::view::View;
@@ -53,14 +55,190 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 ///
 /// It moves when a reader that does not know the new shape would read the file
 /// *wrongly* — never for an added field, which an older reader ignores and a
-/// newer one defaults. So far there have been two.
+/// newer one defaults. So far there have been three.
 ///
 /// **2** added [`Location::Segments`]: a source whose samples are spans of
 /// other sources. [`Location`] is tagged and has no untagged arm, so a reader
 /// that does not know the variant *fails* rather than reading it as something
 /// else — which is the case the counter exists for, and the reason an added
 /// `Location` moves it where an added field would not.
-pub const FORMAT: u32 = 2;
+///
+/// **3** measures the multitrack in **seconds**: a region's position, length
+/// and fades, every automation point, the markers, the loop and punch spans and
+/// a view's visible span and selection, which format 2 wrote in beats; and a
+/// tempo entry states `tempo` in beats per second where it stated `bpm`. The
+/// numbers keep their fields, so an older reader would read every one of them
+/// wrongly — the counter's case exactly. [`migrate`] reads a format-2 file into
+/// this one.
+pub const FORMAT: u32 = 3;
+
+/// The tempo a format-2 multitrack that stated none was read at, in beats per
+/// second: one, the default every reader of that format drew and played it
+/// with. Only [`migrate`] uses it, to put those beats in seconds where the file
+/// itself said nothing.
+pub const FORMAT_2_TEMPO: f64 = 1.0;
+
+/// **A session written in an older format, as this one writes it.**
+///
+/// Applied to the JSON before it is read, so every reader — the crate's own,
+/// the GUI host's, each client's — opens an old file the same way. A session
+/// already at [`FORMAT`] (or newer, which [`Session::is_readable`] refuses) is
+/// handed back untouched, so calling this on every read is safe.
+///
+/// From 2 to 3, every beat position of the multitrack is taken to seconds
+/// through the tempo map the file saved, or [`FORMAT_2_TEMPO`] where it saved
+/// none. A **length** is the difference of two positions, since how long four
+/// beats last depends on where they start; a region's own curve is measured
+/// from the region's start, and so is its fade in, while its fade out is
+/// measured back from its end. The contents of a region — a window's seconds of
+/// a recording, a node's beats — are not the multitrack's axis and are left as
+/// they were.
+pub fn migrate(mut written: Value) -> Value {
+    let format = written.get("format").and_then(Value::as_u64).unwrap_or(1);
+    // What is not an object is not a session, and reading it says so.
+    if format >= 3 || !written.is_object() {
+        return written;
+    }
+    let key = if written.get("multitrack").is_some() {
+        "multitrack"
+    } else {
+        "arrangement"
+    };
+    let map = format_2_map(written.get(key));
+    let secs = |beat: f64| map.secs_at(beat);
+    if let Some(multitrack) = written.get_mut(key) {
+        to_seconds(multitrack, &secs);
+    }
+    if let Some(Value::Array(views)) = written.get_mut("views") {
+        for view in views {
+            for field in ["visible", "selection"] {
+                if let Some(span) = view.get_mut(field) {
+                    span_to_seconds(span, &secs);
+                }
+            }
+        }
+    }
+    written["format"] = json!(FORMAT);
+    written
+}
+
+/// The tempo map a format-2 multitrack states: entries in beats per minute.
+fn format_2_map(multitrack: Option<&Value>) -> TempoMap {
+    let changes: Vec<TempoChange> = multitrack
+        .and_then(|m| m.get("tempo"))
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|t| TempoChange {
+                    beats: number(t.get("at")),
+                    tempo: t.get("bpm").and_then(Value::as_f64).unwrap_or(60.0) / 60.0,
+                    ramp: t.get("ramp").and_then(Value::as_bool).unwrap_or(false),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    TempoMap::from_changes(&changes, FORMAT_2_TEMPO)
+        .unwrap_or_else(|_| TempoMap::new(FORMAT_2_TEMPO))
+}
+
+fn number(value: Option<&Value>) -> f64 {
+    value.and_then(Value::as_f64).unwrap_or(0.0)
+}
+
+/// Every beat position of one multitrack, in seconds.
+fn to_seconds(multitrack: &mut Value, secs: &dyn Fn(f64) -> f64) {
+    if let Some(Value::Array(entries)) = multitrack.get_mut("tempo") {
+        for entry in entries {
+            if let Some(object) = entry.as_object_mut()
+                && let Some(bpm) = object.remove("bpm")
+            {
+                object.insert("tempo".into(), json!(bpm.as_f64().unwrap_or(60.0) / 60.0));
+            }
+        }
+    }
+    if let Some(Value::Array(markers)) = multitrack.get_mut("markers") {
+        for marker in markers {
+            position_to_seconds(marker, "at", secs);
+        }
+    }
+    for field in ["loop_span", "punch"] {
+        if let Some(span) = multitrack.get_mut(field) {
+            span_to_seconds(span, secs);
+        }
+    }
+    let Some(Value::Array(tracks)) = multitrack.get_mut("tracks") else {
+        return;
+    };
+    for track in tracks {
+        if let Some(Value::Array(curves)) = track.get_mut("automation") {
+            for curve in curves {
+                points_to_seconds(curve, 0.0, secs);
+            }
+        }
+        let Some(Value::Array(lanes)) = track.get_mut("lanes") else {
+            continue;
+        };
+        for lane in lanes {
+            let Some(Value::Array(regions)) = lane.get_mut("regions") else {
+                continue;
+            };
+            for region in regions {
+                region_to_seconds(region, secs);
+            }
+        }
+    }
+}
+
+fn region_to_seconds(region: &mut Value, secs: &dyn Fn(f64) -> f64) {
+    let position = number(region.get("position"));
+    let end = position + number(region.get("length"));
+    let (start, stop) = (secs(position), secs(end));
+    region["position"] = json!(start);
+    region["length"] = json!(stop - start);
+    if let Some(fade) = region.get_mut("fade_in")
+        && fade.is_object()
+    {
+        let length = number(fade.get("length"));
+        fade["length"] = json!(secs(position + length) - start);
+    }
+    if let Some(fade) = region.get_mut("fade_out")
+        && fade.is_object()
+    {
+        let length = number(fade.get("length"));
+        fade["length"] = json!(stop - secs(end - length));
+    }
+    if let Some(Value::Array(curves)) = region.get_mut("automation") {
+        for curve in curves {
+            points_to_seconds(curve, position, secs);
+        }
+    }
+}
+
+/// A curve's points, measured from `origin` beats before and from
+/// `secs(origin)` after.
+fn points_to_seconds(curve: &mut Value, origin: f64, secs: &dyn Fn(f64) -> f64) {
+    let base = secs(origin);
+    if let Some(Value::Array(points)) = curve.get_mut("points") {
+        for point in points {
+            let at = number(point.get("at"));
+            point["at"] = json!(secs(origin + at) - base);
+        }
+    }
+}
+
+fn position_to_seconds(value: &mut Value, field: &str, secs: &dyn Fn(f64) -> f64) {
+    if let Some(at) = value.get(field).and_then(Value::as_f64) {
+        value[field] = json!(secs(at));
+    }
+}
+
+fn span_to_seconds(span: &mut Value, secs: &dyn Fn(f64) -> f64) {
+    if span.is_object() {
+        position_to_seconds(span, "start", secs);
+        position_to_seconds(span, "end", secs);
+    }
+}
 
 /// Where samples actually is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -449,6 +627,18 @@ impl Session {
         };
         edit.confirmed = true;
         true
+    }
+
+    /// A session read from its JSON, **migrated first** when it was written in
+    /// an older format ([`migrate`]). The door every reader of a file goes
+    /// through, so an old session opens the same everywhere.
+    pub fn read(written: Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(migrate(written))
+    }
+
+    /// [`Session::read`] over the file's text.
+    pub fn read_str(text: &str) -> Result<Self, serde_json::Error> {
+        Self::read(serde_json::from_str(text)?)
     }
 
     /// Whether this build can read the file at all.

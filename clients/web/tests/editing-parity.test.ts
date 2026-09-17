@@ -116,7 +116,6 @@ test("and a piece's props are the same props in both clients", async () => {
             multitrackProps(
                 JSON.stringify(v.piece),
                 v.rate ?? 0,
-                v.bpm ?? 0,
                 JSON.stringify(v.sources ?? {}),
             ),
         ) as Record<string, unknown>;

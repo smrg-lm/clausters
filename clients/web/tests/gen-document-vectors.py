@@ -132,7 +132,7 @@ DOMAIN_PAYLOADS = [
     (_native.TREE, {"intent": "configure", "node": 2, "config": {}}),
     (_native.MULTITRACK, MOVE_BETWEEN_TRACKS),
     (_native.MULTITRACK, {"intent": "settempomap",
-                           "tempo": [{"at": 0.0, "bpm": 132.0}]}),
+                           "tempo": [{"at": 0.0, "tempo": 2.2}]}),
     (_native.POINTS, {"intent": "setpoints",
                       "points": [{"at": 0.0, "value": 1.0}]}),
     (_native.SAMPLES, {"intent": "write", "channel": 1, "start": 40,

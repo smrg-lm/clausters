@@ -310,16 +310,16 @@ test("a source nobody loaded draws an empty box", () => {
     );
 });
 
-test("the piece is placed through its own tempo map", () => {
-    // Four beats are not one length: under a tempo that changes they last longer
-    // later than earlier, and the picture has to say so.
+test("a tempo moves no box", () => {
+    // The multitrack is in seconds: a box is drawn at its seconds times the
+    // rate, and a tempo the multitrack holds is a ruler's to read.
     const held = piece();
-    held.setTempo(new Tempo({ at: 0.0, bpm: 60.0 }));
-    held.setTempo(new Tempo({ at: 4.0, bpm: 30.0 }));
+    held.setTempo(new Tempo({ at: 0.0, tempo: 1.0 }));
+    held.setTempo(new Tempo({ at: 4.0, tempo: 0.5 }));
     const boxes = clips(editor(held));
     const atFour = boxes.find((b) => b[0] === "13")!;
-    near(Number(atFour[2]), 4.0 * SR, "four beats at a beat a second");
-    near(Number(atFour[3]), 4.0 * SR, "two beats at half the tempo are four seconds");
+    near(Number(atFour[2]), 4.0 * SR, "four seconds in");
+    near(Number(atFour[3]), 2.0 * SR, "two seconds long, whatever the tempo");
 });
 
 // ---- the report, and the history ----
@@ -859,14 +859,13 @@ function plan(ed: MultitrackEditor): Plan {
         multitrackPlan(
             JSON.stringify(ed.structure.write()),
             ed.bridge.rate,
-            ed.bridge.bpm,
             JSON.stringify(ed.bridge.sources.table()),
         ),
     ) as Plan;
 }
 
 test("a box is planned in frames from where its window opens", () => {
-    // The crossing from the piece to the readers: a box is placed in beats and
+    // The crossing from the piece to the readers: a box is placed in seconds and
     // read in frames, and a trimmed one reads on rather than restarting.
     const ed = editor(piece());
     const region = ed.structure.tracks[0].lanes[0].regions[1];
@@ -993,7 +992,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
     assert.deepEqual(log[0]!.slice(0, 2), ["request", "/transport_locateSample"]);
     assert.deepEqual(
         log[0]![2],
-        ["h", BigInt(piece.beatsToSamples(2.0))],
+        ["h", BigInt(piece.secsToSamples(2.0))],
         "a sample rides as 64 bits",
     );
 });

@@ -7,9 +7,9 @@ gesture makes of it; this says what it is heard as.
 **It decides nothing.** What a track and a clip *are* on the server is the
 shared core's; which of them a given piece needs, the difference between that
 and what is already sounding, the messages that carry it out and **how the piece
-is played** -- the tempo a piece that states none is read at, the sample a beat
-is when the transport is located, what play, pause, stop and cue send, and that a
-paused meter is zeroed -- are `clausters._native.MultitrackPlayback`, in the shared
+is played** -- the sample a second of the multitrack is when the transport is
+located, what play, pause, stop and cue send, and that a paused meter is
+zeroed -- are `clausters._native.MultitrackPlayback`, in the shared
 crate. The GUI host playing a session with no script behind it holds the same
 object, so the two are one program. What is left here is what a language
 genuinely owns: a socket, and waiting on it.
@@ -72,12 +72,13 @@ class Playback:
         #: The piece's transport, as the engine last reported it, and the line
         #: the host draws from its position. ``head_clock="piece"`` says it
         #: once: the host draws the line from the engine's own position instead
-        #: of an anchor kept in step here.
+        #: of an anchor kept in step here. It is given no structure with a
+        #: tempo map, so its positions are the multitrack's own seconds.
         self.transport = PlayheadSync(
             editor._host,
             lambda: [] if editor.piece_widget is None else [editor.piece_widget],
             head_clock="piece", governed=True,
-            structure=lambda: bridge, sample_rate=bridge.rate,
+            sample_rate=bridge.rate,
             extent=lambda: editor.structure.end)
         self.transport.server = server
         self.sync()
@@ -145,7 +146,7 @@ class Playback:
 
     @property
     def position(self) -> float:
-        """Where the piece is, in beats -- one round trip, because the position
+        """Where the piece is, in seconds -- one round trip, because the position
         is the engine's."""
         return self.transport.refresh().position
 
@@ -173,17 +174,17 @@ class Playback:
         mark = self.editor.cursor or 0.0
         self._run(self._piece.stop(mark))
         self.transport.reported(playing=False,
-                                position_sample=self._piece.beats_to_samples(mark))
+                                position_sample=self._piece.secs_to_samples(mark))
         return self
 
-    def locate(self, beat: float):
-        """Seek to ``beat``. The readers seek in the engine, so nothing is
+    def locate(self, secs: float):
+        """Seek to ``secs``. The readers seek in the engine, so nothing is
         re-cued and what is sounding carries on from there."""
-        self._run(self._piece.locate(beat))
-        self.transport.reported(position_sample=self._piece.beats_to_samples(beat))
+        self._run(self._piece.locate(secs))
+        self.transport.reported(position_sample=self._piece.secs_to_samples(secs))
         return self
 
-    def cue(self, beat: float):
+    def cue(self, secs: float):
         """The **position cursor** moved: cue a stopped transport there, and
         leave a rolling one alone.
 
@@ -192,10 +193,10 @@ class Playback:
         starts; moving the mark mid-pass must not move the music.
         """
         self._piece.set_rolling(self.playing)
-        steps = self._piece.cue(beat)
+        steps = self._piece.cue(secs)
         if steps:
             self._run(steps)
-            self.transport.reported(position_sample=self._piece.beats_to_samples(beat))
+            self.transport.reported(position_sample=self._piece.secs_to_samples(secs))
         return self
 
     def close(self):

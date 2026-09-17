@@ -98,5 +98,8 @@ def playhead_sync(host, score_id: int, *, source, structure=None,
     and the end it stops at are read off the page itself."""
     tr = PlayheadSync(host, score_id, source=source, structure=structure,
                       sample_rate=sample_rate, extent=extent)
-    tr.to_units = lambda beats: tr.tempo_map().secs_at(float(beats)) * 1000.0
+    # An engraved page always plays a timeline, which holds a map; with none it
+    # would be seconds already.
+    tr.to_units = lambda beats: (float(beats) if tr.tempo_map() is None else
+                                 tr.tempo_map().secs_at(float(beats))) * 1000.0
     return tr

@@ -149,7 +149,8 @@ class Editor:
         #: persisted and never logged.
         self.selection: dict = {}
         #: **Where the reader is**, in the structure's own units (beats for a
-        #: timeline or a piece, seconds for a take or a curve) -- the position cursor a click placed, and
+        #: timeline, seconds for a multitrack, a take or a curve) -- the position
+        #: cursor a click placed, and
         #: `None` until one has been. It is where a playback starts and where a
         #: paste lands, which is why it is worth keeping: the playhead is where
         #: the *music* is and moves on its own, and an anchor that moved on its
@@ -660,9 +661,9 @@ class Editor:
         """A view composed inside this one swept a marquee. Nothing by default;
         a view over an arrangement names what it is a selection *of*."""
 
-    def locate(self, beat: float) -> None:
-        """The position cursor was placed at ``beat``, here or in a window
-        composed inside this one.
+    def locate(self, at: float) -> None:
+        """The position cursor was placed at ``at``, in the structure's own
+        units, here or in a window composed inside this one.
 
         Nothing by default, and that is the honest answer for a structure opened
         on its own: the mark is kept (`cursor`) and what it means for the sound

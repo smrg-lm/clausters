@@ -73,8 +73,6 @@ pub struct Window<'a> {
     pub layers: &'a [String],
     /// The rate the axis reads its numbers with.
     pub rate: f64,
-    /// The tempo, in beats per second.
-    pub tempo: f64,
     /// The id of the take's widget.
     pub widget: i32,
     /// The window's title.
@@ -95,7 +93,6 @@ pub fn window(w: &Window<'_>) -> Value {
         measure: w.layers.join(" "),
         ruler: "time".into(),
         sample_rate: w.rate,
-        tempo: Some(w.tempo),
         label: label(w.name, w.buffer),
         ..Waveform::default()
     });
@@ -152,7 +149,6 @@ mod tests {
             name,
             layers: &layers,
             rate: 48_000.0,
-            tempo: 2.0,
             widget: 9,
             title: "take",
             size: (1000, 520),
@@ -180,7 +176,10 @@ mod tests {
         assert_eq!(take["measure"], "peak rms");
         assert_eq!(take["label"], "glide");
         assert_eq!(take["axes"]["x"]["unit"], "time");
-        assert_eq!(take["axes"]["x"]["tempo"], 2.0);
+        assert!(
+            take["axes"]["x"].get("tempo").is_none(),
+            "a take holds no tempo"
+        );
         assert_eq!(
             take["gestures"],
             json!({"drag": "select", "alt": "draw", "ctrl": "sample"})

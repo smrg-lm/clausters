@@ -19,10 +19,12 @@
 // to the first itself and takes `toUnits` for the second, which is the whole of
 // what a view has to say about its units.
 //
-// **It holds no tempo.** Beats cross to samples through the map of **what
-// plays**: the pass `source` returned (a `Timeline` holds its own map), else the
-// `structure` it was given. A view represents a structure's data and keeps none
-// of it, so a tempo edited on the structure is the one the line follows.
+// **It holds no tempo.** A position is in the units of **what plays**: beats,
+// crossed to samples through the map of the pass `source` returned (a `Timeline`
+// holds its own map) or of the `structure` it was given; or seconds, when neither
+// holds a map — a multitrack, placed in physical time. A view represents a
+// structure's data and keeps none of it, so a tempo edited on the structure is
+// the one the line follows.
 //
 // **A pass ends by itself.** A `Timeline` reports that it finished, so `update`
 // parks the cursor at the piece's end without the script timing it.
@@ -56,7 +58,7 @@ export interface PlayheadSyncOptions {
     /**
      * What is played, asked for its tempo map (`map`) when no pass is in flight
      * — a `Timeline`, or a callable returning the object that has one. The map
-     * is never kept here.
+     * is never kept here. With no structure, positions are seconds.
      */
     structure?: MapHolder | (() => MapHolder);
     /** The engine's sample rate; with the map it fixes the beats→samples axis. */
@@ -68,7 +70,7 @@ export interface PlayheadSyncOptions {
      */
     toUnits?: (beats: number) => number;
     /**
-     * `extent()` → the piece's length in beats, where {@link PlayheadSync.update}
+     * `extent()` → the piece's length, in its own units, where {@link PlayheadSync.update}
      * parks the cursor when a pass ends. Read on each use, so a piece that grew
      * (a clip dragged past the end) ends where it now ends.
      */
@@ -202,20 +204,16 @@ export class PlayheadSync {
 
     /**
      * The map beats cross to samples through, asked for on each use: the pass in
-     * flight's (a `Timeline` holds its own), else the `structure`'s. The line
-     * sweeps by engine samples from an origin this places, so the origin has to
-     * come from the function the sound plays by.
+     * flight's (a `Timeline` holds its own), else the `structure`'s, else `null`
+     * — what plays is in seconds. The line sweeps by engine samples from an
+     * origin this places, so the origin has to come from the function the sound
+     * plays by.
      */
-    tempoMap(): TempoMap {
+    tempoMap(): TempoMap | null {
         const own = (this.head as Partial<MapHolder> | null)?.map;
         if (own !== undefined) return own;
         const structure = typeof this.structure === "function" ? this.structure() : this.structure;
-        if (structure === null || structure.map === undefined) {
-            throw new Error(
-                "PlayheadSync: nothing to read a tempo map from; give it the structure it plays",
-            );
-        }
-        return structure.map;
+        return structure?.map ?? null;
     }
 
     /**
@@ -224,10 +222,13 @@ export class PlayheadSync {
      *
      * Where the line's origin comes from, so it must be the map and not a ratio:
      * the host sweeps the playhead by engine samples, and a beat placed by a
-     * frozen tempo would be crossed at a time the clock never plays it at.
+     * frozen tempo would be crossed at a time the clock never plays it at. What
+     * plays with no map is in seconds, which cross as they are.
      */
     beatsToSamples(beats: number): number {
-        return secs_to_samples(this.tempoMap().secsAt(Number(beats)), this.sampleRate);
+        const map = this.tempoMap();
+        const secs = map === null ? Number(beats) : map.secsAt(Number(beats));
+        return secs_to_samples(secs, this.sampleRate);
     }
 
     private targets(): number[] {
@@ -309,10 +310,12 @@ export class PlayheadSync {
      * Samples of the piece → beats, through the same map
      * {@link PlayheadSync.beatsToSamples} goes the other way — so what the engine
      * reports and what the ruler draws are one function read in two directions.
+     * Seconds, where what plays holds no map.
      */
     samplesToBeats(samples: number): number {
         const secs = this.sampleRate > 0 ? Number(samples) / this.sampleRate : 0.0;
-        return this.tempoMap().beatsAt(secs);
+        const map = this.tempoMap();
+        return map === null ? secs : map.beatsAt(secs);
     }
 
     /**
@@ -330,7 +333,8 @@ export class PlayheadSync {
     }
 
     /**
-     * The transport's position in beats: where the playhead is while it plays,
+     * The transport's position in beats (seconds for what holds no map): where
+     * the playhead is while it plays,
      * where it got to while the last item is still ringing, and where the next
      * `play` starts when neither.
      *

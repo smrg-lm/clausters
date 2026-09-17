@@ -8,9 +8,9 @@
  * **It decides nothing.** What a track and a clip *are* on the server is the
  * shared core's; which of them a given piece needs, the difference between that
  * and what is already sounding, the messages that carry it out and **how the
- * piece is played** — the tempo a piece that states none is read at, the sample
- * a beat is when the transport is located, what play, pause, stop and cue send,
- * and that a paused meter is zeroed — are `MultitrackPlayback`, in the shared crate.
+ * piece is played** — the sample a second of the multitrack is when the
+ * transport is located, what play, pause, stop and cue send, and that a paused
+ * meter is zeroed — are `MultitrackPlayback`, in the shared crate.
  * The GUI host playing a session with no page behind it holds the same object,
  * so the two are one program. What is left here is what a language genuinely
  * owns: a socket, and waiting on it.
@@ -75,13 +75,14 @@ export class Playback {
         this.server = server;
         this.gain = Number(gain);
         const bridge = editor.bridge;
+        // Given no structure with a tempo map, so its positions are the
+        // multitrack's own seconds.
         this.transport = new PlayheadSync(
             host,
             () => (editor.pieceWidget === null ? [] : [editor.pieceWidget]),
             {
                 headClock: "piece",
                 governed: true,
-                structure: () => bridge,
                 sampleRate: bridge.rate,
                 extent: () => editor.structure.end,
             },
@@ -201,7 +202,7 @@ export class Playback {
         return this.transport.playing;
     }
 
-    /** Where the piece is, in beats, as the engine last answered. */
+    /** Where the piece is, in seconds, as the engine last answered. */
     get position(): number {
         return this.transport.position;
     }
@@ -245,26 +246,26 @@ export class Playback {
         void this.run(this.piece.stop(mark));
         this.transport.reported({
             playing: false,
-            positionSample: this.piece.beatsToSamples(mark),
+            positionSample: this.piece.secsToSamples(mark),
         });
         return this;
     }
 
     /**
-     * Seek to `beat`. The readers seek in the engine, so nothing is re-cued and
+     * Seek to `secs`. The readers seek in the engine, so nothing is re-cued and
      * what is sounding carries on from there.
      */
-    locate(beat: number): this {
-        void this.locateAsync(beat);
+    locate(secs: number): this {
+        void this.locateAsync(secs);
         return this;
     }
 
     /** {@link Playback.locate}, waited for. */
-    private async locateAsync(beat: number): Promise<void> {
+    private async locateAsync(secs: number): Promise<void> {
         if (this.piece === null) return;
-        const positionSample = this.piece.beatsToSamples(beat);
+        const positionSample = this.piece.secsToSamples(secs);
         this.transport.reported({ positionSample });
-        await this.run(this.piece.locate(beat));
+        await this.run(this.piece.locate(secs));
     }
 
     /**
@@ -275,12 +276,12 @@ export class Playback {
      * nothing puts the position cursor down, which is where the next play
      * starts; moving the mark mid-pass must not move the music.
      */
-    cue(beat: number): this {
+    cue(secs: number): this {
         if (this.piece === null) return this;
         this.piece.setRolling(this.playing);
-        const answer = this.piece.cue(beat);
+        const answer = this.piece.cue(secs);
         if (answer !== '{"steps":[]}') {
-            this.transport.reported({ positionSample: this.piece.beatsToSamples(beat) });
+            this.transport.reported({ positionSample: this.piece.secsToSamples(secs) });
             void this.run(answer);
         }
         return this;

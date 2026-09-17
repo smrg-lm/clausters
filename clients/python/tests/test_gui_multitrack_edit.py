@@ -174,17 +174,16 @@ def test_a_source_nobody_loaded_draws_an_empty_box():
         "negative and not zero: buffer 0 is a buffer"
 
 
-def test_the_piece_is_placed_through_its_own_tempo_map():
-    """Four beats are not one length: under a tempo that changes they last
-    longer later than earlier, and the picture has to say so."""
+def test_a_tempo_moves_no_box():
+    """The multitrack is in seconds: a box is drawn at its seconds times the
+    rate, and a tempo the multitrack holds is a ruler's to read."""
     held = piece()
-    held.set_tempo(Tempo(at=0.0, bpm=60.0))
-    held.set_tempo(Tempo(at=4.0, bpm=30.0))
+    held.set_tempo(Tempo(at=0.0, tempo=1.0))
+    held.set_tempo(Tempo(at=4.0, tempo=0.5))
     boxes = clips(editor(held))
     at_four = next(b for b in boxes if b[0] == "13")
-    assert at_four[2] == pytest.approx(4.0 * SR), "four beats at a beat a second"
-    assert at_four[3] == pytest.approx(4.0 * SR), \
-        "two beats at half the tempo are four seconds"
+    assert at_four[2] == pytest.approx(4.0 * SR), "four seconds in"
+    assert at_four[3] == pytest.approx(2.0 * SR), "two seconds long, whatever the tempo"
 
 
 # ---- the report, and the history ----
@@ -659,11 +658,11 @@ def _plan(ed) -> dict:
     from clausters import _native
 
     return _native.multitrack_plan(ed.structure.write(), ed.bridge.rate,
-                                   ed.bridge.bpm, ed.bridge.sources.table())
+                                   ed.bridge.sources.table())
 
 
 def test_a_box_is_planned_in_frames_from_where_its_window_opens():
-    """The crossing from the piece to the readers: a box is placed in beats and
+    """The crossing from the piece to the readers: a box is placed in seconds and
     read in frames, and a trimmed one reads on rather than restarting."""
     ed = editor(piece())
     region = ed.structure.tracks[0].lanes[0].regions[1]
@@ -915,4 +914,4 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     (entry,) = playback.server.log
     assert entry[:2] == ("request", "/transport_locateSample")
     assert isinstance(entry[2], _osclib.Int64), "a sample rides as 64 bits"
-    assert entry[2].value == piece.beats_to_samples(2.0)
+    assert entry[2].value == piece.secs_to_samples(2.0)

@@ -679,7 +679,7 @@ mod tests {
     use super::*;
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
     use clausters_document::{
-        Beat, Lifetime, NodeId, SegmentRef, SegmentSource, SourceId, SourceRef,
+        Lifetime, NodeId, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
     };
 
     const SR: f64 = 48_000.0;
@@ -687,8 +687,8 @@ mod tests {
     fn region(id: u64, at: f64) -> Region {
         let mut region = Region::new(
             NodeId(id),
-            Beat(at),
-            Beat(2.0),
+            Second(at),
+            Second(2.0),
             Content::Unknown(Value::Null),
         );
         region.content = Content::window(SegmentRef {
@@ -712,7 +712,7 @@ mod tests {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, 60.0, FIRST_VERSION);
+        let mut editor = MultitrackEditor::new(piece, SR, FIRST_VERSION);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
         editor.chrome(
             None,

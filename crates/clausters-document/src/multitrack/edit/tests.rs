@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::multitrack::{Automation, Lane};
-use crate::{Lifetime, SegmentSource, SourceId, SourceRef};
+use crate::{Beat, Lifetime, SegmentSource, SourceId, SourceRef};
 
 fn window(source: u64) -> crate::SegmentRef {
     crate::SegmentRef {
@@ -20,7 +20,12 @@ fn window(source: u64) -> crate::SegmentRef {
 }
 
 fn region(id: u64, at: f64, len: f64) -> Region {
-    Region::new(NodeId(id), Beat(at), Beat(len), Content::window(window(1)))
+    Region::new(
+        NodeId(id),
+        Second(at),
+        Second(len),
+        Content::window(window(1)),
+    )
 }
 
 /// Two tracks: the first comped from two lanes with a region on each, the
@@ -129,14 +134,14 @@ fn a_region_moved_to_another_track_is_one_edit() {
             region: NodeId(100),
             track: NodeId(20),
             lane: NodeId(21),
-            position: Beat(16.0),
+            position: Second(16.0),
             layer: 2,
         },
     );
     assert!(outcome.applied);
     let (track, lane, moved) = piece.locate(NodeId(100)).unwrap();
     assert_eq!((track.id, lane.id), (NodeId(20), NodeId(21)));
-    assert_eq!(moved.position, Beat(16.0));
+    assert_eq!(moved.position, Second(16.0));
     assert_eq!(moved.layer, 2);
     assert!(piece.lane(NodeId(11)).unwrap().1.regions.is_empty());
 }
@@ -150,7 +155,7 @@ fn a_placement_snaps_and_says_what_it_snapped_to() {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
-            position: Beat(4.3),
+            position: Second(4.3),
             layer: 0,
         },
         &Against::unstated(),
@@ -159,7 +164,7 @@ fn a_placement_snaps_and_says_what_it_snapped_to() {
     let MultitrackIntent::PlaceRegion { position, .. } = outcome.effective else {
         panic!("the effective edit is the one that landed");
     };
-    assert_eq!(position, Beat(4.0));
+    assert_eq!(position, Second(4.0));
     assert_eq!(outcome.reason.as_deref(), Some("snapped to the grid"));
 }
 
@@ -170,8 +175,8 @@ fn a_trim_reports_the_effective_placement_after_snapping() {
         &mut piece,
         &MultitrackIntent::TrimRegion {
             region: NodeId(100),
-            position: Beat(1.1),
-            length: Beat(2.9),
+            position: Second(1.1),
+            length: Second(2.9),
             content: None,
         },
         &Against::unstated(),
@@ -186,7 +191,7 @@ fn a_trim_reports_the_effective_placement_after_snapping() {
     else {
         panic!("a trim reports a trim");
     };
-    assert_eq!((position, length), (Beat(1.0), Beat(3.0)));
+    assert_eq!((position, length), (Second(1.0), Second(3.0)));
     assert!(
         content.is_some(),
         "and it says what the region reads, so the inverse puts the window back"
@@ -201,8 +206,8 @@ fn a_trim_that_moved_the_window_carries_the_window_it_moved_to() {
         &mut piece,
         MultitrackIntent::TrimRegion {
             region: NodeId(100),
-            position: Beat(2.0),
-            length: Beat(2.0),
+            position: Second(2.0),
+            length: Second(2.0),
             content: Some(moved.clone()),
         },
     );
@@ -216,13 +221,13 @@ fn a_region_cannot_be_trimmed_to_nothing() {
         &mut piece,
         MultitrackIntent::TrimRegion {
             region: NodeId(100),
-            position: Beat(0.0),
-            length: Beat(0.0),
+            position: Second(0.0),
+            length: Second(0.0),
             content: None,
         },
     );
     assert!(!outcome.applied);
-    assert_eq!(piece.locate(NodeId(100)).unwrap().2.length, Beat(4.0));
+    assert_eq!(piece.locate(NodeId(100)).unwrap().2.length, Second(4.0));
 }
 
 // ---- the two that change how many regions there are ----
@@ -232,7 +237,7 @@ fn a_split_names_the_two_identities_and_applying_it_twice_changes_nothing() {
     let mut piece = piece();
     let split = MultitrackIntent::SplitRegion {
         region: NodeId(100),
-        at: Beat(1.0),
+        at: Second(1.0),
         left: NodeId(110),
         right: NodeId(111),
         left_content: None,
@@ -246,8 +251,8 @@ fn a_split_names_the_two_identities_and_applying_it_twice_changes_nothing() {
             .map(|r| (r.id, r.position, r.length))
             .collect::<Vec<_>>(),
         vec![
-            (NodeId(110), Beat(0.0), Beat(1.0)),
-            (NodeId(111), Beat(1.0), Beat(3.0)),
+            (NodeId(110), Second(0.0), Second(1.0)),
+            (NodeId(111), Second(1.0), Second(3.0)),
         ]
     );
     // The half after the cut reads what the caller said it reads, because the
@@ -273,7 +278,7 @@ fn a_cut_outside_the_region_is_refused_and_says_so() {
         &mut piece,
         MultitrackIntent::SplitRegion {
             region: NodeId(100),
-            at: Beat(9.0),
+            at: Second(9.0),
             left: NodeId(110),
             right: NodeId(111),
             left_content: None,
@@ -305,7 +310,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
     );
     assert!(outcome.applied);
     let joined = piece.locate(NodeId(120)).unwrap().2;
-    assert_eq!((joined.position, joined.length), (Beat(0.0), Beat(6.0)));
+    assert_eq!((joined.position, joined.length), (Second(0.0), Second(6.0)));
     assert!(piece.locate(NodeId(100)).is_none());
 
     let across = edit(
@@ -358,7 +363,7 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
             MultitrackIntent::FadeRegion {
                 region: NodeId(100),
                 fade_in: None,
-                fade_out: Some(Fade::of(Beat(1.0))),
+                fade_out: Some(Fade::of(Second(1.0))),
             }
         )
         .applied
@@ -368,7 +373,7 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
             &mut piece,
             MultitrackIntent::FadeRegion {
                 region: NodeId(102),
-                fade_in: Some(Fade::of(Beat(1.0))),
+                fade_in: Some(Fade::of(Second(1.0))),
                 fade_out: None,
             }
         )
@@ -377,8 +382,8 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
     let first = piece.locate(NodeId(100)).unwrap().2;
     let second = piece.locate(NodeId(102)).unwrap().2;
     assert!(first.overlaps(second));
-    assert_eq!(first.fade_out.as_ref().unwrap().length, Beat(1.0));
-    assert_eq!(second.fade_in.as_ref().unwrap().length, Beat(1.0));
+    assert_eq!(first.fade_out.as_ref().unwrap().length, Second(1.0));
+    assert_eq!(second.fade_in.as_ref().unwrap().length, Second(1.0));
 
     // Stated whole, so clearing one is stating it as absent.
     edit(
@@ -501,7 +506,7 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
             &mut piece,
             MultitrackIntent::SetMarker {
                 marker: NodeId(30),
-                at: Beat(8.0),
+                at: Second(8.0),
                 name: Some("chorus".into()),
             }
         )
@@ -512,11 +517,11 @@ fn a_marker_is_placed_moved_renamed_and_removed() {
         &mut piece,
         MultitrackIntent::SetMarker {
             marker: NodeId(30),
-            at: Beat(12.0),
+            at: Second(12.0),
             name: Some("verse".into()),
         },
     );
-    assert_eq!(piece.markers[0].at, Beat(12.0));
+    assert_eq!(piece.markers[0].at, Second(12.0));
     assert_eq!(piece.markers[0].name.as_deref(), Some("verse"));
     assert!(
         edit(
@@ -543,18 +548,18 @@ fn the_loop_and_the_punch_are_two_spans_and_unset_is_a_value() {
         &mut piece,
         MultitrackIntent::SetRange {
             range: SpanKind::Loop,
-            span: Some(Span::new(Beat(0.0), Beat(16.0))),
+            span: Some(Span::new(Second(0.0), Second(16.0))),
         },
     );
     edit(
         &mut piece,
         MultitrackIntent::SetRange {
             range: SpanKind::Punch,
-            span: Some(Span::new(Beat(4.0), Beat(8.0))),
+            span: Some(Span::new(Second(4.0), Second(8.0))),
         },
     );
-    assert_eq!(piece.loop_span.unwrap().length(), Beat(16.0));
-    assert_eq!(piece.punch.unwrap().start, Beat(4.0));
+    assert_eq!(piece.loop_span.unwrap().length(), Second(16.0));
+    assert_eq!(piece.punch.unwrap().start, Second(4.0));
     assert!(
         edit(
             &mut piece,
@@ -574,14 +579,14 @@ fn the_two_maps_are_the_pieces_and_arrive_in_position_order() {
     edit(
         &mut piece,
         MultitrackIntent::SetTempoMap {
-            tempo: vec![Tempo::at(Beat(16.0), 140.0), Tempo::at(Beat(0.0), 120.0)],
+            tempo: vec![Tempo::at(Beat(16.0), 2.5), Tempo::at(Beat(0.0), 2.0)],
         },
     );
     assert_eq!(
         piece.tempo.iter().map(|t| t.at).collect::<Vec<_>>(),
         vec![Beat(0.0), Beat(16.0)]
     );
-    assert_eq!(piece.tempo_at(Beat(20.0)).unwrap().bpm, 140.0);
+    assert_eq!(piece.tempo_at(Beat(20.0)).unwrap().tempo, 2.5);
     edit(
         &mut piece,
         MultitrackIntent::SetMeterMap {
@@ -650,7 +655,7 @@ fn an_edit_against_a_superseded_piece_comes_back_stale() {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
-            position: Beat(8.0),
+            position: Second(8.0),
             layer: 0,
         },
         &stale,
@@ -658,9 +663,9 @@ fn an_edit_against_a_superseded_piece_comes_back_stale() {
     );
     assert!(outcome.stale);
     assert!(!outcome.applied);
-    assert_eq!(piece.locate(NodeId(100)).unwrap().2.position, Beat(0.0));
+    assert_eq!(piece.locate(NodeId(100)).unwrap().2.position, Second(0.0));
     assert!(
-        matches!(outcome.effective, MultitrackIntent::PlaceRegion { position, .. } if position == Beat(0.0)),
+        matches!(outcome.effective, MultitrackIntent::PlaceRegion { position, .. } if position == Second(0.0)),
         "and what comes back is where the region actually is"
     );
 }
@@ -675,7 +680,7 @@ fn a_refused_edit_leaves_the_version_where_it_was() {
             region: NodeId(999),
             track: NodeId(10),
             lane: NodeId(11),
-            position: Beat(0.0),
+            position: Second(0.0),
             layer: 0,
         },
     );
@@ -691,7 +696,7 @@ fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
             region: NodeId(100),
             track: NodeId(10),
             lane: NodeId(11),
-            position: Beat(position),
+            position: Second(position),
             layer: 0,
         })
     };
@@ -700,8 +705,8 @@ fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
         drag(1.0),
         coalesce_key(&MultitrackIntent::TrimRegion {
             region: NodeId(100),
-            position: Beat(1.0),
-            length: Beat(1.0),
+            position: Second(1.0),
+            length: Second(1.0),
             content: None,
         })
     );
@@ -745,18 +750,18 @@ fn vocabulary() -> Vec<MultitrackIntent> {
             region: NodeId(100),
             track: NodeId(20),
             lane: NodeId(21),
-            position: Beat(16.0),
+            position: Second(16.0),
             layer: 1,
         },
         MultitrackIntent::TrimRegion {
             region: NodeId(100),
-            position: Beat(1.0),
-            length: Beat(2.0),
+            position: Second(1.0),
+            length: Second(2.0),
             content: Some(Content::window(window(2))),
         },
         MultitrackIntent::SplitRegion {
             region: NodeId(100),
-            at: Beat(2.0),
+            at: Second(2.0),
             left: NodeId(110),
             right: NodeId(111),
             left_content: None,
@@ -770,7 +775,7 @@ fn vocabulary() -> Vec<MultitrackIntent> {
         },
         MultitrackIntent::FadeRegion {
             region: NodeId(100),
-            fade_in: Some(Fade::of(Beat(1.0))),
+            fade_in: Some(Fade::of(Second(1.0))),
             fade_out: None,
         },
         MultitrackIntent::SetAutomation {
@@ -783,16 +788,16 @@ fn vocabulary() -> Vec<MultitrackIntent> {
         },
         MultitrackIntent::SetMarker {
             marker: NodeId(30),
-            at: Beat(8.0),
+            at: Second(8.0),
             name: Some("chorus".into()),
         },
         MultitrackIntent::RemoveMarker { marker: NodeId(30) },
         MultitrackIntent::SetRange {
             range: SpanKind::Loop,
-            span: Some(Span::new(Beat(0.0), Beat(16.0))),
+            span: Some(Span::new(Second(0.0), Second(16.0))),
         },
         MultitrackIntent::SetTempoMap {
-            tempo: vec![Tempo::at(Beat(0.0), 132.0)],
+            tempo: vec![Tempo::at(Beat(0.0), 2.2)],
         },
         MultitrackIntent::SetMeterMap {
             meter: vec![Meter::at(Beat(0.0), 7, 8)],
@@ -837,7 +842,7 @@ mod through_a_history {
                 region: NodeId(100),
                 track: NodeId(20),
                 lane: NodeId(21),
-                position: Beat(16.0),
+                position: Second(16.0),
                 layer: 1,
             }),
             "move the region",
@@ -851,7 +856,7 @@ mod through_a_history {
         undo(&mut history, &mut piece);
         let (track, lane, back) = piece.locate(NodeId(100)).expect("back where it was");
         assert_eq!((track.id, lane.id), (NodeId(10), NodeId(11)));
-        assert_eq!((back.position, back.layer), (Beat(0.0), 0));
+        assert_eq!((back.position, back.layer), (Second(0.0), 0));
         assert!(!history.can_undo());
     }
 
@@ -866,7 +871,7 @@ mod through_a_history {
             &mut Piece::new(&mut piece),
             &payload(&MultitrackIntent::SplitRegion {
                 region: NodeId(100),
-                at: Beat(1.0),
+                at: Second(1.0),
                 left: NodeId(110),
                 right: NodeId(111),
                 left_content: None,
@@ -916,7 +921,7 @@ mod through_a_history {
             &mut Piece::new(&mut piece),
             &payload(&MultitrackIntent::SetMarker {
                 marker: NodeId(30),
-                at: Beat(8.0),
+                at: Second(8.0),
                 name: Some("chorus".into()),
             }),
             "add a marker",
@@ -938,7 +943,7 @@ mod through_a_history {
             &mut Piece::new(&mut piece),
             &payload(&MultitrackIntent::SetRange {
                 range: SpanKind::Loop,
-                span: Some(Span::new(Beat(0.0), Beat(16.0))),
+                span: Some(Span::new(Second(0.0), Second(16.0))),
             }),
             "set the loop",
         );
@@ -975,7 +980,7 @@ fn the_piece_is_edited_across_the_seam_as_state_and_an_inverse() {
         region: NodeId(100),
         track: NodeId(20),
         lane: NodeId(21),
-        position: Beat(16.0),
+        position: Second(16.0),
         layer: 0,
     });
     let edited = crate::domain::edit(MULTITRACK, &state, &load).expect("the piece is served");
@@ -1002,8 +1007,8 @@ fn the_crate_names_the_pieces_vocabulary_where_a_caller_asks_for_it() {
     assert!(crate::domain::known(MULTITRACK));
     let load = payload(&MultitrackIntent::TrimRegion {
         region: NodeId(100),
-        position: Beat(0.0),
-        length: Beat(2.0),
+        position: Second(0.0),
+        length: Second(2.0),
         content: None,
     });
     assert_eq!(

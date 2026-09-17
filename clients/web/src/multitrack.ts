@@ -37,13 +37,20 @@
  *
  * ## Time
  *
- * Everything placed here is placed in **beats**, because where a thing sits in
- * a piece is a musical decision. What fills a region is measured in its own
- * source's units — frames for samples, beats for a node — and the two are not
- * the same axis. The crate makes that a type; here it is a rule the field names
- * say (`position` and `length` are the region's, `start` and `duration` are its
- * window's), and the conversion between them needs the tempo map, which is why
- * the map is part of the piece.
+ * Everything placed here is placed in **seconds**: a region's position, length
+ * and fades, every automation point, the markers, the loop and the punch. A
+ * multitrack is governed by physical time, the way the server and the clients
+ * are, and no tempo change moves anything in it. What fills a region is measured
+ * in its own source's units — seconds of a recording, beats of a node — and the
+ * two are not the same axis. The crate makes that a type; here it is a rule the
+ * field names say (`position` and `length` are the region's, `start` and
+ * `duration` are its window's).
+ *
+ * The **tempo map and the meter map** are structures the multitrack holds, not
+ * its axis: their entries are stated at beats, in beats per second, and what
+ * reads them is a ruler drawing beats and bars over the seconds and a snap to
+ * them. {@link Multitrack.tempoMap} is that map as a `TempoMap`, so a script that
+ * wants a region on bar five asks it where bar five is.
  *
  * ## Spelling
  *
@@ -57,9 +64,12 @@
 
 import {
     StepRunner,
+    editingDefaultTempo,
     multitrackNames as coreNames,
     multitrackProps as coreProps,
+    sessionMigrate,
 } from "./core/clausters_core_web.js";
+import { TempoMap } from "./base/time.ts";
 import { Buffer } from "./defs/buffer.ts";
 import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
@@ -115,7 +125,7 @@ function num(value: unknown, fallback = 0): number {
 }
 
 /**
- * A fade's length in beats, and whatever the client says about its curve.
+ * A fade's length in seconds, and whatever the client says about its curve.
  *
  * The shape is carried and never interpreted: what an exponential fade *is*
  * belongs to whoever renders it. Losing it would straighten every fade on a
@@ -242,7 +252,7 @@ export class Content {
 /**
  * One placed thing on a lane: a span of the timeline, and what fills it.
  *
- * `position` and `length` are the region's own, in beats. They are **not** the
+ * `position` and `length` are the region's own, in seconds. They are **not** the
  * content's: a region may show part of what it holds, and trimming moves these
  * without touching the source.
  */
@@ -592,24 +602,26 @@ export class Track {
 /**
  * One entry of the tempo map: from here on, this tempo.
  *
- * `ramp` says the tempo runs from here to the next entry rather than stepping.
- * A ritardando is a ramp; a section change is a step.
+ * `at` is a beat and `tempo` is beats per **second**, the unit every tempo in
+ * clausters is in; beats per minute is only how a ruler or a text field may show
+ * it. `ramp` says the tempo runs from here to the next entry rather than
+ * stepping. A ritardando is a ramp; a section change is a step.
  */
 export class Tempo {
     at: number;
-    bpm: number;
+    tempo: number;
     ramp: boolean;
     extra: Extra;
 
-    constructor(fields: { at: number; bpm: number; ramp?: boolean; extra?: Extra }) {
+    constructor(fields: { at: number; tempo: number; ramp?: boolean; extra?: Extra }) {
         this.at = fields.at;
-        this.bpm = fields.bpm;
+        this.tempo = fields.tempo;
         this.ramp = fields.ramp ?? false;
         this.extra = fields.extra ?? {};
     }
 
     write(): Extra {
-        const out: Extra = { at: this.at, bpm: this.bpm };
+        const out: Extra = { at: this.at, tempo: this.tempo };
         if (this.ramp) out.ramp = true;
         return { ...out, ...this.extra };
     }
@@ -617,9 +629,9 @@ export class Tempo {
     static read(written: Extra): Tempo {
         return new Tempo({
             at: num(written.at),
-            bpm: num(written.bpm),
+            tempo: num(written.tempo),
             ramp: Boolean(written.ramp),
-            extra: rest(written, "at", "bpm", "ramp"),
+            extra: rest(written, "at", "tempo", "ramp"),
         });
     }
 }
@@ -658,7 +670,7 @@ export class Meter {
     }
 }
 
-/** A named point on the timeline. */
+/** A named point on the timeline, at a second. */
 export class Marker {
     id: number;
     at: number;
@@ -691,7 +703,7 @@ export class Marker {
 /**
  * A span of the timeline: the loop, the punch, a named region of the piece.
  *
- * Half-open, so two spans that meet cover no beat twice.
+ * Half-open, so two spans that meet cover no instant twice. In seconds.
  */
 export class Span {
     start: number;
@@ -770,12 +782,30 @@ export class Multitrack {
     }
 
     /**
-     * The tempo entry in force at `at`, or `undefined` when the map says
+     * The tempo map this multitrack holds, as a `TempoMap`: where its beats and
+     * bars fall over its seconds, with the reader's default of one beat a second
+     * where it states no tempo.
+     *
+     * It places nothing — every position here is already seconds — and is what
+     * a ruler draws from and what a script asks to put something on a bar. Built
+     * afresh on each call, so an edited tempo is the one read.
+     */
+    tempoMap(): TempoMap {
+        const fallback = editingDefaultTempo();
+        return (
+            TempoMap.fromChanges(
+                this.tempo.map((t) => ({ beats: t.at, tempo: t.tempo, ramp: t.ramp })),
+                fallback,
+            ) ?? new TempoMap(fallback)
+        );
+    }
+
+    /**
+     * The tempo entry in force at beat `at`, or `undefined` when the map says
      * nothing.
      *
-     * The **entry**, not a converted position: turning a beat into seconds
-     * needs the whole map walked and a ramp integrated, and the shape of a ramp
-     * is not something the document names.
+     * The **entry**, not a converted position; {@link Multitrack.tempoMap} is the
+     * map.
      */
     tempoAt(at: number): Tempo | undefined {
         return [...this.tempo].reverse().find((t) => t.at <= at);
@@ -804,7 +834,7 @@ export class Multitrack {
     }
 
     /**
-     * Adds a marker, in position order. Several may share a beat: unlike a
+     * Adds a marker, in position order. Several may share an instant: unlike a
      * tempo, two names for one moment is a thing people do.
      */
     addMarker(marker: Marker): void {
@@ -1102,8 +1132,9 @@ export class View {
     /** What the window is called, when a person named it. */
     name?: string;
     /**
-     * The stretch of the timeline on screen — the zoom and the horizontal
-     * scroll, which are one fact and not two. Absent shows the whole piece.
+     * The stretch of the timeline on screen, in seconds — the zoom and the
+     * horizontal scroll, which are one fact and not two. Absent shows the whole
+     * piece.
      */
     visible?: Span;
     /** How far down the tracks the window is scrolled, in its own units. */
@@ -1112,6 +1143,8 @@ export class View {
      * The grid this window snaps to, in beats. Zero snaps nothing. It is here
      * rather than in the piece because two windows over one piece may snap
      * differently — the arranger to a bar, the editor below it to a sixteenth.
+     * A musical grid over a multitrack in seconds, taken through its tempo map by
+     * the window: the ruler's configuration, not a unit of the placement.
      */
     quant = 0;
     /**
@@ -1119,7 +1152,7 @@ export class View {
      * reader's, and nothing moves it, which is what an editor wants.
      */
     autofit = true;
-    /** The time range the hand swept, when it swept one. */
+    /** The time range the hand swept, in seconds, when it swept one. */
     selection?: Span;
     /**
      * What the hand is holding: regions, lanes or tracks, by id. One list
@@ -1274,10 +1307,10 @@ export class View {
  */
 export class Session {
     /**
-     * The format version this session was read at, or the one this build
-     * writes for a session built here — {@link SESSION_FORMAT}, the crate's
-     * `session::FORMAT`. A session **read** keeps the number it was written
-     * with, so round-tripping an old file does not silently promote it.
+     * The format version this build writes — {@link SESSION_FORMAT}, the crate's
+     * `session::FORMAT`. A session **read** in an older format is migrated to
+     * this one first ({@link Session.read}), since its numbers are read
+     * differently: format 2 placed the multitrack in beats.
      */
     format = SESSION_FORMAT;
     /**
@@ -1425,8 +1458,17 @@ export class Session {
         return { ...out, ...this.extra };
     }
 
-    /** A session from the crate's JSON. */
+    /**
+     * A session from the crate's JSON, migrated first when it was written in an
+     * older format.
+     *
+     * The migration is the crate's (`sessionMigrate`), so an old file opens the
+     * same here, in the Python client and in the GUI host.
+     */
     static read(written: Extra): Session {
+        if (num(written.format, 1) < SESSION_FORMAT) {
+            written = JSON.parse(sessionMigrate(JSON.stringify(written))) as Extra;
+        }
         const session = new Session();
         session.format = num(written.format, 1);
         // `arrangement` is what the field was called before 2026-09-08, read so a
@@ -1538,10 +1580,9 @@ export interface Curve {
 export function multitrackProps(
     piece: string,
     rate: number,
-    defaultBpm: number,
     sources: string,
 ): string {
-    return coreProps(piece, rate, defaultBpm, sources);
+    return coreProps(piece, rate, sources);
 }
 
 /**

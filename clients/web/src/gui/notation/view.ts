@@ -143,6 +143,8 @@ export function playheadSync(
     options: Omit<PlayheadSyncOptions, "toUnits">,
 ): PlayheadSync {
     const tr = new PlayheadSync(host, scoreId, options);
-    tr.toUnits = (beats: number) => tr.tempoMap().secsAt(Number(beats)) * 1000.0;
+    // An engraved page always plays a timeline, which holds a map; with none it
+    // would be seconds already.
+    tr.toUnits = (beats: number) => (tr.tempoMap()?.secsAt(Number(beats)) ?? Number(beats)) * 1000.0;
     return tr;
 }

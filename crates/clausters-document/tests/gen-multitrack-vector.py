@@ -45,8 +45,8 @@ def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
 
 def build() -> Multitrack:
     piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, bpm=96.0))
-    piece.set_tempo(Tempo(at=32.0, bpm=120.0, ramp=True))
+    piece.set_tempo(Tempo(at=0.0, tempo=1.6))
+    piece.set_tempo(Tempo(at=32.0, tempo=2.0, ramp=True))
     piece.set_meter(Meter(at=0.0, beats=4, unit=4))
     piece.set_meter(Meter(at=32.0, beats=7, unit=8))
     piece.add_marker(Marker(id=1, at=0.0, name="intro"))

@@ -86,13 +86,13 @@ def pieces():
              "lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
     piece = {"version": 1, "tracks": [track]}
     ramped = json.loads(json.dumps(piece))
-    ramped["tempo"] = [{"at": 0.0, "bpm": 60.0},
-                       {"at": 4.0, "bpm": 120.0, "ramp": True}]
+    ramped["tempo"] = [{"at": 0.0, "tempo": 1.0},
+                       {"at": 4.0, "tempo": 2.0, "ramp": True}]
     return [
-        ("a piece at one beat a second", piece,
+        ("a piece with no tempo", piece,
          {"77": {"buffer": 12, "channels": 1}}),
         ("the same piece over a source nobody read", piece, {}),
-        ("and over a tempo that moves, where a length is not a ratio",
+        ("and with a tempo that moves, which moves no box",
          ramped, {"77": {"buffer": 12, "channels": 1}}),
     ]
 
@@ -106,7 +106,7 @@ def gestures(piece, sources):
     has to be told apart identically in both clients, because one leaves the
     picture alone and the other makes the host redraw it.
     """
-    props = _native.multitrack_props(piece, 48000.0, 60.0,
+    props = _native.multitrack_props(piece, 48000.0,
                                      {int(k): v for k, v in sources.items()})
     clips = list(props["clips"])
     clips[2] = float(clips[2]) + 4.0 * 48_000.0
@@ -116,7 +116,7 @@ def gestures(piece, sources):
     points[len(points) - 3] = 0.75
     timeline = [{"at": 0.0, "data": {"midinote": 60, "instrument": "bell"}},
                 {"at": 1.0, "data": {"osc": "/cue", "args": [1]}}]
-    piece_request = {"state": piece, "rate": 48000.0, "defaultBpm": 60.0,
+    piece_request = {"state": piece, "rate": 48000.0,
                      "sources": sources}
     return [
         ("a curve drawn back", "points", "points",
@@ -136,7 +136,7 @@ def gestures(piece, sources):
         ("a marker the roll invented, refused out loud", "events", "osc",
          {"values": [1440.0, "/cue", 1920.0, ""], "state": timeline,
           "unitsPerBeat": 480.0, "editable": True}),
-        ("a box dragged four beats along", "multitrack", "clips",
+        ("a box dragged four seconds along", "multitrack", "clips",
          {"values": clips, **piece_request}),
         ("a fader moved", "multitrack", "lanes",
          {"values": lanes, **piece_request}),
@@ -276,8 +276,8 @@ def editor_exchange():
             self.calls.append(["stop"])
             self.playing = False
 
-        def cue(self, beat):
-            self.calls.append(["cue", beat])
+        def cue(self, secs):
+            self.calls.append(["cue", secs])
 
         def sync(self):
             self.calls.append(["sync"])
@@ -383,9 +383,8 @@ def main() -> None:
             "kind": "multitrack_props",
             "piece": piece,
             "rate": 48000.0,
-            "bpm": 60.0,
             "sources": sources,
-            "props": _native.multitrack_props(piece, 48000.0, 60.0,
+            "props": _native.multitrack_props(piece, 48000.0,
                                               {int(k): v for k, v in sources.items()}),
         })
     piece, sources = pieces()[0][1], pieces()[0][2]

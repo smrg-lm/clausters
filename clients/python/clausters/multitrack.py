@@ -35,22 +35,30 @@ thing addressed being one object.
 Time
 ----
 
-Everything placed here is placed in **beats**, because where a thing sits in a
-piece is a musical decision. What fills a region is measured in its own source's
-units — frames for samples, beats for a node — and the two are not the same
-axis. The crate makes that a type; here it is a rule the field names say
-(`position` and `length` are the region's, `start` and `duration` are its
-window's), and the conversion between them needs the tempo map, which is why the
-map is part of the piece.
+Everything placed here is placed in **seconds**: a region's position, length
+and fades, every automation point, the markers, the loop and the punch. A
+multitrack is governed by physical time, the way the server and the clients are,
+and no tempo change moves anything in it. What fills a region is measured in its
+own source's units — seconds of a recording, beats of a node — and the two are
+not the same axis. The crate makes that a type; here it is a rule the field
+names say (`position` and `length` are the region's, `start` and `duration` are
+its window's).
+
+The **tempo map and the meter map** are structures the multitrack holds, not its
+axis: their entries are stated at beats, in beats per second, and what reads
+them is a ruler drawing beats and bars over the seconds and a snap to them.
+`Multitrack.tempo_map` is that map as a `clausters.base.TempoMap`, so a script
+that wants a region on bar five asks it where bar five is.
 
 Usage::
 
     from clausters.multitrack import Multitrack, Region, Track, Tempo
 
     piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, bpm=96.0))
+    piece.set_tempo(Tempo(at=0.0, tempo=1.6))     # 96 beats a minute
+    bar = piece.tempo_map().secs_at(4.0)          # where the second bar begins
     drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
-    drums.active_lane.place(Region(id=3, position=0.0, length=4.0,
+    drums.active_lane.place(Region(id=3, position=bar, length=2.5,
                                    content=Content.window(take)))
     piece.tracks.append(drums)
 """
@@ -94,7 +102,7 @@ def _rest(written: dict, *known: str) -> dict:
 
 @dataclass
 class Fade:
-    """A fade's length in beats, and whatever the client says about its curve.
+    """A fade's length in seconds, and whatever the client says about its curve.
 
     The shape is carried and never interpreted, for the reason a curve's
     interpolation is not this crate's to name: what an exponential fade *is*
@@ -201,7 +209,7 @@ class Content:
 class Region:
     """One placed thing on a lane: a span of the timeline, and what fills it.
 
-    `position` and `length` are the region's own, in beats. They are **not** the
+    `position` and `length` are the region's own, in seconds. They are **not** the
     content's: a region may show part of what it holds, and trimming moves these
     without touching the source.
     """
@@ -341,7 +349,7 @@ class Automation:
     `target` says **what this automates** in the client's terms and is never
     read here — a control name, a bus, a plugin's parameter index — the same
     door a leaf's configuration is, and for the same reason. The points are
-    `{"at": beats, "value": v, "data": …}`, the shape `clausters.document`'s
+    `{"at": seconds, "value": v, "data": …}`, the shape `clausters.document`'s
     points vocabulary already carries.
     """
 
@@ -478,17 +486,19 @@ class Track:
 class Tempo:
     """One entry of the tempo map: from here on, this tempo.
 
-    `ramp` says the tempo runs from here to the next entry rather than stepping.
-    A ritardando is a ramp; a section change is a step.
+    `at` is a beat and `tempo` is beats per **second**, the unit every tempo in
+    clausters is in; beats per minute is only how a ruler or a text field may
+    show it. `ramp` says the tempo runs from here to the next entry rather than
+    stepping. A ritardando is a ramp; a section change is a step.
     """
 
     at: float
-    bpm: float
+    tempo: float
     ramp: bool = False
     extra: dict = field(default_factory=dict)
 
     def write(self) -> dict:
-        out: dict = {"at": self.at, "bpm": self.bpm}
+        out: dict = {"at": self.at, "tempo": self.tempo}
         if self.ramp:
             out["ramp"] = True
         out.update(self.extra)
@@ -496,9 +506,9 @@ class Tempo:
 
     @classmethod
     def read(cls, written: dict) -> "Tempo":
-        return cls(at=float(written.get("at", 0.0)), bpm=float(written["bpm"]),
+        return cls(at=float(written.get("at", 0.0)), tempo=float(written["tempo"]),
                    ramp=bool(written.get("ramp", False)),
-                   extra=_rest(written, "at", "bpm", "ramp"))
+                   extra=_rest(written, "at", "tempo", "ramp"))
 
 
 @dataclass
@@ -529,7 +539,7 @@ class Meter:
 
 @dataclass
 class Marker:
-    """A named point on the timeline."""
+    """A named point on the timeline, at a second."""
 
     id: int
     at: float
@@ -554,7 +564,7 @@ class Marker:
 class Span:
     """A span of the timeline: the loop, the punch, a named region of the piece.
 
-    Half-open, so two spans that meet cover no beat twice.
+    Half-open, so two spans that meet cover no instant twice. In seconds.
     """
 
     start: float
@@ -617,13 +627,27 @@ class Multitrack:
             for lane in track.lanes:
                 yield from lane.regions
 
+    def tempo_map(self):
+        """The tempo map this multitrack holds, as a `clausters.base.TempoMap`:
+        where its beats and bars fall over its seconds, with the reader's
+        default of one beat a second where it states no tempo.
+
+        It places nothing -- every position here is already seconds -- and is
+        what a ruler draws from and what a script asks to put something on a
+        bar. Built afresh on each call, so an edited tempo is the one read.
+        """
+        from ._native import TempoMap, editing_default_tempo
+
+        return TempoMap.from_changes(
+            [{"beats": t.at, "tempo": t.tempo, "ramp": bool(t.ramp)}
+             for t in self.tempo],
+            editing_default_tempo())
+
     def tempo_at(self, at: float) -> "Tempo | None":
-        """The tempo entry in force at `at`, or ``None`` when the map says
+        """The tempo entry in force at beat `at`, or ``None`` when the map says
         nothing.
 
-        The **entry**, not a converted position: turning a beat into seconds
-        needs the whole map walked and a ramp integrated, and the shape of a
-        ramp is not something the document names.
+        The **entry**, not a converted position; `tempo_map` is the map.
         """
         return next((t for t in reversed(self.tempo) if t.at <= at), None)
 
@@ -645,8 +669,8 @@ class Multitrack:
         self.meter.sort(key=lambda m: m.at)
 
     def add_marker(self, marker: Marker) -> None:
-        """Adds a marker, in position order. Several may share a beat: unlike a
-        tempo, two names for one moment is a thing people do."""
+        """Adds a marker, in position order. Several may share an instant: unlike
+        a tempo, two names for one moment is a thing people do."""
         self.markers.append(marker)
         self.markers.sort(key=lambda m: m.at)
 
@@ -931,19 +955,22 @@ class View:
 
     #: What the window is called, when a person named it.
     name: "str | None" = None
-    #: The stretch of the timeline on screen -- the zoom and the horizontal
-    #: scroll, which are one fact and not two. ``None`` shows the whole piece.
+    #: The stretch of the timeline on screen, in seconds -- the zoom and the
+    #: horizontal scroll, which are one fact and not two. ``None`` shows the
+    #: whole piece.
     visible: "Span | None" = None
     #: How far down the tracks the window is scrolled, in its own units.
     scroll: float = 0.0
     #: The grid this window snaps to, in beats. Zero snaps nothing. It is here
     #: rather than in the piece because two windows over one piece may snap
     #: differently -- the arranger to a bar, the editor below it to a sixteenth.
+    #: A musical grid over a multitrack in seconds, taken through its tempo map
+    #: by the window: the ruler's configuration, not a unit of the placement.
     quant: float = 0.0
     #: Whether the window follows its content. ``False`` says the window is the
     #: reader's, and nothing moves it, which is what an editor wants.
     autofit: bool = True
-    #: The time range the hand swept, when it swept one.
+    #: The time range the hand swept, in seconds, when it swept one.
     selection: "Span | None" = None
     #: What the hand is holding: regions, lanes or tracks, by id. One list
     #: rather than one per kind, because the piece has one id space.
@@ -1076,11 +1103,10 @@ class Session:
     that same tree, placed.
     """
 
-    #: The format version this session was read at, or the one this build
-    #: writes for a session built here — `clausters.document.SESSION_FORMAT`,
-    #: which is the crate's `session::FORMAT`. A session **read** keeps the
-    #: number it was written with, so round-tripping an old file does not
-    #: silently promote it.
+    #: The format version this build writes — `clausters.document.SESSION_FORMAT`,
+    #: which is the crate's `session::FORMAT`. A session **read** in an older
+    #: format is migrated to this one first (`read`), since its numbers are
+    #: read differently: format 2 placed the multitrack in beats.
     format: int = SESSION_FORMAT
     #: The piece. Always present, possibly empty — which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
@@ -1268,7 +1294,16 @@ class Session:
 
     @classmethod
     def read(cls, written: dict) -> "Session":
-        """A session from the crate's JSON."""
+        """A session from the crate's JSON, migrated first when it was written in
+        an older format.
+
+        The migration is the crate's (`clausters._native.session_migrate`), so
+        an old file opens the same here, in the web client and in the GUI host.
+        """
+        if int(written.get("format", 1)) < SESSION_FORMAT:
+            from ._native import session_migrate
+
+            written = session_migrate(written)
         known = ("format", "multitrack", "views", "document", "sources",
                  "provenance")
         return cls(

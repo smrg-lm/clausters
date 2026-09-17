@@ -118,17 +118,12 @@ numbered **decisions to take** are each reviewed when the phase that needs it
 starts, never earlier. Every phase closes in both clients (decision 15), with
 tests, an example and the books.
 
-- ⬜ **Phase 4 — the multitrack in seconds.** Order: first, now that views
-  hold no tempo; it removes tempo from the last place it does not belong.
-  Carries out the tempo entry's decision 8 (a multitrack's base is seconds) and
-  reviews decision 11 (one unit). Touches
-  `crates/clausters-document/PLAN.md`'s multitrack and the `X` applications
-  built on it (`crates/clausters-apps/PLAN.md`).
-
-- ⬜ **Phase 6 — scores and render.** Order: after Phase 4 in reading, since
-  both touch what a document holds; a score becomes a timeline, which can
-  already play on its own clock or on a transport. Reviews the tempo
-  entry's decisions 5 and 12.
+- ⬜ **Phase 6 — scores and render.** Order: first of what is left, since it
+  touches what a document holds, as the multitrack in seconds did; a score
+  becomes a timeline, which can already play on its own clock or on a
+  transport. Reviews the tempo entry's decisions 5 and 12, and answers
+  "Which map a region in beats is read through"
+  (`crates/clausters-document/PLAN.md`, Future directions).
 
 - ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have
   settled. Carries out the rest of **"piece" names no structure, yet it names

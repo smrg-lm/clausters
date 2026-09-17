@@ -6,6 +6,7 @@ this client generates; what this suite checks is the surface a person actually
 types against, and the few rules that are the client's own to keep.
 """
 
+import pytest
 from clausters.multitrack import (Multitrack, Automation, Content, Fade,
                                    Lane, Marker, Meter, Region, Span, Tempo,
                                    Track)
@@ -70,13 +71,24 @@ def test_an_active_lane_that_is_not_there_answers_nothing():
 
 def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
     piece = Multitrack()
-    piece.set_tempo(Tempo(at=8.0, bpm=90.0))
-    piece.set_tempo(Tempo(at=0.0, bpm=120.0))
-    piece.set_tempo(Tempo(at=16.0, bpm=60.0, ramp=True))
+    piece.set_tempo(Tempo(at=8.0, tempo=1.5))
+    piece.set_tempo(Tempo(at=0.0, tempo=2.0))
+    piece.set_tempo(Tempo(at=16.0, tempo=1.0, ramp=True))
     assert [t.at for t in piece.tempo] == [0.0, 8.0, 16.0]
-    assert piece.tempo_at(7.9).bpm == 120.0
-    assert piece.tempo_at(8.0).bpm == 90.0
+    assert piece.tempo_at(7.9).tempo == 2.0
+    assert piece.tempo_at(8.0).tempo == 1.5
     assert piece.tempo_at(20.0).ramp
+
+
+def test_the_tempo_map_is_where_the_beats_fall_over_the_seconds():
+    """The multitrack is in seconds; the map it holds says where its beats and
+    bars fall, so a script can put a region on a bar -- and it moves nothing."""
+    piece = Multitrack()
+    assert piece.tempo_map().secs_at(3.0) == pytest.approx(3.0), \
+        "one beat a second where it states no tempo"
+    piece.set_tempo(Tempo(at=0.0, tempo=2.0))
+    piece.set_tempo(Tempo(at=4.0, tempo=1.0))
+    assert piece.tempo_map().secs_at(6.0) == pytest.approx(4.0)
 
 
 def test_a_piece_that_never_said_a_tempo_says_nothing():
@@ -88,12 +100,12 @@ def test_a_piece_that_never_said_a_tempo_says_nothing():
 
 def test_two_tempos_at_one_beat_is_a_state_the_map_cannot_hold():
     piece = Multitrack()
-    piece.set_tempo(Tempo(at=4.0, bpm=120.0))
-    piece.set_tempo(Tempo(at=4.0, bpm=90.0))
-    assert len(piece.tempo) == 1 and piece.tempo_at(4.0).bpm == 90.0
+    piece.set_tempo(Tempo(at=4.0, tempo=2.0))
+    piece.set_tempo(Tempo(at=4.0, tempo=1.5))
+    assert len(piece.tempo) == 1 and piece.tempo_at(4.0).tempo == 1.5
 
 
-def test_two_markers_may_share_a_beat_because_people_do_that():
+def test_two_markers_may_share_an_instant_because_people_do_that():
     piece = Multitrack()
     piece.add_marker(Marker(id=1, at=16.0, name="B"))
     piece.add_marker(Marker(id=2, at=16.0, name="chorus"))
@@ -101,7 +113,7 @@ def test_two_markers_may_share_a_beat_because_people_do_that():
     assert [m.name for m in piece.markers] == ["A", "B", "chorus"]
 
 
-def test_a_span_that_meets_the_next_one_covers_no_beat_twice():
+def test_a_span_that_meets_the_next_one_covers_no_instant_twice():
     first, then = Span(0.0, 8.0), Span(8.0, 16.0)
     assert first.length == 8.0 and first.end == then.start
 
@@ -130,7 +142,7 @@ def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
 
 def test_a_whole_piece_round_trips():
     piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, bpm=96.0))
+    piece.set_tempo(Tempo(at=0.0, tempo=1.6))
     piece.set_meter(Meter(at=0.0, beats=7, unit=8))
     piece.loop_span = Span(0.0, 12.0)
     track = Track(id=1, name="guitars", soloed=True, lanes=[Lane(id=2)])
@@ -182,7 +194,7 @@ def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
             "id": 3, "position": 0.0, "length": 4.0,
             "content": {"fill": "window", "window": window(1)},
             "warp": {"mode": "beats"}}]}]}],
-        "tempo": [{"at": 0.0, "bpm": 120.0, "swing": 0.62}],
+        "tempo": [{"at": 0.0, "tempo": 2.0, "swing": 0.62}],
         "groove": {"name": "mpc60"},
     }
     piece = Multitrack.read(written)
@@ -224,9 +236,9 @@ def test_a_session_round_trips_with_its_table():
 def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a piece, possibly
     # empty, so nothing downstream has to ask whether there is one.
-    session = Session.read({"format": 1})
+    session = Session.read({"format": 3})
     assert session.multitrack.tracks == []
-    assert session.write() == {"format": 1}
+    assert session.write() == {"format": 3}
 
 
 def test_a_save_knows_what_it_cannot_promise():
@@ -271,8 +283,27 @@ def test_a_frozen_source_keeps_what_the_table_said():
 
 
 def test_a_session_field_a_newer_writer_added_survives():
-    written = {"format": 1, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
+    written = {"format": 3, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
     assert Session.read(written).write() == written
+
+
+def test_a_format_2_session_opens_in_seconds():
+    """An older file is read through the crate's migration: its beats go to
+    seconds through the tempo map it saved, and it is written back current."""
+    old = {"format": 2, "multitrack": {
+        "tempo": [{"at": 0.0, "bpm": 120.0}],
+        "markers": [{"id": 1, "at": 8.0}],
+        "tracks": [{"id": 1, "lanes": [{"id": 2, "regions": [{
+            "id": 3, "position": 2.0, "length": 4.0,
+            "content": {"fill": "window", "window": {
+                "source": {"source": 1, "lifetime": "session"},
+                "start": 0.0, "duration": 2.0}}}]}]}]}}
+    session = Session.read(old)
+    assert session.format == 3
+    assert session.multitrack.tempo[0].tempo == 2.0
+    region = session.multitrack.tracks[0].lanes[0].regions[0]
+    assert (region.position, region.length) == (1.0, 2.0)
+    assert session.multitrack.markers[0].at == 4.0
 
 
 # ---- the presentation: what a window shows of a piece ----

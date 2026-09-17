@@ -16,6 +16,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { loadCore } from "../src/base/core.ts";
+
 import { Multitrack, Content, Fade, FrozenSource, Lane, LaneView, Region,
          Session, Source, Span, Tempo, Track, TrackView,
          View } from "../src/multitrack.ts";
@@ -37,7 +39,7 @@ test("the two sides agree about what the piece is", async () => {
     const piece = Multitrack.read(await vector());
     assert.equal(piece.tracks.length, 3);
     assert.equal(piece.end, 48);
-    assert.equal(piece.tempoAt(40)?.bpm, 120);
+    assert.equal(piece.tempoAt(40)?.tempo, 2);
     assert.equal(piece.tempoAt(40)?.ramp, true);
     assert.equal(piece.meterAt(40)?.beats, 7);
     assert.equal(piece.markers.length, 2);
@@ -142,12 +144,23 @@ test("a track spans every lane and plays one", () => {
     assert.equal(track.activeLane, undefined);
 });
 
+test("the tempo map is where the beats fall over the seconds", async () => {
+    // The multitrack is in seconds; the map it holds says where its beats and
+    // bars fall, so a script can put a region on a bar -- and it moves nothing.
+    await loadCore();
+    const piece = new Multitrack();
+    assert.ok(Math.abs(piece.tempoMap().secsAt(3) - 3) < 1e-9, "one beat a second where it states no tempo");
+    piece.setTempo(new Tempo({ at: 0, tempo: 2 }));
+    piece.setTempo(new Tempo({ at: 4, tempo: 1 }));
+    assert.ok(Math.abs(piece.tempoMap().secsAt(6) - 4) < 1e-9);
+});
+
 test("two tempos at one beat is a state the map cannot hold", () => {
     const piece = new Multitrack();
-    piece.setTempo(new Tempo({ at: 4, bpm: 120 }));
-    piece.setTempo(new Tempo({ at: 4, bpm: 90 }));
+    piece.setTempo(new Tempo({ at: 4, tempo: 2 }));
+    piece.setTempo(new Tempo({ at: 4, tempo: 1.5 }));
     assert.equal(piece.tempo.length, 1);
-    assert.equal(piece.tempoAt(4)?.bpm, 90);
+    assert.equal(piece.tempoAt(4)?.tempo, 1.5);
     // ...and a piece that never said a tempo says nothing: no 120 invented.
     assert.equal(new Multitrack().tempoAt(0), undefined);
 });
@@ -181,7 +194,7 @@ test("a fill this build does not know is carried whole", () => {
     assert.deepEqual(Content.read(written).write(), written);
 });
 
-test("a half-open span meets the next one without covering a beat twice", () => {
+test("a half-open span meets the next one without covering an instant twice", () => {
     const first = new Span(0, 8);
     assert.equal(first.length, 8);
     assert.equal(first.end, new Span(8, 16).start);
@@ -237,9 +250,9 @@ test("the piece inside the session is the same piece", async () => {
 });
 
 test("an absent multitrack reads as an empty one rather than as nothing", () => {
-    const session = Session.read({ format: 1 });
+    const session = Session.read({ format: 3 });
     assert.deepEqual(session.multitrack.tracks, []);
-    assert.deepEqual(session.write(), { format: 1 });
+    assert.deepEqual(session.write(), { format: 3 });
 });
 
 test("a frozen source keeps what the table said", () => {
@@ -252,8 +265,28 @@ test("a frozen source keeps what the table said", () => {
 });
 
 test("a session field a newer writer added survives", () => {
-    const written = { format: 1, mixer: { buses: [{ id: 1, name: "reverb" }] } };
+    const written = { format: 3, mixer: { buses: [{ id: 1, name: "reverb" }] } };
     assert.deepEqual(Session.read(written).write(), written);
+});
+
+test("a format 2 session opens in seconds", async () => {
+    // An older file is read through the crate's migration: its beats go to
+    // seconds through the tempo map it saved, and it is written back current.
+    await loadCore();
+    const old = { format: 2, multitrack: {
+        tempo: [{ at: 0.0, bpm: 120.0 }],
+        markers: [{ id: 1, at: 8.0 }],
+        tracks: [{ id: 1, lanes: [{ id: 2, regions: [{
+            id: 3, position: 2.0, length: 4.0,
+            content: { fill: "window", window: {
+                source: { source: 1, lifetime: "session" },
+                start: 0.0, duration: 2.0 } } }] }] }] } };
+    const session = Session.read(old);
+    assert.equal(session.format, 3);
+    assert.equal(session.multitrack.tempo[0]!.tempo, 2.0);
+    const region = session.multitrack.tracks[0]!.lanes[0]!.regions[0]!;
+    assert.deepEqual([region.position, region.length], [1.0, 2.0]);
+    assert.equal(session.multitrack.markers[0]!.at, 4.0);
 });
 
 // ---- the presentation: what a window shows of a piece ----

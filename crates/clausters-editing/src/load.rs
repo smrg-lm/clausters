@@ -433,11 +433,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
 /// there, and one that is not is the server's refusal of its read.
 pub fn plan_json(request: &str) -> String {
     let request: Value = serde_json::from_str(request).unwrap_or(Value::Null);
-    let session = match request
-        .get("session")
-        .cloned()
-        .map(serde_json::from_value::<Session>)
-    {
+    let session = match request.get("session").cloned().map(Session::read) {
         Some(Ok(session)) => session,
         Some(Err(e)) => return json!({ "error": format!("not a session: {e}") }).to_string(),
         None => return json!({ "error": "the request names no session" }).to_string(),
@@ -535,7 +531,7 @@ mod tests {
 
     fn session(sources: &[u64], table: Value) -> Session {
         serde_json::from_value(json!({
-            "format": 2, "multitrack": piece(sources), "sources": table,
+            "format": 3, "multitrack": piece(sources), "sources": table,
         }))
         .expect("a session")
     }

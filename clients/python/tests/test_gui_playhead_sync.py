@@ -623,7 +623,9 @@ def test_the_map_is_asked_of_what_plays_and_never_kept():
     assert tp.beats_to_samples(1.0) == pytest.approx(SR / 4.0)
 
 
-def test_with_nothing_to_ask_there_is_no_tempo():
+def test_with_no_map_to_ask_positions_are_seconds():
+    """What holds no tempo map -- a multitrack, placed in physical time --
+    plays in seconds, which cross to samples as they are."""
     tp = PlayheadSync(FakeHost(), 7, sample_rate=SR)
-    with pytest.raises(ValueError, match="structure"):
-        tp.beats_to_samples(1.0)
+    assert tp.beats_to_samples(1.0) == pytest.approx(SR)
+    assert tp.samples_to_beats(SR / 2.0) == pytest.approx(0.5)

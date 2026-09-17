@@ -47,25 +47,29 @@ The vocabulary is the field's own:
   precisely so that no two tracks can disagree about them.
 
 ```python
-from clausters.multitrack import Arrangement, Content, Lane, Region, Tempo, Track
+from clausters.multitrack import Content, Lane, Multitrack, Region, Tempo, Track
 
-piece = Arrangement()
-piece.set_tempo(Tempo(at=0.0, bpm=96.0))
+piece = Multitrack()
+piece.set_tempo(Tempo(at=0.0, tempo=1.6))       # beats per second: 96 a minute
+bar = piece.tempo_map().secs_at(4.0)            # where the second bar begins
 
 drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
-drums.active_lane.place(Region(id=3, position=0.0, length=4.0,
+drums.active_lane.place(Region(id=3, position=bar, length=2.5,
                                content=Content.onto(take)))
 piece.tracks.append(drums)
 
 written = piece.write()          # the crate's JSON
-piece = Arrangement.read(written)
+piece = Multitrack.read(written)
 ```
 
 A **region** is the model's word and a **clip** is the picture's: a clip, a lane
 row, a waveform are what the host draws; a region is what an edit names. And
-everything placed is placed in **beats**, while what fills a region is measured
-in its own source's units — the two are not the same axis, and the conversion
-between them needs the tempo map, which is why the map is part of the piece.
+everything placed is placed in **seconds** — a region, its fades, a curve's
+points, a marker, the loop — while what fills a region is measured in its own
+source's units, so the two are not the same axis. The tempo and meter maps are
+structures the piece holds rather than its axis: a ruler draws beats and bars
+from them and a snap reads them, and an edit of the tempo moves no region. A
+session saved in beats, before this, is converted when it is read.
 
 ### Editing a piece: the verbs a multitrack admits
 
@@ -99,7 +103,7 @@ span), `settempomap` and `setmetermap`.
 Three things about them are worth knowing before you write against them.
 
 **Moving a region to another track is one edit.** Where a region is means track,
-lane *and* beat, and an intent is absolute — so `placeregion` states all three
+lane *and* second, and an intent is absolute — so `placeregion` states all three
 together. One entry in a history, one undo, and no moment in between where the
 region is on no lane at all.
 
@@ -109,11 +113,12 @@ crossfade to lose track of, and nothing to keep in step with the two fades.
 
 **A split and a join ask you for the content.** They are the two edits that
 change how many regions there are, and the two the crate will not work out on
-its own: the cut is on the musical axis and a window into a source is on the
-content's, and this document converts between the two *never* — that is the
-whole reason the tempo map is the piece's. So `splitregion` takes
+its own: the cut is on the multitrack's axis and a window into a source is on
+the content's — a recording's seconds read at a playrate, a node's own beats —
+and this document converts between the two *never*. So `splitregion` takes
 `left_content` and `right_content` and `joinregions` takes `content`, from you,
-who has the map. Omit them and both halves go on reading what the region read.
+who knows how the content is read. Omit them and both halves go on reading what
+the region read.
 Both also invert as `setlane`, the lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 

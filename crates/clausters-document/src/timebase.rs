@@ -1,13 +1,18 @@
 //! The three axes a session measures time on, as **types that do not mix**.
 //!
-//! A session carries three of them at once and they are not interchangeable:
+//! A session carries several of them at once and they are not
+//! interchangeable:
 //!
-//! - [`Beat`] — the **musical** axis. Where a region sits in the piece, where a
-//!   tempo change happens, what a bar line is. Moved by a tempo map, not by a
-//!   sample rate.
+//! - [`Second`] — **physical** time, the multitrack's axis. Where a region
+//!   sits, how long a fade lasts, where an automation point or a marker is.
+//!   It is what the server and the clients measure in, and no tempo moves it.
+//! - [`Beat`] — a **logical** axis, owned by a structure organized by tempo
+//!   and meter: where a tempo or meter change is stated, where a note sits in
+//!   a node's own time. Moved to seconds by that structure's tempo map, never
+//!   by a sample rate.
 //! - [`TimelineFrame`] — the **timeline's own** sample frames: what the
 //!   transport counts, what a view scrolls over, what a render writes. Related
-//!   to [`Beat`] only through the tempo map, and to nothing else.
+//!   to [`Second`] by the sample rate alone.
 //! - [`ContentFrame`] — a frame **inside one source**. Where a region's window
 //!   opens into the samples it plays. It is a coordinate in somebody else's
 //!   recording, and the only reason it looks like a timeline frame is that both
@@ -123,7 +128,18 @@ macro_rules! axis {
 }
 
 axis! {
-    /// A position or a length on the **musical** axis.
+    /// A position or a length in **physical** time: the axis a multitrack
+    /// places everything on.
+    ///
+    /// The multitrack and a structure in beats are two paradigms, and this is
+    /// the first one's. A tempo change moves nothing measured here; a
+    /// structure the document holds in beats (a tempo map, a node of notes) is
+    /// placed at one of these and keeps its own beats inside.
+    Second(f64)
+}
+
+axis! {
+    /// A position or a length on a **logical** (musical) axis.
     ///
     /// One beat, not one bar and not one tick: the meter says how beats make
     /// bars, and a resolution finer than a beat is a fraction of one. What

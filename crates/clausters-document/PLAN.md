@@ -1696,6 +1696,16 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 - ⬜ **Staleness per node rather than per document** *(named while closing O4)*. Today one counter guards everything: an edit is stale if *anything* moved since the picture it was made against, even something in another lane it could not collide with. That is deliberately conservative and it is right for one owner, where the counter moves only for edits the owner itself just applied and a refusal costs one redone gesture. It becomes wrong the moment two hands edit at once, where unrelated work would refuse each other constantly. The refinement is a per-node revision, so an edit is stale only against the node it names - cheap to carry, and it needs the log (O5) to be worth anything, since without an inverse a refused edit is a lost one either way. Opening it early would buy precision nothing can currently observe, which is why it is here and not in a milestone. It shares its seam with the entry below.
 - ⬜ **More than one owner of the same document.** Everything here assumes one authoritative owner per resource, which is what makes a version counter enough and what keeps operational transformation and CRDTs out of the design - an order of magnitude of machinery for a problem the system does not have. Two people editing one composition at once would be that problem, and it would be a track of its own rather than a milestone: the point of recording it is that the current design is a deliberate floor, not an oversight, and the version is the seam it would grow from.
 
+- ⬜ **Which map a region in beats is read through** *(named 2026-09-17, placing
+  the multitrack in seconds -- `clients/python/PLAN.md`, the tempo entry,
+  decision 8)*. A region is placed in seconds and keeps its contents in their
+  own units, so a window onto a node of notes or a composite region holds beats
+  inside a span of seconds, the way a child timeline is placed in its parent.
+  What converts those beats is not decided: a map of the region's own (as a
+  `Timeline` holds), or one of the maps the document holds, named by the
+  region. `MultitrackPlayback` plays no such region yet, so nothing reads the
+  answer; the score's road in (the scores phase) is where it is needed.
+
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.

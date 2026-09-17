@@ -456,7 +456,9 @@ export const FIRST_VERSION = 1;
  * **wrongly** — never for an added field, which an older reader ignores and a
  * newer one defaults. **2** added a source whose samples are spans of other
  * sources, which is a tagged variant an older reader must fail on rather than
- * read as something else.
+ * read as something else. **3** measures the multitrack in seconds where 2
+ * measured it in beats, and states a tempo in beats per second; an older file is
+ * migrated on reading (`Session.read`).
  *
  * A literal rather than a call into the core, deliberately: a `Session` is plain
  * data and `multitrack.ts` opens the core for nothing else, so reading the
@@ -465,7 +467,7 @@ export const FIRST_VERSION = 1;
  * the crate (`sessionFormat`) and compares — which is the check that did not
  * exist when this said 1 and the crate had moved to 2.
  */
-export const SESSION_FORMAT = 2;
+export const SESSION_FORMAT = 3;
 
 /**
  * What makes two of a **domain's** edits *the same thing done the same way* —
@@ -519,7 +521,7 @@ export interface Intake {
  *
  * `request` carries what that domain reads: `values` always, `state` for the two
  * that need the structure (the piece, the timeline), `unitsPerBeat` and
- * `editable` for a roll, and `rate`, `defaultBpm` and `sources` for a piece.
+ * `editable` for a roll, and `rate` and `sources` for a multitrack.
  *
  * No payloads and no refusal is "nothing to say" — a tag this domain does not
  * answer for — which is the ordinary answer rather than a failure.

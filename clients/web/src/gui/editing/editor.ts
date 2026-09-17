@@ -171,7 +171,8 @@ export class Editor<S = unknown> implements Adopting {
      */
     selection: Selection | Record<string, never> = {};
     /**
-     * **Where the reader is**, in this editor's own units (beats for a piece) —
+     * **Where the reader is**, in this editor's own units (beats for a timeline,
+     * seconds for a multitrack, a take or a curve) —
      * the position cursor a click placed, and `null` until one
      * has been. It is where a playback starts and where a paste lands, which is
      * why it is worth keeping: the playhead is where the *music* is and moves on
@@ -821,15 +822,15 @@ export class Editor<S = unknown> implements Adopting {
     adoptSelection(_editor: Editor): void {}
 
     /**
-     * The position cursor was placed at `beat`, here or in a window composed
-     * inside this one.
+     * The position cursor was placed at `at`, in the structure's own units, here
+     * or in a window composed inside this one.
      *
      * Nothing by default, and that is the honest answer for a structure opened
      * on its own: the mark is kept ({@link Editor.cursor}) and what it means for
      * the sound needs a transport, which only something that can be *played*
      * has. An editor that has one cues it here.
      */
-    locate(_beat: number): void {}
+    locate(_at: number): void {}
 
     /**
      * Apply one payload to the structure and record how to put it back.

@@ -1861,7 +1861,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   - **Decided: a `Timeline` does not drive physical time.** The transport and a
     timeline are two different things.
   - **How the multitrack avoids the problem today.** It has one playhead, the
-    server's. `PiecePlayback` (`clausters-editing`) converts regions from beats
+    server's. `MultitrackPlayback` (`clausters-editing`) converts regions from beats
     to frames once, through the document's map, and makes each a buffer reader
     following `TransportPos` under the governed group; an edit re-plans and
     diffs; play, pause, stop and locate are transport commands in samples, and
@@ -2045,6 +2045,27 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   below; several transports on one server stays a future direction in the root
   `PLAN.md`.
 
+  **Phase 4 landed 2026-09-17, in both clients.** The multitrack is placed in
+  seconds (decision 8) and every tempo is in beats per second (decision 11).
+  `clausters-document` grew the `Second` axis and moved regions, fades, curve
+  points, markers and the loop and punch spans onto it; the tempo and meter maps
+  stay at beats as structures the document holds. Nothing that plans, draws or
+  reads a multitrack takes a tempo any more -- the instance plan, the props, the
+  intake, `MultitrackPlayback` (`locate`/`cue` in seconds,
+  `secs_to_samples`), the multitrack editor's cursor and transport verbs, and the
+  GUI host -- and `default_bpm` is gone from every door (core ABI 67).
+  `DEFAULT_TEMPO` (one beat a second) is what a ruler reads where a multitrack
+  states none. Session format **3**; `session::migrate` reads a format-2 file
+  (bound as `session_migrate`/`sessionMigrate`, called by both clients'
+  `Session.read`). `Multitrack.tempo_map()` / `tempoMap()` replaces the editing
+  layer's `tempo_map`/`defaultTempo` and the bridge's copy of the map, and
+  `PlayheadSync` reads positions as seconds when what plays holds no map. Found
+  on the way and removed with it: the applications crate's samples editor held a
+  scalar tempo that no client ever set. Open, and filed in
+  `crates/clausters-document/PLAN.md` ("Which map a region in beats is read
+  through"): the map that converts the beats inside a region whose contents are
+  in beats.
+
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
   a position it is recorded as a position, not as a decision -- several were
@@ -2131,6 +2152,35 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      multitrack and the timeline are two paradigms that must not be confused,
      tempo in a multitrack only draws rulers, and a timeline editor is a
      separate thing. Open within it: how documents migrate.
+     **Decided 2026-09-17 (Phase 4), and what it means** (the user): the
+     original error was measuring *all* time on a base of beats; the fix is
+     that everything is measured on a base of seconds and samples, the way the
+     clients and the server already work. That does **not** mean a multitrack
+     document cannot hold structures organized by meter and tempo: a tempo
+     map, a meter map, a region whose contents are notes in beats, a timeline
+     -- each is a structure the document holds, with its own beats and the map
+     that takes them to seconds, placed in the container's time the way a child
+     timeline is placed in its parent's. What stops is beats being the
+     document's axis. So:
+     - A region's position, length and fades, every automation point, the
+       markers, the loop and punch spans, and a view's visible span and
+       selection are in **seconds** (`timebase::Seconds`). `Beat` no longer
+       measures anything a multitrack places.
+     - The tempo and meter maps stay in the document, saved with the session,
+       and are a musical structure it holds: a ruler draws them and a snap to
+       bars reads them, and an edit of the tempo moves no region. Their entries
+       stay at beats, which is how a map is stated. A view's `quant` stays a
+       musical grid (the ruler's configuration); the snap an edit applies
+       (`Rules::quant`) is a length on the axis of what is edited, so for a
+       multitrack a grid already resolved to seconds by whoever holds the map.
+     - A region whose contents are in beats (a window onto notes, a composite)
+       is placed in seconds and keeps its beats inside; which map converts
+       them -- its own, or one the document holds -- is open, and does not
+       block this phase since `MultitrackPlayback` plays no such region yet.
+     - Session format **3**. A format-2 session is migrated once, in Rust
+       (`session::migrate`, bound in both clients), converting every beat
+       position through the map it saved, or through the reader's default of
+       one beat a second when it saved none.
   9. **The widgets' `tempo=`/`tempo_map=` props.** Possibilities: keep the
      scalar as a constant map's shorthand; remove. Position stated: remove the
      current implementation; a ruler may later represent a timeline. The
@@ -2169,7 +2219,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   *Across*
 
   11. **One unit.** Beats per second (`TempoClock`, `TempoMap`) or bpm (the
-      document), and where the other is converted.
+      document), and where the other is converted. **Decided 2026-09-17
+      (Phase 4): beats per second** in every API and in the document's own
+      tempo entries (`Tempo::tempo`, migrated from `bpm` with format 3); bpm is
+      presentation only -- a ruler's prop, a text field. The default a document
+      that states no tempo is drawn at is `DEFAULT_TEMPO`, one beat a second.
   12. **`render(tempo=)` and `Session.nrt(tempo=)`.** What a session's tempo
       means once a timeline holds its own map.
   13. **`Automation`.** Its place in the frame (a curve in seconds). The fix of

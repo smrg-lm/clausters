@@ -12,7 +12,7 @@
 //! moved. When it changes by accident, this fails first.
 
 use clausters_document::multitrack::*;
-use clausters_document::timebase::Beat;
+use clausters_document::timebase::{Beat, Second};
 
 const VECTOR: &str = include_str!("multitrack_vector.json");
 
@@ -38,13 +38,13 @@ fn the_two_sides_agree_about_what_the_piece_is() {
     // only that something moved.
     let piece = vector();
     assert_eq!(piece.tracks.len(), 3);
-    assert_eq!(piece.end(), Beat(48.0));
-    assert_eq!(piece.tempo_at(Beat(40.0)).unwrap().bpm, 120.0);
+    assert_eq!(piece.end(), Second(48.0));
+    assert_eq!(piece.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
     assert!(piece.tempo_at(Beat(40.0)).unwrap().ramp);
     assert_eq!(piece.meter_at(Beat(40.0)).unwrap().beats, 7);
     assert_eq!(piece.markers.len(), 2);
-    assert_eq!(piece.loop_span.unwrap().length(), Beat(32.0));
-    assert_eq!(piece.punch.unwrap().start, Beat(8.0));
+    assert_eq!(piece.loop_span.unwrap().length(), Second(32.0));
+    assert_eq!(piece.punch.unwrap().start, Second(8.0));
 }
 
 #[test]
@@ -81,7 +81,10 @@ fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
     let piece = vector();
     let lane = &piece.track(NodeId(30)).unwrap().lanes[0];
     assert!(lane.regions[0].overlaps(&lane.regions[1]));
-    assert_eq!(lane.regions[0].fade_out.as_ref().unwrap().length, Beat(4.0));
+    assert_eq!(
+        lane.regions[0].fade_out.as_ref().unwrap().length,
+        Second(4.0)
+    );
     let second = &lane.regions[1];
     assert_eq!(second.layer, 1, "which one is on top");
     assert!(second.muted);
@@ -222,7 +225,7 @@ fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
 
     let arranger = &session.views[0];
     assert_eq!(arranger.name.as_deref(), Some("arranger"));
-    assert_eq!(arranger.visible.unwrap().length(), Beat(48.0));
+    assert_eq!(arranger.visible.unwrap().length(), Second(48.0));
     assert_eq!(arranger.quant, Beat(4.0));
     assert!(arranger.autofit, "the default, and left out of the file");
     assert_eq!(arranger.selected, vec![NodeId(20), NodeId(32)]);
@@ -237,11 +240,11 @@ fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
     );
 
     let editor = &session.views[1];
-    assert_eq!(editor.visible.unwrap().start, Beat(8.0));
+    assert_eq!(editor.visible.unwrap().start, Second(8.0));
     assert_eq!(editor.quant, Beat(0.25), "the same piece, a finer grid");
     assert!(!editor.autofit, "an editor's window is the reader's");
     assert_eq!(editor.scroll, 140.0);
-    assert_eq!(editor.selection.unwrap().length(), Beat(4.0));
+    assert_eq!(editor.selection.unwrap().length(), Second(4.0));
     assert_eq!(editor.detail, Some(NodeId(42)));
 }
 

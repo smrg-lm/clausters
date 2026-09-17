@@ -45,7 +45,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::timebase::Beat;
+use crate::timebase::{Beat, Second};
 use crate::{Node, NodeId, Opaque, SegmentRef};
 
 pub mod edit;
@@ -70,8 +70,8 @@ pub type Extra = Map<String, Value>;
 /// reopen, which is a different act from declining to interpret it.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Fade {
-    /// How long the fade lasts, on the timeline's musical axis.
-    pub length: Beat,
+    /// How long the fade lasts, in seconds.
+    pub length: Second,
     /// The curve, in the client's terms.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub shape: Opaque,
@@ -79,7 +79,7 @@ pub struct Fade {
 
 impl Fade {
     /// A fade of this length, with nothing said about its curve.
-    pub fn of(length: Beat) -> Self {
+    pub fn of(length: Second) -> Self {
         Self {
             length,
             shape: Opaque::none(),
@@ -197,9 +197,10 @@ impl Content {
 /// One placed thing on a lane: a span of the timeline, and what fills it.
 ///
 /// The span is the region's own — position, length, fades, layer — and it is
-/// measured on the **musical** axis, because where a thing sits in a piece is a
-/// musical decision. What fills it is measured in its own source's units, which
-/// is why the two halves cannot be added and why they are two types.
+/// measured in **seconds**, the multitrack's axis: where a thing sits is
+/// physical time, and no tempo change moves it. What fills it is measured in
+/// its own source's units — seconds of a recording, beats of a node of notes —
+/// which is why the two halves cannot be added and why they are two types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Region {
     /// Its identity, and not its source's.
@@ -208,11 +209,12 @@ pub struct Region {
     /// refer to the region, never a second identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Where it starts on the timeline.
-    pub position: Beat,
-    /// How long it occupies. Not the content's length: a region may show part
-    /// of what it holds, and trimming moves this without touching the source.
-    pub length: Beat,
+    /// Where it starts on the timeline, in seconds.
+    pub position: Second,
+    /// How long it occupies, in seconds. Not the content's length: a region may
+    /// show part of what it holds, and trimming moves this without touching the
+    /// source.
+    pub length: Second,
     /// Which of the overlapping regions on this lane draws and plays on top.
     ///
     /// Overlap is legal and ordinary — a crossfade *is* an overlap — so the
@@ -239,8 +241,8 @@ pub struct Region {
     /// on itself alone.
     ///
     /// One type in two places rather than two types, because what a curve *is*
-    /// does not change with its scope: a target in the caller's terms, points on
-    /// the musical axis, and whether it is shown. A second type would be a
+    /// does not change with its scope: a target in the caller's terms, points in
+    /// seconds, and whether it is shown. A second type would be a
     /// second vocabulary, a second domain and a second editor for the same
     /// picture.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -258,7 +260,7 @@ fn is_zero_u32(n: &u32) -> bool {
 
 impl Region {
     /// A region placed at `position`, `length` long, filled with `content`.
-    pub fn new(id: NodeId, position: Beat, length: Beat, content: Content) -> Self {
+    pub fn new(id: NodeId, position: Second, length: Second, content: Content) -> Self {
         Self {
             id,
             name: None,
@@ -281,7 +283,7 @@ impl Region {
     }
 
     /// Where it ends: its position plus its length, on the same axis.
-    pub fn end(&self) -> Beat {
+    pub fn end(&self) -> Second {
         self.position + self.length
     }
 
@@ -349,11 +351,11 @@ impl Lane {
     }
 
     /// Where the last region ends, or the origin when there are none.
-    pub fn end(&self) -> Beat {
+    pub fn end(&self) -> Second {
         self.regions
             .iter()
             .map(Region::end)
-            .fold(Beat::ZERO, Beat::max)
+            .fold(Second::ZERO, Second::max)
     }
 }
 
@@ -377,7 +379,7 @@ pub struct Automation {
     /// belong to whoever wrote the def.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub target: Opaque,
-    /// The curve. `at` is on the musical axis, like every other placement here.
+    /// The curve. `at` is in seconds, like every other placement here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<crate::Point>,
     /// Whether the lane is shown. **The view's**, and here rather than in the
@@ -526,8 +528,11 @@ impl Track {
     /// Where the track's last region ends, across **every** lane — what it
     /// spans, not what it plays, since an alternate take is still part of the
     /// piece.
-    pub fn end(&self) -> Beat {
-        self.lanes.iter().map(Lane::end).fold(Beat::ZERO, Beat::max)
+    pub fn end(&self) -> Second {
+        self.lanes
+            .iter()
+            .map(Lane::end)
+            .fold(Second::ZERO, Second::max)
     }
 }
 
@@ -535,16 +540,19 @@ impl Track {
 
 /// One entry of the tempo map: from here on, this tempo.
 ///
-/// **The map is the piece's, not a track's and not a clock's.** Everything
-/// placed here is placed on the musical axis, so the map is what relates the
-/// whole arrangement to seconds — and it has been homeless until now, which is
-/// why every structure that needed it reached for a scalar.
+/// **The map is a musical structure the document holds**, not the axis it
+/// places things on. Regions, fades, curves and markers are in seconds, and an
+/// edit of the tempo moves none of them; what reads the map is a ruler drawing
+/// beats and bars over that time, and a snap to them. So an entry is stated
+/// where a map states it — at a beat — and in the unit every tempo in this
+/// project is in: beats per **second**.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tempo {
     /// Where the change happens.
     pub at: Beat,
-    /// Beats per minute from here on.
-    pub bpm: f64,
+    /// Beats per second from here on. Beats per minute is presentation — a
+    /// ruler's label, a text field — and never what is stored.
+    pub tempo: f64,
     /// Whether the tempo **ramps** from here to the next entry rather than
     /// stepping. A ritardando is a ramp; a section change is a step.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -555,11 +563,11 @@ pub struct Tempo {
 }
 
 impl Tempo {
-    /// A step to `bpm` at `at`.
-    pub fn at(at: Beat, bpm: f64) -> Self {
+    /// A step to `tempo` beats a second at `at`.
+    pub fn at(at: Beat, tempo: f64) -> Self {
         Self {
             at,
-            bpm,
+            tempo,
             ramp: false,
             extra: Extra::new(),
         }
@@ -610,8 +618,8 @@ pub struct Marker {
     /// What it is called.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Where it sits.
-    pub at: Beat,
+    /// Where it sits, in seconds.
+    pub at: Second,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
     pub extra: Extra,
@@ -619,7 +627,7 @@ pub struct Marker {
 
 impl Marker {
     /// A marker at `at`.
-    pub fn new(id: NodeId, at: Beat) -> Self {
+    pub fn new(id: NodeId, at: Second) -> Self {
         Self {
             id,
             name: None,
@@ -641,20 +649,20 @@ impl Marker {
 /// meet do not overlap, so a piece cut into sections has no ambiguous frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Span {
-    /// Where it starts.
-    pub start: Beat,
+    /// Where it starts, in seconds.
+    pub start: Second,
     /// Where it ends, exclusive.
-    pub end: Beat,
+    pub end: Second,
 }
 
 impl Span {
     /// The span from `start` to `end`.
-    pub fn new(start: Beat, end: Beat) -> Self {
+    pub fn new(start: Second, end: Second) -> Self {
         Self { start, end }
     }
 
     /// How long it is.
-    pub fn length(&self) -> Beat {
+    pub fn length(&self) -> Second {
         (self.end - self.start).clamp_positive()
     }
 
@@ -821,20 +829,18 @@ impl Multitrack {
 
     /// Where the last region ends, across every track and every lane — how long
     /// the piece is.
-    pub fn end(&self) -> Beat {
+    pub fn end(&self) -> Second {
         self.tracks
             .iter()
             .map(Track::end)
-            .fold(Beat::ZERO, Beat::max)
+            .fold(Second::ZERO, Second::max)
     }
 
     /// The tempo in force at `at`, or `None` when the map says nothing.
     ///
     /// **The entry, not a converted position.** Turning a beat into seconds
-    /// needs the whole map walked and a ramp integrated, and that is the
-    /// client's or the host's to do with the map this hands them — the same
-    /// division of labour as [`crate::SecsToBeats`], and for the same reason:
-    /// this crate transports the map without deciding what a ramp's shape is.
+    /// needs the whole map walked and a ramp integrated, which is
+    /// [`nodes::tempo_map`]'s, in the shared core's `TempoMap`.
     pub fn tempo_at(&self, at: Beat) -> Option<&Tempo> {
         self.tempo.iter().rev().find(|t| t.at <= at)
     }
@@ -872,7 +878,7 @@ impl Multitrack {
     }
 
     /// Adds a marker, keeping them in position order. Several markers may share
-    /// a beat: unlike a tempo, two names for one moment is a thing people do.
+    /// an instant: unlike a tempo, two names for one moment is a thing people do.
     pub fn add_marker(&mut self, marker: Marker) {
         let at = self.markers.partition_point(|m| m.at <= marker.at);
         self.markers.insert(at, marker);
@@ -898,15 +904,20 @@ mod tests {
     }
 
     fn region(id: u64, at: f64, len: f64) -> Region {
-        Region::new(NodeId(id), Beat(at), Beat(len), Content::window(window(1)))
+        Region::new(
+            NodeId(id),
+            Second(at),
+            Second(len),
+            Content::window(window(1)),
+        )
     }
 
     #[test]
     fn a_region_ends_where_its_span_ends_and_not_where_its_content_does() {
-        // The window is two seconds of the source; the region shows one beat of
-        // it. Trimming moves the region and never the source.
+        // The window is two seconds of the source; the region shows one second
+        // of it. Trimming moves the region and never the source.
         let r = region(1, 4.0, 1.0);
-        assert_eq!(r.end(), Beat(5.0));
+        assert_eq!(r.end(), Second(5.0));
         assert_eq!(r.content.as_window().unwrap().duration, 2.0);
     }
 
@@ -939,7 +950,7 @@ mod tests {
             .collect();
         assert!(sources.iter().all(|s| *s == SourceId(1)));
         assert_eq!(lane.regions.len(), 6);
-        assert_eq!(lane.region(NodeId(103)).unwrap().position, Beat(12.0));
+        assert_eq!(lane.region(NodeId(103)).unwrap().position, Second(12.0));
     }
 
     #[test]
@@ -949,8 +960,8 @@ mod tests {
         lane.place(region(1, 0.0, 2.0));
         lane.place(region(2, 4.0, 2.0));
         let at: Vec<_> = lane.regions.iter().map(|r| r.position).collect();
-        assert_eq!(at, vec![Beat(0.0), Beat(4.0), Beat(8.0)]);
-        assert_eq!(lane.end(), Beat(10.0));
+        assert_eq!(at, vec![Second(0.0), Second(4.0), Second(8.0)]);
+        assert_eq!(lane.end(), Second(10.0));
     }
 
     #[test]
@@ -963,9 +974,9 @@ mod tests {
             .place(region(100, 0.0, 4.0));
         track.lanes[1].place(region(200, 0.0, 16.0));
         assert_eq!(track.active_lane().unwrap().id, NodeId(10));
-        assert_eq!(track.active_lane().unwrap().end(), Beat(4.0));
+        assert_eq!(track.active_lane().unwrap().end(), Second(4.0));
         // An alternate take is still part of the piece.
-        assert_eq!(track.end(), Beat(16.0));
+        assert_eq!(track.end(), Second(16.0));
     }
 
     #[test]
@@ -1000,8 +1011,8 @@ mod tests {
         );
         let r = Region::new(
             NodeId(1),
-            Beat(0.0),
-            Beat(8.0),
+            Second(0.0),
+            Second(8.0),
             Content::Composite {
                 node: Box::new(node.clone()),
             },
@@ -1041,14 +1052,14 @@ mod tests {
     #[test]
     fn the_map_answers_the_entry_in_force_and_nothing_before_the_first() {
         let mut a = Multitrack::new();
-        a.set_tempo(Tempo::at(Beat(8.0), 90.0));
-        a.set_tempo(Tempo::at(Beat(0.0), 120.0));
-        a.set_tempo(Tempo::at(Beat(16.0), 60.0).ramping());
+        a.set_tempo(Tempo::at(Beat(8.0), 1.5));
+        a.set_tempo(Tempo::at(Beat(0.0), 2.0));
+        a.set_tempo(Tempo::at(Beat(16.0), 1.0).ramping());
         let at: Vec<_> = a.tempo.iter().map(|t| t.at).collect();
         assert_eq!(at, vec![Beat(0.0), Beat(8.0), Beat(16.0)]);
-        assert_eq!(a.tempo_at(Beat(0.0)).unwrap().bpm, 120.0);
-        assert_eq!(a.tempo_at(Beat(7.9)).unwrap().bpm, 120.0);
-        assert_eq!(a.tempo_at(Beat(8.0)).unwrap().bpm, 90.0);
+        assert_eq!(a.tempo_at(Beat(0.0)).unwrap().tempo, 2.0);
+        assert_eq!(a.tempo_at(Beat(7.9)).unwrap().tempo, 2.0);
+        assert_eq!(a.tempo_at(Beat(8.0)).unwrap().tempo, 1.5);
         assert!(a.tempo_at(Beat(20.0)).unwrap().ramp);
     }
 
@@ -1063,47 +1074,47 @@ mod tests {
     #[test]
     fn two_tempos_at_one_beat_is_a_state_the_map_cannot_hold() {
         let mut a = Multitrack::new();
-        a.set_tempo(Tempo::at(Beat(4.0), 120.0));
-        a.set_tempo(Tempo::at(Beat(4.0), 90.0));
+        a.set_tempo(Tempo::at(Beat(4.0), 2.0));
+        a.set_tempo(Tempo::at(Beat(4.0), 1.5));
         assert_eq!(a.tempo.len(), 1);
-        assert_eq!(a.tempo_at(Beat(4.0)).unwrap().bpm, 90.0);
+        assert_eq!(a.tempo_at(Beat(4.0)).unwrap().tempo, 1.5);
     }
 
     #[test]
-    fn a_meter_re_bars_and_a_marker_may_share_a_beat_with_another() {
+    fn a_meter_re_bars_and_a_marker_may_share_an_instant_with_another() {
         let mut a = Multitrack::new();
         a.set_meter(Meter::at(Beat(0.0), 4, 4));
         a.set_meter(Meter::at(Beat(16.0), 7, 8));
         assert_eq!(a.meter_at(Beat(20.0)).unwrap().beats, 7);
-        a.add_marker(Marker::new(NodeId(1), Beat(16.0)).named("B"));
-        a.add_marker(Marker::new(NodeId(2), Beat(16.0)).named("chorus"));
-        a.add_marker(Marker::new(NodeId(3), Beat(0.0)).named("A"));
+        a.add_marker(Marker::new(NodeId(1), Second(16.0)).named("B"));
+        a.add_marker(Marker::new(NodeId(2), Second(16.0)).named("chorus"));
+        a.add_marker(Marker::new(NodeId(3), Second(0.0)).named("A"));
         let names: Vec<_> = a.markers.iter().map(|m| m.name.clone().unwrap()).collect();
         assert_eq!(names, vec!["A", "B", "chorus"]);
     }
 
     #[test]
     fn a_span_that_meets_the_next_one_covers_no_frame_twice() {
-        let first = Span::new(Beat(0.0), Beat(8.0));
-        let then = Span::new(Beat(8.0), Beat(16.0));
-        assert_eq!(first.length(), Beat(8.0));
+        let first = Span::new(Second(0.0), Second(8.0));
+        let then = Span::new(Second(8.0), Second(16.0));
+        assert_eq!(first.length(), Second(8.0));
         assert_eq!(first.end, then.start);
-        assert!(Span::new(Beat(4.0), Beat(4.0)).is_empty());
+        assert!(Span::new(Second(4.0), Second(4.0)).is_empty());
     }
 
     #[test]
     fn an_arrangement_round_trips_and_spans_every_track() {
         let mut a = Multitrack::new();
-        a.set_tempo(Tempo::at(Beat(0.0), 96.0));
+        a.set_tempo(Tempo::at(Beat(0.0), 1.6));
         a.set_meter(Meter::at(Beat(0.0), 3, 4));
-        a.loop_span = Some(Span::new(Beat(0.0), Beat(12.0)));
+        a.loop_span = Some(Span::new(Second(0.0), Second(12.0)));
         let mut one = Track::new(NodeId(1), NodeId(10)).named("drums");
         one.active_lane_mut().unwrap().place(region(100, 0.0, 4.0));
         let mut two = Track::new(NodeId(2), NodeId(20)).named("bass");
         two.active_lane_mut().unwrap().place(region(200, 8.0, 24.0));
         a.tracks.push(one);
         a.tracks.push(two);
-        assert_eq!(a.end(), Beat(32.0));
+        assert_eq!(a.end(), Second(32.0));
         assert_eq!(a.track(NodeId(2)).unwrap().name.as_deref(), Some("bass"));
         let json = serde_json::to_string(&a).unwrap();
         assert!(!json.contains("punch"), "an unset span stays out: {json}");
@@ -1119,7 +1130,7 @@ mod tests {
 
     #[test]
     fn a_timeline_field_a_newer_writer_added_survives() {
-        let json = r#"{"tempo":[{"at":0.0,"bpm":120.0,"swing":0.62}],
+        let json = r#"{"tempo":[{"at":0.0,"tempo":2.0,"swing":0.62}],
                        "groove":{"name":"mpc60"}}"#;
         let a: Multitrack = serde_json::from_str(json).unwrap();
         assert!(a.extra.contains_key("groove"));

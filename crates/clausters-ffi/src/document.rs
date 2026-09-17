@@ -630,14 +630,12 @@ pub unsafe extern "C" fn clausters_mixer_defs(
 /// `piece` is a multitrack and `sources` a JSON object from source id to
 /// `{"buffer": n, "channels": n}`: where a source's samples actually are on a
 /// running server, which is the one fact about a piece that is not in the
-/// piece. `default_bpm` is the tempo a piece that never stated one is read at —
-/// the caller's, because a document that invented 120 would be deciding a
-/// musical question.
+/// piece. No tempo is asked for: a multitrack is placed in seconds.
 ///
 /// The answer names the graph to instantiate, the tracks in the order they are
 /// shown, and for each clip which slot it goes in and which frames its readers
-/// play. Three rules live in it and each was written twice before it did: beats
-/// crossed to frames through the tempo map, the source's width picking the
+/// play. Three rules live in it and each was written twice before it did:
+/// seconds crossed to frames at the rate, the source's width picking the
 /// clip's wiring, and what a solo anywhere does to everything else — which the
 /// document deliberately does not hold, since it records that a track was
 /// *marked* and what a mark does to the others is a mixer's question.
@@ -655,7 +653,6 @@ pub unsafe extern "C" fn clausters_multitrack_plan(
     piece: *const u8,
     piece_len: usize,
     sample_rate: f64,
-    default_bpm: f64,
     sources: *const u8,
     sources_len: usize,
     out: *mut u8,
@@ -680,8 +677,7 @@ pub unsafe extern "C" fn clausters_multitrack_plan(
         .into_iter()
         .filter_map(|(id, info)| id.parse::<u64>().ok().map(|id| (SourceId(id), info)))
         .collect();
-    let plan =
-        clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
+    let plan = clausters_document::multitrack::nodes::plan(&piece, sample_rate, &table);
     let Ok(answer) = serde_json::to_string(&plan) else {
         return 0;
     };

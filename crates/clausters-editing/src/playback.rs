@@ -3,9 +3,9 @@
 //!
 //! [`crate::instance`] answers what has to change on a server for it to hold
 //! what a piece says, and [`crate::apply`] what messages that is. What was left
-//! over was *playing* it — which tempo a piece that states none is read at,
-//! which sample a beat is when the transport is located, what play, pause, stop
-//! and cue send, and that a paused meter is zeroed — and it was written once in
+//! over was *playing* it — which sample a second of the multitrack is when the
+//! transport is located, what play, pause, stop and cue send, and that a paused
+//! meter is zeroed — and it was written once in
 //! each client's `Playback` and once more in the GUI host. A standalone host
 //! and a script's editor are the same multitrack, so they are the same program:
 //! this object, which every one of them holds.
@@ -25,7 +25,6 @@ use std::collections::HashMap;
 use clausters_core::ids::{IdError, IdSpaces};
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
-use clausters_core::tempomap::TempoMap;
 use clausters_document::SourceId;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
@@ -34,20 +33,11 @@ use serde_json::{Value, json};
 use crate::apply::{Applier, Endpoint, Step, steps_json};
 use crate::instance::Instance;
 
-/// **The tempo a piece that states none is played at**, in beats per minute.
-///
-/// The reader's default and not the document's: a piece that said no tempo did
-/// not say one, and writing it into the format would be the crate deciding a
-/// musical question. Every endpoint reads and draws a piece at this one.
-pub const DEFAULT_BPM: f64 = 60.0;
-
 /// **One piece, as it is playing.**
 #[derive(Debug, Clone)]
 pub struct MultitrackPlayback {
     instance: Instance,
     applier: Applier,
-    /// The piece's beat → second map, as of the last [`MultitrackPlayback::sync`].
-    tempo: TempoMap,
     /// The rate the piece was last planned at.
     rate: f64,
     /// Whether the transport was last told to roll.
@@ -61,7 +51,6 @@ impl MultitrackPlayback {
         MultitrackPlayback {
             instance: Instance::new(),
             applier: Applier::new(endpoint),
-            tempo: TempoMap::new(DEFAULT_BPM / 60.0),
             rate: 48_000.0,
             rolling: false,
         }
@@ -79,9 +68,8 @@ impl MultitrackPlayback {
         gain: f32,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
-        self.tempo = nodes::tempo_map(piece, DEFAULT_BPM);
         self.rate = rate;
-        let plan = nodes::plan(piece, rate, DEFAULT_BPM, sources);
+        let plan = nodes::plan(piece, rate, sources);
         let ops = self.instance.reconcile(&plan, gain);
         self.applier.apply(ops, ids)
     }
@@ -120,23 +108,23 @@ impl MultitrackPlayback {
         steps
     }
 
-    /// **Puts the transport at `beat`**, through the piece's own tempo map. The
-    /// readers seek in the engine, so what is sounding carries on from there.
-    pub fn locate(&mut self, beat: f64) -> Vec<Step> {
+    /// **Puts the transport at `secs`** of the multitrack. The readers seek in
+    /// the engine, so what is sounding carries on from there.
+    pub fn locate(&mut self, secs: f64) -> Vec<Step> {
         command(
             "/transport_locateSample",
-            vec![OscType::Long(self.beats_to_samples(beat))],
+            vec![OscType::Long(self.secs_to_samples(secs))],
         )
     }
 
     /// **The position cursor moved**: a stopped transport is cued there and a
     /// rolling one is left alone, because moving the mark mid-pass must not
     /// move the music.
-    pub fn cue(&mut self, beat: f64) -> Vec<Step> {
+    pub fn cue(&mut self, secs: f64) -> Vec<Step> {
         if self.rolling {
             Vec::new()
         } else {
-            self.locate(beat)
+            self.locate(secs)
         }
     }
 
@@ -176,15 +164,16 @@ impl MultitrackPlayback {
         self.applier.node_count()
     }
 
-    /// **A beat as a sample of the piece**, through its tempo map and the
-    /// core's seconds → samples rounding.
-    pub fn beats_to_samples(&self, beat: f64) -> i64 {
-        secs_to_samples(self.tempo.secs_at(beat.max(0.0)), self.rate)
+    /// **A second of the multitrack as a sample**, at the rate it was last
+    /// planned at and with the core's seconds → samples rounding.
+    pub fn secs_to_samples(&self, secs: f64) -> i64 {
+        secs_to_samples(secs.max(0.0), self.rate)
     }
 
-    /// A sample of the piece as a beat: the same map, read the other way.
-    pub fn samples_to_beats(&self, samples: i64) -> f64 {
-        self.tempo.beats_at(samples_to_secs(samples, self.rate))
+    /// A sample as a second of the multitrack: the same rate, read the other
+    /// way.
+    pub fn samples_to_secs(&self, samples: i64) -> f64 {
+        samples_to_secs(samples, self.rate)
     }
 
     /// The meters the piece writes, as `(track id, first bus, channels)`: a run
@@ -286,19 +275,15 @@ mod tests {
         }
     }
 
-    /// **A piece that states no tempo is played at the one default**, and a
-    /// locate is that tempo's sample.
+    /// **A locate is the second's sample**, and a tempo in the multitrack
+    /// changes nothing about it: the tempo map only draws a ruler.
     #[test]
-    fn a_locate_is_the_beat_s_sample_at_the_piece_s_tempo() {
+    fn a_locate_is_the_seconds_sample_whatever_the_tempo() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
         playback
             .sync(&piece(), 48_000.0, &HashMap::new(), 1.0, &mut spaces())
             .unwrap();
-        assert_eq!(
-            playback.beats_to_samples(2.0),
-            96_000,
-            "60 bpm: a beat a second"
-        );
+        assert_eq!(playback.secs_to_samples(2.0), 96_000);
         let steps = playback.locate(2.0);
         assert_eq!(
             steps[0],
@@ -310,21 +295,12 @@ mod tests {
         );
 
         let mut faster = piece();
-        faster.tempo = vec![Tempo {
-            at: Beat(0.0),
-            bpm: 120.0,
-            ramp: false,
-            extra: Default::default(),
-        }];
+        faster.tempo = vec![Tempo::at(Beat(0.0), 2.0)];
         playback
             .sync(&faster, 48_000.0, &HashMap::new(), 1.0, &mut spaces())
             .unwrap();
-        assert_eq!(
-            playback.beats_to_samples(2.0),
-            48_000,
-            "the piece's own tempo"
-        );
-        assert_eq!(playback.samples_to_beats(48_000), 2.0);
+        assert_eq!(playback.secs_to_samples(2.0), 96_000, "no tempo moves it");
+        assert_eq!(playback.samples_to_secs(48_000), 1.0);
     }
 
     /// **A cue moves a stopped transport and leaves a rolling one alone**, and

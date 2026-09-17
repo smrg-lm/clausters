@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 66
+CORE_ABI_VERSION = 67
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -248,7 +248,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_points_props.restype = ctypes.c_size_t
     u8p_early = ctypes.POINTER(ctypes.c_ubyte)
     lib.clausters_editing_multitrack_props.argtypes = [
-        u8p_early, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
+        u8p_early, ctypes.c_size_t, ctypes.c_double,
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_multitrack_props.restype = ctypes.c_size_t
@@ -270,7 +270,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_instance_reconcile.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
-        ctypes.c_double, u8p_early, ctypes.c_size_t, ctypes.c_float,
+        u8p_early, ctypes.c_size_t, ctypes.c_float,
         u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_instance_reconcile.restype = ctypes.c_size_t
@@ -282,8 +282,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
-    lib.clausters_editing_default_bpm.restype = ctypes.c_double
-    lib.clausters_editing_default_bpm.argtypes = []
+    lib.clausters_editing_default_tempo.restype = ctypes.c_double
+    lib.clausters_editing_default_tempo.argtypes = []
     lib.clausters_editing_playback_new.restype = ctypes.c_void_p
     lib.clausters_editing_playback_new.argtypes = [ctypes.c_size_t]
     lib.clausters_editing_runner_new.restype = ctypes.c_void_p
@@ -317,10 +317,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_playback_set_rolling.restype = None
     lib.clausters_editing_playback_rolling.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_playback_rolling.restype = ctypes.c_int32
-    lib.clausters_editing_playback_beats_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
-    lib.clausters_editing_playback_beats_to_samples.restype = ctypes.c_int64
-    lib.clausters_editing_playback_samples_to_beats.argtypes = [ctypes.c_void_p, ctypes.c_int64]
-    lib.clausters_editing_playback_samples_to_beats.restype = ctypes.c_double
+    lib.clausters_editing_playback_secs_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.clausters_editing_playback_secs_to_samples.restype = ctypes.c_int64
+    lib.clausters_editing_playback_samples_to_secs.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_editing_playback_samples_to_secs.restype = ctypes.c_double
     lib.clausters_editing_conversation_read.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
         u8p_early, ctypes.c_size_t,
@@ -347,6 +347,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_apps_samples_measures.restype = ctypes.c_size_t
     lib.clausters_session_format.restype = ctypes.c_uint32
+    lib.clausters_session_migrate.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_session_migrate.restype = ctypes.c_size_t
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:
@@ -642,7 +646,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_multitrack_plan.restype = ctypes.c_size_t
     lib.clausters_multitrack_plan.argtypes = [
-        u8p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
+        u8p, ctypes.c_size_t, ctypes.c_double,
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_history_new.restype = ctypes.c_void_p
@@ -1359,8 +1363,7 @@ def points_props(points, kept=None, held: float = 0.0) -> dict:
     return json.loads(raw) if raw else {}
 
 
-def multitrack_props(piece: dict, rate: float, default_bpm: float,
-                     sources: dict) -> dict:
+def multitrack_props(piece: dict, rate: float, sources: dict) -> dict:
     """A piece as **the props the multitrack widget is drawn with**.
 
     The rows, the boxes, the automations over both, their break-points, which
@@ -1377,7 +1380,7 @@ def multitrack_props(piece: dict, rate: float, default_bpm: float,
     body = json.dumps(piece).encode("utf-8")
     table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
     raw = size_then_fill(_lib.clausters_editing_multitrack_props,
-                         as_u8(body), len(body), float(rate), float(default_bpm),
+                         as_u8(body), len(body), float(rate),
                          as_u8(table), len(table))
     return json.loads(raw) if raw else {}
 
@@ -1397,8 +1400,8 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
         tag: the ``/gui_event`` tag the report arrived under.
         request: what that domain reads — ``values`` always; ``state`` for the
             two that need the structure (the piece, the timeline);
-            ``unitsPerBeat`` and ``editable`` for a roll; ``rate``,
-            ``defaultBpm`` and ``sources`` for a piece.
+            ``unitsPerBeat`` and ``editable`` for a roll; ``rate`` and
+            ``sources`` for a multitrack.
 
     Returns:
         ``{"payloads": [...], "label": str}``, with ``inverse`` where the
@@ -1462,11 +1465,11 @@ def editing_load(session: dict, beside: str, buffers: list) -> dict:
     return json.loads(raw) if raw else {"error": "the load answered nothing"}
 
 
-def editing_default_bpm() -> float:
-    """The tempo a piece that states none is read and drawn at, in beats per
-    minute (`clausters_editing_default_bpm`) -- the one default every endpoint
-    takes."""
-    return float(lib().clausters_editing_default_bpm())
+def editing_default_tempo() -> float:
+    """The tempo a multitrack that states none is drawn at, in beats per second
+    (`clausters_editing_default_tempo`) -- what its ruler reads, and nothing it
+    places, since a multitrack is in seconds."""
+    return float(lib().clausters_editing_default_tempo())
 
 
 class StepRunner:
@@ -1563,17 +1566,17 @@ class MultitrackPlayback:
         return self._steps(lib().clausters_editing_playback_pause)
 
     def stop(self, mark: float) -> list:
-        """The steps that halt and go back to the mark at beat ``mark``."""
+        """The steps that halt and go back to the mark at ``mark`` seconds."""
         return self._steps(lib().clausters_editing_playback_stop, float(mark))
 
-    def locate(self, beat: float) -> list:
-        """The steps that put the transport at ``beat``."""
-        return self._steps(lib().clausters_editing_playback_locate, float(beat))
+    def locate(self, secs: float) -> list:
+        """The steps that put the transport at ``secs`` of the multitrack."""
+        return self._steps(lib().clausters_editing_playback_locate, float(secs))
 
-    def cue(self, beat: float) -> list:
-        """The steps that cue a stopped transport at ``beat`` -- none for a
+    def cue(self, secs: float) -> list:
+        """The steps that cue a stopped transport at ``secs`` -- none for a
         rolling one."""
-        return self._steps(lib().clausters_editing_playback_cue, float(beat))
+        return self._steps(lib().clausters_editing_playback_cue, float(secs))
 
     def close(self, ids: "IdSpaces") -> list:
         """The steps that free everything the piece made."""
@@ -1599,18 +1602,19 @@ class MultitrackPlayback:
         return bool(self._handle) and bool(
             lib().clausters_editing_playback_rolling(ctypes.c_void_p(self._handle)))
 
-    def beats_to_samples(self, beat: float) -> int:
-        """A beat as a sample of the piece, through its tempo map."""
+    def secs_to_samples(self, secs: float) -> int:
+        """A second of the multitrack as a sample, at the rate it was planned
+        at."""
         if not self._handle:
             return 0
-        return int(lib().clausters_editing_playback_beats_to_samples(
-            ctypes.c_void_p(self._handle), float(beat)))
+        return int(lib().clausters_editing_playback_secs_to_samples(
+            ctypes.c_void_p(self._handle), float(secs)))
 
-    def samples_to_beats(self, samples: int) -> float:
-        """A sample of the piece as a beat, through the same map."""
+    def samples_to_secs(self, samples: int) -> float:
+        """A sample as a second of the multitrack, at the same rate."""
         if not self._handle:
             return 0.0
-        return float(lib().clausters_editing_playback_samples_to_beats(
+        return float(lib().clausters_editing_playback_samples_to_secs(
             ctypes.c_void_p(self._handle), int(samples)))
 
 
@@ -1646,11 +1650,11 @@ class Instance:
         if handle:
             lib().clausters_editing_instance_free(ctypes.c_void_p(handle))
 
-    def reconcile(self, piece: dict, sample_rate: float, default_bpm: float,
-                  sources: dict, gain: float) -> list:
+    def reconcile(self, piece: dict, sample_rate: float, sources: dict,
+                  gain: float) -> list:
         """The difference between what is sounding and what ``piece`` says.
 
-        The same four arguments `multitrack_plan` takes, plus the master's own
+        The same three arguments `multitrack_plan` takes, plus the master's own
         level, which is the caller's and not the piece's. Everything already
         right is left alone, which is what lets a hand drag a box without
         hearing the rest of the piece restart.
@@ -1661,7 +1665,7 @@ class Instance:
         table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
         raw = size_then_fill(lib().clausters_editing_instance_reconcile,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body),
-                             float(sample_rate), float(default_bpm),
+                             float(sample_rate),
                              as_u8(table), len(table), ctypes.c_float(gain))
         return json.loads(raw) if raw else []
 
@@ -1868,6 +1872,17 @@ def session_format() -> int:
     return int(lib().clausters_session_format())
 
 
+def session_migrate(session: dict) -> dict:
+    """**A session written in an older format, as this build writes it**
+    (`clausters_session_migrate`): the crate's one reading of an old file, so a
+    format-2 multitrack placed in beats opens in seconds here as it does in the
+    web client and in the GUI host. A session already current comes back
+    unchanged."""
+    body = json.dumps(session).encode("utf-8")
+    raw = size_then_fill(lib().clausters_session_migrate, as_u8(body), len(body))
+    return json.loads(raw) if raw else session
+
+
 def view_not_an_edit() -> tuple:
     """**The `/gui_event` tags that are not edits** of the structure: what a
     view is looking at, and where the hand is.
@@ -1936,23 +1951,21 @@ def mixer_defs(widths, master: int = 2) -> dict:
     return answer if isinstance(answer, dict) else {}
 
 
-def multitrack_plan(piece: dict, sample_rate: float, default_bpm: float,
-                    sources: dict) -> dict:
+def multitrack_plan(piece: dict, sample_rate: float, sources: dict) -> dict:
     """What to instantiate to play ``piece`` -- the instance plan.
 
     ``sources`` maps a source id to ``{"buffer": n, "channels": n}``: where a
     source's samples actually are on a running server, which is the one fact
-    about a piece that is not in the piece. ``default_bpm`` is the tempo a piece
-    that never stated one is read at -- the caller's, because a document that
-    invented 120 would be deciding a musical question.
+    about a piece that is not in the piece. No tempo is asked for: a multitrack
+    is placed in seconds.
 
-    Three rules live in it and each was written twice before it did: beats
-    crossed to frames through the tempo map, the source's width picking the
+    Three rules live in it and each was written twice before it did: seconds
+    crossed to frames at the rate, the source's width picking the
     clip's wiring, and what a solo anywhere does to everything else.
     """
     table = {str(k): v for k, v in sources.items()}
     answer = _read_json(lib().clausters_multitrack_plan, piece,
-                        float(sample_rate), float(default_bpm), table)
+                        float(sample_rate), table)
     return answer if isinstance(answer, dict) else {}
 
 

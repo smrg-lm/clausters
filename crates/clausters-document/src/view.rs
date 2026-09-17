@@ -78,6 +78,10 @@ pub struct View {
     pub scroll: f64,
     /// The grid this window snaps to, in beats. Zero snaps nothing.
     ///
+    /// A **musical** grid over a multitrack placed in seconds: the window takes
+    /// it through the multitrack's tempo map to the seconds an edit snaps to,
+    /// so it is the ruler's configuration and not a unit of the placement.
+    ///
     /// It is here rather than in the piece because two windows over one piece
     /// may snap differently — the arranger to a bar, the editor below it to a
     /// sixteenth — which is exactly the case a single grid on the piece could

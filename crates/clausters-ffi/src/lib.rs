@@ -449,7 +449,17 @@ pub use time::*;
 /// as ITU-R BS.1770 and EBU R 128 do: the gated integrated loudness, the
 /// loudness range and the maximum momentary and short-term loudness.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 66;
+/// **v67 the multitrack is in seconds.** A region, a fade, a curve point, a
+/// marker and a span are seconds, so nothing that plans, draws or reads a
+/// multitrack takes a tempo: `clausters_multitrack_plan`,
+/// `clausters_editing_multitrack_props` and
+/// `clausters_editing_instance_reconcile` lose `default_bpm`, a playback's
+/// `locate` and `cue` take seconds, `clausters_editing_playback_beats_to_samples`
+/// and `_samples_to_beats` become `_secs_to_samples` and `_samples_to_secs`, and
+/// `clausters_editing_default_bpm` becomes `clausters_editing_default_tempo`, in
+/// beats per second, which only a ruler reads. `clausters_session_migrate` reads
+/// a session written in an older format as this one writes it. **Breaking**.
+pub const CORE_ABI_VERSION: u32 = 67;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -468,4 +478,33 @@ pub extern "C" fn clausters_core_abi_version() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_session_format() -> u32 {
     clausters_document::session::FORMAT
+}
+
+/// **A session written in an older format, as this build writes it** —
+/// [`clausters_document::session::migrate`] over the session's JSON. A session
+/// already at the current format comes back unchanged, and text that is not
+/// JSON answers `0`.
+///
+/// Sizes with a null `out` and fills with a second call.
+///
+/// # Safety
+/// `session` must be null or readable for `session_len` bytes, and `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_session_migrate(
+    session: *const u8,
+    session_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(text) = (unsafe { crate::document::text(session, session_len) }) else {
+        return 0;
+    };
+    let Ok(written) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return 0;
+    };
+    let answer = clausters_document::session::migrate(written).to_string();
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }

@@ -1100,7 +1100,6 @@ pub fn reconcile_json(
     instance: &mut Instance,
     piece: &str,
     sample_rate: f64,
-    default_bpm: f64,
     sources: &str,
     gain: f32,
 ) -> String {
@@ -1109,8 +1108,7 @@ pub fn reconcile_json(
         return "[]".into();
     };
     let table = sources_table(sources);
-    let plan =
-        clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
+    let plan = clausters_document::multitrack::nodes::plan(&piece, sample_rate, &table);
     let ops = instance.reconcile(&plan, gain);
     serde_json::to_string(&ops).unwrap_or_else(|_| "[]".into())
 }
@@ -1124,7 +1122,7 @@ mod tests {
     use clausters_document::multitrack::{Automation, Content, Multitrack, Region, Track};
     use clausters_document::points::Point;
     use clausters_document::{
-        Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
+        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
     };
     use serde_json::json;
 
@@ -1148,8 +1146,8 @@ mod tests {
     fn region(id: u64, source: u64) -> Region {
         Region::new(
             NodeId(id),
-            Beat(0.0),
-            Beat(4.0),
+            Second(0.0),
+            Second(4.0),
             Content::Window {
                 window: SegmentRef {
                     source: SegmentSource::Samples(SourceRef {
@@ -1208,7 +1206,7 @@ mod tests {
     }
 
     fn planned(piece: &Multitrack) -> Plan {
-        plan(piece, RATE, 60.0, &sources())
+        plan(piece, RATE, &sources())
     }
 
     /// The ops of one kind, in order.

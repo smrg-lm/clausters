@@ -320,15 +320,15 @@ export class Instance {
      * **The difference between what is sounding and what the piece says**, as
      * the JSON list of operations a client applies.
      *
-     * The same four arguments `multitrackPlan` takes — the piece, the rate,
-     * the tempo a piece that states none is read at, and the source table —
+     * The same three arguments `multitrackPlan` takes — the piece, the rate
+     * and the source table —
      * plus the master's own level, which is the caller's and not the piece's.
      *
      * An operation names what it acts on by a **handle**, never by a node id,
      * a bus index or a buffer number: this allocates none of those, and the
      * client keeps the one table from handle to whatever it made.
      */
-    reconcile(piece: string, sample_rate: number, default_bpm: number, sources: string, gain: number): string;
+    reconcile(piece: string, sample_rate: number, sources: string, gain: number): string;
     /**
      * **Everything this made, given back** — the operations that stop the
      * piece. The piece itself is untouched: what an instance holds is nodes,
@@ -345,21 +345,17 @@ export class MultitrackPlayback {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * A beat as a sample of the piece.
-     */
-    beatsToSamples(beat: number): number;
-    /**
      * The steps that free everything the piece made.
      */
     close(ids: IdSpaces): string;
     /**
-     * The steps that cue a stopped transport at `beat`.
+     * The steps that cue a stopped transport at `secs`.
      */
-    cue(beat: number): string;
+    cue(secs: number): string;
     /**
-     * The steps that put the transport at `beat`.
+     * The steps that put the transport at `secs` of the multitrack.
      */
-    locate(beat: number): string;
+    locate(secs: number): string;
     /**
      * The meters the piece writes, as JSON.
      */
@@ -382,9 +378,13 @@ export class MultitrackPlayback {
      */
     rolling(): boolean;
     /**
-     * A sample of the piece as a beat.
+     * A sample as a second of the multitrack.
      */
-    samplesToBeats(samples: number): number;
+    samplesToSecs(samples: number): number;
+    /**
+     * A second of the multitrack as a sample.
+     */
+    secsToSamples(secs: number): number;
     /**
      * Says whether the transport is rolling.
      */
@@ -1102,10 +1102,10 @@ export function domainEdit(domain: string, state: string, payload: string): stri
  * a structure alone and this one is a function of a structure *and* of what a
  * server already holds: a piece plays itself from the transport, so the nodes
  * have to stay, and what this answers is the **difference**.
- * The tempo a piece that states none is read and drawn at, in beats per
- * minute.
+ * The tempo a multitrack that states none is drawn at, in beats per second:
+ * what its ruler reads, and nothing it places.
  */
-export function editingDefaultBpm(): number;
+export function editingDefaultTempo(): number;
 
 /**
  * JS face: **what a gesture means, in a structure's own vocabulary** — the
@@ -1289,15 +1289,14 @@ export function multitrackNames(piece: string): string;
  *
  * `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
  * where a source's samples actually are on a running server, which is the one
- * fact about a piece that is not in the piece. `default_bpm` is the tempo a
- * piece that never stated one is read at — the caller's, because a document
- * that invented 120 would be deciding a musical question.
+ * fact about a piece that is not in the piece. No tempo is asked for: a
+ * multitrack is placed in seconds.
  *
- * Three rules live in it and each was written twice before it did: beats
- * crossed to frames through the tempo map, the source's width picking the
+ * Three rules live in it and each was written twice before it did: seconds
+ * crossed to frames at the rate, the source's width picking the
  * clip's wiring, and what a solo anywhere does to everything else.
  */
-export function multitrackPlan(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
+export function multitrackPlan(piece: string, sample_rate: number, sources: string): string;
 
 /**
  * JS face: **a piece as the props the multitrack widget is drawn with**, as a
@@ -1309,7 +1308,7 @@ export function multitrackPlan(piece: string, sample_rate: number, default_bpm: 
  * `{"buffer", "channels"}`, because what a box is drawn from and what it is
  * played from are the same samples.
  */
-export function multitrackProps(piece: string, sample_rate: number, default_bpm: number, sources: string): string;
+export function multitrackProps(piece: string, sample_rate: number, sources: string): string;
 
 /**
  * JS face: the boot-derived node-id partition for a node table of
@@ -1426,6 +1425,13 @@ export function secs_to_samples(secs: number, sample_rate: number): number;
  * spans of other sources.
  */
 export function sessionFormat(): number;
+
+/**
+ * **A session written in an older format, as this build writes it** — the
+ * crate's `session::migrate` over the session's JSON text, or an empty string
+ * for text that is not JSON. A session already current comes back unchanged.
+ */
+export function sessionMigrate(session: string): string;
 
 /**
  * The `[base, span]` of share `index` of `of` within `span` ids at `base`.
@@ -1616,7 +1622,7 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly editingDefaultBpm: () => number;
+    readonly editingDefaultTempo: () => number;
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
@@ -1653,7 +1659,7 @@ export interface InitOutput {
     readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly instance_meters: (a: number) => [number, number];
     readonly instance_new: () => number;
-    readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+    readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly instance_teardown: (a: number) => [number, number];
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
@@ -1666,9 +1672,8 @@ export interface InitOutput {
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackNames: (a: number, b: number) => [number, number];
-    readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly multitrackplayback_beatsToSamples: (a: number, b: number) => number;
+    readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly multitrackplayback_close: (a: number, b: number) => [number, number];
     readonly multitrackplayback_cue: (a: number, b: number) => [number, number];
     readonly multitrackplayback_locate: (a: number, b: number) => [number, number];
@@ -1677,7 +1682,8 @@ export interface InitOutput {
     readonly multitrackplayback_pause: (a: number) => [number, number];
     readonly multitrackplayback_play: (a: number) => [number, number];
     readonly multitrackplayback_rolling: (a: number) => number;
-    readonly multitrackplayback_samplesToBeats: (a: number, b: number) => number;
+    readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
+    readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;
     readonly multitrackplayback_setRolling: (a: number, b: number) => void;
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
@@ -1751,6 +1757,7 @@ export interface InitOutput {
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
     readonly sessionFormat: () => number;
+    readonly sessionMigrate: (a: number, b: number) => [number, number];
     readonly shareOf: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];

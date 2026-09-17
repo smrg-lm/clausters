@@ -200,7 +200,7 @@
     }
   },
   {
-    "name": "a piece at one beat a second",
+    "name": "a piece with no tempo",
     "kind": "multitrack_props",
     "piece": {
       "version": 1,
@@ -288,7 +288,6 @@
       ]
     },
     "rate": 48000.0,
-    "bpm": 60.0,
     "sources": {
       "77": {
         "buffer": 12,
@@ -445,7 +444,6 @@
       ]
     },
     "rate": 48000.0,
-    "bpm": 60.0,
     "sources": {},
     "props": {
       "clips": [
@@ -509,7 +507,7 @@
     }
   },
   {
-    "name": "and over a tempo that moves, where a length is not a ratio",
+    "name": "and with a tempo that moves, which moves no box",
     "kind": "multitrack_props",
     "piece": {
       "version": 1,
@@ -598,17 +596,16 @@
       "tempo": [
         {
           "at": 0.0,
-          "bpm": 60.0
+          "tempo": 1.0
         },
         {
           "at": 4.0,
-          "bpm": 120.0,
+          "tempo": 2.0,
           "ramp": true
         }
       ]
     },
     "rate": 48000.0,
-    "bpm": 60.0,
     "sources": {
       "77": {
         "buffer": 12,
@@ -620,7 +617,7 @@
         "3",
         "1",
         192000.0,
-        96000.0,
+        192000.0,
         24000.0,
         "region 3",
         12
@@ -668,7 +665,7 @@
         1.0,
         0.0,
         "5",
-        24000.0,
+        48000.0,
         0.0,
         1.0,
         0.0
@@ -974,7 +971,7 @@
     }
   },
   {
-    "name": "a box dragged four beats along",
+    "name": "a box dragged four seconds along",
     "kind": "intake",
     "domain": "multitrack",
     "tag": "clips",
@@ -1074,7 +1071,6 @@
         ]
       },
       "rate": 48000.0,
-      "defaultBpm": 60.0,
       "sources": {
         "77": {
           "buffer": 12,
@@ -1197,7 +1193,6 @@
         ]
       },
       "rate": 48000.0,
-      "defaultBpm": 60.0,
       "sources": {
         "77": {
           "buffer": 12,
@@ -1411,7 +1406,6 @@
         ]
       },
       "rate": 48000.0,
-      "defaultBpm": 60.0,
       "sources": {
         "77": {
           "buffer": 12,
@@ -1561,7 +1555,6 @@
         ]
       },
       "rate": 48000.0,
-      "defaultBpm": 60.0,
       "sources": {
         "77": {
           "buffer": 12,
@@ -1675,7 +1668,6 @@
         ]
       },
       "rate": 48000.0,
-      "defaultBpm": 60.0,
       "sources": {
         "77": {
           "buffer": 12,
@@ -2034,7 +2026,7 @@
     }
   },
   {
-    "name": "the names of a piece at one beat a second",
+    "name": "the names of a piece with no tempo",
     "kind": "names",
     "piece": {
       "version": 1,
@@ -2236,7 +2228,7 @@
     }
   },
   {
-    "name": "the names of and over a tempo that moves, where a length is not a ratio",
+    "name": "the names of and with a tempo that moves, which moves no box",
     "kind": "names",
     "piece": {
       "version": 1,
@@ -2325,11 +2317,11 @@
       "tempo": [
         {
           "at": 0.0,
-          "bpm": 60.0
+          "tempo": 1.0
         },
         {
           "at": 4.0,
-          "bpm": 120.0,
+          "tempo": 2.0,
           "ramp": true
         }
       ]

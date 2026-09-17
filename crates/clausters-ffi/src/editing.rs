@@ -65,7 +65,6 @@ pub unsafe extern "C" fn clausters_editing_multitrack_props(
     piece: *const u8,
     piece_len: usize,
     rate: f64,
-    default_bpm: f64,
     sources: *const u8,
     sources_len: usize,
     out: *mut u8,
@@ -79,7 +78,7 @@ pub unsafe extern "C" fn clausters_editing_multitrack_props(
     else {
         return 0;
     };
-    let answer = clausters_editing::multitrack::props_json(&piece, rate, default_bpm, &sources);
+    let answer = clausters_editing::multitrack::props_json(&piece, rate, &sources);
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
@@ -251,7 +250,6 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     piece: *const u8,
     piece_len: usize,
     sample_rate: f64,
-    default_bpm: f64,
     sources: *const u8,
     sources_len: usize,
     gain: f32,
@@ -281,14 +279,8 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     // Without that, the sizing call did the reconciling and the filling call
     // found nothing left to do.
     let mut next = held.clone();
-    let answer = clausters_editing::instance::reconcile_json(
-        &mut next,
-        &piece,
-        sample_rate,
-        default_bpm,
-        &sources,
-        gain,
-    );
+    let answer =
+        clausters_editing::instance::reconcile_json(&mut next, &piece, sample_rate, &sources, gain);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::document::fill(answer.as_bytes(), out, out_cap, || {
@@ -361,11 +353,12 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **The tempo a piece that states none is read and drawn at**, in beats per
-/// minute — the one default every endpoint takes.
+/// **The tempo a multitrack that states none is drawn at**, in beats per
+/// second — the one default every endpoint's ruler takes. Nothing a multitrack
+/// places reads it.
 #[unsafe(no_mangle)]
-pub extern "C" fn clausters_editing_default_bpm() -> f64 {
-    clausters_editing::playback::DEFAULT_BPM
+pub extern "C" fn clausters_editing_default_tempo() -> f64 {
+    clausters_editing::multitrack::DEFAULT_TEMPO
 }
 
 /// **Steps being carried out**: the queue a playback's answers are walked
@@ -619,36 +612,36 @@ pub unsafe extern "C" fn clausters_editing_playback_stop(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.stop(mark)))) }
 }
 
-/// The steps that put the transport at `beat`.
+/// The steps that put the transport at `secs` of the multitrack.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_playback_locate(
     p: *mut FfiPlayback,
-    beat: f64,
+    secs: f64,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
     use clausters_editing::playback::answer_json;
     // SAFETY: forwarded from this function's own contract.
-    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.locate(beat)))) }
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.locate(secs)))) }
 }
 
-/// The steps that cue a stopped transport at `beat` — none for a rolling one.
+/// The steps that cue a stopped transport at `secs` — none for a rolling one.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_playback_cue(
     p: *mut FfiPlayback,
-    beat: f64,
+    secs: f64,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
     use clausters_editing::playback::answer_json;
     // SAFETY: forwarded from this function's own contract.
-    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(beat)))) }
+    unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(secs)))) }
 }
 
 /// The steps that free everything the piece made, releasing into `ids`.
@@ -712,14 +705,14 @@ pub unsafe extern "C" fn clausters_editing_playback_rolling(p: *mut FfiPlayback)
         .unwrap_or(0)
 }
 
-/// A beat as a sample of the piece, through its tempo map.
+/// A second of the multitrack as a sample, at the rate it was planned at.
 ///
 /// # Safety
 /// `p` must be null or a live playback.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_playback_beats_to_samples(
+pub unsafe extern "C" fn clausters_editing_playback_secs_to_samples(
     p: *mut FfiPlayback,
-    beat: f64,
+    secs: f64,
 ) -> i64 {
     // SAFETY: caller guarantees `p` is null or live.
     unsafe { p.as_ref() }
@@ -728,17 +721,17 @@ pub unsafe extern "C" fn clausters_editing_playback_beats_to_samples(
                 .0
                 .lock()
                 .ok()
-                .map(|held| held.beats_to_samples(beat))
+                .map(|held| held.secs_to_samples(secs))
         })
         .unwrap_or(0)
 }
 
-/// A sample of the piece as a beat, through the same map.
+/// A sample as a second of the multitrack, at the same rate.
 ///
 /// # Safety
 /// `p` must be null or a live playback.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_playback_samples_to_beats(
+pub unsafe extern "C" fn clausters_editing_playback_samples_to_secs(
     p: *mut FfiPlayback,
     samples: i64,
 ) -> f64 {
@@ -749,7 +742,7 @@ pub unsafe extern "C" fn clausters_editing_playback_samples_to_beats(
                 .0
                 .lock()
                 .ok()
-                .map(|held| held.samples_to_beats(samples))
+                .map(|held| held.samples_to_secs(samples))
         })
         .unwrap_or(0.0)
 }
@@ -956,7 +949,6 @@ mod tests {
                     piece.as_ptr(),
                     piece.len(),
                     48_000.0,
-                    60.0,
                     sources.as_ptr(),
                     sources.len(),
                     0.5,
@@ -976,7 +968,6 @@ mod tests {
                 piece.as_ptr(),
                 piece.len(),
                 48_000.0,
-                60.0,
                 sources.as_ptr(),
                 sources.len(),
                 0.5,

@@ -20,15 +20,15 @@
  * go through {@link Domain.payloads} and land as **one** entry, since they are
  * one thing a hand did.
  *
- * **Beats meet frames through the piece's own tempo map**, never through a
- * ratio: a position is the second it falls on times the rate, and a *length* is
- * the difference of two of those, because four beats last longer later than
- * earlier under a ritardando.
+ * **Seconds meet frames through the rate alone.** A multitrack is placed in
+ * seconds, so a position and a length are each their seconds times the rate, and
+ * no tempo is involved; the tempo map the multitrack holds
+ * ({@link Multitrack.tempoMap}) is what its ruler draws beats and bars from,
+ * which the shared crate composes.
  *
  * @module
  */
 
-import { TempoMap } from "../../base/time.ts";
 import { MULTITRACK, editingStitch } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import { Multitrack } from "../../multitrack.ts";
@@ -40,42 +40,10 @@ import type { Server } from "../../defs/server/index.ts";
 import { type Part, stitchSent } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
-import { editingDefaultBpm } from "../../core/clausters_core_web.js";
 import { keyOf } from "./context.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
-
-/**
- * The tempo a piece that never said one is read at, in beats per second.
- *
- * It is the **reader's** default and not the document's: a piece that said no
- * tempo did not say one, and writing 120 into the format would be deciding a
- * musical question on its behalf. The number is the shared crate's
- * (`editingDefaultBpm`), the one every endpoint plays and draws a piece at —
- * the GUI host with no script behind it included.
- */
-export function defaultTempo(): number {
-    return editingDefaultBpm() / 60.0;
-}
-
-/**
- * The piece's beat→second function, with the reader's default where the piece
- * states nothing.
- *
- * One line, and a **binding** rather than a rule: the three decisions a run of
- * authored entries needs — a ramp reaching the next one, the default before the
- * first, an empty list being the default alone — are {@link TempoMap.fromChanges}'s,
- * in the crate that models tempo.
- */
-export function tempoMap(piece: Multitrack): TempoMap {
-    return (
-        TempoMap.fromChanges(
-            piece.tempo.map((t) => ({ beats: t.at, tempo: t.bpm / 60.0, ramp: t.ramp })),
-            defaultTempo(),
-        ) ?? new TempoMap(defaultTempo())
-    );
-}
 
 /**
  * Which **server buffer** each of the piece's sources was read into.
@@ -226,19 +194,12 @@ export class Sources {
 export class Bridge {
     rate: number;
     sources: Sources;
-    tempo: TempoMap;
     /**
      * The server the takes are on, for the one thing an edit needs one for: **a
      * source an edit makes**. A join owns no samples, so what reaches the server
      * is the list of spans and never the audio.
      */
     server?: Server;
-    /**
-     * The tempo, in beats per minute, a piece that states none is read at. The
-     * reader's own: a piece that never said a tempo did not say one, and a
-     * document that invented 120 would be deciding a musical question.
-     */
-    bpm: number;
 
     constructor(
         piece: Multitrack,
@@ -248,23 +209,7 @@ export class Bridge {
     ) {
         this.rate = Number(sampleRate);
         this.sources = sources ?? new Sources();
-        this.tempo = tempoMap(piece);
-        this.bpm = defaultTempo() * 60.0;
         this.server = server;
-    }
-
-    /** Re-read the tempo map, for an edit that moved one. */
-    refresh(piece: Multitrack): void {
-        this.tempo = tempoMap(piece);
-    }
-
-    /**
-     * The piece's tempo map as the document states it, read last on `refresh` —
-     * what a view over the piece asks for, the way it asks a `Timeline` for its
-     * own.
-     */
-    get map(): TempoMap {
-        return this.tempo;
     }
 }
 
@@ -342,8 +287,6 @@ export class MultitrackDomain extends Domain<Multitrack> {
         piece.markers = written.markers;
         piece.loopSpan = written.loopSpan;
         piece.punch = written.punch;
-        // A tempo that moved changes where every box is drawn.
-        this.bridge.refresh(piece);
     }
 
     /**
@@ -514,7 +457,7 @@ interface Outcome {
 /** What a turn asks the transport to do. */
 interface TransportVerb {
     verb: string;
-    beat?: number;
+    secs?: number;
     mark?: number;
 }
 
@@ -604,7 +547,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const opened = this.editing.open("openMultitrack", keyOf("piece", piece), {
             piece: piece.write(),
             rate: this.bridge.rate,
-            defaultBpm: this.bridge.bpm,
             link: link ?? null,
             transport: server !== undefined,
             title,
@@ -616,15 +558,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }
-    }
-
-    /**
-     * The piece's beat→second map, read from the document through the bridge:
-     * the document states the tempo, and the bridge re-reads it when an edit
-     * moves it.
-     */
-    override tempoMap(): TempoMap {
-        return this.bridge.tempo;
     }
 
     /** This editor's member in its editing context. */
@@ -853,7 +786,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         } else if (verb.verb === "stop") {
             playback.stop();
         } else if (verb.verb === "cue") {
-            this.locate(verb.beat ?? 0.0);
+            this.locate(verb.secs ?? 0.0);
         }
     }
 
@@ -863,7 +796,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      *
      * The cursor's own verb, not the transport's: it is where the next play
      * starts, and stop goes back to it rather than to the top. A hand that has
-     * been working at bar forty otherwise has to find beat zero on screen to
+     * been working at bar forty otherwise has to find the top on screen to
      * get back to it.
      */
     rewind(): void {
@@ -888,14 +821,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /**
-     * The position cursor was placed, here or in a window entered from here: cue
-     * a stopped transport there and leave a rolling one alone.
+     * The position cursor was placed at `at` seconds, here or in a window entered
+     * from here: cue a stopped transport there and leave a rolling one alone.
      *
      * This is what a box's own ruler reaches, because a structure inside a piece
      * has no transport of its own — the piece is the one that has one.
      */
-    override locate(beat: number): void {
-        this.playback?.cue(beat);
+    override locate(at: number): void {
+        this.playback?.cue(at);
     }
 
     /**

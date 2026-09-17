@@ -593,8 +593,11 @@ test("the map is asked of what plays and never kept", async () => {
     assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR / 4.0) < 1e-6);
 });
 
-test("with nothing to ask there is no tempo", () => {
+test("with no map to ask positions are seconds", () => {
+    // What holds no tempo map -- a multitrack, placed in physical time -- plays
+    // in seconds, which cross to samples as they are.
     const tp = new PlayheadSync(new FakeHost() as unknown as GuiHost, 7, { sampleRate: SR });
-    assert.throws(() => tp.beatsToSamples(1.0), /structure/);
+    assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR) < 1e-6);
+    assert.ok(Math.abs(tp.samplesToBeats(SR / 2.0) - 0.5) < 1e-9);
 });
 

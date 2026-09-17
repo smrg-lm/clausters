@@ -14,14 +14,14 @@ the web client binds too. What this adds is what a language owns: the
 onto, which server buffer a source was read into, the history a piece shares
 with the boxes entered out of it, and the socket.
 
-**Beats meet frames through the piece's own tempo map**, never through a ratio:
-a position is the second it falls on times the rate, and a *length* is the
-difference of two of those, because four beats last longer later than earlier
-under a ritardando.
+**Seconds meet frames through the rate alone.** A multitrack is placed in
+seconds, so a position and a length are each their seconds times the rate, and
+no tempo is involved; the tempo map the multitrack holds
+(`clausters.multitrack.Multitrack.tempo_map`) is what its ruler draws beats and
+bars from, which the shared crate composes.
 """
 
 from ... import _native
-from ...base import TempoMap
 from ...defs import Buffer, Part
 from ...multitrack import Multitrack
 from .domain import Domain
@@ -29,7 +29,7 @@ from .editor import Editor
 from .view import View
 
 __all__ = ["MultitrackDomain", "MultitrackEditor", "MultitrackView", "Sources",
-           "is_piece", "tempo_map"]
+           "is_piece"]
 
 #: The names the transport row's three widgets carry. A name and not an id,
 #: because these are the widgets a **hand** addresses and a handler is hung on a
@@ -44,33 +44,6 @@ CLOCK = "piece_clock"
 #: *line* asks nothing — the host draws it from the segment every frame — so this
 #: is the price of the number beside it and nothing else.
 CLOCK_TICK = 0.05
-
-def default_tempo() -> float:
-    """The tempo a piece that never said one is read at, in beats per second.
-
-    It is the **reader's** default and not the document's: a piece that said no
-    tempo did not say one, and writing 120 into the format would be deciding a
-    musical question on its behalf. The number is the shared crate's
-    (`clausters._native.editing_default_bpm`), the one every endpoint plays and
-    draws a piece at -- the GUI host with no script behind it included.
-    """
-    return _native.editing_default_bpm() / 60.0
-
-
-def tempo_map(piece: Multitrack) -> TempoMap:
-    """The piece's beat→second function, with the reader's default where the
-    piece states nothing.
-
-    One line, and a **binding** rather than a rule: the three decisions a run of
-    authored entries needs — a ramp reaching the next one, the default before
-    the first, an empty list being the default alone — are
-    `clausters.base.TempoMap.from_changes`'s, in the crate that models tempo.
-    """
-    return TempoMap.from_changes(
-        [{"beats": t.at, "tempo": t.bpm / 60.0, "ramp": bool(t.ramp)}
-         for t in piece.tempo],
-        default_tempo())
-
 
 class Sources:
     """Which **server buffer** each of the piece's sources was read into.
@@ -192,23 +165,6 @@ class Bridge:
         #: for: **a source an edit makes**. A join owns no samples, so what
         #: reaches the server is the list of spans and never the audio.
         self.server = server
-        self.tempo = tempo_map(piece)
-        #: The tempo, in beats per minute, a piece that states none is read at.
-        #: The reader's own: a piece that never said a tempo did not say one,
-        #: and a document that invented 120 would be deciding a musical
-        #: question.
-        self.bpm = default_tempo() * 60.0
-
-    def refresh(self, piece: Multitrack) -> None:
-        """Re-read the tempo map, for an edit that moved one."""
-        self.tempo = tempo_map(piece)
-
-    @property
-    def map(self) -> TempoMap:
-        """The piece's tempo map as the document states it, read last on
-        `refresh` -- what a view over the piece asks for, the way it asks a
-        `clausters.seq.Timeline` for its own."""
-        return self.tempo
 
 
 class MultitrackDomain(Domain):
@@ -260,8 +216,6 @@ class MultitrackDomain(Domain):
         structure.markers = written.markers
         structure.loop_span = written.loop_span
         structure.punch = written.punch
-        # A tempo that moved changes where every box is drawn.
-        self.bridge.refresh(structure)
 
     def _mint(self, minted) -> None:
         """Install a source an edit made, and put it in the table.
@@ -405,7 +359,6 @@ class MultitrackEditor(Editor):
         self._member, self._structure_id = self._editing.open(
             "openMultitrack", f"piece:{id(piece)}", {
                 "piece": piece.write(), "rate": float(sample_rate),
-                "defaultBpm": float(bridge.bpm),
                 "link": link, "transport": server is not None, "title": title,
                 "w": int(self.size[0]), "h": int(self.size[1])},
             piece, domain)
@@ -416,12 +369,6 @@ class MultitrackEditor(Editor):
             from .playback import Playback
 
             self.playback = Playback(self, server=server)
-
-    def tempo_map(self):
-        """The piece's beat→second map, read from the document through the
-        bridge: the document states the tempo, and the bridge re-reads it when
-        an edit moves it."""
-        return self.bridge.tempo
 
     @property
     def piece_widget(self) -> "int | None":
@@ -588,7 +535,7 @@ class MultitrackEditor(Editor):
 
         The cursor's own verb, not the transport's: it is where the next play
         starts, and stop goes back to it rather than to the top. A hand that
-        has been working at bar forty otherwise has to find beat zero on screen
+        has been working at bar forty otherwise has to find the top on screen
         to get back to it.
         """
         self._sync_core()
@@ -609,7 +556,7 @@ class MultitrackEditor(Editor):
         elif kind == "stop":
             self.playback.stop()
         elif kind == "cue":
-            self.locate(float(verb.get("beat", 0.0)))
+            self.locate(float(verb.get("secs", 0.0)))
 
     def play(self):
         """Play the piece from where the position cursor is."""
@@ -626,15 +573,16 @@ class MultitrackEditor(Editor):
         self._sync_core()
         self._take(self._call("stop"))
 
-    def locate(self, beat: float):
-        """The position cursor was placed, here or in a window entered from
-        here: cue a stopped transport there and leave a rolling one alone.
+    def locate(self, at: float):
+        """The position cursor was placed at ``at`` seconds, here or in a window
+        entered from here: cue a stopped transport there and leave a rolling one
+        alone.
 
         This is what a box's own ruler reaches, because a structure inside a
         piece has no transport of its own — the piece is the one that has one.
         """
         if self.playback is not None:
-            self.playback.cue(beat)
+            self.playback.cue(at)
 
     def data_changed(self) -> None:
         """The piece changed, whoever changed it: put the readers where it now

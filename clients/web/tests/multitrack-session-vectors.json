@@ -1,5 +1,5 @@
 {
- "format": 2,
+ "format": 3,
  "multitrack": {
   "tracks": [
    {
@@ -227,11 +227,11 @@
   "tempo": [
    {
     "at": 0.0,
-    "bpm": 96.0
+    "tempo": 1.6
    },
    {
     "at": 32.0,
-    "bpm": 120.0,
+    "tempo": 2.0,
     "ramp": true
    }
   ],

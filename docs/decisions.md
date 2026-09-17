@@ -8611,3 +8611,37 @@ a transport addressed by id reaches the `/transport_*` commands,
 `/gui_headClock` at once. The property was named so that it survives: it holds
 the server today and one of its transports tomorrow.
 
+## The multitrack is placed in seconds, and a tempo map is a structure it holds
+
+The original error was measuring **all** time on a base of beats. The document
+placed every region, fade, curve point, marker and span in beats, so the piece's
+tempo map was the axis of everything in it: every client crossed a position to
+frames through the map, an edit of the tempo moved every box, and each plan,
+projection and editor had to be handed a `default_bpm` for a piece that stated
+none. That is a sequencer's model applied to a multitrack, whose material —
+recordings — is measured in physical time.
+
+**Everything a multitrack places is in seconds**, the way the server and the
+clients already measure (`timebase::Second`). A position crosses to frames by the
+rate alone, so the instance plan, the props, the intake, the playback and the
+editors take no tempo, and a tempo edit redraws a ruler and moves nothing.
+
+**That does not stop a document holding structures organized by meter and
+tempo.** The tempo and meter maps stay in the document and are saved with it,
+stated at beats: they are a structure the document holds, read by a ruler
+drawing beats and bars and by a snap to them, rather than its axis. A region
+whose contents are in beats keeps them — placed in seconds, the way a child
+timeline is placed in its parent — and which map converts them is left open
+until something plays such a region.
+
+**One unit for tempo.** `TempoClock` and `TempoMap` were in beats per second and
+the document in beats per minute, divided by 60 wherever the two met. Every
+tempo is now beats per second, the document's included; beats per minute is
+presentation.
+
+**An old file is migrated once, in Rust.** Format 3 keeps the field names and
+changes what their numbers mean, which is exactly the case the format counter
+exists for. `session::migrate` converts a format-2 file through the tempo map it
+saved (a length being the difference of two converted positions, a region's own
+curve measured from the region's start), and both clients' `Session.read` and
+the GUI host call it, so an old session opens the same everywhere.

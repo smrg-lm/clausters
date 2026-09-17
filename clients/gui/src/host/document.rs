@@ -346,8 +346,10 @@ impl Owner {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         let text = std::fs::read_to_string(path.as_ref())
             .map_err(|e| format!("{}: {e}", path.as_ref().display()))?;
-        let session: Session =
-            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.as_ref().display()))?;
+        // Read through the crate's door, so a session written in an older
+        // format opens as this one writes it.
+        let session =
+            Session::read_str(&text).map_err(|e| format!("{}: {e}", path.as_ref().display()))?;
         Ok(Self::from_session(session))
     }
 
@@ -442,11 +444,6 @@ impl Owner {
     /// The scales the piece is drawn with.
     pub fn piece_look(&self) -> piece::Look<'_> {
         piece::Look {
-            // **The piece's own map, not a ratio.** A placement is musical time
-            // and the axis counts frames, and what crosses between them is the
-            // tempo the piece states -- so a ritardando moves the boxes and the
-            // readers together rather than leaving both a ratio behind.
-            tempo: piece::tempo_map(&self.piece),
             rate: self.units_per_second,
             takes: Some(&self.takes),
             sources: self.session.as_ref().map(|session| &session.sources),
@@ -489,7 +486,6 @@ impl Owner {
         let mut editor = MultitrackEditor::new(
             self.piece.clone(),
             self.units_per_second,
-            clausters_editing::playback::DEFAULT_BPM,
             self.editing.version(),
         );
         editor.chrome(
@@ -1887,15 +1883,17 @@ mod window_verb_tests {
     fn a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in() {
         use crate::host::document::sources::{Take, Takes};
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-        use clausters_document::{Beat, Lifetime, SegmentRef, SegmentSource, SourceId, SourceRef};
+        use clausters_document::{
+            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
+        };
 
         // One take cut in two, the halves swapped: a join that mints.
         let mut track = Track::new(NodeId(1), NodeId(2));
         for (id, at, start) in [(10, 1.0, 0.0), (11, 0.0, 1.0)] {
             let mut region = Region::new(
                 NodeId(id),
-                Beat(at),
-                Beat(1.0),
+                Second(at),
+                Second(1.0),
                 Content::Unknown(Value::Null),
             );
             region.content = Content::window(SegmentRef {
@@ -2047,11 +2045,13 @@ mod window_verb_tests {
     /// A box on a lane, a window onto source 1.
     fn region(id: u64, position: f64, length: f64) -> clausters_document::multitrack::Region {
         use clausters_document::multitrack::{Content, Region};
-        use clausters_document::{Beat, Lifetime, SegmentRef, SegmentSource, SourceId, SourceRef};
+        use clausters_document::{
+            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
+        };
         let mut region = Region::new(
             NodeId(id),
-            Beat(position),
-            Beat(length),
+            Second(position),
+            Second(length),
             Content::Window {
                 window: SegmentRef {
                     source: SegmentSource::Samples(SourceRef {
@@ -2781,14 +2781,14 @@ mod window_verb_tests {
     #[test]
     fn a_piece_is_drawn_edited_and_undone_by_a_host_that_owns_it() {
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-        use clausters_document::{Beat, Opaque as Op, SegmentRef, SegmentSource, SourceId};
         use clausters_document::{Lifetime, SourceRef};
+        use clausters_document::{Opaque as Op, Second, SegmentRef, SegmentSource, SourceId};
 
         let region = |id: u64, at: f64| {
             Region::new(
                 NodeId(id),
-                Beat(at),
-                Beat(2.0),
+                Second(at),
+                Second(2.0),
                 Content::Window {
                     window: SegmentRef {
                         source: SegmentSource::Samples(SourceRef {

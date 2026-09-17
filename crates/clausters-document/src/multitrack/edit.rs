@@ -22,12 +22,12 @@
 //!
 //! Splitting and joining a region are the only edits here that change *how many
 //! regions there are*, and they are also the only two this crate cannot work
-//! out on its own. The split point is on the musical axis and a window into a
-//! source is on the content's, and [`crate::timebase`] converts between the two
-//! **never** — that is its whole premise, and it is not suspended because it
-//! would be convenient here. So the caller, who holds the tempo map and knows
-//! its own frames per beat, states the halves' content and the crate does the
-//! rest.
+//! out on its own. The split point is on the multitrack's axis and a window
+//! into a source is on the content's — a recording's seconds read at a
+//! playrate, a node's own beats — and [`crate::timebase`] converts between the
+//! two **never**: that is its whole premise, and it is not suspended because it
+//! would be convenient here. So the caller, who knows how its content is read,
+//! states the halves' content and the crate does the rest.
 //!
 //! Both also invert as [`MultitrackIntent::SetLane`] — the lane's previous
 //! contents, whole. Nothing smaller describes putting back a region that was
@@ -48,7 +48,7 @@ use super::{Content, Fade, Marker, Meter, Multitrack, Region, Span, Tempo, Track
 use crate::history::{Applied, Editable};
 use crate::intent::{Against, Outcome, Rules};
 use crate::session::Source;
-use crate::timebase::Beat;
+use crate::timebase::Second;
 use crate::{NodeId, Opaque, Point, SourceId};
 
 /// The domain name the piece's structure is registered under. See
@@ -129,7 +129,7 @@ pub enum MultitrackIntent {
         /// Its regions.
         regions: Vec<Region>,
     },
-    /// Where a region now sits: which track, which lane, which beat, which
+    /// Where a region now sits: which track, which lane, which instant, which
     /// layer.
     ///
     /// **One edit, whatever moved.** A drag within a lane, a drag to another
@@ -145,7 +145,7 @@ pub enum MultitrackIntent {
         /// The lane of that track it now sits on.
         lane: NodeId,
         /// Where it now starts.
-        position: Beat,
+        position: Second,
         /// Which of the overlapping regions is on top. See
         /// [`Region::layer`].
         #[serde(default)]
@@ -162,14 +162,14 @@ pub enum MultitrackIntent {
         /// The region being trimmed.
         region: NodeId,
         /// Where it now starts.
-        position: Beat,
+        position: Second,
         /// How long it now is.
-        length: Beat,
+        length: Second,
         /// What it now reads, when the trim moved the window.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content: Option<Content>,
     },
-    /// One region becomes two, at a beat, with the two identities named.
+    /// One region becomes two, at an instant, with the two identities named.
     ///
     /// Naming the resulting ids is what keeps this absolute: applying it twice
     /// leaves the same piece, because the second time the halves are already
@@ -179,7 +179,7 @@ pub enum MultitrackIntent {
         /// The region being split. Gone when this applies.
         region: NodeId,
         /// Where it is cut, on the timeline.
-        at: Beat,
+        at: Second,
         /// The identity of the half before the cut.
         left: NodeId,
         /// The identity of the half after it.
@@ -255,13 +255,13 @@ pub enum MultitrackIntent {
         /// Its points, in order.
         points: Vec<Point>,
     },
-    /// A marker is at this beat with this name — placed if it was not there,
+    /// A marker is at this instant with this name — placed if it was not there,
     /// moved or renamed if it was.
     SetMarker {
         /// Its identity.
         marker: NodeId,
         /// Where it now is.
-        at: Beat,
+        at: Second,
         /// What it is now called.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
@@ -288,7 +288,7 @@ pub enum MultitrackIntent {
     ///
     /// The map is the piece's, so an edit to it is the piece's, and stating it
     /// whole is what makes adding, moving and removing an entry one verb. It is
-    /// small — a piece has tempo changes, not tempo per beat — which is why
+    /// small — a map has tempo changes, not a tempo per beat — which is why
     /// this one is whole where a lane's regions get a verb of their own.
     SetTempoMap {
         /// The entries; kept in position order.
@@ -616,7 +616,7 @@ fn place_region(
     region: NodeId,
     track: NodeId,
     lane: NodeId,
-    position: Beat,
+    position: Second,
     layer: u32,
     rules: &Rules,
 ) -> Outcome<MultitrackIntent> {
@@ -657,8 +657,8 @@ fn place_region(
 fn trim_region(
     piece: &mut Multitrack,
     region: NodeId,
-    position: Beat,
-    length: Beat,
+    position: Second,
+    length: Second,
     content: Option<&Content>,
     rules: &Rules,
 ) -> Outcome<MultitrackIntent> {
@@ -670,7 +670,7 @@ fn trim_region(
         length,
         content,
     };
-    if length <= Beat::ZERO {
+    if length <= Second::ZERO {
         return Outcome::refused(
             stated(content.cloned()),
             "a region cannot be shorter than nothing",
@@ -712,7 +712,7 @@ fn trim_region(
 fn split_region(
     piece: &mut Multitrack,
     region: NodeId,
-    at: Beat,
+    at: Second,
     left: NodeId,
     right: NodeId,
     left_content: Option<&Content>,
@@ -804,7 +804,7 @@ fn join_regions(
     });
     let mut joined = held[0].clone();
     joined.id = into;
-    joined.length = held.iter().map(Region::end).fold(Beat::ZERO, Beat::max) - joined.position;
+    joined.length = held.iter().map(Region::end).fold(Second::ZERO, Second::max) - joined.position;
     joined.fade_out = held.last().expect("two at least").fade_out.clone();
     if let Some(content) = content {
         joined.content = content.clone();
@@ -866,7 +866,7 @@ fn set_automation(
 fn set_marker(
     piece: &mut Multitrack,
     marker: NodeId,
-    at: Beat,
+    at: Second,
     name: Option<&str>,
     rules: &Rules,
 ) -> Outcome<MultitrackIntent> {
@@ -971,8 +971,11 @@ fn reorder(piece: &mut Multitrack, lane: NodeId) {
     }
 }
 
-fn snap(rules: &Rules, beat: Beat) -> Beat {
-    Beat(rules.snap(beat.get()))
+/// A position on the grid the rules state. The grid is a length on the
+/// multitrack's own axis, seconds: a musical grid (a beat, a bar) reaches here
+/// already resolved through the tempo map by whoever holds it.
+fn snap(rules: &Rules, at: Second) -> Second {
+    Second(rules.snap(at.get()))
 }
 
 fn snapped(rules: &Rules) -> bool {

@@ -1393,8 +1393,8 @@ pub fn points_props(
 /// played from are the same samples.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = multitrackProps)]
-pub fn multitrack_props(piece: &str, sample_rate: f64, default_bpm: f64, sources: &str) -> String {
-    clausters_editing::multitrack::props_json(piece, sample_rate, default_bpm, sources)
+pub fn multitrack_props(piece: &str, sample_rate: f64, sources: &str) -> String {
+    clausters_editing::multitrack::props_json(piece, sample_rate, sources)
 }
 
 /// **An editing context**: one undo order over every editor opened in it. Its
@@ -1482,12 +1482,12 @@ pub fn editing_load(request: &str) -> String {
 /// a structure alone and this one is a function of a structure *and* of what a
 /// server already holds: a piece plays itself from the transport, so the nodes
 /// have to stay, and what this answers is the **difference**.
-/// The tempo a piece that states none is read and drawn at, in beats per
-/// minute.
+/// The tempo a multitrack that states none is drawn at, in beats per second:
+/// what its ruler reads, and nothing it places.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = editingDefaultBpm)]
-pub fn editing_default_bpm() -> f64 {
-    clausters_editing::playback::DEFAULT_BPM
+#[wasm_bindgen(js_name = editingDefaultTempo)]
+pub fn editing_default_tempo() -> f64 {
+    clausters_editing::multitrack::DEFAULT_TEMPO
 }
 
 /// **Steps being carried out**: the queue a playback's answers are walked
@@ -1572,14 +1572,14 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.stop(mark)))
     }
 
-    /// The steps that put the transport at `beat`.
-    pub fn locate(&mut self, beat: f64) -> String {
-        clausters_editing::playback::answer_json(Ok(self.0.locate(beat)))
+    /// The steps that put the transport at `secs` of the multitrack.
+    pub fn locate(&mut self, secs: f64) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.locate(secs)))
     }
 
-    /// The steps that cue a stopped transport at `beat`.
-    pub fn cue(&mut self, beat: f64) -> String {
-        clausters_editing::playback::answer_json(Ok(self.0.cue(beat)))
+    /// The steps that cue a stopped transport at `secs`.
+    pub fn cue(&mut self, secs: f64) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.cue(secs)))
     }
 
     /// The steps that free everything the piece made.
@@ -1603,16 +1603,16 @@ impl JsMultitrackPlayback {
         self.0.rolling()
     }
 
-    /// A beat as a sample of the piece.
-    #[wasm_bindgen(js_name = beatsToSamples)]
-    pub fn beats_to_samples(&self, beat: f64) -> f64 {
-        self.0.beats_to_samples(beat) as f64
+    /// A second of the multitrack as a sample.
+    #[wasm_bindgen(js_name = secsToSamples)]
+    pub fn secs_to_samples(&self, secs: f64) -> f64 {
+        self.0.secs_to_samples(secs) as f64
     }
 
-    /// A sample of the piece as a beat.
-    #[wasm_bindgen(js_name = samplesToBeats)]
-    pub fn samples_to_beats(&self, samples: f64) -> f64 {
-        self.0.samples_to_beats(samples as i64)
+    /// A sample as a second of the multitrack.
+    #[wasm_bindgen(js_name = samplesToSecs)]
+    pub fn samples_to_secs(&self, samples: f64) -> f64 {
+        self.0.samples_to_secs(samples as i64)
     }
 }
 
@@ -1639,29 +1639,15 @@ impl JsInstance {
     /// **The difference between what is sounding and what the piece says**, as
     /// the JSON list of operations a client applies.
     ///
-    /// The same four arguments `multitrackPlan` takes — the piece, the rate,
-    /// the tempo a piece that states none is read at, and the source table —
+    /// The same three arguments `multitrackPlan` takes — the piece, the rate
+    /// and the source table —
     /// plus the master's own level, which is the caller's and not the piece's.
     ///
     /// An operation names what it acts on by a **handle**, never by a node id,
     /// a bus index or a buffer number: this allocates none of those, and the
     /// client keeps the one table from handle to whatever it made.
-    pub fn reconcile(
-        &mut self,
-        piece: &str,
-        sample_rate: f64,
-        default_bpm: f64,
-        sources: &str,
-        gain: f32,
-    ) -> String {
-        clausters_editing::instance::reconcile_json(
-            &mut self.0,
-            piece,
-            sample_rate,
-            default_bpm,
-            sources,
-            gain,
-        )
+    pub fn reconcile(&mut self, piece: &str, sample_rate: f64, sources: &str, gain: f32) -> String {
+        clausters_editing::instance::reconcile_json(&mut self.0, piece, sample_rate, sources, gain)
     }
 
     /// **Everything this made, given back** — the operations that stop the
@@ -2888,16 +2874,15 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
 ///
 /// `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
 /// where a source's samples actually are on a running server, which is the one
-/// fact about a piece that is not in the piece. `default_bpm` is the tempo a
-/// piece that never stated one is read at — the caller's, because a document
-/// that invented 120 would be deciding a musical question.
+/// fact about a piece that is not in the piece. No tempo is asked for: a
+/// multitrack is placed in seconds.
 ///
-/// Three rules live in it and each was written twice before it did: beats
-/// crossed to frames through the tempo map, the source's width picking the
+/// Three rules live in it and each was written twice before it did: seconds
+/// crossed to frames at the rate, the source's width picking the
 /// clip's wiring, and what a solo anywhere does to everything else.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = multitrackPlan)]
-pub fn multitrack_plan(piece: &str, sample_rate: f64, default_bpm: f64, sources: &str) -> String {
+pub fn multitrack_plan(piece: &str, sample_rate: f64, sources: &str) -> String {
     let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
     else {
         return String::new();
@@ -2915,8 +2900,7 @@ pub fn multitrack_plan(piece: &str, sample_rate: f64, default_bpm: f64, sources:
                 .map(|id| (clausters_document::SourceId(id), info))
         })
         .collect();
-    let plan =
-        clausters_document::multitrack::nodes::plan(&piece, sample_rate, default_bpm, &table);
+    let plan = clausters_document::multitrack::nodes::plan(&piece, sample_rate, &table);
     serde_json::to_string(&plan).unwrap_or_default()
 }
 
@@ -2932,6 +2916,17 @@ pub fn multitrack_plan(piece: &str, sample_rate: f64, default_bpm: f64, sources:
 #[wasm_bindgen(js_name = sessionFormat)]
 pub fn session_format() -> u32 {
     clausters_document::session::FORMAT
+}
+
+/// **A session written in an older format, as this build writes it** — the
+/// crate's `session::migrate` over the session's JSON text, or an empty string
+/// for text that is not JSON. A session already current comes back unchanged.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sessionMigrate)]
+pub fn session_migrate(session: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(session)
+        .map(|written| clausters_document::session::migrate(written).to_string())
+        .unwrap_or_default()
 }
 
 /// **One catalogue view's props**, as JSON — the widget a waveform, a curve or

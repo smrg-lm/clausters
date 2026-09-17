@@ -120,10 +120,11 @@ print(f"wrote {take_path} ({take_frames} frames)")
 # ## The piece
 #
 # Two tracks, each with one lane, each with one region. The region's `position`
-# and `length` are in **beats** -- where a thing sits in a piece is a musical
-# decision -- while what fills it is measured in its own source's units. The two
-# are not the same axis, and the tempo map is what relates them, which is why
-# the map is part of the piece rather than of a track.
+# and `length` are in **seconds** -- a multitrack is placed in physical time --
+# while what fills it is measured in its own source's units. The tempo map the
+# piece holds places nothing: it says where the beats and bars of a ruler fall
+# over those seconds, and it is saved with the piece like everything else it
+# holds.
 
 # %%
 #: The source id the piece names. The table below is what says where it is.
@@ -137,7 +138,7 @@ def window(start: float = 0.0, duration: float = take_seconds) -> dict:
 
 
 piece = Multitrack()
-piece.set_tempo(Tempo(at=0.0, bpm=120.0))
+piece.set_tempo(Tempo(at=0.0, tempo=2.0))     # beats per second: 120 a minute
 
 #: The take, twice, at two places: two regions, two identities, **one** source.
 #: Nothing is copied, and trimming one leaves the other where it was.
@@ -155,14 +156,14 @@ echo.active_lane.place(Region(id=22, position=4.0, length=4.0,
                               content=Content.onto(window())))
 
 piece.tracks.extend([tone, echo])
-print(f"the piece is {piece.end:.0f} beats long, over {len(piece.tracks)} tracks")
+print(f"the piece is {piece.end:.0f} s long, over {len(piece.tracks)} tracks")
 
 # %% [markdown]
 # ## Editing it: one edit, one undo
 #
 # The piece has a vocabulary of its own, reached through the door every other
 # structure is reached through. Two things about it are worth seeing rather than
-# reading: **where a region is** means track, lane and beat together, so moving
+# reading: **where a region is** means track, lane and second together, so moving
 # one to the other track is a single edit -- there is no moment in between where
 # it is on no lane at all; and the crate hands back the edit that *puts it back*
 # in the same answer, because an inverse has to be read before the edit lands.
@@ -177,14 +178,14 @@ after = Multitrack.read(moved["state"])
 where = next((t, l, r) for t in after.tracks for l in t.lanes
              for r in l.regions if r.id == 13)
 print(f"  moved:  region 13 is on track {where[0].id}, lane {where[1].id}, "
-      f"at beat {where[2].position:.0f}")
+      f"at {where[2].position:.0f} s")
 print(f"  and to put it back: {moved['current']}")
 
 #: The other direction, through the same door -- and the piece is exactly the
 #: one that was built above, which is what "absolute" buys.
 piece = Multitrack.read(domain_edit(MULTITRACK, moved["state"],
                                      moved["current"])["state"])
-print(f"  undone: the piece is {piece.end:.0f} beats long again, "
+print(f"  undone: the piece is {piece.end:.0f} s long again, "
       f"over {len(piece.tracks)} tracks")
 
 # %% [markdown]
@@ -281,7 +282,7 @@ def run() -> None:
             for region in track.active_lane.regions:
                 print(f"  {region.position:6.2f}  {track.name}{state}: "
                       f"{region.name or region.id} "
-                      f"({region.length:.0f} beats)")
+                      f"({region.length:.0f} s)")
 
         # The two regions of the first track name one source, and there is one
         # buffer behind them.

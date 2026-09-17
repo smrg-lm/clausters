@@ -9,15 +9,13 @@
 //! region for is a new one), and a reader written per client is a reader that
 //! disagrees per client.
 //!
-//! # It is in beats and seconds, and never in frames
+//! # It is in seconds, and never in frames
 //!
-//! A timeline axis counts sample frames and this crate has no sample rate and
-//! no tempo map — [`Tempo`](super::Tempo) says what the piece *states*, and
-//! turning that into a function of time is `clausters_core::tempomap`'s. So
-//! everything here is in the units the document itself is written in, and a
-//! caller crosses to its axis with the two calls that crate already exposes.
-//! That split is deliberate: the **shape** is the format's and the **time** is
-//! the tempo map's, and neither is copied into the other.
+//! A timeline axis counts sample frames and this crate has no sample rate. So
+//! everything here is in the unit the multitrack is written in, seconds, and a
+//! caller crosses to its axis with the rate alone. No tempo map is involved: a
+//! multitrack places things in physical time, and the tempo map it holds is a
+//! structure a ruler and a snap read, which places nothing.
 //!
 //! # A row is a track, showing the lane it plays
 //!
@@ -41,7 +39,7 @@ use crate::multitrack::edit::{MintedSource, MultitrackIntent};
 use crate::multitrack::{Automation, Content, Lane, Multitrack, Region, Track};
 use crate::session::{Location, Part, Source};
 use crate::{
-    Beat, Lifetime, NodeId, Opaque, Point, Range, SegmentRef, SegmentSource, SourceId, SourceRef,
+    Lifetime, NodeId, Opaque, Point, Range, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
 };
 
 /// One row of the view: a track, and the strip that is drawn beside it.
@@ -73,10 +71,10 @@ pub struct Box {
     pub region: NodeId,
     /// The row it sits on ([`Row::track`]).
     pub row: NodeId,
-    /// Where it starts, in beats.
-    pub position: Beat,
-    /// How long it occupies, in beats.
-    pub length: Beat,
+    /// Where it starts, in seconds.
+    pub position: Second,
+    /// How long it occupies, in seconds.
+    pub length: Second,
     /// The frame of the source its own zero reads, **in seconds** — a
     /// recording's units, which no tempo scales.
     pub start: f64,
@@ -187,7 +185,7 @@ pub struct Curve {
     /// which is which is a fact about the parameter, not about the curve.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub target: Opaque,
-    /// The break-points. `at` is on the musical axis, like every placement here.
+    /// The break-points. `at` is in seconds, like every placement here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<Point>,
     /// Whether the row or layer is shown — the view's own state, kept in the
@@ -476,13 +474,12 @@ pub struct Placed {
     /// always an id.
     pub row: NodeId,
     /// Where it now starts.
-    pub position: Beat,
+    pub position: Second,
     /// How long it now occupies.
-    pub length: Beat,
+    pub length: Second,
     /// The frame of the source its zero reads, in seconds.
     pub start: f64,
-    /// How much of the source it shows, in seconds — its own length crossed to
-    /// the wall clock by whoever holds the tempo map, which is not this crate.
+    /// How much of the source it shows, in seconds.
     pub content: f64,
     /// What it is a window onto, where the caller could resolve one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -679,7 +676,6 @@ pub fn read_join(
     piece: &Multitrack,
     names: &[String],
     rate: f64,
-    tempo: &clausters_core::tempomap::TempoMap,
     taken: &[SourceId],
     parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,
     frames_of: &dyn Fn(SourceId) -> Option<u64>,
@@ -728,9 +724,8 @@ pub fn read_join(
         // source than the box plays -- and a part built from that claim asked
         // the server for samples the take does not have, which refused the
         // whole stitch and left the joined box empty (found 2026-09-13). What
-        // is heard is the box's length from its start, so that is the span,
-        // crossed to seconds through the piece's own tempo map.
-        let shown = tempo.span_secs(region.position.get(), region.end().get());
+        // is heard is the box's length from its start, so that is the span.
+        let shown = region.length.get();
         if shown <= 0.0 {
             return Err("one of these boxes reads nothing");
         }
@@ -1101,8 +1096,8 @@ mod tests {
     fn piece() -> Multitrack {
         let mut region = Region::new(
             NodeId(3),
-            Beat(0.0),
-            Beat(4.0),
+            Second(0.0),
+            Second(4.0),
             Content::Unknown(serde_json::Value::Null),
         );
         region.automation.push(curve_at(NodeId(5), 0.25));
@@ -1235,8 +1230,8 @@ mod tests {
         let made = Placed {
             name: "new".into(),
             row: held.row,
-            position: Beat(4.0),
-            length: Beat(2.0),
+            position: Second(4.0),
+            length: Second(2.0),
             start: 1.0,
             content: 2.0,
             source: Some(crate::SourceId(1)),
@@ -1246,7 +1241,7 @@ mod tests {
                 .find_map(|intent| match intent {
                     MultitrackIntent::SetLane { regions, .. } => regions
                         .iter()
-                        .find(|r| r.position == Beat(4.0))
+                        .find(|r| r.position == Second(4.0))
                         .and_then(|r| r.content.as_window().cloned()),
                     _ => None,
                 })
@@ -1292,8 +1287,8 @@ mod tests {
         let same = |name: &str, at: f64, len: f64, start: f64| Placed {
             name: name.into(),
             row: held.row,
-            position: Beat(at),
-            length: Beat(len),
+            position: Second(at),
+            length: Second(len),
             start,
             content: len,
             source: held.source,
@@ -1327,7 +1322,7 @@ mod tests {
             .expect("the original");
         assert_eq!(
             first.length,
-            Beat(2.0),
+            Second(2.0),
             "shortened, and it stayed shortened"
         );
         let tail = lane
@@ -1335,7 +1330,7 @@ mod tests {
             .iter()
             .find(|r| r.id != NodeId(3))
             .expect("the tail");
-        assert_eq!(tail.position, Beat(2.0));
+        assert_eq!(tail.position, Second(2.0));
         assert_eq!(tail.content.as_window().map(|w| w.start), Some(2.0));
     }
 

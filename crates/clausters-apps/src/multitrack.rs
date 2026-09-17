@@ -29,6 +29,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use clausters_core::tempoclock::secs_to_samples;
+use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::Multitrack;
 use clausters_editing::multitrack::{self as projection, Look};
 
@@ -93,8 +94,11 @@ pub struct Meter {
 pub struct Window<'a> {
     /// The piece.
     pub piece: &'a Multitrack,
-    /// Where a beat lands and which buffer each source was read into.
+    /// The rate a second lands at and which buffer each source was read into.
     pub look: &'a Look<'a>,
+    /// The tempo map the piece holds, which is what the ruler draws its beats
+    /// and bars from. It places nothing: the piece is in seconds.
+    pub tempo: &'a TempoMap,
     /// The id of the piece's own widget.
     pub widget: i32,
     /// The id of the strip that rules it.
@@ -102,7 +106,7 @@ pub struct Window<'a> {
     /// The navigation group the piece and its ruler share, when the caller names
     /// one.
     pub link: Option<i64>,
-    /// The position cursor, in beats — `None` until a hand places one.
+    /// The position cursor, in seconds — `None` until a hand places one.
     pub cursor: Option<f64>,
     /// Where each track's meters are read from; empty for a piece nobody plays.
     pub meters: &'a [Meter],
@@ -129,15 +133,14 @@ impl Window<'_> {
     /// top of the piece until a hand places one. A piece that stated no cursor
     /// would otherwise open with nowhere to play from.
     pub fn cursor_units(&self) -> f64 {
-        let beats = self.cursor.unwrap_or(0.0);
-        secs_to_samples(self.look.tempo.secs_at(beats), self.look.rate) as f64
+        secs_to_samples(self.cursor.unwrap_or(0.0), self.look.rate) as f64
     }
 
     /// The tempo map as the wire carries it: the JSON breakpoint list, as a
     /// string, because OSC carries no arrays and a `/gui_set` of it could not be
     /// spelled otherwise.
     fn tempo_map(&self) -> String {
-        serde_json::to_string(self.look.tempo).unwrap_or_default()
+        serde_json::to_string(self.tempo).unwrap_or_default()
     }
 }
 
@@ -217,8 +220,8 @@ fn piece_props(w: &Window<'_>) -> Map<String, Value> {
     // The head is anchored at 0 because the counter it sweeps from is already
     // the piece's position.
     props.insert("playhead_at".into(), json!(0.0));
-    // The piece's own map rules the beats, so the labels and the boxes cannot
-    // disagree.
+    // The ruler's beats and bars are the piece's own tempo map drawn over its
+    // seconds: the ruler's configuration, which moves no box.
     props.insert("tempo_map".into(), json!(w.tempo_map()));
     props.insert("cursor".into(), json!(w.cursor_units()));
     props.insert("link".into(), json!(w.group()));
@@ -286,27 +289,22 @@ fn transport(ids: Option<TransportIds>) -> Value {
 mod tests {
     use super::*;
     use clausters_document::multitrack::{Content, Region, Tempo, Track};
-    use clausters_document::{Beat, NodeId, SourceId};
+    use clausters_document::{Beat, NodeId, Second, SourceId};
     use std::collections::HashMap;
 
     /// One track holding one box, at a tempo of two beats a second.
     fn piece() -> Multitrack {
         let region = Region::new(
             NodeId(3),
-            Beat(4.0),
-            Beat(4.0),
+            Second(4.0),
+            Second(4.0),
             Content::Unknown(Value::Null),
         );
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0].regions.push(region);
         let mut piece = Multitrack::default();
         piece.tracks.push(track);
-        piece.tempo.push(Tempo {
-            at: Beat(0.0),
-            bpm: 120.0,
-            ramp: false,
-            extra: Default::default(),
-        });
+        piece.tempo.push(Tempo::at(Beat(0.0), 2.0));
         piece
     }
 
@@ -316,10 +314,9 @@ mod tests {
         f: impl FnOnce(&Window<'_>) -> T,
     ) -> T {
         let piece = piece();
-        let tempo = projection::tempo_map(&piece, 60.0);
+        let tempo = projection::tempo_map(&piece);
         let table: HashMap<SourceId, i64> = HashMap::new();
         let look = Look {
-            tempo: &tempo,
             rate: 48_000.0,
             sources: &table,
         };
@@ -331,6 +328,7 @@ mod tests {
         f(&Window {
             piece: &piece,
             look: &look,
+            tempo: &tempo,
             widget: 7,
             ruler: 8,
             link: None,
@@ -406,17 +404,17 @@ mod tests {
     }
 
     /// **The piece's props are the projection's and the window's**: the rows
-    /// and boxes, the meters as the widget's quadruples, and a cursor that
-    /// crosses to samples through the piece's own tempo.
+    /// and boxes, the meters as the widget's quadruples, and a cursor in
+    /// seconds that crosses to samples by the rate alone, whatever the tempo.
     #[test]
     fn the_piece_is_drawn_from_the_projection_and_the_window() {
-        let props = compose(Transport::Absent, Some(4.0), |w| props(w, w.widget));
+        let props = compose(Transport::Absent, Some(2.0), |w| props(w, w.widget));
         assert!(props.contains_key("lanes") && props.contains_key("clips"));
         assert_eq!(props["meters"], json!(["1", 20, 22, 2]));
         assert_eq!(
             props["cursor"],
             json!(96_000.0),
-            "four beats at two a second"
+            "two seconds, at two beats a second or at any other tempo"
         );
         assert_eq!(
             props["link"],

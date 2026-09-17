@@ -53,10 +53,10 @@ pub struct Outcome {
     /// `{"intent": "write", "channel", "start", "values"}`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit: Option<Value>,
-    /// Where the position cursor was placed, in beats.
+    /// Where the position cursor was placed, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
-    /// The selection a sweep left, in beats.
+    /// The selection a sweep left, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
 }
@@ -70,7 +70,6 @@ pub struct SamplesEditor {
     name: Option<String>,
     layers: Vec<String>,
     rate: f64,
-    tempo: f64,
     title: String,
     size: (i64, i64),
     window: Option<i32>,
@@ -93,7 +92,6 @@ impl SamplesEditor {
             name: None,
             layers: measures(layers)?,
             rate: 48_000.0,
-            tempo: 1.0,
             title: "Samples".into(),
             size: (1000, 520),
             window: None,
@@ -124,7 +122,6 @@ impl SamplesEditor {
             name: self.name.as_deref(),
             layers: &self.layers,
             rate: self.rate,
-            tempo: self.tempo,
             widget,
             title: &self.title,
             size: self.size,
@@ -211,10 +208,10 @@ impl SamplesEditor {
         conversation::answer(seq, version, reason, Vec::new())
     }
 
-    /// The beat a position on the axis falls on: the frame rounded the way
-    /// every client rounds it, at the editor's one tempo.
-    fn beats_at(&self, units: f64) -> f64 {
-        samples_to_secs(units.round() as i64, self.rate) * self.tempo
+    /// The second a position on the axis falls on: the frame rounded the way
+    /// every client rounds it. A take holds no tempo, so nothing else applies.
+    fn secs_at(&self, units: f64) -> f64 {
+        samples_to_secs(units.round() as i64, self.rate)
     }
 
     /// One gesture onto the take: screen state, or a write. Answers the reason
@@ -262,10 +259,10 @@ impl SamplesEditor {
     fn observe(&mut self, tag: &str, values: &[Value], out: &mut Outcome) {
         match tag {
             "locate" if !values.is_empty() => {
-                out.locate = Some(self.beats_at(number(&values[0])));
+                out.locate = Some(self.secs_at(number(&values[0])));
             }
             "selection" => {
-                let at = |i: usize| values.get(i).map_or(0.0, |v| self.beats_at(number(v)));
+                let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 let mut selection = json!({ "start": at(0), "len": at(1) });
                 if values.len() >= 4 {
                     // The sweep restricted the value axis too, carried as it
@@ -305,7 +302,6 @@ struct Facts {
     name: Option<Option<String>>,
     layers: Option<Vec<String>>,
     rate: Option<f64>,
-    tempo: Option<f64>,
     title: Option<String>,
     w: Option<i64>,
     h: Option<i64>,
@@ -338,9 +334,6 @@ impl SamplesEditor {
         if let Some(rate) = facts.rate.filter(|r| *r > 0.0) {
             self.rate = rate;
         }
-        if let Some(tempo) = facts.tempo {
-            self.tempo = tempo;
-        }
         if let Some(title) = facts.title {
             self.title = title;
         }
@@ -357,7 +350,7 @@ impl SamplesEditor {
 }
 
 /// **An editor built from a JSON request** — `buffer`, `channels`, `name`,
-/// `layers` (the measure stack, [`MEASURES`] when absent), `rate`, `tempo`,
+/// `layers` (the measure stack, [`MEASURES`] when absent), `rate`,
 /// `title`, `w`, `h` and `version` (the history's counter) — or the reason it
 /// cannot be: a request that is not JSON, or a measure stack that is refused.
 pub fn new_json(request: &str) -> Result<SamplesEditor, String> {
@@ -384,7 +377,7 @@ pub fn new_json(request: &str) -> Result<SamplesEditor, String> {
 ///
 /// `request` names the `verb` and carries its arguments:
 ///
-/// - `sync` — any of `buffer`, `channels`, `name`, `rate`, `tempo`, `title`,
+/// - `sync` — any of `buffer`, `channels`, `name`, `rate`, `title`,
 ///   `w`, `h`, `window`: the facts a caller holds, handed over before the verbs
 ///   that read them. Answers `{}`.
 /// - `layers` — `stack`, optional: measures the picture by it when given.
@@ -463,7 +456,7 @@ mod tests {
     #[test]
     fn the_window_follows_the_facts_the_caller_holds() {
         let mut editor = new_json(
-            r#"{"buffer": 4, "channels": 1, "name": "saw", "rate": 44100, "tempo": 2,
+            r#"{"buffer": 4, "channels": 1, "name": "saw", "rate": 44100,
                 "title": "take", "w": 800, "h": 400}"#,
         )
         .unwrap();
@@ -526,7 +519,7 @@ mod tests {
 
     /// An editor open in window 900 with its take drawn by widget 12.
     fn opened() -> SamplesEditor {
-        let mut editor = new_json(r#"{"buffer": 7, "rate": 48000, "tempo": 2}"#).unwrap();
+        let mut editor = new_json(r#"{"buffer": 7, "rate": 48000}"#).unwrap();
         call(&mut editor, json!({"verb": "window", "widget": 12}));
         call(&mut editor, json!({"verb": "sync", "window": 900}));
         editor
@@ -615,17 +608,17 @@ mod tests {
         );
     }
 
-    /// A click on the ruler is a cursor in beats, and another view's widget is
-    /// nothing of this editor's.
+    /// A click on the ruler is a cursor in seconds, and another view's widget
+    /// is nothing of this editor's.
     #[test]
-    fn a_locate_is_in_beats_and_a_stranger_is_nothing() {
+    fn a_locate_is_in_seconds_and_a_stranger_is_nothing() {
         let mut editor = opened();
         let out = call(
             &mut editor,
             json!({"verb": "event", "addr": "/gui_event", "version": 0,
                    "args": [12, 1, 0, "locate", 48000.0]}),
         );
-        assert_eq!(out["locate"], 2.0, "one second at two beats a second");
+        assert_eq!(out["locate"], 1.0, "one second");
         let out = call(
             &mut editor,
             json!({"verb": "event", "addr": "/gui_event", "version": 0,

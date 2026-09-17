@@ -397,21 +397,20 @@ impl Host {
         self.send_piece();
     }
 
-    /// **The position cursor was placed at `beat`**: a stopped transport is
-    /// cued there and a rolling one is left alone. The beat is the editor's,
-    /// read off the axis through the piece's own tempo map.
-    pub fn cue_piece(&mut self, beat: f64) {
+    /// **The position cursor was placed at `secs`**: a stopped transport is
+    /// cued there and a rolling one is left alone.
+    pub fn cue_piece(&mut self, secs: f64) {
         #[cfg(test)]
-        self.exchange.asked.push(serde_json::json!(["cue", beat]));
+        self.exchange.asked.push(serde_json::json!(["cue", secs]));
         let Some(piece) = self.instance.piece.as_mut() else {
             return;
         };
-        let steps = piece.cue(beat.max(0.0));
+        let steps = piece.cue(secs.max(0.0));
         self.instance.run.push(Server::Sound, steps);
         self.send_piece();
     }
 
-    /// **Halts the piece and puts it back at `mark`**, in beats: stop goes back
+    /// **Halts the piece and puts it back at `mark`**, in seconds: stop goes back
     /// to the mark, which is what tells it from pause.
     pub fn stop_piece(&mut self, mark: f64) {
         #[cfg(test)]
@@ -429,11 +428,11 @@ impl Host {
     /// what the editor says it reads changed. Answers the window to repaint when
     /// it did.
     pub fn tick_piece_clock(&mut self, position: f64) -> Option<i32> {
-        let beat = self
+        let secs = self
             .instance
             .piece
             .as_ref()?
-            .samples_to_beats(position.max(0.0).round() as i64);
+            .samples_to_secs(position.max(0.0).round() as i64);
         let owner = self.owner.as_mut()?;
         // The end the clock reads is the piece's, which an undo can move
         // without a turn of the editor's.
@@ -444,7 +443,7 @@ impl Host {
         if let Some(piece) = piece {
             editor.set_piece(piece);
         }
-        let text = editor.clock(beat);
+        let text = editor.clock(secs);
         if self.clock_shown.as_deref() == Some(text.as_str()) {
             return None;
         }
@@ -506,7 +505,7 @@ mod tests {
     use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
     use clausters_document::{
-        Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
+        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
     };
 
     fn window(source: u64, start: f64) -> Content {
@@ -546,15 +545,15 @@ mod tests {
         first.name = Some("one".into());
         first.lanes[0].regions = vec![Region::new(
             NodeId(12),
-            Beat(2.0),
-            Beat(4.0),
+            Second(2.0),
+            Second(4.0),
             window(1, 0.5),
         )];
         let mut second = Track::new(NodeId(20), NodeId(21));
         second.lanes[0].regions = vec![Region::new(
             NodeId(22),
-            Beat(0.0),
-            Beat(2.0),
+            Second(0.0),
+            Second(2.0),
             window(1, 0.0),
         )];
         Multitrack {
@@ -675,7 +674,7 @@ mod tests {
             drain(&mut playing).is_empty(),
             "a piece that did not move costs nothing"
         );
-        piece.tracks[0].lanes[0].regions[0].position = Beat(6.0);
+        piece.tracks[0].lanes[0].regions[0].position = Second(6.0);
         sync(&mut playing, &piece, &mut ids);
         let messages = drain(&mut playing);
         assert!(!messages.is_empty(), "the box moved");

@@ -2323,8 +2323,8 @@ impl Host {
             applied: outcome.changed,
         };
         self.adopt(def_id, &[applied]);
-        if let Some(beat) = outcome.locate {
-            self.cue_piece(beat);
+        if let Some(secs) = outcome.locate {
+            self.cue_piece(secs);
         }
         // **A box entered here opens nothing yet.** What it opens is an editor
         // for what the box holds -- the audio editor, another application --
@@ -2347,7 +2347,7 @@ impl Host {
                 self.roll_piece();
             }
             Some(TransportVerb::Stop { mark }) => self.stop_piece(mark),
-            Some(TransportVerb::Cue { beat }) => self.cue_piece(beat),
+            Some(TransportVerb::Cue { secs }) => self.cue_piece(secs),
             None => {}
         }
         if let Some(answer) = outcome.answer {

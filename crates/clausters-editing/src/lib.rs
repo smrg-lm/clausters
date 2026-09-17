@@ -112,7 +112,6 @@ pub fn intake_json(domain: &str, tag: &str, request: &str) -> String {
             tag,
             values,
             number("rate", 0.0),
-            number("defaultBpm", 0.0),
             request.get("sources").unwrap_or(&Value::Null),
         ),
         _ => Intake::nothing(),

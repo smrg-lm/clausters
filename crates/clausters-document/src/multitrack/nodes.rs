@@ -14,9 +14,9 @@
 //!
 //! Three rules, and each was written twice before this module existed:
 //!
-//! - **Beats to frames.** A region sits on the musical axis and a reader counts
-//!   frames, so something has to cross, through the tempo map and the sample
-//!   rate. Two crossings are two places for a box to land in a different place.
+//! - **Seconds to frames.** A region sits in seconds and a reader counts
+//!   frames, so something has to cross, through the sample rate. Two crossings
+//!   are two places for a box to land in a different place.
 //! - **The mixer's rule about solo.** The document records that a track *was
 //!   marked* soloed and deliberately stops there ([`Track::soloed`]); what a
 //!   solo anywhere does to everything else is the mixer's, and this is the
@@ -197,19 +197,11 @@ fn value_at(points: &[crate::Point], at: f64) -> f64 {
 
 /// The curves over one thing, as tables on the **frame** axis.
 ///
-/// `origin` is the beat the curve's own axis starts at: a track's automation is
-/// on the timeline and a clip's is the box's own time, which is the whole
+/// `origin` is the second the curve's own axis starts at: a track's automation
+/// is on the timeline and a clip's is the box's own time, which is the whole
 /// difference between the two places a curve lives.
-///
-/// Sampled on the frame axis rather than the musical one, so a tempo change
-/// bends the table the way it bends everything else -- a point two beats in is
-/// wherever two beats *are*, not wherever they were when the piece began.
-fn curves(
-    automation: &[Automation],
-    origin: f64,
-    step: f64,
-    frames: &dyn Fn(f64) -> f64,
-) -> Vec<PlannedCurve> {
+fn curves(automation: &[Automation], origin: f64, step: f64, rate: f64) -> Vec<PlannedCurve> {
+    let frames = |secs: f64| secs * rate;
     let mut out = Vec::new();
     for curve in automation {
         if !curve.enabled || curve.points.is_empty() {
@@ -226,8 +218,8 @@ fn curves(
             let count = ((last - first) / step).ceil() as usize + 1;
             (0..count)
                 .map(|i| {
-                    let beat = beat_of(frames, origin, first + i as f64 * step);
-                    value_at(&curve.points, beat) as f32
+                    let at = (first + i as f64 * step) / rate - origin;
+                    value_at(&curve.points, at) as f32
                 })
                 .collect()
         };
@@ -240,25 +232,6 @@ fn curves(
         });
     }
     out
-}
-
-/// The beat, on a curve's own axis, that a frame falls on -- found by bisection
-/// over the same `frames` the rest of the plan uses, so the two axes cannot
-/// disagree about where a point is.
-fn beat_of(frames: &dyn Fn(f64) -> f64, origin: f64, frame: f64) -> f64 {
-    let (mut lo, mut hi) = (0.0f64, 1.0f64);
-    while frames(origin + hi) < frame && hi < 1.0e6 {
-        hi *= 2.0;
-    }
-    for _ in 0..48 {
-        let mid = 0.5 * (lo + hi);
-        if frames(origin + mid) < frame {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    0.5 * (lo + hi)
 }
 
 /// **What a track's fader is at**, as the mixer wants it.
@@ -284,27 +257,24 @@ pub fn track_mute(piece: &Multitrack, track: &Track) -> f32 {
     if silent { 1.0 } else { 0.0 }
 }
 
-/// The tempo map a piece measures its beats against.
+/// The tempo map a multitrack holds, as the shared core holds one: what a
+/// ruler draws its beats and bars from and a snap to them reads. It places
+/// nothing, since a multitrack is in seconds.
 ///
-/// A piece that never said a tempo did not say one, and the document refuses to
-/// invent 120 — that would be the format deciding a musical question. So the
-/// default arrives from the caller, who is the one with a reason to have it.
-pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
-    let changes: Vec<clausters_core::tempomap::TempoChange> = piece
+/// A multitrack that never said a tempo did not say one, and the document
+/// refuses to invent one — that would be the format deciding a musical
+/// question. So the default arrives from the caller, in beats per second.
+pub fn tempo_map(multitrack: &Multitrack, default_tempo: f64) -> TempoMap {
+    let changes: Vec<clausters_core::tempomap::TempoChange> = multitrack
         .tempo
         .iter()
         .map(|t| clausters_core::tempomap::TempoChange {
             beats: t.at.get(),
-            // The map's tempo is beats per **second** and a piece writes beats
-            // per minute; the division is here, once, where the field is read.
-            tempo: t.bpm / 60.0,
+            tempo: t.tempo,
             ramp: t.ramp,
         })
         .collect();
-    // The map counts beats per **second** and a piece writes beats per minute,
-    // here as everywhere else in this function.
-    let default = default_bpm / 60.0;
-    TempoMap::from_changes(&changes, default).unwrap_or_else(|_| TempoMap::new(default))
+    TempoMap::from_changes(&changes, default_tempo).unwrap_or_else(|_| TempoMap::new(default_tempo))
 }
 
 /// **The plan for a piece**: what to instantiate, wired to what, at what frame.
@@ -314,16 +284,10 @@ pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
 /// take that has not finished loading is simply not playing yet and the piece
 /// is otherwise whole.
 ///
-/// `default_bpm` is the tempo, in beats per minute, that a piece which never
-/// stated one is read at — the caller's, for the reason above.
-pub fn plan(
-    piece: &Multitrack,
-    sample_rate: f64,
-    default_bpm: f64,
-    sources: &HashMap<SourceId, SourceInfo>,
-) -> Plan {
-    let map = tempo_map(piece, default_bpm);
-    let frames = |beat: f64| map.secs_at(beat) * sample_rate;
+/// No tempo is asked for: every position is in seconds, so the plan is the
+/// sample rate's alone.
+pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, SourceInfo>) -> Plan {
+    let frames = |secs: f64| secs * sample_rate;
     let mut widths: Vec<(usize, usize)> = Vec::new();
     let mut tracks = Vec::new();
 
@@ -337,7 +301,7 @@ pub fn plan(
                 gain: track_gain(track),
                 mute: track_mute(piece, track),
                 clips,
-                curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, &frames),
+                curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, sample_rate),
             });
             continue;
         };
@@ -390,7 +354,7 @@ pub fn plan(
                     &region.automation,
                     region.position.get(),
                     mixer::CURVE_STEP,
-                    &frames,
+                    sample_rate,
                 ),
             });
         }
@@ -402,7 +366,7 @@ pub fn plan(
             clips,
             // A track's curves are on the timeline, which is the whole
             // difference between the two places a curve lives.
-            curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, &frames),
+            curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, sample_rate),
         });
     }
 
@@ -418,8 +382,9 @@ pub fn plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multitrack::Tempo;
     use crate::multitrack::{Lane, Region};
-    use crate::timebase::Beat;
+    use crate::timebase::{Beat, Second};
     use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
 
     fn sources() -> HashMap<SourceId, SourceInfo> {
@@ -457,7 +422,7 @@ mod tests {
             args: crate::Opaque::none(),
             looping: false,
         };
-        Region::new(NodeId(id), Beat(at), Beat(len), content)
+        Region::new(NodeId(id), Second(at), Second(len), content)
     }
 
     fn piece() -> Multitrack {
@@ -472,12 +437,11 @@ mod tests {
         }
     }
 
-    /// **A box lands where the tempo map says it does.** At 60 bpm a beat is a
-    /// second; the second box starts two beats in, which is two seconds of
-    /// frames and not two of anything else.
+    /// **A box lands at its seconds, in frames.** The second box starts two
+    /// seconds in, which is two seconds of frames and not two of anything else.
     #[test]
-    fn a_box_is_planned_in_frames_off_the_musical_axis() {
-        let plan = plan(&piece(), 48_000.0, 60.0, &sources());
+    fn a_box_is_planned_in_frames_off_its_seconds() {
+        let plan = plan(&piece(), 48_000.0, &sources());
         let clips = &plan.tracks[0].clips;
         assert_eq!(clips[0].readers[0].at, 0.0);
         assert_eq!(clips[0].readers[0].span, 2.0 * 48_000.0);
@@ -488,11 +452,25 @@ mod tests {
         );
     }
 
+    /// **A tempo moves no box.** The multitrack is in seconds, and the tempo map
+    /// it holds is read by a ruler and a snap: a plan with a ritardando in the
+    /// map is the plan without one.
+    #[test]
+    fn a_tempo_in_the_multitrack_moves_nothing_in_the_plan() {
+        let mut slower = piece();
+        slower.set_tempo(Tempo::at(Beat(0.0), 2.0));
+        slower.set_tempo(Tempo::at(Beat(1.0), 0.5).ramping());
+        assert_eq!(
+            plan(&slower, 48_000.0, &sources()),
+            plan(&piece(), 48_000.0, &sources())
+        );
+    }
+
     /// **The source's width picks the slot**, because a mono take is panned
     /// into the track and a stereo one is balanced — one reader against two.
     #[test]
     fn the_source_width_picks_the_slot_and_the_readers() {
-        let plan = plan(&piece(), 48_000.0, 60.0, &sources());
+        let plan = plan(&piece(), 48_000.0, &sources());
         let clips = &plan.tracks[0].clips;
         assert_eq!(clips[0].slot, mixer::clip_slot(1));
         assert_eq!(clips[0].readers.len(), 1);
@@ -509,7 +487,7 @@ mod tests {
     fn a_source_with_no_buffer_is_left_out() {
         let mut table = sources();
         table.remove(&SourceId(2));
-        let plan = plan(&piece(), 48_000.0, 60.0, &table);
+        let plan = plan(&piece(), 48_000.0, &table);
         assert_eq!(plan.tracks[0].clips.len(), 1);
         assert_eq!(plan.widths, vec![(1, 2)]);
     }
@@ -586,7 +564,7 @@ mod json_tests {
                 channels: 1,
             },
         )]);
-        let plan = plan(&piece, 48_000.0, 60.0, &table);
+        let plan = plan(&piece, 48_000.0, &table);
         assert_eq!(plan.tracks[0].clips.len(), 1, "the box is planned");
         assert_eq!(plan.tracks[0].clips[0].readers[0].buffer, 7);
     }
@@ -596,7 +574,7 @@ mod json_tests {
 mod curve_tests {
     use super::*;
     use crate::multitrack::{Automation, Lane, Track};
-    use crate::timebase::Beat;
+    use crate::timebase::Second;
 
     fn curve(id: u64, target: serde_json::Value, points: &[(f64, f64)]) -> Automation {
         Automation {
@@ -633,14 +611,14 @@ mod curve_tests {
             serde_json::json!({"port": "gain"}),
             &[(0.0, 0.0), (1.0, 1.0)],
         )]);
-        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let plan = plan(&piece, 48_000.0, &HashMap::new());
         let [table] = &plan.tracks[0].curves[..] else {
             panic!("one curve, got {:?}", plan.tracks[0].curves.len())
         };
         assert_eq!(table.port, "gain");
         assert_eq!(table.at, 0.0, "it starts at its first point");
         assert_eq!(table.step, mixer::CURVE_STEP);
-        // One second at 60 bpm, sampled every 64 frames.
+        // One second, sampled every 64 frames.
         assert_eq!(table.table.len(), 48_000 / 64 + 1);
         assert!(table.table[0].abs() < 1e-6, "it starts at its first value");
         assert!((table.table[table.table.len() - 1] - 1.0).abs() < 1e-3);
@@ -664,7 +642,7 @@ mod curve_tests {
         );
         bent.points[0].data = crate::Opaque(serde_json::json!({"shape": 5, "curve": 4.0}));
         let piece = track_with(vec![bent]);
-        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let plan = plan(&piece, 48_000.0, &HashMap::new());
         let table = &plan.tracks[0].curves[0].table;
         let middle = table[table.len() / 2];
         let drawn = clausters_core::envshape::shape_value(5, 4.0, 0.0, 1.0, 0.5);
@@ -684,7 +662,7 @@ mod curve_tests {
             curve(10, serde_json::json!({"plugin": 3}), &[(0.0, 1.0)]),
             curve(11, serde_json::Value::Null, &[(0.0, 1.0)]),
         ]);
-        let plan = plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let plan = plan(&piece, 48_000.0, &HashMap::new());
         assert!(plan.tracks[0].curves.is_empty());
     }
 
@@ -696,22 +674,22 @@ mod curve_tests {
         held.enabled = false;
         let piece = track_with(vec![held]);
         assert!(
-            plan(&piece, 48_000.0, 60.0, &HashMap::new()).tracks[0]
+            plan(&piece, 48_000.0, &HashMap::new()).tracks[0]
                 .curves
                 .is_empty()
         );
     }
 
     /// **A box's curve is the box's own time.** A fade drawn at the start of a
-    /// clip two beats in begins two beats in, not at the top of the piece --
+    /// clip two seconds in begins two seconds in, not at the top of the timeline --
     /// which is the whole difference between the two places a curve lives.
     #[test]
     fn a_clips_curve_starts_where_the_clip_does() {
         let mut piece = track_with(Vec::new());
         let mut region = crate::multitrack::Region::new(
             NodeId(3),
-            Beat(2.0),
-            Beat(1.0),
+            Second(2.0),
+            Second(1.0),
             Content::Window {
                 window: crate::SegmentRef {
                     source: crate::SegmentSource::Samples(crate::SourceRef {
@@ -741,8 +719,8 @@ mod curve_tests {
                 channels: 1,
             },
         )]);
-        let plan = plan(&piece, 48_000.0, 60.0, &table);
+        let plan = plan(&piece, 48_000.0, &table);
         let curve = &plan.tracks[0].clips[0].curves[0];
-        assert_eq!(curve.at, 2.0 * 48_000.0, "two beats in, in frames");
+        assert_eq!(curve.at, 2.0 * 48_000.0, "two seconds in, in frames");
     }
 }

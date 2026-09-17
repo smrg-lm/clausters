@@ -23,20 +23,12 @@
 //!
 //! # What the picture is measured in
 //!
-//! The piece measures **beats** and the shared time axis measures timeline
-//! samples, and what crosses between them is the piece's own **tempo map**
-//! rather than a ratio: a position is `secs_at(beat) × rate`, and a *length* is
-//! the difference of two of those, because how long four beats last depends on
-//! where they start. A single ratio is right only for a piece that never
-//! changes tempo, and getting it wrong is silent — the boxes are drawn and the
-//! readers placed in the same wrong place, so the picture and the sound agree
-//! about it.
-//!
-//! A region's window into its samples is in **seconds**, which meets the axis
-//! through the rate and never through the tempo: a recording's length is a
-//! wall-clock fact.
+//! The multitrack measures **seconds** and the shared time axis measures
+//! timeline samples, so what crosses between them is the rate alone: a
+//! position or a length is `seconds × rate`. The tempo map the multitrack holds
+//! places nothing; a ruler reads it. A region's window into its samples is in
+//! seconds too, which meets the axis the same way.
 
-use clausters_core::tempomap::TempoMap;
 use clausters_document::SourceId;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MultitrackIntent;
@@ -46,26 +38,10 @@ use clausters_editing::multitrack as projection;
 use super::sources::Takes;
 use super::tree::{ClipRow, LaneRow, Piece};
 
-/// The tempo a piece that never said one is read at, in beats per second —
-/// one, so a beat is a second and a piece with no tempo behaves exactly as it
-/// did before there was a map.
-///
-/// It is the **reader's** default and not the document's: a piece that said no
-/// tempo did not say one, and writing 120 into the format would be the crate
-/// deciding a musical question ([`clausters_document::multitrack::Multitrack::tempo`]).
-pub const DEFAULT_TEMPO: f64 = clausters_editing::playback::DEFAULT_BPM / 60.0;
-
 /// How the picture is scaled.
 #[derive(Debug, Clone)]
 pub struct Look<'a> {
-    /// Beats to seconds, as the piece itself states it — steps, ramps and all.
-    ///
-    /// Owned rather than borrowed, and rebuilt from the piece each time it is
-    /// asked for: it is a handful of segments, and a copy kept beside the piece
-    /// is a copy to keep in step with every edit that moves a tempo.
-    pub tempo: TempoMap,
-    /// Frames a second — where the musical axis and the wall clock both meet
-    /// the timeline.
+    /// Frames a second — where the multitrack's seconds meet the timeline.
     pub rate: f64,
     /// The session's samples, once somebody resolved them to server buffers.
     pub takes: Option<&'a Takes>,
@@ -78,7 +54,6 @@ pub struct Look<'a> {
 impl Default for Look<'_> {
     fn default() -> Self {
         Self {
-            tempo: TempoMap::new(DEFAULT_TEMPO),
             rate: 48_000.0,
             takes: None,
             sources: None,
@@ -87,47 +62,30 @@ impl Default for Look<'_> {
 }
 
 impl Look<'_> {
-    /// Where a beat falls on the timeline, in frames.
-    pub fn frame_at(&self, beats: f64) -> f64 {
-        self.tempo.secs_at(beats) * self.rate
-    }
-
-    /// How long a stretch of beats lasts there — **the difference of two
-    /// positions**, because four beats are not one length: under a ritardando
-    /// they are longer later than earlier.
-    pub fn frames_over(&self, from: f64, len: f64) -> f64 {
-        self.frame_at(from + len) - self.frame_at(from)
+    /// Where a second falls on the timeline, in frames — a position or a
+    /// length alike.
+    pub fn frame_at(&self, secs: f64) -> f64 {
+        secs * self.rate
     }
 
     /// This same look, as the shared projection asks for it.
     ///
-    /// The two are the same three facts — a tempo map, a rate, and which server
-    /// buffer a source was read into — and the only difference is that the
-    /// projection asks the third as a question ([`projection::Buffers`]) rather
-    /// than as a table, because its three callers hold it three ways.
+    /// The two are the same two facts — a rate, and which server buffer a
+    /// source was read into — and the only difference is that the projection
+    /// asks the second as a question ([`projection::Buffers`]) rather than as a
+    /// table, because its three callers hold it three ways.
     pub fn projection(&self) -> projection::Look<'_> {
         projection::Look {
-            tempo: &self.tempo,
             rate: self.rate,
             sources: self,
         }
     }
 
-    /// The beat a frame falls on: the inverse, and the way an edit comes back.
-    pub fn beat_at(&self, frame: f64) -> f64 {
-        self.tempo
-            .beats_at(frame / self.rate.max(f64::MIN_POSITIVE))
+    /// The second a frame falls on: the inverse, and the way an edit comes
+    /// back.
+    pub fn secs_at(&self, frame: f64) -> f64 {
+        frame / self.rate.max(f64::MIN_POSITIVE)
     }
-}
-
-/// The map a piece states, with the reader's default where it states nothing.
-///
-/// One line, and it is a **binding** rather than a rule: the three decisions a
-/// run of authored entries needs — a ramp reaching the next one, the default
-/// before the first, an empty list being the default alone — are
-/// [`TempoMap::from_changes`]'s, in the crate that models tempo.
-pub fn tempo_map(piece: &Multitrack) -> TempoMap {
-    projection::tempo_map(piece, DEFAULT_TEMPO * 60.0)
 }
 
 /// The piece as the `multitrack` widget takes it, and as an edit-back is
@@ -135,8 +93,8 @@ pub fn tempo_map(piece: &Multitrack) -> TempoMap {
 ///
 /// **The shape is the crate's and the time is this host's**
 /// ([`clausters_document::multitrack::picture`]): what a row and a box *are* is
-/// the format's business and is written once for every client; turning beats
-/// into frames on the shared axis is the tempo map's, which is what this adds.
+/// the format's business and is written once for every client; turning seconds
+/// into frames on the shared axis is the rate's, which is what this adds.
 pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
     // **The props are the projection's**, and they are the same props the two
     // clients send: one list of rows and one of boxes, in one shape, so a piece
@@ -274,7 +232,7 @@ mod tests {
     use clausters_core::osc::OscType;
     use clausters_document::multitrack::{Content, Region, Track};
     use clausters_document::{
-        Against, Beat, NodeId, Opaque, Rules, SegmentRef, SegmentSource, SourceId,
+        Against, Beat, NodeId, Opaque, Rules, Second, SegmentRef, SegmentSource, SourceId,
     };
     use clausters_document::{Lifetime, SourceRef};
 
@@ -297,7 +255,7 @@ mod tests {
     }
 
     fn region(id: u64, position: f64, length: f64) -> Region {
-        let mut region = Region::new(NodeId(id), Beat(position), Beat(length), window(1, 0.0));
+        let mut region = Region::new(NodeId(id), Second(position), Second(length), window(1, 0.0));
         region.name = Some(format!("r{id}"));
         region
     }
@@ -319,13 +277,11 @@ mod tests {
         }
     }
 
-    /// A hundred frames a beat and forty-eight thousand a second: the two
-    /// scales stay apart in the tests, so a length converted through the wrong
-    /// one is obvious rather than plausible.
+    /// A hundred frames a second, so a position reads as its seconds times a
+    /// hundred.
     fn look() -> Look<'static> {
         Look {
-            tempo: TempoMap::new(480.0), // 480 beats a second: 100 frames each
-            rate: 48_000.0,
+            rate: 100.0,
             takes: None,
             sources: None,
         }
@@ -368,73 +324,32 @@ mod tests {
         let clips = shown.props["clips"].as_array().expect("flat");
         assert_eq!(clips[0], "12");
         assert_eq!(clips[1], "10", "on the row of the track that holds it");
-        assert_eq!(clips[2], 0.0, "beats, in timeline units");
-        assert_eq!(clips[3], 200.0, "two beats at a hundred units each");
+        assert_eq!(clips[2], 0.0, "seconds, in timeline units");
+        assert_eq!(clips[3], 200.0, "two seconds at a hundred units each");
     }
 
-    /// **A piece with a ritardando is not placed by one ratio.** Four beats are
-    /// not one length: under a tempo that changes they last longer later than
-    /// earlier, so a position is the map's second times the rate and a length
-    /// is the difference of two of those.
-    ///
-    /// The defect this pins is silent — the boxes and the readers are both
-    /// derived here, so a single ratio draws and sounds the same wrong place
-    /// and the two agree about it.
+    /// **A tempo moves no box.** The multitrack is in seconds, so a position
+    /// and a length are the rate's alone, and a tempo change the multitrack
+    /// holds is a ruler's to read.
     #[test]
-    fn a_tempo_change_moves_the_boxes_and_a_ratio_would_not() {
+    fn a_tempo_change_moves_no_box() {
         use clausters_document::multitrack::Tempo;
 
         let mut piece = piece();
-        // Sixty a minute — a beat a second — and half that from beat 4 on.
-        piece.set_tempo(Tempo {
-            at: Beat(0.0),
-            bpm: 60.0,
-            ramp: false,
-            extra: Default::default(),
-        });
-        piece.set_tempo(Tempo {
-            at: Beat(4.0),
-            bpm: 30.0,
-            ramp: false,
-            extra: Default::default(),
-        });
+        piece.set_tempo(Tempo::at(Beat(0.0), 1.0));
+        piece.set_tempo(Tempo::at(Beat(4.0), 0.5));
         let look = Look {
-            tempo: tempo_map(&piece),
             rate: 48_000.0,
             takes: None,
             sources: None,
         };
-        // The region at beat 4 lasting 2 beats: it starts one second per beat
-        // in, and lasts *two* seconds a beat.
         assert_eq!(look.frame_at(4.0), 4.0 * 48_000.0);
+        assert_eq!(look.frame_at(2.0), 2.0 * 48_000.0);
+        assert!((look.secs_at(8.0 * 48_000.0) - 8.0).abs() < 1e-9);
         assert_eq!(
-            look.frames_over(4.0, 2.0),
-            4.0 * 48_000.0,
-            "two beats at half the tempo are four seconds"
+            shown(&piece, &look).props,
+            shown(&self::piece(), &look).props
         );
-        // ...and the same two beats before the change are half that, which is
-        // the whole of what one ratio cannot say.
-        assert_eq!(look.frames_over(0.0, 2.0), 2.0 * 48_000.0);
-
-        // And it comes back the way it went: a payload in frames reads as the
-        // beats it was drawn from.
-        assert!((look.beat_at(4.0 * 48_000.0) - 4.0).abs() < 1e-9);
-        assert!((look.beat_at(8.0 * 48_000.0) - 6.0).abs() < 1e-9);
-    }
-
-    /// A piece that never said a tempo reads at the reader's default, which is
-    /// a beat a second — so nothing about a piece without tempo changed when
-    /// the map arrived.
-    #[test]
-    fn a_piece_with_no_tempo_is_a_beat_a_second() {
-        let look = Look {
-            tempo: tempo_map(&piece()),
-            rate: 48_000.0,
-            takes: None,
-            sources: None,
-        };
-        assert_eq!(look.frame_at(3.0), 3.0 * 48_000.0);
-        assert_eq!(look.frames_over(3.0, 2.0), 2.0 * 48_000.0);
     }
 
     /// **A move is a `PlaceRegion` and never changes what the region reads**;
@@ -474,7 +389,7 @@ mod tests {
                 moved.first().map(|(i, _)| i),
                 Some(MultitrackIntent::PlaceRegion { region, track, lane, position, .. })
                     if *region == NodeId(12) && *track == NodeId(10) && *lane == NodeId(11)
-                        && *position == Beat(3.0)
+                        && *position == Second(3.0)
             ),
             "{moved:?}"
         );
@@ -514,7 +429,7 @@ mod tests {
             matches!(
                 trimmed.first().map(|(i, _)| i),
                 Some(MultitrackIntent::TrimRegion { region, position, length, .. })
-                    if *region == NodeId(12) && *position == Beat(1.0) && *length == Beat(1.0)
+                    if *region == NodeId(12) && *position == Second(1.0) && *length == Second(1.0)
             ),
             "{trimmed:?}"
         );
@@ -569,7 +484,6 @@ mod tests {
             takes
         };
         let look = Look {
-            tempo: TempoMap::new(1.0), // a beat a second
             rate: 48_000.0,
             takes: Some(&takes),
             sources: None,
@@ -607,8 +521,8 @@ mod tests {
             piece.regions().all(|r| r.id != made.id),
             "it took an id the piece did not already use"
         );
-        assert_eq!(made.position, Beat(1.0), "where the payload put it");
-        assert_eq!(made.length, Beat(1.0));
+        assert_eq!(made.position, Second(1.0), "where the payload put it");
+        assert_eq!(made.length, Second(1.0));
         match &made.content {
             Content::Window { window, .. } => {
                 assert_eq!(

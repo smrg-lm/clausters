@@ -9,11 +9,11 @@
 //!
 //! # What the caller brings, and why it is not in the document
 //!
-//! Two things, both [`Look`]. **Where a beat lands**, which is the piece's own
-//! tempo map and a sample rate: a position is `secs_at(beat) × rate` and a
-//! *length* is the difference of two of those, because how long four beats last
-//! depends on where they start. And **which server buffer a source was read
-//! into**, which is a running server's fact and never a document's.
+//! Two things, both [`Look`]. **The sample rate**, which puts the multitrack's
+//! seconds on the shared frame axis: a position is `seconds × rate`, and no
+//! tempo is involved, since a multitrack is placed in physical time. And
+//! **which server buffer a source was read into**, which is a running server's
+//! fact and never a document's.
 //!
 //! # What is here and what is the caller's
 //!
@@ -38,9 +38,9 @@ use serde_json::{Map, Value, json};
 
 use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::edit::MultitrackIntent;
-use clausters_document::multitrack::nodes::SourceInfo;
+use clausters_document::multitrack::nodes::{self, SourceInfo};
 use clausters_document::multitrack::{Multitrack, picture};
-use clausters_document::{Beat, NodeId, Opaque, SourceId};
+use clausters_document::{NodeId, Opaque, Second, SourceId};
 
 use crate::intake::{Intake, groups, number, text};
 
@@ -54,16 +54,21 @@ pub const CURVE_H: f64 = 40.0;
 /// which is what an unlabelled level means.
 const UNIT: (f64, f64) = (0.0, 1.0);
 
+/// **The tempo a multitrack that states none is drawn at**, in beats per
+/// second: one, so a beat of its ruler is a second.
+///
+/// The reader's default and not the document's: a multitrack that said no
+/// tempo did not say one. It only reaches a ruler — nothing a multitrack
+/// places is in beats.
+pub const DEFAULT_TEMPO: f64 = 1.0;
+
 /// What a caller knows that the document does not.
 ///
-/// The tempo map and rate that put a beat on the shared axis, and the table
-/// saying which server buffer each source was read into. Both are the reason
-/// this is a projection rather than a picture: the document describes the
-/// piece and stops exactly where a *running* system begins.
+/// The rate that puts a second on the shared axis, and the table saying which
+/// server buffer each source was read into. Both are the reason this is a
+/// projection rather than a picture: the document describes the multitrack
+/// and stops exactly where a *running* system begins.
 pub struct Look<'a> {
-    /// The piece's own map, so the boxes and the readers cannot disagree about
-    /// where a beat is.
-    pub tempo: &'a TempoMap,
     /// Frames per second on the shared axis.
     pub rate: f64,
     /// Which server buffer each source was read into. A source nobody answers
@@ -197,40 +202,16 @@ impl Buffers for () {
 }
 
 impl Look<'_> {
-    /// The frame a beat lands on.
-    pub fn frame_at(&self, beats: f64) -> f64 {
-        self.tempo.secs_at(beats) * self.rate
+    /// The frame a second lands on — a position or a length alike, since
+    /// nothing between the two axes moves.
+    pub fn frame_at(&self, secs: f64) -> f64 {
+        secs * self.rate
     }
 
-    /// How many frames `length` beats take **starting at** `start` — the
-    /// difference of two positions, never a ratio.
-    pub fn frames_over(&self, start: f64, length: f64) -> f64 {
-        self.frame_at(start + length) - self.frame_at(start)
-    }
-
-    /// Where a beat measured **from `base`** falls, in frames **from `base`** —
-    /// what a box's own axis counts in.
-    ///
-    /// A layer is drawn inside its box, so its break-points are the box's own
-    /// time and not the timeline's. That is a *length* from the box's start,
-    /// which is why it goes through [`frames_over`](Self::frames_over) rather
-    /// than through [`frame_at`](Self::frame_at): four beats are not one length
-    /// under a tempo that moves.
-    pub fn frame_in(&self, base: f64, at: f64) -> f64 {
-        self.frames_over(base, at)
-    }
-
-    /// The beat a frame falls on: the inverse of
+    /// The second a frame falls on: the inverse of
     /// [`frame_at`](Self::frame_at), and the way an edit comes back.
-    pub fn beat_at(&self, frame: f64) -> f64 {
-        self.tempo
-            .beats_at(frame / if self.rate == 0.0 { 1.0 } else { self.rate })
-    }
-
-    /// The beat, measured **from `base`**, that a frame from `base` falls on —
-    /// the inverse of [`frame_in`](Self::frame_in).
-    pub fn beat_in(&self, base: f64, frame: f64) -> f64 {
-        self.beat_at(self.frame_at(base) + frame) - base
+    pub fn secs_at(&self, frame: f64) -> f64 {
+        frame / if self.rate == 0.0 { 1.0 } else { self.rate }
     }
 
     fn bufnum(&self, source: Option<SourceId>) -> i64 {
@@ -321,7 +302,7 @@ pub fn clips(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             json!(box_.region.0.to_string()),
             json!(box_.row.0.to_string()),
             json!(look.frame_at(box_.position.0)),
-            json!(look.frames_over(box_.position.0, box_.length.0)),
+            json!(look.frame_at(box_.length.0)),
             json!(box_.start * look.rate),
             json!(box_.label),
             json!(look.bufnum(box_.source)),
@@ -371,11 +352,11 @@ pub fn layers(piece: &Multitrack) -> Vec<Value> {
 /// **What each curve's time is measured from** is the one thing that differs
 /// between the two: a track automation runs the timeline and is measured from
 /// the origin, and a clip envelope is drawn inside its box and is measured from
-/// where that box starts.
+/// where that box starts. Both are seconds, and a length of seconds is the same
+/// frames wherever it starts, so the difference reaches no number here.
 pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
-    let bases = bases(piece);
     let mut out = Vec::new();
-    let mut write = |curve: &picture::Curve, base: f64| {
+    for curve in picture::curves(piece).iter().chain(&picture::layers(piece)) {
         for point in &curve.points {
             let data = point.data.0.as_object();
             let read = |key: &str, default: f64| {
@@ -385,24 +366,12 @@ pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             };
             out.extend([
                 json!(curve.automation.0.to_string()),
-                json!(look.frame_in(base, point.at)),
+                json!(look.frame_at(point.at)),
                 json!(point.value),
                 json!(read("shape", 1.0)),
                 json!(read("curve", 0.0)),
             ]);
         }
-    };
-    for curve in picture::curves(piece) {
-        write(&curve, 0.0);
-    }
-    for curve in picture::layers(piece) {
-        write(
-            &curve,
-            bases
-                .get(&curve.automation.0.to_string())
-                .copied()
-                .unwrap_or(0.0),
-        );
     }
     out
 }
@@ -517,36 +486,22 @@ pub fn props(piece: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 ///
 /// An unreadable piece answers an empty object rather than an error: a
 /// projection has nothing to refuse.
-pub fn props_json(piece: &str, rate: f64, default_bpm: f64, sources: &str) -> String {
+pub fn props_json(piece: &str, rate: f64, sources: &str) -> String {
     let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
         return "{}".into();
     };
     let table = table(&serde_json::from_str::<Value>(sources).unwrap_or(Value::Null));
-    let tempo = tempo_map(&piece, default_bpm);
     let look = Look {
-        tempo: &tempo,
         rate,
         sources: &table,
     };
     Value::Object(props(&piece, &look)).to_string()
 }
 
-/// The piece's tempo map, as the shared core holds one.
-///
-/// The document writes beats per **minute**, as a score does; every tempo in
-/// the map is per second.
-pub fn tempo_map(piece: &Multitrack, default_bpm: f64) -> TempoMap {
-    let changes: Vec<clausters_core::tempomap::TempoChange> = piece
-        .tempo
-        .iter()
-        .map(|t| clausters_core::tempomap::TempoChange {
-            beats: t.at.0,
-            tempo: t.bpm / 60.0,
-            ramp: t.ramp,
-        })
-        .collect();
-    let default = default_bpm / 60.0;
-    TempoMap::from_changes(&changes, default).unwrap_or_else(|_| TempoMap::new(default))
+/// The tempo map a multitrack holds, with [`DEFAULT_TEMPO`] where it states
+/// none: what its ruler draws beats and bars from. It places nothing.
+pub fn tempo_map(multitrack: &Multitrack) -> TempoMap {
+    nodes::tempo_map(multitrack, DEFAULT_TEMPO)
 }
 
 /// What the `lanes` prop takes and reports: flat `name label height mute solo
@@ -562,31 +517,8 @@ pub const SEPTUPLE: usize = 7;
 /// quintuples, each naming the curve it is on.
 pub const POINT_QUINTUPLE: usize = 5;
 
-/// **What each curve's time is measured from**, by curve name.
-///
-/// A track automation runs the timeline, so it is measured from the origin; a
-/// clip envelope is drawn inside its box and is measured from where that box
-/// starts. It is the one thing that differs between the two on the wire, and
-/// both [`points`] and [`intake`] read it from here so a break-point cannot go
-/// out against one base and come back against another.
-fn bases(piece: &Multitrack) -> HashMap<String, f64> {
-    let where_: HashMap<u64, f64> = picture::boxes(piece)
-        .iter()
-        .map(|b| (b.region.0, b.position.0))
-        .collect();
-    let mut out: HashMap<String, f64> = picture::curves(piece)
-        .iter()
-        .map(|c| (c.automation.0.to_string(), 0.0))
-        .collect();
-    for curve in picture::layers(piece) {
-        let base = where_.get(&curve.owner.0).copied().unwrap_or(0.0);
-        out.insert(curve.automation.0.to_string(), base);
-    }
-    out
-}
-
-/// The flat `clips` report as the crate's boxes: names as they came, positions
-/// in beats, the window's own numbers in seconds.
+/// The flat `clips` report as the crate's boxes: names as they came, and every
+/// number in seconds.
 ///
 /// A row is named by its **track's id** and never renamed, so a name that is
 /// not one names no row this piece has and the box on it is dropped rather than
@@ -597,18 +529,16 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
         let Ok(row) = text(&group[1]).parse::<u64>() else {
             continue;
         };
-        let (at, dur) = (number(&group[2]), number(&group[3]));
-        let position = look.beat_at(at);
-        let length = look.beat_at(at + dur) - position;
+        let position = look.secs_at(number(&group[2]));
+        let length = look.secs_at(number(&group[3]));
         out.push(picture::Placed {
             name: text(&group[0]),
             row: NodeId(row),
-            position: Beat(position),
-            length: Beat(length),
-            start: number(&group[4]) / if look.rate == 0.0 { 1.0 } else { look.rate },
-            // How much a **new** box shows: the stretch it occupies, crossed to
-            // the wall clock the only way a length may be.
-            content: look.tempo.span_secs(position, position + length),
+            position: Second(position),
+            length: Second(length),
+            start: look.secs_at(number(&group[4])),
+            // How much a **new** box shows: the stretch it occupies.
+            content: length,
             source: look.sources.source(number(&group[6]) as i64),
         });
     }
@@ -616,27 +546,24 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
 }
 
 /// The flat `points` report as the crate's curves: one entry per curve named,
-/// its break-points back on the musical axis.
+/// its break-points back in seconds.
 ///
 /// The widget reports **every** curve there is, in one list, so they are
 /// gathered by name here — the reader says nothing about the ones that did not
 /// move.
-fn curved(piece: &Multitrack, values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
-    let bases = bases(piece);
+fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
     let mut order: Vec<String> = Vec::new();
     let mut found: HashMap<String, Vec<clausters_document::points::Point>> = HashMap::new();
     for group in groups(values, POINT_QUINTUPLE) {
         let name = text(&group[0]);
-        // **Against the same base the picture was drawn from**: a layer's time
-        // is its box's own, so a break-point inside one comes back as a beat
-        // from that box's start.
-        let base = bases.get(&name).copied().unwrap_or(0.0);
+        // A layer's time is its box's own, so a break-point inside one comes
+        // back as seconds from that box's start, as it went out.
         let points = found.entry(name.clone()).or_insert_with(|| {
             order.push(name.clone());
             Vec::new()
         });
         points.push(clausters_document::points::Point {
-            at: look.beat_in(base, number(&group[1])),
+            at: look.secs_at(number(&group[1])),
             value: number(&group[2]),
             // **What a shape is stays the client's**: the document carries a
             // point's data and never reads it, which is what keeps an undo from
@@ -765,7 +692,7 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
             },
         )),
         "lanes" => Reading::of(picture::read_rows(piece, &strips(values))),
-        "points" => Reading::of(picture::read_points(piece, &curved(piece, values, look))),
+        "points" => Reading::of(picture::read_points(piece, &curved(values, look))),
         // **The one verb that is stated rather than differenced**, and the one
         // that can be refused on the *material*: a join and a "delete one,
         // lengthen the other" leave a lane holding the same thing, and a box in
@@ -779,7 +706,6 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
                 piece,
                 &held(values),
                 look.rate,
-                look.tempo,
                 &look.sources.taken(),
                 &|source| look.sources.parts(source),
                 &|source| look.sources.frames(source),
@@ -842,16 +768,13 @@ pub fn intake_value(
     tag: &str,
     values: &[Value],
     rate: f64,
-    default_bpm: f64,
     sources: &Value,
 ) -> Intake {
     let Ok(piece) = serde_json::from_value::<Multitrack>(piece.clone()) else {
         return Intake::nothing();
     };
     let held = Held::of(sources);
-    let tempo = tempo_map(&piece, default_bpm);
     let look = Look {
-        tempo: &tempo,
         rate,
         sources: &held,
     };
@@ -899,7 +822,7 @@ mod tests {
     use clausters_document::points::Point;
     use clausters_document::session::Location;
     use clausters_document::{
-        Beat, Lifetime, NodeId, Opaque, SegmentRef, SegmentSource, SourceRef,
+        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
     };
 
     /// One track at half gain with one box on it, a track automation over the
@@ -907,8 +830,8 @@ mod tests {
     fn piece() -> Multitrack {
         let mut region = Region::new(
             NodeId(3),
-            Beat(4.0),
-            Beat(4.0),
+            Second(4.0),
+            Second(4.0),
             Content::Unknown(Value::Null),
         );
         region.automation.push(curve(NodeId(5), 2.0));
@@ -922,7 +845,7 @@ mod tests {
         piece
     }
 
-    /// A curve with one point at the origin and one `at` beats along.
+    /// A curve with one point at the origin and one `at` seconds along.
     fn curve(id: NodeId, at: f64) -> Automation {
         let mut a = Automation::new(id, Opaque::none());
         a.name = Some(format!("curve {}", id.0));
@@ -948,9 +871,8 @@ mod tests {
         Opaque(json!({ "shape": 1, "curve": 0.0 }))
     }
 
-    fn look<'a>(tempo: &'a TempoMap, sources: &'a HashMap<SourceId, i64>) -> Look<'a> {
+    fn look<'a>(sources: &'a HashMap<SourceId, i64>) -> Look<'a> {
         Look {
-            tempo,
             rate: 48_000.0,
             sources,
         }
@@ -961,9 +883,8 @@ mod tests {
     #[test]
     fn a_row_is_seven_values_and_a_box_is_seven() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
-        let look = look(&tempo, &table);
+        let look = look(&table);
 
         let lanes = lanes(&piece);
         assert_eq!(lanes.len(), LANE_FIELDS);
@@ -981,7 +902,7 @@ mod tests {
         assert_eq!(clips.len(), 7);
         assert_eq!(clips[0], json!("3"), "and a box by its region's");
         assert_eq!(clips[1], json!("1"), "on the row it is on");
-        // A beat a second, so four beats in is four seconds in.
+        // Four seconds in, in frames.
         assert_eq!(clips[2], json!(4.0 * 48_000.0));
         assert_eq!(clips[3], json!(4.0 * 48_000.0));
         assert_eq!(clips[6], json!(-1), "over a source nobody read");
@@ -992,10 +913,9 @@ mod tests {
     #[test]
     fn a_box_names_the_buffer_its_source_was_read_into() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let mut table = HashMap::new();
         table.insert(SourceId(77), 12);
-        assert_eq!(clips(&piece, &look(&tempo, &table))[6], json!(-1));
+        assert_eq!(clips(&piece, &look(&table))[6], json!(-1));
 
         let mut piece = piece;
         piece.tracks[0].lanes[0].regions[0].content = Content::Window {
@@ -1013,7 +933,7 @@ mod tests {
             args: Opaque::none(),
             looping: false,
         };
-        assert_eq!(clips(&piece, &look(&tempo, &table))[6], json!(12));
+        assert_eq!(clips(&piece, &look(&table))[6], json!(12));
     }
 
     /// **A layer's break-points are its box's own time, and a row's are the
@@ -1023,15 +943,14 @@ mod tests {
     #[test]
     fn a_layer_is_measured_from_its_box_and_a_row_from_the_origin() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
-        let points = points(&piece, &look(&tempo, &table));
+        let points = points(&piece, &look(&table));
 
         // Five values a point, the track's curve first, then the box's.
         let at = |i: usize| points[i * 5..i * 5 + 5].to_vec();
         assert_eq!(at(0)[0], json!("4"));
         assert_eq!(at(0)[1], json!(0.0), "the row's first point is the origin");
-        assert_eq!(at(1)[1], json!(1.0 * 48_000.0), "and one beat along it");
+        assert_eq!(at(1)[1], json!(1.0 * 48_000.0), "and one second along it");
         assert_eq!(at(2)[0], json!("5"));
         assert_eq!(
             at(2)[1],
@@ -1063,24 +982,22 @@ mod tests {
         let piece = piece();
         let body = serde_json::to_string(&piece).expect("a piece");
         let answer: Map<String, Value> =
-            serde_json::from_str(&props_json(&body, 48_000.0, 60.0, "{}")).expect("JSON");
-        let tempo = tempo_map(&piece, 60.0);
+            serde_json::from_str(&props_json(&body, 48_000.0, "{}")).expect("JSON");
         let table = HashMap::new();
-        assert_eq!(answer, props(&piece, &look(&tempo, &table)));
+        assert_eq!(answer, props(&piece, &look(&table)));
 
-        assert_eq!(props_json("not a piece", 48_000.0, 60.0, "{}"), "{}");
+        assert_eq!(props_json("not a piece", 48_000.0, "{}"), "{}");
     }
 
     /// **A gesture goes out and comes back on the same axis.** The props are
-    /// read, one box is moved four beats along in the widget's own frames, and
-    /// what comes back names the beat it was moved to — the round trip that was
+    /// read, one box is moved four seconds along in the widget's own frames, and
+    /// what comes back names the second it was moved to — the round trip that was
     /// written once per client before this existed.
     #[test]
-    fn a_box_dragged_in_frames_comes_back_in_beats() {
+    fn a_box_dragged_in_frames_comes_back_in_seconds() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
-        let look = look(&tempo, &table);
+        let look = look(&table);
         let mut drawn = clips(&piece, &look);
         drawn[2] = json!(number(&drawn[2]) + 4.0 * 48_000.0);
 
@@ -1092,7 +1009,7 @@ mod tests {
         assert_eq!(
             moved["position"],
             json!(8.0),
-            "four beats past the four it was at"
+            "four seconds past the four it was at"
         );
     }
 
@@ -1103,9 +1020,8 @@ mod tests {
     #[test]
     fn a_curve_reported_back_unchanged_is_not_an_edit() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
-        let look = look(&tempo, &table);
+        let look = look(&table);
         let drawn = points(&piece, &look);
 
         let taken = intake(&piece, "points", &drawn, &look);
@@ -1130,9 +1046,8 @@ mod tests {
     #[test]
     fn a_report_this_piece_cannot_place_is_dropped_and_not_guessed_at() {
         let piece = piece();
-        let tempo = tempo_map(&piece, 60.0);
         let table = HashMap::new();
-        let look = look(&tempo, &table);
+        let look = look(&table);
         assert_eq!(intake(&piece, "meters", &[], &look), Intake::nothing());
 
         let stray = vec![
@@ -1182,7 +1097,8 @@ mod tests {
         let mut piece = Multitrack::default();
         let mut track = Track::new(NodeId(1), NodeId(2));
         for (id, at, start) in [(NodeId(10), 0.0, 0.0), (NodeId(11), 1.0, 1.0)] {
-            let mut region = Region::new(id, Beat(at), Beat(1.0), Content::Unknown(Value::Null));
+            let mut region =
+                Region::new(id, Second(at), Second(1.0), Content::Unknown(Value::Null));
             region.content = Content::window(SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
                     source: SourceId(7),
@@ -1205,14 +1121,8 @@ mod tests {
     #[test]
     fn halves_that_read_on_from_each_other_join_without_minting_anything() {
         let piece = halves();
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
-        let intents = read(
-            &piece,
-            "join",
-            &[json!("10"), json!("11")],
-            &look(&tempo, &sources),
-        );
+        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
         assert!(matches!(
             intents.as_slice(),
             [MultitrackIntent::JoinRegions {
@@ -1228,8 +1138,8 @@ mod tests {
     fn swapped() -> Multitrack {
         let mut piece = halves();
         let regions = &mut piece.tracks[0].lanes[0].regions;
-        regions[0].position = Beat(1.0);
-        regions[1].position = Beat(0.0);
+        regions[0].position = Second(1.0);
+        regions[1].position = Second(0.0);
         piece
     }
 
@@ -1246,14 +1156,8 @@ mod tests {
         // The tail at the front, the head behind it: what a hand does with a
         // drag and the proximity snap.
         let piece = swapped();
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
-        let intents = read(
-            &piece,
-            "join",
-            &[json!("10"), json!("11")],
-            &look(&tempo, &sources),
-        );
+        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
         let [
             MultitrackIntent::JoinRegions {
                 regions,
@@ -1328,19 +1232,13 @@ mod tests {
             .iter_mut()
             .find(|r| r.id == NodeId(11))
             .expect("the tail, in front");
-        front.position = Beat(0.5);
-        front.length = Beat(0.5);
+        front.position = Second(0.5);
+        front.length = Second(0.5);
         if let Content::Window { window, .. } = &mut front.content {
             window.start = 1.5;
         }
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
-        let intents = read(
-            &piece,
-            "join",
-            &[json!("10"), json!("11")],
-            &look(&tempo, &sources),
-        );
+        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
         let [
             MultitrackIntent::JoinRegions {
                 content: Some(content),
@@ -1394,7 +1292,7 @@ mod tests {
             .find(|r| r.id == NodeId(11))
             .expect("the tail, in front");
         let mut back = front.position;
-        front.length = Beat(0.75);
+        front.length = Second(0.75);
         back.0 += 0.75;
         let source = match &mut front.content {
             Content::Window { window, .. } => {
@@ -1410,13 +1308,11 @@ mod tests {
             .find(|r| r.id == NodeId(10))
             .expect("the head, behind")
             .position = back;
-        let tempo = TempoMap::new(1.0);
         let held = Held {
             buffers: HashMap::new(),
             lengths: HashMap::from([(source, 96_000)]),
         };
         let known = Look {
-            tempo: &tempo,
             rate: 48_000.0,
             sources: &held,
         };
@@ -1429,12 +1325,7 @@ mod tests {
 
         // Not knowing the length checks nothing.
         let sources = HashMap::new();
-        let joined = read(
-            &piece,
-            "join",
-            &[json!("10"), json!("11")],
-            &look(&tempo, &sources),
-        );
+        let joined = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
         assert_eq!(joined.len(), 1, "joined as before: {joined:?}");
     }
 
@@ -1507,15 +1398,15 @@ mod tests {
         let mut track = Track::new(NodeId(1), NodeId(2));
         let mut over_join = Region::new(
             NodeId(20),
-            Beat(0.0),
-            Beat(1.0),
+            Second(0.0),
+            Second(1.0),
             Content::Unknown(Value::Null),
         );
         over_join.content = window(8, 0.5);
         let mut over_take = Region::new(
             NodeId(21),
-            Beat(1.0),
-            Beat(1.0),
+            Second(1.0),
+            Second(1.0),
             Content::Unknown(Value::Null),
         );
         over_take.content = window(7, 0.0);
@@ -1524,9 +1415,7 @@ mod tests {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let tempo = TempoMap::new(1.0);
         let look = Look {
-            tempo: &tempo,
             rate: 48_000.0,
             sources: &table,
         };
@@ -1577,14 +1466,13 @@ mod tests {
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0].regions.push(Region::new(
             NodeId(3),
-            Beat(0.0),
-            Beat(4.0),
+            Second(0.0),
+            Second(4.0),
             Content::Unknown(Value::Null),
         ));
         piece.tracks.push(track);
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
-        let look = look(&tempo, &sources);
+        let look = look(&sources);
 
         // As drawn: no automation, so the toggle reads as off.
         let drawn = lanes(&piece);
@@ -1622,8 +1510,7 @@ mod tests {
         // which is what makes the toggle a document edit rather than a view's.
         let mut piece = piece.clone();
         piece.tracks = tracks.clone();
-        let plan =
-            clausters_document::multitrack::nodes::plan(&piece, 48_000.0, 60.0, &HashMap::new());
+        let plan = clausters_document::multitrack::nodes::plan(&piece, 48_000.0, &HashMap::new());
         assert_eq!(plan.tracks[0].curves.len(), 1, "the server gets the curve");
         assert_eq!(plan.tracks[0].curves[0].port, "gain");
 
@@ -1641,8 +1528,7 @@ mod tests {
         // Hidden is a view's word: it still sounds.
         let mut hidden = piece.clone();
         hidden.tracks = tracks.clone();
-        let plan =
-            clausters_document::multitrack::nodes::plan(&hidden, 48_000.0, 60.0, &HashMap::new());
+        let plan = clausters_document::multitrack::nodes::plan(&hidden, 48_000.0, &HashMap::new());
         assert_eq!(
             plan.tracks[0].curves.len(),
             1,
@@ -1663,18 +1549,17 @@ mod tests {
     #[test]
     fn a_join_never_mints_a_source_whoever_holds_the_samples_is_already_using() {
         let piece = swapped();
-        let tempo = TempoMap::new(1.0);
         let held = [json!("10"), json!("11")];
 
         // Nobody holding anything: clear of the piece, which names 7.
         let none: HashMap<SourceId, i64> = HashMap::new();
-        assert_eq!(minted(&piece, &held, &look(&tempo, &none)), SourceId(8));
+        assert_eq!(minted(&piece, &held, &look(&none)), SourceId(8));
 
         // The client holds 8 already -- the join it made a moment ago, which
         // this piece no longer names because the box was undone.
         let mut sources: HashMap<SourceId, i64> = HashMap::new();
         sources.insert(SourceId(8), 1);
-        assert_eq!(minted(&piece, &held, &look(&tempo, &sources)), SourceId(9));
+        assert_eq!(minted(&piece, &held, &look(&sources)), SourceId(9));
     }
 
     /// The source one `join` report mints.
@@ -1699,14 +1584,13 @@ mod tests {
     #[test]
     fn a_join_over_a_box_the_piece_does_not_have_is_refused_rather_than_partial() {
         let piece = swapped();
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
         assert_eq!(
             intake(
                 &piece,
                 "join",
                 &[json!("10"), json!("11"), json!("a 2")],
-                &look(&tempo, &sources)
+                &look(&sources)
             )
             .to_json()["refusal"],
             json!("one of these boxes is not one the piece has")
@@ -1720,27 +1604,26 @@ mod tests {
     /// and a key that looks dead.
     #[test]
     fn a_join_that_cannot_be_stated_says_which_of_the_cases_it_is() {
-        let tempo = TempoMap::new(1.0);
         let sources = HashMap::new();
         let held = [json!("10"), json!("11")];
 
         let mut piece = halves();
-        piece.tracks[0].lanes[0].regions[1].position = Beat(2.0);
+        piece.tracks[0].lanes[0].regions[1].position = Second(2.0);
         assert_eq!(
-            intake(&piece, "join", &held, &look(&tempo, &sources)).to_json()["refusal"],
+            intake(&piece, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("there is a gap between these boxes, and a join cannot state silence yet")
         );
 
         let mut piece = halves();
-        piece.tracks[0].lanes[0].regions[1].position = Beat(0.5);
+        piece.tracks[0].lanes[0].regions[1].position = Second(0.5);
         assert_eq!(
-            intake(&piece, "join", &held, &look(&tempo, &sources)).to_json()["refusal"],
+            intake(&piece, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("these boxes overlap, and a join cannot state a mix yet")
         );
 
         let piece = halves();
         assert_eq!(
-            intake(&piece, "join", &[json!("10")], &look(&tempo, &sources)).to_json()["refusal"],
+            intake(&piece, "join", &[json!("10")], &look(&sources)).to_json()["refusal"],
             json!("a join needs two boxes or more in hand")
         );
     }

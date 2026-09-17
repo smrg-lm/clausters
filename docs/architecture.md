@@ -664,10 +664,16 @@ reasoning:
   arguments of its own evaluation, or a **composite** carrying the general tree
   unchanged. REAPER splits that into an item and a take; we do not, because a
   track holding several lanes is already the comping mechanism, and REAPER 7
-  itself grew fixed item lanes beside its takes. The three timebases are types
-  now (`timebase::Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat`) with no
-  conversion between them, because a beat becomes a frame only through a tempo
-  map and a rate, and both belong to whoever holds them.
+  itself grew fixed item lanes beside its takes. The timebases are types
+  (`timebase::Second`, `Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat`)
+  with no conversion between them. **The multitrack is placed in `Second`s** —
+  physical time, the way the server and the clients measure — so a region, a
+  fade, a curve point, a marker and a span cross to frames by the rate alone,
+  and nothing that plans or draws a multitrack takes a tempo. `Beat` belongs to
+  the structures organized by tempo and meter that the document holds: the
+  tempo and meter maps (which a ruler and a snap read, and which move nothing)
+  and a node's own time. A session written before this, in beats (format 2), is
+  migrated on reading by `session::migrate`.
 - **A window is onto samples or onto a node, and the second is why
   `Document::content` exists.** The rule above holds for contents the document
   does not carry — samples live outside it, so two windows are two references
