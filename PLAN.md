@@ -3088,7 +3088,7 @@ finished work, where a pending item reads as done.
   them, onsets read back 48 000 samples apart. With the placement reverted it
   reads 47 661 -- **verified by mutation**.
 
-- ⬜ **`boot()` returns about 100 ms before the device's first callback**
+- ✅ **`boot()` returns about 100 ms before the device's first callback**
   *(found 2026-09-16, fixing the entry above)*. A server launched from Python
   answers `/clock_query` for roughly a tenth of a second with its counter at 0
   and no device epoch published: the port is up, the stream is not playing yet.
@@ -3101,3 +3101,15 @@ finished work, where a pending item reads as done.
   verified by ear. The question is whether readiness should mean the stream is
   running (the first callback published an epoch) rather than the socket
   answering, which is a launcher contract both clients read.
+
+  **Decided and fixed the same day: ready means sounding.** `boot` blocks by
+  default, and the case it exists for is a note played on the next line.
+  `backend::start` now waits, after `stream.play()`, until the device has called
+  back twice -- the first callback is late on the stream's own start, and the
+  epoch it seeds settles on the next -- and warns and serves anyway after two
+  seconds of a device that never calls back. The OSC front is bound after
+  `start` returns, so every launcher that waits on the port (the Python one, the
+  web client's node scripts, a terminal, `embed`) reads readiness as sounding
+  with no change of its own. Measured: the first `/clock_query` after `boot()`
+  already reads the settled epoch, and the routine's first note now lands
+  **500.0 ms** before the second (was about 420).

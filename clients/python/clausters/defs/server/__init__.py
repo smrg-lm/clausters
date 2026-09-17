@@ -210,7 +210,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         and what that means is the carrier's to say —
 
         - the default carriers (TCP/UDP/WS) have a process behind them, so this
-          spawns the standalone ``clausters`` server and waits until it answers,
+          spawns the standalone ``clausters`` server and waits until it answers
+          -- which it does only once its audio device is sounding, so a note
+          played on the next line is placed on a stream already running --
           at **this handle's own address** — the process is told to bind it, so
           several servers run side by side, one per port;
         - an offline or in-process carrier has nothing to start, and this is a

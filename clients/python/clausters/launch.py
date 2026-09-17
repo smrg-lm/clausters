@@ -331,8 +331,9 @@ class ServerProcess(_Process):
         return argv
 
     def _wait_ready(self, deadline: float):
-        """Poll ``/server_status`` until the server replies (its OSC front is bound and
-        the engine is running)."""
+        """Poll ``/server_status`` until the server replies. A server binds its
+        OSC front only once its audio device is calling back, so a reply means
+        the stream is already sounding, not merely started."""
         osc = OscUdpInterface().start()
         try:
             while time.monotonic() < deadline:

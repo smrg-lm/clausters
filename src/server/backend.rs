@@ -356,6 +356,7 @@ pub fn start(
                         }
                         None => None,
                     };
+                    wait_until_sounding(&handle);
                     return Ok((
                         AudioBackend {
                             sample_rate: rate as f32,
@@ -410,6 +411,43 @@ fn open_input(
     }?;
     stream.play()?;
     Ok(stream)
+}
+
+/// How long [`start`] waits for the device to call back before serving anyway.
+const FIRST_CALLBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Blocks until the output stream is actually sounding: past its first
+/// callback, and past the one after it.
+///
+/// `stream.play()` returns when the stream is *started*, and a device takes
+/// its time to ask for the first buffer -- about a tenth of a second on a
+/// PipeWire desktop. A server that answered on its socket in that window was
+/// "ready" to a launcher whose caller then played a note against a counter
+/// that was not moving yet. Waiting here puts readiness where a caller reads
+/// it: the socket is bound after this returns, so a server that answers is
+/// one that sounds. The second callback is waited for too because the first
+/// is late on the stream's own start, and the device epoch it seeds settles
+/// on the next.
+///
+/// A device that never calls back is not a reason to refuse to serve: after
+/// [`FIRST_CALLBACK_TIMEOUT`] this warns and returns.
+fn wait_until_sounding(handle: &EngineHandle) {
+    let deadline = std::time::Instant::now() + FIRST_CALLBACK_TIMEOUT;
+    let mut first = None;
+    while std::time::Instant::now() < deadline {
+        if handle.device_epoch().get().is_some() {
+            let counter = handle.current_samples();
+            match first {
+                None => first = Some(counter),
+                Some(seen) if counter > seen => return,
+                Some(_) => {}
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    tracing::warn!(
+        "the audio device has not started calling back after {FIRST_CALLBACK_TIMEOUT:?}; serving anyway"
+    );
 }
 
 fn build_input_stream<T>(
