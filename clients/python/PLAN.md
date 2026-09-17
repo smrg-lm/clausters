@@ -2061,10 +2061,136 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   layer's `tempo_map`/`defaultTempo` and the bridge's copy of the map, and
   `PlayheadSync` reads positions as seconds when what plays holds no map. Found
   on the way and removed with it: the applications crate's samples editor held a
-  scalar tempo that no client ever set. Open, and filed in
-  `crates/clausters-document/PLAN.md` ("Which map a region in beats is read
-  through"): the map that converts the beats inside a region whose contents are
-  in beats.
+  scalar tempo that no client ever set. Filed then and dissolved the same day
+  in `crates/clausters-document/PLAN.md` ("Which map a region in beats is read
+  through"): no region of a multitrack holds beats, and the composite region
+  that seemed to is a `form` leftover to remove ("A composite region is
+  `form`'s tree inside the multitrack").
+
+  **Phase 6 decided 2026-09-17 with the user: the tempo is the clock's, and a
+  session is the context clocks are made in.** Nothing that *uses* a clock
+  takes a tempo number; what takes one is a clock, or a structure that hides
+  its clock. How several `tempo=` parameters got there, from `git log`: the
+  session factories (`5ad93d53`) built the clock inside and exposed its one
+  argument, `Timeline.from_pattern` (`97f41db4`) built a clock to run the
+  pattern and exposed the same number, and `render` (`7cef02ed`) built an
+  offline session and passed the factory's parameter through. None was
+  designed; each copied the one before, in both clients.
+
+  What is corrected, in Python and web:
+
+  1. **`render` and `play` take no tempo.** Both take an optional clock and use
+     a default one when none is given. Only `render` changes: today it takes
+     `tempo=` and ignores its `clock=` when it renders offline.
+  2. **`Session.nrt`, `Session.live` and `Session.embed` lose `tempo=` and take
+     an optional `clock=`.** A session shows its clock; it does not hide it.
+  3. **`Timeline.from_pattern` goes** (`fromPattern` in web). A constructor
+     that runs a pattern to fill a timeline has no reason to be: an **event
+     pattern** (a `Pbind`, not any pattern) is rendered like any playable. Its
+     users move with it: `examples/transport/timeline.py` and its pages
+     `timeline.html` and `sequencing.html`, `timelines.md`, the tests, the
+     `docs/architecture.md` table, and `clausters.form`'s render
+     (`form/render.py`, `form/render.ts`), which flattens a pattern through it
+     -- maintenance of a frozen module, not new work in it.
+  4. **A `Pattern` is not playable; an `EventPattern` is.** A `Pattern` is
+     the definition of a generator, so it has no `play`. A new class
+     `EventPattern(Pattern)` is playable and returns its `EventStreamPlayer`;
+     `Pbind` (and every pattern that yields events) derives from it. Today
+     `Pattern.play` exists on every pattern, so `play(Pseq([1, 2, 3]))` is
+     taken and its player fails inside the routine, which `render` reports as
+     an unrelated "empty render" (verified 2026-09-17). **`render` of a value
+     pattern stays valid**: the verb is general, and rendering one generates
+     its numeric sequence. Today it does not: `render`'s pattern branch calls `play`
+     on **every** pattern, in both clients (`render.py`, `render.ts`), which is
+     where the value pattern fails. The branch dispatches instead: an
+     `EventPattern` is bounced through its player, and a value pattern
+     generates its values without `play`.
+
+  What stays:
+
+  - **`Timeline(tempo=, tempo_map=)`.** A timeline hides its clock, and
+    `tempo` is a constant map.
+  - **`TempoClock(tempo=, tempo_map=)`.** It is the clock itself.
+
+  Dropped:
+
+  - **Converting an `OscScore` into a `Timeline`.** It runs backwards: a
+    `Timeline` is the score together with the data it was generated from, and
+    an `OscScore` is what is left once one is rendered.
+
+  **A session is global, per context.** Today the ambient session is
+  thread-local and set by `with session:` or `activate()`, and nothing ties a
+  clock's timebase to the session it belongs to (a live session's own clock is
+  built monotonic and switched to the sample clock by `lock_to`; a clock built
+  inside the session stays monotonic; a timeline's hidden clock takes the
+  ambient timebase once, on its first play). The rules:
+
+  - **A session is switched with its context manager, on the same thread**,
+    and the rules below hold for whichever one is in force. That is also what
+    makes an offline session inside a live one simple, as
+    `examples/editors/edit_multitrack.py` needs.
+  - **`Session` takes `timebase=`**, because it initializes its clock.
+  - **A live session's timebase is `SampleClockTimebase` by default.**
+  - **A `TempoClock` made while a session is active is initialized with the
+    session's timebase, and is kept in the session.**
+  - **A render needs an offline session**, under the same rules. Its timebase
+    is `LogicalTimebase` by default and is the only one possible: every clock
+    made inside an offline session is on `LogicalTimebase`.
+
+  **Settled the same day, point by point** (proposed and corrected with the
+  user):
+
+  1. **A clock does not change mode.** Its timebase is fixed when it is made.
+     `lock_to` and `unlock` go (and `Session.lock_to_server` with them): a
+     clock on the server's sample clock is a clock
+     made with `SampleClockTimebase`, which is what `Session.live` does by
+     default. `TempoClock.render` works only on a clock on `LogicalTimebase`
+     and raises on any other.
+  2. **A clock made with no session active** belongs to the default session
+     (`main`), which works as a live session with no server of its own: its
+     clocks are on `MonotonicTimebase`, as today. A sample clock is made with
+     `SampleClockTimebase`.
+  3. **`Session(clock=c, timebase=t)` with `c` on another timebase raises**,
+     naming both; so does a `c` that already belongs to another session.
+  4. **A `Timeline`'s hidden clock belongs to the session it sounds in.** On
+     each play, if the active session is not its clock's, the timeline makes a
+     new clock in that session, on its timebase, at the position it stopped
+     at. Playing a timeline in one session while it sounds in another raises.
+  5. **What makes a pattern an event pattern.** `Pbind`, `Pmono`, `Ppar`,
+     `Pchain` and the other patterns that yield events derive from
+     `EventPattern`. A list pattern (`Pseq`, `Prand`, ...) resolves its class
+     when it is built: if every element is an `EventPattern`, so is it
+     (`__new__` in Python, the constructor's return in TS). A list that mixes
+     events and values is a value pattern, and playing it raises saying why.
+  6. **A `Timeline`'s items**: `add` takes an `EventPattern` and refuses a
+     value pattern by name.
+  7. **`render` of a value pattern** returns the values it generates, a list
+     in Python and an array in TS. An endless one needs `count=`, a number of
+     values; `until` stays a time.
+  8. **The endless guard moves to `render`**, since `from_pattern` goes: an
+     `EventPattern` with no `until` raises after `MAX_BOUNCED_EVENTS` events,
+     a value pattern with no `count` after as many values, and the message
+     names the parameter to pass.
+  9. **Documentation**: both clients' books (sessions, routines and clocks,
+     timelines, patterns, render), and a `docs/decisions.md` entry, "The tempo
+     is the clock's, and a session is the context clocks are made in", with how
+     the parameters got there (the `git log` above).
+
+  **Two more, found reviewing the above and answered by the user:**
+
+  10. **A live session whose server does not answer the sample clock raises**,
+      and says why: today `lock_to` falls back to wall-clock time without a
+      word, and with a timebase fixed when the clock is made there is nothing
+      to fall back to afterwards.
+  11. **`Session.embed`'s default timebase is `SampleClockTimebase`**, as a
+      live session's: it is real time too, and reads the sample counter in
+      process.
+
+  Also in the phase: `examples/editors/session.py` imports `Session as Server`
+  and calls `Server.live(tempo=2.0)` -- it runs, but the alias reads as a
+  server and the tempo goes with this phase. It has no page on purpose (it
+  launches a standalone host; `clients/web/PLAN.md`), so its counterpart is
+  checked rather than written.
 
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
@@ -2113,6 +2239,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      score); converting a score to a timeline of events. Position stated: no
      new server structure is created to play a score; a score converts to a
      timeline of events, which is simplest and shares the timeline's logic.
+     **Decided 2026-09-17 (Phase 6)**: no score player in the server, and no
+     conversion of an `OscScore` into a timeline either -- a `Timeline` is the
+     score with its generation data, and an `OscScore` is what rendering one
+     leaves.
   6. **Aligning clients.** *(Reviewed at Phase 3 and moved to Phase 5: no view
      uses the server's grid.)* What replaces `join_transport` and `quant` on the
      server's shared grid. Possibilities: remove the logical grid from the
@@ -2173,10 +2303,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
        musical grid (the ruler's configuration); the snap an edit applies
        (`Rules::quant`) is a length on the axis of what is edited, so for a
        multitrack a grid already resolved to seconds by whoever holds the map.
-     - A region whose contents are in beats (a window onto notes, a composite)
-       is placed in seconds and keeps its beats inside; which map converts
-       them -- its own, or one the document holds -- is open, and does not
-       block this phase since `MultitrackPlayback` plays no such region yet.
+     - *(Superseded 2026-09-17 by the user: a multitrack region holds no
+       beats. The composite region and the window onto a node that suggested
+       it are `form`'s tree left inside the multitrack document, filed for
+       removal in `crates/clausters-document/PLAN.md`.)*
      - Session format **3**. A format-2 session is migrated once, in Rust
        (`session::migrate`, bound in both clients), converting every beat
        position through the map it saved, or through the reader's default of
@@ -2225,7 +2355,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
       presentation only -- a ruler's prop, a text field. The default a document
       that states no tempo is drawn at is `DEFAULT_TEMPO`, one beat a second.
   12. **`render(tempo=)` and `Session.nrt(tempo=)`.** What a session's tempo
-      means once a timeline holds its own map.
+      means once a timeline holds its own map. **Decided 2026-09-17 (Phase 6)**: neither
+      takes a tempo; `render` takes a clock as `play` does, a session factory
+      takes `clock=` and `timebase=`, and a render runs in an offline session
+      whose only timebase is `LogicalTimebase` ("Phase 6 decided", above).
   13. **`Automation`.** Its place in the frame (a curve in seconds). The fix of
       its scalar conversion has landed.
   14. **What the work is called.** CLAUDE.md names it "the composition" / "the

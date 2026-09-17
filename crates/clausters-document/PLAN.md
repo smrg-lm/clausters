@@ -1696,19 +1696,36 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 - ⬜ **Staleness per node rather than per document** *(named while closing O4)*. Today one counter guards everything: an edit is stale if *anything* moved since the picture it was made against, even something in another lane it could not collide with. That is deliberately conservative and it is right for one owner, where the counter moves only for edits the owner itself just applied and a refusal costs one redone gesture. It becomes wrong the moment two hands edit at once, where unrelated work would refuse each other constantly. The refinement is a per-node revision, so an edit is stale only against the node it names - cheap to carry, and it needs the log (O5) to be worth anything, since without an inverse a refused edit is a lost one either way. Opening it early would buy precision nothing can currently observe, which is why it is here and not in a milestone. It shares its seam with the entry below.
 - ⬜ **More than one owner of the same document.** Everything here assumes one authoritative owner per resource, which is what makes a version counter enough and what keeps operational transformation and CRDTs out of the design - an order of magnitude of machinery for a problem the system does not have. Two people editing one composition at once would be that problem, and it would be a track of its own rather than a milestone: the point of recording it is that the current design is a deliberate floor, not an oversight, and the version is the seam it would grow from.
 
-- ⬜ **Which map a region in beats is read through** *(named 2026-09-17, placing
+- ✅ **Which map a region in beats is read through** *(named 2026-09-17, placing
   the multitrack in seconds -- `clients/python/PLAN.md`, the tempo entry,
-  decision 8)*. A region is placed in seconds and keeps its contents in their
-  own units, so a window onto a node of notes or a composite region holds beats
-  inside a span of seconds, the way a child timeline is placed in its parent.
-  What converts those beats is not decided: a map of the region's own (as a
-  `Timeline` holds), or one of the maps the document holds, named by the
-  region. `MultitrackPlayback` plays no such region yet, so nothing reads the
-  answer; the score's road in (the scores phase) is where it is needed.
+  decision 8; **dissolved the same day** by the user)*. The question assumed a
+  region could hold contents in beats -- a composite region, or a window onto a
+  node of the general tree -- and asked which tempo map would convert them. Its
+  premise is wrong: the multitrack is a model of its own, with no nodes as the
+  `clausters.form` tree has, so no region of it holds beats and there is
+  nothing to convert. What made it look like a question is a leftover of
+  `form` inside the multitrack document, filed under "Found by use" ("A
+  composite region is `form`'s tree inside the multitrack").
 
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
+
+- ⬜ **A composite region is `form`'s tree inside the multitrack** *(found
+  2026-09-17 by the user, while the scores phase asked which map converts the
+  beats inside a region: "Un composito no existe en un multipista porque no hay
+  nodos como en el modulo form. El multipista es un modelo completamente
+  distinto.")*. `multitrack::Content::Composite { node }` places a general-tree
+  `Node` as one region, and both clients bind it (`Content.composite`); only
+  tests use it, and `MultitrackPlayback` skips it. It is what is left of the
+  arrangement that was `clausters.form`'s, and it let a region appear to hold
+  beats -- a `Sequence`, a `Clang`, an `Aggregate` -- in a document whose
+  regions are sources placed in seconds. **To do:** remove `Composite` from the
+  multitrack document, or move it to another kind of document if the `form`
+  module is taken up again; the logic can live in an editor specific to `form`,
+  never in the multitrack. The same pass reviews the window onto a node
+  (`SegmentSource::Node`, a window onto a node of `Document::content`), which
+  has the same origin, and the migration of a session that saved either.
 
 - ✅ **Boxes that met on a sample stopped meeting once the multitrack was in seconds** *(found 2026-09-17 by the user, the day it landed: a snap that sometimes missed, a join refused, and in the editor example)*. The projection crossed a length on its own (`dur / rate`) and an end as `(at + dur) / rate`, which differ in the last bit for most sample counts, so a box's end and the next box's start stopped being equal and `read_join` -- comparing seconds against `f64::EPSILON` -- saw a gap. Beats had hidden it by computing a length as the difference of two converted positions. **Fixed** by one rule for every crossing, in the core (`tempoclock::secs_to_samples_over`/`samples_to_secs_over`): a position lands on a whole sample and a length is the difference of its two ends; a join asks where boxes meet in samples at the view's rate. The host also reported positions as `f32`, which holds a whole sample only up to 2^24 (under six minutes at 48 kHz); the `clips` and `points` reports are doubles now. Held by `halves_placed_at_any_sample_draw_back_there_and_join` and the core's `a_span_crosses_as_the_difference_of_its_ends`.
 
