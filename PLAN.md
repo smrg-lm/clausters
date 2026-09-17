@@ -2259,6 +2259,25 @@ where it came from).
   and no pre-fader send, once the ramp is over. Measured before it is taken, and
   taken without touching the audible rule.
 
+- ⬜ **Several transports on one server, to play concurrently** *(named
+  2026-09-17 with the user, designing how a timeline plays on a server's
+  transport; `clients/python/PLAN.md`, the tempo-map entry)*. A server has
+  one transport today -- one governed group, one transport clock, one position
+  anchor, one loop -- so two things that each want their own play, pause and
+  locate (two timelines, or a timeline beside a multitrack) share one playhead.
+  The shape: a transport becomes a resource addressed by id and sized at boot
+  (like `--taps`), so the audio thread never allocates, each with its own
+  governed group, clock (frozen total), position anchor, loop and
+  transport-axis queue. The id reaches every surface that names the
+  transport: the `/transport_*` commands and `/sched_atTransport`, the
+  `TransportPos` UGen, the per-transport clocks and positions in the
+  shared-memory segment, the change notifications, and `/gui_headClock`, which
+  says which transport a view draws from. A protocol change across the server,
+  both clients, the GUI host and the books at once; `/transport_query` and the
+  conductor examples change shape. Worth settling before a timeline's transport
+  property is built, since it decides how that property names the transport it
+  joins.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

@@ -1743,6 +1743,239 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   Whichever it is lands in both clients, and the host needs no change: it takes
   the map as an axis prop and does not care who sent it.
 
+  **Re-read 2026-09-16: ownership is the second question, not the first.** An
+  audit of every use of `TempoClock` and `TempoMap` (after two live-coding bugs
+  in one session: `clock.tempo = x` re-sloping the map, and wall-clock
+  timetags jittering by a block) found that the code treats **two beat axes as
+  one** -- the beat of the **content** (where an item sits) and the **clock's** beat
+  (how far a run has gone, accumulated across passes, `quant`s and restarts) --
+  and **two kinds of tempo as one**: the content's, authored and read by views,
+  passes and bounces, and the performance's, a live gesture that belongs to a
+  run. Live coding with a bare clock is the one case where the pairs coincide,
+  which is why that case works and the others do not. So the work opens with a
+  **conceptual classification and unification** -- the axes, the two tempi,
+  what each structure holds and in which unit, and the use cases each serves --
+  and ownership is decided inside it. The defects the audit found, each one
+  evidence for that classification:
+
+  - `Playhead` converts position by clock-beat differences, so a tempo change
+    sounds shifted by whatever clock beat the pass started on (verified: a
+    change at timeline beat 4 sounds at timeline beat 2 for a pass started at
+    clock beat 2).
+  - `Transport` and `Editor` copy the map they are handed, so a later
+    `set_tempo` on the clock never reaches the line or the ruler (verified:
+    beat 16 at 6.0 s on the clock, 8.0 s on the transport).
+  - `Transport.anchor` places the line's origin through the map from the
+    content's beat 0 while the sound is scheduled on clock beats.
+  - In the multitrack editor, `Editor.tempo_map` and
+    `Playback.transport.tempo_map` go stale when `Bridge.refresh` rebuilds the
+    map after a tempo edit (read in the code, not run).
+  - `TempoClock.map` is indexed in clock beats but documented, handed to views
+    and saved by `dump` as the content's map.
+  - `Editor.tempo` and `Transport.tempo` read the starting tempo and replace
+    the map when assigned, while `TempoClock.tempo` is the sounding tempo and
+    read-only.
+  - `TempoClock.tempo` read inside a routine answers for the physical beat, not
+    the routine's logical one.
+  - `Automation.play` converts its length with the scalar `clock.tempo`, so
+    inside a ramp a 2 s curve is scheduled for 1.49 s (verified; its own entry
+    is below).
+  - `join_transport` replaces the clock's map with one segment and drops any
+    content map it held.
+  - `render(tempo=)` and `Session.nrt(tempo=)` take only a scalar, so a timeline
+    cannot be bounced with its map.
+  - Two clocks sharing one map agree only if they started on the same beat.
+  - `form.element` invents a constant map at every conversion that names none.
+  - `Multitrack.tempo` is written in bpm and `TempoClock`/`TempoMap` in beats
+    per second, with no common unit between the document and the clock.
+  - The web client ports all of the above one to one.
+
+  **The frame, decided 2026-09-16/17 with the user.** Two kinds of time:
+  **physical** (seconds, unalterable, always running) and **logical** (beats,
+  whose unit's length is the tempo; metre and notation live here, and a
+  performance converts it to physical). A logical time has an **access point**
+  on the physical one, where it starts or changes. A `TempoClock` is a logical
+  clock; a `TempoMap` is a **plan** of how a logical time varies along the
+  physical one (or a record of how it did). The server knows no logical time.
+  A multitrack is governed by physical time and uses logical time only to draw
+  its rulers. The earlier "piece beat / clock beat" wording in this entry is
+  superseded by this frame, and so is "piece" as the name of a structure: no
+  structure is *the piece* -- a `Timeline` need not be one, a `Multitrack` is a
+  document -- so this entry names the structure it means.
+
+  **`Timeline` is a plan in logical time, and it plays itself.**
+
+  - A `Timeline` organizes a `TempoClock` (holding the timeline's `TempoMap`)
+    and a `Playhead`; both are **internal**. Its surface is adding items, its
+    tempo map, and the verbs `play(at=)`, `locate`, `pause`, `stop`.
+  - The clock is born on the timeline's zero, so a clock beat *is* a timeline
+    beat and the contradiction `Playhead` has today (an external clock whose
+    map is indexed from another zero) cannot arise.
+  - The `Playhead` is the mechanism that gives the timeline random access
+    (play from a beat, seek), not a public object.
+  - A `Timeline` is playable, and **a timeline can contain timelines**: a parent
+    simply plays its children when it reaches them, so siblings at different
+    tempi start together by construction. A child remains an object that can be
+    handled on its own.
+  - A timeline is stateful, so **one instance has at most one parent**: `add`
+    walks up the chain, refuses a timeline that already has a parent (naming
+    `copy()`) and refuses an ancestor (no cycles) -- checked when the structure
+    is built, at any depth, not while it sounds.
+  - `copy()` gives a fresh clock and playhead stopped at 0, an independent map,
+    children copied recursively, and stateless items (events) shared.
+  - **A parent's logical length covers its children's.** A child that lasts
+    longer than the parent's own items extends the parent, even with no items
+    of its own there, so a parent can never be shorter than what it holds.
+    Everything is planned, so this is computed when a child is added, and it
+    takes **relative tempi**: each timeline is in its own units, so a child's
+    length in its beats goes to seconds through its map and back to beats of
+    the parent through the parent's map, from the beat it is placed at.
+
+  **Following a server transport.** `Playhead.follow_transport` today listens
+  to the transport's broadcasts and reacts after the fact: `play` becomes
+  `playhead.play(at=position)`, `stop` a stop and a locate, with events stamped
+  on the wall or device clock rather than on the transport's axis. The two
+  things it joins are different in nature: the transport is **state in
+  physical time** (frozen nodes, `TransportPos` readers, locate and loop exact
+  in the engine), and a timeline is **a plan of discrete events in logical
+  time** generated by the client ahead of `latency`. Joined that way they are
+  two playheads that cancel each other, not a synchronization problem. Found
+  on the way: after a locate, bundles already queued on the transport clock
+  (which is monotonic) sound at the old position, and `/sched_clear` is the
+  only clear there is, and it is global.
+
+  - **Decided: the server knows only physical time.** The logical grid leaves
+    it -- the tempo of `/transport_set`, `/transport_locate` by beat,
+    `/transport_play <beat>` and the position in beats.
+  - **Decided: a `Timeline` does not drive physical time.** The transport and a
+    timeline are two different things.
+  - **How the multitrack avoids the problem today.** It has one playhead, the
+    server's. `PiecePlayback` (`clausters-editing`) converts regions from beats
+    to frames once, through the document's map, and makes each a buffer reader
+    following `TransportPos` under the governed group; an edit re-plans and
+    diffs; play, pause, stop and locate are transport commands in samples, and
+    nothing is ever re-cued. It plays no events: a region whose content is
+    notes or a document node is skipped by the plan. The only place events and
+    the transport meet is `Transport(head_clock="piece")` calling a client
+    `source` on play and locate -- the two cancelling playheads again.
+  - **Re-cueing from the client was examined and is costly.** It needs a
+    scoped clear in the protocol, releases for notes whose note-offs are
+    cleared (or they hang), locate and clear sent atomically, a locate itself
+    stamped `latency` ahead so regenerated events are not late, and content
+    that can be re-generated from a position (a plan, not a live routine).
+
+  **Rejected: a score player in the server.** Compiling a timeline to a score
+  the server plays by following the transport was proposed and dropped: **no
+  new server structure is created to play a score.** The direction is the
+  opposite one -- a score converts to a timeline of events, which is the
+  simplest and shares the timeline's logic -- and a timeline following a
+  transport does so from the client.
+
+  **Decided: both ways of playing a timeline are valid, and coexist.**
+  `tl.play()` plays it on the client's clock -- any destination (a server,
+  MIDI, another OSC application), live edits and `set_tempo` heard at once,
+  each timeline independent, which is what live coding needs -- and
+  `tl.follow(transport)` plays it as a score the server follows. The server's
+  single transport stops being a limit: following it *means* the timeline follows
+  the shared physical time, and independent timelines go through the client.
+  Four conditions keep the two from contradicting each other:
+
+  1. **One mode per root, and the same verbs in both.** The root timeline
+     plays on its own clock or on a server's transport, chosen by a property of
+     the timeline, never both. On a transport, `tl.play`/`pause`/`locate` work
+     exactly as the multitrack's playback does: they are the transport's
+     commands, and the timeline follows the position internally. No clock or
+     playhead is ever handled by the caller for a timeline. A transport is
+     driven by one owner at a time -- an editor or a multitrack playback, or a
+     timeline -- so the two playheads do not come back.
+  2. **One implementation of the semantics.** Nesting, extent, loop, locate
+     and the note-chase rule live in one place, driven by the timeline's own
+     clock in one mode and by the transport's position in the other. Written
+     twice, they would sound different.
+  3. *(Superseded with the score player: condition 3 restricted what could go
+     into a server score.)*
+  4. **Following a transport is re-cueing from the client**, with the costs
+     recorded above; the API looks the same in both modes.
+
+  **Decided: a view holds no tempo, no clock and no tempo map.** A view only
+  represents the structure it shows and edits; a conversion it needs is asked
+  of that structure (a `Timeline`, the document), never kept. `Editor` and
+  `Transport` lose `tempo=`, `tempo_map=` and their `tempo` property. The host
+  still receives the map as an axis prop -- a value in a message -- re-sent
+  when the structure's `map.version` moves, checked where views already
+  refresh.
+
+  **Why views held one.** Not by design: a view draws on a physical axis
+  (samples, milliseconds) content placed in beats, so it needed a conversion.
+  The multitrack driver (July) and `Transport` (`691c9f68`, July, anchoring
+  the line on engine samples) took a scalar `tempo` for it; `f939e589`
+  (2026-08-31) made the scalar a `TempoMap` because it drew wrong across a
+  tempo change, but kept it in the view as a copy, since no structure held a
+  map. What stood for the composition then was `clausters.form`'s
+  `Aggregate` drawn by `FormEditor`, which had no tempo, and `Timeline` was only the `(beat, item)`
+  sequence a `Playhead` scanned. `form` was frozen, `FormEditor` removed and
+  `Transport` moved to the server's position (`6988cb9d`), and the map stayed
+  where it had landed: the conversion a view needed was taken for ownership of
+  the data.
+
+  **Decided: the timeline questions.**
+
+  - **A loop reaches the children.** A parent looping a window plays each child
+    looping over the region of the child that corresponds to that window, so
+    the hierarchy of playback holds. The correspondence is computed through
+    physical time -- the window in the parent's beats to seconds through the
+    parent's map, and back to beats through the child's -- since two logical
+    times can only be compared in physical time. There is no retrigger.
+  - **A timeline has no `set_tempo`.** Its clock is hidden, so its tempo is its
+    map, written through the map's own writers; an edit while it plays is heard
+    on the next wake, since the internal clock reads the map it holds.
+    `TempoClock.set_tempo` behaves the same everywhere and is not reinterpreted
+    by any structure.
+  - **An item is anything playable.** A timeline schedules whatever has a
+    play; which playables compile to a score is the transport mode's
+    condition 3, not a restriction on the timeline.
+  - **`TempoClock` is basic, and a structure built on it never changes how it
+    behaves.** A bare clock with routines is live coding with no structure at
+    all -- `TempoClock(2).start()`, a routine, `set_tempo` -- and stays
+    exactly that: its map, `start()`, its gesture. A `Timeline` groups basic
+    structures and uses an ordinary `TempoClock`; what it needs that a clock
+    lacks (a seek) is an addition to the clock, never a change of its
+    behavior. This holds for every structure over the basic ones.
+
+  **Decided: the server's fundamental service is a synchronized physical
+  clock for all its clients.** Each client already synchronizes *with* the
+  server: `lock_to` models the sample counter from `/clock_query`, and
+  `Session.live()` does it by default, so every locked client shares the
+  server's physical axis. What is not done is clients synchronizing *with each
+  other* without the grid -- agreeing on a common origin -- and that, not a
+  logical grid, is what the server should provide first. The grid, if it
+  stays, is a use case and must not read as the server's main function.
+
+  **Still open.**
+
+  - *Server and transport.* (1) Converting a score to a timeline of events:
+    the score's bundles as playable items, so a score plays in real time
+    through the timeline and never through a server structure. (2) Whether the server's grid (`/transport_set`,
+    `join_transport`, `quant` on it) is removed, as decided above, or kept as a
+    secondary use case; the priority below is decided either way. (3) The property that puts a timeline on a
+    transport: its name and `at=` (where the timeline's beat 0 falls on the
+    transport). (3b) Several transports on one server, to play concurrently:
+    today there is one; recorded as a future direction in the root `PLAN.md`. **Decided:** `gui.Transport` is renamed for what it does --
+    coordinating a playback with a view's line -- so "transport" names only the
+    server's.
+  - *Multitrack and views.* (4) Regions in physical time: the document places
+    them in beats, so whether they move to seconds, how existing documents
+    migrate, and that a tempo change moves nothing. (5) Whether the widgets'
+    scalar `tempo=` prop stays as a constant map's shorthand or goes. (6) The
+    redesign of `Editor` and `Transport` without tempo: what they receive and
+    where they ask for a conversion.
+  - *Across.* (7) One unit, beats per second or bpm, and where the other is
+    converted. (8) What `render(tempo=)` and `Session.nrt(tempo=)` mean once
+    the map is a timeline's. (9) `Automation`'s place in the frame (a curve in
+    seconds) and the fix of its scalar. (10) What the work is called in
+    CLAUDE.md, if anything, on which the "piece" rename depends. (11) The web
+    port: `clients/web/PLAN.md` names the shape it must follow.
+
 - ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
   2026-09-05 by the user, pressing a button that did nothing)*.
   `editors/edit_notes` opened a session with `activate()` and never started it,
@@ -3674,6 +3907,40 @@ work, where a pending item reads as done.)*
   for the setter went with it. The views' own `tempo` setters stay: whether a
   view should hold a map at all is the ownership entry above ("Nothing
   fundamental holds the tempo map").
+
+- ⬜ **"piece" names no structure, yet it names types, variables, a wire word
+  and prose** *(found 2026-09-17 by the user, reviewing the tempo entry: "no
+  hay definida una estructura que sea 'la pieza'", and on `PiecePlayback`: "el
+  nombre debería referir a la estructura de datos")*. No structure is *the
+  piece*: a `Timeline` need not be one and a `Multitrack` is a document. The
+  word still stands for whichever structure a module happened to hold, some
+  three thousand times across Rust, Python and TypeScript, so a reader has to
+  work out each time which one it is. The rule is the one CLAUDE.md already
+  states for "material": **name the structure**. What it reaches, and it is
+  general, not one rename:
+
+  - **Types named for no structure.** `PiecePlayback` (`clausters-editing`)
+    plays a `Multitrack` document on the server -- `sync`, the transport verbs,
+    the meters -- and becomes `MultitrackPlayback`, beside `MultitrackEditor`
+    and `MultitrackDomain`. `PiecePosition` (`server::clock_axis`) is the
+    transport's position in samples, a quantity of the transport and not of any
+    structure, and becomes `TransportPosition` -- beside `TransportSample`, the
+    transport's clock, so the pair reads as clock and position, and matching
+    the `TransportPos` UGen and `positionSample` on the wire. The test doubles `PieceServer`/`PieceHost` follow what they fake.
+  - **A wire word.** `"piece"` in `/gui_headClock`, `--clock piece` and
+    `Transport(head_clock="piece")` means "draw from the transport's position";
+    it is protocol, so its rename goes through `docs/gui-protocol.md`, the host
+    and both clients together.
+  - **Variables and parameters.** `piece`, `piece_widget`, `piece_len`,
+    `send_piece`, `render_piece` and the rest, most of them holding a
+    `Multitrack`: named for what they hold.
+  - **Prose.** The books, `docs/schemas.md` ("where the piece is") and
+    CLAUDE.md, which names the work "the composition" / "the piece" and so
+    licenses the word. What the work is called, if anything, is decided there
+    first, since every other rename follows it.
+
+  A rename is not a search-and-replace (CLAUDE.md): each sentence it touches is
+  re-read for which structure it means.
 
 ## Future directions (a design that is not a fix)
 
