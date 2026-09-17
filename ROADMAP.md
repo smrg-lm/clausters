@@ -118,16 +118,10 @@ numbered **decisions to take** are each reviewed when the phase that needs it
 starts, never earlier. Every phase closes in both clients (decision 15), with
 tests, an example and the books.
 
-- ⬜ **Phase 3 — views without tempo.** Order: first, now that a timeline
-  holds its own map, since a view draws a timeline's data. Carries out the tempo entry's "The fixed principle:
-  an editor represents and edits a structure's data, and holds none of it" and
-  "Decided: a view holds no tempo, no clock and no tempo map". Reviews
-  decisions 9, 10 and 6, and the new name of `gui.Transport` (decision 7).
-
-- ⬜ **Phase 4 — the multitrack in seconds.** Order: independent of Phase 3 in
-  code, after it in reading, since both remove tempo from where it does not
-  belong. Carries out the tempo entry's decision 8 (a multitrack's base is
-  seconds) and reviews decision 11 (one unit). Touches
+- ⬜ **Phase 4 — the multitrack in seconds.** Order: first, now that views
+  hold no tempo; it removes tempo from the last place it does not belong.
+  Carries out the tempo entry's decision 8 (a multitrack's base is seconds) and
+  reviews decision 11 (one unit). Touches
   `crates/clausters-document/PLAN.md`'s multitrack and the `X` applications
   built on it (`crates/clausters-apps/PLAN.md`).
 
@@ -137,7 +131,8 @@ tests, an example and the books.
   transport. Carries out the tempo entry's "Following a
   server transport" and "Both ways of playing a timeline are valid, and
   coexist". Reviews decisions 7 and 6, and re-reads `T2` (root `PLAN.md`, T
-  track; section 4 below), which names the grid decision 6 is about. Moves the
+  track; section 4 below), which names the grid decision 6 is about, and
+  reviews decision 6 itself (moved here from Phase 3). Moves the
   last public `Playhead` users the tempo entry's Phase 2 status names --
   `follow_transport`, the conductor examples and
   `clients/web/examples/transport/sequencing.html`, whose live tempo slider

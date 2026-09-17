@@ -39,8 +39,8 @@ export type { Measure } from "./editing/index.ts";
 // client reaches them (`clausters.gui.editing`): `View` here is the picture of a
 // structure and would collide with the guidef `View` this module exports.
 export * as editing from "./editing/index.ts";
-export { Transport } from "./transport.ts";
-export type { TransportOptions, TransportTargets } from "./transport.ts";
+export { PlayheadSync } from "./playhead-sync.ts";
+export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "./playhead-sync.ts";
 
 export * from "./guidef.ts";
 export { Clip, Lane, Multitrack } from "./multitrack.ts";

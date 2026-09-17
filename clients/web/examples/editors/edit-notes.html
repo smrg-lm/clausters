@@ -101,13 +101,10 @@ the instrument, and everything else the author put on it.</div>
         $("run").disabled = true;
         // `activate` is what makes this session the **ambient** one, and the
         // free-standing verbs are what need it: `play(timeline)` below resolves
-        // its clock and server from here, the way `edit` resolves its host.
+        // its server from here, the way `edit` resolves its host.
         // Building a session does not claim that role -- a page may hold
         // several.
         session = (await Session.embed()).activate();
-        // The clock the playhead runs on. An ambient play resolves this
-        // session's clock, and a stopped clock schedules what never fires.
-        session.start();
         await session.gui();
 
         // One verb. A `Timeline` opens as a NotesEditor — one `pianoroll`
@@ -115,7 +112,6 @@ the instrument, and everything else the author put on it.</div>
         // editing context.
         const editor = await gui.edit(timeline, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
-          tempo: session.clock.tempo,
           title: "notes",
           stage: $("stage"),
         });

@@ -240,9 +240,9 @@ def test_a_page_and_a_roll_walk_one_order():
     from clausters.gui.editing import Editing
 
     s, nid = _edited_score()
-    timeline = Timeline([(0.0, Event(midinote=72, dur=1.0))])
+    timeline = Timeline([(0.0, Event(midinote=72, dur=1.0))], tempo=2.0)
     # One context for both — what a window drawing the two would build.
-    editor = edit(timeline, sample_rate=48_000.0, tempo=2.0,
+    editor = edit(timeline, sample_rate=48_000.0,
                   context=Editing.of(s), open=False)
 
     s.transpose(nid, -2)

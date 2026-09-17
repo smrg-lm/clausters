@@ -2017,6 +2017,18 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   undecided about the public verb is answered by `Timeline.play`; its other two
   points stand.
 
+  **Phase 3 landed 2026-09-17, in both clients.** `Editor` holds no tempo: its
+  bridge asks the structure for its map on each use (`Editor.tempo_map`, a
+  timeline's own map, the document's for the multitrack), a take's and a
+  curve's editors have no beats ruler and keep their cursor and selection in
+  seconds, and `edit()` lost `tempo`. `gui.Transport` is `PlayheadSync`
+  (`notation.transport` is `notation.playhead_sync`): it holds no tempo either,
+  and reads the map of the pass its `source` returns or of the `structure` it is
+  given. The roll's catalogue view (`clausters-document`) takes the timeline's
+  `tempo_map` as a fact and no longer requires a scalar. The host's axis props
+  are unchanged and documented as the ruler's configuration. The two defects
+  above about views copying and replacing a map are fixed.
+
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
   a position it is recorded as a position, not as a decision -- several were
@@ -2060,14 +2072,17 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      score); converting a score to a timeline of events. Position stated: no
      new server structure is created to play a score; a score converts to a
      timeline of events, which is simplest and shares the timeline's logic.
-  6. **Aligning clients.** What replaces `join_transport` and `quant` on the
+  6. **Aligning clients.** *(Reviewed at Phase 3 and moved to Phase 5: no view
+     uses the server's grid.)* What replaces `join_transport` and `quant` on the
      server's shared grid. Possibilities: remove the logical grid from the
      server; keep it as a secondary use case. Position stated: the server's
      fundamental service is a synchronized physical clock for all its clients
      -- each client already synchronizes with the server (`lock_to`), and
      clients synchronizing with each other on a common origin is not done --
      and the grid, if kept, must not read as the server's main function.
-  7. **How a timeline goes on a transport.** The name of the property, `at=`
+  7. **How a timeline goes on a transport.** *(Its name half decided
+     2026-09-17, Phase 3: `gui.Transport` becomes `PlayheadSync`, since it keeps
+     the views' playhead line in step with what sounds.)* The name of the property, `at=`
      (where the timeline's beat 0 falls on the transport), and what the verbs
      do there. Possibilities: verbs raise while following; verbs are the
      transport's commands. Position stated: `tl.play`/`pause`/`locate` work as
@@ -2089,7 +2104,21 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      current implementation; a ruler may later represent a timeline. The
      concrete case is the piano roll: `NotesEditor` converts a timeline's beats
      to samples with a tempo it invented, and the widget converts them back to
-     beats with the same tempo sent as a prop.
+     beats with the same tempo sent as a prop. **Decided 2026-09-17 (Phase 3):**
+     the axis prop is the map, sent from the structure (`timeline.map`, the
+     document's) as a value in a message, and the scalar `tempo` and `beat_at`
+     stop being how a view states one; the beats ruler of the roll and the
+     multitrack stays. **And a ruler's units are its configuration** (the
+     user): beats can be a unit a ruler is set to without any map, the same case
+     as dB, normalized or bits -- the values a ruler shows are configurable in
+     general, as long as the domains of the data are not mixed. A structure in
+     beats draws its own beats through its map; a ruler set to beats over data
+     that has none is a presentation choice, never the data's tempo. So the
+     host's axis props `tempo`, `beat_at` and `tempo_map` stay as they are
+     (the user, same day): they are **the ruler's configuration**, documented
+     as props, and a function or a map handed to a ruler tomorrow is one more
+     prop of it. What Phase 3 changes is that the client's views stop holding
+     them, and take them from the structure when the structure has one.
   10. **`Editor` and `Transport` without tempo.** What they receive and where a
       conversion comes from. The problem: `Editor` is the base class of every
       editor and hands each one a beats-to-units conversion, needed by the
@@ -2097,6 +2126,13 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
       (a document in beats), and by no other; `Transport` needs one only to
       place the playhead line and read the server's position. It is to be
       decided under the fixed principle above, per structure edited.
+      **Decided 2026-09-17 (Phase 3):** `Editor` and `Transport` lose `tempo=`,
+      `tempo_map=` and `tempo`; a conversion is asked of the structure on each
+      use -- `timeline.map` for a `NotesEditor`, the document's map for the
+      multitrack (until Phase 4), and for `Transport` the timeline its `source`
+      returns or the document it plays. A buffer's and a curve's editors have
+      no beats ruler, since neither holds a tempo, and `edit()` loses its
+      `tempo`.
 
   *Across*
 

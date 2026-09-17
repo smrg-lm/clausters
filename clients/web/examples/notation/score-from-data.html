@@ -59,7 +59,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       call for call: the timeline built in code, `sheetFromTimeline`, the
       display list, the minimal transport over it, the *interpreted sheet*
       played as a timeline, and the by-hand cursor anchor (a `/clock_query` plus the server's
-      latency) that the script uses rather than the notation transport.
+      latency) that the script uses rather than `notation.playheadSync`.
 
       The platform's differences are the usual two -- the host is the wasm one
       in this tab and draws into an element, and nothing is pumped -- plus the

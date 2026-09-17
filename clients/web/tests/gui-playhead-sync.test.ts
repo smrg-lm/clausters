@@ -1,5 +1,5 @@
-// The shared transport (`gui/transport.ts`) — play/pause/stop/locate and the
-// view's playhead line.
+// The shared playhead sync (`gui/playhead-sync.ts`) — play/pause/stop/locate
+// and the views' playhead line.
 //
 // No host and no server: a fake host records the sets, a fake server answers the
 // clock query, and the pass is a real `Playhead` driven offline (`clock.render`)
@@ -7,7 +7,7 @@
 // — which of the two numbers is written, in which unit — and the state machine
 // around it, not what the widgets do with it.
 //
-// The same cases the Python client's `test_gui_transport.py` checks, because
+// The same cases the Python client's `test_gui_playhead_sync.py` checks, because
 // this is one object in two languages: what would drift is the arithmetic (the
 // anchor, the units) and the tail rule, and both are pinned here.
 //
@@ -19,7 +19,8 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { ManualTimebase } from "../src/base/timebase.ts";
-import { Transport } from "../src/gui/transport.ts";
+import { TempoMap } from "../src/base/time.ts";
+import { PlayheadSync } from "../src/gui/playhead-sync.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { Playhead, Timeline } from "../src/seq/timeline.ts";
 import type { GuiHost } from "../src/gui/host.ts";
@@ -30,6 +31,8 @@ await loadCore();
 
 const SR = 48_000.0;
 const TEMPO = 2.0; // beats per second (120 bpm)
+/** What the passes play, as far as the line is concerned: its map is the tempo. */
+const PIECE = new Timeline([], { tempo: TEMPO });
 const BEAT = SR / TEMPO; // 24000 samples per beat
 const CLOCK = 1_000_000.0; // the sample-clock value the fake server reports
 
@@ -101,11 +104,11 @@ function makeClock(): TempoClock {
 function makeTransport(
     host: FakeHost = new FakeHost(),
     { clock = makeClock(), extent }: { clock?: TempoClock; extent?: () => number } = {},
-): Transport {
-    return new Transport(host as unknown as GuiHost, 7, {
+): PlayheadSync {
+    return new PlayheadSync(host as unknown as GuiHost, 7, {
         source: (at) =>
             new Playhead(arp(), clock, recorder as never).play({ at }),
-        tempo: TEMPO,
+        structure: PIECE,
         sampleRate: SR,
         extent,
         clock,
@@ -123,9 +126,9 @@ test("a locate draws the cursor and turns the anchor off", () => {
 
 test("the cursor is drawn in the view's own unit", () => {
     const host = new FakeHost();
-    const tp = new Transport(host as unknown as GuiHost, 7, {
+    const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
         source: () => null,
-        tempo: TEMPO,
+        structure: PIECE,
         sampleRate: SR,
         // An engraved page: milliseconds, not timeline samples.
         toUnits: (beats) => (beats * 1000.0) / TEMPO,
@@ -150,7 +153,7 @@ test("stop returns to the top and pause keeps the position", () => {
 });
 
 test("no host, no line", () => {
-    const tp = new Transport(null, 7, { source: () => null, tempo: TEMPO, sampleRate: SR });
+    const tp = new PlayheadSync(null, 7, { source: () => null, structure: PIECE, sampleRate: SR });
     tp.locate(1.0); // must not throw
     assert.equal(tp.at, 1.0);
 });
@@ -343,9 +346,9 @@ test("a play puts the end of the pass on the application clock", async () => {
     // when the piece stops sounding.
     const host = new ClockedHost();
     const clock = makeClock();
-    const tp = new Transport(host as unknown as GuiHost, 7, {
+    const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
         source: (at) => new Playhead(arp(), clock, recorder as never).play({ at }),
-        tempo: TEMPO,
+        structure: PIECE,
         sampleRate: SR,
         extent: () => 3.0,
         clock,
@@ -418,10 +421,10 @@ class HeadClockHost extends FakeHost {
     }
 }
 
-function pieceTransport(host?: HeadClockHost): Transport {
-    const tp = new Transport((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
+function pieceTransport(host?: HeadClockHost): PlayheadSync {
+    const tp = new PlayheadSync((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
         headClock: "piece",
-        tempo: TEMPO,
+        structure: PIECE,
         sampleRate: SR,
     });
     tp.server = new TransportServer() as unknown as Server;
@@ -496,13 +499,13 @@ test("a piece still cues a pass of voices, and only on a locate", async () => {
     // locate cues it again while nothing re-cues on an edit.
     const cued: number[] = [];
     const host = new HeadClockHost();
-    const tp = new Transport(host as unknown as GuiHost, 7, {
+    const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
         headClock: "piece",
         source: (at) => {
             cued.push(at);
             return null;
         },
-        tempo: TEMPO,
+        structure: PIECE,
         sampleRate: SR,
     });
     tp.server = new TransportServer() as unknown as Server;
@@ -514,3 +517,35 @@ test("a piece still cues a pass of voices, and only on a locate", async () => {
     tp.locate(4.0);
     assert.deepEqual(cued, [0.0, 2.0], "stopped, there is no pass to cue");
 });
+
+test("the map is asked of what plays and never kept", async () => {
+    // No tempo is held here: beats cross through the pass's own map (a
+    // timeline holds one), else the structure's, read on each use.
+    const passMap = new TempoMap(4.0);
+    const pass = {
+        map: passMap,
+        playing: true,
+        finished: false,
+        position: () => 0,
+        pause() { this.playing = false; },
+        stop() { this.playing = false; },
+        locate() {},
+    };
+    const piece = new Timeline([], { tempo: TEMPO });
+    const tp = new PlayheadSync(new FakeHost() as unknown as GuiHost, 7, {
+        source: () => pass as unknown as Timeline,
+        structure: piece,
+        sampleRate: SR,
+    });
+    assert.ok(Math.abs(tp.beatsToSamples(1.0) - BEAT) < 1e-6);
+    piece.map.push(0.0, 1.0); // edited on the structure: followed
+    assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR) < 1e-6);
+    await tp.play(fakeServer(), { at: 0.0 });
+    assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR / 4.0) < 1e-6);
+});
+
+test("with nothing to ask there is no tempo", () => {
+    const tp = new PlayheadSync(new FakeHost() as unknown as GuiHost, 7, { sampleRate: SR });
+    assert.throws(() => tp.beatsToSamples(1.0), /structure/);
+});
+

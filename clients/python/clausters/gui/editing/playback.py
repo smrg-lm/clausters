@@ -33,7 +33,7 @@ stated once, and every endpoint carries out the same list.
 
 from ... import _native
 from ..._steps import run_steps
-from ..transport import Transport
+from ..playhead_sync import PlayheadSync
 
 __all__ = ["Playback"]
 
@@ -73,11 +73,11 @@ class Playback:
         #: the host draws from its position. ``head_clock="piece"`` says it
         #: once: the host draws the line from the engine's own position instead
         #: of an anchor kept in step here.
-        self.transport = Transport(
+        self.transport = PlayheadSync(
             editor._host,
             lambda: [] if editor.piece_widget is None else [editor.piece_widget],
             head_clock="piece", governed=True,
-            tempo_map=bridge.tempo, sample_rate=bridge.rate,
+            structure=lambda: bridge, sample_rate=bridge.rate,
             extent=lambda: editor.structure.end)
         self.transport.server = server
         self.sync()

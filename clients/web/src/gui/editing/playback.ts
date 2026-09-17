@@ -41,7 +41,7 @@ import type { Server } from "../../defs/server/index.ts";
 import { runSteps } from "../../steps.ts";
 import type { Step } from "../../steps.ts";
 import type { GuiHost } from "../host.ts";
-import { Transport } from "../transport.ts";
+import { PlayheadSync } from "../playhead-sync.ts";
 import type { MultitrackEditor } from "./multitrack.ts";
 
 export type { Step, StepArg } from "../../steps.ts";
@@ -61,7 +61,7 @@ export class Playback {
      * GUI host's are. Made in `prepare`, beside the playback.
      */
     private runner: StepRunner | null = null;
-    readonly transport: Transport;
+    readonly transport: PlayheadSync;
 
     constructor(
         editor: MultitrackEditor,
@@ -75,13 +75,13 @@ export class Playback {
         this.server = server;
         this.gain = Number(gain);
         const bridge = editor.bridge;
-        this.transport = new Transport(
+        this.transport = new PlayheadSync(
             host,
             () => (editor.pieceWidget === null ? [] : [editor.pieceWidget]),
             {
                 headClock: "piece",
                 governed: true,
-                tempoMap: bridge.tempo,
+                structure: () => bridge,
                 sampleRate: bridge.rate,
                 extent: () => editor.structure.end,
             },

@@ -94,8 +94,6 @@ export interface Leg {
 
 export interface GenericEditorOptions<S> {
     sampleRate: number;
-    tempo?: number;
-    tempoMap?: TempoMap | null;
     domain?: Domain<S> | null;
     view?: View<S> | null;
     context?: Editing | null;
@@ -138,12 +136,6 @@ export class Editor<S = unknown> implements Adopting {
      */
     structure: S;
     sampleRate: number;
-    /**
-     * The piece's beat→second map — the whole of the beat side of the unit
-     * bridge. Given one, the editor draws against the same function the clock
-     * plays by; given only a `tempo`, it is that tempo as a single segment.
-     */
-    tempoMap: TempoMap;
     title: string;
     size: [number, number];
     /**
@@ -258,8 +250,6 @@ export class Editor<S = unknown> implements Adopting {
         structure: S,
         {
             sampleRate,
-            tempo = 1.0,
-            tempoMap,
             domain = null,
             view = null,
             context = null,
@@ -273,7 +263,6 @@ export class Editor<S = unknown> implements Adopting {
     ) {
         this.structure = structure;
         this.sampleRate = Number(sampleRate);
-        this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
         this.title = title;
         this.size = [Math.trunc(width), Math.trunc(height)];
         this.extra = [...extra];
@@ -290,15 +279,33 @@ export class Editor<S = unknown> implements Adopting {
     // ---- the unit bridge: the data ↔ timeline samples ----
 
     /**
-     * The tempo the piece **starts** at, in beats per second. A reading of
-     * {@link Editor.tempoMap}, not a second copy of it.
+     * The structure's beat→second map, asked for on each use, or `null` for a
+     * structure that holds no tempo.
+     *
+     * The map is **the structure's data**: a `Timeline` holds its own
+     * (`Timeline.map`), and an editor over a structure kept elsewhere says where
+     * it is by overriding this. Keeping a copy here is what let a tempo edited on
+     * the structure be drawn at the old one.
      */
-    get tempo(): number {
-        return this.tempoMap.tempoAt(0.0);
+    tempoMap(): TempoMap | null {
+        return (this.structure as { map?: TempoMap } | null)?.map ?? null;
     }
 
-    set tempo(tempo: number) {
-        this.tempoMap = new TempoMap(Number(tempo));
+    private mapOf(): TempoMap {
+        const tempoMap = this.tempoMap();
+        if (tempoMap === null) {
+            const name = (this.structure as object | null)?.constructor?.name ?? "structure";
+            throw new Error(`a ${name} holds no tempo, so it has no beats to convert`);
+        }
+        return tempoMap;
+    }
+
+    /**
+     * Timeline samples as a position in the structure's own units: beats for a
+     * structure with a tempo map, seconds for one without (a take, a curve).
+     */
+    private position(units: number): number {
+        return this.tempoMap() === null ? this.unitsToSecs(units) : this.unitsToBeats(units);
     }
 
     /**
@@ -315,12 +322,12 @@ export class Editor<S = unknown> implements Adopting {
      * seconds→samples rounding every client shares).
      */
     beatsToUnits(beats: number): number {
-        return Number(secs_to_samples(this.tempoMap.secsAt(Number(beats)), this.sampleRate));
+        return Number(secs_to_samples(this.mapOf().secsAt(Number(beats)), this.sampleRate));
     }
 
     /** Timeline samples → beats: the inverse the edit-back path takes. */
     unitsToBeats(units: number): number {
-        return this.tempoMap.beatsAt(samples_to_secs(Math.round(units), this.sampleRate));
+        return this.mapOf().beatsAt(samples_to_secs(Math.round(units), this.sampleRate));
     }
 
     /**
@@ -768,7 +775,7 @@ export class Editor<S = unknown> implements Adopting {
             // there. It is kept here whatever else happens to it — a play starts
             // from it, a paste lands on it — and it is not a seek: the playhead
             // is never placed.
-            this.cursor = this.unitsToBeats(Number(values[0]));
+            this.cursor = this.position(Number(values[0]));
             // **Whoever has the transport is told**, and that is this editor
             // when it has one and the piece it is composed inside when it does
             // not: a structure has no transport of its own, and a window inside
@@ -780,8 +787,8 @@ export class Editor<S = unknown> implements Adopting {
         }
         if (tag === "selection") {
             const selection: Record<string, unknown> = {
-                start: values.length > 0 ? this.unitsToBeats(Number(values[0])) : 0.0,
-                len: values.length > 1 ? this.unitsToBeats(Number(values[1])) : 0.0,
+                start: values.length > 0 ? this.position(Number(values[0])) : 0.0,
+                len: values.length > 1 ? this.position(Number(values[1])) : 0.0,
             };
             if (values.length >= 4) {
                 // The sweep restricted the value axis too. Carried **as it

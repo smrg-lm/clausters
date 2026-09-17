@@ -257,6 +257,15 @@ export class Bridge {
     refresh(piece: Multitrack): void {
         this.tempo = tempoMap(piece);
     }
+
+    /**
+     * The piece's tempo map as the document states it, read last on `refresh` —
+     * what a view over the piece asks for, the way it asks a `Timeline` for its
+     * own.
+     */
+    get map(): TempoMap {
+        return this.tempo;
+    }
 }
 
 /**
@@ -583,7 +592,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
         super(piece, {
             ...rest,
             title,
-            tempoMap: bridge.tempo,
             domain,
             view: new MultitrackView(bridge, link, server !== undefined),
         });
@@ -608,6 +616,15 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }
+    }
+
+    /**
+     * The piece's beat→second map, read from the document through the bridge:
+     * the document states the tempo, and the bridge re-reads it when an edit
+     * moves it.
+     */
+    override tempoMap(): TempoMap {
+        return this.bridge.tempo;
     }
 
     /** This editor's member in its editing context. */

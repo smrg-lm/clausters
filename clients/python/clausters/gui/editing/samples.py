@@ -153,12 +153,12 @@ class SamplesEditor(Editor):
     what is seen, with no copy in between.
     """
 
-    def __init__(self, take, *, sample_rate: float = 0.0, tempo: float = 1.0,
+    def __init__(self, take, *, sample_rate: float = 0.0,
                  title: str = "Samples", layers=MEASURES, **options):
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
         domain = SamplesDomain()
-        super().__init__(take, sample_rate=rate, tempo=tempo,
+        super().__init__(take, sample_rate=rate,
                          domain=domain, view=view,
                          title=title, **options)
         domain.editor = self
@@ -178,7 +178,7 @@ class SamplesEditor(Editor):
         return {"buffer": int(getattr(take, "bufnum", 0) or 0),
                 "channels": max(1, int(getattr(take, "channels", 1) or 1)),
                 "name": name if isinstance(name, str) and name else None,
-                "rate": self.sample_rate, "tempo": self.tempo,
+                "rate": self.sample_rate,
                 "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
                 "window": self._window}
 

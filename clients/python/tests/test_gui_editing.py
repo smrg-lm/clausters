@@ -143,7 +143,7 @@ class FakeHost:
 
 
 def an_editor(structure=None, app=None):
-    return Editor(structure or Dial(), sample_rate=SR, tempo=2.0,
+    return Editor(structure or Dial(), sample_rate=SR,
                   domain=DialDomain(), view=DialView(), app=app)
 
 

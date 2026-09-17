@@ -27,9 +27,9 @@ live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.editing.Editor` drives that
 multitrack view from a `clausters.form` composition — drawing the arrangement
 tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it.
-`clausters.gui.transport.Transport` is the play/pause/stop/locate machinery
-every time view shares: it drives a `clausters.seq.Playhead` and the view's
-playhead line together, whatever the view is — a lane, a piano-roll, an engraved
+`clausters.gui.playhead_sync.PlayheadSync` is the play/pause/stop/locate machinery
+every time view shares: it keeps the views' playhead line in step with what
+plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is — a lane, a piano-roll, an engraved
 page. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
@@ -109,7 +109,7 @@ from .guidef import (
 from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost, WidgetInfo
 from .multitrack import Clip, Lane, Multitrack
-from .transport import Transport
+from .playhead_sync import PlayheadSync
 
 #: **The builder, not the submodule.** Importing `clausters.gui.multitrack`
 #: binds the module as an attribute of this package, which overwrites the
@@ -181,7 +181,7 @@ __all__ = [
     "MEASURES",
     "edit",
     "measures",
-    "Transport",
+    "PlayheadSync",
     "WidgetHandle",
     "WindowHandle",
     "View",

@@ -28,9 +28,9 @@ handed to `engrave`/`Score`; `from_notes`/`from_timeline`, which turn the
 client's own `clausters.seq` data into MEI (the inverse direction, data->score);
 and `svg_to_display_list`, the adapter the first two both flow through.
 
-`score_view` and `transport` are the two helpers for putting a page on screen
+`score_view` and `playhead_sync` are the two helpers for putting a page on screen
 and *playing* it: the first wraps the display list in a scrollable view, the
-second hands back the shared `clausters.gui.transport.Transport` with the page's
+second hands back the shared `clausters.gui.playhead_sync.PlayheadSync` with the page's
 own unit filled in.
 
 **Module layout.** The layer's growth is semantic rather than graphic, so it is
@@ -41,7 +41,7 @@ both directions (`from_timeline`, `to_timeline`), `sheet` is
 the **score model** — notation as data, operations as data over it, and the
 reading that turns it back into sound (`to_notes`, `interpretation`) — and
 `view` is the pair of helpers that put a page on screen and play it
-(`score_view`, `transport`). Every name is re-exported here, so
+(`score_view`, `playhead_sync`). Every name is re-exported here, so
 ``clausters.gui.notation.Score`` keeps meaning what it always did.
 """
 
@@ -60,7 +60,7 @@ from .sheet import (
 )
 from .sheet import from_mei as sheet_from_mei
 from .sheet import from_voice as sheet_from_voice
-from .view import score_view, transport
+from .view import playhead_sync, score_view
 
 __all__ = [
     "Score",
@@ -108,7 +108,7 @@ __all__ = [
     "to_notes",
     "to_timeline",
     "to_voice",
-    "transport",
+    "playhead_sync",
     "transpose",
 ]
 

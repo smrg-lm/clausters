@@ -20,9 +20,12 @@ So the boundaries are:
   windows over one thing walk one undo order;
 - **how an edit inverts is the crate's** (`history::Editable`), reached through
   the domain — never re-derived here, and never twice per language;
-- **what a number is measured in is the editor's**: the unit bridge (beats and
-  seconds ↔ timeline samples) is here because it is the same bridge for every
-  structure, and a view that computed its own would be a second answer.
+- **what a number is measured in is the structure's, and the bridge is the
+  editor's**: the unit bridge (beats and seconds ↔ timeline samples) is here
+  because it is the same bridge for every structure, but the tempo it crosses
+  beats through is **asked of the structure** on each use (`tempo_map`) and
+  never kept -- an editor represents and edits a structure's data and holds
+  none of it.
 
 A multitrack application is this class plus what only a tree has: a
 held document, several views of one composition, the lanes and clips, and a
@@ -31,7 +34,6 @@ sounds; it has no piece to move over.
 """
 
 from ... import _native
-from ...base.time import TempoMap
 from .application import BASE_ID, Application, _resolve_host
 from .context import Editing
 from .echo import Echo
@@ -67,11 +69,8 @@ class Editor:
     Args:
         structure: what is edited — whatever the ``domain`` and the ``view``
             understand.
-        sample_rate: the engine's sample rate; with ``tempo`` it fixes the
-            data↔timeline-samples conversion.
-        tempo: the clock's tempo in **beats per second** (the `TempoClock`
-            convention — 2.0 is 120 bpm).
-        tempo_map: the piece's beat→second map, when the tempo changes along it.
+        sample_rate: the engine's sample rate; with the structure's tempo map
+            it fixes the data↔timeline-samples conversion.
         domain: the `clausters.gui.editing.Domain` this structure's payloads are
             written in.
         view: the `clausters.gui.editing.View` that draws it.
@@ -95,8 +94,8 @@ class Editor:
             before there was a name for it.
     """
 
-    def __init__(self, structure=None, *, sample_rate: float, tempo: float = 1.0,
-                 tempo_map=None, domain=None, view=None, context=None,
+    def __init__(self, structure=None, *, sample_rate: float,
+                 domain=None, view=None, context=None,
                  title: str = "Editor", extra=(),
                  width: int = 1000, height: int = 520, base_id: int = BASE_ID,
                  app=None):
@@ -104,15 +103,6 @@ class Editor:
         #: arrangement's word for the same slot.
         self.structure = structure
         self.sample_rate = float(sample_rate)
-        #: The piece's beat->second map (`clausters.base.TempoMap`) — the whole
-        #: of the beat side of the unit bridge. Given one, the editor draws
-        #: against the same function the clock plays by, which is what makes the
-        #: line and the sound agree across a tempo change; given only a
-        #: ``tempo``, it is that tempo as a single segment, which is exactly the
-        #: affine ratio this bridge always was.
-        self.tempo_map = (
-            tempo_map.copy() if tempo_map is not None else TempoMap(float(tempo))
-        )
         self.title = title
         self.size = (int(width), int(height))
         #: Widgets appended to the window after the picture. They are the
@@ -158,8 +148,8 @@ class Editor:
         #: which is the crate's own line: a selection is screen state, never
         #: persisted and never logged.
         self.selection: dict = {}
-        #: **Where the reader is**, in this editor's own units (beats for a
-        #: piece) -- the position cursor a click placed, and
+        #: **Where the reader is**, in the structure's own units (beats for a
+        #: timeline or a piece, seconds for a take or a curve) -- the position cursor a click placed, and
         #: `None` until one has been. It is where a playback starts and where a
         #: paste lands, which is why it is worth keeping: the playhead is where
         #: the *music* is and moves on its own, and an anchor that moved on its
@@ -199,20 +189,24 @@ class Editor:
 
     # ---- the unit bridge: the data ↔ timeline samples ----
 
-    @property
-    def tempo(self) -> float:
-        """The tempo the piece **starts** at, in beats per second.
+    def tempo_map(self):
+        """The structure's beat→second map (`clausters.base.TempoMap`), asked
+        for on each use, or ``None`` for a structure that holds no tempo.
 
-        A reading of `tempo_map`, not a second copy of it: under one tempo it is
-        the tempo, and under a tempo that changes it is the first segment's.
-        Assigning it replaces the map with that single tempo, which is what
-        setting a grid does.
+        The map is **the structure's data**: a `clausters.seq.Timeline` holds
+        its own (`Timeline.map`), and an editor over a structure kept elsewhere
+        says where it is by overriding this. Keeping a copy here is what let a
+        tempo edited on the structure be drawn at the old one.
         """
-        return self.tempo_map.tempo_at(0.0)
+        return getattr(self.structure, "map", None)
 
-    @tempo.setter
-    def tempo(self, tempo: float):
-        self.tempo_map = TempoMap(float(tempo))
+    def _map(self):
+        tempo_map = self.tempo_map()
+        if tempo_map is None:
+            raise ValueError(
+                f"a {type(self.structure).__name__} holds no tempo, so it has no "
+                "beats to convert")
+        return tempo_map
 
     @property
     def units_per_beat(self) -> float:
@@ -234,14 +228,22 @@ class Editor:
         coordinate: a beat after a tempo change lands on the second it actually
         falls on, which is the second the clock will play it at.
         """
-        secs = self.tempo_map.secs_at(float(beats))
+        secs = self._map().secs_at(float(beats))
         return float(_native.secs_to_samples(secs, self.sample_rate))
+
+    def _position(self, units: float) -> float:
+        """Timeline samples as a position in the structure's own units: beats
+        for a structure with a tempo map, seconds for one without (a take, a
+        curve)."""
+        if self.tempo_map() is None:
+            return self.units_to_secs(units)
+        return self.units_to_beats(units)
 
     def units_to_beats(self, units: float) -> float:
         """Timeline samples → beats: the inverse the edit-back path takes to turn
         a dragged clip back into a placement."""
         secs = _native.samples_to_secs(int(round(units)), self.sample_rate)
-        return self.tempo_map.beats_at(secs)
+        return self._map().beats_at(secs)
 
     @property
     def units_per_second(self) -> float:
@@ -618,7 +620,7 @@ class Editor:
             # there. It is kept here whatever else happens to it -- a play
             # starts from it, a paste lands on it -- and it is not a seek: the
             # playhead is never placed.
-            self.cursor = self.units_to_beats(float(values[0]))
+            self.cursor = self._position(float(values[0]))
             # **Whoever has the transport is told**, and that is this editor
             # when it has one and the piece it is composed inside when it does
             # not: a structure has no transport of its own, and a window inside a
@@ -631,8 +633,8 @@ class Editor:
             return False
         if tag == "selection":
             self.selection = {
-                "start": self.units_to_beats(float(values[0])) if values else 0.0,
-                "len": (self.units_to_beats(float(values[1]))
+                "start": self._position(float(values[0])) if values else 0.0,
+                "len": (self._position(float(values[1]))
                         if len(values) > 1 else 0.0)}
             if len(values) >= 4:
                 # The sweep restricted the value axis too. Carried **as it

@@ -1,4 +1,4 @@
-"""`Transport`: play, pause, stop and locate, with the view's playhead in step.
+"""`PlayheadSync`: play, pause, stop and locate, with the views' playhead in step.
 
 Every time view the host draws — a lane, a piano-roll, an engraved page — shows
 the same line, and every script that plays into one needs the same four buttons.
@@ -13,11 +13,16 @@ the cursor where the music was left, which is what makes pause look like pause.
 
 **Two axes meet here.** The anchor lives on the engine's sample clock (samples,
 always); the static cursor lives on the *view's* own axis — timeline samples for
-a lane, milliseconds for an engraved page. `Transport` converts to the first
+a lane, milliseconds for an engraved page. `PlayheadSync` converts to the first
 itself and takes `to_units` for the second, which is the whole of what a view
 has to say about its units.
 
-**A pass ends by itself.** `clausters.seq.Playhead` reports the end of its scan,
+**It holds no tempo.** Beats cross to samples through the map of **what plays**:
+the pass `source` returned (a `clausters.seq.Timeline` holds its own map), else
+the ``structure`` it was given. A view represents a structure's data and keeps
+none of it, so a tempo edited on the structure is the one the line follows.
+
+**A pass ends by itself.** A `clausters.seq.Timeline` reports that it finished,
 so `update` parks the cursor at the piece's end without the script timing it.
 
 **Or the server owns all of it** (``head_clock="piece"``). Then none of the paragraphs
@@ -33,9 +38,8 @@ back instead of computing one.
 """
 
 from .. import _native
-from ..base.time import TempoMap
 
-__all__ = ["Transport"]
+__all__ = ["PlayheadSync"]
 
 #: How often a rolling transport asks itself whether the pass has ended, in
 #: seconds. It is not the line's frame rate — the host sweeps that from the
@@ -44,8 +48,9 @@ __all__ = ["Transport"]
 TICK = 0.05
 
 
-class Transport:
-    """Drive a `clausters.seq.Playhead` and a view's playhead line together.
+class PlayheadSync:
+    """Keep the views' playhead line in step with what plays, and relay the
+    transport verbs to it.
 
     Args:
         host: the `clausters.gui.host.GuiHost` the widgets live on. May be
@@ -53,17 +58,14 @@ class Transport:
         ids: the widget ids showing the line — one id, a sequence of them, or a
             callable returning either, for a view that redraws (its lanes are
             new widgets, and the transport must find the current ones).
-        source: ``source(at, **kw)`` starts a pass at beat ``at`` and returns the
-            playing `clausters.seq.Playhead` (``None`` when there is nothing to
-            play). It is called afresh on every play, so what sounds is always
-            the samples as it now stands.
-        tempo: the piece's starting tempo in beats per second (the
-            `TempoClock` convention — 2.0 is 120 bpm). Ignored when
-            ``tempo_map`` is given.
-        tempo_map: the piece's `clausters.base.TempoMap`, when its tempo changes
-            along the way — pass the clock's (`clausters.base.TempoClock.map`)
-            so the line and the sound read one function.
-        sample_rate: the engine's sample rate. With ``tempo`` it fixes the
+        source: ``source(at, **kw)`` starts a pass at beat ``at`` and returns
+            what plays -- a `clausters.seq.Timeline` played from there (``None``
+            when there is nothing to play). It is called afresh on every play,
+            so what sounds is always the structure as it now stands.
+        structure: what is played, asked for its tempo map (``map``) when no
+            pass is in flight -- a `clausters.seq.Timeline`, or a callable
+            returning the object that has one. The map is never kept here.
+        sample_rate: the engine's sample rate. With the map it fixes the
             beats→samples conversion the anchor is expressed in.
         to_units: ``to_units(beats)`` → the view's own units, for the static
             cursor. Defaults to beats→samples, which is what the timeline views
@@ -82,20 +84,14 @@ class Transport:
             piece's position is measured in frames.
     """
 
-    def __init__(self, host, ids, *, source=None, tempo: float = 1.0, tempo_map=None,
+    def __init__(self, host, ids, *, source=None, structure=None,
                  sample_rate: float, to_units=None, extent=None, clock=None,
                  governed: bool = False, head_clock: str = "device"):
         self.host = host
         self.ids = ids
         self.source = source
-        #: The piece's beat->second map (`clausters.base.TempoMap`). The line
-        #: sweeps by engine samples from an origin this places, so the origin
-        #: has to come from the same function the clock plays by: given only a
-        #: ``tempo`` it is that tempo as one segment, which is the affine ratio
-        #: this always used.
-        self.tempo_map = (
-            tempo_map.copy() if tempo_map is not None else TempoMap(float(tempo))
-        )
+        #: What is played, asked for its map when no pass is in flight.
+        self.structure = structure
         self.sample_rate = float(sample_rate)
         self.to_units = self.beats_to_samples if to_units is None else to_units
         self.extent = extent
@@ -133,15 +129,21 @@ class Transport:
 
     # ---- the unit bridge ----
 
-    @property
-    def tempo(self) -> float:
-        """The tempo the piece **starts** at, in beats per second — a reading of
-        `tempo_map`. Assigning it replaces the map with that single tempo."""
-        return self.tempo_map.tempo_at(0.0)
-
-    @tempo.setter
-    def tempo(self, tempo: float):
-        self.tempo_map = TempoMap(float(tempo))
+    def tempo_map(self):
+        """The map beats cross to samples through, asked for on each use: the
+        pass in flight's (a `clausters.seq.Timeline` holds its own), else the
+        ``structure``'s. The line sweeps by engine samples from an origin this
+        places, so the origin has to come from the function the sound plays by.
+        """
+        tempo_map = getattr(self._playhead, "map", None)
+        if tempo_map is not None:
+            return tempo_map
+        structure = self.structure() if callable(self.structure) else self.structure
+        tempo_map = getattr(structure, "map", None)
+        if tempo_map is None:
+            raise ValueError("PlayheadSync: nothing to read a tempo map from; "
+                             "give it the structure it plays")
+        return tempo_map
 
     def beats_to_samples(self, beats: float) -> float:
         """Beats → samples of the engine clock, through the piece's time map
@@ -152,7 +154,7 @@ class Transport:
         by a frozen tempo would be crossed at a time the clock never plays it
         at.
         """
-        secs = self.tempo_map.secs_at(float(beats))
+        secs = self.tempo_map().secs_at(float(beats))
         return float(_native.secs_to_samples(secs, self.sample_rate))
 
     def _targets(self) -> tuple:
@@ -163,8 +165,8 @@ class Transport:
 
     @property
     def playhead(self):
-        """The `clausters.seq.Playhead` of the pass in flight, or ``None`` before
-        the first `play`."""
+        """What the pass in flight plays -- the `clausters.seq.Timeline`
+        `source` returned -- or ``None`` before the first `play`."""
         return self._playhead
 
     @property
@@ -211,7 +213,7 @@ class Transport:
         last item's beat plus what the clock has advanced since, never past the
         end. ``None`` when there is no tail to be in.
 
-        The clock is the **pass's own** (`clausters.seq.Playhead.clock`), and it
+        The clock is the **pass's own** (a timeline's hidden one), and it
         has to be *rolling*: an offline render computes the whole piece in an
         instant and its beat is the queue's, not the wall's, so there is no tail
         to sweep and the cursor parks straight away — exactly as it did before
@@ -265,7 +267,7 @@ class Transport:
         goes the other way — so what the engine reports and what the ruler draws
         are one function read in two directions."""
         secs = float(samples) / self.sample_rate if self.sample_rate > 0 else 0.0
-        return self.tempo_map.beats_at(secs)
+        return self.tempo_map().beats_at(secs)
 
     def _piece_anchor(self):
         """Draw every target's line straight from the piece's position: the
@@ -279,9 +281,11 @@ class Transport:
             self.host.set(wid, playhead_at=0.0, playhead=-1.0)
 
     def _pass_clock(self):
-        """The clock the pass in flight runs on: the playhead's own, else the
-        one this transport was given."""
-        return getattr(self._playhead, "clock", None) or self.clock
+        """The clock the pass in flight runs on: its own (a timeline's hidden
+        clock), else the one this was given."""
+        ph = self._playhead
+        own = getattr(ph, "clock", None) or getattr(getattr(ph, "_player", None), "clock", None)
+        return own or self.clock
 
     @property
     def at(self) -> float:
@@ -294,7 +298,7 @@ class Transport:
         """Play (or resume) from beat ``at`` — the transport's position by
         default — and anchor the line to the engine clock. ``server`` is where
         the anchor's clock query goes (remembered for later passes); any other
-        keyword goes on to `source`. Returns the playhead.
+        keyword goes on to `source`. Returns what the pass plays.
 
         On the **piece** it is `/transport_play`, and a bare one: the engine
         keeps where it stopped, so resuming is the same verb as starting and
@@ -498,7 +502,7 @@ class Transport:
         before its host exists has no clock to schedule on, and because asking
         the question once more is always legal.
 
-        The playhead says when its scan ran out (`clausters.seq.Playhead.finished`),
+        The pass says when it ran out (`clausters.seq.Timeline.finished`),
         so the end needs no timing here: the cursor stops at the piece's `extent`
         rather than sweeping off the view, and stays there — the transport is
         *at the end*, so it is a `locate` (a rewind) that goes back to the top."""
@@ -512,6 +516,10 @@ class Transport:
                 # From the moment the last item was *rendered* — which is a
                 # loop pass or two before anyone noticed — not from now.
                 since = getattr(ph, "scanned_at", None)
+                if since is None and getattr(ph, "_player", None) is not None:
+                    # A timeline's clock beat *is* its beat, and it holds the
+                    # beat its last item fell on.
+                    since = ph.position()
                 self._tail = (clock.beats() if since is None else since,
                               ph.position())
             if self._tail_position() < end:
@@ -581,4 +589,4 @@ class Transport:
         self._tail = None
         ph = self._playhead
         if ph is not None and ph.playing:
-            ph.stop()
+            (getattr(ph, "pause", None) or ph.stop)()

@@ -1,8 +1,9 @@
 """Putting an engraved page on screen, and playing it.
 
 Two helpers over a display list the engraver already produced: `score_view`
-wraps it in a `scroll` sized to the page, and `transport` hands back the shared
-`clausters.gui.transport.Transport` with the page's own unit filled in — a
+wraps it in a `scroll` sized to the page, and `playhead_sync` hands back the
+shared `clausters.gui.playhead_sync.PlayheadSync` with the page's own unit
+filled in — a
 ``score`` widget places its cursor in **score milliseconds**, not samples, and
 that conversion is the only thing a page needs on top of the transport the
 timeline views already use.
@@ -10,7 +11,7 @@ timeline views already use.
 
 from __future__ import annotations
 
-from ..transport import Transport
+from ..playhead_sync import PlayheadSync
 
 def score_view(display_list, *, scroll_id: int | None = None,
                score_id: int | None = None, name: str | None = None,
@@ -74,29 +75,28 @@ def score_view(display_list, *, scroll_id: int | None = None,
     )
 
 
-def transport(host, score_id: int, *, source, tempo: float = 1.0, tempo_map=None,
-              sample_rate: float, extent=None):
-    """A `clausters.gui.transport.Transport` driving a ``score`` widget's
+def playhead_sync(host, score_id: int, *, source, structure=None,
+                  sample_rate: float, extent=None):
+    """A `clausters.gui.playhead_sync.PlayheadSync` driving a ``score`` widget's
     playback cursor — play, pause, stop and locate, with the cursor following
     the sound.
 
-    The same transport the timeline views use; what a page needs on top is only
-    its unit: a ``score`` widget places its static cursor in **score
+    The same one the timeline views use; what a page needs on top is only its
+    unit: a ``score`` widget places its static cursor in **score
     milliseconds**, not samples, so this fills in that conversion and leaves the
     rest of the arguments as they are — ``source(at)`` starts a pass at beat
-    ``at`` and returns the playing `clausters.seq.Playhead`, ``extent()`` gives
-    the piece's length in beats.
+    ``at`` and returns the `clausters.seq.Timeline` it plays, ``structure`` is
+    that timeline (or a callable returning it) for when nothing is playing, and
+    ``extent()`` gives the piece's length in beats.
 
-    The conversion goes through the piece's time map like every other one, not
-    through a division of its own: a page is engraved on the beat axis, and the
-    millisecond a beat is drawn at is the second it falls on. Pass ``tempo_map``
-    (the clock's, `clausters.base.TempoClock.map`) when the tempo changes along
-    the piece; ``tempo`` alone is that tempo as a single segment.
+    The conversion goes through the timeline's own map like every other one,
+    not through a division of its own: a page is engraved on the beat axis, and
+    the millisecond a beat is drawn at is the second it falls on.
 
     The engraving is what makes both easy to write: `Score.display_list` hands
     back the notes with their onsets and lengths, so the timeline a pass plays
     and the end it stops at are read off the page itself."""
-    tr = Transport(host, score_id, source=source, tempo=tempo,
-                   tempo_map=tempo_map, sample_rate=sample_rate, extent=extent)
-    tr.to_units = lambda beats: tr.tempo_map.secs_at(float(beats)) * 1000.0
+    tr = PlayheadSync(host, score_id, source=source, structure=structure,
+                      sample_rate=sample_rate, extent=extent)
+    tr.to_units = lambda beats: tr.tempo_map().secs_at(float(beats)) * 1000.0
     return tr

@@ -11,6 +11,8 @@ import struct
 
 import pytest
 
+from clausters import TempoMap
+
 from clausters.defs.ugens import points_to_env
 from clausters.gui import edit
 from clausters.gui.editing import (Editing, NotesEditor, PointsEditor,
@@ -184,7 +186,7 @@ def test_something_none_of_the_three_reads_says_what_they_are():
 
 def test_a_curve_is_drawn_edited_and_read_back_with_no_composition():
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
+    editor = edit(curve, sample_rate=SR, open=False)
     host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "points",
@@ -208,7 +210,7 @@ def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
     # an edit made against a picture the composition has moved away from by a
     # route the host never saw: here an undo.
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
+    editor = edit(curve, sample_rate=SR, open=False)
     host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "points",
@@ -242,7 +244,7 @@ def test_a_segments_shape_survives_the_round_trip():
     # The crate carries a point's `data` and reads none of it, which is what
     # keeps an undo from putting the curve back straight.
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
+    editor = edit(curve, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "points",
                                 0.0, 300.0, 5, -4.0,
@@ -256,7 +258,7 @@ def test_a_segments_shape_survives_the_round_trip():
 
 def test_a_resend_of_the_curve_is_not_an_edit():
     curve = a_curve()
-    editor = edit(curve, sample_rate=SR, tempo=TEMPO, open=False)
+    editor = edit(curve, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "points",
                                        *curve.to_points()]) is False
@@ -267,7 +269,8 @@ def test_a_resend_of_the_curve_is_not_an_edit():
 
 def test_a_roll_edits_the_timeline_the_caller_holds():
     timeline = a_timeline()
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "notes",
@@ -280,11 +283,36 @@ def test_a_roll_edits_the_timeline_the_caller_holds():
         [(0.0, 60.0), (1.0, 64.0)]
 
 
+def test_a_rolls_ruler_reads_the_timelines_own_map():
+    # The editor holds no tempo: the roll's axis takes the timeline's map, and
+    # a tempo written on the timeline afterwards is what a resync sends.
+    timeline = a_timeline()
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
+    tree = editor.view.build(editor)
+    roll = next(node for node in _walk(tree) if node.get("type") == "notes")
+    assert roll["axes"]["x"]["tempo_map"] == timeline.map.dump()
+    assert "tempo" not in roll["axes"]["x"]
+    assert editor.units_per_beat == BEAT
+
+    timeline.map.push(1.0, 4.0)
+    props = editor.view.props(editor, 0)
+    assert props["tempo_map"] == timeline.map.dump()
+    assert editor.beats_to_units(2.0) == BEAT + SR / 4.0
+
+
+def _walk(node):
+    yield node
+    for child in node.get("children", []) or []:
+        yield from _walk(child)
+
+
 def test_a_note_keeps_what_the_roll_cannot_draw():
     # Order is the only identity the payload carries, so the i-th note's own
     # event is edited rather than rebuilt from the five numbers.
     timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell"))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 65, 100, 0])
     _beat, event = next(iter(timeline))
@@ -298,7 +326,8 @@ def test_what_the_roll_does_not_draw_is_kept():
     timeline = a_timeline()
     marker = OscItem("/mark")
     timeline.add(3.0, marker)
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
     assert any(item is marker for _beat, item in timeline), \
@@ -312,7 +341,8 @@ def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
 
     timeline = a_timeline()
     timeline.add(3.0, OscItem("/hit", 7))
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
     at = [(beat, item) for beat, item in timeline if isinstance(item, OscItem)]
@@ -330,7 +360,8 @@ def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
 
     timeline = Timeline([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
                          (2.0, OscItem("/c", 3))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
     assert [(item.addr, item.args) for _beat, item in timeline] == \
@@ -344,7 +375,8 @@ def test_a_marker_added_in_the_roll_is_refused_and_says_why():
     from clausters.seq.timeline import OscItem
 
     timeline = Timeline([(0.0, OscItem("/a"))])
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) \
         is False
@@ -361,7 +393,8 @@ def test_the_notes_gesture_does_not_move_the_markers():
 
     timeline = a_timeline()
     timeline.add(3.0, OscItem("/hit"))
-    editor = edit(timeline, sample_rate=SR, tempo=TEMPO, open=False)
+    timeline.map = TempoMap(TEMPO)
+    editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
     assert [(beat, type(item).__name__) for beat, item in timeline] == \
@@ -372,7 +405,7 @@ def test_the_notes_gesture_does_not_move_the_markers():
 
 def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
     take = FakeBuffer(frames=8)
-    editor = edit(take, tempo=TEMPO, open=False)
+    editor = edit(take, open=False)
     _host, wid = opened(editor)
 
     assert editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 2,
@@ -387,7 +420,7 @@ def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
 
 def test_a_takes_window_is_composed_by_the_crate():
     take = FakeBuffer(frames=8, channels=2)
-    editor = edit(take, tempo=TEMPO, title="take", open=False)
+    editor = edit(take, title="take", open=False)
     host, wid = opened(editor)
     tree = host.trees[0]
     assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "col")
@@ -413,7 +446,7 @@ def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
 
 def test_one_dragged_sample_is_the_same_edit_one_frame_wide():
     take = FakeBuffer(frames=8)
-    editor = edit(take, tempo=TEMPO, open=False)
+    editor = edit(take, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]) is True
     assert take.data[3] == pytest.approx(0.9)
@@ -424,7 +457,7 @@ def test_one_dragged_sample_is_the_same_edit_one_frame_wide():
 def test_a_stroke_on_one_channel_of_a_stereo_take_leaves_the_other_alone():
     take = FakeBuffer(frames=4, channels=2)
     take.data = [0.1, 0.2] * 4
-    editor = edit(take, tempo=TEMPO, open=False)
+    editor = edit(take, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1,
                                 blob([0.7, 0.8]), blob([0.2, 0.2])])
@@ -456,8 +489,9 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     # The composed case: two structures, one editing context, one order.
     context = Editing()
     curve, timeline = a_curve(), a_timeline()
-    curve_editor = edit(curve, sample_rate=SR, tempo=TEMPO, context=context, open=False)
-    roll = edit(timeline, sample_rate=SR, tempo=TEMPO, context=context, open=False)
+    curve_editor = edit(curve, sample_rate=SR, context=context, open=False)
+    timeline.map = TempoMap(TEMPO)
+    roll = edit(timeline, sample_rate=SR, context=context, open=False)
     _ch, curve_wid = opened(curve_editor)
     _rh, roll_wid = opened(roll)
 

@@ -160,9 +160,9 @@ class PointsEditor(Editor):
     is how a caller sees what was drawn.
     """
 
-    def __init__(self, curve, *, sample_rate: float, tempo: float = 1.0,
+    def __init__(self, curve, *, sample_rate: float,
                  title: str = "Curve", **options):
-        super().__init__(curve, sample_rate=sample_rate, tempo=tempo,
+        super().__init__(curve, sample_rate=sample_rate,
                          domain=PointsDomain(), view=PointsView(), title=title,
                          **options)
 

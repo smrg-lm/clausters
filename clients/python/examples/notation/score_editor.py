@@ -68,9 +68,8 @@ it as a plain script.
 # %%
 import sys
 
-from clausters import Event, Session, play
+from clausters import Event, Session, TempoMap, play
 from clausters.gui import button, label, notation, panel, source, view
-from clausters.seq.timeline import Playhead
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter
@@ -88,8 +87,9 @@ B c d e | f2 e d | c B A B | G4 |
 
 # Two beats per second: the quarter = 120 the engraver times the page at. A
 # quarter is then one beat in the model and 500 ms on the page, which is what
-# ties the cursor to the sound -- the transport places its cursor in *score*
-# milliseconds and reads the model in beats, so the two have to agree.
+# ties the cursor to the sound -- the sync places its cursor in *score*
+# milliseconds and reads the model in beats through the timeline's map, so the
+# two have to agree.
 TEMPO = 2.0
 
 # How wide the page is drawn. The height follows from the engraving's aspect
@@ -203,7 +203,7 @@ def scene(engraved, sample_rate: float) -> dict:
 # ## Open the window
 
 # %%
-session = Session.live(tempo=TEMPO)
+session = Session.live()
 server = session.server
 # `query_info` rather than the launch options: it is the one spelling both
 # clients have, so this file and its page twin ask the same question.
@@ -220,7 +220,6 @@ def page_height(page: dict) -> float:
 
 
 win = scene(engraved, sr).open()
-session.start()
 
 selected: dict = {"element": None, "item": None}
 
@@ -404,10 +403,16 @@ def slur_four() -> None:
 # `instruments` binds a staff to what plays it, since the notation never says.
 
 # %%
+def piece():
+    """The model as it stands right now, read into a timeline at `TEMPO`."""
+    timeline = notation.to_timeline(score.sheet())
+    timeline.map = TempoMap(TEMPO)
+    return timeline
+
+
 def pass_from(at: float):
     """One playback pass, read out of the model as it stands right now."""
-    return Playhead(notation.to_timeline(score.sheet()),
-                    session.clock, server).play(at=at)
+    return piece().play(at=at, destination=server)
 
 
 def phrase_end() -> float:
@@ -417,8 +422,9 @@ def phrase_end() -> float:
     return max((n["t"] + n["dur"] for n in notes), default=0.0)
 
 
-transport = notation.transport(gui, win["score"].id, source=pass_from,
-                               tempo=TEMPO, sample_rate=sr, extent=phrase_end)
+transport = notation.playhead_sync(gui, win["score"].id, source=pass_from,
+                                   structure=piece, sample_rate=sr,
+                                   extent=phrase_end)
 transport.locate(0.0)
 
 # %% [markdown]

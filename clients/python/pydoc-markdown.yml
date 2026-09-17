@@ -86,7 +86,7 @@ loaders:
       - clausters.gui.notation.mei
       - clausters.gui.notation.sheet
       - clausters.gui.notation.view
-      - clausters.gui.transport
+      - clausters.gui.playhead_sync
 processors:
   - type: filter
     documented_only: true

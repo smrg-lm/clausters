@@ -42,8 +42,6 @@ export interface EditOptions {
      * and needs none.
      */
     sampleRate?: number;
-    /** The clock's tempo in beats per second, for the structures placed in beats. */
-    tempo?: number;
     title?: string;
     width?: number;
     height?: number;
@@ -82,31 +80,28 @@ export interface EditOptions {
 
 /** Builds the editor `structure` asks for, without opening it. */
 function editorFor(structure: unknown, options: EditOptions): Editor<never> {
-    const { sampleRate = 0, tempo = 1.0, host: _h, stage: _s, open: _o, ...rest } = options;
+    const { sampleRate = 0, host: _h, stage: _s, open: _o, ...rest } = options;
     if (isSamples(structure)) {
         return new SamplesEditor(structure, {
             sampleRate,
-            tempo,
             ...rest,
         }) as unknown as Editor<never>;
     }
     if (isCurve(structure)) {
         return new PointsEditor(structure, {
             sampleRate: sampleRate || 48_000,
-            tempo,
             ...rest,
         }) as unknown as Editor<never>;
     }
     if (isEvents(structure)) {
+        // No `tempo`: a timeline holds its own map, and the editor reads it.
         return new NotesEditor(structure, {
             sampleRate: sampleRate || 48_000,
-            tempo,
             ...rest,
         }) as unknown as Editor<never>;
     }
     if (isPiece(structure)) {
-        // No `tempo`: a piece states its own, and a caller's ratio beside it
-        // would be a second answer to a question the document already answers.
+        // A piece states its own tempo, like a timeline.
         return new MultitrackEditor(structure, {
             sampleRate: sampleRate || 48_000,
             ...rest,

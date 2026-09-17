@@ -1,4 +1,4 @@
-"""The shared transport (`clausters.gui.transport`) — play/pause/stop/locate and
+"""The shared playhead sync (`clausters.gui.playhead_sync`) — play/pause/stop/locate and
 the view's playhead line.
 
 No host and no server: a fake host records the `/gui_set`s, a fake server answers
@@ -11,7 +11,7 @@ it, not what the widgets do with it.
 import pytest
 
 from clausters.base import TempoClock
-from clausters.gui.transport import Transport
+from clausters.gui.playhead_sync import PlayheadSync
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Playhead, Timeline
 
@@ -19,6 +19,8 @@ SR = 48_000.0
 TEMPO = 2.0          # beats per second (120 bpm)
 BEAT = SR / TEMPO    # 24000 samples per beat
 CLOCK = 1_000_000.0  # the sample-clock value the fake server reports
+#: What the passes play, as far as the line is concerned: its map is the tempo.
+PIECE = Timeline(tempo=TEMPO)
 
 
 class FakeHost:
@@ -66,15 +68,15 @@ def arp() -> Timeline:
                      for i in range(3)])
 
 
-def transport(host=None, clock=None, **kw) -> Transport:
+def transport(host=None, clock=None, **kw) -> PlayheadSync:
     clock = TempoClock(TEMPO) if clock is None else clock
     dest = Recorder()
 
     def source(at, **_kw):
         return Playhead(arp(), clock, dest).play(at=at)
 
-    return Transport(FakeHost() if host is None else host, 7, source=source,
-                     tempo=TEMPO, sample_rate=SR, **kw)
+    return PlayheadSync(FakeHost() if host is None else host, 7, source=source,
+                     structure=PIECE, sample_rate=SR, **kw)
 
 
 # ---- the static cursor: the stopped half of the line ----
@@ -384,7 +386,7 @@ def test_resume_does_not_re_render():
         return Playhead(arp(), clock, dest).play(at=at)
 
     server = FakeGovernedServer()
-    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR,
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR,
                    clock=clock, governed=True)
     tp.server = server
 
@@ -405,7 +407,7 @@ def test_play_still_re_renders():
         calls.append(at)
         return Playhead(arp(), clock, dest).play(at=at)
 
-    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR)
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR)
     tp.play(at=0.0)
     tp.pause()
     tp.play()
@@ -422,7 +424,7 @@ def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():
         heads.append(ph)
         return ph
 
-    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR,
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR,
                    clock=clock, governed=True)
     tp.server = FakeGovernedServer()
     tp.play(at=0.0)
@@ -441,7 +443,7 @@ def test_an_ungoverned_pause_still_stops_the_playhead():
         heads.append(ph)
         return ph
 
-    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR)
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR)
     tp.play(at=0.0)
     tp.pause()
     assert not heads[0].playing
@@ -490,7 +492,7 @@ class HeadClockHost(FakeHost):
 
 def piece_transport(host=None, server=None):
     host = HeadClockHost() if host is None else host
-    tp = Transport(host, 7, head_clock="piece", tempo=TEMPO, sample_rate=SR)
+    tp = PlayheadSync(host, 7, head_clock="piece", structure=PIECE, sample_rate=SR)
     tp.server = TransportServer() if server is None else server
     return tp
 
@@ -563,8 +565,8 @@ def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
         return None
 
     host = HeadClockHost()
-    tp = Transport(host, 7, head_clock="piece", source=source,
-                   tempo=TEMPO, sample_rate=SR)
+    tp = PlayheadSync(host, 7, head_clock="piece", source=source,
+                   structure=PIECE, sample_rate=SR)
     tp.server = TransportServer()
     tp.play()
     assert cued == [0.0]
@@ -573,3 +575,34 @@ def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
     tp.pause()
     tp.locate(4.0)
     assert cued == [0.0, 2.0], "stopped, there is no pass to cue"
+
+
+def test_the_map_is_asked_of_what_plays_and_never_kept():
+    """No tempo is held here: beats cross through the pass's own map (a
+    timeline holds one), else the structure's, read on each use."""
+    from clausters import TempoMap
+
+    class Pass:
+        map = TempoMap(4.0)
+        playing = True
+
+        def position(self):
+            return 0.0
+
+        def pause(self):
+            self.playing = False
+
+    piece = Timeline(tempo=TEMPO)
+    tp = PlayheadSync(FakeHost(), 7, source=lambda at, **_: Pass(),
+                      structure=piece, sample_rate=SR)
+    assert tp.beats_to_samples(1.0) == pytest.approx(BEAT)
+    piece.map.push(0.0, 1.0)                 # edited on the structure: followed
+    assert tp.beats_to_samples(1.0) == pytest.approx(SR)
+    tp.play(FakeServer(), at=0.0)
+    assert tp.beats_to_samples(1.0) == pytest.approx(SR / 4.0)
+
+
+def test_with_nothing_to_ask_there_is_no_tempo():
+    tp = PlayheadSync(FakeHost(), 7, sample_rate=SR)
+    with pytest.raises(ValueError, match="structure"):
+        tp.beats_to_samples(1.0)

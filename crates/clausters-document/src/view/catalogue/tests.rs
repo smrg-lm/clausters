@@ -101,6 +101,22 @@ fn a_roll_fits_its_pitch_window_to_the_notes_it_holds() {
 }
 
 #[test]
+fn a_rolls_ruler_reads_the_timelines_map_when_it_is_given_one() {
+    let map = r#"[{"beats":0.0,"tempo":2.0}]"#;
+    let props = props(
+        "pianoroll",
+        &json!({"notes": [], "osc": [], "ruler": "beats", "tempo_map": map,
+                "sample_rate": 48_000.0}),
+    )
+    .expect("a roll without a scalar tempo still reads");
+    assert_eq!(props["axes"]["x"]["tempo_map"], map);
+    assert!(
+        props["axes"]["x"].get("tempo").is_none(),
+        "no tempo was stated"
+    );
+}
+
+#[test]
 fn a_roll_written_high_still_shows_where_the_ordinary_range_was() {
     // One note is its own window, padded: the piece is what is drawn.
     assert_eq!(pitch_window(&[0.0, 1.0, 60.0, 100.0, 0.0]), (56.0, 64.0));

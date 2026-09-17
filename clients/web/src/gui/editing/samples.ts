@@ -287,7 +287,6 @@ export class SamplesEditor extends Editor<Buffer> {
             channels: Math.max(1, Math.trunc(take.channels || 1)),
             name: typeof name === "string" && name ? name : null,
             rate: this.sampleRate,
-            tempo: this.tempo,
             title: this.title,
             w: this.size[0],
             h: this.size[1],

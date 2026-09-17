@@ -169,8 +169,10 @@ the graphic is not a picture of the music, it *is* the music. Its user
 documentation is the composition chapter of the Python client's book.
 
 **Playing any of these views is one shared object**, not a per-view transport:
-`clausters.gui.Transport` drives a playhead over the samples and the view's line
-together, and every view — a lane, a piano-roll, an engraved page — uses that one.
+`clausters.gui.PlayheadSync` keeps the views' line in step with what plays, and
+every view — a lane, a piano-roll, an engraved page — uses that one. It holds no
+tempo: beats cross through the map of what plays (a timeline's own, the
+document's).
 What a view contributes is a single conversion (its cursor's unit: timeline
 samples for a lane, score milliseconds for a page); everything else is the same
 two numbers the host already understands. A port keeps that shape: the anchor

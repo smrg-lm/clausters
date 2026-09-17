@@ -24,7 +24,7 @@
 // `engrave`/`Score.open`; `fromNotes`/`fromTimeline`, which turn the client's
 // own `seq` data into MEI (the inverse direction, data→score); and
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
-// and `transport` are the two helpers that put a page on screen and *play* it.
+// and `playheadSync` are the two helpers that put a page on screen and *play* it.
 //
 // `sheet` is the **score model** underneath all of that: notation as data,
 // operations as data over it, and the reading that turns it back into sound
@@ -92,6 +92,6 @@ export type {
     Sheet,
     TransposeOptions,
 } from "./sheet.ts";
-export { scoreView, transport } from "./view.ts";
+export { playheadSync, scoreView } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";
 export { setEngraverUrl } from "./_verovio.ts";

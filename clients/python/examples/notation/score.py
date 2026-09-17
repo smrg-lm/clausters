@@ -16,10 +16,10 @@ engine's sample clock, so the score follows the audio with **one message per
 pass** (``playhead_at``), the host reading the clock every frame from there,
 exactly as the timeline views do. A stopped transport is the other half of that
 one number: it goes negative and the static ``playhead`` holds the cursor where
-the music was left. It is the **shared** transport (`clausters.gui.Transport`),
+the music was left. It is the **shared** `clausters.gui.PlayheadSync`,
 the same object the multitrack editor drives its lanes with: a page differs only
 in the unit its static cursor is placed in, and that is all
-`notation.transport` fills in.
+`notation.playhead_sync` fills in.
 
 The page is also **clickable and editable**: every primitive carries the MEI
 ``xml:id`` it was engraved from, so a press reports the element under the cursor
@@ -62,7 +62,7 @@ import sys
 
 from clausters import Event, Session, play
 from clausters.gui import button, notation, panel, source, view
-from clausters.seq.timeline import Playhead, Timeline
+from clausters.seq.timeline import Timeline
 
 # Six bars in ABC -- the readable way to type a score by hand; verovio reads MEI
 # and MusicXML through the same loader, which is what a score usually arrives as.
@@ -80,9 +80,10 @@ K:G
 C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
 """
 
-# One beat per second, so the engraving's milliseconds are beats/1000: score time
-# and clock time become the same axis, which is what lets one anchor tie the
-# cursor to the sound.
+# One beat per second, so the engraving's milliseconds are beats/1000: it is the
+# tempo of the timeline the page is played as, so score time and the timeline's
+# time become the same axis, which is what lets one anchor tie the cursor to the
+# sound.
 TEMPO = 1.0
 
 # %% [markdown]
@@ -126,7 +127,7 @@ def phrase_timeline(notes: list) -> Timeline:
     """Place the engraved notes on a `Timeline` (see `TEMPO`: score ms are
     beats/1000). Built per play, so a transposed note is played at the pitch it
     now has."""
-    timeline = Timeline()
+    timeline = Timeline(tempo=TEMPO)
     for note in notes:
         timeline.add(note["t"] / 1000.0,
                      Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
@@ -149,7 +150,7 @@ print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
 
 # the session is the ambient one for the whole block, so a bare `play` below
 # resolves to its server and clock
-session = Session.live(tempo=TEMPO)
+session = Session.live()
 server = session.server
 # `query_info` rather than the launch options: it is the one spelling both
 # clients have, so this file and its page twin ask the same question.
@@ -157,8 +158,6 @@ sr = server.query_info().nominal_sample_rate
 gui = session.gui()
 engraved = source(display_list=dl)
 win = scene(engraved, sr).open()
-
-session.start()                     # the clock runs the routines
 
 # Both round trips run off the same id: the widget reports the MEI id
 # under the cursor, and that id indexes this script's own engraving.
@@ -170,8 +169,7 @@ def pass_from(at):
     """One playback pass: the engraved notes on a fresh `Timeline`, played
     from beat `at`. The transport calls this on every play, so a note
     transposed meanwhile simply sounds at the pitch it now has."""
-    return Playhead(phrase_timeline(dl["notes"]), session.clock,
-                    server).play(at=at)
+    return phrase_timeline(dl["notes"]).play(at=at, destination=server)
 
 def phrase_end():
     """Where the piece ends, in beats: the last note's onset plus its
@@ -179,12 +177,15 @@ def phrase_end():
     last = dl["notes"][-1]
     return (last["t"] + last["dur"]) / 1000.0
 
-# The transport is the shared one (`clausters.gui.Transport`), the same
-# object the multitrack editor drives its lanes with; `notation.transport`
-# only fills in the page's unit -- a score cursor is placed in score
-# milliseconds, not samples.
-transport = notation.transport(gui, win["score"].id, source=pass_from,
-                               tempo=TEMPO, sample_rate=sr, extent=phrase_end)
+# The sync is the shared one (`clausters.gui.PlayheadSync`), the same object
+# the multitrack editor drives its lanes with; `notation.playhead_sync` only
+# fills in the page's unit -- a score cursor is placed in score milliseconds,
+# not samples. Its tempo is the timeline's: `structure` is the page as a
+# timeline, for the cursor before anything has played.
+transport = notation.playhead_sync(
+    gui, win["score"].id, source=pass_from,
+    structure=lambda: phrase_timeline(dl["notes"]), sample_rate=sr,
+    extent=phrase_end)
 transport.locate(0.0)               # the cursor waits at the top
 print("press play -- click a note to hear it and to select it, drag one "
       "up or down to transpose it, 'from note' plays from the selected "

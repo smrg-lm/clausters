@@ -4,16 +4,16 @@
 // it in a `scroll` sized to the page, ready to drop into a window.
 //
 // Two helpers over a display list the engraver already produced: `scoreView`
-// wraps it in a `scroll` sized to the page, and `transport` hands back the
-// shared `Transport` with the page's own unit filled in — a `score` widget
+// wraps it in a `scroll` sized to the page, and `playheadSync` hands back the
+// shared `PlayheadSync` with the page's own unit filled in — a `score` widget
 // places its cursor in **score milliseconds**, not samples, and that conversion
 // is the only thing a page needs on top of the transport the timeline views
 // already use.
 
 import { score, scroll, Source } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
-import { Transport } from "../transport.ts";
-import type { TransportOptions } from "../transport.ts";
+import { PlayheadSync } from "../playhead-sync.ts";
+import type { PlayheadSyncOptions } from "../playhead-sync.ts";
 import type { GuiHost } from "../host.ts";
 
 /** What {@link scoreView} takes past the page itself. */
@@ -119,31 +119,30 @@ export function scoreView(
 }
 
 /**
- * A {@link Transport} driving a `score` widget's playback cursor — play, pause,
- * stop and locate, with the cursor following the sound.
+ * A {@link PlayheadSync} driving a `score` widget's playback cursor — play,
+ * pause, stop and locate, with the cursor following the sound.
  *
- * The same transport the timeline views use; what a page needs on top is only
- * its unit: a `score` widget places its static cursor in **score
- * milliseconds**, not samples, so this fills in that conversion and leaves the
- * rest as it is — `source(at)` starts a pass at beat `at` and answers the
- * playing `Playhead`, `extent()` gives the piece's length in beats.
+ * The same one the timeline views use; what a page needs on top is only its
+ * unit: a `score` widget places its static cursor in **score milliseconds**, not
+ * samples, so this fills in that conversion and leaves the rest as it is —
+ * `source(at)` starts a pass at beat `at` and answers the `Timeline` it plays,
+ * `structure` is that timeline (or a callable returning it) for when nothing is
+ * playing, and `extent()` gives the piece's length in beats.
  *
- * The conversion goes through the piece's time map like every other one, not
+ * The conversion goes through the timeline's own map like every other one, not
  * through a division of its own: a page is engraved on the beat axis, and the
- * millisecond a beat is drawn at is the second it falls on. Pass `tempoMap`
- * (the clock's, `TempoClock.map`) when the tempo changes along the piece;
- * `tempo` alone is that tempo as a single segment.
+ * millisecond a beat is drawn at is the second it falls on.
  *
  * The engraving is what makes both easy to write: a page hands back the notes
  * with their onsets and lengths, so the timeline a pass plays and the end it
  * stops at are read off the page itself.
  */
-export function transport(
+export function playheadSync(
     host: GuiHost | null,
     scoreId: number,
-    options: Omit<TransportOptions, "toUnits">,
-): Transport {
-    const tr = new Transport(host, scoreId, options);
-    tr.toUnits = (beats) => tr.tempoMap.secsAt(Number(beats)) * 1000.0;
+    options: Omit<PlayheadSyncOptions, "toUnits">,
+): PlayheadSync {
+    const tr = new PlayheadSync(host, scoreId, options);
+    tr.toUnits = (beats: number) => tr.tempoMap().secsAt(Number(beats)) * 1000.0;
     return tr;
 }

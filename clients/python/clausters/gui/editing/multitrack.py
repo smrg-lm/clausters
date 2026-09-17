@@ -203,6 +203,13 @@ class Bridge:
         """Re-read the tempo map, for an edit that moved one."""
         self.tempo = tempo_map(piece)
 
+    @property
+    def map(self) -> TempoMap:
+        """The piece's tempo map as the document states it, read last on
+        `refresh` -- what a view over the piece asks for, the way it asks a
+        `clausters.seq.Timeline` for its own."""
+        return self.tempo
+
 
 class MultitrackDomain(Domain):
     """A piece's vocabulary, as the **history** walks it.
@@ -386,7 +393,6 @@ class MultitrackEditor(Editor):
         self.playback = None
         domain = MultitrackDomain(bridge)
         super().__init__(piece, sample_rate=sample_rate,
-                         tempo_map=bridge.tempo,
                          domain=domain,
                          view=MultitrackView(bridge, link=link,
                                              transport=server is not None),
@@ -410,6 +416,12 @@ class MultitrackEditor(Editor):
             from .playback import Playback
 
             self.playback = Playback(self, server=server)
+
+    def tempo_map(self):
+        """The piece's beat→second map, read from the document through the
+        bridge: the document states the tempo, and the bridge re-reads it when
+        an edit moves it."""
+        return self.bridge.tempo
 
     @property
     def piece_widget(self) -> "int | None":

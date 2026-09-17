@@ -49,13 +49,13 @@ class NotesDomain(Domain):
     name = _native.EVENTS
     ingested = True
 
-    def __init__(self, *, tempo: float = 1.0, editable: bool = True):
+    def __init__(self, *, editable: bool = True):
         super().__init__()
         #: What a beat is worth on the view's axis. The roll draws in timeline
         #: samples and a timeline is in beats, so the crossing happens in the
-        #: reading — the editor's bridge is what supplies this.
+        #: reading — the editor's bridge is what supplies this, from the
+        #: timeline's own map.
         self.units_per_beat = 1.0
-        self.tempo = float(tempo)
         #: Whether a note may be written back onto this timeline. A roll over
         #: what a **generator** produced is a rendering of an algorithm, so
         #: there is nothing to write it onto — the view says so with the
@@ -124,7 +124,7 @@ class NotesView(View):
     grid."""
 
     def build(self, editor) -> dict:
-        from ..guidef import _flat_notes, _flat_osc, window
+        from ..guidef import _flat_notes, _flat_osc, _tempo_map, window
 
         # The pitch window the roll fits to its notes is the crate's, and so is
         # saying **before the hand tries** that a roll over what a generator
@@ -134,7 +134,9 @@ class NotesView(View):
             "notes": _flat_notes(_notes(editor)),
             "osc": _flat_osc(_osc(editor)),
             "ruler": "beats",
-            "tempo": editor.tempo,
+            # The ruler draws the timeline's beats through the timeline's map:
+            # configuration of the ruler, read from the data it shows.
+            "tempo_map": _tempo_map(editor.structure.map),
             "sample_rate": editor.sample_rate,
             "editable": bool(getattr(editor.domain, "editable", True)),
         })
@@ -143,22 +145,24 @@ class NotesView(View):
                       layout="col")
 
     def props(self, editor, widget_id: int) -> dict:
-        from ..guidef import _flat_notes, _flat_osc
+        from ..guidef import _flat_notes, _flat_osc, _tempo_map
 
         # **Both lanes**: a correction is what the widget should be drawing, and
-        # a refused marker is answered by the markers as they still are.
+        # a refused marker is answered by the markers as they still are. The
+        # ruler's map goes with them, so a tempo edited on the timeline redraws.
         return {"notes": _flat_notes(_notes(editor)),
-                "osc": _flat_osc(_osc(editor))}
+                "osc": _flat_osc(_osc(editor)),
+                "tempo_map": _tempo_map(editor.structure.map)}
 
 
 class NotesEditor(Editor):
     """A timeline on screen, editable back into the `clausters.seq.Timeline`
     the caller already holds."""
 
-    def __init__(self, timeline, *, sample_rate: float, tempo: float = 1.0,
+    def __init__(self, timeline, *, sample_rate: float,
                  title: str = "Notes", editable: bool = True, **options):
-        domain = NotesDomain(tempo=tempo, editable=editable)
-        super().__init__(timeline, sample_rate=sample_rate, tempo=tempo,
+        domain = NotesDomain(editable=editable)
+        super().__init__(timeline, sample_rate=sample_rate,
                          domain=domain, view=NotesView(), title=title,
                          **options)
         # The bridge is the editor's, so the domain reads it from here rather

@@ -38,7 +38,7 @@ from .points import PointsEditor, is_curve
 from .samples import SamplesEditor, is_samples
 
 
-def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
+def edit(structure, *, sample_rate: float = 0.0,
          host=None, open: bool = True, **options):
     """Open ``structure`` in an editor of its own kind.
 
@@ -48,8 +48,6 @@ def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
             (its notes) or a `clausters.multitrack.Multitrack` (the piece).
         sample_rate: the engine's rate, which fixes the data↔view bridge. A
             take knows its own and needs none.
-        tempo: the clock's tempo in beats per second, for the structures placed
-            in beats.
         host: the `clausters.gui.host.GuiHost` to open on; ``None`` — the
             ordinary case — resolves the ambient one, the rule
             `clausters.plot`, `clausters.scope` and
@@ -77,17 +75,16 @@ def edit(structure, *, sample_rate: float = 0.0, tempo: float = 1.0,
             and answering it with a bare failure teaches nothing.
     """
     if is_samples(structure):
-        editor = SamplesEditor(structure, sample_rate=sample_rate, tempo=tempo,
-                               **options)
+        editor = SamplesEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):
         editor = PointsEditor(structure, sample_rate=sample_rate or 48_000.0,
-                              tempo=tempo, **options)
+                              **options)
     elif is_events(structure):
+        # No `tempo`: a timeline holds its own map, and the editor reads it.
         editor = NotesEditor(structure, sample_rate=sample_rate or 48_000.0,
-                             tempo=tempo, **options)
+                             **options)
     elif is_piece(structure):
-        # No `tempo`: a piece states its own, and a caller's ratio beside it
-        # would be a second answer to a question the document already answers.
+        # A piece states its own tempo, like a timeline.
         editor = MultitrackEditor(structure, sample_rate=sample_rate or 48_000.0,
                                   **options)
     else:

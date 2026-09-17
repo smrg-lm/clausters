@@ -189,7 +189,9 @@ export class NotesView extends View<Timeline> {
                 notes: flatNotes(drawn(editor)),
                 osc: flatOsc(markers(editor)),
                 ruler: "beats",
-                tempo: editor.tempo,
+                // The ruler draws the timeline's beats through the timeline's
+                // map: configuration of the ruler, read from the data it shows.
+                tempo_map: editor.structure.map.dump(),
                 sample_rate: editor.sampleRate,
                 editable,
             }),
@@ -199,10 +201,12 @@ export class NotesView extends View<Timeline> {
 
     override props(editor: Editor<Timeline>): Record<string, PropValue> {
         // **Both lanes**: a correction is what the widget should be drawing, and
-        // a refused marker is answered by the markers as they still are.
+        // a refused marker is answered by the markers as they still are. The
+        // ruler's map goes with them, so a tempo edited on the timeline redraws.
         return {
             notes: flatNotes(drawn(editor)) as PropValue,
             osc: flatOsc(markers(editor)) as PropValue,
+            tempo_map: editor.structure.map.dump(),
         };
     }
 }

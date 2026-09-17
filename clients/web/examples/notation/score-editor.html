@@ -100,7 +100,7 @@ server process, no socket.</div>
     -->
     <script type="module">
       import {
-        Event, Session, gui, loadCore, play, seq,
+        Event, Session, TempoMap, gui, loadCore, play,
       } from "../../dist/index.js";
 
       const { notation } = gui;
@@ -122,9 +122,9 @@ B c d e | f2 e d | c B A B | G4 |
 
       // Two beats per second: the quarter = 120 the engraver times the page at.
       // A quarter is then one beat in the model and 500 ms on the page, which is
-      // what ties the cursor to the sound — the transport places its cursor in
-      // *score* milliseconds and reads the model in beats, so the two have to
-      // agree.
+      // what ties the cursor to the sound — the sync places its cursor in
+      // *score* milliseconds and reads the model in beats through the timeline's
+      // map, so the two have to agree.
       const TEMPO = 2.0;
 
       // How wide the page is drawn. The height follows from the engraving's
@@ -133,7 +133,7 @@ B c d e | f2 e d | c B A B | G4 |
       const PAGE_W = 900.0;
 
       let server, host = null, raw = null, win = null, SR = 0;
-      let score = null, engraved = null, clock = null, transport = null;
+      let score = null, engraved = null, transport = null;
       // What the page named, and the model item behind it.
       const selected = { element: null, item: null };
 
@@ -355,8 +355,13 @@ B c d e | f2 e d | c B A B | G4 |
       // One playback pass, read out of the model as it stands right now: the
       // symbols are what is played, so a staccato added a moment ago is
       // honoured and every attack after it stays where it was.
-      const pass = (at) =>
-        new seq.Playhead(notation.toTimeline(score.sheet()), clock, server).play({ at });
+      const piece = () => {
+        // The model as it stands right now, read into a timeline at `TEMPO`.
+        const timeline = notation.toTimeline(score.sheet());
+        timeline.map = new TempoMap(TEMPO);
+        return timeline;
+      };
+      const pass = (at) => piece().play({ at, destination: server });
 
       // Where the piece ends, in beats — the last note's onset plus its written
       // value. The transport parks the cursor there when a pass runs out.
@@ -481,8 +486,8 @@ B c d e | f2 e d | c B A B | G4 |
         score.apply({ op: "set_marks", id: top[0], marks: notation.marks({ dynamic: "p" }) });
         score.apply({ op: "set_marks", id: top[8], marks: notation.marks({ dynamic: "f" }) });
 
-        // One session: it owns the server, the clock and the GUI host.
-        const session = await Session.embed({ tempo: TEMPO });
+        // One session: it owns the server and the GUI host.
+        const session = await Session.embed();
         server = session.server;
         // `queryInfo` rather than the launch options: it is the one spelling
         // both clients have, so this page and its script twin ask the same
@@ -493,11 +498,9 @@ B c d e | f2 e d | c B A B | G4 |
         engraved = gui.source(undefined, { displayList: dl });
 
         win = await scene(engraved, SR).open(el("stage"));
-        session.start();
-        clock = session.clock;
 
-        transport = notation.transport(host, win.widget("score").id, {
-          source: pass, tempo: TEMPO, extent,
+        transport = notation.playheadSync(host, win.widget("score").id, {
+          source: pass, structure: piece, extent,
           sampleRate: SR,
         });
         transport.locate(0.0);

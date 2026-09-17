@@ -194,7 +194,7 @@ waiting.
 
 The clock follows too. `TempoClock.freeze()` holds the beat where it is and
 `thaw()` picks it up there, so a client does not run away from a piece that is
-not moving; `clausters.gui.Transport` does this for you, and its `resume()` is
+not moving; `clausters.gui.PlayheadSync` does this for you, and its `resume()` is
 deliberately **not** `play()` — play re-renders from a position, resume
 continues the frozen sound.
 

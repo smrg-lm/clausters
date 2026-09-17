@@ -185,8 +185,16 @@ pub struct Roll {
     pub osc: Vec<f64>,
     /// What the ruler counts.
     pub ruler: String,
-    /// The tempo the grid is drawn at, in beats per second.
+    /// The tempo the grid is drawn at, in beats per second: the ruler's
+    /// configuration, written onto the axis only when stated (above zero).
+    #[serde(default)]
     pub tempo: f64,
+    /// The beat-to-second map the ruler reads the timeline's beats through, as
+    /// the wire carries it (a `TempoMap` dump). The ruler's configuration
+    /// too, taken from the timeline being drawn; where both are stated the
+    /// host reads the map.
+    #[serde(default)]
+    pub tempo_map: Option<String>,
     /// The rate the axis reads its numbers with.
     pub sample_rate: f64,
     /// Whether a hand may write here. A roll over what a generator produced
@@ -204,6 +212,7 @@ impl Default for Roll {
             osc: Vec::new(),
             ruler: String::new(),
             tempo: 0.0,
+            tempo_map: None,
             sample_rate: 0.0,
             editable: true,
         }
@@ -242,7 +251,12 @@ pub fn pianoroll(roll: &Roll) -> Map<String, Value> {
             &roll.ruler
         }),
     );
-    x.insert("tempo".into(), json!(roll.tempo));
+    if roll.tempo > 0.0 {
+        x.insert("tempo".into(), json!(roll.tempo));
+    }
+    if let Some(map) = &roll.tempo_map {
+        x.insert("tempo_map".into(), json!(map));
+    }
     x.insert("sample_rate".into(), json!(roll.sample_rate));
     axes(&mut props, x, y);
     props

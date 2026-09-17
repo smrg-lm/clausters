@@ -1477,8 +1477,12 @@ def waveform(*, autofit: bool | None = None,
     same GUI can retune them): ``ruler`` labels the time axis — ``"time"``
     (the default; clock time, using ``sample_rate`` or the rate the source
     brings), ``"samples"``, ``"beats"`` (musical time: ``tempo`` in beats per
-    second — pass ``clock.tempo`` — ``beat_at`` the beat position of sample 0,
-    ``quant`` the beats per bar, labels ``bar:beat``), or ``"off"``.
+    second, or ``tempo_map`` for a tempo that changes, ``beat_at`` the beat
+    position of sample 0, ``quant`` the beats per bar, labels ``bar:beat``), or
+    ``"off"``. Those are the **ruler's configuration**, like the units of
+    ``ruler_y``: over data that is in beats (a timeline) they are read from the
+    data -- its map -- and over data that is not they are a presentation choice,
+    never a tempo the data holds.
     ``ruler_y`` labels the amplitude axis — ``"norm"`` (the default;
     normalized [-1, 1]), ``"db"`` (dBFS), ``"bits"`` (integer sample values at
     the ``bit_depth`` resolution, default 16), ``"percent"`` (0-100% of full

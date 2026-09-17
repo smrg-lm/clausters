@@ -2246,7 +2246,7 @@ items, it does not wait for them.
 numbers the line is made of — is not about what a view draws. `playhead_at` is
 one anchor on the engine's sample clock that the host sweeps from; the static
 `playhead` is where a stopped transport sits. Both are the same for a lane, a
-piano-roll and an engraved page. So there is **one** `Transport`, and a view
+piano-roll and an engraved page. So there is **one** `Transport` (now `PlayheadSync`), and a view
 contributes exactly one thing to it: the unit its static cursor is placed in
 (timeline samples for a lane, score milliseconds for a page). What each view
 still owns is what a pass *is* — a render of the arrangement, a timeline built

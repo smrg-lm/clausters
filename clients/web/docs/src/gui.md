@@ -302,15 +302,18 @@ the previous one as its inverse, so a window holding a page beside a lane has
 one Ctrl+Z, in the order the hand made the edits. `score.canUndo` answers for
 that order and may well be an edit to something else.
 
-To **play** the page with the cursor following the sound, `gui.Transport` is the
-same object every time view uses — a lane, a piano roll, an engraved page — and
-`notation.transport` only fills in the page's unit, since a score places its
-cursor in milliseconds where a lane places it in samples:
+To **play** the page with the cursor following the sound, `gui.PlayheadSync` is
+the same object every time view uses — a lane, a piano roll, an engraved page —
+and `notation.playheadSync` only fills in the page's unit, since a score places
+its cursor in milliseconds where a lane places it in samples. It holds no tempo:
+beats cross through the map of the timeline a pass plays, or of `structure` when
+nothing is playing.
 
 ```ts
-const tp = notation.transport(host, win.widget("page").id, {
-    source: (at) => new seq.Playhead(timelineOf(score), clock, server).play({ at }),
-    tempo: 2.0, sampleRate: engine.context.sampleRate,
+const tp = notation.playheadSync(host, win.widget("page").id, {
+    source: (at) => timelineOf(score).play({ at, destination: server }),
+    structure: () => timelineOf(score),
+    sampleRate: engine.context.sampleRate,
     extent: () => endOfPiece(score),
 });
 tp.play(server);                 // and pause / stop / locate
