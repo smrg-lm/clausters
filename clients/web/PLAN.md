@@ -3073,6 +3073,20 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The GuiDef sweep vectors are stale, and regenerated they show `waveform`
+  disagreeing on two loudness options** *(found 2026-09-17, regenerating every
+  parity vector after the timeline work)*. `tests/gen-gui-vectors.py` writes
+  entries the committed `tests/gui-sweep-vectors.json` does not have: the
+  `scope` and `signal` builders' `loudness_target`, `loudness_scale`,
+  `loudness_ruler` and `loudness_stats`, and the same for `waveform`. With the
+  file regenerated, `gui-parity.test.ts` fails two cases,
+  `waveform(loudness_ruler)` and `waveform(loudness_stats)`: this client's
+  `waveform` emits `loudness_ruler: 1` / `loudness_stats: 1` on the tree and the
+  Python client's does not, while `scope` and `signal` agree. Which one is right
+  is not decided; the fix is that one, in the lagging client, and the
+  regenerated vectors committed with it. The committed file was left as it was,
+  so the suite passes today only because it is stale.
+
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** *(found 2026-09-16: the user opened
   `examples/basics/group-order.html` in Firefox and got `Uncaught (in promise)

@@ -185,6 +185,13 @@ already carry it.
   fills a slot while keeping the slot is a copy by construction, and the verb's
   shape follows that answer.
 
+- ⬜ **The GuiDef sweep vectors are stale, and regenerated they show `waveform`
+  disagreeing on two loudness options** (`clients/web/PLAN.md`, Found by use).
+  `waveform` puts `loudness_ruler`/`loudness_stats` on the tree in the web
+  client and not in Python; the committed vectors predate the options, so the
+  parity suite does not see it. Fix the lagging client and commit the
+  regenerated vectors together.
+
 
 ## 2. Fixes that need a decision first
 
