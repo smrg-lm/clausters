@@ -746,12 +746,34 @@ impl OscServer {
     /// Seconds from now until the timetag fires. `None` is the OSC
     /// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).
     fn timetag_delta_secs(&self, t: OscTime) -> Option<f64> {
-        if t.seconds == 0 && t.fractional <= 1 {
+        timetag_unix(t).map(|target| target - self.unix_secs())
+    }
+
+    /// The device sample Unix instant `unix` falls on, through the line a
+    /// device callback publishes (`server::device_epoch`) -- `None` when the
+    /// server's time is the counter itself, or nothing publishes one.
+    ///
+    /// This, and not the counter read beside the wall clock, is what places a
+    /// wall-clock timetag: the counter moves once per callback, so pairing it
+    /// with *now* is off by however far into the callback the packet arrived,
+    /// differently for every bundle.
+    fn device_sample_at(&self, unix: f64) -> Option<u64> {
+        if !matches!(self.clock, TimeSource::Wall { .. }) {
             return None;
         }
-        let target = t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
-        Some(target - self.unix_secs())
+        let epoch = self.handle.device_epoch().get()?;
+        let secs = (unix - epoch).max(0.0);
+        Some((secs * self.handle.sample_rate as f64).round() as u64)
     }
+}
+
+/// A timetag as Unix seconds; `None` is the OSC "immediately" tag (seconds 0,
+/// fractional 1 -- rosc keeps it verbatim).
+fn timetag_unix(t: OscTime) -> Option<f64> {
+    if t.seconds == 0 && t.fractional <= 1 {
+        return None;
+    }
+    Some(t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32))
 }
 
 /// How much work one pulled serving turn may do — the ceiling

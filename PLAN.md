@@ -3038,7 +3038,7 @@ finished work, where a pending item reads as done.
   failed about one run in six on a loaded machine — a flaky test written while
   fixing a defect that presented as a flaky test.
 
-- ⬜ **A wall-clock timetag is placed a block late or early, so a routine's
+- ✅ **A wall-clock timetag is placed a block late or early, so a routine's
   spacing jitters by one device block** *(found 2026-09-16 while checking a
   report that a routine's first note sounded shorter -- it did not: the output
   was recorded with `RecordBuf` and every note, the first included, is 329.6 ms
@@ -3065,3 +3065,39 @@ finished work, where a pending item reads as done.
   exactly that pair), rather than against the moment the packet was handled.
   Acceptance is an E2E that schedules bundles at a fixed spacing over UDP and
   reads the onsets back sample-exact.
+
+  **Fixed the same day, in the server.** The audio callback stamps the frame it
+  is about to hand the device with the system clock and publishes the lower
+  edge of `stamp - frame / rate` -- the **device epoch**, the Unix instant sample
+  0 falls on (`server::device_epoch`). The lower edge because a stamp is only
+  ever late (the callback thread's wake-up), tracked with a 1000 ppm rise so a
+  crystal slower than the system clock is followed, and restarted from a stamp
+  more than three callbacks late (an xrun, a restarted stream, a stepped clock).
+  `schedule_bundle` places a timetag at `(T - epoch) * rate`, never before the
+  counter; `/clock_query.reply` anchors on the same line, so a wall-clock
+  client joining a transport maps the grid through the same numbers the bundles
+  land by. A host that drives the engine itself publishes no epoch and keeps
+  the counter-plus-delta placement, which is exact there: its time is the
+  counter. Nothing changed in either client -- the timing is the server's.
+
+  **Measured on the device**, the same recording: the monotonic-timebase
+  routine now lands its notes **499.9 to 500.3 ms** apart (was 490 to 513); the
+  sample-locked one still reads 500.0. The acceptance is
+  `tests/scheduling.rs::wall_clock_timetags_land_on_the_device_line_whenever_they_arrive`:
+  two notes a second apart sent 7 ms apart with the engine not moving between
+  them, onsets read back 48 000 samples apart. With the placement reverted it
+  reads 47 661 -- **verified by mutation**.
+
+- ⬜ **`boot()` returns about 100 ms before the device's first callback**
+  *(found 2026-09-16, fixing the entry above)*. A server launched from Python
+  answers `/clock_query` for roughly a tenth of a second with its counter at 0
+  and no device epoch published: the port is up, the stream is not playing yet.
+  A bundle handled in that window can only be placed against a counter that is
+  not moving, so the first note of `Server().boot()` followed at once by a
+  routine landed about 80 ms off the line the later notes sit on. It may also
+  be what a report heard as a first note "shorter" than the rest -- at the
+  engine's output that note is identical, so whatever cuts it happens after the
+  engine, and a device that has only just started is the likeliest place. Not
+  verified by ear. The question is whether readiness should mean the stream is
+  running (the first callback published an epoch) rather than the socket
+  answering, which is a launcher contract both clients read.

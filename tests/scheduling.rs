@@ -500,6 +500,122 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 
+    /// With the device's line published, a wall-clock timetag lands on the
+    /// sample the line gives it, whenever its packet is handled. Placing it
+    /// against the counter read beside the wall clock instead was off by how
+    /// far into the callback the packet arrived, so two bundles a second apart
+    /// in their timetags sounded 490 to 513 ms apart on a real device. Here the
+    /// two are sent at different moments and the engine does not move between
+    /// them, which is the worst case for that placement.
+    #[test]
+    fn wall_clock_timetags_land_on_the_device_line_whenever_they_arrive() {
+        let (mut engine, engine_handle) = engine_pair(SR, CHANNELS);
+        let unix =
+            |t: OscTime| t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
+        let epoch = unix(ntp_in(0.0));
+        engine_handle.device_epoch().publish(epoch);
+        let info = ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        };
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_thread = std::thread::spawn(move || server.run());
+        let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let send = |packet: OscPacket| {
+            client
+                .send_to(&encoder::encode(&packet).unwrap(), addr)
+                .unwrap();
+        };
+        let at_sample = |sample: u64| {
+            let ntp = epoch + sample as f64 / SR as f64 + NTP_UNIX_OFFSET;
+            OscTime {
+                seconds: ntp as u32,
+                fractional: (ntp.fract() * 2f64.powi(32)).round() as u32,
+            }
+        };
+        let note = |id: i32, on: u64| {
+            let message = |addr: &str, args: Vec<OscType>| {
+                OscPacket::Message(OscMessage {
+                    addr: addr.into(),
+                    args,
+                })
+            };
+            [
+                OscPacket::Bundle(OscBundle {
+                    timetag: at_sample(on),
+                    content: vec![message(
+                        "/synth_new",
+                        vec![
+                            OscType::String("default".into()),
+                            OscType::Int(id),
+                            OscType::Int(1),
+                            OscType::Int(0),
+                        ],
+                    )],
+                }),
+                OscPacket::Bundle(OscBundle {
+                    timetag: at_sample(on + 2400),
+                    content: vec![message(
+                        "/node_set",
+                        vec![
+                            OscType::Int(id),
+                            OscType::String("gate".into()),
+                            OscType::Float(0.0),
+                        ],
+                    )],
+                }),
+            ]
+        };
+
+        let [on, off] = note(1000, 24_000);
+        send(on);
+        send(off);
+        std::thread::sleep(Duration::from_millis(7));
+        let [on, off] = note(1001, 72_000);
+        send(on);
+        send(off);
+
+        // The anchor a client reads agrees with the same line.
+        send(OscPacket::Message(OscMessage {
+            addr: "/clock_query".into(),
+            args: vec![],
+        }));
+        let mut buf = [0u8; 65536];
+        let (len, _) = client
+            .recv_from(&mut buf)
+            .expect("expected /clock_query.reply");
+        let (_, OscPacket::Message(reply)) = decoder::decode_udp(&buf[..len]).unwrap() else {
+            panic!("expected a message reply");
+        };
+        let (OscType::Long(sample), OscType::Time(osc)) = (&reply.args[0], &reply.args[2]) else {
+            panic!("unexpected /clock_query.reply {:?}", reply.args);
+        };
+        let expected = epoch + *sample as f64 / SR as f64;
+        assert!((unix(*osc) - expected).abs() < 1e-6, "anchor off the line");
+
+        std::thread::sleep(Duration::from_millis(100)); // let the server parse them
+        let left = render(&mut engine, 100_000 / BLOCK_SIZE);
+        let onsets: Vec<usize> = (0..left.len())
+            .filter(|&i| left[i] != 0.0 && (i == 0 || left[i - 1] == 0.0))
+            .collect();
+        assert_eq!(onsets.len(), 2, "two notes, onsets at {onsets:?}");
+        assert_eq!(onsets[1] - onsets[0], 48_000, "onsets at {onsets:?}");
+        assert!(
+            (24_000..=24_001).contains(&onsets[0]),
+            "onsets at {onsets:?}"
+        );
+
+        send(OscPacket::Message(OscMessage {
+            addr: "/server_quit".into(),
+            args: vec![],
+        }));
+        server_thread.join().unwrap().unwrap();
+    }
+
     /// M8: `/sched_at` carries an *absolute* sample target, so unlike the NTP
     /// test above there is no wall-clock neighborhood to allow for — the
     /// note must start on that exact frame. This precision is the point of

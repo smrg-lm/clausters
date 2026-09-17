@@ -4,11 +4,14 @@
 //! multiple of [`BLOCK_SIZE`]; `BlockAdapter` slices them up by requesting
 //! blocks from the engine and keeping the leftover across callbacks.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
 use rtrb::Producer;
 
 use crate::dsp::Limits;
+use crate::server::device_epoch::{DeviceEpoch, EpochFilter};
 use crate::server::engine::{BLOCK_SIZE, Engine, EngineHandle, engine_pair_full};
 
 /// How many blocks of input the ring between the cpal input callback and the
@@ -181,6 +184,10 @@ struct BlockAdapter {
     engine: Engine,
     buf: Vec<f32>,
     pos: usize,
+    /// The device's sample axis on the wall clock, stamped once per callback
+    /// and published to the network thread (see `server::device_epoch`).
+    epoch_filter: EpochFilter,
+    epoch: DeviceEpoch,
     /// One-shot pin + scheduling diagnostic of the callback thread, run from
     /// the callback itself (`rtprio` builds only; see `server::rt`).
     #[cfg(feature = "rtprio")]
@@ -188,12 +195,14 @@ struct BlockAdapter {
 }
 
 impl BlockAdapter {
-    fn new(engine: Engine) -> Self {
+    fn new(engine: Engine, epoch: DeviceEpoch) -> Self {
         let len = BLOCK_SIZE * engine.channels();
         Self {
             engine,
             buf: vec![0.0; len],
             pos: len, // forces a process_block on the first sample
+            epoch_filter: EpochFilter::new(),
+            epoch,
             #[cfg(feature = "rtprio")]
             rt_setup: crate::server::rt::RtSetup::new(),
         }
@@ -208,6 +217,25 @@ impl BlockAdapter {
         let s = self.buf[self.pos];
         self.pos += 1;
         s
+    }
+
+    /// Stamps the callback about to fill `frames` frames: the next frame it
+    /// hands out is the engine's counter minus what is still waiting in the
+    /// block buffer, and it is being handed out now. A clock read and some
+    /// arithmetic -- no allocation, no lock.
+    fn stamp(&mut self, frames: usize) {
+        let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+            return;
+        };
+        let channels = self.engine.channels().max(1);
+        let pending = ((self.buf.len() - self.pos) / channels) as u64;
+        let frame = self.engine.processed_samples().saturating_sub(pending);
+        let rate = self.engine.sample_rate() as f64;
+        let period = frames as f64 / rate;
+        let epoch = self
+            .epoch_filter
+            .observe(now.as_secs_f64(), frame, rate, period);
+        self.epoch.publish(epoch);
     }
 }
 
@@ -300,7 +328,7 @@ pub fn start(
             // stream is committed (a failed attempt just drops it).
             let input_producer = (inputs > 0)
                 .then(|| engine.input_ring(inputs, inputs * BLOCK_SIZE * INPUT_RING_BLOCKS));
-            let adapter = BlockAdapter::new(engine);
+            let adapter = BlockAdapter::new(engine, handle.device_epoch().clone());
             let built = match format {
                 cpal::SampleFormat::F32 => build_stream::<f32>(&device, cfg, adapter),
                 cpal::SampleFormat::I16 => build_stream::<i16>(&device, cfg, adapter),
@@ -425,6 +453,7 @@ where
             // Subnormals in decaying DSP state are 10-100x slower: keep the
             // callback thread in flush-to-zero mode (see dsp::denormals).
             crate::dsp::denormals::flush_to_zero();
+            adapter.stamp(data.len() / adapter.engine.channels().max(1));
             for s in data.iter_mut() {
                 *s = T::from_sample(adapter.next_sample());
             }

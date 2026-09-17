@@ -5,6 +5,7 @@
 pub mod backend;
 pub mod clock_axis;
 pub mod defstore;
+pub mod device_epoch;
 pub mod engine;
 pub mod ipc;
 pub mod meters;

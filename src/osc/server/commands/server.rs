@@ -155,13 +155,24 @@ impl OscServer {
     /// *processed* samples: it runs a device buffer ahead of the speakers and
     /// pauses on xruns.
     pub(in crate::osc::server) fn handle_clock_query(&mut self, from: ClientId) {
-        // Read the counter and the wall clock back-to-back so the published
-        // anchor pairs the same instant (the sub-microsecond gap is negligible).
+        // The anchor pairs the counter with the instant that sample falls on,
+        // through the same line a wall-clock timetag is placed with, so a
+        // client mapping between the two axes agrees with the server. With no
+        // line published, the counter and the wall clock read back-to-back.
         let sample = self.handle.current_samples();
+        let osc = self
+            .handle
+            .device_epoch()
+            .get()
+            .filter(|_| matches!(self.clock, TimeSource::Wall { .. }))
+            .map_or_else(
+                || self.now_ntp(),
+                |epoch| unix_to_ntp(epoch + sample as f64 / self.handle.sample_rate as f64),
+            );
         let args = vec![
             OscType::Long(sample as i64),
             OscType::Double(self.info.actual_sample_rate),
-            OscType::Time(self.now_ntp()),
+            OscType::Time(osc),
         ];
         self.reply(from, "/clock_query.reply", args);
     }

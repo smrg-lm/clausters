@@ -51,7 +51,17 @@ impl OscServer {
     /// boxed, names resolved — all the allocating work happens now) and
     /// sends them as one atomic [`Cmd::Schedule`].
     fn schedule_bundle(&mut self, bundle: OscBundle, delta: f64, from: ClientId) {
-        let time = self.handle.current_samples() + (delta * self.handle.sample_rate as f64) as u64;
+        let counter = self.handle.current_samples();
+        // Through the device's line when the backend publishes one, so the
+        // relative timing the timetags carry survives. Never before the
+        // counter: that block is already processed, and the engine fires a
+        // past target at the next one, as it always has.
+        let time = timetag_unix(bundle.timetag)
+            .and_then(|unix| self.device_sample_at(unix))
+            .map_or_else(
+                || counter + (delta * self.handle.sample_rate as f64) as u64,
+                |sample| sample.max(counter),
+            );
         let mut cmds = Vec::new();
         for packet in bundle.content {
             match packet {

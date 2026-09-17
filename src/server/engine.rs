@@ -28,6 +28,7 @@ use crate::dsp::{
 };
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, Reject, SynthNode};
 use crate::server::clock_axis::{DeviceSample, PiecePosition, PositionAnchor, TransportSample};
+use crate::server::device_epoch::DeviceEpoch;
 use crate::server::ipc::Segment;
 use crate::server::meters::{Meters, Role};
 use crate::server::workers::WorkerPool;
@@ -540,6 +541,10 @@ pub struct EngineHandle {
     /// The IPC segment when one exists — the network thread reads the audio
     /// taps from here (`/bus_tapStream`) without an engine round-trip.
     segment: Option<Arc<Segment>>,
+    /// Where the device's sample axis sits on the wall clock, published by a
+    /// backend with a device callback and unknown otherwise. See
+    /// `server::device_epoch`.
+    device_epoch: DeviceEpoch,
 }
 
 pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) {
@@ -673,6 +678,7 @@ pub fn engine_pair_full(
         counters,
         meters,
         segment,
+        device_epoch: DeviceEpoch::default(),
     };
     (engine, handle)
 }
@@ -684,6 +690,12 @@ impl Engine {
 
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    /// Samples processed so far: the counter [`EngineHandle::current_samples`]
+    /// mirrors, read on the thread that advances it.
+    pub fn processed_samples(&self) -> u64 {
+        self.now
     }
 
     /// The transport clock: samples elapsed under the transport.
@@ -1487,6 +1499,13 @@ impl EngineHandle {
     /// per block. Timetag→sample conversion anchors on this.
     pub fn current_samples(&self) -> u64 {
         self.sample_clock.load(Ordering::Relaxed)
+    }
+
+    /// Where the device's sample axis sits on the wall clock: the shared
+    /// estimate a device callback publishes and the network thread places
+    /// wall-clock timetags with.
+    pub fn device_epoch(&self) -> &DeviceEpoch {
+        &self.device_epoch
     }
 
     /// The transport clock as of the last completed block.
