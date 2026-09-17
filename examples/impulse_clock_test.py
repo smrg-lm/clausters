@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Long-running sample-clock check, driven by the high-level Python client.
 
-Locks a `TempoClock` to a running server's **sample clock** (`lock_to`, over
+Makes a `TempoClock` on a running server's **sample clock** (`Server.sample_timebase`, over
 UDP, modelling `/clock_query` — no shared memory) and runs a `Routine` that, once per
 second, spawns a synth of a single one-sample-impulse **SynthDef** and fires it
 sample-accurately, then frees the synth. The def is defined and loaded **once**
@@ -33,7 +33,7 @@ The end-of-run analysis is still the authoritative check.
 
 Recording and the final analysis reuse `examples/clock_recorder.py` (pw-record,
 the impulse-spacing scan); this file only swaps the low-level shared-memory
-scheduling there for the high-level client (Server + lock_to + Routine + SynthDef).
+scheduling there for the high-level client (Server + sample_timebase + Routine + SynthDef).
 """
 
 import argparse
@@ -50,7 +50,7 @@ sys.path.insert(0, _HERE)  # clock_recorder + json_client live here
 sys.path.insert(0, os.path.join(_HERE, "..", "clients", "python"))
 
 import clock_recorder as rec  # noqa: E402  (recording + final analysis, reused)
-from clausters.base import Routine, SampleClockTimebase, TempoClock  # noqa: E402
+from clausters.base import Routine, TempoClock  # noqa: E402
 from clausters.defs import Server, SynthDef, impulse, out  # noqa: E402
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
@@ -265,13 +265,14 @@ def main(argv):
         return 0 if ok else 1
 
     server = Server(args.host, args.port, latency=args.latency)
-    clock = TempoClock(tempo=1.0)            # 1 beat = 1 second
-    print(f"locking the clock to {args.host}:{args.port} ...")
-    clock.lock_to(server)
-    if not isinstance(clock.timebase, SampleClockTimebase):
+    print(f"reading the sample clock of {args.host}:{args.port} ...")
+    try:
+        timebase = server.sample_timebase()
+    except RuntimeError:
         server.close()
-        sys.exit("could not lock to the server's sample clock — is a server "
+        sys.exit("could not read the server's sample clock — is a server "
                  "running on UDP at that address? (start the installed `clausters`)")
+    clock = TempoClock(tempo=1.0, timebase=timebase)   # 1 beat = 1 second
     rate = clock.timebase.sample_rate
     period = int(round(rate))                # SR samples between impulses
     print(f"locked: sample rate {rate:.0f} Hz, one impulse every {period} samples (1 s)")

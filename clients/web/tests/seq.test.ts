@@ -17,6 +17,7 @@ import { seed } from "../src/base/rand.ts";
 import { Routine } from "../src/base/stream.ts";
 import {
     Event,
+    EventPattern,
     INF,
     Pbind,
     Pgeom,
@@ -34,6 +35,7 @@ import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
 import type { OscHandler } from "../src/base/receiver.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { Automation } from "../src/seq/automation.ts";
+import { play } from "../src/play.ts";
 import { flush } from "./flush.ts";
 
 await loadCore();
@@ -263,36 +265,35 @@ test("quantize snaps every placement to the grid", () => {
     assert.deepEqual([...timeline].map(([beat]) => beat), [0, 1, 2.5]);
 });
 
-test("a pattern bounces into a timeline at the beats it would have played", () => {
-    const timeline = Timeline.fromPattern(
-        new Pbind({ degree: new Pseq([0, 1, 2]), dur: 0.5 }),
-    );
-    assert.deepEqual([...timeline].map(([beat]) => beat), [0, 0.5, 1]);
-    assert.equal(timeline.length, 3);
-    assert.equal((timeline.get(1)![1] as Event).get("degree"), 1);
+test("a timeline refuses a value pattern", () => {
+    // A value pattern is the definition of a generator and does not play, so it
+    // is not an item; an event pattern is.
+    const timeline = new Timeline();
+    timeline.add(0, new Pbind({ freq: new Pseq([440, 550]), dur: 0.5 }));
+    assert.throws(() => timeline.add(1, new Pseq([1, 2, 3])), /does not play/);
+    assert.equal(timeline.length, 1);
 });
 
-test("bouncing an endless pattern needs a bound, and honours it", () => {
-    const timeline = Timeline.fromPattern(
-        new Pbind({ degree: new Pseq([0, 1], INF), dur: 0.25 }),
-        { dur: 1 },
-    );
-    assert.deepEqual([...timeline].map(([beat]) => beat), [0, 0.25, 0.5, 0.75, 1]);
+test("a value pattern does not play", () => {
+    // A pattern is the definition of a generator: what plays is an event
+    // pattern, and a value pattern is refused by name.
+    assert.throws(() => play(new Pwhite(0, 1)), /does not play/);
+    assert.throws(() => play(new Pseq<unknown>([new Pbind({ degree: 0 }), 1])), /does not play/);
 });
 
-test("an endless pattern with no bound is refused, not run forever", () => {
-    // The cap is the caller's (`maxEvents`), so this does not have to record a
-    // million events to prove it. It is deliberately not inside `render`'s
-    // default either: a long offline render of a real score is meant to take a
-    // long time, and a routine cannot raise this itself — a routine that throws
-    // loses its own place and nothing else.
-    assert.throws(
-        () =>
-            Timeline.fromPattern(new Pbind({ degree: new Pseq([0, 1], INF), dur: 0.25 }), {
-                maxEvents: 32,
-            }),
-        /did not end after 32 events.*\{ dur \}/s,
-    );
+test("a list pattern over events is an event pattern", () => {
+    // A list pattern resolves what it is when it is built: over event patterns
+    // only it plays; a list that mixes events and values is a value pattern.
+    const phrase = new Pbind({ freq: new Pseq([440, 550]), dur: 0.5 });
+    assert.ok(new Pseq([phrase, phrase]) instanceof EventPattern);
+    assert.ok(new Prand([phrase]) instanceof EventPattern);
+    assert.ok(new Pn(phrase, 2) instanceof EventPattern);
+    assert.ok(new Pseq([phrase, phrase]) instanceof Pseq);
+    assert.ok(!(new Pseq<unknown>([phrase, 1]) instanceof EventPattern));
+    assert.ok(!(new Pseq([1, 2]) instanceof EventPattern));
+    assert.ok(!("play" in new Pseq([1, 2])));
+    assert.ok(!(phrase instanceof Pseq), "a Pbind is not a list pattern");
+    assert.deepEqual([...new Pseq([phrase], 2)].map((e) => e.get("freq")), [440, 550, 440, 550]);
 });
 
 test("an automation's lane is freed where the curve ends, across a tempo change", async () => {

@@ -84,7 +84,7 @@ def mixer(name: str = "mixer") -> SynthDef:
 # it.
 
 # %%
-session = Session.live(tempo=1.0, workers=2).activate()
+session = Session.live(workers=2).activate()
 voice().send()
 mixer().send()
 session.server.sync()

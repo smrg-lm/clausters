@@ -18,11 +18,24 @@ by kind:
   plays it and renders the score;
 - a `clausters.seq.timeline.Timeline` -> the same dual: played on
   ``destination`` on its own clock, or the offline bounce, whose seconds are
-  the timeline's own tempo map (``tempo`` does not apply to it);
-- an event `clausters.seq.pattern.Pattern`, a `clausters.base.stream.Routine`
+  the timeline's own tempo map;
+- an `clausters.seq.pattern.EventPattern`, a `clausters.base.stream.Routine`
   / `clausters.base.stream.Stream` or a bare **generator** -> offline bounce
   only (they are forward-only; sounding them live is `clausters.play`'s job).
-  An endless source needs ``until`` (the bounce would never drain).
+  An endless source needs ``until`` (the bounce would never drain);
+- a **value pattern** (a `clausters.seq.pattern.Pattern` whose values are not
+  events) -> the values it generates, as a list. An endless one needs
+  ``count``.
+
+**An offline bounce runs in an offline session**, and the tempo is the clock's:
+``clock`` is the one it plays on, as it is for `clausters.play`. It must be a
+clock of an offline session (`clausters.Session.nrt`), on its
+`clausters.base.LogicalTimebase`, and the render is that session's; with no
+``clock`` the render makes an offline session of its own and plays on its clock,
+at tempo 1.0.
+
+The one thing a render returns that is not a `RenderStats` is a value
+pattern's list, since there is no audio in it.
 
 Every offline path returns a `RenderStats`: the frame, channel and event
 counts, per-channel peak and RMS, and the samples themselves (interleaved
@@ -43,6 +56,7 @@ from clausters.defs import sine
 
 stats = render(sine(440.0) * 0.2, dur=2.0)
 render(Pbind(degree=Pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
+render(Pseq([1, 2, 3], 2))                          # [1, 2, 3, 1, 2, 3]
 render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
 ```
 """
@@ -54,7 +68,18 @@ from .base.main import main
 from .defs.node import Group, Synth
 
 __all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
-           "render_to_file", "channels", "interleave"]
+           "render_to_file", "channels", "interleave", "MAX_BOUNCED_EVENTS"]
+
+
+#: How many events -- or values -- a render takes before it decides its
+#: source is endless, when no ``until`` (or ``count``) bounds it.
+#:
+#: A render holds what it generated in memory, so a million is already past any
+#: real piece and nowhere near a legitimate one — which is what makes the cap
+#: honest *here* and wrong inside `clausters.base.TempoClock.render`, where a
+#: long offline render of a real score is exactly the thing that runs for a very
+#: long time on purpose.
+MAX_BOUNCED_EVENTS = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -158,7 +183,7 @@ def _measure(samples, chans: int):
 
 def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            ports=None, dur: float = 1.0, controls=None, defs=(),
-           until: float | None = None, tempo: float = 1.0,
+           until: float | None = None, count: int | None = None,
            sample_rate: float = 48_000.0, channels: int = 2,
            workers: int = 0, path=None, seed: int | None = None):
     """Render ``obj`` — offline to a `RenderStats`, or onto a live
@@ -166,13 +191,16 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
 
     Args:
         obj: what to render — a binary score (``bytes``), a def or bare
-            expression, an arrangement `Element`, a `Timeline`, an event
-            `Pattern`, a `Routine`/`Stream` or a generator.
+            expression, an arrangement `Element`, a `Timeline`, an
+            `EventPattern`, a `Routine`/`Stream`, a generator, or a value
+            pattern.
         destination: a `Server` to sound on — only an `Element` or a
             `Timeline` accepts one (the delegating paths); the rest are
             offline by nature.
-        clock: the clock for a live ``destination``; ``None`` resolves the
-            ambient one.
+        clock: the clock it plays on, as for `clausters.play`. Offline it is a
+            clock of an offline session, whose render this is; ``None`` makes
+            an offline session of its own. On a live ``destination``, ``None``
+            resolves the ambient one.
         at: start beat on a live ``destination`` (see `clausters.form.render`).
         quant: start quantization on a live ``destination``.
         ports: ``{name: value}`` overrides for a logical `Group`'s surface
@@ -186,11 +214,12 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             or the instrument a bounced pattern, timeline or routine names.
             Every offline path starts from an **empty** ephemeral session, so
             whatever it names has to ride along.
-        until: stop the offline bounce at this beat — required for an endless
-            source (an infinite pattern never drains on its own).
-        tempo: the offline bounce's clock tempo, in beats per second (beats
-            of ``obj`` map to ``beat / tempo`` seconds). A timeline has a tempo
-            map of its own and ignores it.
+        until: stop the offline bounce at this beat of ``clock`` — required
+            for an endless source (an infinite pattern never drains on its
+            own; an event pattern with no bound raises after
+            `MAX_BOUNCED_EVENTS` events).
+        count: how many values a value pattern generates — required for an
+            endless one, which otherwise raises after `MAX_BOUNCED_EVENTS`.
         sample_rate: offline render rate, in Hz.
         channels: interleaved output channel count of the offline render —
             the outputs the offline server has, not a property of what is
@@ -205,7 +234,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             here replays that take exactly.
 
     Returns:
-        A `RenderStats` for every offline path. A timeline on a ``destination``
+        A `RenderStats` for every offline path but a value pattern's, which
+        is the list of its values. A timeline on a ``destination``
         returns the timeline; an `Element` on one returns what
         `clausters.form.render` returns (the timeline it flattened to, or the
         instance group of a logical `Group`).
@@ -214,7 +244,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     from .defs import Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
     from .form.element import Element
-    from .seq.pattern import Pattern
+    from .seq.pattern import EventPattern, Pattern
     from .seq.timeline import Timeline
 
     if isinstance(obj, (bytes, bytearray)):
@@ -232,18 +262,26 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
 
             return render_element(obj, destination, clock, at=at, quant=quant,
                                   ports=ports)
-        return _bounce(lambda session: _start_element(obj, session, at),
-                       until, tempo, sample_rate, channels, path, seed, defs)
+        return _bounce(lambda session, on: _start_element(obj, session, on, at),
+                       clock, until, sample_rate, channels, path, seed, defs)
 
     if isinstance(obj, Timeline):
         if destination is not None:
             return obj.play(at=at, quant=quant, destination=destination)
         return _bounce(
-            lambda session: obj.play(at=at, destination=session.server),
-            until, tempo, sample_rate, channels, path, seed, defs)
+            lambda session, on: obj.play(at=at, destination=session.server),
+            clock, until, sample_rate, channels, path, seed, defs)
+
+    if isinstance(obj, Pattern) and not isinstance(obj, EventPattern):
+        if destination is not None:
+            raise ValueError(
+                "a value pattern has nothing to sound: its render is the values "
+                "it generates"
+            )
+        return _values(obj, count)
 
     playable = obj
-    if not isinstance(playable, (Pattern, Routine, Stream)):
+    if not isinstance(playable, (EventPattern, Routine, Stream)):
         import inspect
 
         if inspect.isgenerator(playable) or inspect.isgeneratorfunction(playable):
@@ -255,7 +293,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
                 f"don't know how to render {type(obj).__name__}; expected a "
                 "score (bytes), a def or bare expression "
                 "(Ugen/ChannelList/Signal/Box), "
-                "an arrangement Element, a Timeline, an event Pattern, or a "
+                "an arrangement Element, a Timeline, a pattern, or a "
                 "Routine/Stream/generator"
             )
     if destination is not None:
@@ -263,12 +301,31 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             "a pattern or routine renders offline only (it is forward-only); "
             "to sound it live, use play()"
         )
-    if isinstance(playable, Pattern):
+    if isinstance(playable, EventPattern):
         return _bounce(
-            lambda session: playable.play(session.clock, session.server),
-            until, tempo, sample_rate, channels, path, seed, defs)
-    return _bounce(lambda session: playable.play(session.clock),
-                   until, tempo, sample_rate, channels, path, seed, defs)
+            lambda session, on: playable.play(on, session.server),
+            clock, until, sample_rate, channels, path, seed, defs,
+            guard="event pattern")
+    return _bounce(lambda session, on: playable.play(on),
+                   clock, until, sample_rate, channels, path, seed, defs)
+
+
+def _values(pattern, count):
+    """The values a value pattern generates: ``count`` of them, or all of them
+    for a finite one -- refused past `MAX_BOUNCED_EVENTS` with no ``count``."""
+    values = []
+    limit = MAX_BOUNCED_EVENTS if count is None else int(count)
+    for value in pattern:
+        if len(values) == limit:
+            if count is None:
+                raise RuntimeError(
+                    f"render: the {type(pattern).__name__} did not end after "
+                    f"{MAX_BOUNCED_EVENTS} values — pass count= to take a number "
+                    f"of them"
+                )
+            break
+        values.append(value)
+    return values
 
 
 def _check_expr_width(obj, channels):
@@ -310,7 +367,7 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
     from .defs.graphdef import GraphDef
     from .session import Session
 
-    session = Session.nrt(tempo=1.0)  # beats == seconds
+    session = Session.nrt()  # its clock at tempo 1.0: beats == seconds
     server = session.server
     for d in defs:
         d.send(server)
@@ -326,29 +383,58 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
 
 # ---- the offline bounce ----
 
-def _bounce(start, until, tempo, sample_rate, channels, path, seed, defs=()):
-    """An ephemeral NRT session: ``start(session)`` schedules the source on
-    its clock and server, the drained score renders to samples.
+def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
+            guard=None):
+    """An offline session: ``start(session, clock)`` schedules the source on
+    the clock it plays on and the session's server, and the drained score
+    renders to samples.
 
-    ``defs`` are sent into that session first. The session starts **empty** —
-    it is not the one the caller has been working in — so a pattern naming an
-    instrument of its own has to bring it along, exactly as a def bounce does.
+    The session is ``clock``'s, which has to be an offline one; with no
+    ``clock`` it is a new one, which starts **empty** — it is not the one the
+    caller has been working in — so a pattern naming an instrument of its own
+    has to bring it along in ``defs``, exactly as a def bounce does.
+
+    ``guard`` names what an unbounded render is refused for after
+    `MAX_BOUNCED_EVENTS` events.
     """
+    from .base.timebase import LogicalTimebase
     from .session import Session
 
-    session = Session.nrt(tempo=tempo)
+    if clock is None:
+        session = Session.nrt()
+        clock = session.clock
+    else:
+        session = clock.session
+        if not isinstance(clock.timebase, LogicalTimebase) or session is None:
+            raise ValueError(
+                f"render plays on a clock of an offline session, and this clock "
+                f"is on a {type(clock.timebase).__name__}"
+                f"{'' if session is not None else ' in no session'}: a clock's "
+                f"timebase is fixed when it is made. Pass a clock made in "
+                f"Session.nrt(), or none for a session of the render's own"
+            )
     for d in defs:
         d.send(session.server)
+    steps = MAX_BOUNCED_EVENTS if guard is not None and until is None else None
     with session._active():
-        start(session)
-    return session.render(sample_rate=sample_rate, channels=channels,
-                          until=until, path=path, seed=seed)
+        start(session, clock)
+        try:
+            clock.render(until, max_steps=steps)
+        except RuntimeError as exc:
+            if steps is None:
+                raise
+            raise RuntimeError(
+                f"render: the {guard} did not end after {MAX_BOUNCED_EVENTS} "
+                f"events — pass until= to bound it"
+            ) from exc
+    return session.server.render(sample_rate=sample_rate, channels=channels,
+                                 path=path, seed=seed)
 
 
-def _start_element(element, session, at):
+def _start_element(element, session, clock, at):
     from .form import render as render_element
 
-    render_element(element, session.server, session.clock, at=at)
+    render_element(element, session.server, clock, at=at)
 
 
 def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,

@@ -1,9 +1,10 @@
 // The sequencing layer (mirrors `clausters/seq/__init__.py`).
 //
 // - `event` — `Event` (a note plays a synth and schedules its release).
-// - `pattern` — `Pattern` and the value patterns (`Pseq`, `Pser`, `Prand`,
-//   `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) plus `Pbind` (an
-//   event pattern).
+// - `pattern` — `Pattern` (the definition of a generator) and the value
+//   patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`,
+//   `Pn`, `Pconst`), plus `EventPattern`, what plays: `Pbind`, and a
+//   `Pseq`/`Prand`/`Pn` over event patterns only.
 // - `eventstream` — `EventStreamPlayer`.
 // - `automation` — `Automation` (a break-point control curve rendered as a
 //   control vector) and the lane def it plays through.
@@ -23,6 +24,7 @@ export { DEFAULTS, Event, NOTATION_KEYS, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
 export { EventStreamPlayer } from "./eventstream.ts";
 export {
+    EventPattern,
     INF,
     Pattern,
     Pbind,

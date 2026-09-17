@@ -68,7 +68,8 @@ this brings up only the GUI host.</div>
         $("run").disabled = true;
 
         // ---- the take, rendered offline ----
-        const nrt = await Session.nrt({ tempo: 2.0 });
+        const nrt = await Session.nrt();
+        nrt.clock.setTempo(2.0);
         nrt.play(phrase());
         const take = await nrt.render({ sampleRate: SR, channels: 2 });
         log(`rendered ${take.frames} frames (${(take.frames / SR).toFixed(2)} s) `

@@ -62,7 +62,7 @@ import sys
 import time
 import wave
 
-from clausters import Session as Server
+import clausters
 from clausters.multitrack import (Multitrack, Content, Lane, Region, Session,
                                    Source, Span, Tempo, Track, View)
 from clausters.document import MULTITRACK, domain_edit
@@ -242,8 +242,9 @@ print(f"  dangling:   {session.dangling()}  (named by the piece, absent from "
 # it twice would give them two that drift apart on the first edit.
 
 # %%
-def reopen(server=None) -> tuple:
-    """Reads the session back and resolves its table onto `server`.
+def reopen(live=None) -> tuple:
+    """Reads the session back and resolves its table onto the server of
+    `live`, a running `clausters.Session`.
 
     Returns the piece and the buffers by source id. A source the table cannot
     locate is simply absent from the second: half a session is worth opening,
@@ -251,19 +252,21 @@ def reopen(server=None) -> tuple:
     whole file failing.
     """
     reopened = Session.open(path)
-    if server is None:
+    if live is None:
         return reopened, {}
     #: The table is loaded by the shared crate, the same load the GUI host runs
     #: on `--session`: relative paths against the folder the session was opened
     #: from, and a volatile source left out with a warning.
-    return reopened, reopened.load(server.server)
+    return reopened, reopened.load(live.server)
 
 
 def run() -> None:
     """Reopen the session, report it, and play what its first region names."""
-    with Server.live(tempo=2.0).activate() as session_server:
-        reopened, buffers = reopen(session_server)
-        session_server.server.sync()
+    # `clausters.Session` is the running server and its clock; the `Session`
+    # imported above is the file.
+    with clausters.Session.live().activate() as live:
+        reopened, buffers = reopen(live)
+        live.server.sync()
         print(f"reopened {os.path.basename(path)}: "
               f"{len(reopened.multitrack.tracks)} tracks, "
               f"{len(buffers)} source(s) read, "
@@ -293,7 +296,7 @@ def run() -> None:
             print("  the take's file was not found, so nothing plays")
             return
         print(f"  playing source {named} from {buffer}")
-        play(buffer, server=session_server.server)
+        play(buffer, server=live.server)
         time.sleep(take_seconds + 0.5)
 
 

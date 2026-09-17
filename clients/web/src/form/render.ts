@@ -6,9 +6,8 @@
 // `seq.Timeline` of items that each know how to `play(destination)`. That
 // timeline then plays itself — RT (timetagged bundles) or NRT (a score for an
 // offline render) purely by which destination it holds and how its clock is
-// driven, sample-identical, with no scheduling path of its own. This mirrors
-// `Timeline.fromPattern`: the arrangement reuses the sequencing layer rather
-// than duplicating it.
+// driven, sample-identical, with no scheduling path of its own: the arrangement
+// reuses the sequencing layer rather than duplicating it.
 //
 // Scope of the concrete path:
 //
@@ -45,6 +44,7 @@ import type { Controls } from "../defs/node.ts";
 import type { Server } from "../defs/server/index.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
 import { Pattern } from "../seq/pattern.ts";
+import { MAX_BOUNCED_EVENTS } from "../render.ts";
 import { Timeline } from "../seq/timeline.ts";
 import type { PlayDestination } from "../seq/timeline.ts";
 import type { TempoClock } from "../base/clock.ts";
@@ -464,7 +464,7 @@ function emitSequence(
         return;
     }
     if (wrapped instanceof Pattern) {
-        for (const [beat, item] of Timeline.fromPattern(wrapped)) {
+        for (const [beat, item] of eventsOf(wrapped)) {
             heard(out, base + beat, item, mix);
         }
     } else if (wrapped instanceof Timeline) {
@@ -510,3 +510,30 @@ function emitSequence(
 // through the registry rather than through an import back into `element.ts` —
 // see `registerRendering` there for why the dependency stays one-way.
 registerRendering({ toTimeline, render });
+
+/**
+ * `[beat, event]` for each event an event pattern yields, each at the sum of
+ * the deltas before it, with the keys a played event completes (`midinote`,
+ * `freq`, `delta`, `sustain`) written in. Refused past `MAX_BOUNCED_EVENTS`,
+ * since an endless pattern never ends its lane.
+ */
+function* eventsOf(pattern: Pattern<unknown>): IterableIterator<[number, SeqEvent]> {
+    let beat = 0;
+    let count = 0;
+    for (const value of pattern) {
+        if (count === MAX_BOUNCED_EVENTS) {
+            throw new Error(
+                `the pattern did not end after ${MAX_BOUNCED_EVENTS} events; an element over `
+                + "an endless pattern states its duration",
+            );
+        }
+        count += 1;
+        const event = value instanceof SeqEvent
+            ? value
+            : new SeqEvent(value as Record<string, unknown>);
+        const delta = event.delta();
+        event.set({ midinote: event.midinote(), freq: event.freq(), delta, sustain: event.sustain() });
+        yield [beat, event];
+        beat += delta;
+    }
+}

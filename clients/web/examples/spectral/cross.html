@@ -104,7 +104,8 @@ between the stages; the spectral frames are synth-private scratch.</div>
       async function render() {
         $("render").disabled = true;
 
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await cross().send();
 
         function* sequence() {

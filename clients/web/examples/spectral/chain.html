@@ -111,7 +111,7 @@ and nothing to unlock until you ask to hear it.</div>
       let take = null;
 
       async function renderScore() {
-        const session = (await Session.nrt({ tempo: 1.0 })).activate();
+        const session = (await Session.nrt()).activate();
         await noisy().send();
         await spectralLowpass().send();
 

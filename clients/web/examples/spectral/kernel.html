@@ -121,7 +121,7 @@ between bins, reading another chain — stays with the dedicated
       async function render() {
         $("render").disabled = true;
 
-        const session = (await Session.nrt({ tempo: 1.0 })).activate();
+        const session = (await Session.nrt()).activate();
         await raw().send();
         await tiltedGate().send();
         const reference = new Synth("raw");

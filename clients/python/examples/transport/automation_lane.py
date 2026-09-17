@@ -56,7 +56,7 @@ def tone(name: str = "tone") -> SynthDef:
 
 
 # %% Build the offline session and register the instrument.
-session = Session.nrt(tempo=1.0)
+session = Session.nrt()
 server = session.server
 tone().send(server)
 

@@ -1,10 +1,12 @@
 // Patterns (mirrors `clausters/seq/pattern.py`).
 //
-// A `Pattern` is a reusable, lazy description of a value sequence; iterating
-// it yields the values (a fresh walk each time). Value patterns (`Pseq`,
-// `Pwhite`, …) feed `Pbind`, which combines per-key value patterns into a
-// stream of `Event`s. An event pattern is played on a clock with
-// `Pattern.play` (see `EventStreamPlayer`).
+// A `Pattern` is a reusable, lazy description of a value sequence — the
+// definition of a generator: iterating it yields the values (a fresh walk each
+// time), and it does not play. Value patterns (`Pseq`, `Pwhite`, …) feed
+// `Pbind`, which combines per-key value patterns into a stream of `Event`s. An
+// `EventPattern` — `Pbind`, and a list pattern whose every element is an event
+// pattern — is what plays, on a clock, with `EventPattern.play` (see
+// `EventStreamPlayer`).
 //
 // Patterns are plain generators underneath, so nesting and composition are
 // natural; a sub-pattern used as a value is embedded (iterated) in place.
@@ -31,7 +33,11 @@ function* embed<T>(value: T | Pattern<T>): Generator<T, void, undefined> {
 export const asPattern = <T>(value: T | Pattern<T>): Pattern<T> =>
     value instanceof Pattern ? value : new Pconst(value);
 
-/** The base: anything that can be walked for values. */
+/**
+ * The definition of a generator: walking it yields its values. It has no
+ * `play` — what plays is an {@link EventPattern}. `render` of a value pattern
+ * generates its values.
+ */
 export abstract class Pattern<T = unknown> {
     abstract [Symbol.iterator](): Generator<T, void, undefined>;
 
@@ -44,9 +50,38 @@ export abstract class Pattern<T = unknown> {
             return step.value;
         });
     }
+}
+
+/** What an event pattern carries, so a list pattern built over events is one. */
+const EVENTS = Symbol("clausters.eventPattern");
+
+/** Plays `pattern`'s events on `clock`, sending to `destination`. */
+function playEvents(
+    pattern: Pattern<unknown>,
+    destination: EventDestination | undefined,
+    { clock, quant }: { clock?: TempoClock; quant?: number },
+): EventStreamPlayer {
+    const target = destination ?? (main.resolveServer() as unknown as EventDestination);
+    return new EventStreamPlayer(pattern, target).play(clock, quant);
+}
+
+/**
+ * A pattern whose values are events, and so a pattern that plays.
+ *
+ * `Pbind` is one, and so is a list pattern (`Pseq`, `Prand`, `Pn`) whose every
+ * element is one: it resolves what it is when it is built, and
+ * `instanceof EventPattern` answers for both.
+ */
+export abstract class EventPattern<T = Event> extends Pattern<T> {
+    readonly [EVENTS] = true;
+
+    static override [Symbol.hasInstance](value: unknown): boolean {
+        if (this !== EventPattern) return Function.prototype[Symbol.hasInstance].call(this, value);
+        return value instanceof Pattern && (value as { [EVENTS]?: boolean })[EVENTS] === true;
+    }
 
     /**
-     * Plays this (event) pattern on `clock`, sending to `destination`.
+     * Plays this event pattern on `clock`, sending to `destination`.
      *
      * Both are optional and resolve against the ambient context (the running
      * session, else the active one, else the default session): an omitted
@@ -57,15 +92,15 @@ export abstract class Pattern<T = unknown> {
      */
     play(
         destination?: EventDestination,
-        { clock, quant }: { clock?: TempoClock; quant?: number } = {},
+        options: { clock?: TempoClock; quant?: number } = {},
     ): EventStreamPlayer {
-        const target = destination ?? (main.resolveServer() as unknown as EventDestination);
-        return new EventStreamPlayer(this as Pattern<unknown>, target).play(
-            clock,
-            quant,
-        );
+        return playEvents(this as Pattern<unknown>, destination, options);
     }
 }
+
+/** Whether every element of a list pattern is an event pattern. */
+const allEvents = (items: readonly unknown[]): boolean =>
+    items.length > 0 && items.every((item) => item instanceof EventPattern);
 
 // ---- value patterns ----
 
@@ -85,7 +120,10 @@ export class Pconst<T> extends Pattern<T> {
     }
 }
 
-/** The items in order, `repeats` times (sub-patterns are embedded). */
+/**
+ * The items in order, `repeats` times (sub-patterns are embedded). Over event
+ * patterns only, it is an {@link EventPattern}.
+ */
 export class Pseq<T> extends Pattern<T> {
     readonly items: readonly (T | Pattern<T>)[];
     readonly repeats: number;
@@ -94,6 +132,9 @@ export class Pseq<T> extends Pattern<T> {
         super();
         this.items = [...items];
         this.repeats = repeats;
+        if (new.target === Pseq && allEvents(this.items)) {
+            return new EventPseq(this.items, repeats);
+        }
     }
 
     *[Symbol.iterator](): Generator<T, void, undefined> {
@@ -124,7 +165,7 @@ export class Pser<T> extends Pattern<T> {
  * running routine's stream, or the root outside one — see `base/rand.ts`):
  * `seed(n)` reproduces the choices along with everything else in the script.
  * There is no per-pattern seed — independent seeds would break whole-script
- * consistency.
+ * consistency. Over event patterns only, it is an {@link EventPattern}.
  */
 export class Prand<T> extends Pattern<T> {
     readonly items: readonly (T | Pattern<T>)[];
@@ -134,6 +175,9 @@ export class Prand<T> extends Pattern<T> {
         super();
         this.items = [...items];
         this.length = length;
+        if (new.target === Prand && allEvents(this.items)) {
+            return new EventPrand(this.items, length);
+        }
     }
 
     *[Symbol.iterator](): Generator<T, void, undefined> {
@@ -222,7 +266,7 @@ export class Pfunc<T> extends Pattern<T> {
     }
 }
 
-/** Repeats `pattern` `n` times. */
+/** Repeats `pattern` `n` times. Over an event pattern, it is an {@link EventPattern}. */
 export class Pn<T> extends Pattern<T> {
     readonly pattern: T | Pattern<T>;
     readonly n: number;
@@ -231,6 +275,9 @@ export class Pn<T> extends Pattern<T> {
         super();
         this.pattern = pattern;
         this.n = n;
+        if (new.target === Pn && pattern instanceof EventPattern) {
+            return new EventPn(pattern, n);
+        }
     }
 
     *[Symbol.iterator](): Generator<T, void, undefined> {
@@ -251,7 +298,7 @@ export type Bindings = Record<string, unknown>;
  * key's walk stops. Constants are held; sub-patterns advance one value per
  * event.
  */
-export class Pbind extends Pattern<Event> {
+export class Pbind extends EventPattern<Event> {
     readonly patterns: Bindings;
 
     constructor(patterns: Bindings) {
@@ -273,5 +320,34 @@ export class Pbind extends Pattern<Event> {
             }
             yield new Event(props);
         }
+    }
+}
+
+// ---- list patterns over events ----
+//
+// What a list pattern is made as when every element is an event pattern: the
+// same pattern, and playable. `new Pseq([new Pbind(…), new Pbind(…)])` is one.
+
+class EventPseq<T> extends Pseq<T> {
+    readonly [EVENTS] = true;
+
+    play(destination?: EventDestination, options: { clock?: TempoClock; quant?: number } = {}): EventStreamPlayer {
+        return playEvents(this as Pattern<unknown>, destination, options);
+    }
+}
+
+class EventPrand<T> extends Prand<T> {
+    readonly [EVENTS] = true;
+
+    play(destination?: EventDestination, options: { clock?: TempoClock; quant?: number } = {}): EventStreamPlayer {
+        return playEvents(this as Pattern<unknown>, destination, options);
+    }
+}
+
+class EventPn<T> extends Pn<T> {
+    readonly [EVENTS] = true;
+
+    play(destination?: EventDestination, options: { clock?: TempoClock; quant?: number } = {}): EventStreamPlayer {
+        return playEvents(this as Pattern<unknown>, destination, options);
     }
 }

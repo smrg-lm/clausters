@@ -57,7 +57,8 @@ QUANT = 4.0  # beats per bar
 # at ``TEMPO`` and the same value is handed to the views below.
 
 # %%
-nrt = Session.nrt(tempo=TEMPO)
+nrt = Session.nrt()
+nrt.clock.set_tempo(TEMPO)
 nrt.play(Pbind(degree=Pseq([0, 2, 4, 7], repeats=8), dur=0.5,
                amp=Pwhite(0.3, 0.7)))
 take = nrt.render(sample_rate=SR, channels=2)

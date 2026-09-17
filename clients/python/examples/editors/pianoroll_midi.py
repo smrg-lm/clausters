@@ -49,7 +49,8 @@ BPM = 120.0
 SR = 48_000.0
 SAMPLES_PER_BEAT = SR * 60.0 / BPM      # the timeline sample units the widget uses
 
-session = Session.live(tempo=BPM / 60.0)
+session = Session.live()
+session.clock.set_tempo(BPM / 60.0)
 gui = session.gui()
 
 

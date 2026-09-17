@@ -47,7 +47,8 @@ SR = 48_000.0
 # One NRT render, one raw f32 file — both lanes map the same bytes.
 
 # %%
-nrt = Session.nrt(tempo=2.0)
+nrt = Session.nrt()
+nrt.clock.set_tempo(2.0)
 nrt.play(Pbind(degree=Pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
                amp=Pwhite(0.1, 0.25)))
 take = nrt.render(sample_rate=SR, channels=2)

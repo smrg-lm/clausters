@@ -78,7 +78,7 @@ export type { PatchViewOptions } from "./plot.ts";
 export type { Plottable, PlotOptions } from "./plot.ts";
 export { scope, ScopeWindow } from "./scope.ts";
 export type { ScopeOptions, ScopeView } from "./scope.ts";
-export { bounceDef, channel, render, renderScore, wavBytes } from "./render.ts";
+export { MAX_BOUNCED_EVENTS, bounceDef, channel, render, renderScore, wavBytes } from "./render.ts";
 export type {
     RenderOptions,
     RenderStats,

@@ -134,7 +134,8 @@ not an <code>OUT</code>.</div>
 
       async function run() {
         $("run").disabled = true;
-        session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
+        session = await Session.embed({ latency: 0.1 });
+        session.clock.setTempo(TEMPO);
         server = session.server;
 
         const built = { osc: osc(), filt: filt(), trem: trem(), dac: dac() };

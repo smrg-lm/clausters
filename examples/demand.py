@@ -39,7 +39,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters.render import read_soundfile
 from clausters.defs import Server, SynthDef
 from clausters.defs.ugens import (
@@ -218,7 +218,7 @@ def run_bench(path=None):
     rows = bench_rows()
     for sdef, _ in rows:
         sdef.send(server)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument=Pseq([s.name for s, _ in rows]), dur=BENCH).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=1, path=path)
@@ -289,7 +289,7 @@ def drift_check():
         out(0.0, duty(dur, level=dseq([1.0, 2.0], repeats=0))),
         line(0.0, 1.0, 1.0, DoneAction.FREE_SELF),
     ).send(server)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument=Pseq(["drift"]), dur=1.2).play(clock, server)
     clock.render()
     samples = server.render(sample_rate=SR, channels=1).samples
@@ -315,7 +315,7 @@ def render_piece(path=None):
     parts = [melody(), phrase(), stutter(), shuffle(), walk(), perc()]
     for sdef in parts:
         sdef.send(server)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument=Pseq([s.name for s in parts]), dur=SECTION).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)

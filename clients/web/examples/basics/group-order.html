@@ -96,7 +96,7 @@ lands; the tree below is the server's answer printed back.</div>
       }
 
       async function run(seconds = 4.0) {
-        const session = (await Session.embed({ tempo: 1.0 })).activate();
+        const session = (await Session.embed()).activate();
         await voice().send();
         await mixer().send();
         await session.server.sync();

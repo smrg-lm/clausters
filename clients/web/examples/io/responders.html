@@ -75,7 +75,7 @@ Everything below runs on the <b>in-page engine</b>: no server process.
         // gate-releases after each note's dur, ramping out). Notifications are
         // registered so the server's `/transport_query.reply` pushes land here
         // and reach the responder.
-        const session = await Session.embed({ tempo: 1.0, latency: 0.1 });
+        const session = await Session.embed({ latency: 0.1 });
         const server = session.server;
         session.start();
 

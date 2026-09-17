@@ -29,7 +29,6 @@ import math
 
 from .. import _native
 from ..base.main import main
-from ..base.moment import Moment
 from ..base.stream import Routine, StopStream
 
 
@@ -112,17 +111,6 @@ def item_from_data(data):
     return Event(data)
 
 
-#: How many events a bounce records before it decides the pattern is endless
-#: (`Timeline.from_pattern`'s ``max_events`` default).
-#:
-#: A bounce holds every event in memory, so a million is already past any real
-#: piece and nowhere near a legitimate one — which is what makes the cap honest
-#: *here* and wrong inside `clausters.base.TempoClock.render`, where a long
-#: offline render of a real score is exactly the thing that runs for a very
-#: long time on purpose.
-MAX_BOUNCED_EVENTS = 1_000_000
-
-
 class Timeline:
     """A plan in logical time: ``(beat, item)`` kept sorted by beat, with random
     access by time, its own tempo map, and the verbs that play it.
@@ -142,7 +130,7 @@ class Timeline:
     *is* a timeline beat.
 
     **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
-    `Automation`, a pattern, a `Routine` -- and **another timeline**, which its
+    `Automation`, an event pattern, a `Routine` -- and **another timeline**, which its
     parent plays when it reaches it. Each timeline keeps its own units: a
     child's beats go to seconds through its own map, so siblings at different
     tempi start together by construction. One tree plays on one engine, the
@@ -194,7 +182,16 @@ class Timeline:
 
         A timeline as ``item`` becomes this one's child: refused if it already
         has a parent (its `copy` has none) or if it is this timeline or one of
-        its ancestors."""
+        its ancestors. A value pattern is refused: it is the definition of a
+        generator and does not play -- an `EventPattern` does."""
+        from .pattern import EventPattern, Pattern
+
+        if isinstance(item, Pattern) and not isinstance(item, EventPattern):
+            raise TypeError(
+                f"a {type(item).__name__} of values does not play, so it is not a "
+                f"timeline item: a pattern plays when its values are events (a "
+                f"Pbind, or a list pattern of event patterns only)"
+            )
         if isinstance(item, Timeline):
             self._check_child(item)
             item.parent = self
@@ -480,42 +477,6 @@ class Timeline:
             self._player = (_Player(self) if self._transport is None
                             else _TransportPlayer(self))
         return self._player
-
-    # ---- capture a pattern into a timeline ----
-
-    @classmethod
-    def from_pattern(
-        cls,
-        pattern,
-        dur=None,
-        tempo: float = 1.0,
-        max_events: int = MAX_BOUNCED_EVENTS,
-    ) -> "Timeline":
-        """Bounce an event pattern (a `Pbind`) into a static timeline by running
-        it offline and recording each event at its logical beat. ``dur`` bounds
-        an open-ended pattern (beats); ``None`` drains a finite one fully.
-        ``tempo`` is the tempo the pattern is run at, and the timeline's.
-
-        Without a ``dur``, an endless pattern is **caught rather than run
-        forever**: the bounce raises once it has recorded ``max_events``
-        (`MAX_BOUNCED_EVENTS` by default). That guard is this call's and not the
-        clock's — a long offline `clausters.base.TempoClock.render` of a real
-        score is meant to run for a long time, where a bounce with no bound is a
-        mistake."""
-        from ..base.clock import TempoClock
-
-        timeline = cls(tempo=tempo)
-        recorder = _Recorder(timeline)
-        clock = TempoClock(tempo)
-        pattern.play(clock, recorder)
-        try:
-            clock.render(until_beat=dur, max_steps=None if dur is not None else max_events)
-        except RuntimeError as e:
-            raise RuntimeError(
-                f"Timeline.from_pattern: the pattern did not end after "
-                f"{max_events} events — pass dur= to bound an endless one"
-            ) from e
-        return timeline
 
 
 class _ClockView:
@@ -1009,14 +970,28 @@ class _Player:
         return self.timeline._map.beats_at(secs)
 
     def _clock_for(self):
-        if self.clock is None:
-            from ..base.clock import TempoClock
+        """The hidden clock, which belongs to the session the timeline sounds
+        in: made there, on that session's timebase, the first time it plays in
+        it -- and made again, at the position it stopped at, when it plays in
+        another. A timeline sounding in one session is refused in another."""
+        from ..base.clock import TempoClock
 
-            ambient = main.resolve_clock()
-            timebase = getattr(ambient, "timebase", None)
-            self.clock = TempoClock(tempo_map=self.timeline._map, timebase=timebase)
-            if timebase is not None and ambient is not None and ambient.session is not None:
-                ambient.session.adopt(self.clock)
+        session = main._ambient_session()
+        if self.clock is not None and self.clock.session is not session:
+            if self.running:
+                raise RuntimeError(
+                    "this timeline is sounding in another session; stop it there "
+                    "before playing it in this one"
+                )
+            held = self.position()
+            self.clock.stop()
+            if self.clock.session is not None and self.clock is not self.clock.session.clock:
+                self.clock.session.release(self.clock)
+            self.clock = None
+            self._held = held
+        if self.clock is None:
+            self.clock = TempoClock(tempo_map=self.timeline._map)
+            self.clock.locate(self._held)
         return self.clock
 
     def position(self):
@@ -1107,14 +1082,14 @@ class _Player:
             me.clock, me._logical_beat = saved
 
     def _render_on(self, view, item, destination):
-        from .pattern import Pattern
+        from .pattern import EventPattern
 
         if isinstance(item, Routine):
             # Fresh on every pass: the item may still be sounding from the last
             # one, or on another clock.
             view.play(Routine(item.func))
             return
-        if isinstance(item, Pattern):
+        if isinstance(item, EventPattern):
             item.play(view, destination or main.resolve_server())
             return
         item.play(destination if destination is not None else main.resolve_server())
@@ -1158,19 +1133,3 @@ def _within(node, ancestor):
     if node is ancestor:
         return True
     return any(_within(node, child) for child in ancestor.children)
-
-
-class _Recorder:
-    """A capture destination: `play_event` appends the event to a timeline at the
-    running routine's logical beat instead of sending it (used by
-    `Timeline.from_pattern`)."""
-
-    def __init__(self, timeline: Timeline):
-        self.timeline = timeline
-
-    def play_event(self, event):
-        from .event import Event
-
-        beat = Moment.current().beat
-        self.timeline.add(beat, Event(event))
-        return None

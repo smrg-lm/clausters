@@ -76,7 +76,8 @@ PORT = 57123
 listener = stand_in_for_another_app(PORT)
 print(f"standing in for an external app on UDP {listener.port}")
 
-session = Session.live(tempo=TEMPO, latency=0.1).activate()
+session = Session.live(latency=0.1).activate()
+session.clock.set_tempo(TEMPO)
 lights = session.destination("127.0.0.1", listener.port)
 lights.send_msg("/lamps/reset")
 

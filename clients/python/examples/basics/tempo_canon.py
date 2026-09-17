@@ -26,14 +26,14 @@ width in beats a request in seconds implies is solved in closed form
 was asked for.
 
 **Ten clocks, one server.** A `Session` owns a server and as many clocks as the
-piece has tempos, so this file makes ten. Each is `lock_to` the server, which
-puts its scheduling on the server's own sample counter — ten clocks drifting
+piece has tempos, so this file makes ten. Each is made while the session is
+active, so it is made on **the session's timebase** — for a live session, the
+server's own sample counter — and kept in the session: ten clocks drifting
 apart on ten OS timers would be a different and much less interesting piece.
 
-Each also **adopts the session**, because it is built while the session is
-ambient: they are in ``session.clocks``, ``session.start()`` starts them
-together, and ``session.close()`` closes them. That adoption is not bookkeeping
-— it is what an ambient `play` follows. ``Session.activate`` makes a session
+Being kept there is not bookkeeping either: they are in ``session.clocks``,
+``session.start()`` starts them together, ``session.close()`` closes them, and
+it is what an ambient `play` follows. ``Session.activate`` makes a session
 ambient *on the calling thread*, and a routine does not run on that thread; it
 runs on its own clock's. So inside a routine the only thing left to follow is
 the clock's own `session`.
@@ -100,11 +100,11 @@ for start, target in zip(STARTS, TARGETS):
 # ## The session
 # `Session.live` boots a server if none answers and stops the one it started.
 # Activating it makes it ambient, so a note played from inside a routine finds
-# this server without being handed it — and so every clock built below adopts
-# this session.
+# this server without being handed it — and so every clock built below is made
+# on its timebase and kept in it.
 
 # %%
-session = Session.live(tempo=1.0).activate()
+session = Session.live().activate()
 server = session.server
 
 
@@ -129,16 +129,15 @@ def line(pitch: float):
 
 # %% [markdown]
 # ## The ten clocks
-# Built here, in the open: a clock, its ramp, its routine. Each one adopts the
-# ambient session as it is constructed, so by the end of this cell
+# Built here, in the open: a clock, its ramp, its routine. Each one is made on
+# the ambient session's timebase and kept in it, so by the end of this cell
 # `session.clocks` holds all eleven — the session's own default clock, which
 # this piece does not use, and these ten.
 
 # %%
 clocks = []
 for start, target, pitch in zip(STARTS, TARGETS, PITCHES):
-    clock = TempoClock(tempo=start)
-    clock.lock_to(server)                  # schedule on the server's samples
+    clock = TempoClock(tempo=start)        # on the session's sample clock
     clock.set_tempo(target, over=SPREAD, unit="seconds")
     Routine(partial(line, pitch)).play(clock)   # a hand-made clock is named
     clocks.append(clock)

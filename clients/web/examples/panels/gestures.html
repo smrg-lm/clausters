@@ -85,7 +85,8 @@ right one is switched live by the menu under it.</div>
         $("run").disabled = true;
 
         // ---- the take, bounced offline ----
-        const nrt = await Session.nrt({ tempo: TEMPO });
+        const nrt = await Session.nrt();
+        nrt.clock.setTempo(TEMPO);
         nrt.play(new seq.Pbind({
           degree: new seq.Pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
           dur: 0.25,

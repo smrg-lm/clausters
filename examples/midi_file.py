@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import MidiServer, TempoClock
+from clausters.base import LogicalTimebase, MidiServer, TempoClock
 from clausters.seq import Pbind, Pseq, Pwhite
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
@@ -51,7 +51,7 @@ def main() -> None:
         OUT, "midi_file.midiclip" if clip else "midi_file.mid")
 
     midi = MidiServer(channel=0, ppq=480)
-    clock = TempoClock(tempo=2.0)  # 2 beats/second; tempo only scales the clock
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())  # 2 beats/second; tempo only scales the clock
     phrase().play(clock, midi)
     clock.render()  # NRT: drive the routine to the end, no sleeping
 

@@ -88,7 +88,8 @@ def soft_voice(name: str = "soft_voice") -> FaustDef:
 # The fragment sliders are ordinary controls: ``/node_set`` by label.
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 soft_voice().send()   # NRT: scored at time 0
 voice = Synth("soft_voice", {"freq": 220.0, "amp": 0.25})
 

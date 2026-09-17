@@ -5,9 +5,8 @@ accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
 timeline then plays itself — RT (timetagged bundles) or NRT (a score for
 `Session.render`) purely by which destination it holds and how its clock is
-driven, sample-identical, with no scheduling path of its own. This mirrors
-`Timeline.from_pattern`: the arrangement reuses the sequencing layer rather than
-duplicating it.
+driven, sample-identical, with no scheduling path of its own: the arrangement
+reuses the sequencing layer rather than duplicating it.
 
 **The two units meet here.** An onset is in beats and a length is in the unit
 of its own data — a take's is seconds, a phrase of events' is beats — and a
@@ -370,7 +369,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
         # because one lane in it was written by a script that is not running.
         return
     if isinstance(wrapped, Pattern):
-        for beat, item in Timeline.from_pattern(wrapped):
+        for beat, item in _events_of(wrapped):
             _heard(out, base + beat, item, mix)
     elif isinstance(wrapped, Timeline):
         for beat, item in wrapped:
@@ -409,3 +408,27 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
             cursor = (end_beat(cursor, item.duration, item.duration_unit, tempo_map)
                       if item.duration is not None
                       else cursor + _reaches(item, tempo_map))
+
+
+def _events_of(pattern):
+    """``(beat, event)`` for each event an event pattern yields, each at the sum
+    of the deltas before it, with the keys a played event completes
+    (``midinote``, ``freq``, ``delta``, ``sustain``) written in. Refused past
+    `clausters.render.MAX_BOUNCED_EVENTS`, since an endless pattern never ends
+    its lane."""
+    from ..render import MAX_BOUNCED_EVENTS
+    from ..seq.event import Event
+
+    beat = 0.0
+    for count, value in enumerate(pattern):
+        if count == MAX_BOUNCED_EVENTS:
+            raise RuntimeError(
+                f"the pattern did not end after {MAX_BOUNCED_EVENTS} events; an "
+                f"element over an endless pattern states its duration"
+            )
+        event = Event(value)
+        delta = event.delta()
+        event.update(midinote=event.midinote(), freq=event.freq(), delta=delta,
+                     sustain=event.sustain())
+        yield beat, event
+        beat += delta

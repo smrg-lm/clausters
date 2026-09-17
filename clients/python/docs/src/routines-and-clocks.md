@@ -142,7 +142,8 @@ same values in every Clausters client language.
 from clausters import Session, uniform
 from clausters.seq import Pbind, Pwhite
 
-with Session.nrt(tempo=2.0) as session:
+with Session.nrt() as session:
+    session.clock.set_tempo(2.0)
     session.seed(2026)               # this session is now reproducible
     base = uniform(-3.0, 3.0)        # a one-off draw from the session's root
     session.play(Pbind(freq=Pwhite(400.0, 800.0), dur=0.25))   # draws when played
@@ -151,9 +152,9 @@ with Session.nrt(tempo=2.0) as session:
 
 ## Offline, with the same code
 
-Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, drive the clock with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
+Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, make the clock on a `LogicalTimebase` (every clock of `Session.nrt()` is), drive it with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
 
-**Offline, the system clock is logical, and the script runs as it does live.** A `LogicalTimebase` stands in for physical time: seconds that advance only when whatever is due next is woken. Every clock of an offline session shares it and has its origin on it, as a live clock has its origin on the monotonic clock. So what a script sets up before rendering happens at second 0, a clock a routine starts at second 4 starts at second 4, and a render wakes what is due across **all** the started clocks in order of seconds. A clock that is never started does not play, offline as live; the one being rendered is started by rendering it. `locate` and a timeline's loop are the same operation on that time, so beats may repeat while the score's seconds go on.
+**Offline, the system clock is logical, and the script runs as it does live.** A `LogicalTimebase` stands in for physical time: seconds that advance only when whatever is due next is woken. Every clock of an offline session shares it and has its origin on it, as a live clock has its origin on the monotonic clock. So what a script sets up before rendering happens at second 0, a clock a routine starts at second 4 starts at second 4, and a render wakes what is due across **all** the started clocks in order of seconds. A clock that is never started does not play, offline as live; the one being rendered is started by rendering it. And a clock never changes mode: rendering one made on another timebase raises, since its queue is measured against the time it was made on. `locate` and a timeline's loop are the same operation on that time, so beats may repeat while the score's seconds go on.
 
 Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so `Synth(…)`, `node.set(…)`, `node.free()` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a piece is built on.
 

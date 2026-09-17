@@ -53,7 +53,8 @@ def melody() -> Pbind:
 
 def render_offline(path: str | None):
     """Play the phrase into an NRT session and render it to samples."""
-    session = Session.nrt(tempo=2.0)        # 2 beats/sec
+    session = Session.nrt()
+    session.clock.set_tempo(2.0)            # 2 beats/sec
     session.play(melody())                  # schedule the pattern on its clock
     stats = session.render(sample_rate=SR, channels=2, path=path)
 
@@ -67,7 +68,8 @@ def play_live():
     """The exact same pattern, live over UDP. Only the session differs: a live
     `Server` instead of an NRT one. `run(seconds)` advances the clock in real
     time, then stops; the synths free themselves after each note's sustain."""
-    with Session.live(tempo=2.0, latency=0.1) as session:
+    with Session.live(latency=0.1) as session:
+        session.clock.set_tempo(2.0)
         session.play(melody())
         session.run(2.0)                    # 8 notes * 0.25 beat / 2 bps = 1.0 s + tail
         print("played live; synths free themselves after their sustain")

@@ -6,8 +6,8 @@ Two ways to feed a `SampleClockTimebase`:
   directly, it queries the server's ``/clock_query`` and models the counter (below).
 - `EmbedSampleClock` — for an in-process embedded server, whose handle exposes
   the counter itself: no socket, no round trips, no model — every read *is* the
-  counter. It mirrors the tracker's surface so `TempoClock.lock_to` treats both
-  alike.
+  counter. It mirrors the tracker's surface so `Server.sample_timebase` treats
+  both alike.
 
 The UDP tracker models
 
@@ -205,8 +205,8 @@ class EmbedSampleClock:
 
     def anchor(self) -> float:
         # A direct read has no round trip: probe the handle once (a closed or
-        # dead handle raises here, which lock_to turns into a graceful
-        # fall-back) and report zero uncertainty.
+        # dead handle raises here, which sample_timebase reports as no server
+        # answering) and report zero uncertainty.
         self._handle.clock
         return 0.0
 
@@ -220,7 +220,8 @@ class EmbedSampleClock:
     def tracking(self) -> bool:
         """Always true: shared memory needs no model, so there is never a
         warmup for a second clock to repeat. The surface matches
-        `UdpSampleClock.tracking` so `lock_to` asks one question."""
+        `UdpSampleClock.tracking` so `Server.sample_timebase` asks one
+        question."""
         return True
 
     def untrack(self):

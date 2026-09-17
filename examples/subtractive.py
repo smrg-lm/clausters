@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters.defs import AddAction, Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, allpass_c, comb_c, env_gen, in_, lf_tri, lpf, out, pulse,
@@ -103,7 +103,7 @@ def render(path=None):
     # voices: adding it at the tail of the root group is enough.
     Synth("sub_space", action=AddAction.TAIL, server=server)
 
-    clock = TempoClock(tempo=2.0)
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
     degrees = [0, 3, 5, 7, 10, 12, 10, 7]
     Pbind(
         instrument="sub_voice",

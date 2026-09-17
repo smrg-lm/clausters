@@ -8,11 +8,13 @@ lockstep is the manual E2E in
 """
 
 from clausters.seq import (
-    INF,
     Event,
+    EventPattern,
     MidiItem,
     OscItem,
     Pbind,
+    Pn,
+    Prand,
     Pseq,
     Timeline,
 )
@@ -59,34 +61,32 @@ def test_timeline_random_access_by_time():
     assert tl.at(2.0) == ["c"]
 
 
-# ---- capture a pattern into a timeline ----
+# ---- what a pattern is as an item ----
 
 
-def test_timeline_from_pattern_records_beats():
-    tl = Timeline.from_pattern(Pbind(freq=Pseq([440, 550, 660]), dur=0.5))
-    assert len(tl) == 3
-    assert [b for b, _ in tl] == [0.0, 0.5, 1.0]
-    assert [e["freq"] for _, e in tl] == [440, 550, 660]
-
-
-def test_timeline_from_pattern_bounds_an_endless_pattern_by_beats():
-    """``dur`` is the ordinary way to bounce something that never ends."""
-    endless = Pbind(freq=Pseq([440, 550], INF), dur=0.25)
-    tl = Timeline.from_pattern(endless, dur=1.0)
-    assert [b for b, _ in tl] == [0.0, 0.25, 0.5, 0.75, 1.0]
-
-
-def test_timeline_from_pattern_refuses_an_endless_pattern_with_no_bound():
-    """With no ``dur`` an endless pattern would run forever, so the bounce
-    counts what it has recorded and gives up. The cap is the caller's
-    (``max_events``) so this does not have to record a million events to prove
-    it — and it is deliberately **not** in `TempoClock.render`, where a long
-    offline render of a real score is meant to take a long time."""
-    endless = Pbind(freq=Pseq([440, 550], INF), dur=0.25)
+def test_a_timeline_refuses_a_value_pattern():
+    """A value pattern is the definition of a generator and does not play, so
+    it is not an item; an event pattern is."""
+    tl = Timeline()
+    tl.add(0.0, Pbind(freq=Pseq([440, 550]), dur=0.5))
     try:
-        Timeline.from_pattern(endless, max_events=32)
-    except RuntimeError as e:
-        assert "did not end after 32 events" in str(e)
-        assert "dur=" in str(e), "the message says how to bound it"
+        tl.add(1.0, Pseq([1, 2, 3]))
+    except TypeError as e:
+        assert "does not play" in str(e)
     else:
-        raise AssertionError("an endless bounce with no bound must not return")
+        raise AssertionError("a value pattern must not be a timeline item")
+    assert len(tl) == 1
+
+
+def test_a_list_pattern_over_events_is_an_event_pattern():
+    """A list pattern resolves its class when it is built: over event patterns
+    only it plays; a list that mixes events and values is a value pattern."""
+    phrase = Pbind(freq=Pseq([440, 550]), dur=0.5)
+    assert isinstance(Pseq([phrase, phrase]), EventPattern)
+    assert isinstance(Prand([phrase]), EventPattern)
+    assert isinstance(Pn(phrase, 2), EventPattern)
+    assert isinstance(Pseq([phrase, phrase]), Pseq)
+    assert not isinstance(Pseq([phrase, 1]), EventPattern)
+    assert not isinstance(Pseq([1, 2]), EventPattern)
+    assert not hasattr(Pseq([1, 2]), "play")
+    assert [e["freq"] for e in Pseq([phrase], 2)] == [440, 550, 440, 550]

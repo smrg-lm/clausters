@@ -7,6 +7,7 @@ as audio, so the rendered signal *is* the curve — proving the whole path
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.base.stream import Routine
@@ -45,7 +46,7 @@ def test_automation_drives_control_bus_matches_curve():
     sr = 48000
 
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     # Expose a control bus as audio on out 0, so the render captures the curve.
     SynthDef("readbus", out(0, in_ctl(control("bus", 0.0, "ir")))).send(server)
 
@@ -84,7 +85,7 @@ def test_the_lane_is_freed_where_the_curve_ends_across_a_tempo_change():
     # freed at beat 3 -- two seconds in. One tempo times the duration would say
     # beat 2, which is half a second early.
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     clock.set_tempo(2.0, at=1.0)
 
     auto = Automation.from_points([(0, 0.2, 1, 0.0), (2, 0.8, 1, 0.0)], target=None)

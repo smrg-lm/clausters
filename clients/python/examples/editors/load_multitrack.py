@@ -48,7 +48,7 @@ for id, source in sorted(saved.sources.items()):
 # folder the session was opened from.
 
 # %%
-session = Session.live(tempo=1.0, latency=0.1)
+session = Session.live(latency=0.1)
 server = session.server
 buffers = saved.load(server)
 

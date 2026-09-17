@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.base.stream import Routine
@@ -29,7 +30,7 @@ def test_write_then_read_buffer_round_trips(tmp_path):
 
     # Generate a normalized sine period, write it to a WAV (both scored at 0).
     s = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     buf = Buffer.alloc(1024, 1, server=s)
     buf.gen("sine1", 7, 1.0)
     buf.write(wav, sample_format="float")
@@ -48,7 +49,7 @@ def test_write_then_read_buffer_round_trips(tmp_path):
 
     # Read it back in a fresh score and play it: the readback is audible.
     s2 = Server(interface=OscNrtInterface())
-    clock2 = TempoClock(tempo=1.0)
+    clock2 = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     b2 = Buffer.read(wav, server=s2)
     SynthDef("play",
              out(0.0, play_buf(control("buf", 0.0, "ir"), 0.0, 1.0, 1.0))).send(s2)

@@ -120,7 +120,8 @@ def env_traces():
 def main():
     vectors = []
     for name, build, tempo in CASES:
-        session = Session.nrt(tempo=tempo)
+        session = Session.nrt()
+        session.clock.set_tempo(tempo)
         with session._active():
             build(session)
         session.clock.render()

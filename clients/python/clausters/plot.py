@@ -338,7 +338,7 @@ def _render_env(env, sample_rate):
 
     times = [float(t) for t in env.times]
     total = sum(times) or 1.0
-    session = Session.nrt(tempo=1.0)
+    session = Session.nrt()
     server = session.server
     gate = control("gate", 1.0)
     sdef = SynthDef("_plot_env", out(0.0, env_gen(env, gate=gate)))

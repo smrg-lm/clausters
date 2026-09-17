@@ -105,7 +105,8 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
       async function run() {
         $("run").disabled = true;
 
-        const nrt = await Session.nrt({ tempo: TEMPO });
+        const nrt = await Session.nrt();
+        nrt.clock.setTempo(TEMPO);
         nrt.play(new seq.Pbind({
           degree: new seq.Pseq([0, 2, 4, 7], 8),
           dur: 0.5,

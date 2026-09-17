@@ -158,7 +158,8 @@ A `Group` is **born named** — `new Group({ name: "mixer" })`, and `group.renam
 A **`Session`** is a server, a clock and (if you ask for one) a GUI host, bundled into the handle a piece is written against:
 
 ```js
-const s = await Session.embed({ tempo: 2.0 });       // this tab's engine
+const s = await Session.embed();       // this tab's engine
+s.clock.setTempo(2.0);
 const s = await Session.live(url);               // a `clausters --ws` server
 ```
 
@@ -269,7 +270,7 @@ Two things around it are the browser's:
 
 [Routines and clocks](routines-and-clocks.md) is this layer written out, from a melody by hand to the patterns above it.
 
-Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`), `Pbind`, and the seekable counterpart: `Timeline`, a beat-sorted plan with its own tempo map that `Timeline.fromPattern` can bounce a pattern into, and that plays itself with play/pause/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole piece. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
+Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`), `Pbind` — an `EventPattern`: a pattern is the definition of a generator, and only one whose values are events plays — and the seekable counterpart: `Timeline`, a beat-sorted plan with its own tempo map that holds event patterns as items, and that plays itself with play/pause/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole piece. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
 
 ## What the browser changes
 

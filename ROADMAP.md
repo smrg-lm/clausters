@@ -118,14 +118,6 @@ numbered **decisions to take** are each reviewed when the phase that needs it
 starts, never earlier. Every phase closes in both clients (decision 15), with
 tests, an example and the books.
 
-- ⬜ **Phase 6 — the tempo is the clock's, and a session is the context
-  clocks are made in.** Order: first of what is left, since every other
-  structure that sounds is built on a session and a clock. Carries out what the
-  tempo entry's decisions 5 and 12 decided (`clients/python/PLAN.md`, "Phase 6
-  decided"): no verb and no session factory takes a tempo, a session sets its
-  clocks' timebase and keeps them, and a render is a session in logical time.
-  In both clients.
-
 - ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have
   settled. Carries out the rest of **"piece" names no structure, yet it names
   types, variables, a wire word and prose** (the wire word `"piece"` and the

@@ -90,7 +90,8 @@ def unison(name: str = "unison") -> SynthDef:
 # `env_gen` waits for.
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 unison().send()
 
 

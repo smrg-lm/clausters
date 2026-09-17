@@ -6,6 +6,7 @@ import struct
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import TempoClock, OscNrtInterface
 from clausters.base import _osclib as osc
 from clausters.base.builtins import midicps
@@ -86,7 +87,7 @@ def test_routines_get_their_own_streams_reproducible_per_routine():
         a_out, b_out = [], []
         ra = Routine(collect(a_out, 4))    # creation order fixes each stream:
         rb = Routine(collect(b_out, 4))    # ra then rb, derived from the root
-        clock = TempoClock(tempo=4.0)
+        clock = TempoClock(tempo=4.0, timebase=LogicalTimebase())
         if swap:
             clock.sched_abs(0.125, rb)     # rb wakes first and interleaves
             clock.sched_abs(0.25, ra)
@@ -160,7 +161,7 @@ def _inner_addr(raw: bytes) -> str:
 def test_pbind_timing_is_yield_exact_in_nrt():
     _embed_or_skip()
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)               # 1 beat = 1 second
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())               # 1 beat = 1 second
     Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
           dur=0.5, amp=0.2).play(clock, server)
     clock.render()
@@ -174,7 +175,7 @@ def test_pbind_timing_is_yield_exact_in_nrt():
 def test_pbind_renders_to_audio():
     _embed_or_skip()
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=2.0)
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
     Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0, 659.0]),
           dur=0.5, amp=0.2).play(clock, server)
     clock.render()

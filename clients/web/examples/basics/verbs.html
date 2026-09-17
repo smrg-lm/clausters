@@ -152,7 +152,8 @@ it refuses an unprepared one by name instead.</div>
         }));
 
         log("a session that never sounds: the same verbs, rendered");
-        const offline = await Session.nrt({ tempo: 2.0 });
+        const offline = await Session.nrt();
+        offline.clock.setTempo(2.0);
         offline.play(new seq.Pbind({
           instrument: "default",
           degree: new seq.Pseq([0, 4, 7]),

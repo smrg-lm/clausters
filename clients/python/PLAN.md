@@ -2192,6 +2192,26 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   launches a standalone host; `clients/web/PLAN.md`), so its counterpart is
   checked rather than written.
 
+  **Phase 6 landed 2026-09-17, in both clients**, as decided above. `render`
+  plays on its `clock` (a clock of an offline session, or its own session at
+  tempo 1.0) and generates a value pattern's values (`count`); the session
+  factories take `clock=` and `timebase=`; `Timeline.from_pattern` is removed
+  (`clausters.form`'s render walks an event pattern itself); `EventPattern`
+  carries `play`, and `Pseq`/`Prand`/`Pn` over event patterns resolve to one;
+  `TempoClock.lock_to`/`unlock` and `Session.lock_to_server` are removed, and
+  `Server.sample_timebase` (which the web client already had, falling back to
+  wall-clock time) raises when no server answers; a clock's timebase is
+  read-only, a session adopts only clocks on its timebase that no other session
+  holds, and a timeline's hidden clock is made per session. Found on the way,
+  in the web port: in a page one thread runs every clock, so the session in
+  force wins over a routine's own session only when the context was entered in
+  that routine -- otherwise a session activated at top level took over the
+  wakes of every other session's clock; both clients record the routine with
+  the session. `examples/transport/sequencing.html` shared its clock's timebase
+  with its timeline through `main.defaultClock`, which no longer passes a
+  timebase on; it makes a session on that clock instead. `examples/editors/
+  session.py` lost its `Session as Server` alias.
+
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
   a position it is recorded as a position, not as a decision -- several were

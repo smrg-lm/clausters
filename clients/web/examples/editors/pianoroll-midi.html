@@ -122,7 +122,8 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
 
       async function run() {
         $("run").disabled = true;
-        session = await Session.embed({ tempo: BPM / 60.0 });
+        session = await Session.embed();
+        session.clock.setTempo(BPM / 60.0);
         await session.gui();
 
         // The clock times the take, so a beat counted off it lands where it

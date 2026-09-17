@@ -117,6 +117,9 @@ test("with nothing opened, resolution fails by naming the two ways to open one",
 test("an activated session is what a bare constructor reaches, and it lets go", () =>
     withCleanDefault(async () => {
         const { session, packets } = await fakeSession();
+        // Made before either is active: a clock made while a session is active
+        // is that session's, and could not be another's default.
+        const other = await fakeSession();
         assert.equal(main.currentSession, null,
             "a session is not ambient by merely existing");
 
@@ -127,7 +130,6 @@ test("an activated session is what a bare constructor reaches, and it lets go", 
 
         // Last-wins, not first-wins: `activate` is the reference client's, and
         // it says "this one, from here on" rather than claiming a free slot.
-        const other = await fakeSession();
         other.session.activate();
         assert.equal(new Synth("beep").server, other.session.server);
 

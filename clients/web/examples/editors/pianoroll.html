@@ -138,7 +138,8 @@ until you press play.</div>
 
       async function run() {
         $("run").disabled = true;
-        session = (await Session.embed({ tempo: BPM / 60.0 })).activate();
+        session = (await Session.embed()).activate();
+        session.clock.setTempo(BPM / 60.0);
         await session.gui();
 
         win = await gui.view(

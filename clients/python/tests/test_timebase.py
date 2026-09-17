@@ -7,6 +7,7 @@ import struct
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import (
     ManualTimebase,
     MonotonicTimebase,
@@ -172,23 +173,18 @@ def test_latency_shifts_the_scheduled_sample():
     assert args[0] == round(0.25 * 48_000)        # 12000
 
 
-# ---- the logical (NRT) timing is timebase-independent ----
+# ---- a clock never changes mode ----
 
-def test_nrt_render_is_timebase_independent():
-    _ffi_or_skip()
-
-    def starts_for(timebase):
-        server = Server(interface=OscNrtInterface())
+def test_only_a_clock_on_logical_time_renders():
+    """A clock's timebase is fixed when it is made, so a render does not switch
+    a real-time clock to offline time: it refuses, and says how to make one."""
+    for timebase in (MonotonicTimebase(), SampleClockTimebase(lambda: 0, 48_000.0)):
         clock = TempoClock(tempo=1.0, timebase=timebase)
-        Pbind(instrument="default", freq=Pseq([100.0, 200.0, 300.0, 400.0]),
-              dur=0.5).play(clock, server)
-        clock.render()
-        return sorted(w for w, raw in server.interface.score.bundles
-                      if _inner_addr(raw) == "/synth_new")
-
-    mono = starts_for(MonotonicTimebase())
-    samp = starts_for(SampleClockTimebase(lambda: 0, 48_000.0))
-    assert mono == samp == [0.0, 0.5, 1.0, 1.5]
+        with pytest.raises(RuntimeError, match="LogicalTimebase"):
+            clock.render()
+        assert clock.timebase is timebase
+    with pytest.raises(AttributeError):
+        clock.timebase = MonotonicTimebase()
 
 
 # ---- immediate against timed, offline ----
@@ -201,7 +197,7 @@ def test_nrt_immediate_sends_land_at_the_start_of_the_score():
     Creating a node this way from a routine is an error; the timed path is
     below."""
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def routine():
         Synth("default", {"freq": 100.0}, server=server)
@@ -220,7 +216,7 @@ def test_nrt_send_bundle_carries_the_routines_logical_beat():
     """The other half of the pair: `send_bundle` stamps the beat the routine has
     accumulated by yielding, so this is how a routine places an event in time."""
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def routine():
         for _ in range(3):

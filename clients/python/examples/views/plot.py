@@ -46,7 +46,8 @@ def phrase() -> Pbind:
                  amp=Pwhite(0.1, 0.2))
 
 
-nrt = Session.nrt(tempo=2.0)
+nrt = Session.nrt()
+nrt.clock.set_tempo(2.0)
 nrt.play(phrase())
 take = nrt.render(sample_rate=SR, channels=2)
 samples, frames = take.samples, take.frames

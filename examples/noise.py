@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters.render import read_soundfile
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
@@ -117,7 +117,7 @@ def render(path=None):
     # the setup goes — so five of them would all begin at once whatever the
     # yields in between said. Placing something in time is what a pattern (or
     # `send_bundle`) is for.
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(
         instrument=Pseq(["white", "pink", "brown", "grit", "kit"]),
         dur=Pseq([SECTION, SECTION, SECTION, SECTION, 2.4]),

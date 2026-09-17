@@ -119,7 +119,8 @@ def render_stereo(path: str) -> list:
     brings the samples here for the waveform view -- interleaved f32, the
     layout everything downstream already speaks.
     """
-    nrt = Session.nrt(tempo=2.0)
+    nrt = Session.nrt()
+    nrt.clock.set_tempo(2.0)
     nrt.play(phrase())
     stats = nrt.render(sample_rate=SR, channels=2, path=path)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) -> {path}")

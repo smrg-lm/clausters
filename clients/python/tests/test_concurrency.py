@@ -8,6 +8,7 @@ import threading
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import OscNrtInterface, OscUdpInterface, Routine, TempoClock
 from clausters.base import _osclib as osc
 from clausters.base.main import main
@@ -66,7 +67,7 @@ def test_two_clocks_render_independently():
 
     def run(tag, freqs):
         server = Server(interface=OscNrtInterface())
-        clock = TempoClock(tempo=1.0)
+        clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
         Pbind(instrument="default", freq=Pseq(freqs), dur=0.5, amp=0.2).play(clock, server)
         clock.render()
         results[tag] = server.interface.score
@@ -100,14 +101,14 @@ def test_rt_and_nrt_in_the_same_script():
     try:
         # Meanwhile, build an NRT score on the main thread: it must stay exact.
         nrt_server = Server(interface=OscNrtInterface())
-        nrt_clock = TempoClock(tempo=1.0)
+        nrt_clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
         Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
               dur=0.5, amp=0.2).play(nrt_clock, nrt_server)
         for _ in range(20):           # repeat to widen the race window
             nrt_clock.render()
             assert _starts(nrt_server.interface.score) == [0.0, 0.5, 1.0, 1.5]
             nrt_server.interface.score.bundles.clear()
-            nrt_clock = TempoClock(tempo=1.0)
+            nrt_clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
             Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
                   dur=0.5, amp=0.2).play(nrt_clock, nrt_server)
     finally:

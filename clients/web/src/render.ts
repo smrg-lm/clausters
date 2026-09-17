@@ -10,14 +10,22 @@
 //   (a UGen graph, a `ChannelList`, a Faust `Signal` — coerced through
 //   `defs/asdef.ts`) → instanced offline for `dur` seconds, the audible
 //   sibling of `plot(def)`;
-// - a `Timeline`, an event `Pattern`, a `Routine`/`Stream` or a bare
-//   **generator** → an **offline bounce**: an ephemeral NRT session plays it
-//   and the drained score is rendered. An endless source needs `until` (the
-//   bounce would never drain).
+// - a `Timeline`, an `EventPattern`, a `Routine`/`Stream` or a bare
+//   **generator** → an **offline bounce**: an offline session plays it and
+//   the drained score is rendered. An endless source needs `until` (the
+//   bounce would never drain);
+// - a **value pattern** (a `Pattern` whose values are not events) → the values
+//   it generates, as an array. An endless one needs `count`.
 //
-// Every path resolves with a `RenderStats`: the frame, channel and event
-// counts, per-channel peak and RMS, the seed the take used, and the samples
-// themselves (interleaved `Float32Array`).
+// **An offline bounce runs in an offline session**, and the tempo is the
+// clock's: `clock` is the one it plays on, as it is for `play`. It must be a
+// clock of an offline session (`Session.nrt`), on its `LogicalTimebase`, and
+// the render is that session's; with no `clock` the render makes an offline
+// session of its own and plays on its clock, at tempo 1.0.
+//
+// Every path but a value pattern's resolves with a `RenderStats`: the frame,
+// channel and event counts, per-channel peak and RMS, the seed the take used,
+// and the samples themselves (interleaved `Float32Array`).
 //
 // **Where this client stops, and why.** The reference client's verb also
 // writes a file, through the server's own `--nrt` renderer: it hands a score to
@@ -43,6 +51,7 @@
 // ```ts
 // const stats = await render(sine(440).mul(0.2), { dur: 2.0 });
 // const bounced = await render(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 }));
+// const values = await render(new Pseq([1, 2, 3], 2));   // [1, 2, 3, 1, 2, 3]
 // ```
 
 import { Routine, Stream } from "./base/stream.ts";
@@ -53,11 +62,26 @@ import { GraphDef } from "./defs/graphdef.ts";
 import { Group, Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
-import { Pattern } from "./seq/pattern.ts";
+import type { TempoClock } from "./base/clock.ts";
+import { LogicalTimebase } from "./base/timebase.ts";
+import { EventPattern, Pattern } from "./seq/pattern.ts";
+import type { Event } from "./seq/event.ts";
 import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
 import { renderScoreBytes } from "./engine/render.ts";
+
+/**
+ * How many events — or values — a render takes before it decides its source
+ * is endless, when no `until` (or `count`) bounds it.
+ *
+ * A render holds what it generated in memory, so a million is already past any
+ * real piece and nowhere near a legitimate one — which is what makes the cap
+ * honest *here* and wrong inside `TempoClock.render`, where a long offline
+ * render of a real score is exactly the thing that runs for a very long time on
+ * purpose.
+ */
+export const MAX_BOUNCED_EVENTS = 1_000_000;
 
 /** The render's own settings — what the offline server is configured with. */
 export interface RenderOptions {
@@ -151,15 +175,22 @@ export interface RenderVerbOptions extends RenderOptions {
      */
     defs?: readonly (SynthDef | FaustDef | GraphDef)[];
     /**
-     * Stop the offline bounce at this beat — required for an endless source,
-     * which never drains on its own.
+     * The clock it plays on, as for `play`: a clock of an offline session,
+     * whose render this is. Omitted, the render makes an offline session of
+     * its own, at tempo 1.0.
+     */
+    clock?: TempoClock;
+    /**
+     * Stop the offline bounce at this beat of `clock` — required for an
+     * endless source, which never drains on its own (an event pattern with no
+     * bound throws after `MAX_BOUNCED_EVENTS` events).
      */
     until?: number;
     /**
-     * The bounce's clock tempo, in beats per second (1.0: a beat is a second).
-     * A timeline has a tempo map of its own and ignores it.
+     * How many values a value pattern generates — required for an endless
+     * one, which otherwise throws after `MAX_BOUNCED_EVENTS`.
      */
-    tempo?: number;
+    count?: number;
 }
 
 /** Anything `render` knows how to turn into samples. */
@@ -176,17 +207,21 @@ export type Renderable =
     | (() => Generator<number | undefined, unknown, unknown>);
 
 /**
- * Renders `obj` offline and resolves with a `RenderStats`.
+ * Renders `obj` offline and resolves with a `RenderStats` — or, for a value
+ * pattern, with the values it generates.
  *
  * Everything here is offline by nature: a pattern or a routine is
  * forward-only, and sounding one live is `play`'s job.
  */
+export async function render(obj: Pattern<Event>, options?: RenderVerbOptions): Promise<RenderStats>;
+export async function render<T>(obj: Pattern<T>, options?: RenderVerbOptions): Promise<T[]>;
+export async function render(obj: Renderable, options?: RenderVerbOptions): Promise<RenderStats>;
 export async function render(
     obj: Renderable,
     options: RenderVerbOptions = {},
-): Promise<RenderStats> {
+): Promise<RenderStats | unknown[]> {
     const {
-        dur = 1.0, controls, defs = [], until, tempo = 1.0, ...cfg
+        dur = 1.0, controls, defs = [], until, count, clock, ...cfg
     } = options;
 
     if (obj instanceof Uint8Array) return renderScore(obj, cfg);
@@ -203,28 +238,52 @@ export async function render(
         return bounce(
             (session) =>
                 obj.play({ destination: session.server as unknown as PlayDestination }),
-            { until, tempo, defs, ...cfg },
+            { clock, until, defs, ...cfg },
         );
     }
 
-    if (obj instanceof Pattern) {
+    if (obj instanceof EventPattern) {
         return bounce(
-            (session) => obj.play(session.server, { clock: session.clock }),
-            { until, tempo, defs, ...cfg },
+            (session, on) => obj.play(session.server, { clock: on }),
+            { clock, until, defs, guard: "event pattern", ...cfg },
         );
     }
+
+    if (obj instanceof Pattern) return values(obj, count);
 
     const playable = obj instanceof Stream ? obj : asRoutine(obj);
     if (playable === null) {
         throw new TypeError(
             "don't know how to render this; expected a score (Uint8Array), a def "
-                + "(SynthDef/FaustDef/GraphDef), a bare expression, a Timeline, an "
-                + "event Pattern, or a Routine/Stream/generator",
+                + "(SynthDef/FaustDef/GraphDef), a bare expression, a Timeline, a "
+                + "pattern, or a Routine/Stream/generator",
         );
     }
-    return bounce((session) => playable.play(session.clock), {
-        until, tempo, defs, ...cfg,
+    return bounce((_session, on) => playable.play(on), {
+        clock, until, defs, ...cfg,
     });
+}
+
+/**
+ * The values a value pattern generates: `count` of them, or all of them for a
+ * finite one — refused past `MAX_BOUNCED_EVENTS` with no `count`.
+ */
+function values<T>(pattern: Pattern<T>, count: number | undefined): T[] {
+    const out: T[] = [];
+    const limit = count ?? MAX_BOUNCED_EVENTS;
+    for (const value of pattern) {
+        if (out.length === limit) {
+            if (count === undefined) {
+                throw new Error(
+                    `render: the ${pattern.constructor.name} did not end after `
+                    + `${MAX_BOUNCED_EVENTS} values — pass count to take a number of them`,
+                );
+            }
+            break;
+        }
+        out.push(value);
+    }
+    return out;
 }
 
 /**
@@ -249,7 +308,7 @@ export async function bounceDef(
     } = {},
 ): Promise<RenderStats> {
     const { Session } = await import("./session.ts");
-    const session = await Session.nrt({ tempo: 1.0 }); // beats == seconds
+    const session = await Session.nrt(); // its clock at tempo 1.0: beats == seconds
     const server = session.server;
     for (const extra of defs) await extra.send(server);
     await def.send(server);
@@ -261,29 +320,60 @@ export async function bounceDef(
 }
 
 /**
- * An ephemeral offline session: the `defs` first, then `start(session)`
- * schedules the source on its clock and server, and the drained score is
- * rendered.
+ * An offline session: the `defs` first, then `start(session, clock)` schedules
+ * the source on the clock it plays on and the session's server, and the drained
+ * score is rendered.
  *
- * The session starts **empty** — it is not the one the caller has been
+ * The session is `clock`'s, which has to be an offline one; with no `clock` it
+ * is a new one, which starts **empty** — it is not the one the caller has been
  * working in — so a pattern naming an instrument of its own has to bring it
  * along, exactly as a def bounce does.
+ *
+ * `guard` names what an unbounded render is refused for after
+ * `MAX_BOUNCED_EVENTS` events.
  */
 async function bounce(
-    start: (session: import("./session.ts").Session) => unknown,
-    { until, tempo = 1.0, defs = [], ...cfg }: RenderOptions & {
+    start: (session: import("./session.ts").Session, clock: TempoClock) => unknown,
+    { clock, until, defs = [], guard, ...cfg }: RenderOptions & {
+        clock?: TempoClock;
         until?: number;
-        tempo?: number;
         defs?: readonly (SynthDef | FaustDef | GraphDef)[];
+        guard?: string;
     },
 ): Promise<RenderStats> {
     const { Session } = await import("./session.ts");
-    const session = await Session.nrt({ tempo });
+    let session: import("./session.ts").Session;
+    if (clock === undefined) {
+        session = await Session.nrt();
+        clock = session.clock;
+    } else {
+        const owner = clock.session;
+        if (!(clock.timebase instanceof LogicalTimebase) || !(owner instanceof Session)) {
+            throw new Error(
+                `render plays on a clock of an offline session, and this clock is on a `
+                + `${clock.timebase.constructor.name}${owner ? "" : " in no session"}: a clock's `
+                + `timebase is fixed when it is made. Pass a clock made in Session.nrt(), or `
+                + `none for a session of the render's own`,
+            );
+        }
+        session = owner;
+    }
+    const on = clock;
     for (const def of defs) await def.send(session.server);
+    const maxSteps = guard !== undefined && until === undefined ? MAX_BOUNCED_EVENTS : undefined;
     session.use(() => {
-        start(session);
+        start(session, on);
+        try {
+            on.render(until, { maxSteps });
+        } catch (error) {
+            if (maxSteps === undefined) throw error;
+            throw new Error(
+                `render: the ${guard} did not end after ${MAX_BOUNCED_EVENTS} events — `
+                + `pass until to bound it`,
+            );
+        }
     });
-    return session.render({ until, ...cfg });
+    return session.server.render(cfg);
 }
 
 /**

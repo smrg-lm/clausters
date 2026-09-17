@@ -18,7 +18,9 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 ## `clausters.seq` — sequencing
 
 - `Event` — a note plays a synth and frees it after its sustain.
-- The value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`. The random
+- The value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`, an
+  `EventPattern` — a pattern is the definition of a generator, and only one
+  whose values are events plays. The random
   patterns (`Pwhite`, `Prand`) draw from the **random context** — the running
   routine's generator, derived at creation from the context that created it,
   seeded per session (`session.seed(n)`, or `clausters.seed(n)` for the

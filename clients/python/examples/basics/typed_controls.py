@@ -83,7 +83,8 @@ def glide_lead(name: str = "glide_lead") -> SynthDef:
 # before it ever sounded.
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 glide_lead().send()        # /def_send synth at time 0
 lead = Synth("glide_lead", {"amp": 0.2, "freq": midicps(48),
                             "detune": random.uniform(-4.0, 4.0)})

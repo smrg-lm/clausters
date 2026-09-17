@@ -85,7 +85,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
       // functions the GUI host's meters use.
       async function run() {
         $("render").disabled = true;
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         session.play(piece);
 
         new Routine(function* close() {

@@ -5,6 +5,7 @@ event/pattern/timing layer emits the right score, end to end."""
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.base import _osclib as osc
@@ -44,7 +45,7 @@ def test_pbind_render_matches_handrolled_osc():
     _embed_or_skip()
 
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument="default", freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
     clock.render()
 

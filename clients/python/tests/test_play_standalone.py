@@ -16,6 +16,7 @@ from clausters.defs.ugens import (
 )
 from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
+from clausters.base import LogicalTimebase, TempoClock
 from clausters.seq.pattern import Pbind, Pseq
 from clausters.seq.timeline import Timeline
 from clausters.defs import Buffer
@@ -28,6 +29,13 @@ def clean_default():
     main.server, main.default_clock = None, None
     yield
     main.server, main.default_clock = server, clock
+
+
+def _offline_default_clock():
+    """The default session's clock, made on logical time so a test can render
+    it: a clock's timebase is fixed when it is made."""
+    main.default_clock = TempoClock(timebase=LogicalTimebase())
+    return main.get_default_clock(start=False)
 
 
 def _nrt_server():
@@ -107,7 +115,7 @@ def test_routine_play_runs_on_an_existing_default_clock(clean_default):
         yield 1.0
         beats.append(main.current_routine._logical_beat)
 
-    clock = main.get_default_clock(start=False)   # already there: not started
+    clock = _offline_default_clock()   # already there: not started
     Routine(gen).play()
     assert not clock._running
     clock.render()
@@ -118,7 +126,7 @@ def test_routine_run_plays_as_a_decorator(clean_default):
     """``@Routine.run`` leaves the name bound to a routine already scheduled --
     it plays, as in sclang; it is not a constructor alias."""
     beats = []
-    clock = main.get_default_clock(start=False)
+    clock = _offline_default_clock()
 
     @Routine.run
     def melody():
@@ -139,7 +147,7 @@ def test_routine_pause_keeps_its_place_and_stop_rewinds(clean_default):
             seen.append(i)
             yield 1.0
 
-    clock = main.get_default_clock(start=False)
+    clock = _offline_default_clock()
 
     r = Routine(gen).play()
     clock.render(until_beat=1.0)          # two wakes: 0 and 1
@@ -175,7 +183,7 @@ def test_a_raising_routine_does_not_take_the_clock_down(clean_default, capsys):
             survivor.append(1)
             yield 1.0
 
-    clock = main.get_default_clock(start=False)
+    clock = _offline_default_clock()
     bad = Routine(boom).play()
     Routine(other).play()
     clock.render()
@@ -202,7 +210,7 @@ def test_free_play_accepts_a_generator(clean_default):
         beats.append(main.current_routine._logical_beat)
 
     # Both forms: the genfunc, and an already-created generator object.
-    play(gen, clock=main.get_default_clock(start=False))
+    play(gen, clock=_offline_default_clock())
     main.default_clock.render()
     assert beats == [0.0, 1.0]
 
@@ -285,7 +293,7 @@ def test_play_buffer_stock_instrument_renders_audible_output(clean_default):
     from clausters.defs import Env
     from clausters.seq.automation import _env_gen_args
 
-    session = Session.nrt(tempo=1.0)
+    session = Session.nrt()
     server = session.server
     buf = Buffer.alloc(4800, 1, server=server)          # 0.1 s at 48 kHz
     # Fill it with a constant 1.0 (the env generator, level 1 throughout).
@@ -503,8 +511,19 @@ def test_free_play_pattern_resolves_server_and_clock(clean_default):
     main.server = server
     # NRT: drive the default clock's render rather than real time.
     player = play(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
-                  clock=main.get_default_clock(start=False))
+                  clock=_offline_default_clock())
     main.default_clock.render()
     # three notes, each an /synth_new + release bundle
     assert len(server.interface.score.bundles) == 6
     player.stop()
+
+
+def test_a_value_pattern_does_not_play(clean_default):
+    """A pattern is the definition of a generator: what plays is an event
+    pattern, and a value pattern is refused by name."""
+    from clausters.seq import Pwhite
+
+    with pytest.raises(TypeError, match="does not play"):
+        play(Pwhite(0.0, 1.0), clock=_offline_default_clock())
+    with pytest.raises(TypeError, match="does not play"):
+        play(Pseq([Pbind(degree=0), 1]), clock=_offline_default_clock())

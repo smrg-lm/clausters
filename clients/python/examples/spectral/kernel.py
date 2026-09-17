@@ -113,7 +113,7 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=1.0).activate()
+session = Session.nrt().activate()
 raw().send()
 tilted_gate().send()
 

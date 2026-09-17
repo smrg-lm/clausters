@@ -42,7 +42,7 @@ from clausters.defs import Synth
 # `MidiReceiver` opens a virtual input any DAW or keyboard can be routed into.
 
 # %%
-session = Session.live(tempo=1.0, latency=0.05)
+session = Session.live(latency=0.05)
 server = session.server
 
 recv = MidiReceiver(port="clausters-in").start()

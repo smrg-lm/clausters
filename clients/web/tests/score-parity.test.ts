@@ -25,6 +25,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { Routine } from "../src/base/stream.ts";
+import { TempoClock } from "../src/base/clock.ts";
 import { Session } from "../src/session.ts";
 import { ScoreConnection } from "../src/base/connection.ts";
 import { Synth } from "../src/defs/node.ts";
@@ -88,7 +89,8 @@ const pieces: Record<string, (session: Session) => void> = {
 
 test("a piece writes the same score the Python client writes", async () => {
     for (const vector of vectors) {
-        const session = await Session.nrt({ tempo: vector.tempo });
+        const session = await Session.nrt();
+        session.clock.setTempo(vector.tempo);
         session.use(() => {
             pieces[vector.name]!(session);
             session.clock.render();
@@ -99,7 +101,7 @@ test("a piece writes the same score the Python client writes", async () => {
 });
 
 test("an offline session renders the score it wrote", async () => {
-    const session = await Session.nrt({ tempo: 1.0 });
+    const session = await Session.nrt();
     session.use(() => {
         pieces.one_synth!(session);
     });
@@ -202,4 +204,33 @@ test("an envelope draws what an EnvGen plays, in both clients", async () => {
             );
         });
     }
+});
+
+// ---- the tempo is the clock's ----
+
+test("a render plays on the clock it is given", async () => {
+    // The tempo is the clock's: a render plays on the clock it is handed, which
+    // is a clock of an offline session, and the render is that session's.
+    const session = await Session.nrt();
+    session.clock.setTempo(2.0); // two beats a second
+    const stats = await render(
+        new Pbind({ instrument: "default", degree: new Pseq([0, 2, 4]), dur: 1.0 }),
+        { clock: session.clock },
+    );
+    // The last note starts at beat 2 (second 1.0) and releases 0.8 beats later.
+    assert.ok(Math.abs(stats.frames - 1.4 * 48_000) <= 4096, `${stats.frames} frames`);
+});
+
+test("a render refuses a clock not on logical time", async () => {
+    await assert.rejects(
+        render(new Pbind({ degree: 0, dur: 0.5 }), { clock: new TempoClock(2) }),
+        /fixed when it is made/,
+    );
+});
+
+test("a render of a value pattern is the values it generates", async () => {
+    // A value pattern does not play; its render is the values it generates.
+    assert.deepEqual(await render(new Pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
+    assert.deepEqual(await render(new Pseq([1, 2], Infinity), { count: 5 }), [1, 2, 1, 2, 1]);
+    await assert.rejects(render(new Pseq([1, 2], Infinity)), /count/);
 });

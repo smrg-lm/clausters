@@ -115,7 +115,8 @@ def pluck(kernel_bufnum: int, partitions: int, name: str = "pluck") -> SynthDef:
 ir_path = str(Path(tempfile.gettempdir()) / "clausters_ir.wav")
 ir_frames = write_ir(ir_path)
 
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 server = session.server
 
 # 1. The raw IR, 2. the prepared kernel (spectra, computed off-RT).

@@ -29,7 +29,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, Routine, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, Routine, TempoClock
 from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
 from clausters.defs import Group
 
@@ -88,7 +88,7 @@ def main():
     print(json.dumps(duo.spec(), indent=2))
 
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     clock.play(Routine(lambda: play(server)))
     clock.render()
     path = sys.argv[1] if len(sys.argv) > 1 else None

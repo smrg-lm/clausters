@@ -100,7 +100,8 @@ def cross(name: str = "cross") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 cross().send()
 
 

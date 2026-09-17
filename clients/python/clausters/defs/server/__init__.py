@@ -906,12 +906,52 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         """Close this server's shared sample-clock reader, if it built one, and
         forget it — the next `sample_clock` builds a fresh one.
 
-        Called by `close`, and by `clausters.base.TempoClock.lock_to` when the
-        reader turns out to have no master to anchor against, so a failed probe
-        does not leave a dead reader for the next clock to adopt."""
+        Called by `close`, and by `sample_timebase` when the reader turns out
+        to have no master to anchor against, so a failed probe does not leave a
+        dead reader for the next clock to read."""
         if self._sample_clock is not None:
             self._sample_clock.close()
             self._sample_clock = None
+
+    def sample_timebase(self, warmup: bool = True, timeout: float = 2.0):
+        """The server's sample clock as a timebase a clock is made on:
+        ``TempoClock(timebase=server.sample_timebase())`` schedules on the
+        server's own sample counter (``/sched_at``), drift-free.
+
+        It is what `clausters.Session.live` and `clausters.Session.embed` make
+        their clocks on by default. The reader it reads is this server's
+        `sample_clock`, probed, warmed up and tracking; an in-process embedded
+        server is read directly, with no round trip.
+
+        **Blocking over UDP** (it does `/clock_query` round trips) — call it
+        before `start`/`run`, never from inside a routine.
+
+        Raises `RuntimeError` for an offline server, which has no sample clock,
+        and when no server answers: a clock's timebase is fixed when it is
+        made, so there is no falling back to wall-clock time afterwards.
+        """
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            raise RuntimeError(
+                "an offline server has no sample clock: its clocks are on a "
+                "LogicalTimebase"
+            )
+        sc = self.sample_clock(timeout=timeout)
+        if not sc.tracking:
+            try:
+                sc.anchor()
+            except (TimeoutError, OSError, RuntimeError) as exc:
+                self.release_sample_clock()
+                raise RuntimeError(
+                    f"no server answered the sample clock at "
+                    f"{self.target.host}:{self.target.port} within {timeout} s. A "
+                    f"clock's timebase is fixed when it is made, so it cannot fall "
+                    f"back to wall-clock time afterwards: start the server first, "
+                    f"or make the session with timebase=MonotonicTimebase()"
+                ) from exc
+            if warmup:
+                sc.warmup(n=4)
+            sc.track()
+        return sc.timebase()
 
     def close(self):
         """Close the communication interface (and the ``/node_end`` recycling

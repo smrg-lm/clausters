@@ -8,7 +8,7 @@
 //
 // - an `Event` — or a plain **object** of event keys — → a note (immediate
 //   outside a clock, timetagged inside one);
-// - an event `Pattern` (a `Pbind`) → an `EventStreamPlayer` on a clock;
+// - an `EventPattern` (a `Pbind`) → an `EventStreamPlayer` on a clock;
 // - a `Routine`/`Stream`, or a bare **generator** (object or function) →
 //   scheduled on a clock;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) → sent and instanced on
@@ -59,7 +59,7 @@ import { bufSampleRate, control, out, playBuf, sampleRate } from "./defs/ugens/i
 import { Event } from "./seq/event.ts";
 import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
-import { Pattern } from "./seq/pattern.ts";
+import { EventPattern, Pattern } from "./seq/pattern.ts";
 import { Automation } from "./seq/automation.ts";
 import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
@@ -121,8 +121,15 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     if (playable instanceof Stream) {
         return playable.play(clock ?? ambientClock(), quant);
     }
-    if (playable instanceof Pattern) {
+    if (playable instanceof EventPattern) {
         return playable.play(destinationFor(server), { clock, quant }) as EventStreamPlayer;
+    }
+    if (playable instanceof Pattern) {
+        throw new TypeError(
+            `a ${playable.constructor.name} of values does not play: a pattern is the definition `
+            + "of a generator, and it plays when its values are events (a Pbind, or a "
+            + "Pseq/Prand/Pn over event patterns only). render() generates a value pattern's values",
+        );
     }
     if (isGenerator(playable) || isGeneratorFunction(playable)) {
         return asRoutine(playable).play(clock ?? ambientClock(), quant);
@@ -167,7 +174,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     }
     throw new TypeError(
         `don't know how to play ${String(playable)}; expected an Event or event ` +
-            "object, an event Pattern (Pbind), a Routine/Stream or generator, a " +
+            "object, an EventPattern (Pbind), a Routine/Stream or generator, a " +
             "def (SynthDef/FaustDef/GraphDef) or a bare expression, a Timeline, a " +
             "Buffer, an " +
             "Automation, or anything with play(destination)",

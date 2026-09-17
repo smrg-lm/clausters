@@ -99,7 +99,8 @@ def shaped(name: str = "wt_shaped") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 server = session.server
 
 # Three buffers, scored at time 0. 2048 frames hold a 1024-point table.

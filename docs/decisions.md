@@ -8632,7 +8632,9 @@ stated at beats: they are a structure the document holds, read by a ruler
 drawing beats and bars and by a snap to them, rather than its axis. A region
 whose contents are in beats keeps them — placed in seconds, the way a child
 timeline is placed in its parent — and which map converts them is left open
-until something plays such a region.
+until something plays such a region. *(Dissolved the same day: no multitrack region
+holds beats. The composite region that suggested one is the `form` tree left
+inside the multitrack document, and it is filed for removal.)*
 
 **One unit for tempo.** `TempoClock` and `TempoMap` were in beats per second and
 the document in beats per minute, divided by 60 wherever the two met. Every
@@ -8654,3 +8656,55 @@ exists for. `session::migrate` converts a format-2 file through the tempo map it
 saved (a length being the difference of two converted positions, a region's own
 curve measured from the region's start), and both clients' `Session.read` and
 the GUI host call it, so an old session opens the same everywhere.
+
+## The tempo is the clock's, and a session is the context clocks are made in
+
+*Decided 2026-09-17 with the user, reviewing what was filed as the tempo work's
+"scores and render" phase.*
+
+**No verb and no session factory takes a tempo.** `render(tempo=)`,
+`Session.nrt/live/embed(tempo=)` and `Timeline.from_pattern(tempo=)` each held a
+number that belongs to a clock. None was designed that way; the history shows a
+copy chain. The session factories built their clock inside and exposed its one
+argument (`5ad93d53`), `from_pattern` built a clock to run a pattern and exposed
+the same number (`97f41db4`), and `render` built an offline session and passed
+the factory's parameter through (`7cef02ed`) — in both clients. What takes a
+tempo now is a clock (`TempoClock`), or a structure that hides its clock
+(`Timeline`, whose `tempo` is a constant map). `play` and `render` take an
+optional clock, symmetric: one sounds in real time, the other writes audio.
+`from_pattern` is gone rather than repaired — a constructor that runs a pattern
+to fill a timeline has no reason to exist when an event pattern is an item and a
+render. Converting an `OscScore` back into a timeline was proposed and dropped:
+a `Timeline` is the score with its generation data, and an `OscScore` is what
+rendering one leaves.
+
+**A pattern is the definition of a generator; an `EventPattern` plays.**
+`Pattern.play` existed on every pattern, so `play(Pseq([1, 2, 3]))` was taken,
+its player failed inside a routine, and `render` reported an unrelated empty
+render. `play` now refuses a value pattern by name, `render` generates its
+values, and a list pattern (`Pseq`, `Prand`, `Pn`) resolves whether it is an
+event pattern when it is built — from whether every element is one, since the
+class alone cannot say.
+
+**A clock never changes mode.** `lock_to`, `unlock` and a render that switched a
+real-time clock to logical time for its duration all changed a clock's timebase
+after the fact, which re-measures every beat already queued against a different
+time. A clock's timebase is now fixed when it is made; a clock on a server's
+samples is made on `Server.sample_timebase()`, and rendering a clock that is not
+on logical time raises. The graceful fall-back to wall-clock time went with it:
+there is nothing to fall back to once the clock exists, so a server that does
+not answer raises and says why.
+
+**A session is global, per context.** A clock made while a session is active is
+made on the session's timebase and kept in it: the server's sample clock for a
+live or embedded session, and `LogicalTimebase` for an offline one — the only
+time an offline session can have. The context manager is how a session is
+switched on the same thread, including inside a running routine, which is what
+makes an offline render inside a live piece a plain block. One subtlety came out
+of the port: in a page everything runs on one thread, so a session merely
+*activated* at top level must not take over the wakes of another session's
+clock. A context wins over a routine's own session only when it was entered in
+that routine; both clients record the routine a context was entered in, and
+restore it with the session when the block ends. A timeline's hidden clock
+belongs to the session it sounds in, and is made again when it plays in another.
+

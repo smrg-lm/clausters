@@ -86,7 +86,8 @@ groups, a negative one unlinks it.</div>
       async function run() {
         $("run").disabled = true;
 
-        const nrt = await Session.nrt({ tempo: 2.0 });
+        const nrt = await Session.nrt();
+        nrt.clock.setTempo(2.0);
         nrt.play(new seq.Pbind({
           degree: new seq.Pseq([0, 4, 7, 11, 7, 4], 4),
           dur: 0.25,

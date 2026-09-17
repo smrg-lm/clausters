@@ -17,6 +17,8 @@ import { LogicalTimebase, ManualTimebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
 import type { ScoreConnection } from "../src/base/connection.ts";
 import type { Server } from "../src/defs/server/index.ts";
+import { main } from "../src/base/main.ts";
+import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import { Session } from "../src/session.ts";
 
 await loadCore();
@@ -51,9 +53,10 @@ function emitter(server: Server, addr: string, beats: number[]): Routine {
 }
 
 test("two clocks of one script render together in seconds", async () => {
-    const s = await Session.nrt({ tempo: 1 });
+    const s = await Session.nrt();
     const emits = recordEmits(s);
-    const fast = s.adopt(new TempoClock(2));
+    const fast = s.use(() => new TempoClock(2));
+    assert.equal(fast.session, s);
     assert.equal(fast.timebase, s.clock.timebase, "a session's clocks share its time");
     fast.start();
     s.clock.play(emitter(s.server, "/a", [0, 1, 2]));
@@ -65,7 +68,7 @@ test("two clocks of one script render together in seconds", async () => {
 });
 
 test("a clock started at second 4 starts at second 4", async () => {
-    const s = await Session.nrt({ tempo: 1 });
+    const s = await Session.nrt();
     const emits = recordEmits(s);
     s.clock.play(new Routine(function* () {
         yield 4;
@@ -77,9 +80,9 @@ test("a clock started at second 4 starts at second 4", async () => {
 });
 
 test("an offline clock that is never started does not play, as live", async () => {
-    const s = await Session.nrt({ tempo: 1 });
+    const s = await Session.nrt();
     const emits = recordEmits(s);
-    const idle = s.adopt(new TempoClock(2));
+    const idle = s.use(() => new TempoClock(2));
     idle.play(emitter(s.server, "/b", [0, 1]));
     s.clock.play(emitter(s.server, "/a", [0]));
     s.clock.render();
@@ -87,15 +90,28 @@ test("an offline clock that is never started does not play, as live", async () =
     idle.clear();
 });
 
-test("a bare clock still renders on a time of its own", async () => {
-    const clock = new TempoClock(1, { timebase: new ManualTimebase(0), ticker: manualTicker() });
+test("a bare clock on logical time renders on a time of its own", async () => {
+    const clock = new TempoClock(1, { timebase: new LogicalTimebase(), ticker: manualTicker() });
     const s = await Session.nrt();
     const emits = recordEmits(s);
     clock.play(emitter(s.server, "/a", [0, 2]));
     await Promise.resolve();
     clock.render();
     assert.deepEqual(sorted(emits), [[0, "/a"], [2, "/a"]]);
-    assert.ok(!(clock.timebase instanceof LogicalTimebase), "its timebase comes back");
+    assert.ok(clock.session === null && clock.timebase !== s.timebase);
+});
+
+test("an offline session has only logical time", async () => {
+    // Every clock of an offline session is on its logical time: a clock made
+    // inside one takes it, and a clock or a timebase of another kind is refused.
+    const s = await Session.nrt();
+    assert.ok(s.timebase instanceof LogicalTimebase);
+    s.use(() => {
+        assert.equal(new TempoClock(3).timebase, s.timebase);
+        assert.throws(() => new TempoClock(1, { timebase: new ManualTimebase(0) }), /session's timebase/);
+    });
+    await assert.rejects(Session.nrt({ timebase: new ManualTimebase(0) }), /LogicalTimebase/);
+    assert.throws(() => s.adopt(new TempoClock(1)), /session's timebase/);
 });
 
 test("locate on a stopped clock is where start resumes", () => {
@@ -138,7 +154,7 @@ test("a frozen clock stays frozen at the located beat", () => {
 test("a locate back from inside a routine keeps physical time going", async () => {
     // A loop by hand: at beat 2 the routine goes back to beat 0 once. Beats
     // repeat; the score's seconds do not.
-    const s = await Session.nrt({ tempo: 1 });
+    const s = await Session.nrt();
     const emits = recordEmits(s);
     const seen: number[] = [];
     s.clock.play(new Routine(function* () {
@@ -159,7 +175,7 @@ test("a locate back from inside a routine keeps physical time going", async () =
 });
 
 test("a locate forward wakes what it passed at once", async () => {
-    const s = await Session.nrt({ tempo: 1 });
+    const s = await Session.nrt();
     const emits = recordEmits(s);
     s.clock.play(new Routine(function* () {
         yield 1;
@@ -170,4 +186,67 @@ test("a locate forward wakes what it passed at once", async () => {
     s.clock.render();
     // Located at second 1: beat 5 is overdue and wakes then; beat 12 is 2 s on.
     assert.deepEqual(sorted(emits), [[1, "/a"], [3, "/b"]]);
+});
+
+// ---- a session is the context clocks are made in ----
+
+test("a session given a clock takes its timebase and refuses another", async () => {
+    const clock = new TempoClock(2, { timebase: new LogicalTimebase() });
+    const s = await Session.nrt({ clock });
+    assert.ok(s.clock === clock && s.timebase === clock.timebase);
+    await assert.rejects(
+        Session.nrt({
+            clock: new TempoClock(1, { timebase: new LogicalTimebase() }),
+            timebase: new LogicalTimebase(),
+        }),
+        /session's timebase/,
+    );
+    await assert.rejects(Session.nrt({ clock }), /another session/);
+});
+
+test("a session switched inside a routine is the one in force", async () => {
+    // The context a `use` block sets wins over the running routine's session:
+    // an offline session made from inside another's routine makes its clocks on
+    // its own time and plays on its own server.
+    const outer = await Session.nrt();
+    const inner = await Session.nrt();
+    const made: [TempoClock, TempoClock | null, Server][] = [];
+    outer.clock.play(new Routine(function* () {
+        inner.use(() => {
+            made.push([new TempoClock(1), main.resolveClock(), main.resolveServer()]);
+        });
+        yield undefined;
+    }));
+    outer.clock.render();
+    const [clock, resolved, server] = made[0]!;
+    assert.ok(clock.session === inner && clock.timebase === inner.timebase);
+    assert.ok(resolved === inner.clock && server === inner.server);
+});
+
+test("a timeline's hidden clock belongs to the session it sounds in", async () => {
+    const tl = new Timeline([[0, new OscItem("/a")], [1, new OscItem("/a")]], { tempo: 2 });
+    const first = await Session.nrt();
+    const firstEmits = recordEmits(first);
+    first.use(() => {
+        tl.play();
+        first.clock.render();
+    });
+    assert.deepEqual(sorted(firstEmits), [[0, "/a"], [0.5, "/a"]]);
+
+    const second = await Session.nrt();
+    const secondEmits = recordEmits(second);
+    second.use(() => {
+        tl.play({ at: 0 });
+        second.clock.render();
+    });
+    assert.deepEqual(sorted(secondEmits), [[0, "/a"], [0.5, "/a"]]);
+});
+
+test("a timeline sounding in one session is refused in another", async () => {
+    const tl = new Timeline([[0, new OscItem("/a")], [8, new OscItem("/a")]]);
+    const first = await Session.nrt();
+    first.use(() => tl.play());
+    const other = await Session.nrt();
+    assert.throws(() => other.use(() => tl.play()), /another session/);
+    tl.stop();
 });

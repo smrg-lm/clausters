@@ -55,7 +55,8 @@ phrase = Pbind(
 # `interface.server` is the handle.
 
 # %%
-session = Session.embed(tempo=2.0, latency=0.1)
+session = Session.embed(latency=0.1)
+session.clock.set_tempo(2.0)
 print("embedded server:", session.server.interface.server.sample_rate, "Hz")
 
 # %%

@@ -4,7 +4,7 @@ The sequencing you have seen so far is **generative**: a `Routine` is a Python g
 
 A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback reads it forward from a position.
 
-This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and you can move between them (capture a pattern into a timeline, below).
+This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and an event pattern is a timeline item like any other.
 
 ## The timeline
 
@@ -87,7 +87,7 @@ tl.play(at=0.0, destination=session.server)
 
 A pass **ends on its own** when nothing is left to play: `playing` goes False, `finished` goes True and `position()` holds where the last item fell. It is the *plan* that ends, so a `loop` never finishes, and the last item keeps sounding for its own length.
 
-The clock it plays on takes the ambient clock's timebase, so a session locked to its server's sample clock (`lock_to_server`) plays its timelines sample-exact, and an offline session renders them.
+The clock it plays on belongs to **the session it sounds in**: it is made there, on that session's timebase, the first time the timeline plays in it, and made again — at the position the timeline stopped at — when it plays in another. So a live session on its server's sample clock plays its timelines sample-exact, and an offline session renders them. A timeline sounding in one session is refused in another until it is stopped.
 
 **What is sounding when a timeline moves.** A locate, a stop or a loop's wrap does not cut what already started: notes keep their own releases. What comes next is decided by what the contents are — a discrete item (an event, a message, a routine) plays from the **next onset**, and one whose onset the new position has passed is not recovered.
 
@@ -155,21 +155,6 @@ of the synth that reads it, so it is safe from a UI loop.
 Its length is in **seconds**, because an envelope's segment times are real time —
 which is what `duration_unit` reports, and what anything measuring it has to ask.
 
-## Capturing a pattern into a timeline
-
-The two meet here: run a pattern offline and record what it plays into a timeline — "bounce a pattern to a clip" — then edit and seek the result.
-
-```python
-from clausters.seq import Timeline, Pbind, Pseq
-
-tl = Timeline.from_pattern(
-    Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.5),
-    dur=2.0,      # bound an open-ended pattern; None drains a finite one fully
-    tempo=2.0,    # the tempo it is run at, and the timeline's
-)
-tl.add(0.0, Event(instrument="default", degree=7, dur=0.5, amp=0.3))   # then edit
-```
-
 ## Offline rendering
 
 A timeline plays the same way offline. An offline session's clocks share one **logical** time — the run's physical time, advanced only by what is due — and a timeline played there takes it, so rendering the session renders the timeline:
@@ -183,7 +168,9 @@ session.clock.render()                       # wake what is due, in seconds
 stats = session.server.render()              # the offline render
 ```
 
-`clausters.render(timeline)` does the same in one call, on a session nobody holds. The timeline's own map sets the seconds; the `tempo` argument of `render` does not apply to it.
+`clausters.render(timeline)` does the same in one call, on a session nobody holds. The timeline's own map sets the seconds.
+
+An **event pattern** is an item like any other, placed at its beat; a pattern of plain values is not, since it is the definition of a generator and does not play (see [Routines and clocks](routines-and-clocks.md)).
 
 ## On a server's transport
 
@@ -518,8 +505,8 @@ the order they come in.
 
 ## See also
 
-- [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).
+- [Routines and clocks](routines-and-clocks.md) — the generative counterpart: routines and patterns, the open-ended side.
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
-- [Timing models](timing-models.md) — the timing references a timeline's clock inherits (`quant`, `lock_to`).
+- [Timing models](timing-models.md) — the timing references a timeline's clock is made on, and `quant`.
 - [Examples](examples.md) — `timeline.py`, a timeline's transport live.
 - [API reference](api.md) — `Timeline`, `OscItem`, `MidiItem`.

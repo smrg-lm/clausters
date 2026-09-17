@@ -74,7 +74,7 @@ four beats.</div>
 
       async function renderGliss() {
         // The offline session, and the instrument registered on it.
-        const session = await Session.nrt({ tempo: 1.0 });
+        const session = await Session.nrt();
         const server = session.server;
         await tone().send(server);
 

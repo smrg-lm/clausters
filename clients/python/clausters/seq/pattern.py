@@ -1,10 +1,11 @@
 """Patterns (port of ``sc3/seq/pattern.py`` + ``patterns/``).
 
-A `Pattern` is a reusable, lazy description of a value sequence; iterating
-it yields the values (a fresh stream each time). Value patterns (``Pseq``,
-``Pwhite``, …) feed `Pbind`, which combines per-key value patterns into a
-stream of `Event` objects. An event pattern is
-played on a clock with `Pattern.play` (see
+A `Pattern` is a reusable, lazy description of a value sequence -- the
+definition of a generator: iterating it yields the values (a fresh stream each
+time), and it does not play. Value patterns (``Pseq``, ``Pwhite``, …) feed
+`Pbind`, which combines per-key value patterns into a stream of `Event`
+objects. An `EventPattern` -- `Pbind`, and a list pattern whose every element
+is an event pattern -- is what plays, on a clock, with `EventPattern.play` (see
 `EventStreamPlayer`).
 
 Patterns are plain Python generators under the hood, so nesting and composition
@@ -31,7 +32,22 @@ def as_pattern(value):
     return value if isinstance(value, Pattern) else Pconst(value)
 
 
+def _made(cls, base, event_cls, events):
+    """An instance of ``event_cls`` when ``base`` itself is being built over
+    event patterns only, else of ``cls``: how a list pattern resolves whether
+    it is an `EventPattern` when it is made."""
+    return object.__new__(event_cls if cls is base and events else cls)
+
+
+def _all_events(items) -> bool:
+    return bool(items) and all(isinstance(item, EventPattern) for item in items)
+
+
 class Pattern:
+    """The definition of a generator: iterating it yields its values. It has no
+    `play` -- what plays is an `EventPattern`. `clausters.render` of a value
+    pattern generates its values."""
+
     def __iter__(self):
         raise NotImplementedError(f"{type(self).__name__}.__iter__")
 
@@ -42,8 +58,16 @@ class Pattern:
         it = iter(self)
         return FunctionStream(lambda _=None: next(it))
 
+
+class EventPattern(Pattern):
+    """A pattern whose values are events, and so a pattern that plays.
+
+    `Pbind` is one, and so is a list pattern (`Pseq`, `Prand`, `Pn`) whose
+    every element is one: it resolves its class when it is built.
+    """
+
     def play(self, clock=None, server=None, quant=None):
-        """Play this (event) pattern on ``clock``, sending to ``server``.
+        """Play this event pattern on ``clock``, sending to ``server``.
 
         Both are optional and resolve against the ambient context (the running
         session, else the default session): ``server=None`` takes the booted
@@ -77,10 +101,16 @@ class Pconst(Pattern):
 
 
 class Pseq(Pattern):
-    """The items in order, ``repeats`` times (sub-patterns are embedded)."""
+    """The items in order, ``repeats`` times (sub-patterns are embedded). Over
+    event patterns only, it is an `EventPattern`."""
 
-    def __init__(self, items, repeats=1):
-        self.items = list(items)
+    def __new__(cls, items=(), repeats=1):
+        items = list(items)
+        self = _made(cls, Pseq, _EventPseq, _all_events(items))
+        self.items = items
+        return self
+
+    def __init__(self, items=(), repeats=1):
         self.repeats = repeats
 
     def __iter__(self):
@@ -108,10 +138,16 @@ class Prand(Pattern):
     running routine's generator, or the root outside one — see
     `clausters.base.rand`): ``main.seed(n)`` reproduces the choices along with
     everything else in the script. There is no per-pattern seed — independent
-    seeds would break whole-script consistency."""
+    seeds would break whole-script consistency. Over event patterns only, it is
+    an `EventPattern`."""
 
-    def __init__(self, items, length=INF):
-        self.items = list(items)
+    def __new__(cls, items=(), length=INF):
+        items = list(items)
+        self = _made(cls, Prand, _EventPrand, _all_events(items))
+        self.items = items
+        return self
+
+    def __init__(self, items=(), length=INF):
         self.length = length
 
     def __iter__(self):
@@ -183,9 +219,13 @@ class Pfunc(Pattern):
 
 
 class Pn(Pattern):
-    """Repeats ``pattern`` ``n`` times."""
+    """Repeats ``pattern`` ``n`` times. Over an event pattern, it is an
+    `EventPattern`."""
 
-    def __init__(self, pattern, n=INF):
+    def __new__(cls, pattern=None, n=INF):
+        return _made(cls, Pn, _EventPn, isinstance(pattern, EventPattern))
+
+    def __init__(self, pattern=None, n=INF):
         self.pattern = pattern
         self.n = n
 
@@ -198,7 +238,7 @@ class Pn(Pattern):
 
 # ---- event pattern ----
 
-class Pbind(Pattern):
+class Pbind(EventPattern):
     """Binds keys to value patterns; yields an `Event` per step, stopping
     when any key's stream stops. Constant values are held; sub-patterns advance
     one value per event.
@@ -222,3 +262,20 @@ class Pbind(Pattern):
                 except StopIteration:
                     return
             yield Event(event)
+
+
+# ---- list patterns over events ----
+#
+# What a list pattern is made as when every element is an event pattern: the
+# same pattern, and playable. `Pseq([Pbind(...), Pbind(...)])` is one.
+
+class _EventPseq(Pseq, EventPattern):
+    pass
+
+
+class _EventPrand(Prand, EventPattern):
+    pass
+
+
+class _EventPn(Pn, EventPattern):
+    pass

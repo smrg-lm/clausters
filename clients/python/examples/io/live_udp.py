@@ -43,7 +43,8 @@ phrase = Pbind(
 # `Session.live` for `Session.nrt` is the *only* change that makes this offline.
 
 # %%
-session = Session.live(tempo=2.0, latency=0.1)
+session = Session.live(latency=0.1)
+session.clock.set_tempo(2.0)
 
 # %%
 def run(seconds: float = 3.5):

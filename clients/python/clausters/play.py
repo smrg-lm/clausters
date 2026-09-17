@@ -63,7 +63,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
 
     Args:
         playable: an `clausters.seq.event.Event` or a plain dict of event
-            keys; an event `clausters.seq.pattern.Pattern`; a
+            keys; an `clausters.seq.pattern.EventPattern`; a
             `clausters.base.stream.Routine` / `clausters.base.stream.Stream`
             or a bare generator (object or function); a bare expression
             (`clausters.defs.Ugen`, `clausters.defs.ChannelList`,
@@ -103,7 +103,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
     """
     from .seq.automation import Automation
     from .seq.event import Event
-    from .seq.pattern import Pattern
+    from .seq.pattern import EventPattern, Pattern
     from .seq.timeline import Timeline
     from .base.stream import Stream, Routine
     from .defs import Buffer, Expr, FaustDef, GraphDef, SynthDef
@@ -120,8 +120,15 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         routine = _as_routine(playable)
         clock = clock or main.resolve_clock() or main.get_default_clock()
         return routine.play(clock, quant)
-    if isinstance(playable, Pattern):
+    if isinstance(playable, EventPattern):
         return playable.play(clock, main.resolve_server(server), quant)
+    if isinstance(playable, Pattern):
+        raise TypeError(
+            f"a {type(playable).__name__} of values does not play: a pattern is "
+            f"the definition of a generator, and it plays when its values are "
+            f"events (a Pbind, or a Pseq/Prand/Pn over event patterns only). "
+            f"render() generates a value pattern's values"
+        )
     if isinstance(playable, (Expr, SynthDef, FaustDef, GraphDef)):
         return _play_def(as_def(playable), main.resolve_server(server), controls)
     if isinstance(playable, Timeline):
@@ -151,7 +158,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return playable.play(main.resolve_server(server))
     raise TypeError(
         f"don't know how to play {type(playable).__name__}; expected an Event "
-        "or event dict, an event Pattern (Pbind), a Routine/Stream or "
+        "or event dict, an EventPattern (Pbind), a Routine/Stream or "
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
         "a Timeline, "
         "a Buffer, an Automation, or anything with play(destination). An "

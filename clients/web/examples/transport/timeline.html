@@ -30,7 +30,7 @@ random access by beat, and it plays itself — <code>play({ at })</code>,
 <code>position()</code>. No clock and no playhead are handled: the timeline
 plays on a clock of its own, with its own tempo map.
 
-This captures a pattern into a timeline, edits it, then drives it live. Random
+This writes a phrase into a timeline, edits it, then drives it live. Random
 access happens at the boundaries; between them the timeline just goes
 forward.</div>
 
@@ -72,17 +72,18 @@ forward.</div>
 
       async function run() {
         $("run").disabled = true;
-        timeline = seq.Timeline.fromPattern(
-          new seq.Pbind({
-            instrument: "default",
-            degree: new seq.Pseq([0, 2, 4, 7]),
-            dur: 0.5,
-            amp: 0.2,
-          }),
-          { dur: 2.0, tempo: 2.0 },
+        // Four notes half a beat apart, each at its beat: a static list of
+        // timed items, so it can be edited by hand. Its tempo is the
+        // timeline's own: two beats a second.
+        timeline = new seq.Timeline(
+          [0, 2, 4, 7].map((degree, i) => [
+            0.5 * i,
+            new Event({ instrument: "default", degree, dur: 0.5, amp: 0.2 }),
+          ]),
+          { tempo: 2.0 },
         );
-        // An accent, added where the pattern never put one: a timeline is
-        // editable, which is the half a generator does not have.
+        // An accent, added by hand: a timeline is editable, which is the half
+        // a generator does not have.
         timeline.add(0.0, new Event({ instrument: "default", degree: 7, dur: 0.5, amp: 0.3 }));
         log(`timeline: ${timeline.length} items over ${timeline.duration()} beats`);
 

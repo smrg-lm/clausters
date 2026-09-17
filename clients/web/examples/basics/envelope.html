@@ -116,7 +116,8 @@ a chosen attack, decay, sustain and release.</div>
           amp: 0.2,
         });
 
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await adsrPad().send();                 // /def_send synth at time 0
         session.play(phrase);
 

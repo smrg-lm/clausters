@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, Routine, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, Routine, TempoClock
 from clausters.defs import Server, Synth, SynthDef, control
 from clausters.defs.ugens import (
     decay2, demand, dseq, impulse, latch, lpf, out, pulse_divider, rlpf, saw,
@@ -104,7 +104,7 @@ def render(path=None):
     server = Server(interface=OscNrtInterface())
     for sdef in (sequencer(), bass()):
         sdef.send(server)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     clock.play(Routine(lambda: play(server)))
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)

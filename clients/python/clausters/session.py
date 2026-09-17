@@ -14,7 +14,7 @@ work with no `Session` at all. An explicit `Session` is simply a *named*
 environment that never touches the default one.
 
 ```python
-s = Session.nrt(tempo=2.0)
+s = Session.nrt()
 s.play(Pbind(instrument="default", freq=Pseq([440, 550, 660]), dur=0.5))
 stats = s.render()                  # drains the clock, renders the score
 ```
@@ -23,7 +23,7 @@ stats = s.render()                  # drains the clock, renders the score
 from contextlib import contextmanager
 
 from .base import OscDestination, OscEmbedInterface, OscNrtInterface, TempoClock
-from .base.timebase import LogicalTimebase
+from .base.timebase import LogicalTimebase, MonotonicTimebase
 from .base.environment import Environment
 from .base.main import main
 from .defs import Server
@@ -59,8 +59,16 @@ class Session(Environment):
     Args:
         server: the `Server` to drive -- a live one, or one holding an
             `OscNrtInterface` for offline rendering.
-        clock: the `TempoClock` that sequences it; a fresh one at tempo 1.0 is
-            created when omitted.
+        clock: the `TempoClock` that sequences it; a fresh one at tempo 1.0,
+            on the session's timebase, is made when omitted. A clock that
+            already belongs to another session, or is on another timebase than
+            ``timebase``, raises.
+        timebase: the physical time every clock of this session paces
+            against, fixed for the session's life. ``None`` takes ``clock``'s
+            when one is given, else `LogicalTimebase` for an offline server --
+            the only one an offline session can have -- and the OS monotonic
+            clock otherwise (`live` and `embed` default to the server's sample
+            clock).
         gui: a `clausters.gui.GuiHost` this session drives instead of booting
             one -- the visual half of taking a `Server` the session did not
             start, and the way a session adopts a host reached with
@@ -71,15 +79,40 @@ class Session(Environment):
     manager:
 
     ```python
-    with Session.live(tempo=2.0, latency=0.1) as s:
+    with Session.live(latency=0.1) as s:
         s.play(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5))
         s.run(3.0)
     ```
     """
 
-    def __init__(self, server: Server, clock: TempoClock | None = None, gui=None):
+    def __init__(self, server: Server, clock: TempoClock | None = None, gui=None,
+                 timebase=None):
         super().__init__()          # Environment: its own RNG root + server slot
         self.server = server
+        if clock is not None:
+            if timebase is not None and timebase is not clock.timebase:
+                raise ValueError(
+                    f"this clock is on a {type(clock.timebase).__name__} and the "
+                    f"session was asked for a {type(timebase).__name__}: every "
+                    f"clock of a session is on the session's timebase, and a "
+                    f"clock's is fixed when it is made"
+                )
+            timebase = clock.timebase
+        if getattr(server.interface, "time_mode", "unix") == "score":
+            if timebase is None:
+                timebase = LogicalTimebase()
+            elif not isinstance(timebase, LogicalTimebase):
+                raise ValueError(
+                    f"an offline session is on a LogicalTimebase, and this one "
+                    f"was given a {type(timebase).__name__}: an offline run has "
+                    f"no physical time to wait on, so logical time is the only "
+                    f"time its clocks can have"
+                )
+        elif timebase is None:
+            timebase = MonotonicTimebase()
+        #: the physical time every clock of this session paces against; see
+        #: `timebase`.
+        self._timebase = timebase
         #: every clock this session owns, in the order it took them. A piece
         #: with several independent tempos has several clocks, and they belong
         #: to the session the same way its server does: kept here, and closed
@@ -88,7 +121,13 @@ class Session(Environment):
         #: the session's **default clock** -- the one `play`, `start`, `run` and
         #: the ambient `Routine.play` mean when no clock is named. The first of
         #: `clocks`, and it stays the default however many others are adopted.
-        self.clock = self.adopt(clock if clock is not None else TempoClock())
+        if clock is None:
+            # Made with this session in force, so it takes the session's
+            # timebase and is kept here -- whatever session is active around
+            # this constructor.
+            with self._active():
+                clock = TempoClock()
+        self.clock = self.adopt(clock)
         #: the session's GUI host: the one handed to the constructor, or the one
         #: `gui` boots lazily. Stopped with the session — and `GuiHost.stop`
         #: stops the ``clausters-gui`` process only if that host booted it, so a
@@ -101,6 +140,29 @@ class Session(Environment):
         self._destinations = []
 
     # ---- the session's clocks ----
+
+    @property
+    def timebase(self):
+        """The physical time every clock of this session paces against, fixed
+        for the session's life: the server's sample clock for a live or
+        embedded session, `LogicalTimebase` for an offline one.
+
+        A `TempoClock` made while this session is active is made on it and
+        kept here, so the clocks of one session never disagree about what
+        "now" is."""
+        return self._timebase
+
+    def _timebase_for_clock(self, timebase):
+        """The timebase a clock made while this session is active is made on:
+        the session's, which is the only one it may ask for."""
+        if timebase is None or timebase is self._timebase:
+            return self._timebase
+        raise ValueError(
+            f"a clock made while a session is active is on the session's "
+            f"timebase ({type(self._timebase).__name__}), and this one asked for "
+            f"a {type(timebase).__name__}; make it with no timebase, or with no "
+            f"session active"
+        )
 
     @property
     def clocks(self) -> tuple:
@@ -122,22 +184,27 @@ class Session(Environment):
         not available there. A clock already held by another session leaves that
         one first; a clock this session already holds is not taken twice.
 
-        Called for you: `TempoClock` adopts the ambient session at construction.
-        Call it by hand for a clock built before the session existed, or to move
-        one between sessions.
+        Called for you: a `TempoClock` made while this session is active is
+        adopted at construction. Call it by hand for a clock made with no
+        session active, on this session's timebase.
+
+        A clock that belongs to another session raises, and so does one on
+        another timebase: a clock's timebase is fixed when it is made, so it
+        cannot join a session that paces against another time.
         """
         previous = getattr(clock, "session", None)
         if previous is not None and previous is not self:
-            previous.release(clock)
+            raise ValueError(
+                "this clock already belongs to another session; a clock is kept "
+                "by the session it was made in"
+            )
+        if clock.timebase is not self._timebase:
+            raise ValueError(
+                f"this clock is on a {type(clock.timebase).__name__} and the "
+                f"session on a {type(self._timebase).__name__}: every clock of a "
+                f"session is on the session's timebase"
+            )
         clock.session = self
-        # Offline, the session's clocks share one logical time -- the run's
-        # physical time -- so a clock that has not started yet moves onto it.
-        home = getattr(getattr(self, "clock", None), "timebase", None)
-        if (isinstance(home, LogicalTimebase)
-                and not isinstance(clock.timebase, LogicalTimebase)
-                and clock.pacing_origin is None):
-            clock.timebase = clock._now = home
-            home.join(clock)
         if not any(held is clock for held in self._clocks):
             self._clocks.append(clock)
         return clock
@@ -163,7 +230,7 @@ class Session(Environment):
     # ---- factories (the "defaults", explicit) ----
 
     @classmethod
-    def nrt(cls, tempo: float = 1.0) -> "Session":
+    def nrt(cls, clock: "TempoClock | None" = None, timebase=None) -> "Session":
         """Build an offline (non-real-time) session.
 
         Its `Server` holds an `OscNrtInterface`, so playing a pattern
@@ -171,18 +238,24 @@ class Session(Environment):
         then turns that score into samples through the bundled embedded
         renderer. No server process and no audio device are involved.
 
+        Its timebase is a `LogicalTimebase`, and it is the only one it can
+        have: every clock made while it is active is on that logical time.
+
         Args:
-            tempo: the clock's tempo, in beats per second.
+            clock: the session's clock, made on a `LogicalTimebase`; ``None``
+                makes one at tempo 1.0 on the session's.
+            timebase: the session's `LogicalTimebase`; ``None`` makes one, and
+                any other kind raises.
 
         Returns:
             A `Session` whose `render` produces the audio.
         """
-        return cls(Server(interface=OscNrtInterface()),
-                   TempoClock(tempo, timebase=LogicalTimebase()))
+        return cls(Server(interface=OscNrtInterface()), clock=clock, timebase=timebase)
 
     @classmethod
     def live(cls, host: "str | None" = None, port: "int | None" = None, *,
-             tempo: float = 1.0, latency: "float | None" = None, timebase=None,
+             clock: "TempoClock | None" = None, timebase=None,
+             latency: "float | None" = None,
              boot: bool = True, options=None, shm="auto", transport: "str | None" = None,
              verbose: int = 0, workers: "int | None" = None,
              data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
@@ -210,19 +283,23 @@ class Session(Environment):
                 ``[client].host`` (default ``127.0.0.1``). Booting is local.
             port: the server's UDP port; ``None`` takes ``[client].port`` (the
                 Clausters default is 57110).
-            tempo: the clock's tempo, in beats per second.
+            clock: the session's clock, on the session's timebase; ``None``
+                makes one at tempo 1.0.
             latency: seconds added to each event's timetag so it reaches the
                 server slightly ahead of its play time and sounds on time
                 instead of late; a small value such as 0.1 is typical for a
                 live take. ``None`` takes the config file's ``[client].latency``,
                 falling back to 0.1 (the real-time default for a networked
                 transport) when the config sets none.
-            timebase: the clock's pacing source. Left unset, the session
-                **anchors to the server's sample clock by default** (config
-                ``[client].clock``, default ``"sample"``) — sample-accurate and
-                drift-free, falling back to wall-clock if no master answers. Pass
-                ``timebase=MonotonicTimebase()`` (or set ``[client].clock =
-                "monotonic"``) to keep wall-clock OSC timetags.
+            timebase: the session's timebase, which every clock of it is made
+                on. Left unset (and with no ``clock``), it is **the server's
+                sample clock** (config ``[client].clock``, default
+                ``"sample"``) — sample-accurate and drift-free — and a server
+                that does not answer it raises, since a clock's timebase is
+                fixed when it is made and there is nothing to fall back to
+                afterwards. Pass ``timebase=MonotonicTimebase()`` (or set
+                ``[client].clock = "monotonic"``) for wall-clock OSC
+                timetags.
             boot: start a server if none is already answering (default). ``False``
                 attaches only, never launching a process.
             options: a `clausters.defs.ServerOptions` — the enumeration of
@@ -259,33 +336,11 @@ class Session(Environment):
             server.boot(shm=shm, verbose=verbose, workers=workers,
                         data_dir=data_dir, server_args=server_args,
                         ready_timeout=ready_timeout, adopt_default=False)
-        return cls(server, TempoClock(tempo, timebase=timebase))._apply_default_clock(timebase)
-
-    def _apply_default_clock(self, timebase):
-        """Anchor a live session's clock to its server's sample clock by default.
-
-        With no explicit ``timebase``, the clock follows the config's
-        ``[client].clock`` (default ``"sample"``): a local real-time session is
-        sample-accurate and drift-free out of the box. Graceful — if no master
-        answers, `lock_to` leaves it on wall-clock time (see `TempoClock.lock_to`).
-        An explicit ``timebase`` is honoured as-is (no auto-lock). Returns ``self``.
-
-        Both real-time factories call this: `live` locks through the UDP
-        sample-clock tracker, `embed` through a direct in-process read of the
-        shared counter (no socket, no timeout). Offline (`nrt`) never does —
-        a score server has no live clock.
-        """
-        if timebase is not None:
-            return self
-        from .config import client_config
-
-        if client_config().get("clock", "sample") == "sample":
-            self.lock_to_server()
-        return self
+        return cls(server, clock=clock, timebase=_live_timebase(server, clock, timebase))
 
     @classmethod
-    def embed(cls, tempo: float = 1.0, latency: "float | None" = None, workers: int = 0,
-              timebase=None, server=None) -> "Session":
+    def embed(cls, clock: "TempoClock | None" = None, latency: "float | None" = None,
+              workers: int = 0, timebase=None, server=None) -> "Session":
         """Build a real-time session backed by an in-process embedded server.
 
         The whole server — audio device and engine — runs in this process
@@ -297,7 +352,8 @@ class Session(Environment):
         script.
 
         Args:
-            tempo: the clock's tempo, in beats per second.
+            clock: the session's clock, on the session's timebase; ``None``
+                makes one at tempo 1.0.
             latency: seconds added to each event's timetag so it lands a touch
                 in the future and sounds on time. The embedded server is
                 wall-clock timetagged like a networked one, so ``None`` takes
@@ -305,13 +361,13 @@ class Session(Environment):
                 default; a smaller value such as 0.05 is fine in-process.
             workers: engine worker threads for parallel node processing (0 lets
                 the server choose).
-            timebase: the clock's pacing source. Left unset, the session
-                **anchors to the server's sample clock by default**, exactly
-                like `live` (config ``[client].clock``, default ``"sample"``) —
-                and in-process the lock is a direct read of the shared counter,
-                with no tracker, socket or timeout at all. Pass
-                ``timebase=MonotonicTimebase()`` (or set ``[client].clock =
-                "monotonic"``) to keep wall-clock OSC timetags.
+            timebase: the session's timebase, which every clock of it is made
+                on. Left unset (and with no ``clock``), it is **the server's
+                sample clock**, exactly like `live` (config ``[client].clock``,
+                default ``"sample"``) — and in-process it is a direct read of
+                the shared counter, with no tracker, socket or timeout at all.
+                Pass ``timebase=MonotonicTimebase()`` (or set
+                ``[client].clock = "monotonic"``) for wall-clock OSC timetags.
             server: an existing `clausters.ipc.Clausters` handle to reuse; when
                 omitted the session opens and owns a fresh embedded server and
                 closes it on `close`.
@@ -321,8 +377,8 @@ class Session(Environment):
             `live`.
         """
         iface = OscEmbedInterface(server, workers=workers)
-        session = cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
-        return session._apply_default_clock(timebase)
+        server = Server(interface=iface, latency=latency)
+        return cls(server, clock=clock, timebase=_live_timebase(server, clock, timebase))
 
     def gui(self, *, port: "int | None" = None, transport: str = "tcp",
             verbose: int = 0, data_dir=None,
@@ -440,26 +496,29 @@ class Session(Environment):
         driving call, so anything created in it (a played routine, a top-level
         draw) resolves to *this* session's server/clock/rng — not the default
         session's. Save/restore, so nesting and other threads are unaffected."""
-        prev = main.current_session
+        prev = main._session_context
         main.current_session = self
         try:
             yield
         finally:
-            main.current_session = prev
+            main._session_context = prev
 
     def play(self, pattern, quant=None):
         """Play an event pattern on this session's clock and server.
 
         Args:
-            pattern: an event pattern, e.g. a `Pbind`.
+            pattern: an `EventPattern`, e.g. a `Pbind`. A value pattern does
+                not play, and is refused.
             quant: optional quantization handed to the player -- the beat grid
                 the routine starts on; ``None`` starts immediately.
 
         Returns:
             The `EventStreamPlayer` driving the pattern.
         """
+        from .play import play
+
         with self._active():
-            return pattern.play(self.clock, self.server, quant)
+            return play(pattern, server=self.server, clock=self.clock, quant=quant)
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
                until: float | None = None, workers: int = 0, path=None,
@@ -503,24 +562,11 @@ class Session(Environment):
                                   workers=workers, path=path, seed=seed,
                                   sample_format=sample_format)
 
-    def lock_to_server(self):
-        """Lock this session's clock to its server's sample clock — the
-        sample-accurate, drift-free timebase, with the server as the master
-        clock. Returns ``self``, so it chains after a factory:
-        ``Session.live(...).lock_to_server()``.
-
-        Safe when the server is not a reachable master (offline, or no server
-        running): the clock simply stays on wall-clock OSC time. See
-        `TempoClock.lock_to`.
-        """
-        self.clock.lock_to(self.server)
-        return self
-
     def join_transport(self):
         """Join this session's server's shared transport, so a ``quant``-ed
         pattern starts on the same beat as every other client on it (see
         `TempoClock.join_transport`). Returns ``self`` for chaining:
-        ``Session.live(...).lock_to_server().join_transport()``. No-op if the
+        ``Session.live(...).join_transport()``. No-op if the
         server has no transport defined."""
         self.clock.join_transport(self.server)
         return self
@@ -575,9 +621,8 @@ class Session(Environment):
         return dest
 
     def close(self):
-        """Close the underlying `Server` and every clock the session owns,
-        releasing each one's master-clock tracker (from `lock_to_server`), if
-        any. Also stops the GUI host and, if
+        """Close the underlying `Server` (which releases its sample-clock
+        reader) and every clock the session owns. Also stops the GUI host and, if
         `live` launched a server, that process too — so nothing this session
         started is left running. What it did **not** start it leaves standing:
         `clausters.gui.GuiHost.stop` ends a ``clausters-gui`` process only when
@@ -599,10 +644,23 @@ class Session(Environment):
     def __enter__(self):
         # Activate for the whole block, so anything created inside (patterns,
         # routines, top-level draws) resolves to this session's server/clock/rng.
-        self._prev_session = main.current_session
+        self._prev_session = main._session_context
         main.current_session = self
         return self
 
     def __exit__(self, *exc):
-        main.current_session = getattr(self, "_prev_session", None)
+        main._session_context = getattr(self, "_prev_session", (None, None))
         self.close()
+
+
+def _live_timebase(server, clock, timebase):
+    """The timebase a real-time session is made on when nothing names one:
+    the server's sample clock, unless the config (``[client].clock``) says
+    ``"monotonic"``. A given ``clock`` or ``timebase`` is kept as it is."""
+    if clock is not None or timebase is not None:
+        return timebase
+    from .config import client_config
+
+    if client_config().get("clock", "sample") == "sample":
+        return server.sample_timebase()
+    return MonotonicTimebase()

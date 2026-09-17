@@ -98,7 +98,8 @@ than an <code>/synth_new</code> per note.</div>
       // beat) rather than the immediate `set`/`free`, which would collapse onto
       // time 0 and free the synth before it ever sounded.
       async function renderMelody() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await glideLead().send();          // /def_send synth at time 0
         const lead = new Synth("glide_lead", {
           amp: 0.2, freq: midicps(48), detune: -4.0 + 8.0 * Math.random(),

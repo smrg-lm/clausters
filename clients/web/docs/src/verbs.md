@@ -61,7 +61,10 @@ The three carry one semantic each, and the split is deliberate:
 |---|---|
 | a binary **score** (`Uint8Array`) | the score, as is |
 | a def, or a bare expression | instances it offline for `dur` seconds — the audible sibling of `plot(def)` |
-| a `Timeline`, an event `Pattern`, a `Routine` or a generator | **bounces** it in an ephemeral offline session |
+| a `Timeline`, an `EventPattern`, a `Routine` or a generator | **bounces** it in an offline session |
+| a value pattern (`Pseq`, `Pwhite`, …) | the values it generates, as an array (an endless one needs `count`) |
+
+**The tempo is the clock's.** Neither verb takes one: `play` and `render` both take an optional `clock`, and use a default one when none is given. A render bounces in an **offline session** — the one its `clock` belongs to, which has to be a clock of `Session.nrt()`, or, with no `clock`, a session of the render's own at tempo 1.0. A value pattern is not a playable at all: `play` refuses it by name, and `render` generates its values.
 
 `plot` and `render` do the same render: `plot(x)` shows exactly what `render(x)` returns and `play(x)` sounds.
 
@@ -72,7 +75,8 @@ They part company on one word. `play` and `plot` are **conveniences** — free t
 Under `render` sits a third `Server` carrier, beside the in-page engine and the WebSocket: one that **writes time instead of waiting for it**.
 
 ```js
-const session = await Session.nrt({ tempo: 2.0 });
+const session = await Session.nrt();
+session.clock.setTempo(2.0);
 await def.send(session.server);
 session.play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 }));
 const stats = await session.render({ channels: 2 });
@@ -82,7 +86,7 @@ const stats = await session.render({ channels: 2 });
 
 Nothing above the carrier changes: the same patterns, defs and routines play into it, because only the connection under the `Server` is different. That is what makes a piece written for a live take renderable without editing a line of it — and the score it writes is **byte-identical** to the one the Python client writes for the same piece, which the package asserts against committed vectors.
 
-Schedule a closing event — freeing the root group, or whatever ends the piece — so the render has a defined length: it stops when the score does, and commands do not sound. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own).
+Schedule a closing event — freeing the root group, or whatever ends the piece — so the render has a defined length: it stops when the score does, and commands do not sound. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own); with none, `render` refuses an event pattern after a million events rather than rendering it forever.
 
 ## What a render gives back
 
@@ -95,7 +99,7 @@ const stats = await render(myPattern, { defs: [myInstrument], channels: 2 });
 
 `seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy piece in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
 
-Every offline path starts from an **empty** ephemeral session, so whatever the samples names has to ride along in `defs`.
+Every offline path with no `clock` starts from an **empty** session of its own, so whatever the samples names has to ride along in `defs`.
 
 ## Where the audio goes
 

@@ -92,7 +92,7 @@ TAKE_DUR = 2.0
 # %%
 def gentake(name: str, expr, secs: float = TAKE_DUR) -> list:
     """Render ``expr`` for ``secs`` seconds offline and hand back its samples."""
-    session = Session.nrt(tempo=1.0)          # beats == seconds
+    session = Session.nrt()          # beats == seconds
     server = session.server
     SynthDef(name, out(0.0, expr)).send(server)
     node = Synth(name, server=server)
@@ -114,7 +114,7 @@ TAKES = {"white": gentake("t_white", white_noise() * 0.5),
 # ## The session and the takes on the server
 
 # %%
-session = Session.live(tempo=1.0, latency=0.1)
+session = Session.live(latency=0.1)
 server = session.server
 BUFS = {name: Buffer.from_samples(samples, sample_rate=SR, server=server)
         for name, samples in TAKES.items()}

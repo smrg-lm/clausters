@@ -137,7 +137,8 @@ render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
 # together, with no audio device anywhere. The verbs inside it are the verbs
 # above, which is the whole point: only the carrier differs.
 print("a session that never sounds: the same verbs, rendered")
-offline = Session.nrt(tempo=2.0)
+offline = Session.nrt()
+offline.clock.set_tempo(2.0)
 offline.play(Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25))
 stats = offline.render(channels=1)
 print(f"  offline session -> {stats.frames} frames, {stats.duration:.2f} s, "

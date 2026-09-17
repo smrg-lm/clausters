@@ -84,7 +84,8 @@ paused: it is still there.</div>
       // they go out through `sendBundle` (stamped with the routine's logical
       // beat).
       async function renderScore() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await drone().send();          // /def_send synth at time 0
         const node = new Synth("drone", { freq: 220.0, amp: 0.2 });
 

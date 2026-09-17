@@ -46,14 +46,11 @@ approximate either: the width in beats a request in seconds implies is solved in
 closed form, so a ramp ends on the second it was asked for.
 
 <b>Ten clocks, one server.</b> A <code>Session</code> owns a server and as many
-clocks as the piece has tempos, so this page makes ten. Each is
-<code>lockTo</code> the server, which puts its scheduling on the engine's own
-sample counter — and there is <b>one</b> reader of that counter, built by the
-first clock and shared by the rest.
-
-Each also <b>adopts the session</b>, because it is built while the session is
-ambient: they are in <code>session.clocks</code>, <code>session.start()</code>
-starts them together, and <code>session.close()</code> closes them.
+clocks as the piece has tempos, so this page makes ten. Each is made while the
+session is active, so it is made on <b>the session's timebase</b> — the engine's
+own sample counter — and kept in the session: they are in
+<code>session.clocks</code>, <code>session.start()</code> starts them together,
+and <code>session.close()</code> closes them.
 
 <b>What is different from the script</b>, and it is only the platform: the
 numeric core is wasm and has to be fetched before anything calls into it
@@ -160,19 +157,18 @@ this directory and open the page.</div>
         // The session. `embed` is this client's `live` — the engine is the
         // tab's own rather than a process this line started. Activating it
         // makes it ambient, so a note played from inside a routine finds this
-        // server without being handed it, and every clock built below adopts
-        // this session.
-        const session = (await Session.embed({ tempo: 1.0, channels: 2 })).activate();
+        // server without being handed it, and every clock built below is made
+        // on its timebase and kept in it.
+        const session = (await Session.embed({ channels: 2 })).activate();
         const server = session.server;
 
-        // The ten clocks: a clock, its ramp, its routine. Each adopts the
-        // ambient session as it is constructed, so by the end of this loop
+        // The ten clocks: a clock, its ramp, its routine. Each is made on the
+        // ambient session's timebase and kept in it, so by the end of this loop
         // `session.clocks` holds all eleven — the session's own default clock,
         // which this piece does not use, and these ten.
         const clocks = [];
         for (const [i, start] of STARTS.entries()) {
-          const clock = new TempoClock(start);
-          await clock.lockTo(server);          // the engine's own sample counter
+          const clock = new TempoClock(start);   // on the session's sample clock
           clock.setTempo(TARGETS[i], { over: SPREAD, unit: "seconds" });
           new Routine(() => line(PITCHES[i])).play(clock);   // a hand-made clock is named
           clocks.push(clock);

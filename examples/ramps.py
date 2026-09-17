@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, env_gen, free_self, free_self_when_done, line, lpf, out,
@@ -98,7 +98,7 @@ def render(path=None):
     for sdef in (zap(), sweep(), fade()):
         sdef.send(server)
 
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument="zap", dur=Pseq([0.5, 0.5, 0.5, 1.5]), amp=0.2).play(clock, server)
     Pbind(instrument="sweep", dur=Pseq([3.0]), amp=0.12).play(clock, server)
     Pbind(instrument="fade", dur=Pseq([1.0]), delta=3.0, amp=0.15).play(clock, server)

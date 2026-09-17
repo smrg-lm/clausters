@@ -330,7 +330,7 @@ def test_render_matches_handbuilt_timeline_nrt():
     from clausters.seq.event import Event as SeqEvent
 
     def _starts(build):
-        session = Session.nrt(tempo=1.0).activate()
+        session = Session.nrt().activate()
         try:
             build(session.server, session.clock)
             session.clock.render()

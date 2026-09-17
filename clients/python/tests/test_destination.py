@@ -12,6 +12,7 @@ import time
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import Moment, OscDestination, OscReceiver, Routine, TempoClock
 
 
@@ -32,7 +33,7 @@ def test_moment_outside_a_routine_is_the_wall_clock():
 def test_moment_inside_a_routine_is_the_exact_logical_beat():
     """The beat the clock stamped on the routine, not what time it is now."""
     seen = []
-    clock = TempoClock(tempo=2.0)
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
 
     def body():
         seen.append(Moment.current())
@@ -54,7 +55,7 @@ def test_moment_on_a_foreign_clock_asks_that_clock():
     seen = []
     theirs = TempoClock(tempo=1.0)
     theirs.start()
-    ours = TempoClock(tempo=1.0)
+    ours = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def body():
         seen.append((Moment.current(), Moment.current(theirs)))

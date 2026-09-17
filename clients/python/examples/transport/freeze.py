@@ -70,7 +70,8 @@ def cloud() -> SynthDef:
 # that group (the event's ``target``), so freezing the group freezes the piece.
 
 # %%
-session = Session.live(tempo=2.0, latency=0.1).activate()
+session = Session.live(latency=0.1).activate()
+session.clock.set_tempo(2.0)
 server = session.server
 cloud().send(server)
 server.sync()

@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import builtins as B
 from clausters.base import (
     AbstractObject,
@@ -191,7 +192,7 @@ def test_set_tempo_pins_the_instant():
     """A tempo change must not move the music that already happened: the beat
     the clock is on keeps mapping to the second it already mapped to."""
     _ffi_or_skip()
-    clk = TempoClock(tempo=2.0)          # 2 beats/s -> beat 8 is second 4
+    clk = TempoClock(tempo=2.0, timebase=LogicalTimebase())          # 2 beats/s -> beat 8 is second 4
     seen = {}
 
     def change():
@@ -220,7 +221,7 @@ def test_a_tempo_change_leaves_the_beats_before_it_convertible():
     would answer that beat 4 happened at a second it did not.
     """
     _ffi_or_skip()
-    clk = TempoClock(tempo=1.0)
+    clk = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def change():
         clk.set_tempo(2.0)
@@ -335,25 +336,27 @@ def test_one_tempo_verb_spells_a_step_a_ramp_a_shape_and_an_envelope():
 
 
 def test_a_clock_built_under_a_session_belongs_to_it():
-    """A clock adopts the ambient session at construction, and the session keeps
-    it and closes it. That back-reference is the only thing an ambient play can
+    """A clock adopts the ambient session at construction, on the session's
+    timebase, and the session keeps it and closes it. That back-reference is the only thing an ambient play can
     follow from inside a routine: a routine runs on its clock's thread, and
     `Session.activate` is thread-local."""
     _ffi_or_skip()
     from clausters import Session
 
-    session = Session.nrt(tempo=1.0).activate()
+    session = Session.nrt().activate()
     try:
         extra = [TempoClock(tempo=2.0) for _ in range(3)]
         assert [c.session for c in extra] == [session] * 3
         assert session.clocks == (session.clock, *extra)
         assert session.clocks[0] is session.clock, "the default is the first"
 
-        # Moving one between sessions leaves the first.
-        other = Session.nrt(tempo=1.0)
-        other.adopt(extra[0])
-        assert extra[0].session is other
-        assert all(held is not extra[0] for held in session.clocks)
+        # Each is on the session's timebase, and stays with the session it was
+        # made in: another session refuses it.
+        assert all(c.timebase is session.timebase for c in extra)
+        other = Session.nrt()
+        with pytest.raises(ValueError, match="another session"):
+            other.adopt(extra[0])
+        assert extra[0].session is session
 
         # The default cannot be released -- a session without one has no answer
         # for `play`.
@@ -370,23 +373,15 @@ def test_a_clock_built_under_a_session_belongs_to_it():
 
 
 def test_one_sample_clock_reader_serves_every_clock_on_a_server():
-    """There is one sample counter, so there is one model of it. Ten clocks
-    locked to a server share the server's reader -- one socket, one tracking
-    thread, one warmup -- and `unlock` lets go of it rather than closing it out
-    from under the others."""
+    """There is one sample counter, so there is one model of it: a server builds
+    its reader once and hands the same one to every clock on its samples, and
+    `release_sample_clock` is what lets it go."""
     _ffi_or_skip()
     from clausters.defs import Server
 
     server = Server()
     reader = server.sample_clock()
     assert server.sample_clock() is reader, "one reader, built once"
-
-    clocks = [TempoClock(tempo=1.0) for _ in range(4)]
-    for clock in clocks:
-        clock._sample_clock = reader          # what `lock_to` leaves behind
-    clocks[0].unlock()
-    assert clocks[0]._sample_clock is None
-    assert clocks[1]._sample_clock is reader, "unlock let go, it did not close"
 
     server.release_sample_clock()
     assert server._sample_clock is None
@@ -465,7 +460,7 @@ def test_routine_renders_through_nrt_interface():
     # The Server owns the interface and emits; the clock only times. Swap the
     # interface for an OscUdpInterface and the same routine plays live.
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=2.0)
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
 
     def arpeggio():  # finds its clock via main.current_routine; emits via the server
         for i, freq in enumerate([262.0, 330.0, 392.0, 523.0, 659.0]):

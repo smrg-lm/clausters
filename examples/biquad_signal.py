@@ -147,11 +147,11 @@ def voice(server):
 
 def render_offline(path):
     """NRT path: drive the voice with a clock in non-real time, then render."""
-    from clausters.base import Routine, TempoClock, OscNrtInterface
+    from clausters.base import LogicalTimebase, OscNrtInterface, Routine, TempoClock
 
     fdef = build_def()
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=TEMPO)
+    clock = TempoClock(tempo=TEMPO, timebase=LogicalTimebase())
     fdef.send(server)             # NRT: scores /def_send faust at time 0
     clock.play(Routine(lambda: voice(server)))
     clock.render()                       # drain the queue in beat order, no sleep

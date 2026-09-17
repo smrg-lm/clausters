@@ -68,7 +68,8 @@ SAMPLES_PER_BEAT = SR * 60.0 / BPM      # the timeline sample units the widget u
 LOOP = 8.0                              # beats between repeats
 AMP = 0.2                               # what a full-velocity note reaches
 
-session = Session.live(tempo=BPM / 60.0).activate()
+session = Session.live().activate()
+session.clock.set_tempo(BPM / 60.0)
 gui = session.gui()
 
 

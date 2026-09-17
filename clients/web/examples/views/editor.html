@@ -98,7 +98,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
        * the layout everything downstream already speaks.
        */
       async function renderStereo() {
-        const nrt = await Session.nrt({ tempo: 2.0 });
+        const nrt = await Session.nrt();
+        nrt.clock.setTempo(2.0);
         nrt.play(phrase());
         const stats = await nrt.render({ sampleRate: SR, channels: 2 });
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s)`);

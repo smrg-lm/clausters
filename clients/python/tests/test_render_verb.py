@@ -108,6 +108,54 @@ def test_render_needs_until_for_an_endless_pattern():
     assert 2.0 * SR <= frames <= 2.5 * SR
 
 
+def test_render_plays_on_the_clock_it_is_given():
+    """The tempo is the clock's: a render plays on the clock it is handed, which
+    is a clock of an offline session, and the render is that session's."""
+    _embed_or_skip()
+    from clausters import Session
+
+    session = Session.nrt()
+    session.clock.set_tempo(2.0)                 # two beats a second
+    stats = render(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=1.0),
+                   clock=session.clock, sample_rate=SR)
+    # The last note starts at beat 2 (second 1.0) and releases 0.8 beats later.
+    assert abs(stats.frames - 1.4 * SR) <= 4096
+
+
+def test_render_refuses_a_clock_not_on_logical_time():
+    from clausters.base import TempoClock
+
+    with pytest.raises(ValueError, match="fixed when it is made"):
+        render(Pbind(degree=0, dur=0.5), clock=TempoClock(2.0))
+
+
+def test_render_refuses_an_endless_event_pattern_with_no_bound(monkeypatch):
+    """With no ``until`` an endless pattern would render forever, so it is
+    refused past a cap -- lowered here, so the test does not generate a million
+    events to prove it."""
+    import sys
+
+    render_module = sys.modules["clausters.render"]
+
+    monkeypatch.setattr(render_module, "MAX_BOUNCED_EVENTS", 32)
+    endless = Pbind(degree=Pseq([0, 2], float("inf")), dur=0.25)
+    with pytest.raises(RuntimeError, match="until="):
+        render(endless, sample_rate=SR)
+
+
+def test_render_generates_a_value_patterns_values(monkeypatch):
+    """A value pattern does not play; its render is the values it generates."""
+    import sys
+
+    render_module = sys.modules["clausters.render"]
+
+    assert render(Pseq([1, 2, 3], 2)) == [1, 2, 3, 1, 2, 3]
+    assert render(Pseq([1, 2], float("inf")), count=5) == [1, 2, 1, 2, 1]
+    monkeypatch.setattr(render_module, "MAX_BOUNCED_EVENTS", 16)
+    with pytest.raises(RuntimeError, match="count="):
+        render(Pseq([1, 2], float("inf")))
+
+
 def test_render_bounces_a_timeline():
     _embed_or_skip()
     tl = Timeline()
@@ -183,7 +231,7 @@ def test_the_file_path_reports_its_seed_too(tmp_path):
     from clausters.render import read_soundfile
 
     def score(seed):
-        s = Session.nrt(tempo=1.0)
+        s = Session.nrt()
         _noisy().send(s.server)
         node = Synth("noisy", server=s.server)
         s.server.send_bundle_after(0.05, ("/node_free", node.id))

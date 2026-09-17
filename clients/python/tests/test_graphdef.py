@@ -6,6 +6,7 @@ driven through its named surface actually sounds."""
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters import render
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
@@ -87,7 +88,7 @@ def test_graphdef_instantiates_and_sounds():
         pytest.skip(f"embed library not built: {e}")
 
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def play(srv):
         for sdef in _members():
@@ -151,7 +152,7 @@ def test_polyphonic_graphdef_voices_render():
         pytest.skip(f"embed library not built: {e}")
 
     server = Server(interface=OscNrtInterface())
-    clock = TempoClock(tempo=2.0)
+    clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
 
     def play(srv):
         vtone, vgain, g = _poly()

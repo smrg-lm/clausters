@@ -428,7 +428,7 @@ async function renderEnv(
 ): Promise<Drawn> {
     const { Session } = await import("./session.ts");
     const total = env.times.reduce((a, b) => a + b, 0) || 1.0;
-    const session = await Session.nrt({ tempo: 1.0 });
+    const session = await Session.nrt();
     const server = session.server;
     const gate = control("gate", 1.0);
     const def = new SynthDef("_plot_env", out(0.0, envGen(env, { gate })));

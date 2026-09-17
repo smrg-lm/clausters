@@ -190,9 +190,14 @@ interface Entry {
 
 export interface TempoClockOptions {
     /**
-     * The pacing source. Defaults to the page's monotonic clock; pass a
-     * `SampleClockTimebase` from `Server.sampleTimebase()` to pace against a
-     * server's own sample counter.
+     * The physical time this clock reads and waits against, and **fixed for
+     * the clock's life** — a clock never changes mode. Omitted, it is the
+     * active session's (an embedded or live session is on the server's sample
+     * clock, an offline one on its `LogicalTimebase`), and with no session
+     * active the page's monotonic clock. A clock made while a session is
+     * active is kept in that session, and a timebase other than the session's
+     * throws. A clock on a server's samples is made with
+     * `Server.sampleTimebase()`.
      */
     timebase?: Timebase;
     /** How the clock is woken. Defaults to `defaultTicker()`. */
@@ -323,11 +328,18 @@ export class TempoClock {
     name: string | null;
 
     private tempoMapHeld: TempoMap;
+    private readonly timebaseHeld: Timebase;
+
     /**
-     * The pacing source — *only* used to decide how long to sleep between
-     * items, and read by `Server` to choose how to stamp what it emits.
+     * The physical time this clock paces against, fixed when the clock is
+     * made: the page's monotonic clock, a server's sample clock, or an offline
+     * run's logical time. `Server` reads it to choose how to stamp what it
+     * emits. Read-only: a clock that changed mode would have its queued beats
+     * measured against two times.
      */
-    timebase: Timebase;
+    get timebase(): Timebase {
+        return this.timebaseHeld;
+    }
     /**
      * The environment this clock belongs to.
      *
@@ -374,10 +386,12 @@ export class TempoClock {
     constructor(tempo = 1.0, { timebase, ticker, tempoMap, name }: TempoClockOptions = {}) {
         this.name = name ?? null;
         this.tempoMapHeld = tempoMap ?? new TempoMap(tempo);
-        this.timebase = timebase ?? new MonotonicTimebase();
+        const ambient = main.ambientSession();
+        const resolved = ambient?.timebaseForClock?.(timebase) ?? timebase;
+        this.timebaseHeld = resolved ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();
-        if (this.timebase instanceof LogicalTimebase) this.timebase.join(this);
-        main.ambientSession()?.adopt?.(this);
+        if (this.timebaseHeld instanceof LogicalTimebase) this.timebaseHeld.join(this);
+        ambient?.adopt?.(this);
     }
 
     // ---- beat/second math (through the core) ----
@@ -698,54 +712,6 @@ export class TempoClock {
         return beatInBar(beats ?? this.beats(), quant);
     }
 
-    // ---- the master clock (drift-free timing) ----
-
-    /**
-     * Lock this clock to a master `server`'s sample clock, so events schedule
-     * on the server's own sample axis (drift-free) instead of a wall-clock
-     * timetag. Resolves with `this`.
-     *
-     * Opt-in: a plain clock paces against wall-clock time, which works
-     * standalone and across a socket. This switches it to the server's counter
-     * — over the in-page engine that counter is read directly, over a socket it
-     * is tracked through `/clock_query` anchors. The switch is **graceful**: a
-     * score server, or a master that does not answer, leaves the clock on
-     * wall-clock time, so a page with no reachable server keeps working.
-     *
-     * **Idempotent**: on a clock already on a sample timebase it is a no-op,
-     * which is what makes it safe to call after a `Session.embed()`/`live()`
-     * that anchored by default. Release it with {@link TempoClock.unlock}.
-     *
-     * The reference client's `TempoClock.lock_to`, and the verb
-     * `Session.lockToServer` is the session-wide spelling of.
-     */
-    async lockTo(
-        server: Server,
-        { warmup = true, timeout }: { warmup?: boolean; timeout?: number } = {},
-    ): Promise<this> {
-        if (this.timebase instanceof SampleClockTimebase) return this;
-        // The server owns one reader and hands the same one to every clock, so
-        // this is a lookup after the first clock has paid for the warmup.
-        this.timebase = await server.sampleTimebase({
-            ...(timeout === undefined ? {} : { timeout }),
-            warmup,
-        });
-        return this;
-    }
-
-    /**
-     * Undo a {@link TempoClock.lockTo}: let go of the server's sample-clock
-     * reader and go back to wall-clock time. Returns `this`.
-     *
-     * It lets go rather than closes. The reader belongs to the **server** and
-     * is shared by every clock locked to it, so closing it here would stop the
-     * others dead; `Server.close` is what releases it.
-     */
-    unlock(): this {
-        this.timebase = new MonotonicTimebase();
-        return this;
-    }
-
     // ---- the shared transport (phase alignment) ----
 
     /**
@@ -756,7 +722,7 @@ export class TempoClock {
      * client land on.
      *
      * Reads the transport once; a server with none defined leaves the clock on
-     * its own grid (no-op). A clock on a `SampleClockTimebase` (`lockToServer`)
+     * its own grid (no-op). A clock on a `SampleClockTimebase`
      * aligns **sample-exactly**, since the grid is defined on the very counter
      * it paces against; a wall-clock one aligns to beats through the server's
      * `/clock_query` anchor (drift-bounded, and re-joining re-anchors it).
@@ -824,11 +790,8 @@ export class TempoClock {
         const grid = this.transport;
         if (grid === null) return this.beats();
         if (grid.kind === "sample") {
-            // A timebase swapped out from under a joined grid (a `lockToServer`
-            // after the join) leaves the sample origin meaningless; the clock's
-            // own beats are the honest answer until it re-joins.
-            const timebase = this.timebase;
-            if (!(timebase instanceof SampleClockTimebase)) return this.beats();
+            // Joined as "sample" only on a sample timebase, which is fixed.
+            const timebase = this.timebase as SampleClockTimebase;
             return ((timebase.currentSample() - grid.origin) * grid.tempo) / timebase.sampleRate;
         }
         return (Date.now() / 1000 - grid.origin) * grid.tempo;
@@ -1017,8 +980,9 @@ export class TempoClock {
      * Rendering drives **every** clock of that time that is started — this one
      * is started by rendering it, at the run's current second — in the order
      * their items fall in seconds, so a script with several clocks renders as
-     * it plays. A clock with another timebase renders on a logical time of its
-     * own, from its held beat.
+     * it plays. A clock on any other timebase throws: a clock never changes
+     * mode, so offline is a clock made on a `LogicalTimebase` — which every
+     * clock of an offline session is.
      *
      * Returns when nothing is due (or the next item falls after `untilBeat`, a
      * beat of this clock). What the routines emit lands wherever their `Server`
@@ -1032,8 +996,8 @@ export class TempoClock {
      * `maxSteps` bounds the number of **resumes**, throwing once it is passed.
      * It defaults to no bound, which is the right default: a long offline
      * render of a real score is meant to run for a long time. It is for the
-     * caller who knows its source might never end — a bounce of an endless
-     * pattern (`Timeline.fromPattern`) — because a routine cannot report that
+     * caller who knows its source might never end — a render of an endless
+     * event pattern (`render`) — because a routine cannot report that
      * itself: a routine that throws loses its own place and nothing else, so a
      * guard inside one is swallowed by design.
      *
@@ -1042,28 +1006,20 @@ export class TempoClock {
      * for as long as it takes and then returns, the way a long loop does.
      */
     render(untilBeat?: number, { maxSteps }: { maxSteps?: number } = {}): this {
-        let saved: [Timebase, number | null, boolean, typeof this.mode] | null = null;
-        let timebase: LogicalTimebase;
-        if (this.timebase instanceof LogicalTimebase) {
-            timebase = this.timebase;
-        } else {
-            saved = [this.timebase, this.monoStart, this.running, this.mode];
-            timebase = new LogicalTimebase(this.beats2secs(this.logicalBeat));
-            this.timebase = timebase;
-            this.monoStart = null;
-            timebase.join(this);
+        const timebase = this.timebase;
+        if (!(timebase instanceof LogicalTimebase)) {
+            throw new Error(
+                `TempoClock.render drives a clock on a LogicalTimebase, and this one is on a `
+                + `${timebase.constructor.name}: a clock's timebase is fixed when it is made, so it `
+                + `cannot be switched to offline time for a render. Make the clock in an offline `
+                + `session (Session.nrt()), or with new TempoClock(1, { timebase: new LogicalTimebase() })`,
+            );
         }
         if (this.monoStart === null || this.halted) this.start();
         const until = untilBeat === undefined
             ? undefined
             : this.monoStart! + this.beats2secs(untilBeat);
-        try {
-            driveOffline(timebase, until, maxSteps);
-        } finally {
-            if (saved !== null) {
-                [this.timebase, this.monoStart, this.running, this.mode] = saved;
-            }
-        }
+        driveOffline(timebase, until, maxSteps);
         return this;
     }
 

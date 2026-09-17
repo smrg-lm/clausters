@@ -39,7 +39,7 @@ function is the uniform entry that picks the right one.
 | You hand it | It does | Returns |
 |---|---|---|
 | an `Event`, or a plain **dict** of event keys | one note, now (timetagged at the logical beat inside a routine) | the **completed event** — the derived keys (`freq`, `sustain`, …) plus `node`/`server` written in; `.free()` cuts it, `.release()` ends it musically (gate 0 when it releases by gate) |
-| an event pattern (`Pbind`) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
+| an event pattern (`EventPattern`: a `Pbind`, or a `Pseq`/`Prand`/`Pn` over event patterns only) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
 | a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
@@ -47,6 +47,10 @@ function is the uniform entry that picks the right one.
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
 | an `Automation` | prepares it if needed and applies the curve to its target controls, now | the automation itself — `.stop()` interrupts the sweep (the controls hold their last value) |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
+
+A **value pattern** (`Pseq([1, 2, 3])`, `Pwhite`, …) is not a playable: a
+`Pattern` is the definition of a generator, and what plays is a pattern whose
+values are events. `play` refuses one by name; `render` generates its values.
 
 Everything `play` returns knows how to **end what it started** — even the
 self-terminating kinds, whose duration can be extreme: a note frees itself
@@ -67,8 +71,8 @@ ranges):
 | a `Buffer` (or buffer number) | its contents, fetched from the live server |
 | any iterable of numbers — a list, a value pattern (`Pseq`, `Pwhite`, …), a stream | the sequence, index on the x axis (endless ones cap at `n`) |
 
-**Renderables** — every offline path returns a `RenderStats` (see
-[What a render gives back](#what-a-render-gives-back)):
+**Renderables** — every offline path but a value pattern's returns a
+`RenderStats` (see [What a render gives back](#what-a-render-gives-back)):
 
 | You hand it | It does |
 |---|---|
@@ -77,6 +81,19 @@ ranges):
 | an arrangement `Element` | with a `destination`, delegates to the arrangement's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
 | a `Timeline` | the same dual path |
 | an event pattern, a `Routine`/`Stream`, a generator | offline bounce only — they are forward-only; sounding them live is `play`'s job |
+| a value pattern (`Pseq`, `Pwhite`, …) | the values it generates, as a list (an endless one needs `count`) |
+
+**The tempo is the clock's.** Neither verb takes one: `play` and `render` both
+take an optional `clock`, and use a default one when none is given. A render
+bounces in an **offline session** — the one its `clock` belongs to, which has to
+be a clock of `Session.nrt()` (on its `LogicalTimebase`), or, with no `clock`, a
+session of the render's own at tempo 1.0:
+
+```python
+offline = Session.nrt()
+offline.clock.set_tempo(2.0)                      # two beats a second
+render(Pbind(degree=Pseq([0, 2, 4]), dur=1.0), clock=offline.clock)
+```
 
 ## How it works
 
@@ -114,7 +131,9 @@ being already generated, *is* playable. The full story is in
 ## Caveats
 
 - **An endless source needs `until`.** `render(Pbind(...))` with an infinite
-  pattern would never drain; pass `until=beats` to bounce a fixed length.
+  pattern would never drain; pass `until=beats` to bounce a fixed length. With
+  none, an event pattern is refused after a million events rather than rendered
+  forever, and a value pattern is bounded the same way by `count`.
 - **`play(def)` blocks until the server confirms** (the `/done` of the def
   send). Fine interactively; inside a routine, send the def asynchronously
   first (`d.send(server, wait=False)`) and instance it with

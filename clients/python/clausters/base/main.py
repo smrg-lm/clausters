@@ -80,20 +80,58 @@ class Main(Environment):
     @current_session.setter
     def current_session(self, value):
         self._local.current_session = value
+        #: the routine running when the session was put in force, which is
+        #: whose wakes the session wins over (see `_context_session`).
+        self._local.session_routine = self.current_routine
+
+    @property
+    def _session_context(self):
+        """``(session, routine)``: what `current_session` holds and the routine
+        that was running when it was put in force -- what a block saves and
+        restores, so leaving it puts back both."""
+        return (getattr(self._local, "current_session", None),
+                getattr(self._local, "session_routine", None))
+
+    @_session_context.setter
+    def _session_context(self, context):
+        self._local.current_session, self._local.session_routine = context
+
+    def _context_session(self):
+        """The session a context put in force **for what runs now**: the
+        `current_session` when it was put in force outside any routine and none
+        is running, or inside the very routine running now. A session activated
+        at top level does not take over the wakes of another session's clock;
+        a ``with`` block entered inside a routine does, for its extent."""
+        sess = self.current_session
+        if sess is None:
+            return None
+        routine = self.current_routine
+        if routine is None or getattr(self._local, "session_routine", None) is routine:
+            return sess
+        return None
 
     # ---- ambient resolution (the single rule) ----
 
     def _ambient_session(self):
-        """The session an ambient play belongs to: the running routine's
-        (``current_routine.clock.session``), else the explicit `current_session`
-        active on this thread, else ``None`` (the default session, ``self``)."""
+        """The session an ambient play belongs to: the session a context put in
+        force for what runs now (`_context_session`: a ``with session:`` block,
+        `activate`, or a session driving a call), else the running routine's
+        (``current_routine.clock.session``), else the `current_session`, else
+        ``None`` (the default session, ``self``).
+
+        A block entered inside a routine wins over that routine's session: it
+        is how a session is switched, so an offline session made and rendered
+        from inside a live routine is the one in force while it is."""
+        sess = self._context_session()
+        if sess is not None:
+            return sess
         sess = getattr(getattr(self.current_routine, "clock", None), "session", None)
         return sess if sess is not None else self.current_session
 
     def resolve_server(self, server=None):
         """The server a free-standing play should target: the explicit ``server``
-        if given, else the ambient session's server (the running routine's, or
-        the `current_session` active on this thread), else the default session's
+        if given, else the ambient session's server (the `current_session` in
+        force on this thread, or the running routine's), else the default session's
         `server`. Raises if none has been booted."""
         if server is not None:
             return server
@@ -109,16 +147,20 @@ class Main(Environment):
 
     def resolve_clock(self, clock=None):
         """The clock a play should schedule on: the explicit ``clock`` if given,
-        else the clock of the routine running on this thread, else the ambient
-        session's clock, else the default session's `default_clock` (which may be
-        ``None`` -- the caller then plays immediately, or calls
-        `get_default_clock`)."""
+        else the clock of the routine running on this thread when it belongs to
+        the session a block put in force, else the ambient session's clock, else the default
+        session's `default_clock` (which may be ``None`` -- the caller then plays
+        immediately, or calls `get_default_clock`).
+
+        A routine's clock of another session than the one a ``with`` block put
+        in force is not taken: the block is how a session is switched."""
         if clock is not None:
             return clock
+        context = self._context_session()
         c = getattr(self.current_routine, "clock", None)
-        if c is not None:
+        if c is not None and (context is None or c.session is context):
             return c
-        sess = self.current_session
+        sess = context if context is not None else self.current_session
         if sess is not None and getattr(sess, "clock", None) is not None:
             return sess.clock
         return self.default_clock

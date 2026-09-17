@@ -10,7 +10,7 @@ from clausters.seq import Pbind, Pwhite
 
 
 def _score(seed):
-    s = Session.nrt(tempo=1.0)
+    s = Session.nrt()
     s.seed(seed)
     s.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
     s.clock.render()
@@ -29,9 +29,9 @@ def test_sessions_are_order_independent():
     # Build both, then play in the opposite order: a's random sequencerial must not
     # depend on whether b was created/played first (separate roots, not one
     # shared global root spawned in creation order).
-    a = Session.nrt(tempo=1.0)
+    a = Session.nrt()
     a.seed(7)
-    b = Session.nrt(tempo=1.0)
+    b = Session.nrt()
     b.seed(99)
     b.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
     a.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
@@ -41,8 +41,8 @@ def test_sessions_are_order_independent():
 
 
 def test_seeding_one_session_does_not_touch_another():
-    a = Session.nrt(tempo=1.0)
-    b = Session.nrt(tempo=1.0)
+    a = Session.nrt()
+    b = Session.nrt()
     a.seed(1)
     b.seed(2)
     a.seed(1)  # re-seed a after b exists; a must still reproduce its seed-1 sequence
@@ -55,9 +55,9 @@ def test_seeding_one_session_does_not_touch_another():
 
 
 def test_current_session_routes_the_root_draw():
-    a = Session.nrt(tempo=1.0)
+    a = Session.nrt()
     a.seed(123)
-    b = Session.nrt(tempo=1.0)
+    b = Session.nrt()
     b.seed(123)
     with a:
         da = rand.next_f64()
@@ -70,11 +70,11 @@ def test_current_session_routes_the_root_draw():
 
 
 def test_context_manager_restores_previous_session():
-    a = Session.nrt(tempo=1.0)
+    a = Session.nrt()
     assert main.current_session is None
     with a:
         assert main.current_session is a
-        b = Session.nrt(tempo=1.0)
+        b = Session.nrt()
         with b:
             assert main.current_session is b
         assert main.current_session is a   # restored, not clobbered

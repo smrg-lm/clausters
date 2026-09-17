@@ -86,8 +86,8 @@ and a new tempo written there, which pins that instant for the same reason.</div
     -->
     <script type="module">
       import {
-        Server, SynthDef, TempoClock,
-        main, seq,
+        Server, Session, SynthDef, TempoClock,
+        seq,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
 
@@ -134,10 +134,11 @@ and a new tempo written there, which pins that instant for the same reason.</div
         const timebase = await server.sampleTimebase();
         clock = new TempoClock(Number(el("tempo").value), { timebase });
         clock.start();
-        // The ambient clock, so the timeline's own clock takes this timebase:
-        // both halves then ride the engine's audio clock, and `quant` on the
-        // timeline snaps against this grid.
-        main.defaultClock = clock;
+        // A session made on this clock is the context the timeline's own clock
+        // is made in, so it takes this timebase: both halves then ride the
+        // engine's audio clock, and `quant` on the timeline snaps against this
+        // grid.
+        new Session(server, clock).activate();
         log(`clock started on the ${timebase.kind} timebase`);
 
         buildTimeline();
@@ -171,18 +172,16 @@ and a new tempo written there, which pins that instant for the same reason.</div
       let timeline = null;
 
       function buildTimeline() {
-        // Bounce four bars of a pattern into a static timeline, then edit it
-        // like the list it is: this one drops a bass note on every downbeat.
-        timeline = seq.Timeline.fromPattern(
-          new seq.Pbind({
-            instrument: "web_seq_voice",
-            hasGate: true,
-            degree: new seq.Pseq([0, 4, 7, 11], seq.INF),
-            dur: 0.5,
-            amp: 0.12,
-          }),
-          { dur: 4, tempo: Number(el("tempo").value) },
-        );
+        // Four bars of an arpeggio written into a static timeline, a note every
+        // half beat, then edited like the list it is: this one drops a bass
+        // note on every downbeat.
+        timeline = new seq.Timeline([], { tempo: Number(el("tempo").value) });
+        for (let i = 0; i <= 8; i += 1) {
+          timeline.add(0.5 * i, new seq.Event({
+            instrument: "web_seq_voice", hasGate: true,
+            degree: [0, 4, 7, 11][i % 4], dur: 0.5, amp: 0.12,
+          }));
+        }
         for (let beat = 0; beat < 4; beat += 1) {
           timeline.add(beat, new seq.Event({
             instrument: "web_seq_voice", hasGate: true,

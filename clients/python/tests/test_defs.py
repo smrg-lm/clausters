@@ -4,6 +4,7 @@ Server round-trip (over a fake connection), and the end-to-end vertical slice
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.base import _osclib as osc
 from clausters.defs import (
@@ -489,7 +490,7 @@ def test_faustdef_renders_through_the_seam():
     _ffi_or_skip()
     fdef = _sine_def()
     server = Server(interface=OscNrtInterface())   # NRT mode (no live server)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
 
     def play():
         # def first, then instantiate (same beat; score keeps insertion order)

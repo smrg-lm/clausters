@@ -87,7 +87,8 @@ phrase = Pbind(
 )
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 adsr_pad().send(session.server)  # /def_send synth at time 0 in the score
 session.play(phrase)
 

@@ -25,13 +25,13 @@
 import { TempoClock } from "../base/clock.ts";
 import type { Schedulable } from "../base/clock.ts";
 import { TempoMap } from "../base/time.ts";
-import { ManualTimebase, quantDelay } from "../base/timebase.ts";
+import { quantDelay } from "../base/timebase.ts";
 import { currentRoutine, setCurrentRoutine } from "../base/context.ts";
 import { main } from "../base/main.ts";
 import { Routine, StopStream, Stream } from "../base/stream.ts";
 import { Event } from "./event.ts";
 import type { EventDestination } from "./event.ts";
-import { Pattern } from "./pattern.ts";
+import { EventPattern, Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { OscFunc } from "../responders.ts";
@@ -162,17 +162,6 @@ export function itemFromData(data: Record<string, unknown> | null | undefined): 
 }
 
 /**
- * How many events a bounce records before it decides the pattern is endless
- * (`Timeline.fromPattern`'s `maxEvents` default).
- *
- * A bounce holds every event in memory, so a million is already past any real
- * piece and nowhere near a legitimate one — which is what makes the cap honest
- * *here* and wrong inside `TempoClock.render`, where a long offline render of a
- * real score is exactly the thing that runs for a very long time on purpose.
- */
-export const MAX_BOUNCED_EVENTS = 1_000_000;
-
-/**
  * A plan in logical time: `(beat, item)` kept sorted by beat, with random
  * access by time, its own tempo map, and the verbs that play it.
  *
@@ -189,7 +178,7 @@ export const MAX_BOUNCED_EVENTS = 1_000_000;
  * timeline beat.
  *
  * **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
- * `Automation`, a pattern, a `Routine` — and **another timeline**, which its
+ * `Automation`, an event pattern, a `Routine` — and **another timeline**, which its
  * parent plays when it reaches it. Each timeline keeps its own units: a
  * child's beats go to seconds through its own map, so siblings at different
  * tempi start together by construction. One tree plays on one engine, the
@@ -249,9 +238,17 @@ export class Timeline {
      *
      * A timeline as `item` becomes this one's child: refused if it already has
      * a parent (its `copy` has none) or if it is this timeline or one of its
-     * ancestors.
+     * ancestors. A value pattern is refused: it is the definition of a
+     * generator and does not play — an `EventPattern` does.
      */
     add(beat: number, item: unknown): Entry {
+        if (item instanceof Pattern && !(item instanceof EventPattern)) {
+            throw new TypeError(
+                `a ${item.constructor.name} of values does not play, so it is not a timeline `
+                + "item: a pattern plays when its values are events (a Pbind, or a list "
+                + "pattern of event patterns only)",
+            );
+        }
         if (item instanceof Timeline) {
             this.checkChild(item, false);
             item.parent = this;
@@ -592,63 +589,6 @@ export class Timeline {
             ? new TimelinePlayer(this)
             : new TransportPlayer(this);
         return this.player;
-    }
-
-    // ---- capture a pattern into a timeline ----
-
-    /**
-     * Bounces an event pattern into a static timeline by running it with no
-     * pacing and recording each event at its logical beat. `dur` bounds an
-     * open-ended pattern (in beats); leave it out to drain a finite one.
-     *
-     * The run is the clock's own **offline drive** (`TempoClock.render`), so it
-     * is the same driver live playback uses with the waiting taken out.
-     *
-     * `tempo` is the tempo the pattern is run at, and the timeline's.
-     *
-     * `dur` bounds an endless pattern, in beats. Without one, an endless
-     * pattern is **caught rather than run forever**: the bounce throws once it
-     * has recorded `maxEvents` (`MAX_BOUNCED_EVENTS` by default). That guard is
-     * this call's and not the clock's — a long offline `render` of a real score
-     * is meant to run for a long time, where a bounce with no bound is a
-     * mistake.
-     */
-    static fromPattern(
-        pattern: Pattern<unknown>,
-        {
-            dur,
-            tempo = 1.0,
-            maxEvents = MAX_BOUNCED_EVENTS,
-        }: { dur?: number; tempo?: number; maxEvents?: number } = {},
-    ): Timeline {
-        const timeline = new Timeline(undefined, { tempo });
-        const recorder: EventDestination = {
-            playEvent(event: Event) {
-                timeline.add(currentRoutine()?.logicalBeat ?? 0, event);
-                return null;
-            },
-            sendMsg() {},
-        };
-        // The offline drive, which is what a bounce is: no wall clock, no
-        // ticker, no sleeping. The clock is deliberately **not started** —
-        // `render` walks the queue in beat order itself, so the pattern is
-        // queued and then drained, which is the same pair of calls the Python
-        // client makes (`pattern.play(clock, recorder)`; `clock.render(dur)`).
-        // Driving a `manualTicker` by hand here was a second driver for a job
-        // this one already does.
-        const clock = new TempoClock(tempo, { timebase: new ManualTimebase(0) });
-        pattern.play(recorder, { clock });
-        try {
-            clock.render(dur, { maxSteps: dur === undefined ? maxEvents : undefined });
-        } catch (cause) {
-            throw new Error(
-                `Timeline.fromPattern: the pattern did not end after ${maxEvents} ` +
-                    "events — pass { dur } to bound an endless one",
-                { cause },
-            );
-        }
-        clock.close();
-        return timeline;
     }
 }
 
@@ -1282,13 +1222,31 @@ export class TimelinePlayer implements TreeDriver {
         return this.timeline.map.beatsAt(secs);
     }
 
+    /**
+     * The hidden clock, which belongs to the session the timeline sounds in:
+     * made there, on that session's timebase, the first time it plays in it —
+     * and made again, at the position it stopped at, when it plays in another.
+     * A timeline sounding in one session is refused in another.
+     */
     private clockFor(): TempoClock {
+        const session = main.ambientSession();
+        if (this.clock !== null && this.clock.session !== session) {
+            if (this.running) {
+                throw new Error(
+                    "this timeline is sounding in another session; stop it there before "
+                    + "playing it in this one",
+                );
+            }
+            const held = this.position();
+            this.clock.stop();
+            const owner = this.clock.session as { clock?: TempoClock; release?(c: TempoClock): unknown } | null;
+            if (owner?.release && owner.clock !== this.clock) owner.release(this.clock);
+            this.clock = null;
+            this.held = held;
+        }
         if (this.clock === null) {
-            const ambient = main.resolveClock();
-            this.clock = new TempoClock(1, {
-                tempoMap: this.timeline.map,
-                timebase: ambient?.timebase,
-            });
+            this.clock = new TempoClock(1, { tempoMap: this.timeline.map });
+            this.clock.locate(this.held);
         }
         return this.clock;
     }
@@ -1389,7 +1347,7 @@ export class TimelinePlayer implements TreeDriver {
             return;
         }
         const destination = this.destination ?? (main.resolveServer() as unknown as PlayDestination);
-        if (item instanceof Pattern) {
+        if (item instanceof EventPattern) {
             item.play(destination, { clock });
             return;
         }

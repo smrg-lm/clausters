@@ -63,9 +63,15 @@ class TempoClock:
 
     Args:
         tempo: beats per second.
-        timebase: the pacing source -- the default monotonic clock, or a
-            `SampleClockTimebase` to anchor pacing and scheduling to the
-            server's own sample clock.
+        timebase: the physical time this clock reads and waits against, and
+            **fixed for the clock's life** -- a clock never changes mode.
+            ``None`` takes the active session's (a live or embedded session is
+            on the server's sample clock, an offline one on its
+            `LogicalTimebase`), and with no session active the OS monotonic
+            clock. A clock made while a session is active is kept in that
+            session, and a timebase other than the session's raises. A clock
+            on the server's samples is made with
+            `clausters.defs.Server.sample_timebase`.
         tempo_map: a `clausters._native.TempoMap` to **read** instead of
             building one. Every clock builds its own, so this is only for the
             case where two clocks are reading one piece.
@@ -90,15 +96,21 @@ class TempoClock:
         #: is how two clocks come to be reading one piece.
         self._map = tempo_map if tempo_map is not None else _native.TempoMap(float(tempo))
 
-        #: pacing source — *only* used to decide how long to sleep between
-        #: events. The default is the OS monotonic clock; pass a
-        #: `SampleClockTimebase` to anchor to the
-        #: server's sample clock. The Server reads this to choose how to stamp
-        #: events (NTP timetag vs ``/sched_at`` absolute sample).
-        self.timebase = timebase if timebase is not None else MonotonicTimebase()
-        self._now = self.timebase
-        if isinstance(self.timebase, LogicalTimebase):
-            self.timebase.join(self)
+        # Deferred, like the one in `_wake`: `main` reaches back here through
+        # `get_default_clock`.
+        from .main import main as _main
+
+        ambient = _main._ambient_session()
+        if ambient is not None:
+            timebase = ambient._timebase_for_clock(timebase)
+        #: The physical time this clock paces against, fixed when the clock is
+        #: made: the OS monotonic clock, the server's sample clock, or an
+        #: offline run's logical time. The Server reads it to choose how to
+        #: stamp events (NTP timetag vs ``/sched_at`` absolute sample).
+        self._timebase = timebase if timebase is not None else MonotonicTimebase()
+        self._now = self._timebase
+        if isinstance(self._timebase, LogicalTimebase):
+            self._timebase.join(self)
 
         #: the beat-ordered queue lives in the native core (`clausters-core`'s
         #: `Scheduler`); only beats and flat ids cross, and `_items` maps each
@@ -123,7 +135,6 @@ class TempoClock:
         #: nothing, which looks exactly like silence — see `_warn_if_undriven`.
         self._driven = False
         self._exit_hook = False
-        self._sample_clock = None     # the master-clock tracker, set by lock_to()
         self._transport = None        # joined shared beat grid, set by join_transport()
         #: The timebase reading at which `freeze` stopped the beat, or ``None``
         #: while the clock runs normally. See `freeze`.
@@ -138,13 +149,15 @@ class TempoClock:
         #: from inside a routine. A clock built with no session ambient has
         #: ``None`` here and resolves against the default session.
         self.session = None
-        # Deferred, like the one in `_wake`: `main` reaches back here through
-        # `get_default_clock`.
-        from .main import main as _main
-
-        ambient = _main._ambient_session()
         if ambient is not None:
             ambient.adopt(self)
+
+    @property
+    def timebase(self):
+        """The physical time this clock paces against. Read-only: a clock's
+        timebase is fixed when it is made, since a clock that changed mode
+        would have its queued beats measured against two times."""
+        return self._timebase
 
     # ---- beat/second math (native) ----
 
@@ -534,78 +547,10 @@ class TempoClock:
         pos = self.beats() if beats is None else beats
         return _native.beat_in_bar(pos, quant)
 
-    # ---- master-clock lock (sample timebase) ----
-
-    def lock_to(self, server, warmup: bool = True, timeout: float = 2.0):
-        """Lock this clock to a master ``server``'s sample clock, so events
-        schedule on the server's own sample axis (drift-free) instead of a
-        wall-clock OSC timetag.
-
-        Opt-in: a plain clock paces against wall-clock OSC time, which works
-        standalone, against another program, or across a network. `lock_to`
-        switches it to the server's sample clock — over UDP it tracks the
-        server's published `/clock_query` anchor on its own socket; an in-process
-        embedded server needs no tracker at all (the counter is read directly
-        from shared memory). The switch is **graceful**: an offline (score)
-        server, or a master that does not answer, leaves the clock on
-        wall-clock time, so a client with no Clausters server keeps working.
-        Returns ``self``.
-
-        **Blocking — call it before `start`/`run`, never from inside a
-        routine** (it does `/clock_query` round trips). Release it with `unlock` or
-        `close`. **Idempotent**: on an already sample-locked clock it is a no-op
-        (keeps the live tracker), so it is safe to call after a
-        `Session.live()`/`embed()` that already anchored by default.
-        """
-        # Idempotent: already sample-locked (e.g. the session auto-locked on
-        # creation and the caller also calls lock_to_server) -> keep the live
-        # tracker instead of building a second one and leaking the first.
-        if self._sample_clock is not None:
-            return self
-        # An offline (score) destination has no live clock to lock to.
-        if getattr(getattr(server, "interface", None), "time_mode", "unix") == "score":
-            return self
-        # The server owns one reader and hands the same one to every clock: a
-        # second model of one counter is another socket and another thread
-        # re-anchoring the same number, not a second opinion.
-        sc = server.sample_clock(timeout=timeout)
-        if not sc.tracking:
-            # Fresh reader: probe it, firm it up, and start its loop. Already
-            # tracking means another clock paid for all three.
-            try:
-                sc.anchor()       # one round trip: detect a reachable master
-            except (TimeoutError, OSError, RuntimeError):
-                # Graceful: no master -> stay on wall clock, and take the dead
-                # reader off the server so the next clock probes a fresh one.
-                server.release_sample_clock()
-                return self
-            if warmup:
-                sc.warmup(n=4)    # firm up the model before scheduling
-            sc.track()
-        self._sample_clock = sc
-        self.timebase = sc.timebase()
-        self._now = self.timebase
-        return self
-
-    def unlock(self):
-        """Undo a `lock_to`: let go of the server's sample-clock reader and
-        return to wall-clock OSC time. Returns ``self``.
-
-        It lets go rather than closes. The reader belongs to the **server** and
-        is shared by every clock locked to it, so closing it here would stop
-        the others dead; `Server.close` is what releases it."""
-        if self._sample_clock is not None:
-            self._sample_clock = None
-        self.timebase = MonotonicTimebase()
-        self._now = self.timebase
-        return self
-
     def close(self):
-        """Stop the clock and let go of the server's sample-clock reader, if it
-        was locked to one (the reader itself is the server's, and outlives
-        this)."""
+        """Stop the clock. A sample-clock reader it reads belongs to the server,
+        which releases it on `clausters.defs.Server.close`."""
         self.stop()
-        self.unlock()
 
     # ---- shared transport (phase alignment) ----
 
@@ -615,7 +560,7 @@ class TempoClock:
         beat as every other client joined to it.
 
         Reads the transport once; if the server has none defined, the clock
-        keeps its own grid (no-op). A sample-locked clock (`lock_to`) aligns
+        keeps its own grid (no-op). A clock on the server's sample clock aligns
         **sample-exactly**; a plain wall-clock clock aligns to beats through the
         server's OSC-time anchor (drift-bounded). Returns ``self``.
 
@@ -814,8 +759,9 @@ class TempoClock:
         clock. Rendering drives **every** clock of that time that is started --
         this one is started by rendering it, at the run's current second -- in
         the order their items fall in seconds, so a script with several clocks
-        renders as it plays. A clock with another timebase renders on a
-        logical time of its own, from its held beat.
+        renders as it plays. A clock on any other timebase raises: a clock
+        never changes mode, so offline is a clock made on a `LogicalTimebase`
+        -- which every clock of an offline session is.
 
         Returns when nothing is due (or the next item falls after
         ``until_beat``, a beat of this clock). Whatever the routines emit
@@ -825,27 +771,24 @@ class TempoClock:
         ``max_steps`` bounds the number of **resumes**, raising once it is
         passed. It defaults to no bound, which is the right default: a long
         offline render of a real score is meant to run for a long time. It is
-        for the caller who knows its source might never end — a bounce of an
-        endless pattern (`clausters.seq.Timeline.from_pattern`) — because a
+        for the caller who knows its source might never end — a render of an
+        endless event pattern (`clausters.render`) — because a
         routine cannot report that itself: a routine that raises loses its own
         place and nothing else (see `_wake`), so a guard inside one is
         swallowed by design."""
         tb = self.timebase
-        saved = None
         if not isinstance(tb, LogicalTimebase):
-            saved = (tb, self._now, self._mono_start, self._running, self._mode)
-            tb = LogicalTimebase(self.beats2secs(self._logical_beat))
-            self.timebase = self._now = tb
-            self._mono_start = None
-            tb.join(self)
+            raise RuntimeError(
+                f"TempoClock.render drives a clock on a LogicalTimebase, and this "
+                f"one is on a {type(tb).__name__}: a clock's timebase is fixed "
+                f"when it is made, so it cannot be switched to offline time for a "
+                f"render. Make the clock in an offline session (Session.nrt()), or "
+                f"with TempoClock(timebase=LogicalTimebase())"
+            )
         if self._mono_start is None or self._halted:
             self.start()
         until = None if until_beat is None else self._mono_start + self.beats2secs(until_beat)
-        try:
-            _drive_offline(tb, until, max_steps)
-        finally:
-            if saved is not None:
-                self.timebase, self._now, self._mono_start, self._running, self._mode = saved
+        _drive_offline(tb, until, max_steps)
         return self
 
     def start(self):

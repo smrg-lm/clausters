@@ -86,7 +86,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
       // Same `Pbind` API as live, but the clock drives a score the engine's own
       // renderer turns into samples -- no server, no audio device.
       async function renderPhrase() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         session.seed(1);
         session.play(phrase);
 

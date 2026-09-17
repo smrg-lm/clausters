@@ -33,7 +33,7 @@ import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.base import OscNrtInterface, TempoClock
+from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters.defs import (
     DoneAction,
     Env,
@@ -77,7 +77,7 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
     server = Server(interface=OscNrtInterface())
     if sdef is not None:
         sdef.send(server)      # scored at t=0 in NRT
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     # `has_gate` releases each note with `gate 0` instead of freeing the node
     # outright, which is what the player does for `default` on its own — the
     # twin needs it stated so both renders end their notes the same way.

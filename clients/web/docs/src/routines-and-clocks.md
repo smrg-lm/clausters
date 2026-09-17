@@ -73,7 +73,9 @@ The clock measures its sleeps against a **timebase**, and the timebase also deci
 const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
 ```
 
-The rule the clock keeps either way: **it reads the timebase, and never talks to a server**.
+The rule the clock keeps either way: **it reads the timebase, and never talks to a server**. And the timebase is **fixed when the clock is made**: a clock never changes mode, since everything already queued on it is measured against that time. A server that does not answer throws rather than handing back wall-clock time.
+
+**A session is the context clocks are made in.** A `TempoClock` made while a session is active — inside `session.use(...)`, or after `session.activate()` — is made on the session's timebase and kept in the session: the server's sample clock for `embed` and `live`, which is their default, and a `LogicalTimebase` for `Session.nrt()`, the only time an offline session can have. Asking one for another timebase throws, and so does rendering a clock that is not on logical time. A timeline's hidden clock follows the same rule: it belongs to the session the timeline sounds in. A `use` block entered inside a routine is how that routine switches session for the block's extent; a session merely activated does not take over the routines of another session's clock.
 
 ## The wake-up
 
@@ -92,7 +94,7 @@ new seq.Pbind({
 }).play(server, { clock });
 ```
 
-What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns, how `Timeline.fromPattern` bounces one into the other — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters.
+What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns, why only an event pattern plays and a value pattern renders to its values — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters.
 
 ## Reproducible randomness
 

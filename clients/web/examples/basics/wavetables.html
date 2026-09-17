@@ -105,7 +105,8 @@ band-limited recipe instead of a clipped edge.</div>
       // ---- the score ----
       // Timetagged bundles, as in every NRT routine: the beat stamps them.
       async function renderScore() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         const server = session.server;
 
         // 2048 frames hold a 1024-point table; the allocator hands out 0, 1, 2

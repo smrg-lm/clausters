@@ -3,9 +3,10 @@
 
 A server hosts a **transport** — a beat grid `(origin_sample, tempo)` it stores
 under `/transport_set`. Several independent clients can *join* that grid, so a
-`quant`-ed routine on each starts on the **same** beat. When each client is also
-locked to the server's sample clock (`lock_to`), that alignment is sample-exact;
-in plain wall-clock mode it is beat-accurate (drift-bounded).
+`quant`-ed routine on each starts on the **same** beat. When each client's clock
+is also made on the server's sample clock (`Server.sample_timebase`), that
+alignment is sample-exact; on wall-clock time it is beat-accurate
+(drift-bounded).
 
 This runs in a single process for clarity, but the two `Server` / `TempoClock`
 pairs are completely independent — exactly the state two separate programs would
@@ -47,12 +48,12 @@ from clausters.seq import Event, Timeline
 
 # %% [markdown]
 # ## An independent client
-# Its own server connection and clock, locked to the server's sample clock and
+# Its own server connection and clock, made on the server's sample clock and
 # joined to the shared transport. Two of these stand in for two programs.
 
 # %%
 def make_client(share):
-    """An independent client: its own server connection and clock, locked to the
+    """An independent client: its own server connection and clock, made on the
     server's sample clock and joined to the shared transport.
 
     ``share`` is its slice of the client id space: several clients on one server
@@ -62,8 +63,8 @@ def make_client(share):
     # instead of dropping every later message into a UDP void -- and sizes the
     # allocators from the capacities the running server reports.
     server = Server(share=share).attach(adopt_default=False)   # to 127.0.0.1:57110
-    clock = TempoClock(tempo=1.0)     # the transport overwrites this tempo
-    clock.lock_to(server)             # sample-exact, drift-free timing
+    # sample-exact, drift-free timing; the transport overwrites this tempo
+    clock = TempoClock(tempo=1.0, timebase=server.sample_timebase())
     clock.join_transport(server)      # adopt the shared beat grid
     return server, clock
 

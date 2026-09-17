@@ -113,7 +113,8 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
       // MIDI number into Hz with `.midicps()`, so the score never computes a
       // frequency.
       async function renderPhrase() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await mathsLead().send();
         const lead = new Synth("maths_lead", { note: 48.0, amp: 0.3 });
 

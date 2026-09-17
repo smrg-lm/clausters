@@ -66,7 +66,8 @@ TEMPO = 2.0  # beats per second (120 BPM)
 # gestures are the point here, not the audio.
 
 # %%
-nrt = Session.nrt(tempo=TEMPO)
+nrt = Session.nrt()
+nrt.clock.set_tempo(TEMPO)
 nrt.play(Pbind(degree=Pseq([0, 2, 4, 7, 5, 4, 2, 0], repeats=4), dur=0.25,
                amp=Pwhite(0.3, 0.7)))
 take = nrt.render(sample_rate=SR, channels=1)

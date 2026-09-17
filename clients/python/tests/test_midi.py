@@ -12,6 +12,7 @@ import tempfile
 
 import pytest
 
+from clausters.base.timebase import LogicalTimebase
 from clausters.base import MidiRtInterface, MidiServer, TempoClock
 from clausters.seq import Pbind, Pseq
 
@@ -30,7 +31,7 @@ def _note_offs(events):
 
 def test_pbind_rendered_as_midi_in_beats():
     midi = MidiServer(channel=0)
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(
         instrument="default", midinote=Pseq([60, 64, 67]), dur=0.5, amp=0.5, legato=0.8
     ).play(clock, midi)
@@ -51,7 +52,7 @@ def test_pbind_rendered_as_midi_in_beats():
 
 def test_explicit_freq_maps_to_a_note_number():
     midi = MidiServer()
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument="default", freq=Pseq([440.0]), dur=1.0, amp=1.0).play(clock, midi)
     clock.render()
     on = _note_ons(midi.score.sorted())[0]
@@ -70,7 +71,7 @@ def _midi_or_skip():
 
 def _rendered_midi(**pbind):
     midi = MidiServer()
-    clock = TempoClock(tempo=1.0)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(instrument="default", **pbind).play(clock, midi)
     clock.render()
     return midi
@@ -111,7 +112,7 @@ def test_live_output_smoke():
         pytest.skip(f"live MIDI unavailable: {e}")
     try:
         midi = MidiServer(interface=iface)
-        clock = TempoClock(tempo=4.0)
+        clock = TempoClock(tempo=4.0, timebase=LogicalTimebase())
         Pbind(instrument="default", midinote=Pseq([60, 64, 67]), dur=0.25, amp=0.7).play(
             clock, midi
         )

@@ -28,13 +28,14 @@ def test_session_and_default_are_the_same_kind_of_environment():
     assert issubclass(Session, Environment)
     assert isinstance(main, Environment)
     assert default_session is main
-    for env in (main, Session.nrt(tempo=1.0)):
+    for env in (main, Session.nrt()):
         assert hasattr(env, "server") and hasattr(env, "seed") and hasattr(env, "rng")
 
 
 def test_nrt_session_plays_and_renders():
     _embed_or_skip()
-    s = Session.nrt(tempo=2.0)
+    s = Session.nrt()
+    s.clock.set_tempo(2.0)
     s.play(Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
                  dur=0.5, amp=0.2))
     try:
@@ -53,7 +54,7 @@ def test_nrt_render_with_workers_is_bit_identical():
     from clausters.defs import SynthDef, control, out, sine
 
     def build():
-        s = Session.nrt(tempo=1.0)
+        s = Session.nrt()
         server = s.server
         SynthDef(
             "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)).send(server)
@@ -124,7 +125,9 @@ def _embed_session_or_skip():
     from clausters import Session
     from clausters.errors import LibraryError, ServerError
     try:
-        return Session.embed(tempo=4.0, latency=0.1)
+        session = Session.embed(latency=0.1)
+        session.clock.set_tempo(4.0)
+        return session
     except (LibraryError, ServerError, OSError) as e:
         pytest.skip(f"embedded server not available: {e}")
 
@@ -149,23 +152,23 @@ def test_embed_session_drives_in_process_server():
 
 
 def test_embed_session_anchors_to_the_sample_clock_by_default():
-    # Like live, an embed session sample-locks out of the box — but through a
-    # direct in-process read of the shared counter (EmbedSampleClock), with no
-    # UDP tracker: no socket, no round trips, no timeout to burn.
+    # Like live, an embed session is on the sample clock out of the box — but
+    # through a direct in-process read of the shared counter (EmbedSampleClock),
+    # with no UDP tracker: no socket, no round trips, no timeout to burn.
     from clausters.base.timebase import SampleClockTimebase
     from clausters.defs.clocksync import EmbedSampleClock
 
     s = _embed_session_or_skip()
     try:
-        assert isinstance(s.clock.timebase, SampleClockTimebase)
-        assert isinstance(s.clock._sample_clock, EmbedSampleClock)
+        assert isinstance(s.timebase, SampleClockTimebase)
+        assert s.clock.timebase is s.timebase
+        assert isinstance(s.server._sample_clock, EmbedSampleClock)
         # the timebase reads the handle's counter directly
         embed = s.server.interface.server
         assert s.clock.timebase.current_sample() == pytest.approx(embed.clock, abs=8192)
-        # lock_to is idempotent: a manual lock keeps the in-process reader
-        sc = s.clock._sample_clock
-        assert s.lock_to_server() is s
-        assert s.clock._sample_clock is sc
+        # a clock made in the session is on the same time
+        with s:
+            assert TempoClock(2.0).timebase is s.timebase
     finally:
         s.close()
 
@@ -175,7 +178,7 @@ def test_embed_session_is_independent_from_others():
     # with its own server and clock.
     s = _embed_session_or_skip()
     try:
-        b = Session.nrt(tempo=1.0)
+        b = Session.nrt()
         assert s.server is not b.server
         assert s.clock is not b.clock
         b.close()
@@ -185,8 +188,8 @@ def test_embed_session_is_independent_from_others():
 
 def test_two_sessions_are_independent():
     _embed_or_skip()
-    a = Session.nrt(tempo=1.0)
-    b = Session.nrt(tempo=1.0)
+    a = Session.nrt()
+    b = Session.nrt()
     a.play(Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5))
     b.play(Pbind(instrument="default", freq=Pseq([1000.0, 2000.0, 3000.0]), dur=0.5))
     a.clock.render()
@@ -200,28 +203,27 @@ def test_two_sessions_are_independent():
     assert a.clock is not b.clock
 
 
-def test_lock_to_offline_session_is_a_noop():
-    # An NRT (score) server has no live clock; lock_to must leave the clock on
-    # the run's logical time (and not raise), so offline scripts keep working.
-    s = Session.nrt(tempo=2.0)
+def test_an_offline_server_has_no_sample_clock():
+    # An NRT (score) server has no live clock: its session is on logical time,
+    # and asking it for a sample timebase is refused rather than ignored.
+    s = Session.nrt()
     assert isinstance(s.clock.timebase, LogicalTimebase)
-    assert s.lock_to_server() is s            # chainable, no-op here
-    assert isinstance(s.clock.timebase, LogicalTimebase)
-    assert s.clock._sample_clock is None
+    with pytest.raises(RuntimeError, match="offline server"):
+        s.server.sample_timebase()
     s.close()
 
 
-def test_lock_to_unreachable_master_falls_back_to_wall_clock():
-    # No server is listening on this port: lock_to detects no master within the
-    # timeout and stays on wall-clock OSC time (the "client with no Clausters
-    # server" case), rather than raising.
+def test_a_live_session_with_no_server_answering_raises():
+    # No server is listening on this port. A clock's timebase is fixed when it
+    # is made, so the session cannot fall back to wall-clock time afterwards:
+    # it raises and says why, instead of pacing silently on another time.
     server = Server("127.0.0.1", 59999)
-    clock = TempoClock(tempo=1.0)
-    assert clock.lock_to(server, timeout=0.2) is clock
-    assert isinstance(clock.timebase, MonotonicTimebase)
-    assert clock._sample_clock is None
-    clock.close()
-    server.close()
+    with pytest.raises(RuntimeError, match="fixed when it is made"):
+        server.sample_timebase(timeout=0.2)
+    assert server._sample_clock is None, "the dead reader is released"
+    session = Session(server, timebase=MonotonicTimebase())
+    assert isinstance(session.clock.timebase, MonotonicTimebase)
+    session.close()
 
 
 def test_quant_snaps_to_the_clock_grid():
@@ -515,7 +517,7 @@ def test_a_score_left_on_a_clock_nobody_drove_says_so():
     queued = """
 from clausters import Session
 from clausters.base import Routine
-s = Session.nrt(tempo=1.0)
+s = Session.nrt()
 def f():
     yield 1.0
 Routine(f).play(s.clock)

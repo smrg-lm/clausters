@@ -4,9 +4,10 @@ This layer ships:
 
 - `event` — `Event` (a note plays a synth and
   schedules its release at the exact logical beat).
-- `pattern` — `Pattern` and the value patterns
-  (``Pseq``, ``Pser``, ``Prand``, ``Pwhite``, ``Pseries``, ``Pgeom``,
-  ``Pfunc``, ``Pn``, ``Pconst``) plus `Pbind` (an event pattern).
+- `pattern` — `Pattern` (the definition of a generator) and the value
+  patterns (``Pseq``, ``Pser``, ``Prand``, ``Pwhite``, ``Pseries``, ``Pgeom``,
+  ``Pfunc``, ``Pn``, ``Pconst``), plus `EventPattern`, what plays: `Pbind`, and
+  a ``Pseq``/``Prand``/``Pn`` over event patterns only.
 - `eventstream` — `EventStreamPlayer`.
 - `timeline` — `Timeline` (a static, editable, random-access sequence) and
   its own transport (play/pause/stop/locate/loop) and its own tempo map, plus the `OscItem` /
@@ -24,6 +25,7 @@ from .timeline import (MidiItem, OscItem, Timeline, item_data,
                        item_from_data)
 from .pattern import (
     INF,
+    EventPattern,
     Pattern,
     Pbind,
     Pconst,
@@ -38,6 +40,7 @@ from .pattern import (
 )
 
 __all__ = [
+    "EventPattern",
     "Event",
     "rest",
     "Automation",

@@ -105,7 +105,8 @@ def dac(name: str = "dac") -> SynthDef:
     return SynthDef(name, out(0, in_(control("in", SILENT)) * control("amp", 0.4)))
 
 
-session = Session.live(tempo=TEMPO, latency=0.1)
+session = Session.live(latency=0.1)
+session.clock.set_tempo(TEMPO)
 server = session.server
 defs = {"osc": osc(), "filt": filt(), "trem": trem(), "dac": dac()}
 for sdef in defs.values():

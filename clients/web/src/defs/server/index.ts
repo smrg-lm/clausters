@@ -1329,9 +1329,10 @@ export class Server {
      *   anchoring afterwards so the slope stays fresh; `trackEvery: 0` stops
      *   after the warmup.
      *
-     * A server that does not answer leaves you on wall-clock time: the
-     * returned timebase is a `MonotonicTimebase` and a warning is logged, so
-     * a page whose master is unreachable keeps working.
+     * It is what `Session.embed` and `Session.live` make their clocks on by
+     * default. It throws for an offline server, which has no sample clock, and
+     * when no server answers: a clock's timebase is fixed when it is made, so
+     * there is no falling back to wall-clock time afterwards.
      *
      * Hand the result to a clock (`new TempoClock(2, { timebase })`); the
      * clock never talks to a server itself.
@@ -1350,13 +1351,20 @@ export class Server {
         // also used to be wrong: building a second one closed the first, and
         // every clock already holding that timebase was left reading a closed
         // reader.
+        if (this.connection instanceof ScoreConnection) {
+            throw new Error(
+                "an offline server has no sample clock: its clocks are on a LogicalTimebase",
+            );
+        }
         if (this.clock !== null) return this.clock.timebase();
         const clock = await sampleClockFor(this, options);
         if (clock === null) {
-            console.warn(
-                "clausters: no /clock_query reply; the clock stays on wall-clock time",
+            throw new Error(
+                "no server answered the sample clock (no /clock_query reply). A clock's "
+                + "timebase is fixed when it is made, so it cannot fall back to wall-clock "
+                + "time afterwards: open the server first, or make the session with "
+                + "timebase: new MonotonicTimebase()",
             );
-            return new MonotonicTimebase();
         }
         this.clock = clock;
         return clock.timebase();
@@ -1366,9 +1374,8 @@ export class Server {
      * Closes this server's shared sample-clock reader, if it built one, and
      * forgets it — the next {@link Server.sampleTimebase} builds a fresh one.
      *
-     * Called by {@link Server.close}. A clock does **not** call it on
-     * {@link TempoClock.unlock}: the reader belongs to the server and other
-     * clocks may still be reading it.
+     * Called by {@link Server.close}. A clock never calls it: the reader
+     * belongs to the server and other clocks may still be reading it.
      */
     releaseSampleClock(): void {
         this.clock?.close();

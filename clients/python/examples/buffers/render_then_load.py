@@ -88,7 +88,8 @@ def sampler(name: str = "take") -> SynthDef:
 tmp = tempfile.mkdtemp(prefix="clausters-take-")
 wav = os.path.join(tmp, "phrase.wav")
 
-offline = Session.nrt(tempo=2.0)
+offline = Session.nrt()
+offline.clock.set_tempo(2.0)
 offline.play(phrase())
 stats = offline.render(sample_rate=SR, channels=2, path=wav)
 print(f"rendered {stats.events} score events -> {stats.frames} frames "
@@ -113,7 +114,8 @@ print(f"  peak matches the render's own measurement: {same}")
 # ## 3. Load it into a running server and play it
 
 # %%
-live = Session.live(tempo=2.0, latency=0.15)
+live = Session.live(latency=0.15)
+live.clock.set_tempo(2.0)
 buf = Buffer.read(wav, server=live.server)          # /buffer_allocRead, by content
 info = buf.info()
 print(f"buffer {buf.bufnum} on the server: {info.frames} frames, "

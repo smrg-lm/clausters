@@ -57,7 +57,8 @@ phrase = Pbind(
 # here) end to end, independently of any other session.
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 session.seed(1)
 session.play(phrase)
 

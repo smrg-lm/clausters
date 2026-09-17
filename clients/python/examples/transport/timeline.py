@@ -7,7 +7,7 @@ plays itself -- `play(at=…)`, `locate(beat)`, `loop(start, end)`, `pause()`,
 `stop()` -- reporting a song `position`. No clock and no playhead are handled:
 the timeline plays on a clock of its own, with its own tempo map.
 
-This example captures a pattern into a timeline, edits it programmatically, then
+This example writes a phrase into a timeline, edits it programmatically, then
 drives it live. Random access happens at the boundaries (play/locate/loop);
 between them the timeline just goes forward.
 
@@ -25,18 +25,18 @@ import sys
 import time
 
 from clausters import Session
-from clausters.seq import Event, Pbind, Pseq, Timeline
+from clausters.seq import Event, Timeline
 
 # %% [markdown]
-# ## Bounce a pattern to a clip, then edit it
-# `Timeline.from_pattern` captures a forward-only generator into a static list of
-# timed items -- and once static, it can be edited by hand. Its ``tempo`` is the
-# timeline's own: two beats a second.
+# ## A phrase in a timeline, then edit it
+# Four notes half a beat apart, each at its beat: a static list of timed items,
+# so it can be edited by hand. Its ``tempo`` is the timeline's own: two beats a
+# second.
 
 # %%
-timeline = Timeline.from_pattern(
-    Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.5, amp=0.2),
-    dur=2.0,
+timeline = Timeline(
+    [(0.5 * i, Event(instrument="default", degree=degree, dur=0.5, amp=0.2))
+     for i, degree in enumerate([0, 2, 4, 7])],
     tempo=2.0,
 )
 timeline.add(0.0, Event(instrument="default", degree=7, dur=0.5, amp=0.3))  # an accent

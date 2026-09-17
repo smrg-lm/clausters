@@ -100,7 +100,8 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       // chord. `hasGate` releases by closing the gate, which is what this def's
       // `envGen` waits for.
       async function renderPhrase() {
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await unison().send();
 
         new Routine(function* sequence() {

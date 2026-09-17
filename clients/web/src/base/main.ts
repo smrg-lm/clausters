@@ -25,6 +25,7 @@ import { currentRoutine } from "./context.ts";
 import { Environment } from "./environment.ts";
 import { TempoClock } from "./clock.ts";
 import type { Rng } from "./rand.ts";
+import type { Timebase } from "./timebase.ts";
 import type { Server } from "../defs/server/index.ts";
 import type { Stream } from "./stream.ts";
 
@@ -44,6 +45,12 @@ export interface SessionLike {
      * belongs to nobody.
      */
     adopt?(clock: TempoClock): TempoClock;
+    /**
+     * The timebase a clock made while this session is active is made on: the
+     * session's, which is the only one it may ask for (a different one
+     * throws). The default session does not have it.
+     */
+    timebaseForClock?(timebase: Timebase | undefined): Timebase;
 }
 
 /**
@@ -63,6 +70,8 @@ export class Main extends Environment {
     defaultClock: TempoClock | null = null;
 
     private active: SessionLike | null = null;
+    /** The routine running when `active` was put in force (see `contextSession`). */
+    private activeIn: Stream | null = null;
 
     /**
      * The routine being resumed right now, set by the clock around each wake
@@ -85,19 +94,55 @@ export class Main extends Environment {
 
     set currentSession(session: SessionLike | null) {
         this.active = session;
+        this.activeIn = this.currentRoutine;
+    }
+
+    /**
+     * `[session, routine]`: what `currentSession` holds and the routine that
+     * was running when it was put in force — what a block saves and restores,
+     * so leaving it puts back both.
+     *
+     * @internal
+     */
+    get sessionContext(): [SessionLike | null, Stream | null] {
+        return [this.active, this.activeIn];
+    }
+
+    set sessionContext([session, routine]: [SessionLike | null, Stream | null]) {
+        this.active = session;
+        this.activeIn = routine;
+    }
+
+    /**
+     * The session a context put in force **for what runs now**: the
+     * `currentSession` when it was put in force outside any routine and none is
+     * running, or inside the very routine running now. A session activated at
+     * top level does not take over the wakes of another session's clock; a
+     * `use` block entered inside a routine does, for its extent.
+     */
+    private contextSession(): SessionLike | null {
+        if (this.active === null) return null;
+        const routine = this.currentRoutine;
+        return routine === null || routine === this.activeIn ? this.active : null;
     }
 
     // ---- ambient resolution (the single rule) ----
 
     /**
-     * The session an ambient play belongs to: the running routine's (through
-     * the clock driving it), else the explicit `currentSession`, else `null`
-     * — the default session, which is `this`.
+     * The session an ambient play belongs to: the session a context put in
+     * force for what runs now (`contextSession`: a `use` block, `activate`, or
+     * a session driving a call), else the running routine's (through the clock
+     * driving it), else the `currentSession`, else `null` — the default
+     * session, which is `this`.
+     *
+     * A block entered inside a routine wins over that routine's session: it is
+     * how a session is switched, so an offline session made and rendered from
+     * inside a live routine is the one in force while it is.
+     *
+     * @internal
      */
-    /** @internal */
     ambientSession(): SessionLike | null {
-        const session = this.currentRoutine?.clock?.session ?? null;
-        return session ?? this.active;
+        return this.contextSession() ?? this.currentRoutine?.clock?.session ?? this.active;
     }
 
     /**
@@ -118,15 +163,20 @@ export class Main extends Environment {
 
     /**
      * The clock a play should schedule on: the explicit one if given, else
-     * the clock of the routine running right now, else the ambient session's,
-     * else the default session's `defaultClock` — which may be `null`, the
-     * caller then reaching for `getDefaultClock`.
+     * the clock of the routine running right now when it belongs to the
+     * session a block put in force, else the ambient session's, else the default
+     * session's `defaultClock` — which may be `null`, the caller then reaching
+     * for `getDefaultClock`.
+     *
+     * A routine's clock of another session than the one a `use` block put in
+     * force is not taken: the block is how a session is switched.
      */
     resolveClock(clock?: TempoClock | null): TempoClock | null {
         if (clock) return clock;
+        const context = this.contextSession();
         const running = this.currentRoutine?.clock;
-        if (running) return running;
-        const session = this.active;
+        if (running && (context === null || running.session === context)) return running;
+        const session = context ?? this.active;
         if (session?.clock) return session.clock;
         return this.defaultClock;
     }

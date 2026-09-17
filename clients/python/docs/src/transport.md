@@ -49,14 +49,14 @@ session.play(pattern, quant=4)                  # the Session form
 How tightly the clients align depends on the time reference each clock paces against — the subject of [Timing models](timing-models.md), in one paragraph here:
 
 - **Plain (wall-clock) followers** align to the **beat**, drift-bounded: the grid's sample origin is mapped to OSC time through the server's `/clock_query` anchor, so everyone agrees on the bar to within the wall-vs-audio drift.
-- **Followers that also `lock_to(server)`** align to the **sample**: the grid lives on the master's sample axis, so the shared bar is one exact sample for all of them.
+- **Followers whose clock is on the server's sample clock** align to the **sample**: the grid lives on the master's sample axis, so the shared bar is one exact sample for all of them. A live session's clocks are, by default.
 
 ```python
-clock.lock_to(server)        # sample-exact timing (drift-free; the master clock)
+clock = TempoClock(timebase=server.sample_timebase())  # sample-exact, drift-free
 clock.join_transport(server) # ...then phase-align on the shared bar
 ```
 
-Order does not matter much, but lock first and join second reads well: choose the reference, then align on it.
+A clock's timebase is fixed when it is made, so the reference is chosen first, and the clock aligns on it afterwards.
 
 ## Following a tempo change live
 
@@ -138,9 +138,9 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 | Join the grid (follower) | `clock.join_transport(server)` / `Session.join_transport()` |
 | Leave it | `clock.leave_transport()` |
 | Start on the next bar | `clock.play(routine, quant=4)` / `session.play(pattern, quant=4)` |
-| Align to the sample, not just the beat | `clock.lock_to(server)` as well (see [Timing models](timing-models.md)) |
+| Align to the sample, not just the beat | a clock on `server.sample_timebase()` — a live session's default (see [Timing models](timing-models.md)) |
 | Follow live tempo changes | an `OscFunc("/transport_query.reply", …)` that re-`join_transport`s (see [Receiving OSC and MIDI](responders.md)) |
-| Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers `playhead.follow_transport(server, quant=4)` |
+| Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers put a timeline on it, `timeline.transport = server` |
 | Read the rolling state | `server.transport_state()` → `{tempo, playing, position, …}` |
 
 ## Freezing a piece: when the transport governs the sound

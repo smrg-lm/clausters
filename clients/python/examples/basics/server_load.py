@@ -57,7 +57,8 @@ from clausters.seq import INF, Pbind, Pseq, Pwhite
 # the graph where it can.
 
 # %%
-session = Session.live(tempo=2.0, latency=0.1, workers=2).activate()
+session = Session.live(latency=0.1, workers=2).activate()
+session.clock.set_tempo(2.0)
 server = session.server
 
 # %% [markdown]

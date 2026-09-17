@@ -25,7 +25,7 @@ play(Event(degree=0))         # one note now, no clock — resolves the default 
 play(Pbind(degree=Pseq([0, 2, 4]), dur=0.5))   # on the default session's clock
 ```
 
-The free-standing `play` plays anything against this ambient context — an `Event` (immediate outside a clock, timetagged inside one), an event `Pbind`, or a `Routine` — resolving the server and clock for you. Each playable also has the same ambient `.play()`. A note or pattern played from *inside* a running session (its routine's clock) resolves *that* session instead, so isolation holds even for the ambient verb. An explicit `Session` never adopts the default: `Session.live()` and friends keep their server to themselves.
+The free-standing `play` plays anything against this ambient context — an `Event` (immediate outside a clock, timetagged inside one), an event `Pbind`, or a `Routine` — resolving the server and clock for you. Each playable also has the same ambient `.play()`. A note or pattern played from *inside* a running session (its routine's clock) resolves *that* session instead — unless a `with` block has put another session in force — so isolation holds even for the ambient verb. An explicit `Session` never adopts the default: `Session.live()` and friends keep their server to themselves.
 
 ## Kinds of session
 
@@ -37,7 +37,8 @@ You almost always build a session with one of the factories rather than the cons
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
-session = Session.nrt(tempo=2.0)
+session = Session.nrt()
+session.clock.set_tempo(2.0)
 session.seed(1)   # this session's root seed reproduces its every random draw
 session.play(Pbind(
     degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
@@ -65,7 +66,8 @@ The two protocols have two roles: **UDP finds the server, TCP talks to it**. The
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
-with Session.live(tempo=2.0, latency=0.1) as session:   # attaches, or boots one
+with Session.live(latency=0.1) as session:   # attaches, or boots one
+    session.clock.set_tempo(2.0)
     session.play(Pbind(
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
@@ -79,7 +81,8 @@ Arguments worth knowing on `live()`:
 
 - `boot` — whether to start a server when none is up (default `True`). Pass `boot=False` for plain attach-only behavior: connect to a server you launched yourself (possibly remote), never starting a process. When booting, `options` (a `ServerOptions` that sizes the launched server *and* this client's allocators), `shm` (`"auto"`, a path, or `None`), and `verbose`/`data_dir`/`server_args` shape the launched process.
 - `latency` — seconds added to each event's timetag so it arrives a touch ahead of its play time and the server sounds it *on* time rather than late. `0.0` means "as soon as possible"; a small value such as `0.1` is typical for a live take. Left unset (and with no `[client].latency` in the config), it defaults to `0.1` for a real-time transport — UDP, TCP, WS **and** the embedded server, which is wall-clock timetagged just the same — and to `0.0` for an offline NRT session. So `Session.live()` and `Session.embed()` land on time out of the box, without an explicit `latency=`.
-- `timebase` — the clock's pacing source. Left unset, the session anchors to the server's own sample clock by default (config `[client].clock`, default `"sample"`), for drift-free, sample-accurate scheduling, falling back to wall-clock time if no server answers; pass `MonotonicTimebase()` (or set `[client].clock = "monotonic"`) to keep wall-clock timetags. See [Timing models](timing-models.md) for the distinction.
+- `clock` — the session's clock. Left unset, the session makes one at tempo 1.0 on its timebase; the tempo is the clock's, so it is set there (`session.clock.set_tempo(2.0)`). A clock that belongs to another session, or is on another timebase, is refused.
+- `timebase` — the time every clock of the session is made on, fixed for the session's life. Left unset, it is the server's own sample clock (config `[client].clock`, default `"sample"`), for drift-free, sample-accurate scheduling, and a server that does not answer it **raises**: a clock's timebase is fixed when it is made, so there is nothing to fall back to afterwards. Pass `MonotonicTimebase()` (or set `[client].clock = "monotonic"`) for wall-clock timetags. See [Timing models](timing-models.md) for the distinction.
 
 `Session.embed()` is a **real-time** session whose server runs *inside this process*. It opens the whole engine — audio device and all — through the native library bundled with the package, and OSC is delivered by function call rather than over a socket. There is no separate process to start and no port to connect to, yet it is real-time: it sounds on a device just like `live()`.
 
@@ -87,7 +90,8 @@ Arguments worth knowing on `live()`:
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
-with Session.embed(tempo=2.0, latency=0.1) as session:
+with Session.embed(latency=0.1) as session:
+    session.clock.set_tempo(2.0)
     session.play(Pbind(
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
@@ -97,7 +101,7 @@ with Session.embed(tempo=2.0, latency=0.1) as session:
     session.run(3.5)
 ```
 
-It takes the same `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.ipc.Clausters` handle instead of opening a fresh one. You do not normally build that handle: `embedded()` opens and owns it, and hands it back as `session.server.interface.server`. Because the server lives in this process, that property reads its sample clock (`.clock`, `.sample_rate`) and control buses (`.ctl_get` / `.ctl_set`) directly, with no OSC round trip.
+It takes the same `clock`, `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.ipc.Clausters` handle instead of opening a fresh one. You do not normally build that handle: `embedded()` opens and owns it, and hands it back as `session.server.interface.server`. Because the server lives in this process, that property reads its sample clock (`.clock`, `.sample_rate`) and control buses (`.ctl_get` / `.ctl_set`) directly, with no OSC round trip.
 
 There is deliberately **no separate "spawn" factory**: launching a server is not a different kind of session, just `live()`'s default behavior, so the option lives on `live` rather than multiplying constructors. See [Launching the server and the GUI](#launching-the-server-and-the-gui) below for the details and the object-level `Server.boot` / `GuiHost.boot`.
 
@@ -126,7 +130,8 @@ Once you have a session, a small set of methods drives it. Some are offline-only
 Because `close()` releases the server, the idiomatic shape for a live session is a context manager, which closes it for you even if the block raises:
 
 ```python
-with Session.live(tempo=2.0) as session:
+with Session.live() as session:
+    session.clock.set_tempo(2.0)
     session.play(my_pattern)
     session.run(4.0)
 # server closed here
@@ -155,12 +160,14 @@ def phrase():
     )
 
 # Offline: capture it to samples.
-offline = Session.nrt(tempo=2.0)
+offline = Session.nrt()
+offline.clock.set_tempo(2.0)
 offline.play(phrase())
 take = offline.render()
 
 # Live: hear the very same phrase.
-with Session.live(tempo=2.0, latency=0.1) as live:
+with Session.live(latency=0.1) as live:
+    live.clock.set_tempo(2.0)
     live.play(phrase())
     live.run(3.5)
 ```
@@ -172,8 +179,10 @@ This is exactly what the two shipped examples do — `offline_render.py` and `li
 Because a session is an ordinary object rather than a global, more than one can be live at the same time. The common case is rendering a score offline (for a plot, an analysis or a `.wav`) right next to a live session you are listening to, in a single script:
 
 ```python
-live = Session.live(tempo=2.0, latency=0.1)
-plot = Session.nrt(tempo=2.0)
+live = Session.live(latency=0.1)
+live.clock.set_tempo(2.0)
+plot = Session.nrt()
+plot.clock.set_tempo(2.0)
 
 live.play(phrase())
 plot.play(phrase())
@@ -214,6 +223,22 @@ The visual server binary ships **bundled in the same package** as the audio serv
 `with session:` makes a session ambient for a block, which is the right shape when the session's life *is* the block's. A REPL has no block to be inside of — each statement runs on its own — so `session.activate()` makes it ambient and leaves it there, and `session.deactivate()` gives the slot up (closing the session does too). After it, everything that names no session (`play(...)`, a bare `Synth(...)`) resolves to this one's server, clock and random root.
 
 Both are thread-local, like the ambient session itself: another thread is unaffected, and a `with` block nests inside an activated session rather than replacing it — it restores what was in force when it ends.
+
+### The session is the context clocks are made in
+
+A session is global **per context**: whichever one is in force is where a clock is made. A `TempoClock` made while a session is active is made on **the session's timebase** — the server's sample clock for a live or embedded session, a `LogicalTimebase` for an offline one — and kept in the session, which starts, stops and closes it with the rest. With no session active, a clock belongs to the default session and paces on wall-clock time, unless it is given a timebase of its own.
+
+The `with` block is how a session is switched, on the same thread and even inside a running routine, so an offline render in the middle of a live one needs nothing but the block:
+
+```python
+live = Session.live().activate()
+
+with Session.nrt() as offline:          # in force for the block, closed after it
+    offline.play(Pbind(degree=Pseq([0, 2, 4]), dur=0.25))
+    take = offline.render()             # every clock made here is on logical time
+```
+
+An offline session has only logical time: a clock or a `timebase` of another kind given to one raises, and so does rendering a clock that is not on it. A timeline's hidden clock follows the same rule — it belongs to the session the timeline sounds in (see [Timelines](timelines.md)).
 
 ### Without a Session: `boot` and `attach`
 

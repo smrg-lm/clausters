@@ -66,7 +66,8 @@ piece = Pbind(
 # -- without it the last note's tail is cut off.
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 session.play(piece)
 
 PIECE_BEATS = 128 * 0.25        # two sections of 64 notes, a quarter beat each

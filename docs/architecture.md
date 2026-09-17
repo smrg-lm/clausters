@@ -393,7 +393,8 @@ Three things this makes visible that no single type does:
 its right half. `SampleClockModel` — the least-squares fit behind
 `SampleClockTimebase` — is a value of the *same shape* as the map: an affine
 relation with a slope and an anchor, fitted rather than written. Everything
-`lock_to` does is that left arrow.
+`Server.sample_timebase` hands a clock is that left arrow, fixed when the clock
+is made.
 
 **The beat axis has two structures, not one**, and the difference is random
 access against forward-only. The project vocabulary already names it — a
@@ -439,7 +440,7 @@ of the Python client's book; the reasoning behind it is in
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
-| Change of state (generator → generated) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
+| Change of state (generator → generated) | evaluating a def or bouncing an event pattern | `render.py`, `session.py`, `src/server/render.rs` |
 | Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Timeline.play`), `src/server/render.rs` |
 | The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editing/`, `clients/web/src/gui/editing/` |
 | Graphic unit (a clip: length = duration) | the placed rectangle, and its bodies as the child elements they are | `clients/gui/src/host/graphics/track.rs` |

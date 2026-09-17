@@ -64,7 +64,8 @@ def drone(name: str = "drone") -> SynthDef:
 # out through `send_bundle` (stamped with the routine's logical beat).
 
 # %%
-session = Session.nrt(tempo=2.0).activate()
+session = Session.nrt().activate()
+session.clock.set_tempo(2.0)
 drone().send()             # /def_send synth at time 0
 node = Synth("drone", {"freq": 220.0, "amp": 0.2})
 

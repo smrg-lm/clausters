@@ -44,7 +44,7 @@ session.play(pattern, 4);               // starts on the *shared* bar line
 
 The join reads the grid once and keeps three numbers — a tempo (the grid brings its own), an origin and which axis that origin lives on. Afterwards the clock is as offline as it was before: it does not talk to the server, and nothing about a joined clock is asynchronous. `clock.gridBeat()` is where the shared grid is now (the clock's own `beats()` when it has not joined one), `clock.leaveTransport()` goes back to its own beats, and a server with no grid defined leaves the clock exactly as it was.
 
-How exact the alignment is follows from the timebase. A clock locked to the server's sample clock (`session.lockToServer()`, which every session factory does by default) is on the very counter the grid's origin is defined against, so the alignment is **sample-exact**; a wall-clock clock maps the origin through the server's `/clock_query` anchor and lands within the drift between the two clocks. Lock first, then join.
+How exact the alignment is follows from the timebase. A clock made on the server's sample clock (`new TempoClock(1, { timebase: await server.sampleTimebase() })`, and every clock of an `embed` or `live` session by default) is on the very counter the grid's origin is defined against, so the alignment is **sample-exact**; a wall-clock clock maps the origin through the server's `/clock_query` anchor and lands within the drift between the two clocks. A clock's timebase is fixed when it is made, so the reference comes first and the join after.
 
 ## Following the conductor
 

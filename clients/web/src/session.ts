@@ -19,7 +19,8 @@
 // that never touches the default one.
 //
 // ```ts
-// const s = await Session.embed({ tempo: 2.0 });
+// const s = await Session.embed();
+// s.clock.setTempo(2.0);
 // s.play(new Pbind({ instrument: "default", freq: Pseq([440, 550]), dur: 0.5 }));
 // ```
 //
@@ -31,7 +32,7 @@
 // has none of.
 
 import { TempoClock } from "./base/clock.ts";
-import { LogicalTimebase } from "./base/timebase.ts";
+import { LogicalTimebase, MonotonicTimebase } from "./base/timebase.ts";
 import type { Timebase } from "./base/timebase.ts";
 import { pageConnection, ScoreConnection, WsConnection } from "./base/connection.ts";
 import type { Connection } from "./base/connection.ts";
@@ -48,19 +49,26 @@ import { engine as engineInstance, server as pageEngine } from "./engine/server.
 import { GuiHost } from "./gui/host.ts";
 import { newGuiHost, pageGuiConnection } from "./gui/page.ts";
 import type { ClaustersGui } from "./gui/page.ts";
-import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import type { Pattern } from "./seq/pattern.ts";
+import { play as playVerb } from "./play.ts";
 
 /** What both factories take on top of their carrier's own options. */
 export interface SessionOptions {
-    /** The clock's tempo, in beats per second. */
-    tempo?: number;
     /**
-     * The clock's pacing source. Left unset the session **anchors to its
-     * server's sample clock**, which is sample-accurate and drift-free — and
-     * in the page it is exact, the engine and the `AudioContext` being one
-     * clock. Pass `new MonotonicTimebase()` to keep wall-clock timetags.
+     * The session's clock, on the session's timebase. Omitted, the session
+     * makes one at tempo 1.0; the tempo is the clock's, so it is set there
+     * (`session.clock.setTempo(2.0)`).
+     */
+    clock?: TempoClock;
+    /**
+     * The time every clock of the session is made on, fixed for the session's
+     * life. Left unset (and with no `clock`) it is **its server's sample
+     * clock**, which is sample-accurate and drift-free — and in the page it is
+     * exact, the engine and the `AudioContext` being one clock — and a server
+     * that does not answer it throws, since a clock's timebase is fixed when
+     * it is made and there is nothing to fall back to afterwards. Pass
+     * `new MonotonicTimebase()` for wall-clock timetags.
      */
     timebase?: Timebase;
     /** Seconds added to each event's timetag; see `Server.latency`. */
@@ -119,27 +127,83 @@ export class Session extends Environment {
     private readonly destinations: OscDestination[] = [];
 
     /**
-     * Drives `server` on `clock` (a fresh one at tempo 1.0 when omitted).
+     * Drives `server` on `clock` — a fresh one at tempo 1.0, on the session's
+     * timebase, when omitted. A clock that already belongs to another session,
+     * or is on another timebase than `timebase`, throws.
      *
      * The clock gets a back-reference to this session, so a play running on it
      * resolves *this* session's server and random root — which is what keeps
      * several sessions isolated from each other and from the default one.
-     */
-    /**
+     *
      * `gui` is a host this session drives instead of opening one — the visual
      * half of taking a `Server` the session did not open, and the way a session
      * adopts a host reached with `GuiHost.connect`. `gui()` then returns it
      * rather than opening anything.
+     *
+     * `timebase` is the physical time every clock of this session paces
+     * against, fixed for the session's life. Omitted it is `clock`'s when one
+     * is given, else a `LogicalTimebase` for an offline server — the only one
+     * an offline session can have — and the page's monotonic clock otherwise
+     * (`embed` and `live` default to the server's sample clock).
      */
-    constructor(server: Server, clock?: TempoClock, gui?: GuiHost) {
+    constructor(server: Server, clock?: TempoClock, gui?: GuiHost, timebase?: Timebase) {
         super();
         this.server = server;
+        if (clock !== undefined) {
+            if (timebase !== undefined && timebase !== clock.timebase) {
+                throw new Error(
+                    `this clock is on a ${clock.timebase.constructor.name} and the session was `
+                    + `asked for a ${timebase.constructor.name}: every clock of a session is on `
+                    + `the session's timebase, and a clock's is fixed when it is made`,
+                );
+            }
+            timebase = clock.timebase;
+        }
+        if (server.connection instanceof ScoreConnection) {
+            if (timebase === undefined) {
+                timebase = new LogicalTimebase();
+            } else if (!(timebase instanceof LogicalTimebase)) {
+                throw new Error(
+                    `an offline session is on a LogicalTimebase, and this one was given a `
+                    + `${timebase.constructor.name}: an offline run has no physical time to wait `
+                    + `on, so logical time is the only time its clocks can have`,
+                );
+            }
+        } else if (timebase === undefined) {
+            timebase = new MonotonicTimebase();
+        }
+        this.timebaseHeld = timebase;
         this.clocks_ = [];
-        this.clock = this.adopt(clock ?? new TempoClock());
+        // Made with this session in force, so it takes the session's timebase
+        // and is kept here -- whatever session is active around this constructor.
+        this.clock = this.adopt(clock ?? this.use(() => new TempoClock()));
         this.gui_ = gui ?? null;
     }
 
     private clocks_!: TempoClock[];
+    private readonly timebaseHeld: Timebase;
+
+    /**
+     * The physical time every clock of this session paces against, fixed for
+     * the session's life: the server's sample clock for an embedded or live
+     * session, a `LogicalTimebase` for an offline one.
+     *
+     * A `TempoClock` made while this session is active is made on it and kept
+     * here, so the clocks of one session never disagree about what "now" is.
+     */
+    get timebase(): Timebase {
+        return this.timebaseHeld;
+    }
+
+    /** @internal */
+    timebaseForClock(timebase: Timebase | undefined): Timebase {
+        if (timebase === undefined || timebase === this.timebaseHeld) return this.timebaseHeld;
+        throw new Error(
+            `a clock made while a session is active is on the session's timebase `
+            + `(${this.timebaseHeld.constructor.name}), and this one asked for a `
+            + `${timebase.constructor.name}; make it with no timebase, or with no session active`,
+        );
+    }
 
     /**
      * Every clock this session owns, the default ({@link Session.clock})
@@ -158,28 +222,33 @@ export class Session extends Environment {
      * Takes `clock` into this session and returns it.
      *
      * Sets the clock's `session` back-reference, which is what an ambient play
-     * follows from inside a routine. A clock already held by another session
-     * leaves that one first; a clock this session already holds is not taken
-     * twice.
+     * follows from inside a routine. A clock this session already holds is not
+     * taken twice.
      *
-     * Called for you: a `TempoClock` adopts the ambient session at
-     * construction. Call it by hand for a clock built before the session
-     * existed, or to move one between sessions.
+     * Called for you: a `TempoClock` made while this session is active is
+     * adopted at construction. Call it by hand for a clock made with no session
+     * active, on this session's timebase.
+     *
+     * A clock that belongs to another session throws, and so does one on
+     * another timebase: a clock's timebase is fixed when it is made, so it
+     * cannot join a session that paces against another time.
      */
     adopt(clock: TempoClock): TempoClock {
         const previous = clock.session;
         if (previous != null && previous !== this) {
-            (previous as Session).release(clock);
+            throw new Error(
+                "this clock already belongs to another session; a clock is kept by the "
+                + "session it was made in",
+            );
+        }
+        if (clock.timebase !== this.timebaseHeld) {
+            throw new Error(
+                `this clock is on a ${clock.timebase.constructor.name} and the session on a `
+                + `${this.timebaseHeld.constructor.name}: every clock of a session is on the `
+                + `session's timebase`,
+            );
         }
         clock.session = this;
-        // Offline, the session's clocks share one logical time — the run's
-        // physical time — so a clock that has not started yet moves onto it.
-        const home = (this as { clock?: TempoClock }).clock?.timebase;
-        if (home instanceof LogicalTimebase && !(clock.timebase instanceof LogicalTimebase)
-            && clock.pacingOrigin === null) {
-            clock.timebase = home;
-            home.join(clock);
-        }
         if (!this.clocks_.some((held) => held === clock)) this.clocks_.push(clock);
         return clock;
     }
@@ -217,17 +286,22 @@ export class Session extends Environment {
      * patterns, defs and routines play into it, because only the connection
      * underneath the `Server` changed.
      *
-     * The clock's tempo is what maps the piece's beats onto the render's
-     * seconds; at the default 1.0 a beat is a second.
+     * Its timebase is a `LogicalTimebase`, and it is the only one it can have:
+     * every clock made while it is active is on that logical time. `clock` is
+     * the session's clock, made on a `LogicalTimebase` (omitted, one at tempo
+     * 1.0 on the session's); `timebase` is the session's `LogicalTimebase`
+     * (omitted, a new one; any other kind throws).
      */
-    static async nrt({ tempo = 1.0 }: { tempo?: number } = {}): Promise<Session> {
+    static async nrt(
+        { clock, timebase }: { clock?: TempoClock; timebase?: Timebase } = {},
+    ): Promise<Session> {
         await loadCore();
         // Neither booted nor attached: a score has no server to bring up and
         // none to reach, so the handle is the bare one the reference client
         // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
         // the compiled sizing, which is the whole truth about an offline run.
         const server = new Server({ connection: new ScoreConnection() });
-        return new Session(server, new TempoClock(tempo, { timebase: new LogicalTimebase() }));
+        return new Session(server, clock, undefined, timebase);
     }
 
     /**
@@ -254,7 +328,7 @@ export class Session extends Environment {
     static async embed({
         engine,
         channels,
-        tempo = 1.0,
+        clock,
         timebase,
         latency,
         timeout,
@@ -282,7 +356,7 @@ export class Session extends Environment {
         if (engine !== undefined) {
             return Session.over(
                 { connection: await pageConnection(engine), timeout, share },
-                { tempo, timebase, latency },
+                { clock, timebase, latency },
                 "boot",
             );
         }
@@ -290,7 +364,7 @@ export class Session extends Environment {
         const audio = await engineInstance(options);
         const session = await Session.over(
             { connection: await pageConnection(audio), timeout, share },
-            { tempo, timebase, latency },
+            { clock, timebase, latency },
             "boot",
         );
         session.ownedEngine = audio;
@@ -313,7 +387,7 @@ export class Session extends Environment {
      */
     static async live(
         url = "ws://127.0.0.1:57120",
-        { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
+        { clock, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
         await loadCore();
         // `attach`: nothing here started that server, and a WebSocket that
@@ -322,7 +396,7 @@ export class Session extends Environment {
         // message into it.
         return Session.over(
             { transport: "ws", url, timeout, share },
-            { tempo, timebase, latency },
+            { clock, timebase, latency },
             "attach",
         );
     }
@@ -330,7 +404,7 @@ export class Session extends Environment {
     /** Builds the session around a server described by `options`. */
     private static async over(
         options: ServerOptions,
-        { tempo, timebase, latency }: SessionOptions,
+        { clock, timebase, latency }: SessionOptions,
         how: "boot" | "attach",
     ): Promise<Session> {
         // Not the default session's by being built: `activate()` is the verb
@@ -339,12 +413,13 @@ export class Session extends Environment {
         const server = new Server(options);
         await server[how]({ adoptDefault: false });
         if (latency !== undefined) server.latency = latency;
-        const session = new Session(server, new TempoClock(tempo, { timebase }));
-        // With no explicit timebase, anchor to the server's own sample clock:
-        // a session is sample-accurate out of the box. Graceful — a server
-        // that does not answer leaves the clock on wall-clock time.
-        if (timebase === undefined) await session.lockToServer();
-        return session;
+        // With no clock and no timebase, the session is made on the server's
+        // own sample clock: sample-accurate out of the box. A server that does
+        // not answer throws, since a clock's timebase is fixed when it is made.
+        if (clock === undefined && timebase === undefined) {
+            timebase = await server.sampleTimebase({ timeout: server.timeout });
+        }
+        return new Session(server, clock, undefined, timebase);
     }
 
     // ---- the GUI leg ----
@@ -414,48 +489,33 @@ export class Session extends Environment {
      * scope that. Do the awaiting outside and the creating inside.
      */
     use<T>(body: (session: this) => T): T {
-        const previous = main.currentSession;
+        const previous = main.sessionContext;
         main.currentSession = this;
         try {
             return body(this);
         } finally {
-            main.currentSession = previous;
+            main.sessionContext = previous;
         }
     }
 
     /**
-     * Plays an event pattern on this session's clock and server.
+     * Plays an event pattern on this session's clock and server. A value
+     * pattern does not play, and throws.
      *
      * @param quant the beat grid the player starts on; omitted, it starts now.
      */
     play(pattern: Pattern<unknown>, quant?: number): EventStreamPlayer {
         return this.use(() =>
-            pattern.play(this.server as unknown as EventDestination, {
-                clock: this.clock,
-                quant,
-            }));
-    }
-
-    /**
-     * Anchors this session's clock to its server's sample clock — the
-     * sample-accurate, drift-free timebase, with the server as the master.
-     * Returns `this`, so it chains after a factory.
-     *
-     * Safe when the server is not a reachable master: the clock simply stays
-     * on wall-clock time (`Server.sampleTimebase` says so and warns).
-     */
-    async lockToServer(): Promise<this> {
-        await this.clock.lockTo(this.server, { timeout: this.server.timeout });
-        return this;
+            playVerb(pattern, { server: this.server, clock: this.clock, quant }) as EventStreamPlayer);
     }
 
     /**
      * Joins this session's server's shared transport, so a `quant`-ed pattern
      * starts on the same beat as every other client on it (see
-     * `TempoClock.joinTransport`). Resolves with `this`, so it chains after
-     * the other anchoring verb: `await (await session.lockToServer())
-     * .joinTransport()` — lock first, and the alignment is sample-exact. A
-     * server with no transport defined leaves the clock's own grid alone.
+     * `TempoClock.joinTransport`). Resolves with `this`, so it chains after a
+     * factory; on a session made on the sample clock (the default) the
+     * alignment is sample-exact. A server with no transport defined leaves the
+     * clock's own grid alone.
      */
     async joinTransport(): Promise<this> {
         await this.clock.joinTransport(this.server, this.server.timeout);

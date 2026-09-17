@@ -124,7 +124,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
       // The fragment sliders are ordinary controls: /node_set by label.
       async function run() {
         $("render").disabled = true;
-        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
         await softVoice().send();   // NRT: scored at time 0
         const voice = new Synth("soft_voice", { freq: 220.0, amp: 0.25 });
 

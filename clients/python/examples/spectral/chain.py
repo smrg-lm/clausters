@@ -96,7 +96,7 @@ def spectral_lowpass(name: str = "spectral_lp") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=1.0).activate()
+session = Session.nrt().activate()
 noisy().send()
 spectral_lowpass().send()
 
