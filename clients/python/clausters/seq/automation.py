@@ -18,7 +18,7 @@ Two phases keep the clock thread unblocked — a routine must **never** block:
   command is scored in order, `play` self-prepares.
 """
 
-from ..base.main import main
+from ..base.moment import Moment
 from ..defs.buffer import Buffer
 from ..defs.bus import Bus
 from ..defs.node import AddAction, Node, ROOT_NODE_ID
@@ -190,9 +190,13 @@ class Automation:
                     "(allocating/filling a buffer must not block the clock thread)")
             self.prepare(destination)
 
-        clock = getattr(main.current_routine, "clock", None)
+        moment = Moment.current()
+        clock = moment.clock
         dur_secs = self.duration()
-        dur_beats = dur_secs if clock is None else dur_secs * clock.tempo
+        # A length in beats comes from two positions on the map, never from a
+        # duration times one tempo: a tempo change inside the curve moves its end.
+        dur_beats = (dur_secs if clock is None
+                     else clock.secs2beats(moment.secs() + dur_secs) - moment.beat)
 
         node = destination.nodes.alloc()
         self.node, self._playing_on = node, destination

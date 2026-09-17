@@ -76,3 +76,27 @@ def test_automation_drives_control_bus_matches_curve():
     assert value_at(0.05) == pytest.approx(0.2, abs=0.03)
     assert value_at(1.0) == pytest.approx(0.5, abs=0.03)
     assert value_at(1.9) == pytest.approx(0.8, abs=0.03)
+
+
+def test_the_lane_is_freed_where_the_curve_ends_across_a_tempo_change():
+    # Two seconds of curve, started at beat 0, with the tempo doubling at beat 1:
+    # the first second covers one beat and the next covers two, so the lane is
+    # freed at beat 3 -- two seconds in. One tempo times the duration would say
+    # beat 2, which is half a second early.
+    server = Server(interface=OscNrtInterface())
+    clock = TempoClock(tempo=1.0)
+    clock.set_tempo(2.0, at=1.0)
+
+    auto = Automation.from_points([(0, 0.2, 1, 0.0), (2, 0.8, 1, 0.0)], target=None)
+    auto.prepare(server)
+
+    def routine():
+        auto.play(server)
+        yield 4
+
+    clock.play(Routine(routine))
+    clock.render()
+
+    frees = [t for t, msgs in server.interface.score.bundles
+             if b"/node_free" in msgs]
+    assert frees == pytest.approx([2.0])

@@ -266,9 +266,13 @@ export class Automation {
             );
         }
         const server = main.resolveServer(destination);
-        const clock = Moment.current().clock;
+        const moment = Moment.current();
+        const clock = moment.clock;
         const durSecs = this.duration();
-        const durBeats = clock === null ? durSecs : durSecs * clock.tempo;
+        // A length in beats comes from two positions on the map, never from a
+        // duration times one tempo: a tempo change inside the curve moves its end.
+        const durBeats =
+            clock === null ? durSecs : clock.secs2beats(moment.secs() + durSecs) - moment.beat;
 
         const node = server.nodes.alloc();
         this.node = node;

@@ -1648,7 +1648,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   Breaking, and pre-1.0, so no alias: `docs/decisions.md` carries the rule it
   settles.
 
-- ⬜ **An automation's lane is freed on a beat length computed from one tempo**
+- ✅ **An automation's lane is freed on a beat length computed from one tempo**
   *(found 2026-09-05, reading the fundamental structures after the tempo-map
   ownership question was raised)*. `Automation.play` schedules the curve's
   `/node_free` with `delay_beats=dur_beats`, and computes that length as
@@ -1673,6 +1673,12 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   conversion in two languages. It is **not** the ownership question below --
   that one asks where a map should live, this one uses the map that is already
   there.
+
+  **Fixed 2026-09-17**, in both clients: the free is scheduled
+  `secs2beats(secs(at) + dur_secs) - at` beats after the routine's logical beat,
+  and a test on each side starts a two-second curve at beat 0 against a tempo
+  doubling at beat 1 and finds the free three beats later, where the scalar
+  said two.
 
 - ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
   it reaches for a scalar** *(found 2026-09-05 by the user, reading the
@@ -2011,8 +2017,8 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
       document), and where the other is converted.
   12. **`render(tempo=)` and `Session.nrt(tempo=)`.** What a session's tempo
       means once a timeline holds its own map.
-  13. **`Automation`.** Its place in the frame (a curve in seconds) and the fix
-      of its scalar conversion.
+  13. **`Automation`.** Its place in the frame (a curve in seconds). The fix of
+      its scalar conversion has landed.
   14. **What the work is called.** CLAUDE.md names it "the composition" / "the
       piece"; whether it has a name at all. The "piece" rename depends on it.
   15. **The web port.** The shape it must follow, written in

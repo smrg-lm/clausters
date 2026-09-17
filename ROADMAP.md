@@ -120,10 +120,6 @@ tests, an example and the books.
 
 - ⬜ **Phase 1 — independent fixes, no decision.** Order: first, since nothing
   depends on anything else. Carries out:
-  - "An automation's lane is freed on a beat length computed from one tempo"
-    (`clients/python/PLAN.md`, Found by use; section 1 below) -- the scalar
-    fix only; `Automation`'s place in the frame is the tempo entry's decision
-    13 and waits.
   - The type renames of **"piece" names no structure, yet it names types,
     variables, a wire word and prose** (`clients/python/PLAN.md`, Found by use):
     `PiecePlayback`, `PiecePosition` and the test doubles. The wire word and
@@ -186,18 +182,6 @@ Each is small, owned by its plan, and blocked by nothing.
 
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
-
-- ⬜ **An automation's lane is freed on a beat length computed from one tempo**
-  *(`clients/python/PLAN.md`, Found by use)*. `Automation.play` schedules the
-  curve's `/node_free` with `dur_secs * clock.tempo` — a wall-clock length times
-  the tempo read *now* — so across a tempo change during the curve the free
-  lands early (an accelerando) or late (a ritardando), cutting the lane synth
-  off the tail or leaving it running past it. A length in beats never comes
-  from a duration times a tempo; it comes from two positions, and the clock
-  already has the verbs (`beats2secs`/`secs2beats`, both through the map). One
-  line in each client. **Distinct from the ownership question in section 2**:
-  this one uses the map that is already there. It is also one of that entry's
-  decisions to take (`Automation`'s place in the frame).
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
