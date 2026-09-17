@@ -147,6 +147,50 @@ export class SampleClockTimebase implements Timebase {
 }
 
 /**
+ * The system clock of a non-real-time run: seconds that advance only when
+ * whatever is due next is woken.
+ *
+ * Offline there is no physical time to wait on, so this stands in for it — a
+ * clock at tempo 1 — and **every** `TempoClock` of the run shares it: each has
+ * its origin on these seconds, exactly as a live clock has its origin on the
+ * monotonic clock, so a script runs the same live and offline. What a script
+ * sets up before rendering happens at second 0; what a routine starts at
+ * second 4 starts at second 4.
+ *
+ * It keeps the clocks that share it, in the order they joined, so a render
+ * wakes whatever is due next across all of them (`TempoClock.render`).
+ */
+export class LogicalTimebase implements Timebase {
+    readonly kind = "logical";
+    private seconds: number;
+    /**
+     * The clocks on this time, in the order they joined; ties between two
+     * clocks due on the same second wake in this order.
+     */
+    readonly clocks: object[] = [];
+    /** The clock being woken right now, whose routine's beat is exact. */
+    waking: object | null = null;
+
+    constructor(start = 0) {
+        this.seconds = start;
+    }
+
+    now(): number {
+        return this.seconds;
+    }
+
+    /** Moves time to `seconds` (never backwards). */
+    advanceTo(seconds: number): void {
+        this.seconds = Math.max(this.seconds, seconds);
+    }
+
+    /** Adds `clock` to the clocks this time drives (once). */
+    join(clock: object): void {
+        if (!this.clocks.includes(clock)) this.clocks.push(clock);
+    }
+}
+
+/**
  * A timebase driven by hand: what tests pace with, so the same code path the
  * browser runs advances deterministically and instantly.
  */

@@ -21,13 +21,15 @@
 // driving every client — the same local transport, driven from outside.
 
 import { TempoClock } from "../base/clock.ts";
-import type { TempoMap } from "../base/time.ts";
-import { ManualTimebase } from "../base/timebase.ts";
+import type { Schedulable } from "../base/clock.ts";
+import { TempoMap } from "../base/time.ts";
+import { ManualTimebase, quantDelay } from "../base/timebase.ts";
 import { currentRoutine } from "../base/context.ts";
-import { Routine } from "../base/stream.ts";
+import { main } from "../base/main.ts";
+import { Routine, StopStream, Stream } from "../base/stream.ts";
 import { Event } from "./event.ts";
 import type { EventDestination } from "./event.ts";
-import type { Pattern } from "./pattern.ts";
+import { Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { OscFunc } from "../responders.ts";
@@ -169,25 +171,82 @@ export function itemFromData(data: Record<string, unknown> | null | undefined): 
 export const MAX_BOUNCED_EVENTS = 1_000_000;
 
 /**
- * A static, editable sequence of `(beat, item)` kept sorted by beat, with
- * random access by time.
+ * A plan in logical time: `(beat, item)` kept sorted by beat, with random
+ * access by time, its own tempo map, and the verbs that play it.
  *
  * Items stay in beat order, and a stable insert preserves the order of items
  * added at the same beat (a note-off before a re-trigger). `add` returns a
  * handle you pass back to `remove`/`move`, so edits stay correct as other
  * inserts shift indices.
+ *
+ * **Its tempo is its own.** `map` is the timeline's `TempoMap`, the plan of how
+ * its beats fall on seconds, and it is data like the items: edited on the map,
+ * saved with the timeline. There is no `setTempo` here, because no clock is
+ * handled: a timeline plays itself (`play`, `locate`, `pause`, `stop`, `loop`)
+ * on a clock of its own that is born on its beat 0, so a clock beat *is* a
+ * timeline beat.
+ *
+ * **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
+ * `Automation`, a pattern, a `Routine` — and **another timeline**, which its
+ * parent plays when it reaches it. Each timeline keeps its own units: a
+ * child's beats go to seconds through its own map, so siblings at different
+ * tempi start together by construction. One tree plays on one engine, the
+ * root's; a child stays an object of its own, and played by itself it plays on
+ * its own clock.
+ *
+ * A timeline is stateful, so **one instance has at most one parent**: adding
+ * one that already has a parent is refused (`copy` makes an independent one),
+ * and so is adding an ancestor, which would be a cycle.
  */
 export class Timeline {
     private entries: Entry[] = [];
+    /** The timeline this one is an item of, or `null`. */
+    parent: Timeline | null = null;
+    // Built on first use, so a timeline can be written before the core is
+    // loaded: only reading its time needs the map.
+    private mapHeld: TempoMap | null;
+    private readonly tempo: number;
+    /** @internal */
+    player: TimelinePlayer | null = null;
 
-    constructor(items?: Iterable<readonly [number, unknown]>) {
+    constructor(
+        items?: Iterable<readonly [number, unknown]>,
+        { tempo = 1.0, tempoMap }: { tempo?: number; tempoMap?: TempoMap } = {},
+    ) {
+        this.mapHeld = tempoMap ?? null;
+        this.tempo = tempo;
         if (items) for (const [beat, item] of items) this.add(beat, item);
+    }
+
+    /**
+     * The timeline's tempo map: how its beats fall on seconds. Editable data —
+     * write a tempo change on it (`push`, `ramp`, `env`) and what plays follows
+     * it.
+     */
+    get map(): TempoMap {
+        this.mapHeld ??= new TempoMap(this.tempo);
+        return this.mapHeld;
+    }
+
+    set map(tempoMap: TempoMap) {
+        this.mapHeld = tempoMap;
+        if (this.player?.clock) this.player.clock.map = tempoMap;
     }
 
     // ---- editing ----
 
-    /** Inserts `item` at `beat` (kept sorted); returns the entry handle. */
+    /**
+     * Inserts `item` at `beat` (kept sorted); returns the entry handle.
+     *
+     * A timeline as `item` becomes this one's child: refused if it already has
+     * a parent (its `copy` has none) or if it is this timeline or one of its
+     * ancestors.
+     */
     add(beat: number, item: unknown): Entry {
+        if (item instanceof Timeline) {
+            this.checkChild(item, false);
+            item.parent = this;
+        }
         const entry = new Entry(beat, item);
         this.entries.splice(this.insertIndex(beat), 0, entry);
         return entry;
@@ -197,12 +256,14 @@ export class Timeline {
     remove(entry: Entry): this {
         const i = this.entries.indexOf(entry);
         if (i >= 0) this.entries.splice(i, 1);
+        if (entry.item instanceof Timeline) entry.item.parent = null;
         return this;
     }
 
     /** Moves an entry to `newBeat`, keeping the timeline sorted. */
     move(entry: Entry, newBeat: number): Entry {
-        this.remove(entry);
+        const i = this.entries.indexOf(entry);
+        if (i >= 0) this.entries.splice(i, 1);
         entry.beat = newBeat;
         this.entries.splice(this.insertIndex(newBeat), 0, entry);
         return entry;
@@ -210,6 +271,7 @@ export class Timeline {
 
     /** Drops every item. */
     clear(): this {
+        for (const e of this.entries) if (e.item instanceof Timeline) e.item.parent = null;
         this.entries = [];
         return this;
     }
@@ -228,9 +290,45 @@ export class Timeline {
      */
     replace(items: Iterable<[number, unknown]>): this {
         const entries = [...items].map(([beat, item]) => new Entry(Number(beat), item));
+        const children = entries.map((e) => e.item).filter((i) => i instanceof Timeline);
+        for (const child of children) this.checkChild(child, true);
         entries.sort((a, b) => a.beat - b.beat);
+        for (const e of this.entries) if (e.item instanceof Timeline) e.item.parent = null;
+        for (const child of children) child.parent = this;
         this.entries = entries;
         return this;
+    }
+
+    /**
+     * Refuses a child that already has another parent, or that is this
+     * timeline or one of its ancestors.
+     */
+    private checkChild(item: Timeline, replacing: boolean): void {
+        if (item.parent !== null && !(replacing && item.parent === this)) {
+            throw new Error(
+                "this timeline already has a parent; a timeline is stateful and " +
+                    "plays in one place — add item.copy() instead",
+            );
+        }
+        for (let node: Timeline | null = this; node !== null; node = node.parent) {
+            if (node === item) {
+                throw new Error("a timeline cannot contain itself or an ancestor");
+            }
+        }
+    }
+
+    /**
+     * An independent timeline with the same plan: its own tempo map, its
+     * children copied (recursively), and the other items shared — an event or a
+     * message is a value, and a routine item is played fresh on every pass
+     * anyway. It is stopped at beat 0 and has no parent.
+     */
+    copy(): Timeline {
+        const twin = new Timeline(undefined, { tempoMap: this.map.copy() });
+        twin.entries = this.entries.map((e) =>
+            new Entry(e.beat, e.item instanceof Timeline ? e.item.copy() : e.item));
+        for (const e of twin.entries) if (e.item instanceof Timeline) e.item.parent = twin;
+        return twin;
     }
 
     /**
@@ -290,9 +388,38 @@ export class Timeline {
         return this.entries.filter((e) => e.beat === beat).map((e) => e.item);
     }
 
-    /** The beat of the last item (0 when empty) — the timeline's length. */
+    /**
+     * The timeline's logical length, in its own beats: the beat of the last
+     * item (0 when empty), **extended by any child that lasts longer**.
+     *
+     * A parent is never shorter than what it holds. A child's length is in the
+     * child's beats, so it goes to seconds through the child's map and back to
+     * this timeline's beats through this one's, from the beat it is placed at.
+     * A looping child never ends.
+     */
     duration(): number {
-        return this.entries.at(-1)?.beat ?? 0;
+        let end = 0;
+        for (const e of this.entries) {
+            if (e.item instanceof Timeline) {
+                const child = e.item;
+                if (child.looping()) return Infinity;
+                const secs = this.map.secsAt(e.beat) + child.map.secsAt(child.duration());
+                end = Math.max(end, this.map.beatsAt(secs));
+            } else {
+                end = Math.max(end, e.beat);
+            }
+        }
+        return end;
+    }
+
+    /** @internal */
+    looping(): boolean {
+        return this.player !== null && this.player.loop !== null;
+    }
+
+    /** @internal */
+    get entryList(): readonly Entry[] {
+        return this.entries;
     }
 
     get length(): number {
@@ -309,6 +436,108 @@ export class Timeline {
         for (const entry of this.entries) yield [entry.beat, entry.item];
     }
 
+    // ---- playing ----
+
+    /**
+     * Plays the timeline from beat `at`, on a clock of its own.
+     *
+     * No `at` resumes where `pause` left it (beat 0 the first time). `quant`
+     * starts it on the next multiple of `quant` beats of the **ambient** clock
+     * (the routine's, the session's), which is how it lands on another clock's
+     * bar. `destination` is where items play (a `Server`, a `MidiServer`);
+     * without one the ambient server is resolved when an item needs one.
+     *
+     * Playing a child on its own plays only it, on its own clock; its parent is
+     * not involved.
+     */
+    play(
+        { at, quant, destination }: {
+            at?: number;
+            quant?: number;
+            destination?: PlayDestination;
+        } = {},
+    ): this {
+        const player = this.playerFor();
+        if (destination !== undefined) player.destination = destination;
+        if (at === undefined) {
+            player.play(player.position(), quant);
+        } else {
+            player.mark = at;
+            player.play(at, quant);
+        }
+        return this;
+    }
+
+    /**
+     * Moves to `beat`. Playing, the timeline goes on from there: what is
+     * sounding keeps its own release, children are entered at the beat that
+     * corresponds, and an onset the new position has passed is not recovered.
+     * Stopped, it is where the next `play` starts.
+     */
+    locate(beat: number): this {
+        this.playerFor().locate(beat);
+        return this;
+    }
+
+    /** Halts, holding the position: `play` with no `at` resumes there. */
+    pause(): this {
+        this.player?.halt();
+        return this;
+    }
+
+    /**
+     * Halts and goes back to the mark: the beat of the last `play` given an
+     * `at`, or of the last `locate` made while stopped (a resume does not move
+     * it).
+     */
+    stop(): this {
+        if (this.player !== null) {
+            this.player.halt();
+            this.player.hold(this.player.mark);
+        }
+        return this;
+    }
+
+    /**
+     * Loops the half-open beat window `[start, end)`: reaching `end` goes on
+     * from `start`, with physical time running on. A child longer than the
+     * window loops over its part that corresponds to it. Set before or during
+     * play.
+     */
+    loop(start: number, end: number): this {
+        this.playerFor().loop = [start, end];
+        return this;
+    }
+
+    /** Stops looping. */
+    unloop(): this {
+        if (this.player !== null) this.player.loop = null;
+        return this;
+    }
+
+    /** Where the timeline is, in its beats. */
+    position(): number {
+        return this.player === null ? 0 : this.player.position();
+    }
+
+    /**
+     * Whether it is playing. False after `pause`/`stop` and once the end is
+     * reached.
+     */
+    get playing(): boolean {
+        return this.player !== null && this.player.running;
+    }
+
+    /** Whether it stopped because it reached its end (a loop never does). */
+    get finished(): boolean {
+        return this.player !== null && this.player.finished;
+    }
+
+    private playerFor(): TimelinePlayer {
+        this.player ??= new TimelinePlayer(this);
+        return this.player;
+    }
+
     // ---- capture a pattern into a timeline ----
 
     /**
@@ -318,6 +547,8 @@ export class Timeline {
      *
      * The run is the clock's own **offline drive** (`TempoClock.render`), so it
      * is the same driver live playback uses with the waiting taken out.
+     *
+     * `tempo` is the tempo the pattern is run at, and the timeline's.
      *
      * `dur` bounds an endless pattern, in beats. Without one, an endless
      * pattern is **caught rather than run forever**: the bounce throws once it
@@ -334,7 +565,7 @@ export class Timeline {
             maxEvents = MAX_BOUNCED_EVENTS,
         }: { dur?: number; tempo?: number; maxEvents?: number } = {},
     ): Timeline {
-        const timeline = new Timeline();
+        const timeline = new Timeline(undefined, { tempo });
         const recorder: EventDestination = {
             playEvent(event: Event) {
                 timeline.add(currentRoutine()?.logicalBeat ?? 0, event);
@@ -362,6 +593,424 @@ export class Timeline {
         }
         clock.close();
         return timeline;
+    }
+}
+
+// ---- the engine: one tree, woken by its root's clock ----
+
+/**
+ * A timeline's clock as what it plays sees it, while the root's clock wakes the
+ * tree.
+ *
+ * An item of a child measures in the **child's** beats — an event's sustain, an
+ * automation's length, a routine's yields, a pattern's durations — but only the
+ * root's clock runs. So the node hands each item this view: its beats and
+ * conversions are the child's, placed on the root's time by the node's origin,
+ * and what it schedules goes onto the root's clock at the beat that
+ * corresponds. Timetags and sessions are the root clock's.
+ */
+class ClockView {
+    private readonly node: TimelineNode;
+
+    constructor(node: TimelineNode) {
+        this.node = node;
+    }
+
+    private get root(): TempoClock {
+        return this.node.player.clock!;
+    }
+
+    beats2secs(beats: number): number {
+        return this.node.origin + this.node.timeline.map.secsAt(beats);
+    }
+
+    secs2beats(secs: number): number {
+        return this.node.timeline.map.beatsAt(secs - this.node.origin);
+    }
+
+    rootBeat(beats: number): number {
+        if (this.node.isRoot) return beats;
+        return this.node.player.rootBeat(this.beats2secs(beats));
+    }
+
+    localBeat(rootBeat: number): number {
+        if (this.node.isRoot) return rootBeat;
+        return this.secs2beats(this.node.player.rootSecs(rootBeat));
+    }
+
+    beats(): number {
+        const routine = currentRoutine();
+        if (routine !== null && (routine.clock as unknown) === this) return routine.logicalBeat;
+        return this.localBeat(this.root.beats());
+    }
+
+    get tempo(): number {
+        return this.node.timeline.map.tempoAt(this.beats());
+    }
+
+    get map(): TempoMap {
+        return this.node.timeline.map;
+    }
+
+    sched(delayBeats: number, item: Schedulable): this {
+        this.schedule(this.beats() + delayBeats, item);
+        return this;
+    }
+
+    schedAbs(beat: number, item: Schedulable): this {
+        this.schedule(beat, item);
+        return this;
+    }
+
+    play<T extends Schedulable>(item: T): T {
+        this.schedule(this.beats(), item);
+        return item;
+    }
+
+    unsched(item: Schedulable): this {
+        const wrapper = this.node.player.wrappers.get(item);
+        if (wrapper !== undefined) {
+            this.node.player.wrappers.delete(item);
+            this.root.unsched(wrapper);
+        }
+        return this;
+    }
+
+    private schedule(beat: number, item: Schedulable): void {
+        const player = this.node.player;
+        const wrapper = new Routine(translated(item, this));
+        player.wrappers.set(item, wrapper);
+        player.owned.push([this.node, wrapper]);
+        this.root.schedAbs(this.rootBeat(beat), wrapper);
+    }
+
+    // What a Server and a session read, from the root clock.
+    get timebase() { return this.root.timebase; }
+    get pacingOrigin() { return this.root.pacingOrigin; }
+    get startTime() { return this.root.startTime; }
+    get session() { return this.root.session; }
+    get name() { return this.root.name; }
+    get rolling() { return this.root.rolling; }
+    get frozen() { return this.root.frozen; }
+}
+
+/**
+ * The body of the routine the root clock wakes for `item`, an item scheduled
+ * on a child's view: each wake runs `item` at the child's beat that
+ * corresponds, and turns the child beats it yields into root beats.
+ */
+function translated(item: Schedulable, view: ClockView) {
+    return function* (): Generator<number, void, unknown> {
+        for (;;) {
+            const me = currentRoutine()!;
+            const rootBeat = me.logicalBeat;
+            const local = view.localBeat(rootBeat);
+            const saved: [TempoClock | null, number] = [me.clock, me.logicalBeat];
+            me.clock = view as unknown as TempoClock;
+            me.logicalBeat = local;
+            let delta: unknown;
+            try {
+                if (item instanceof Stream) {
+                    item.clock = view as unknown as TempoClock;
+                    item.logicalBeat = local;
+                    try {
+                        delta = item.next(view);
+                    } catch (error) {
+                        if (error instanceof StopStream) return;
+                        throw error;
+                    }
+                } else {
+                    delta = (item as () => unknown)();
+                }
+            } finally {
+                [me.clock, me.logicalBeat] = saved;
+            }
+            if (typeof delta !== "number") return;
+            yield view.rootBeat(local + delta) - rootBeat;
+        }
+    };
+}
+
+type Due = [number, () => void, number | null];
+
+/**
+ * One timeline of a playing tree: where its beat 0 falls on the root's axis of
+ * seconds, its cursor, and the children it has entered.
+ */
+class TimelineNode {
+    readonly player: TimelinePlayer;
+    readonly timeline: Timeline;
+    origin: number;
+    readonly isRoot: boolean;
+    readonly view: ClockView;
+    cursor = 0;
+    children: TimelineNode[] = [];
+
+    constructor(player: TimelinePlayer, timeline: Timeline, origin: number, beat: number) {
+        this.player = player;
+        this.timeline = timeline;
+        this.origin = origin;
+        this.isRoot = timeline === player.timeline;
+        this.view = new ClockView(this);
+        this.enter(beat);
+    }
+
+    /**
+     * Places the cursor at `beat`: the next onset at or after it, and the
+     * children the beat is inside, entered at the beat that corresponds.
+     */
+    enter(beat: number): void {
+        const tl = this.timeline;
+        this.cursor = tl.indexAt(beat);
+        this.children = [];
+        const secs = this.origin + tl.map.secsAt(beat);
+        for (const e of tl.entryList.slice(0, this.cursor)) {
+            if (!(e.item instanceof Timeline)) continue;
+            const child = e.item;
+            const origin = this.origin + tl.map.secsAt(e.beat);
+            const local = child.map.beatsAt(secs - origin);
+            if (local < child.duration() || child.looping()) {
+                this.children.push(new TimelineNode(this.player, child, origin, local));
+            }
+        }
+    }
+
+    /**
+     * `[seconds, action, beat]` of the next thing to do in this subtree, or
+     * `null` when it has ended. `beat` is the root's exact beat when the action
+     * is the root's own, and `null` when it has to be read through the maps.
+     */
+    nextDue(): Due | null {
+        const tl = this.timeline;
+        let best: Due | null = null;
+        const entry = tl.entryList[this.cursor];
+        if (entry !== undefined) {
+            best = [this.origin + tl.map.secsAt(entry.beat), () => this.onset(),
+                this.isRoot ? entry.beat : null];
+        }
+        const loop = this.isRoot ? null : tl.player?.loop ?? null;
+        if (loop !== null) {
+            const endSecs = this.origin + tl.map.secsAt(loop[1]);
+            if (best === null || best[0] >= endSecs) best = [endSecs, () => this.wrap(), null];
+        }
+        for (const child of this.children) {
+            const due = child.nextDue();
+            if (due !== null && (best === null || due[0] < best[0])) best = due;
+        }
+        return best;
+    }
+
+    private wrap(): void {
+        const [start, end] = this.timeline.player!.loop!;
+        const map = this.timeline.map;
+        this.player.release(this);
+        this.origin += map.secsAt(end) - map.secsAt(start);
+        this.enter(start);
+    }
+
+    private onset(): void {
+        const tl = this.timeline;
+        const e = tl.entryList[this.cursor]!;
+        this.cursor += 1;
+        if (e.item instanceof Timeline) {
+            const origin = this.origin + tl.map.secsAt(e.beat);
+            this.children.push(new TimelineNode(this.player, e.item, origin, 0));
+            return;
+        }
+        this.player.render(this, e.beat, e.item);
+    }
+
+    prune(): void {
+        this.children = this.children.filter((c) => c.nextDue() !== null);
+        for (const c of this.children) c.prune();
+    }
+
+    contains(node: TimelineNode): boolean {
+        return node === this || this.children.some((c) => c.contains(node));
+    }
+}
+
+/**
+ * The engine of a timeline played as a root: its hidden clock, born on the
+ * timeline's beat 0, and the routine that wakes the whole tree on it.
+ *
+ * @internal
+ */
+export class TimelinePlayer {
+    clock: TempoClock | null = null;
+    destination: PlayDestination | null = null;
+    loop: [number, number] | null = null;
+    mark = 0;
+    running = false;
+    finished = false;
+    root: TimelineNode | null = null;
+    owned: [TimelineNode, Routine][] = [];
+    readonly wrappers = new Map<Schedulable, Routine>();
+    private engine: Routine | null = null;
+    private epoch = 0;
+    private held = 0;
+
+    readonly timeline: Timeline;
+
+    constructor(timeline: Timeline) {
+        this.timeline = timeline;
+    }
+
+    rootSecs(beat: number): number {
+        return this.timeline.map.secsAt(beat);
+    }
+
+    rootBeat(secs: number): number {
+        return this.timeline.map.beatsAt(secs);
+    }
+
+    private clockFor(): TempoClock {
+        if (this.clock === null) {
+            const ambient = main.resolveClock();
+            this.clock = new TempoClock(1, {
+                tempoMap: this.timeline.map,
+                timebase: ambient?.timebase,
+            });
+        }
+        return this.clock;
+    }
+
+    position(): number {
+        if (this.running && this.clock !== null) return this.clock.beats();
+        return this.held;
+    }
+
+    hold(beat: number): void {
+        this.held = beat;
+        this.clock?.locate(beat);
+    }
+
+    play(at: number, quant?: number): void {
+        const clock = this.clockFor();
+        this.halt();
+        this.finished = false;
+        let delay = 0;
+        if (quant) {
+            const ambient = main.resolveClock();
+            if (ambient !== null && ambient !== clock) {
+                const now = ambient.beats();
+                delay = ambient.beats2secs(now + quantDelay(ambient.gridBeat(), quant)) -
+                    ambient.beats2secs(now);
+            }
+        }
+        clock.locate(this.rootBeat(this.rootSecs(at) - delay));
+        this.running = true;
+        this.epoch += 1;
+        const epoch = this.epoch;
+        const player = this;
+        this.engine = new Routine(function* () {
+            yield* player.run(epoch, at);
+        });
+        clock.schedAbs(clock.beats(), this.engine);
+        clock.start();
+    }
+
+    locate(beat: number): void {
+        if (this.running) {
+            this.play(beat);
+        } else {
+            this.mark = beat;
+            this.hold(beat);
+            this.finished = false;
+        }
+    }
+
+    halt(): void {
+        if (this.clock === null) return;
+        this.held = this.clock.beats();
+        this.running = false;
+        this.epoch += 1;
+        if (this.engine !== null) {
+            this.clock.unsched(this.engine);
+            this.engine = null;
+        }
+        this.release(null);
+    }
+
+    /**
+     * Unschedules the routines a pass started, in `node`'s subtree (all of them
+     * for `null`).
+     */
+    release(node: TimelineNode | null): void {
+        const keep: [TimelineNode, Routine][] = [];
+        for (const [owner, routine] of this.owned) {
+            if (node === null || node.contains(owner)) this.clock!.unsched(routine);
+            else keep.push([owner, routine]);
+        }
+        this.owned = keep;
+        if (node === null) this.wrappers.clear();
+    }
+
+    /**
+     * Plays one item of `node` at its `beat`, with the moment and the clock set
+     * to the node's: an item measures in its own timeline's beats.
+     */
+    render(node: TimelineNode, beat: number, item: unknown): void {
+        const me = currentRoutine()!;
+        const saved: [TempoClock | null, number] = [me.clock, me.logicalBeat];
+        me.clock = node.view as unknown as TempoClock;
+        me.logicalBeat = beat;
+        try {
+            this.renderOn(node.view, item);
+        } finally {
+            [me.clock, me.logicalBeat] = saved;
+        }
+    }
+
+    private renderOn(view: ClockView, item: unknown): void {
+        const clock = view as unknown as TempoClock;
+        if (item instanceof Routine) {
+            // Fresh on every pass: the item may still be sounding from the last
+            // one, or on another clock.
+            view.play(new Routine(item.func));
+            return;
+        }
+        const destination = this.destination ?? (main.resolveServer() as unknown as PlayDestination);
+        if (item instanceof Pattern) {
+            item.play(destination, { clock });
+            return;
+        }
+        (item as TimelineItem).play(destination);
+    }
+
+    *run(epoch: number, at: number): Generator<number, void, unknown> {
+        this.root = new TimelineNode(this, this.timeline, 0, at);
+        const me = currentRoutine()!;
+        if (me.logicalBeat < at) yield at - me.logicalBeat;
+        while (this.running && epoch === this.epoch) {
+            const loop = this.loop;
+            const due = this.root.nextDue();
+            if (loop !== null && (due === null || due[0] >= this.rootSecs(loop[1]))) {
+                const wait = loop[1] - me.logicalBeat;
+                if (wait > 0) {
+                    yield wait;
+                    if (!(this.running && epoch === this.epoch)) return;
+                }
+                this.release(null);
+                this.clock!.locate(loop[0]);
+                this.root = new TimelineNode(this, this.timeline, 0, loop[0]);
+                continue;
+            }
+            if (due === null) {
+                this.held = me.logicalBeat;
+                this.running = false;
+                this.finished = true;
+                return;
+            }
+            const beat = due[2] ?? this.rootBeat(due[0]);
+            const wait = beat - me.logicalBeat;
+            if (wait > 0) {
+                yield wait;
+                if (!(this.running && epoch === this.epoch)) return;
+            }
+            due[1]();
+            this.root.prune();
+        }
     }
 }
 

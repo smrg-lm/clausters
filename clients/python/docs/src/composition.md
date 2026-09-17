@@ -1,6 +1,6 @@
 # The document: what a composition is, and who edits it
 
-A `Timeline` places items at beats and a `Playhead` plays them. That is enough to
+A `Timeline` places items at beats and plays them. That is enough to
 sequence, but not enough to *compose*: a composition is a piece placed in time,
 with tracks, takes and curves that are **authored, durable and undoable** — state
 a picture cannot hold, because a picture is drawn and drawing frees.

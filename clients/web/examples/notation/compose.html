@@ -67,15 +67,16 @@ refused by name.</div>
       /examples/notation/compose.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, loadCore, seq } from "../../dist/index.js";
+      import { Session, TempoMap, gui, loadCore } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
       // Two beats per second: the quarter = 120 the engraver times the page at.
-      // Score time and clock time are then the same axis, which is what ties the
-      // cursor to the sound.
+      // It is the tempo of the timeline that plays the score, so score time and
+      // the timeline's time are the same axis, which is what ties the cursor to
+      // the sound.
       const TEMPO = 2.0;
 
       /** The letters of a sheet's first voice, for reading a phrase in the log. */
@@ -183,12 +184,11 @@ refused by name.</div>
         const dl = score.displayList();
         log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
 
-        const session = await Session.embed({ tempo: TEMPO });
+        const session = await Session.embed();
         const server = session.server;
         const sr = (await server.queryInfo()).nominalSampleRate;
         await session.gui();
         const win = await scene(dl, sr).open($("stage"));
-        session.start();
 
         // What plays is the **interpretation of the sheet**, not the engraved
         // notes: `toTimeline` reads the page's own symbols -- the staccato
@@ -197,11 +197,11 @@ refused by name.</div>
         // both lengths, `dur` written and `sustain` heard. Pass `instruments`
         // to say what plays each staff; left out, as here, they take the
         // client's default, because the notation itself never says.
-        const playhead = new seq.Playhead(
-          notation.toTimeline(piece), session.clock, server);
+        const timeline = notation.toTimeline(piece);
+        timeline.map = new TempoMap(TEMPO);
 
         win.widget("play").onClick(async () => {
-          playhead.play({ at: 0.0 });
+          timeline.play({ at: 0.0, destination: server });
           // anchor the cursor: the clock now, plus the play latency, is score 0
           const reply = await server.request("/clock_query", [],
             { expect: ["/clock_query.reply"] });
@@ -210,7 +210,7 @@ refused by name.</div>
           log("playing — the cursor follows the sound");
         });
         win.widget("stop").onClick(() => {
-          playhead.stop();
+          timeline.stop();
           win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
           log("stopped");
         });

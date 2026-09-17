@@ -62,6 +62,44 @@ class ManualTimebase(Timebase):
         self._seconds += max(float(secs), 0.0)
 
 
+class LogicalTimebase(Timebase):
+    """The system clock of a non-real-time run: seconds that advance only when
+    whatever is due next is woken.
+
+    Offline there is no physical time to wait on, so this stands in for it --
+    a clock at tempo 1 -- and **every** `clausters.base.TempoClock` of the run
+    shares it: each has its origin on these seconds, exactly as a live clock
+    has its origin on the monotonic clock, so a script runs the same live and
+    offline. What a script sets up before rendering happens at second 0; what a
+    routine starts at second 4 starts at second 4.
+
+    It keeps the clocks that share it, in the order they joined, so a render
+    wakes whatever is due next across all of them (`TempoClock.render`).
+    """
+
+    kind = "logical"
+
+    def __init__(self, start: float = 0.0):
+        self._seconds = float(start)
+        #: the clocks on this time, in the order they joined; ties between two
+        #: clocks due on the same second wake in this order.
+        self.clocks = []
+        #: the clock being woken right now, whose routine's beat is exact.
+        self.waking = None
+
+    def now(self) -> float:
+        return self._seconds
+
+    def advance_to(self, seconds: float) -> None:
+        """Moves time to ``seconds`` (never backwards)."""
+        self._seconds = max(self._seconds, float(seconds))
+
+    def join(self, clock) -> None:
+        """Adds ``clock`` to the clocks this time drives (once)."""
+        if not any(c is clock for c in self.clocks):
+            self.clocks.append(clock)
+
+
 class SampleClockTimebase(Timebase):
     """Seconds from the server's sample clock: ``now = sample() / sample_rate``."""
 

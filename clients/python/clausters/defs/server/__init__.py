@@ -37,7 +37,7 @@ from ...base.moment import Moment
 from ...base.netaddr import NetAddr
 from ...base._oscinterface import (OscNrtInterface, OscTcpInterface, OscUdpInterface,
                                    OscWsInterface)
-from ...base.timebase import SampleClockTimebase
+from ...base.timebase import LogicalTimebase, SampleClockTimebase
 
 #: What this client sent the audio server and what came back
 #: (`clausters.log`). Silent unless asked.
@@ -89,6 +89,28 @@ __all__ = [
     "DEFAULT_TAPS",
     "DEFAULT_TAP_FRAMES",
 ]
+
+
+def _score_secs(when) -> float:
+    """The second of a score a moment falls on.
+
+    A clock's moment is its beat through the map, from the clock's origin on
+    the run's `LogicalTimebase`. A clockless one (``send_bundle_after``) is a
+    delay from the run's current second: the second the routine sending it was
+    woken on, or 0 outside any routine.
+
+    Never before the run's current second: a beat a `TempoClock.locate` has
+    left behind wakes late, and a live server plays a past timetag now, so a
+    score places it now too."""
+    clock = when.clock
+    if clock is None:
+        running = getattr(main.current_routine, "clock", None)
+        tb = getattr(running, "timebase", None)
+        return (tb.now() if isinstance(tb, LogicalTimebase) else 0.0) + when.beat
+    tb = clock.timebase
+    if not isinstance(tb, LogicalTimebase):
+        return when.secs()
+    return max((clock.pacing_origin or 0.0) + when.secs(), tb.now())
 
 
 def _answers(addr: str, reply: str, args) -> bool:
@@ -392,8 +414,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
                   [m[0] if m else m for m in messages])
 
         if getattr(self.interface, "time_mode", "unix") == "score":
-            # NRT: seconds from render start (logical, timebase-independent).
-            self.interface.send_bundle(self.target, when.secs(), *messages)
+            # NRT: seconds of the run's logical time -- the moment's beat put
+            # through its clock, from that clock's origin on that time.
+            self.interface.send_bundle(self.target, _score_secs(when), *messages)
             return
 
         timebase = getattr(when.clock, "timebase", None)

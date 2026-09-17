@@ -23,6 +23,7 @@ stats = s.render()                  # drains the clock, renders the score
 from contextlib import contextmanager
 
 from .base import OscDestination, OscEmbedInterface, OscNrtInterface, TempoClock
+from .base.timebase import LogicalTimebase
 from .base.environment import Environment
 from .base.main import main
 from .defs import Server
@@ -129,6 +130,14 @@ class Session(Environment):
         if previous is not None and previous is not self:
             previous.release(clock)
         clock.session = self
+        # Offline, the session's clocks share one logical time -- the run's
+        # physical time -- so a clock that has not started yet moves onto it.
+        home = getattr(getattr(self, "clock", None), "timebase", None)
+        if (isinstance(home, LogicalTimebase)
+                and not isinstance(clock.timebase, LogicalTimebase)
+                and clock.pacing_origin is None):
+            clock.timebase = clock._now = home
+            home.join(clock)
         if not any(held is clock for held in self._clocks):
             self._clocks.append(clock)
         return clock
@@ -168,7 +177,8 @@ class Session(Environment):
         Returns:
             A `Session` whose `render` produces the audio.
         """
-        return cls(Server(interface=OscNrtInterface()), TempoClock(tempo))
+        return cls(Server(interface=OscNrtInterface()),
+                   TempoClock(tempo, timebase=LogicalTimebase()))
 
     @classmethod
     def live(cls, host: "str | None" = None, port: "int | None" = None, *,

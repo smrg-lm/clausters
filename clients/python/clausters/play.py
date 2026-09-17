@@ -19,8 +19,8 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   (`clausters.defs.asdef.as_def` adds the ``out`` when it lacks one), so
   ``play(sine(440))`` just sounds and ``play(sine(440).dup())`` sounds in
   stereo. Returns the node handle — it plays until you free it;
-- a `clausters.seq.timeline.Timeline` -> a `clausters.seq.timeline.Playhead`
-  over the ambient clock and server;
+- a `clausters.seq.timeline.Timeline` -> played on its own clock
+  (`Timeline.play`), on the ambient server;
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
   (a buffer sounds through an instrument; here the verb provides the default
   one — ``rate``/``amp`` controls, freed when the take ends);
@@ -78,12 +78,14 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         server: the destination server; ``None`` resolves the ambient one (the
             running session's, else the booted default — see
             `clausters.base.main.Main.resolve_server`).
-        clock: the clock to schedule on (patterns, routines and timelines);
-            ``None`` resolves the running routine's clock, else the default
-            session's (started on first use). Ignored by a bare event played
-            immediately and by a def or expression.
+        clock: the clock to schedule on (patterns and routines); ``None``
+            resolves the running routine's clock, else the default session's
+            (started on first use). Ignored by a bare event played immediately,
+            by a def or expression, and by a timeline, which plays on a clock
+            of its own.
         quant: start quantization for a pattern/routine/timeline (see
-            `clausters.base.clock.TempoClock.play`).
+            `clausters.base.clock.TempoClock.play`; a timeline starts on the
+            ambient clock's grid).
         controls: ``{name: value}`` controls (ports, for a `GraphDef`) a def
             or expression is instanced with; for a `Buffer`, the stock
             instrument's (``rate``, a musical ratio, and ``amp``). Ignored by
@@ -96,13 +98,13 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         (``.stop()``), the routine for a routine, the node handle — a
         `clausters.defs.Synth` or instance `clausters.defs.Group` — for a
         def, expression or buffer (``.free()``), the
-        `clausters.seq.timeline.Playhead` for a timeline (``.stop()``), and
+        timeline itself (``.stop()``), and
         the `clausters.seq.automation.Automation` itself (``.stop()``).
     """
     from .seq.automation import Automation
     from .seq.event import Event
     from .seq.pattern import Pattern
-    from .seq.timeline import Playhead, Timeline
+    from .seq.timeline import Timeline
     from .base.stream import Stream, Routine
     from .defs import Buffer, Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
@@ -123,10 +125,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
     if isinstance(playable, (Expr, SynthDef, FaustDef, GraphDef)):
         return _play_def(as_def(playable), main.resolve_server(server), controls)
     if isinstance(playable, Timeline):
-        clock = clock or main.resolve_clock() or main.get_default_clock()
-        playhead = Playhead(playable, clock, main.resolve_server(server))
-        playhead.play(quant=quant)
-        return playhead
+        return playable.play(at=0.0, quant=quant, destination=main.resolve_server(server))
     if isinstance(playable, Buffer):
         return _play_buffer(playable, main.resolve_server(server), controls)
     if isinstance(playable, Automation):
@@ -148,7 +147,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         )
     if callable(getattr(playable, "play", None)):
         # The timeline-item protocol (`OscItem`, `MidiItem`, and anything
-        # else a Playhead could play): play(destination).
+        # else a timeline could hold): play(destination).
         return playable.play(main.resolve_server(server))
     raise TypeError(
         f"don't know how to play {type(playable).__name__}; expected an Event "

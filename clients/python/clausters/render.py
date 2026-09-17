@@ -16,8 +16,9 @@ by kind:
   `clausters.form.render` (the arrangement's own seam: RT or NRT by the
   destination); without one, an **offline bounce** — an ephemeral NRT session
   plays it and renders the score;
-- a `clausters.seq.timeline.Timeline` -> the same dual: a
-  `clausters.seq.timeline.Playhead` on ``destination``, or the offline bounce;
+- a `clausters.seq.timeline.Timeline` -> the same dual: played on
+  ``destination`` on its own clock, or the offline bounce, whose seconds are
+  the timeline's own tempo map (``tempo`` does not apply to it);
 - an event `clausters.seq.pattern.Pattern`, a `clausters.base.stream.Routine`
   / `clausters.base.stream.Stream` or a bare **generator** -> offline bounce
   only (they are forward-only; sounding them live is `clausters.play`'s job).
@@ -188,7 +189,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         until: stop the offline bounce at this beat — required for an endless
             source (an infinite pattern never drains on its own).
         tempo: the offline bounce's clock tempo, in beats per second (beats
-            of ``obj`` map to ``beat / tempo`` seconds).
+            of ``obj`` map to ``beat / tempo`` seconds). A timeline has a tempo
+            map of its own and ignores it.
         sample_rate: offline render rate, in Hz.
         channels: interleaved output channel count of the offline render —
             the outputs the offline server has, not a property of what is
@@ -203,7 +205,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             here replays that take exactly.
 
     Returns:
-        A `RenderStats` for every offline path. The delegating paths return what
+        A `RenderStats` for every offline path. A timeline on a ``destination``
+        returns the timeline; an `Element` on one returns what
         `clausters.form.render` returns (a `Playhead`, or the instance group
         of a logical `Group`).
     """
@@ -212,7 +215,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     from .defs.asdef import as_def
     from .form.element import Element
     from .seq.pattern import Pattern
-    from .seq.timeline import Playhead, Timeline
+    from .seq.timeline import Timeline
 
     if isinstance(obj, (bytes, bytearray)):
         return render_score(bytes(obj), sample_rate, channels, workers, path,
@@ -234,13 +237,9 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
 
     if isinstance(obj, Timeline):
         if destination is not None:
-            clock = clock or main.resolve_clock() or main.get_default_clock()
-            playhead = Playhead(obj, clock, destination)
-            playhead.play(at=at, quant=quant)
-            return playhead
+            return obj.play(at=at, quant=quant, destination=destination)
         return _bounce(
-            lambda session: Playhead(obj, session.clock, session.server)
-            .play(at=at),
+            lambda session: obj.play(at=at, destination=session.server),
             until, tempo, sample_rate, channels, path, seed, defs)
 
     playable = obj

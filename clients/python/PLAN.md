@@ -1794,6 +1794,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   - `form.element` invents a constant map at every conversion that names none.
   - `Multitrack.tempo` is written in bpm and `TempoClock`/`TempoMap` in beats
     per second, with no common unit between the document and the clock.
+  - In NRT each clock renders only itself (`clock.render()` walks its own
+    queue), so two clocks of one script cannot render together.
+  - In NRT a score's second *is* `beats2secs(beat)` of the clock that emitted
+    it, so a clock started from a routine at second 4 still starts at second 0,
+    and a `locate` or a loop has no physical now to rest on.
   - The web client ports all of the above one to one.
 
   **The frame, decided 2026-09-16/17 with the user.** Two kinds of time:
@@ -1933,6 +1938,85 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   where it had landed: the conversion a view needed was taken for ownership of
   the data.
 
+  **Decided 2026-09-17: one physical time, the same in RT and NRT.** As in
+  sc3, a script has **one source of physical time** and every clock derives
+  from it. In RT it is the system clock (or the sample clock under `lock_to`).
+  In NRT **the system clock is logical** -- a clock at tempo 1 advanced by
+  **one main routine** that wakes whatever is due next across **all** clocks,
+  in seconds -- so what a script sets up when it runs happens at time zero,
+  and what a routine starts at second 4 starts at second 4. Each `TempoClock`
+  has its origin on that time in both modes, so `start`, `stop`, `freeze` and
+  `locate` are one operation on the origin, and a script runs identically in RT
+  and in NRT. No per-clock offset or accumulator: that was a patch for the
+  per-clock render. It is the ground Phase 2 stands on, so it is built first.
+
+  **Decided 2026-09-17: `TempoClock.locate(beat)`**, the addition decision 4
+  names. It moves the logical beat without moving physical time: after it,
+  `beat` falls on the physical now. Valid on a bare clock, as SuperCollider's
+  `TempoClock.beats_` is, and its consequences are the semantics, documented
+  rather than prevented:
+
+  - Stopped: the held beat moves; the next `start` resumes there.
+  - Queued routines keep their absolute beats: a locate forward wakes every one
+    due before `beat` at once, late; a locate back makes each wait the
+    difference.
+  - Bundles already sent inside `latency` sound where they were; nothing
+    recalls them (`/sched_clear` is global).
+  - The map does not change: a locate back before a tempo change recorded live
+    replays it as a plan, and a locate forward enters the tempo section there.
+  - `quant` on the clock's own grid follows the new beat; a joined grid is the
+    server's and does not.
+  - Timetags and a `lock_to` clock follow, since the origins move.
+  - A frozen clock stays frozen at `beat`; inside a routine on the clock, the
+    routine's logical beat jumps and its next `yield` counts from there; other
+    clocks, even sharing the map, are untouched.
+  - In NRT it is the same operation, on the logical system clock.
+
+  **Decided 2026-09-17: one engine per tree.** Nesting, extent, loop, locate and
+  the entry rule live in one place (condition 2): the **root's** clock wakes
+  the whole tree, and each child converts its positions child -> seconds ->
+  root through the maps. One thread per tree, not per child; a child keeps its
+  own clock and map, running it only when played on its own. The same engine
+  is later driven by a transport's position instead of the clock (Phase 5).
+
+  **Decided 2026-09-17: entering the middle of a child.** A child is a
+  container, so a parent's locate or loop enters it at its corresponding beat,
+  compared through physical time; inside, the rule already decided in "A pass
+  re-cued from the playhead drops the clip the playhead is inside" holds --
+  discrete contents start at the next onset, and an onset already passed is not
+  recovered.
+
+  **Decided 2026-09-17: a routine as an item.** It has no state to enter in the
+  middle, so a locate past its onset does not recover it; a locate at or before
+  its onset plays it when reached. Each pass plays a **fresh**
+  `Routine(item.func)` rather than resetting the item, which may still be
+  sounding from the last pass or on another clock, and the engine owns what it
+  started: `stop`, `locate` and a loop's wrap unschedule the routines of the
+  pass. A routine inside a child yields in the child's beats while the root's
+  clock wakes it, so it runs on a view of the child's logical clock that
+  translates `beats()` and `sched` -- the part of the phase to design with most
+  care.
+
+  **Phase 2 landed 2026-09-17, in both clients.** One physical time live and
+  offline (`LogicalTimebase`, the offline drive over every started clock,
+  scores stamped from each clock's origin), `TempoClock.locate`, and the
+  `Timeline` as decided above: its own map, `play`/`pause`/`stop`/`locate`/
+  `loop`/`position`, children in their own units on one engine per tree, one
+  parent and `copy`, routines fresh per pass, items measuring in their
+  timeline's beats. The two offline defects in the list above are fixed; the
+  `Playhead` axis defect is gone for a timeline and stays for the `Playhead`
+  itself, which is still public for what Phase 5 moves: `follow_transport`
+  and the conductor examples, `gui.Transport`'s `source` (Phase 3), and
+  `clients/web/examples/transport/sequencing.html`, which shares one clock
+  between a pattern and a timeline under a live tempo slider -- moving it needs
+  decision 2's answer for a timeline's tempo changed while it plays.
+  `clausters.play(timeline)` and `render(timeline)` play the timeline itself;
+  `render`'s `tempo` no longer applies to a timeline, which is decision 12's to
+  review. `Timeline.from_pattern(tempo=)` gives the timeline that tempo. What
+  "The mapping exists and is private to the `Editor`" (Future directions) left
+  undecided about the public verb is answered by `Timeline.play`; its other two
+  points stand.
+
   **Decisions to take.** Fifteen questions raised while designing this entry.
   Each is **open**: the possibilities are noted, and where the user has stated
   a position it is recorded as a position, not as a decision -- several were
@@ -1946,9 +2030,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   1. **A loop window shorter than a child.** What a parent does when its loop
      plays a child again while the child still sounds. Possibilities: restart
      the child (a retrigger); the child loops over its region that corresponds
-     to the parent's window. Position stated: the latter, which keeps the
-     hierarchy of playback, with the correspondence computed through physical
-     time, since two logical times compare only in physical time.
+     to the parent's window. **Decided 2026-09-17: the latter**, which keeps
+     the hierarchy of playback, with the correspondence computed through
+     physical time, since two logical times compare only in physical time;
+     entering a child in its middle is decided above.
   2. **Changing a timeline's tempo while it plays.** Possibilities: an edit of
      the plan from that beat (what `set_tempo` does on a clock today); a
      performance adjustment that leaves the plan alone. Position stated: a
@@ -1956,14 +2041,16 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
      map, edited as data -- and `TempoClock.set_tempo` behaves the same
      everywhere.
   3. **What an item can be.** Possibilities: events only; events and
-     timelines; also `Automation` and routines. Position stated: a timeline
-     schedules anything playable.
+     timelines; also `Automation` and routines. **Decided 2026-09-17: a
+     timeline schedules anything playable**; a child timeline and a routine
+     each follow the rules decided above.
   4. **What a bare `TempoClock` remains.** For live coding with no structure:
      its map as plan or record, and whether it runs from creation or from
      `start()`. Position stated: a bare clock with routines is the most basic
      use, as it is today (`TempoClock(2).start()`), and a structure built on a
      basic one never changes how the basic one behaves; what a `Timeline`
-     needs from a clock (a seek) is an addition.
+     needs from a clock (a seek) is an addition. **Decided 2026-09-17** as
+     stated; the addition is `TempoClock.locate`, above.
 
   *Server and transport*
 

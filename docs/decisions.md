@@ -7918,6 +7918,11 @@ divergence would still be caught.
 
 ## Who owns a piece's tempo map is the wrong question
 
+*Superseded for the timeline by "A timeline holds its tempo map and plays
+itself, and offline time is one logical clock", below: what this entry says of
+a map as a value stands; what it says of a `Timeline` knowing nothing of tempo,
+and of the saved unit being a named clock, does not.*
+
 The question stood open for a while in this shape: does a piece's tempo belong
 to the **clock** (execution — the clock builds it, a save loses it) or to the
 **document** (notation — the piece saves it, the clock reads it)? Both worked,
@@ -8503,3 +8508,53 @@ collide). The consequence is stated rather than worked around: a source that is
 a summary and nothing else — a peaks cache, a streamed overview — draws no
 spectrogram layer at all, exactly as an old cache with no mean square draws no
 level body.
+
+## A timeline holds its tempo map and plays itself, and offline time is one logical clock
+
+An audit of every use of `TempoClock` and `TempoMap` found the code treating two
+beat axes as one — where an item sits, and how far a clock has run across
+passes, `quant`s and restarts — and two tempi as one, the content's and a live
+gesture's. The case that worked was the one where the pairs coincide: a bare
+clock with routines. Every structure that needed a conversion elsewhere reached
+for a scalar or kept a copy of a map it did not own. The frame that resolved
+it, decided with the user: **physical time** is seconds and cannot be altered;
+**logical time** is beats, metre and notation; a `TempoClock` is a logical
+clock that runs; a `TempoMap` is a plan (or a record) of a logical time along
+the physical one; the server knows only physical time.
+
+**A `Timeline` is a plan in logical time, so its map is its own.** It holds the
+map as data beside its items, and it plays itself on a clock of its own that is
+born on its beat 0 — so a clock beat *is* a timeline beat, and the contradiction
+a `Playhead` over an external clock had (a map indexed from another zero) cannot
+arise. No clock and no playhead are handled for a timeline; a bare clock with
+routines stays exactly what it was, and what a timeline needed from a clock — a
+seek — was added as `TempoClock.locate`, which moves the logical beat without
+moving physical time.
+
+**A timeline contains timelines, played by one engine per tree.** Each child
+keeps its units: its beats go to seconds through its own map, from the second
+its parent placed it at. The alternative, a running clock per child, costs a
+thread per child and propagates every locate and loop clock by clock; one
+engine, the root's, keeps nesting, extent, loop, locate and the entry rule in
+one place, and it is the same engine a transport's position can later drive.
+An item of a child still measures in the child's beats — an event's sustain, an
+automation's length, a routine's yields — because the engine hands it a view of
+the child's clock that translates to the root's, rather than teaching each item
+about nesting. A timeline is stateful, so one instance has one parent (`copy`
+makes another), and a routine item is played fresh each pass instead of reset,
+since the instance may still be sounding.
+
+**Offline, the system clock is logical, and there is one per run.** Before, each
+clock rendered only its own queue and a score's second *was* the emitting
+clock's `beats2secs(beat)`: two clocks of a script could not render together, a
+clock started at second 4 started at 0, and a locate or a loop had no physical
+now to rest on. The fix considered first — a per-clock offset accumulating the
+seconds a locate skipped — was a patch for the per-clock render. The model
+taken instead is sc3's: one `LogicalTimebase` per offline session, a clock at
+tempo 1 that one routine advances by waking whatever is due next across all its
+started clocks, in seconds, with every clock's origin on it exactly as a live
+clock's is on the monotonic clock. A script then runs the same live and
+offline, and a locate is one operation on either time. A clock that is never
+started does not play offline, as live; a score never places a bundle before
+the run's current second, since a live server plays a past timetag now.
+

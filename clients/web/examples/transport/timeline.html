@@ -19,33 +19,34 @@
   </head>
   <body>
     <main>
-      <div id="note">DAW-style transport over a static timeline: play, locate,
-loop, position.
+      <div id="note">DAW-style transport over a timeline: play, locate, loop,
+pause, position.
 
 A <code>Pbind</code> is a forward-only generator — you cannot seek it. A
-<code>Timeline</code> is the opposite: a static, editable list of timed items
-with random access by beat, so a <code>Playhead</code> can offer real transport
-controls — <code>play({ at })</code>, <code>locate(beat)</code>,
-<code>loop(start, end)</code>, <code>stop()</code> — and report a song
-<code>position()</code>.
+<code>Timeline</code> is the opposite: an editable plan of timed items with
+random access by beat, and it plays itself — <code>play({ at })</code>,
+<code>locate(beat)</code>, <code>loop(start, end)</code>,
+<code>pause()</code>, <code>stop()</code> — reporting a song
+<code>position()</code>. No clock and no playhead are handled: the timeline
+plays on a clock of its own, with its own tempo map.
 
-This captures a pattern into a timeline, edits it, then drives it live with the
-playhead. Random access happens at the boundaries; between them the playhead
-just scans forward.</div>
+This captures a pattern into a timeline, edits it, then drives it live. Random
+access happens at the boundaries; between them the timeline just goes
+forward.</div>
 
       <div class="row">
         <button id="run">capture and play</button>
         <button id="locate" disabled>locate to beat 1</button>
         <button id="loop" disabled>loop [0, 2)</button>
-        <button id="stop" disabled>stop</button>
+        <button id="stop" disabled>pause, then stop</button>
       </div>
       <pre id="log"></pre>
     </main>
 
     <!--
       The web sibling of clients/python/examples/transport/timeline.py, call for
-      call: the captured timeline, the added accent, the playhead over the
-      session's clock and server, and the four transport verbs.
+      call: the captured timeline at its own tempo, the added accent, the
+      session it plays on, and the transport verbs.
 
       The one difference is the shape of the run: the script sleeps between the
       verbs and a page has one thread it must not block, so each verb is a
@@ -67,45 +68,45 @@ just scans forward.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      let session = null, head = null;
+      let session = null, timeline = null;
 
       async function run() {
         $("run").disabled = true;
-        const timeline = seq.Timeline.fromPattern(
+        timeline = seq.Timeline.fromPattern(
           new seq.Pbind({
             instrument: "default",
             degree: new seq.Pseq([0, 2, 4, 7]),
             dur: 0.5,
             amp: 0.2,
           }),
-          { dur: 2.0 },
+          { dur: 2.0, tempo: 2.0 },
         );
         // An accent, added where the pattern never put one: a timeline is
         // editable, which is the half a generator does not have.
         timeline.add(0.0, new Event({ instrument: "default", degree: 7, dur: 0.5, amp: 0.3 }));
         log(`timeline: ${timeline.length} items over ${timeline.duration()} beats`);
 
-        session = await Session.embed({ tempo: 2.0, latency: 0.1 });
-        head = new seq.Playhead(timeline, session.clock, session.server);
-        session.start();
-        head.play({ at: 0.0 });
+        session = (await Session.embed({ latency: 0.1 })).activate();
+        timeline.play({ at: 0.0 });
         log("playing from beat 0");
         for (const id of ["locate", "loop", "stop"]) $(id).disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
       $("locate").onclick = () => {
-        log(`position now: beat ${head.position().toFixed(2)}`);
-        head.locate(1.0);
+        log(`position now: beat ${timeline.position().toFixed(2)}`);
+        timeline.locate(1.0);
         log("located to beat 1.0");
       };
       $("loop").onclick = () => {
-        head.loop(0.0, 2.0).play({ at: 0.0 });
+        timeline.loop(0.0, 2.0).play({ at: 0.0 });
         log("looping [0, 2)");
       };
       $("stop").onclick = () => {
-        head.stop();
-        log(`stopped at beat ${head.position().toFixed(2)}`);
+        timeline.pause();
+        log(`paused at beat ${timeline.position().toFixed(2)}`);
+        timeline.stop();
+        log(`stopped, back at beat ${timeline.position().toFixed(2)}`);
       };
     </script>
   </body>

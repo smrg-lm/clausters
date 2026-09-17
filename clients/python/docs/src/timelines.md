@@ -1,8 +1,8 @@
-# Timelines and the playhead
+# Timelines
 
 The sequencing you have seen so far is **generative**: a `Routine` is a Python generator, a `Pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
 
-A `Timeline` is the complement: a **static, editable list of timed items, kept sorted by beat, with random access by time**. Because it is a data structure rather than a coroutine, a `Playhead` can give it real **transport controls** — play, stop, locate (seek), loop — and a song position. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback is a forward scan of it from the playhead.
+A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback reads it forward from a position.
 
 This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and you can move between them (capture a pattern into a timeline, below).
 
@@ -30,14 +30,31 @@ The **random access by time** is the point:
 tl.index_at(1.5)      # the cursor of the first item at or after beat 1.5
 tl.range(1.0, 3.0)    # the (beat, item) pairs in the half-open window [1.0, 3.0)
 tl.at(2.0)            # the items exactly at beat 2.0
-tl.duration()         # the beat of the last item
+tl.duration()         # its logical length, in its beats
 ```
 
-`index_at` is the seek primitive — it is what `play(at=…)` and `locate` use to start the scan at an arbitrary point, which a forward-only routine could never do.
+`index_at` is the seek primitive — it is what `play(at=…)` and `locate` use to start at an arbitrary point, which a forward-only routine could never do.
+
+### Its tempo is its own
+
+A timeline's beats fall on seconds through **its** `TempoMap`, `tl.map` — the same function [Routines and clocks](routines-and-clocks.md) and `examples/basics/tempo_map.py` question. It is data, like the notes: written on the map, and what plays follows it.
+
+```python
+tl = Timeline(tempo=2.0)             # two beats a second
+tl.map.push(8.0, 3.0)                # faster from beat 8 on
+tl.map.ramp(16.0, 24.0, 3.0, 1.5)    # then a ritardando
+```
+
+There is no `set_tempo` on a timeline: that is a clock's gesture, and a timeline's clock is its own business. A bare `TempoClock` running routines — live coding with no timeline — still writes on its map with `set_tempo`.
 
 ### What an item is
 
-An *item* is anything that can render itself on a destination — it has a `play(destination)` method. `Event` already is one (it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI — the same double dispatch the patterns use), so a timeline of `Event`s renders to OSC *or* MIDI depending only on the destination the playhead holds. For a plain editable OSC or MIDI score, `OscItem` and `MidiItem` wrap a raw message:
+An item is **anything playable**:
+
+- an `Event` — it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI, the same double dispatch the patterns use;
+- `OscItem` and `MidiItem`, which wrap a raw message, for a plain editable OSC or MIDI score;
+- an `Automation` (below), an event pattern, or a `Routine`;
+- **another `Timeline`**.
 
 ```python
 from clausters.seq import OscItem, MidiItem
@@ -46,42 +63,59 @@ tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0))
 tl.add(1.0, MidiItem(b"\x90\x3c\x64"))     # note on, key 60, vel 100
 ```
 
-## The playhead
+Every item measures in **its timeline's beats**: an event's sustain, an automation's length, a pattern's durations and a routine's `yield`s are all read through the map of the timeline that holds them.
 
-A `Playhead` scans a timeline forward as a clock advances, rendering each item on a destination. It is built from a timeline, the clock that drives it, and the destination the items go to:
+A routine has no position to enter in its middle, so it is played **fresh** each time its onset is reached (a new `Routine` over the same function), and a locate past its onset does not bring it back. Stopping, locating or wrapping a loop unschedules the routines that pass started.
+
+## Playing it
+
+A timeline plays itself, on a clock of its own that is born on its beat 0 — so no clock and no playhead are handled:
 
 ```python
-from clausters.seq import Playhead
-
-head = Playhead(timeline, session.clock, session.server)
-session.start()                 # the clock must be running for live playback
-head.play(at=0.0, quant=4)      # start on the next bar, from the top
+tl.play(at=0.0, destination=session.server)
 ```
-
-(The free-standing `play(timeline)` builds this for you on the ambient clock
-and server and returns the playhead — see
-[The ambient verbs](verbs.md).)
-
-The transport controls:
 
 | Call | What it does |
 | --- | --- |
-| `play(at=0.0, quant=None)` | Start (or restart) from beat `at`, snapping to a `quant` bar. Re-seeks the cursor, so it doubles as locate-and-play. |
-| `stop()` | Halt the playhead; no further items are rendered (notes already started keep their scheduled releases). |
-| `locate(beat)` | Seek to `beat` — random access. While playing, restarts the scan there; while stopped, sets where the next `play` begins. |
-| `loop(start, end)` / `unloop()` | Loop the half-open window `[start, end)`; the scan wraps at `end`. |
-| `position()` | The current song position in beats (interpolated from the clock while playing). |
-| `playing` / `finished` | Whether the scan is running, and — once it is not — whether it ran off the end rather than being stopped. |
+| `play(at=None, quant=None, destination=None)` | Play from beat `at`; with no `at`, resume where `pause` left it. `quant` starts it on the next multiple of `quant` beats of the **ambient** clock (a routine's, the session's). `destination` is where items go; left out, the ambient server. |
+| `pause()` | Halt, holding the position. |
+| `stop()` | Halt and go back to the mark: the beat of the last `play` given an `at`, or of the last `locate` made while stopped. |
+| `locate(beat)` | Move to `beat`. Playing, it goes on from there; stopped, it is where the next `play` starts. |
+| `loop(start, end)` / `unloop()` | Loop the half-open window `[start, end)`; physical time runs on across the wrap. |
+| `position()` | Where it is, in its beats. |
+| `playing` / `finished` | Whether it is playing, and — once it is not — whether it reached its end rather than being stopped. |
 
-A pass **ends on its own** when the scan reaches the end of the timeline: `playing` goes False, `finished` goes True and `position()` freezes on the last item. That is what a transport polls to park its cursor, rather than timing the end itself. It is the *scan* that ends, so a `loop` never finishes, and the last item keeps sounding for its own length — the playhead schedules items, it does not wait for them.
+A pass **ends on its own** when nothing is left to play: `playing` goes False, `finished` goes True and `position()` holds where the last item fell. It is the *plan* that ends, so a `loop` never finishes, and the last item keeps sounding for its own length.
 
-Under the hood the playhead is a thin cursor over the static structure: the random access happens at the boundaries (`play`, `locate`, loop wrap), and between them it is a forward scan — exactly how a DAW's playback engine reads its arrangement. Because it rides the clock's logical time like everything else in the client, it **inherits the timing models for free**: `quant` starts it on a bar, `clock.lock_to(server)` makes its events sample-exact, and `clock.join_transport(server)` aligns its bars with other clients (see [Timing models](timing-models.md) and [A DAW-style transport](transport.md)).
+The clock it plays on takes the ambient clock's timebase, so a session locked to its server's sample clock (`lock_to_server`) plays its timelines sample-exact, and an offline session renders them.
+
+**What is sounding when a timeline moves.** A locate, a stop or a loop's wrap does not cut what already started: notes keep their own releases. What comes next is decided by what the contents are — a discrete item (an event, a message, a routine) plays from the **next onset**, and one whose onset the new position has passed is not recovered.
+
+## Timelines in timelines
+
+A timeline can hold timelines. The parent plays a child when it reaches it, and each keeps **its own units**: a child's beats go to seconds through the child's map, from the second the parent placed it at. So two children at different tempi placed at one beat start together, by construction.
+
+```python
+verse = Timeline(tempo=2.0)
+drums = Timeline(tempo=4.0)
+song = Timeline(tempo=1.0)
+song.add(0.0, verse)
+song.add(0.0, drums)          # both start at second 0, each at its own tempo
+song.play()
+```
+
+- **One tree, one engine.** The root's clock plays the whole tree; a child is still an object of its own, and `child.play()` plays only it, on its own clock.
+- **One parent per timeline.** A timeline is stateful, so adding one that already has a parent is refused — `copy()` gives an independent one — and so is adding an ancestor, which would be a cycle.
+- **`copy()`** keeps the plan: its own tempo map, its children copied, the other items shared (an event or a message is a value).
+- **A parent covers its children.** `duration()` extends to the end of a child that lasts longer than the parent's own items, converted through both maps; a looping child never ends.
+- **A loop shorter than a child** plays, pass after pass, only the part of the child that falls inside the window, compared in seconds.
+- **Entering a child in its middle** — a locate or a loop landing inside it — enters it at its beat that corresponds, and its contents follow the rule above: the next onset plays, a passed one does not.
 
 ## Automation: a curve as a timeline item
 
 A `clausters.seq.Automation` is the other static structure this module has: a
-**break-point curve driving one or more `(node, control)` targets**, and it is
-played by a `Playhead` exactly as an event is, because it is a timeline item.
+**break-point curve driving one or more `(node, control)` targets**, and a
+timeline plays it exactly as it plays an event, because it is a timeline item.
 
 ```python
 from clausters.seq import Automation
@@ -131,28 +165,33 @@ from clausters.seq import Timeline, Pbind, Pseq
 tl = Timeline.from_pattern(
     Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.5),
     dur=2.0,      # bound an open-ended pattern; None drains a finite one fully
+    tempo=2.0,    # the tempo it is run at, and the timeline's
 )
 tl.add(0.0, Event(instrument="default", degree=7, dur=0.5, amp=0.3))   # then edit
 ```
 
 ## Offline rendering
 
-A playhead is destination-agnostic, so rendering a timeline offline is the same code with an offline session: play it on the NRT clock and render the score.
+A timeline plays the same way offline. An offline session's clocks share one **logical** time — the run's physical time, advanced only by what is due — and a timeline played there takes it, so rendering the session renders the timeline:
 
 ```python
 from clausters import Session
 
-session = Session.nrt(tempo=2.0)
-Playhead(timeline, session.clock, session.server).play()
-session.clock.render()                       # drain the playhead in logical time
+session = Session.nrt().activate()
+timeline.play(destination=session.server)
+session.clock.render()                       # wake what is due, in seconds
 stats = session.server.render()              # the offline render
 ```
 
+`clausters.render(timeline)` does the same in one call, on a session nobody holds. The timeline's own map sets the seconds; the `tempo` argument of `render` does not apply to it.
+
 ## Following a conductor
 
-A playhead is a local transport, but it can also obey a **shared** one. `head.follow_transport(server)` binds it to the server's transport so that a conductor's `transport_play` / `transport_stop` / `transport_locate` rolls, halts and seeks *this* playhead too — several clients in lockstep. It is built on the responder layer (an `OscFunc` on the transport broadcast) and the shared grid:
+Following a server's shared transport is still a `Playhead`'s — a lower-level cursor over a timeline and a clock you hand it — until a timeline can follow a transport itself. `head.follow_transport(server)` binds it to the server's transport so that a conductor's `transport_play` / `transport_stop` / `transport_locate` rolls, halts and seeks *this* playhead too — several clients in lockstep. It is built on the responder layer (an `OscFunc` on the transport broadcast) and the shared grid:
 
 ```python
+from clausters.seq import Playhead
+
 head = Playhead(timeline, clock, server)
 clock.start()
 head.follow_transport(server, quant=4)   # roll when the conductor presses play
@@ -470,6 +509,6 @@ the order they come in.
 
 - [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
-- [Timing models](timing-models.md) — the timing references a playhead inherits (`quant`, `lock_to`, `join_transport`).
-- [Examples](examples.md) — `timeline.py`, the playhead live.
+- [Timing models](timing-models.md) — the timing references a timeline's clock inherits (`quant`, `lock_to`).
+- [Examples](examples.md) — `timeline.py`, a timeline's transport live.
 - [API reference](api.md) — `Timeline`, `Playhead`, `OscItem`, `MidiItem`.

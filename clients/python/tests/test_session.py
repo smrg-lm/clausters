@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from clausters import Session
-from clausters.base import MonotonicTimebase, TempoClock
+from clausters.base import LogicalTimebase, MonotonicTimebase, TempoClock
 from clausters.defs import Server
 from clausters.seq import Pbind, Pseq
 from clausters.defs import Group, Synth
@@ -202,11 +202,11 @@ def test_two_sessions_are_independent():
 
 def test_lock_to_offline_session_is_a_noop():
     # An NRT (score) server has no live clock; lock_to must leave the clock on
-    # wall-clock OSC time (and not raise), so offline scripts keep working.
+    # the run's logical time (and not raise), so offline scripts keep working.
     s = Session.nrt(tempo=2.0)
-    assert isinstance(s.clock.timebase, MonotonicTimebase)
+    assert isinstance(s.clock.timebase, LogicalTimebase)
     assert s.lock_to_server() is s            # chainable, no-op here
-    assert isinstance(s.clock.timebase, MonotonicTimebase)
+    assert isinstance(s.clock.timebase, LogicalTimebase)
     assert s.clock._sample_clock is None
     s.close()
 

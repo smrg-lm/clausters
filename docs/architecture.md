@@ -347,9 +347,9 @@ table rather than derived again. The arrangement layer in the next section is
 | machine ↔ seconds | `Timebase`, and `SampleClockModel` behind the sample one | a value (the fit) plus a reader |
 | seconds ↔ beats | `TempoMap` | a value |
 | the shape of one segment | `clausters_core::warp` and `envshape` | a value, *below* the map |
-| beats → items, random access | `Timeline` | a value |
+| beats → items, random access, with their own map | `Timeline` | a value, which plays itself on a clock of its own |
 | beats → items, forward only | `Stream` / a pattern | a value |
-| a position that advances | `TempoClock` | a **process** over the others |
+| a position that advances | `TempoClock` | a **process** over the others; offline, on a `LogicalTimebase` shared by the run's clocks |
 | a position that does not | `Moment` | a value |
 | what is ready, and what is due | `EventLoop` (`base/loop.py`); the page itself | a **process** over sources and timers |
 | the application's own seconds | `AppClock` (`base/appclock.py`, `base/appclock.ts`) | a **process**, the clock face over that loop |
@@ -398,20 +398,24 @@ relation with a slope and an anchor, fitted rather than written. Everything
 **The beat axis has two structures, not one**, and the difference is random
 access against forward-only. The project vocabulary already names it — a
 *generated* element against a *generator* element — and the consequence is
-concrete: a `Playhead` over a `Timeline` has a position a transport can follow,
-and a pattern player has none.
+concrete: a `Timeline` has a position it can be located to and a transport can
+follow, and a pattern player has none.
 
 **`TempoClock` is the only process here.** Everything else is a value: shared,
 saved, compared, and read with nothing running. A `TempoMap` answers the same
 for the same beat forever and is meaningful for a piece that has never been
-played; a `Timeline` holds `(beat, item)` and knows nothing of tempo; a
-`TempoMap` holds tempo and knows nothing of items. They are peers, and the
-clock is the machine that moves over them.
+played. A `Timeline` is a plan in logical time and holds **its own** map beside
+its `(beat, item)`, so it plays itself: a hidden clock born on its beat 0, and
+one engine per tree of timelines that wakes children in their own units
+(`docs/decisions.md`, "A timeline holds its tempo map and plays itself, and
+offline time is one logical clock").
 
-That last sentence is load-bearing rather than descriptive — it is what
-answered where a piece's tempo belongs (`docs/decisions.md`, "Who owns a
-piece's tempo map is the wrong question"), and it is the first thing to apply
-to the next question of the same shape.
+**Physical time is one per run, live and offline.** Live it is the monotonic
+clock (or the server's sample clock); offline it is a `LogicalTimebase` every
+clock of the session shares, advanced by waking what is due across all of them
+in seconds. Every clock has its origin on that time in both, so `start`, `stop`,
+`freeze` and `TempoClock.locate` are one operation on the origin, and a script
+renders as it plays.
 
 ## The arrangement layer: where it lives
 
@@ -436,7 +440,7 @@ of the Python client's book; the reasoning behind it is in
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
 | Change of state (generator → generated) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
-| Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
+| Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Timeline.play`), `src/server/render.rs` |
 | The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editing/`, `clients/web/src/gui/editing/` |
 | Graphic unit (a clip: length = duration) | the placed rectangle, and its bodies as the child elements they are | `clients/gui/src/host/graphics/track.rs` |
 | Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editing/formeditor.py` |

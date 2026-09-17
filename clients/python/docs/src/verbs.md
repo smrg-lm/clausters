@@ -43,7 +43,7 @@ function is the uniform entry that picks the right one.
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
 | a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
-| a `Timeline` | drives it through a playhead on the ambient clock | the `Playhead` — `.stop()` (and `locate`/`loop`) |
+| a `Timeline` | plays it on its own clock, on the ambient server | the timeline — `.stop()` (and `pause`/`locate`/`loop`) |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
 | an `Automation` | prepares it if needed and applies the curve to its target controls, now | the automation itself — `.stop()` interrupts the sweep (the controls hold their last value) |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |

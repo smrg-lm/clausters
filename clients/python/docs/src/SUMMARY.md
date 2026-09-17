@@ -13,7 +13,7 @@
 - [Sessions](sessions.md)
 - [The ambient verbs: play, plot, render](verbs.md)
 - [Routines and clocks](routines-and-clocks.md)
-- [Timelines and the playhead](timelines.md)
+- [Timelines](timelines.md)
 - [Timing models](timing-models.md)
 - [A DAW-style transport](transport.md)
 - [The visual elements: a GUI the script builds](gui.md)

@@ -54,7 +54,7 @@ import { Group, Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import { Pattern } from "./seq/pattern.ts";
-import { Playhead, Timeline } from "./seq/timeline.ts";
+import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
 import { renderScoreBytes } from "./engine/render.ts";
@@ -155,7 +155,10 @@ export interface RenderVerbOptions extends RenderOptions {
      * which never drains on its own.
      */
     until?: number;
-    /** The bounce's clock tempo, in beats per second (1.0: a beat is a second). */
+    /**
+     * The bounce's clock tempo, in beats per second (1.0: a beat is a second).
+     * A timeline has a tempo map of its own and ignores it.
+     */
     tempo?: number;
 }
 
@@ -199,11 +202,7 @@ export async function render(
     if (obj instanceof Timeline) {
         return bounce(
             (session) =>
-                new Playhead(
-                    obj,
-                    session.clock,
-                    session.server as unknown as PlayDestination,
-                ).play(),
+                obj.play({ destination: session.server as unknown as PlayDestination }),
             { until, tempo, defs, ...cfg },
         );
     }

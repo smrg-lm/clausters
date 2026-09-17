@@ -16,7 +16,8 @@
 // - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) →
 //   the same, through the ephemeral-def coercion (`defs/asdef.ts`), so
 //   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
-// - a `Timeline` → a `Playhead` over the ambient clock and server;
+// - a `Timeline` → played on its own clock (`Timeline.play`), on the ambient
+//   server;
 // - an `Automation` → its lane synth triggered and its targets mapped
 //   (`await auto.prepare(server)` first — see below);
 // - a `Buffer` → sounded through the stock playbuf instrument (a buffer
@@ -60,7 +61,7 @@ import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import { Pattern } from "./seq/pattern.ts";
 import { Automation } from "./seq/automation.ts";
-import { Playhead, Timeline } from "./seq/timeline.ts";
+import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 
 /** Anything `play` knows how to start. */
@@ -84,12 +85,16 @@ export interface PlayOptions {
     /** The destination server; the ambient one by default. */
     server?: Server;
     /**
-     * The clock to schedule on (patterns, routines, timelines); the running
-     * routine's by default, else the default session's, started on first use.
-     * Ignored by a bare event played immediately, and by a def or a buffer.
+     * The clock to schedule on (patterns and routines); the running routine's
+     * by default, else the default session's, started on first use. Ignored by
+     * a bare event played immediately, by a def or a buffer, and by a timeline,
+     * which plays on a clock of its own.
      */
     clock?: TempoClock;
-    /** Start quantization for a pattern, routine or timeline. */
+    /**
+     * Start quantization for a pattern, routine or timeline (a timeline starts
+     * on the ambient clock's grid).
+     */
     quant?: number;
     /**
      * The controls (ports, for a `GraphDef`) a def is instanced with; for a
@@ -104,8 +109,8 @@ export interface PlayOptions {
  * Returns something that knows how to end what just started: the completed
  * event for an event or object (`free()` / `release()`), the
  * `EventStreamPlayer` for a pattern (`stop()`), the routine for a routine, the
- * node handle for a def or a buffer (`free()`), the `Playhead` for a timeline
- * (`stop()`) and the `Automation` itself (`stop()`).
+ * node handle for a def or a buffer (`free()`), the timeline itself (`stop()`)
+ * and the `Automation` itself (`stop()`).
  */
 export function play(playable: Playable, options: PlayOptions = {}): unknown {
     const { server, clock, quant, controls } = options;
@@ -136,13 +141,11 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         return playDef(asDef(playable), main.resolveServer(server), controls);
     }
     if (playable instanceof Timeline) {
-        const playhead = new Playhead(
-            playable,
-            clock ?? ambientClock(),
-            main.resolveServer(server) as unknown as PlayDestination,
-        );
-        playhead.play({ quant });
-        return playhead;
+        return playable.play({
+            at: 0,
+            quant,
+            destination: main.resolveServer(server) as unknown as PlayDestination,
+        });
     }
     if (playable instanceof Buffer) {
         return playBuffer(playable, main.resolveServer(server), controls);
@@ -155,7 +158,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         play?: unknown;
     }).play === "function") {
         // The timeline-item protocol (`OscItem`, and anything else a
-        // Playhead could play): play(destination).
+        // timeline could hold): play(destination).
         return (playable as { play(destination: unknown): unknown })
             .play(main.resolveServer(server));
     }

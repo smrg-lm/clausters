@@ -29,10 +29,11 @@ wrong.
   wrong answer, and over four bars it is out by a tenth of a second -- audible,
   and visible if it were drawn. The cell prints both.
 
-Then the map is handed to a clock (`clock.map = tempo`) and the piece is played,
-so the acceleration is something you **hear** rather than something the numbers
-assert. The same map that answered the questions above is the one the clock runs
-on: there is one function, not a description and a performance.
+Then the map is handed to the timeline that holds the notes (`line.map =
+tempo`) and the timeline is played, so the acceleration is something you **hear**
+rather than something the numbers assert. The same map that answered the
+questions above is the one the timeline plays by: there is one function, not a
+description and a performance.
 
 The *drawn* side of this -- a tempo curve you drag, and the beat ruler re-ruling
 under your hand -- is `views/tempo_ruler.py`.
@@ -47,7 +48,7 @@ import sys
 import time
 
 from clausters import Session, TempoMap
-from clausters.seq import Playhead, Timeline
+from clausters.seq import Timeline
 from clausters.seq.event import Event
 
 #: Beats per second before any change: one beat a second, so the first bars are
@@ -127,25 +128,23 @@ for beat in range(16):
 print(f"{len(line)} notes over {line.duration()} beats")
 
 # %% [markdown]
-# ## The piece's tempo, handed to the clock
-# The map above **is** the piece's tempo, written before any clock existed.
+# ## The piece's tempo, handed to the timeline
+# The map above **is** the piece's tempo, written before anything played.
 # Assigning it is the whole of the handover, and from here there is one function:
 # the same one this file asked its questions of, and the one the notes are played
-# by.
+# by. The tempo is the timeline's data, like its notes: nothing else holds it.
 
 # %%
-session = Session.live(tempo=TEMPO, latency=0.1).activate()
-session.start()
-clock = session.clock
-clock.map = tempo                       # the piece's tempo is the clock's
+session = Session.live(latency=0.1).activate()
+line.map = tempo                        # the piece's tempo is the timeline's
 
-print("the clock's map:", clock.map.segments())
-print("the clock is at beat", round(clock.beats(), 3))
+print("the timeline's map:", line.map.segments())
 
 # %% [markdown]
-# ## The other spelling: writing on the map from the clock
-# `set_tempo` is the same act from the other side, and it writes on the same map.
-# Four forms, and each is one call:
+# ## The other spelling: writing on a clock's map
+# A timeline's tempo is written on its map, as above. A **bare clock** -- live
+# coding, with routines and no timeline -- writes on its own map with
+# `set_tempo`, from the beat it is on. Four forms, and each is one call:
 #
 # ```python
 # clock.set_tempo(4.0)                            # a step, pinned where you call it
@@ -154,11 +153,11 @@ print("the clock is at beat", round(clock.beats(), 3))
 # clock.set_tempo(4.0, over=8.0, curve="exp")     # equal ratios, not equal steps
 # ```
 #
-# Do any of them while the piece runs and it accelerates under your hand; the map
-# keeps both histories, and every beat already played stays convertible. Which is
-# also why `tempo_canon.py` can ask ten clocks to land together: `unit="seconds"`
-# is a stretch of wall clock, and the map solves the beats it implies in closed
-# form.
+# Do any of them while a routine runs on that clock and it accelerates under your
+# hand; the map keeps both histories, and every beat already played stays
+# convertible. Which is also why `tempo_canon.py` can ask ten clocks to land
+# together: `unit="seconds"` is a stretch of wall clock, and the map solves the
+# beats it implies in closed form.
 
 # %% [markdown]
 # ## Play it
@@ -166,25 +165,25 @@ print("the clock is at beat", round(clock.beats(), 3))
 # they would do: beat 16 at the second `secs_at` printed above, not at sixteen.
 
 # %%
-head = Playhead(line, clock, session.server)
-head.play(at=0.0)
+line.play(at=0.0)
 
 started = time.monotonic()
 while (elapsed := time.monotonic() - started) < SECONDS_TO_PLAY:
     time.sleep(min(2.0, SECONDS_TO_PLAY - elapsed))
-    print(f"{time.monotonic() - started:5.1f} s   beat {clock.beats():6.2f}"
-          f"   tempo {clock.tempo:.2f}")
+    beat = line.position()
+    print(f"{time.monotonic() - started:5.1f} s   beat {beat:6.2f}"
+          f"   tempo {line.map.tempo_at(beat):.2f}")
 
 # %% [markdown]
 # ## Stop
-# `stop` holds the position; `close` ends the session and the server it launched.
+# `stop` goes back to where the play started; `close` ends the session and the
+# server it launched.
 
 # %%
-head.stop()
-session.stop()
+line.stop()
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     session.close()
 else:
-    print("up - head.play(at=0) to hear it again, session.close() to end")
+    print("up - line.play(at=0) to hear it again, session.close() to end")

@@ -94,7 +94,8 @@ export class Main extends Environment {
      * the clock driving it), else the explicit `currentSession`, else `null`
      * — the default session, which is `this`.
      */
-    private ambientSession(): SessionLike | null {
+    /** @internal */
+    ambientSession(): SessionLike | null {
         const session = this.currentRoutine?.clock?.session ?? null;
         return session ?? this.active;
     }

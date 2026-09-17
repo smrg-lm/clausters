@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""DAW-style transport over a static timeline: play, locate, loop, position.
+"""DAW-style transport over a timeline: play, locate, loop, pause, position.
 
 A `Pbind` is a forward-only generator -- you cannot seek it. A `Timeline` is the
-opposite: a static, editable list of timed items with random access by beat, so
-a `Playhead` can offer real transport controls -- `play(at=…)`, `locate(beat)`,
-`loop(start, end)`, `stop()` -- and report a song `position`.
+opposite: an editable plan of timed items with random access by beat, and it
+plays itself -- `play(at=…)`, `locate(beat)`, `loop(start, end)`, `pause()`,
+`stop()` -- reporting a song `position`. No clock and no playhead are handled:
+the timeline plays on a clock of its own, with its own tempo map.
 
 This example captures a pattern into a timeline, edits it programmatically, then
-drives it live with the playhead. Random access happens at the boundaries
-(play/locate/loop); between them the playhead just scans forward.
+drives it live. Random access happens at the boundaries (play/locate/loop);
+between them the timeline just goes forward.
 
 `Session.live` boots an audio server if none is up, so this runs on its own:
 
@@ -16,7 +17,7 @@ drives it live with the playhead. Random access happens at the boundaries
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Stepping through it is how the transport controls are meant to be met: run a
-cell, hear where the playhead went.
+cell, hear where the timeline went.
 """
 
 # %%
@@ -24,36 +25,36 @@ import sys
 import time
 
 from clausters import Session
-from clausters.seq import Event, Pbind, Playhead, Pseq, Timeline
+from clausters.seq import Event, Pbind, Pseq, Timeline
 
 # %% [markdown]
 # ## Bounce a pattern to a clip, then edit it
 # `Timeline.from_pattern` captures a forward-only generator into a static list of
-# timed items -- and once static, it can be edited by hand.
+# timed items -- and once static, it can be edited by hand. Its ``tempo`` is the
+# timeline's own: two beats a second.
 
 # %%
 timeline = Timeline.from_pattern(
     Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.5, amp=0.2),
     dur=2.0,
+    tempo=2.0,
 )
 timeline.add(0.0, Event(instrument="default", degree=7, dur=0.5, amp=0.3))  # an accent
 print(f"timeline: {len(timeline)} items over {timeline.duration()} beats")
 
 # %% [markdown]
-# ## The playhead
+# ## A session to play on
 
 # %%
-session = Session.live(tempo=2.0, latency=0.1)
-head = Playhead(timeline, session.clock, session.server)
-session.start()
+session = Session.live(latency=0.1).activate()
 
 # %% [markdown]
 # ## Play from the top
 
 # %%
-head.play(at=0.0)
+timeline.play(at=0.0)
 time.sleep(1.2)
-print(f"position after ~1.2 s: beat {head.position():.2f}")
+print(f"position after ~1.2 s: beat {timeline.position():.2f}")
 
 # %% [markdown]
 # ## Locate
@@ -61,7 +62,7 @@ print(f"position after ~1.2 s: beat {head.position():.2f}")
 # could never do.
 
 # %%
-head.locate(1.0)
+timeline.locate(1.0)
 print("located to beat 1.0")
 time.sleep(1.0)
 
@@ -69,17 +70,23 @@ time.sleep(1.0)
 # ## Loop the first two beats
 
 # %%
-head.loop(0.0, 2.0).play(at=0.0)
+timeline.loop(0.0, 2.0).play(at=0.0)
 print("looping [0, 2)")
 time.sleep(3.0)
 
+# %% [markdown]
+# ## Pause, then stop
+# `pause` holds the position; `stop` goes back to where the last `play` started.
+
 # %%
-head.stop()
-print(f"stopped at beat {head.position():.2f}")
+timeline.pause()
+print(f"paused at beat {timeline.position():.2f}")
+timeline.stop()
+print(f"stopped, back at beat {timeline.position():.2f}")
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     session.close()
     print("done")
 else:
-    print("head up - head.play(at=0), head.locate(b), session.close() to end")
+    print("up - timeline.play(at=0), timeline.locate(b), session.close() to end")

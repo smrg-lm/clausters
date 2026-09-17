@@ -40,10 +40,10 @@ rather less once the tempo has doubled, so seconds always come from <b>two
 positions</b>. And <b>an accelerando is a logarithm</b> — averaging the two
 tempos is out by a tenth of a second over four bars.
 
-Then the map is handed to a clock and the piece is played, so the acceleration
-is something you <b>hear</b>. The same map that answered the questions is the
-one the clock runs on: there is one function, not a description and a
-performance.
+Then the map is handed to the timeline that holds the notes and the timeline
+is played, so the acceleration is something you <b>hear</b>. The same map that
+answered the questions is the one the timeline plays by: there is one function,
+not a description and a performance.
 
 <b>What is different from the script</b>, and it is only the platform: the
 numeric core is wasm and has to be fetched before anything calls into it
@@ -65,7 +65,7 @@ this directory and open the page.</div>
 
     <script type="module">
       import {
-        Event, Playhead, Session, TempoMap, Timeline, loadCore, tempoSegments,
+        Event, Session, TempoMap, Timeline, loadCore, tempoSegments,
       } from "../../dist/index.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
@@ -133,53 +133,51 @@ this directory and open the page.</div>
       log(`${line.length} notes over ${line.duration()} beats`);
 
       let session = null;
-      let head = null;
       let watching = null;
 
       el("start").onclick = async () => {
         el("start").disabled = true;
 
-        // ---- the piece's tempo, handed to the clock ----
-        // The map above **is** the piece's tempo, written before any clock
-        // existed. Assigning it is the whole of the handover, and from here
+        // ---- the piece's tempo, handed to the timeline ----
+        // The map above **is** the piece's tempo, written before anything
+        // played. Assigning it is the whole of the handover, and from here
         // there is one function: the same one this page asked its questions of,
-        // and the one the notes are played by.
-        session = (await Session.embed({ tempo: TEMPO, channels: 2 })).activate();
-        session.start();
-        const clock = session.clock;
-        clock.map = tempo;
+        // and the one the notes are played by. The tempo is the timeline's
+        // data, like its notes: nothing else holds it.
+        session = (await Session.embed({ channels: 2 })).activate();
+        line.map = tempo;
 
-        log(`the clock's map: ${JSON.stringify(tempoSegments(clock.map))}`);
-        log(`the clock is at beat ${clock.beats().toFixed(3)}`);
+        log(`the timeline's map: ${JSON.stringify(tempoSegments(line.map))}`);
 
-        // The other spelling: `setTempo` is the same act from the other side,
-        // and it writes on the same map.
+        // The other spelling: writing on a clock's map. A timeline's tempo is
+        // written on its map, as above. A **bare clock** — live coding, with
+        // routines and no timeline — writes on its own map with `setTempo`,
+        // from the beat it is on.
         //
         //   clock.setTempo(4.0)                                  a step
         //   clock.setTempo(4.0, { over: 8.0 })                   over eight beats
         //   clock.setTempo(4.0, { over: 3.0, unit: "seconds" })  over three seconds
         //   clock.setTempo(4.0, { over: 8.0, curve: "exp" })     equal ratios
         //
-        // Do any of them while the piece runs and it accelerates under your
-        // hand; the map keeps both histories, and every beat already played
-        // stays convertible.
+        // Do any of them while a routine runs on that clock and it accelerates
+        // under your hand; the map keeps both histories, and every beat already
+        // played stays convertible.
 
         // ---- play it ----
         // The notes crowd together over the last two bars, which is what the
         // map said they would do: beat 16 at the second `secsAt` printed above,
         // not at sixteen.
-        head = new Playhead(line, clock, session.server);
-        await head.play({ at: 0.0 });
+        line.play({ at: 0.0 });
 
         const started = performance.now();
         watching = setInterval(() => {
           const elapsed = (performance.now() - started) / 1000;
-          log(`${elapsed.toFixed(1)} s   beat ${clock.beats().toFixed(2)}`
-              + `   tempo ${clock.tempo.toFixed(2)}`);
+          const beat = line.position();
+          log(`${elapsed.toFixed(1)} s   beat ${beat.toFixed(2)}`
+              + `   tempo ${line.map.tempoAt(beat).toFixed(2)}`);
           if (elapsed >= SECONDS_TO_PLAY) {
             clearInterval(watching);
-            head.stop();
-            session.stop();
+            line.stop();
             log("stopped — reload to run it again");
           }
         }, 2000);

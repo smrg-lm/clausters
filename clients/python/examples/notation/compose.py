@@ -55,13 +55,12 @@ it as a plain script.
 # %%
 import sys
 
-from clausters import Session
+from clausters import Session, TempoMap
 from clausters.gui import button, notation, panel, view
-from clausters.seq.timeline import Playhead
 
-# Two beats per second: the quarter = 120 the engraver times the page at. Score
-# time and clock time are then the same axis, which is what ties the cursor to
-# the sound -- a quarter is one beat here and half a second there.
+# Two beats per second: the quarter = 120 the engraver times the page at. It is
+# the tempo of the timeline that plays the score, so score time and the
+# timeline's time are the same axis, which is what ties the cursor to the sound -- a quarter is one beat here and half a second there.
 TEMPO = 2.0
 
 
@@ -207,14 +206,13 @@ def scene(display_list: dict, sample_rate: float) -> dict:
 # ## Open it
 
 # %%
-session = Session.live(tempo=TEMPO)
+session = Session.live()
 server = session.server
 # `query_info` rather than the launch options: it is the one spelling both
 # clients have, so this file and its page twin ask the same question.
 sr = server.query_info().nominal_sample_rate
 gui = session.gui()
 win = scene(dl, sr).open()
-session.start()
 
 # %%
 # What plays is the **interpretation of the sheet**, not the engraved notes:
@@ -224,11 +222,12 @@ session.start()
 # ``sustain`` heard. Pass ``instruments=`` to say what plays each staff; left
 # out, as here, they take the client's default, because the notation itself
 # never says.
-playhead = Playhead(notation.to_timeline(piece), session.clock, server)
+timeline = notation.to_timeline(piece)
+timeline.map = TempoMap(TEMPO)
 
 
 def play():
-    playhead.play(at=0.0)
+    timeline.play(at=0.0, destination=server)
     # anchor the cursor: the clock now, plus the play latency, is score 0
     _, args = server.request("/clock_query", expect=("/clock_query.reply",))
     now = float(args[0]) + server.latency * sr
@@ -236,7 +235,7 @@ def play():
 
 
 def stop():
-    playhead.stop()
+    timeline.stop()
     win["score"].set(playhead_at=-1.0, playhead=0.0)
 
 

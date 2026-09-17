@@ -31,6 +31,7 @@
 // has none of.
 
 import { TempoClock } from "./base/clock.ts";
+import { LogicalTimebase } from "./base/timebase.ts";
 import type { Timebase } from "./base/timebase.ts";
 import { pageConnection, ScoreConnection, WsConnection } from "./base/connection.ts";
 import type { Connection } from "./base/connection.ts";
@@ -171,6 +172,14 @@ export class Session extends Environment {
             (previous as Session).release(clock);
         }
         clock.session = this;
+        // Offline, the session's clocks share one logical time — the run's
+        // physical time — so a clock that has not started yet moves onto it.
+        const home = (this as { clock?: TempoClock }).clock?.timebase;
+        if (home instanceof LogicalTimebase && !(clock.timebase instanceof LogicalTimebase)
+            && clock.pacingOrigin === null) {
+            clock.timebase = home;
+            home.join(clock);
+        }
         if (!this.clocks_.some((held) => held === clock)) this.clocks_.push(clock);
         return clock;
     }
@@ -218,7 +227,7 @@ export class Session extends Environment {
         // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
         // the compiled sizing, which is the whole truth about an offline run.
         const server = new Server({ connection: new ScoreConnection() });
-        return new Session(server, new TempoClock(tempo));
+        return new Session(server, new TempoClock(tempo, { timebase: new LogicalTimebase() }));
     }
 
     /**

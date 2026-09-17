@@ -115,8 +115,8 @@ sweep.stop()                # interrupted at the top: the freq holds there
 time.sleep(1.0)
 node.free()
 
-# %% A timeline: already-generated placement, driven by a playhead on the
-# ambient clock.
+# %% A timeline: already-generated placement, playing itself on a clock of its
+# own.
 print("a timeline, two placed notes")
 tl = Timeline()
 tl.add(0.0, Event(degree=0, dur=0.5))

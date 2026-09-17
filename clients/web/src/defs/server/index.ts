@@ -59,7 +59,7 @@ import { OscFunc } from "../../responders.ts";
 import type { RenderOptions, RenderStats } from "../../render.ts";
 import { main } from "../../base/main.ts";
 import { Moment } from "../../base/moment.ts";
-import { MonotonicTimebase, SampleClockTimebase } from "../../base/timebase.ts";
+import { LogicalTimebase, MonotonicTimebase, SampleClockTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
 import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
@@ -209,6 +209,29 @@ export interface ServerBootOptions {
      * displaced. The reference client's `adopt_default`.
      */
     adoptDefault?: boolean;
+}
+
+/**
+ * The second of a score a moment falls on.
+ *
+ * A clock's moment is its beat through the map, from the clock's origin on the
+ * run's `LogicalTimebase`. A clockless one (`sendBundleAfter`) is a delay from
+ * the run's current second: the second the routine sending it was woken on, or
+ * 0 outside any routine.
+ *
+ * Never before the run's current second: a beat a `TempoClock.locate` has left
+ * behind wakes late, and a live server plays a past timetag now, so a score
+ * places it now too.
+ */
+function scoreSecs(when: Moment): number {
+    const clock = when.clock;
+    if (clock === null) {
+        const timebase = main.currentRoutine?.clock?.timebase;
+        return (timebase instanceof LogicalTimebase ? timebase.now() : 0) + when.beat;
+    }
+    const timebase = clock.timebase;
+    if (!(timebase instanceof LogicalTimebase)) return when.secs();
+    return Math.max((clock.pacingOrigin ?? 0) + when.secs(), timebase.now());
 }
 
 export class Server {
@@ -837,9 +860,9 @@ export class Server {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
         log.debug("-> bundle at beat %s: %s", when.beat ?? when, messages);
         if (this.scoring) {
-            // NRT: seconds from the render's start — logical, and independent
-            // of any timebase, since no wall clock is involved.
-            this.connection.addBundle!(when.secs(), toBundle(messages));
+            // NRT: seconds of the run's logical time — the moment's beat put
+            // through its clock, from that clock's origin on that time.
+            this.connection.addBundle!(scoreSecs(when), toBundle(messages));
             return;
         }
         const timebase = when.clock?.timebase;

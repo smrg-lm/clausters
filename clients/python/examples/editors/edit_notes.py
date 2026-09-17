@@ -85,7 +85,7 @@ editor = edit(timeline,
 # ## Play what was drawn
 #
 # The timeline is the one the script holds, so playing it needs nothing from the
-# editor: `clausters.seq.Timeline` plays itself on the session's clock.
+# editor: `clausters.seq.Timeline` plays itself, on a clock of its own.
 
 # %%
 def play():
@@ -94,9 +94,8 @@ def play():
     The **free-standing** verb, not `clausters.Session.play`: that one plays an
     event *pattern*, and this is a timeline. `clausters.play` dispatches on what
     the structure is — the same question `clausters.gui.edit` asked to open this
-    window — and hands a `clausters.seq.Timeline` to a
-    `clausters.seq.timeline.Playhead` over the ambient session's clock and
-    server.
+    window — and a `clausters.seq.Timeline` plays itself, on a clock of its own
+    and the ambient session's server.
     """
     clausters.play(timeline)
 

@@ -12,8 +12,10 @@ One clock, two drives:
   events using a **monotonic** pacing clock; the logical beat still advances
   only by the routines' ``yield``s, so inter-event timing is exact and the OSC
   timetags (stamped from a separate wall clock) carry that exactness.
-- `render` — non-real time: drain the queue in beat order with no
-  sleeping, advancing a logical clock; used to build a score.
+- `render` — non-real time: wake whatever is due next with no sleeping,
+  on a `LogicalTimebase` that stands in for physical time; used to build a
+  score. Every clock sharing that timebase is driven together, so a script
+  with several clocks runs offline exactly as it runs live.
 
 The clock does **not** talk to the server: it only schedules and exposes the
 current time (`beats`, `beats2secs`, `start_time`). Sending
@@ -33,7 +35,7 @@ import traceback
 
 from .. import _native
 from .stream import Stream, StopStream, resume
-from .timebase import MonotonicTimebase, SampleClockTimebase
+from .timebase import LogicalTimebase, MonotonicTimebase, SampleClockTimebase
 
 
 class TempoClock:
@@ -44,9 +46,9 @@ class TempoClock:
 
     - real time (`start` / `run`): a background thread sleeps between items,
       pacing against the `timebase`, and fires them live.
-    - non-real time (`render`): the queue is drained in beat order with no
-      sleeping, advancing a logical clock as fast as possible -- used to build
-      a score offline.
+    - non-real time (`render`): whatever is due next is woken with no
+      sleeping, on a `LogicalTimebase` that is the run's physical time --
+      used to build a score offline.
 
     The defining property is that the **logical beat advances only by the
     routines' ``yield``s**, never by wall-clock drift: a routine that yields
@@ -95,6 +97,8 @@ class TempoClock:
         #: events (NTP timetag vs ``/sched_at`` absolute sample).
         self.timebase = timebase if timebase is not None else MonotonicTimebase()
         self._now = self.timebase
+        if isinstance(self.timebase, LogicalTimebase):
+            self.timebase.join(self)
 
         #: the beat-ordered queue lives in the native core (`clausters-core`'s
         #: `Scheduler`); only beats and flat ids cross, and `_items` maps each
@@ -107,6 +111,12 @@ class TempoClock:
         self._mono_start = None       # pacing origin (monotonic)
         self._unix_start = None       # wall-clock origin for OSC timetags
         self._running = False
+        #: on a `LogicalTimebase`, whether `stop` has halted the clock: a render
+        #: drives a clock that is started and not halted.
+        self._halted = False
+        #: the beat a `locate` made from inside this clock's own wake moved to,
+        #: so the waking routine is requeued from there (see `_wake`).
+        self._located = None
         self._thread = None
         #: whether anything ever drove this clock (`start`, `run` or `render`).
         #: A queued routine on a clock nobody drives never runs and says
@@ -132,8 +142,9 @@ class TempoClock:
         # `get_default_clock`.
         from .main import main as _main
 
-        if _main.current_session is not None:
-            _main.current_session.adopt(self)
+        ambient = _main._ambient_session()
+        if ambient is not None:
+            ambient.adopt(self)
 
     # ---- beat/second math (native) ----
 
@@ -259,11 +270,70 @@ class TempoClock:
         running in RT (what scheduling relative to "now" reads), else the
         yield-driven logical beat — while rendering, before the first `start`,
         and after a `stop`, which holds the beat it reached."""
+        if isinstance(self.timebase, LogicalTimebase):
+            return self._offline_beats()
         if self._mode == "nrt" or not self._running or self._mono_start is None:
             return self._logical_beat
         if self._frozen_at is not None:
             return self.secs2beats(self._frozen_at - self._mono_start)
         return self.secs2beats(self._now() - self._mono_start)
+
+    def _offline_beats(self) -> float:
+        """`beats` on a `LogicalTimebase`: the exact beat while this clock is
+        being woken, the held beat while it is not placed or halted, and
+        otherwise the run's current second read through the map."""
+        tb = self.timebase
+        if tb.waking is self or self._halted or self._mono_start is None:
+            return self._logical_beat
+        if self._frozen_at is not None:
+            return self.secs2beats(self._frozen_at - self._mono_start)
+        return self.secs2beats(tb.now() - self._mono_start)
+
+    def locate(self, beat: float):
+        """Move the clock's logical beat to ``beat`` without moving physical
+        time: from here, ``beat`` falls on the physical now.
+
+        A stopped clock holds ``beat`` and the next `start` resumes there. A
+        running one places its origins so that ``beat`` is now, and the rest
+        follows from that rule rather than being prevented:
+
+        - what is queued keeps its absolute beat, so a locate forward wakes
+          every item due before ``beat`` at once, late, and a locate back makes
+          each wait the difference;
+        - bundles already sent inside the server's latency sound where they
+          were -- nothing recalls them;
+        - the tempo map does not change: a locate back before a tempo change
+          replays it, a locate forward enters the tempo there;
+        - `quant` on the clock's own grid follows the new beat (a joined grid is
+          the server's and does not), and timetags follow the origins;
+        - a frozen clock stays frozen, at ``beat``;
+        - from inside a routine on this clock, that routine's beat jumps and
+          its next ``yield`` counts from ``beat``.
+
+        Offline it is the same operation on the run's `LogicalTimebase`.
+        Returns ``self``.
+        """
+        from .main import main
+
+        beat = float(beat)
+        with self._cond:
+            secs = self.beats2secs(beat)
+            tb = self.timebase
+            if isinstance(tb, LogicalTimebase):
+                if self._mono_start is not None and not self._halted:
+                    now = self._frozen_at if self._frozen_at is not None else tb.now()
+                    self._mono_start = now - secs
+            elif self._running and self._mono_start is not None:
+                now = self._frozen_at if self._frozen_at is not None else self._now()
+                self._mono_start = now - secs
+                self._unix_start = time.time() - (self._now() - now) - secs
+            self._logical_beat = beat
+            routine = main.current_routine
+            if getattr(routine, "clock", None) is self:
+                routine._logical_beat = beat
+                self._located = beat
+            self._cond.notify_all()
+        return self
 
     @property
     def queued(self) -> int:
@@ -727,18 +797,30 @@ class TempoClock:
         The resumption itself is `clausters.base.stream.resume`, shared with the
         `clausters.base.appclock.AppClock` -- what is this clock's is the beat
         the routine is woken on and the requeue."""
+        self._located = None
         delta = resume(item, self, logical=beat)
+        located, self._located = self._located, None
         if delta is not None:
             with self._cond:
-                self._push(beat + float(delta), item)
+                base = beat if located is None else located
+                self._push(base + float(delta), item)
                 self._cond.notify()
 
     def render(self, until_beat: float | None = None, max_steps: int | None = None):
-        """NRT drive: process the queue in beat order without sleeping.
+        """NRT drive: wake whatever is due next, without sleeping.
 
-        Returns when the queue is empty (or the next event is past
-        ``until_beat``). Whatever the routines emit (through a Server) lands in
-        that Server's interface — here we only advance time and resume them.
+        Offline, physical time is a `LogicalTimebase` and every clock on it has
+        its origin there, as a live clock has its origin on the monotonic
+        clock. Rendering drives **every** clock of that time that is started --
+        this one is started by rendering it, at the run's current second -- in
+        the order their items fall in seconds, so a script with several clocks
+        renders as it plays. A clock with another timebase renders on a
+        logical time of its own, from its held beat.
+
+        Returns when nothing is due (or the next item falls after
+        ``until_beat``, a beat of this clock). Whatever the routines emit
+        (through a Server) lands in that Server's interface — here we only
+        advance time and resume them.
 
         ``max_steps`` bounds the number of **resumes**, raising once it is
         passed. It defaults to no bound, which is the right default: a long
@@ -748,26 +830,22 @@ class TempoClock:
         routine cannot report that itself: a routine that raises loses its own
         place and nothing else (see `_wake`), so a guard inside one is
         swallowed by design."""
-        self._mode = "nrt"
-        self._driven = True
-        self._logical_beat = 0.0
-        steps = 0
+        tb = self.timebase
+        saved = None
+        if not isinstance(tb, LogicalTimebase):
+            saved = (tb, self._now, self._mono_start, self._running, self._mode)
+            tb = LogicalTimebase(self.beats2secs(self._logical_beat))
+            self.timebase = self._now = tb
+            self._mono_start = None
+            tb.join(self)
+        if self._mono_start is None or self._halted:
+            self.start()
+        until = None if until_beat is None else self._mono_start + self.beats2secs(until_beat)
         try:
-            while True:
-                beat = self._queue.peek_time()
-                if beat is None or (until_beat is not None and beat > until_beat):
-                    break
-                steps += 1
-                if max_steps is not None and steps > max_steps:
-                    raise RuntimeError(
-                        f"render: still going after {max_steps} resumes — "
-                        f"the source does not end on its own"
-                    )
-                _, key = self._queue.pop_due(beat)
-                self._logical_beat = beat
-                self._wake(self._take(key), beat)
+            _drive_offline(tb, until, max_steps)
         finally:
-            self._mode = "stopped"
+            if saved is not None:
+                self.timebase, self._now, self._mono_start, self._running, self._mode = saved
         return self
 
     def start(self):
@@ -779,6 +857,16 @@ class TempoClock:
         accordingly — a beat's position in seconds is measured from the clock's
         own zero, so resuming at beat *b* puts the origins ``beats2secs(b)``
         seconds in the past."""
+        if isinstance(self.timebase, LogicalTimebase):
+            # Offline: no thread. The clock is placed on the run's current
+            # second, and a render drives it from there.
+            if self._mono_start is None or self._halted:
+                self._mono_start = self.timebase.now() - self.beats2secs(self._logical_beat)
+            self.timebase.join(self)
+            self._halted = False
+            self._running = True
+            self._driven = True
+            return self
         if self._running:
             return self
         self._mode = "rt"
@@ -798,6 +886,12 @@ class TempoClock:
         The beat the clock reached is **held**: `beats` keeps reporting it
         while stopped, and a later `start` resumes from it. What is queued
         stays queued (`clear` drops it)."""
+        if isinstance(self.timebase, LogicalTimebase):
+            with self._cond:
+                self._logical_beat = self.beats()
+                self._halted = True
+                self._running = False
+            return self
         with self._cond:
             # Freeze the beat first: from here `beats()` reports it, because
             # the clock is no longer running. The two origins are deliberately
@@ -836,3 +930,46 @@ class TempoClock:
                 item = self._take(key)
             # Outside the lock: emitting/sending must not block the queue.
             self._wake(item, beat)
+
+
+def _drive_offline(tb, until, max_steps):
+    """Wakes, in order of seconds, whatever is due across the clocks of the
+    logical time ``tb``: the one routine a non-real-time run has, from which
+    every clock's time is derived. Stops when nothing is due, or at the first
+    item after ``until`` seconds."""
+    steps = 0
+    try:
+        while True:
+            best = None
+            for clock in list(tb.clocks):
+                if clock._halted or clock._mono_start is None or clock._frozen_at is not None:
+                    continue
+                beat = clock._queue.peek_time()
+                if beat is None:
+                    continue
+                at = clock._mono_start + clock.beats2secs(beat)
+                if best is None or at < best[0]:
+                    best = (at, clock, beat)
+            if best is None or (until is not None and best[0] > until):
+                break
+            steps += 1
+            if max_steps is not None and steps > max_steps:
+                raise RuntimeError(
+                    f"render: still going after {max_steps} resumes — "
+                    f"the source does not end on its own"
+                )
+            at, clock, beat = best
+            tb.advance_to(at)
+            _, key = clock._queue.pop_due(beat)
+            clock._mode = "nrt"
+            clock._driven = True
+            clock._logical_beat = beat
+            waking, tb.waking = tb.waking, clock
+            try:
+                clock._wake(clock._take(key), beat)
+            finally:
+                tb.waking = waking
+    finally:
+        for clock in tb.clocks:
+            if clock._mode == "nrt":
+                clock._mode = "stopped"

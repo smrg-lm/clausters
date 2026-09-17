@@ -57,8 +57,8 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
     <!--
       The web sibling of clients/python/examples/notation/score_from_data.py,
       call for call: the timeline built in code, `sheetFromTimeline`, the
-      display list, the minimal transport over it, the playhead over the
-      *interpreted sheet*, and the by-hand cursor anchor (a `/clock_query` plus the server's
+      display list, the minimal transport over it, the *interpreted sheet*
+      played as a timeline, and the by-hand cursor anchor (a `/clock_query` plus the server's
       latency) that the script uses rather than the notation transport.
 
       The platform's differences are the usual two -- the host is the wasm one
@@ -70,15 +70,16 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       /examples/notation/score-from-data.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, loadCore, seq } from "../../dist/index.js";
+      import { Event, Session, TempoMap, gui, loadCore, seq } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // Two beats per second: the quarter = 120 the engraver times the page at,
-      // so score time and clock time are the same axis and the cursor is locked
-      // to the sound.
+      // Two beats per second: the quarter = 120 the engraver times the page at.
+      // It is the tempo of the timeline that plays the score, so score time and
+      // the timeline's time are the same axis and the cursor is locked to the
+      // sound.
       const TEMPO = 2.0;
 
       /**
@@ -157,21 +158,20 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
         const dl = score.displayList();
         log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
 
-        const session = await Session.embed({ tempo: TEMPO });
+        const session = await Session.embed();
         const server = session.server;
         const sr = (await server.queryInfo()).nominalSampleRate;
         await session.gui();
         const win = await scene(dl, sr).open($("stage"));
-        session.start();
 
         // Play the **score**, not the source timeline: what makes it the score
         // rather than a copy of the source is that the symbols are read, not
         // the events replayed.
-        const playhead = new seq.Playhead(
-          notation.toTimeline(sheet), session.clock, server);
+        const timeline = notation.toTimeline(sheet);
+        timeline.map = new TempoMap(TEMPO);
 
         win.widget("play").onClick(async () => {
-          playhead.play({ at: 0.0 });
+          timeline.play({ at: 0.0, destination: server });
           // anchor the cursor: the clock now, plus the play latency, is score 0
           const reply = await server.request("/clock_query", [],
             { expect: ["/clock_query.reply"] });
@@ -180,7 +180,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
           log("playing — the cursor follows the sound");
         });
         win.widget("stop").onClick(() => {
-          playhead.stop();
+          timeline.stop();
           win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
           log("stopped");
         });

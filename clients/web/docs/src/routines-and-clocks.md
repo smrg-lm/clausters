@@ -83,7 +83,7 @@ The seam is also what makes the layer testable: a test supplies its own ticker a
 
 ## Patterns, and the seekable form
 
-The routine is the forward-only form. Above it sit the same two layers as in the reference client — `Pbind` over the value patterns for the generative form, `Timeline` and its `Playhead` for the static, editable, seekable one:
+The routine is the forward-only form. Above it sit the same two layers as in the reference client — `Pbind` over the value patterns for the generative form, `Timeline`, which plays itself, for the static, editable, seekable one:
 
 ```js
 new seq.Pbind({

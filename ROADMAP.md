@@ -118,27 +118,8 @@ numbered **decisions to take** are each reviewed when the phase that needs it
 starts, never earlier. Every phase closes in both clients (decision 15), with
 tests, an example and the books.
 
-- ⬜ **Phase 2 — the `Timeline` core on its own clock.** Order: the base every
-  later phase builds on, fully designed. Carries out the tempo entry's
-  section "`Timeline` is a plan in logical time, and it plays itself" and the
-  `TempoClock` rule of decision 4, and retires the `Playhead` axis defect in
-  its defect list. Reviews decisions 1, 3 and 4 when it starts, and where the
-  semantics live (condition 2 of "Both ways of playing a timeline are valid,
-  and coexist": one implementation). Re-read before it starts, since each
-  involves a `Playhead` that becomes internal:
-  - "A pass re-cued from the playhead drops the clip the playhead is inside"
-    (`clients/python/PLAN.md`, Found by use; section 2 below).
-  - `C54`/`W31`, the events half (`clients/python/PLAN.md`;
-    `clients/web/PLAN.md`; section 4 below).
-  - "The mapping exists and is private to the `Editor`, so every example that
-    plays writes a worse one" (`clients/python/PLAN.md`, Future directions).
-  - "A roll that sounds shows no cursor, and what can drive the line is a
-    `Playhead`" (`clients/gui/PLAN.md`, Future directions).
-  - `follow_transport` and the conductor examples, which use a public
-    `Playhead` until Phase 5.
-
-- ⬜ **Phase 3 — views without tempo.** Order: after Phase 2, since a view
-  draws a timeline's data. Carries out the tempo entry's "The fixed principle:
+- ⬜ **Phase 3 — views without tempo.** Order: first, now that a timeline
+  holds its own map, since a view draws a timeline's data. Carries out the tempo entry's "The fixed principle:
   an editor represents and edits a structure's data, and holds none of it" and
   "Decided: a view holds no tempo, no clock and no tempo map". Reviews
   decisions 9, 10 and 6, and the new name of `gui.Transport` (decision 7).
@@ -150,16 +131,20 @@ tests, an example and the books.
   `crates/clausters-document/PLAN.md`'s multitrack and the `X` applications
   built on it (`crates/clausters-apps/PLAN.md`).
 
-- ⬜ **Phase 5 — a timeline on a server's transport.** Order: after Phase 2,
-  and after "Several transports on one server, to play concurrently" (root
-  `PLAN.md`, Future directions) has been looked at, since it decides how the
-  property names a transport. Carries out the tempo entry's "Following a
+- ⬜ **Phase 5 — a timeline on a server's transport.** Order: after "Several
+  transports on one server, to play concurrently" (root `PLAN.md`, Future
+  directions) has been looked at, since it decides how the property names a
+  transport. Carries out the tempo entry's "Following a
   server transport" and "Both ways of playing a timeline are valid, and
   coexist". Reviews decisions 7 and 6, and re-reads `T2` (root `PLAN.md`, T
-  track; section 4 below), which names the grid decision 6 is about.
+  track; section 4 below), which names the grid decision 6 is about. Moves the
+  last public `Playhead` users the tempo entry's Phase 2 status names --
+  `follow_transport`, the conductor examples and
+  `clients/web/examples/transport/sequencing.html`, whose live tempo slider
+  reviews decision 2 first.
 
-- ⬜ **Phase 6 — scores and render.** Order: after Phase 2 (a score becomes a
-  timeline) and Phase 5 (it can then follow a transport). Reviews the tempo
+- ⬜ **Phase 6 — scores and render.** Order: after Phase 5 (a score becomes a
+  timeline, which can then follow a transport). Reviews the tempo
   entry's decisions 5 and 12.
 
 - ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have

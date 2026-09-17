@@ -39,6 +39,7 @@ import {
 import { main } from "./main.ts";
 import type { SessionLike } from "./main.ts";
 import type { Server } from "../defs/server/index.ts";
+import { LogicalTimebase } from "./timebase.ts";
 import type { Timebase } from "./timebase.ts";
 import type { TickReply, TickRequest } from "./tick-worker.ts";
 
@@ -359,13 +360,24 @@ export class TempoClock {
     /** The timebase instant `freeze` held the beat at, or `null` when running. */
     private frozenAt: number | null = null;
     private pumping = false;
+    /**
+     * On a `LogicalTimebase`, whether `stop` has halted the clock: a render
+     * drives a clock that is started and not halted.
+     */
+    private halted = false;
+    /**
+     * The beat a `locate` made from inside this clock's own wake moved to, so
+     * the waking routine is requeued from there (see `wake`).
+     */
+    private located: number | null = null;
 
     constructor(tempo = 1.0, { timebase, ticker, tempoMap, name }: TempoClockOptions = {}) {
         this.name = name ?? null;
         this.tempoMapHeld = tempoMap ?? new TempoMap(tempo);
         this.timebase = timebase ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();
-        main.currentSession?.adopt?.(this);
+        if (this.timebase instanceof LogicalTimebase) this.timebase.join(this);
+        main.ambientSession()?.adopt?.(this);
     }
 
     // ---- beat/second math (through the core) ----
@@ -417,11 +429,71 @@ export class TempoClock {
      * reached.
      */
     beats(): number {
+        const timebase = this.timebase;
+        if (timebase instanceof LogicalTimebase) {
+            // Offline: the exact beat while this clock is being woken, the held
+            // beat while it is not placed or halted, and otherwise the run's
+            // current second read through the map.
+            if (timebase.waking === this || this.halted || this.monoStart === null) {
+                return this.logicalBeat;
+            }
+            if (this.frozenAt !== null) return this.secs2beats(this.frozenAt - this.monoStart);
+            return this.secs2beats(timebase.now() - this.monoStart);
+        }
         if (!this.running || this.monoStart === null) return this.logicalBeat;
         if (this.frozenAt !== null) {
             return this.secs2beats(this.frozenAt - this.monoStart);
         }
         return this.secs2beats(this.timebase.now() - this.monoStart);
+    }
+
+    /**
+     * Moves the clock's logical beat to `beat` without moving physical time:
+     * from here, `beat` falls on the physical now.
+     *
+     * A stopped clock holds `beat` and the next `start` resumes there. A
+     * running one places its origins so that `beat` is now, and the rest
+     * follows from that rule rather than being prevented:
+     *
+     * - what is queued keeps its absolute beat, so a locate forward wakes every
+     *   item due before `beat` at once, late, and a locate back makes each wait
+     *   the difference;
+     * - bundles already sent inside the server's latency sound where they were
+     *   — nothing recalls them;
+     * - the tempo map does not change: a locate back before a tempo change
+     *   replays it, a locate forward enters the tempo there;
+     * - `quant` on the clock's own grid follows the new beat (a joined grid is
+     *   the server's and does not), and timetags follow the origins;
+     * - a frozen clock stays frozen, at `beat`;
+     * - from inside a routine on this clock, that routine's beat jumps and its
+     *   next `yield` counts from `beat`.
+     *
+     * Offline it is the same operation on the run's `LogicalTimebase`.
+     */
+    locate(beat: number): this {
+        const secs = this.beats2secs(beat);
+        const timebase = this.timebase;
+        if (timebase instanceof LogicalTimebase) {
+            if (this.monoStart !== null && !this.halted) {
+                this.monoStart = (this.frozenAt ?? timebase.now()) - secs;
+            }
+        } else if (this.running && this.monoStart !== null) {
+            const nowTb = timebase.now();
+            const at = this.frozenAt ?? nowTb;
+            this.monoStart = at - secs;
+            this.unixStart = Date.now() / 1000 - (nowTb - at) - secs;
+        }
+        this.logicalBeat = beat;
+        const routine = currentRoutine();
+        if (routine !== null && routine.clock === this) {
+            routine.logicalBeat = beat;
+            this.located = beat;
+        }
+        if (!(timebase instanceof LogicalTimebase)) {
+            this.ticker.cancel();
+            this.wakeSoon();
+        }
+        return this;
     }
 
     // ---- the freeze gate (a server transport's pause, reaching the clock) ----
@@ -910,6 +982,17 @@ export class TempoClock {
      * position.)
      */
     start(): this {
+        if (this.timebase instanceof LogicalTimebase) {
+            // Offline: no ticker. The clock is placed on the run's current
+            // second, and a render drives it from there.
+            if (this.monoStart === null || this.halted) {
+                this.monoStart = this.timebase.now() - this.beats2secs(this.logicalBeat);
+            }
+            this.timebase.join(this);
+            this.halted = false;
+            this.running = true;
+            return this;
+        }
         if (this.running) return this;
         this.running = true;
         this.mode = "rt";
@@ -926,15 +1009,21 @@ export class TempoClock {
     }
 
     /**
-     * The **offline drive**: resumes everything queued in beat order, with no
-     * sleeping and no wall clock at all, and returns when the queue is empty
-     * (or the next item is past `untilBeat`).
+     * The **offline drive**: wakes whatever is due next, with no sleeping and
+     * no wall clock at all.
      *
-     * This is the same driver the real-time one runs — the same `wake`, the
-     * same yield-accumulated logical beat — with the waiting taken out. What
-     * the routines emit lands wherever their `Server` puts it; against a
-     * score carrier that is a score, which is what makes a piece written for
-     * a live take renderable without changing a line of it.
+     * Offline, physical time is a `LogicalTimebase` and every clock on it has
+     * its origin there, as a live clock has its origin on the monotonic clock.
+     * Rendering drives **every** clock of that time that is started — this one
+     * is started by rendering it, at the run's current second — in the order
+     * their items fall in seconds, so a script with several clocks renders as
+     * it plays. A clock with another timebase renders on a logical time of its
+     * own, from its held beat.
+     *
+     * Returns when nothing is due (or the next item falls after `untilBeat`, a
+     * beat of this clock). What the routines emit lands wherever their `Server`
+     * puts it; against a score carrier that is a score, which is what makes a
+     * piece written for a live take renderable without changing a line of it.
      *
      * `untilBeat` is required for an endless source: an infinite pattern
      * never drains on its own, and nothing here is watching a clock to stop
@@ -953,30 +1042,63 @@ export class TempoClock {
      * for as long as it takes and then returns, the way a long loop does.
      */
     render(untilBeat?: number, { maxSteps }: { maxSteps?: number } = {}): this {
-        this.mode = "nrt";
-        this.logicalBeat = 0;
-        let steps = 0;
+        let saved: [Timebase, number | null, boolean, typeof this.mode] | null = null;
+        let timebase: LogicalTimebase;
+        if (this.timebase instanceof LogicalTimebase) {
+            timebase = this.timebase;
+        } else {
+            saved = [this.timebase, this.monoStart, this.running, this.mode];
+            timebase = new LogicalTimebase(this.beats2secs(this.logicalBeat));
+            this.timebase = timebase;
+            this.monoStart = null;
+            timebase.join(this);
+        }
+        if (this.monoStart === null || this.halted) this.start();
+        const until = untilBeat === undefined
+            ? undefined
+            : this.monoStart! + this.beats2secs(untilBeat);
         try {
-            for (;;) {
-                const beat = this.queue.peekTime();
-                if (beat === undefined) break;
-                if (untilBeat !== undefined && beat > untilBeat) break;
-                if (maxSteps !== undefined && ++steps > maxSteps) {
-                    throw new Error(
-                        `render: still going after ${maxSteps} resumes — ` +
-                            "the source does not end on its own",
-                    );
-                }
-                const due = this.queue.popDue(beat);
-                if (due === undefined) break;
-                const item = this.take(due[1]!);
-                this.logicalBeat = due[0]!;
-                if (item !== null) this.wake(item, due[0]!);
-            }
+            driveOffline(timebase, until, maxSteps);
         } finally {
-            this.mode = "stopped";
+            if (saved !== null) {
+                [this.timebase, this.monoStart, this.running, this.mode] = saved;
+            }
         }
         return this;
+    }
+
+    /**
+     * One step of an offline run, for `driveOffline`: the second this clock's
+     * next item falls on, or `undefined` when it has nothing due to wake.
+     *
+     * @internal
+     */
+    offlineDue(): number | undefined {
+        if (this.halted || this.monoStart === null || this.frozenAt !== null) return undefined;
+        const beat = this.queue.peekTime();
+        return beat === undefined ? undefined : this.monoStart + this.beats2secs(beat);
+    }
+
+    /**
+     * Wakes this clock's next item, for `driveOffline`, which has already moved
+     * the run's time onto it.
+     *
+     * @internal
+     */
+    offlineWake(): void {
+        const beat = this.queue.peekTime();
+        if (beat === undefined) return;
+        const due = this.queue.popDue(beat);
+        if (due === undefined) return;
+        const item = this.take(due[1]!);
+        this.mode = "nrt";
+        this.logicalBeat = due[0]!;
+        if (item !== null) this.wake(item, due[0]!);
+    }
+
+    /** @internal */
+    offlineDone(): void {
+        if (this.mode === "nrt") this.mode = "stopped";
     }
 
     /**
@@ -985,6 +1107,12 @@ export class TempoClock {
      * reset.
      */
     stop(): this {
+        if (this.timebase instanceof LogicalTimebase) {
+            this.logicalBeat = this.beats();
+            this.halted = true;
+            this.running = false;
+            return this;
+        }
         // Freeze the beat first: from here `beats()` reports it, because the
         // clock is no longer running. The two origins are deliberately kept —
         // they stay the correct origins of the beat axis a later `start`
@@ -1009,7 +1137,7 @@ export class TempoClock {
      * its own wake) are absorbed — the loop re-reads the queue anyway.
      */
     private pump(): void {
-        if (!this.running || this.pumping) return;
+        if (!this.running || this.pumping || this.timebase instanceof LogicalTimebase) return;
         this.pumping = true;
         try {
             for (;;) {
@@ -1036,11 +1164,52 @@ export class TempoClock {
     /** Resumes `item` at `beat`, rescheduling it by whatever delay it asks for. */
     private wake(item: Schedulable, beat: number): void {
         this.logicalBeat = beat;
+        this.located = null;
         // `resume` is the shared one, so the musical clock and the application's
         // cannot come to mean different things by "drive a routine" -- including
         // what a raising one costs, which is its own place in the schedule and
         // nothing else.
         const delta = resume(item, this, { logical: beat });
-        if (delta !== undefined) this.push(beat + delta, item);
+        const located = this.located;
+        this.located = null;
+        if (delta !== undefined) this.push((located ?? beat) + delta, item);
+    }
+}
+
+/**
+ * Wakes, in order of seconds, whatever is due across the clocks of the logical
+ * time `timebase`: the one routine a non-real-time run has, from which every
+ * clock's time is derived. Stops when nothing is due, or at the first item
+ * after `until` seconds.
+ */
+function driveOffline(timebase: LogicalTimebase, until: number | undefined, maxSteps: number | undefined): void {
+    let steps = 0;
+    try {
+        for (;;) {
+            let best: [number, TempoClock] | null = null;
+            for (const held of [...timebase.clocks]) {
+                const clock = held as TempoClock;
+                const at = clock.offlineDue();
+                if (at !== undefined && (best === null || at < best[0])) best = [at, clock];
+            }
+            if (best === null || (until !== undefined && best[0] > until)) break;
+            if (maxSteps !== undefined && ++steps > maxSteps) {
+                throw new Error(
+                    `render: still going after ${maxSteps} resumes — ` +
+                        "the source does not end on its own",
+                );
+            }
+            const [at, clock] = best;
+            timebase.advanceTo(at);
+            const waking = timebase.waking;
+            timebase.waking = clock;
+            try {
+                clock.offlineWake();
+            } finally {
+                timebase.waking = waking;
+            }
+        }
+    } finally {
+        for (const held of timebase.clocks) (held as TempoClock).offlineDone();
     }
 }

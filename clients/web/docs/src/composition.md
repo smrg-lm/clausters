@@ -1,6 +1,6 @@
 # Composition: the arrangement, and the document under it
 
-A `Timeline` places items at beats and a `Playhead` plays them. That is enough to
+A `Timeline` places items at beats and plays them. That is enough to
 sequence, but not enough to *compose*: a composition is not a flat list of events,
 it is an element inside an element — a phrase inside a section inside a piece, a
 take placed against a melody, a generator that has not been evaluated yet.

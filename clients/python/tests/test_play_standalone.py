@@ -17,7 +17,7 @@ from clausters.defs.ugens import (
 from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
 from clausters.seq.pattern import Pbind, Pseq
-from clausters.seq.timeline import Playhead, Timeline
+from clausters.seq.timeline import Timeline
 from clausters.defs import Buffer
 
 
@@ -232,15 +232,20 @@ def test_free_play_instances_a_def_with_controls(clean_default):
 
 
 def test_free_play_plays_a_timeline(clean_default):
-    server = _nrt_server()
-    main.server = server
-    tl = Timeline()
-    tl.add(0.0, Event(degree=0, dur=0.5))
-    tl.add(1.0, Event(degree=2, dur=0.5))
-    playhead = play(tl, clock=main.get_default_clock(start=False))
-    assert isinstance(playhead, Playhead)
-    main.default_clock.render()
-    assert len(server.interface.score.bundles) == 4   # two notes, two releases
+    # A timeline plays on a clock of its own, which offline shares the
+    # session's logical time: rendering the session drives it.
+    from clausters import Session
+
+    session = Session.nrt().activate()
+    try:
+        tl = Timeline()
+        tl.add(0.0, Event(degree=0, dur=0.5))
+        tl.add(1.0, Event(degree=2, dur=0.5))
+        assert play(tl) is tl
+        session.clock.render()
+        assert len(session.server.interface.score.bundles) == 4   # two notes, two releases
+    finally:
+        session.deactivate()
 
 
 def test_play_rejects_an_arrangement_element_with_a_pointer_to_render(clean_default):

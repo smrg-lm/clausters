@@ -32,7 +32,7 @@ The three carry one semantic each, and the split is deliberate:
 | an event `Pattern` (a `Pbind`) | schedules it on a clock | the `EventStreamPlayer` |
 | a `Routine`/`Stream`, or a bare generator | schedules it on a clock | the routine |
 | a def, or a bare expression (`Ugen` / `ChannelList` / `Signal`) | sends it and instances it | the node handle |
-| a `Timeline` | a `Playhead` over the ambient clock and server | the playhead |
+| a `Timeline` | plays it on its own clock, on the ambient server | the timeline |
 | an `Automation` | triggers its lane and maps its targets | the automation |
 | a `Buffer` | sounds it through the stock playbuf instrument | the synth |
 

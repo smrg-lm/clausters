@@ -40,7 +40,8 @@ from .moment import Moment
 from .netaddr import NetAddr
 from .rand import Rng, choice, current_rng, next_below, next_f64, seed, spawn_rng, uniform
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
-from .timebase import ManualTimebase, MonotonicTimebase, SampleClockTimebase, Timebase
+from .timebase import (LogicalTimebase, ManualTimebase, MonotonicTimebase,
+                       SampleClockTimebase, Timebase)
 from ._midiinterface import (
     MidiNrtInterface,
     MidiReceiver,
@@ -66,6 +67,7 @@ __all__ = [
     "TempoMap",
     "Timebase",
     "MonotonicTimebase",
+    "LogicalTimebase",
     "ManualTimebase",
     "SampleClockTimebase",
     "Environment",

@@ -127,7 +127,8 @@ the instrument, and everything else the author put on it.</div>
         // The **free-standing** verb, not `session.play`: that one plays an
         // event *pattern*, and this is a timeline. `play` dispatches on what the
         // structure is -- the same question `edit` asked to open this window --
-        // and hands a `Timeline` to a `Playhead` over the ambient session.
+        // and a `Timeline` plays itself, on a clock of its own and the ambient
+        // session's server.
         $("play").onclick = () => play(timeline);
 
         // The script's ending: there `wait()` blocks so the process stays alive
