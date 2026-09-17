@@ -88,8 +88,11 @@ nobody took. That is written down, as an open item, and the bug is not. Closing
 a checkbox that was **already** open is the other case and stays right: that
 entry was pending, and it keeps the record of what was wrong.
 
-The five sections, and the line between them:
+The six sections, and the line between them:
 
+0. **Do first** — a working sequence taken ahead of everything below, because
+   what it changes is read by several entries below. Its phases name the
+   entries they carry out; what each phase does is in those entries.
 1. **Fixes** — something is wrong, missing or duplicated, and what to do about
    it is already known. No decision stands in front of the work.
 2. **Fixes that need a decision first** — the same kind of small work, except
@@ -102,6 +105,78 @@ The five sections, and the line between them:
    otherwise closed, again split by whether a decision comes first.
 5. **Tracks not started, or incomplete** — whole tracks, named and referred to
    their plan, not enumerated here.
+
+---
+
+## 0. Do first
+
+The time design worked out on 2026-09-16 and 17. Its content, its decisions
+and their positions are all in one entry, **"Nothing fundamental holds the
+tempo map, so every structure that needs it reaches for a scalar"**
+(`clients/python/PLAN.md`, Found by use) -- "the tempo entry" below, whose
+numbered **decisions to take** are each reviewed when the phase that needs it
+starts, never earlier. Every phase closes in both clients (decision 15), with
+tests, an example and the books.
+
+- ⬜ **Phase 1 — independent fixes, no decision.** Order: first, since nothing
+  depends on anything else. Carries out:
+  - "An automation's lane is freed on a beat length computed from one tempo"
+    (`clients/python/PLAN.md`, Found by use; section 1 below) -- the scalar
+    fix only; `Automation`'s place in the frame is the tempo entry's decision
+    13 and waits.
+  - The type renames of **"piece" names no structure, yet it names types,
+    variables, a wire word and prose** (`clients/python/PLAN.md`, Found by use):
+    `PiecePlayback`, `PiecePosition` and the test doubles. The wire word and
+    the prose wait for Phase 7.
+
+- ⬜ **Phase 2 — the `Timeline` core on its own clock.** Order: the base every
+  later phase builds on, fully designed. Carries out the tempo entry's
+  section "`Timeline` is a plan in logical time, and it plays itself" and the
+  `TempoClock` rule of decision 4, and retires the `Playhead` axis defect in
+  its defect list. Reviews decisions 1, 3 and 4 when it starts, and where the
+  semantics live (condition 2 of "Both ways of playing a timeline are valid,
+  and coexist": one implementation). Re-read before it starts, since each
+  involves a `Playhead` that becomes internal:
+  - "A pass re-cued from the playhead drops the clip the playhead is inside"
+    (`clients/python/PLAN.md`, Found by use; section 2 below).
+  - `C54`/`W31`, the events half (`clients/python/PLAN.md`;
+    `clients/web/PLAN.md`; section 4 below).
+  - "The mapping exists and is private to the `Editor`, so every example that
+    plays writes a worse one" (`clients/python/PLAN.md`, Future directions).
+  - "A roll that sounds shows no cursor, and what can drive the line is a
+    `Playhead`" (`clients/gui/PLAN.md`, Future directions).
+  - `follow_transport` and the conductor examples, which use a public
+    `Playhead` until Phase 5.
+
+- ⬜ **Phase 3 — views without tempo.** Order: after Phase 2, since a view
+  draws a timeline's data. Carries out the tempo entry's "The fixed principle:
+  an editor represents and edits a structure's data, and holds none of it" and
+  "Decided: a view holds no tempo, no clock and no tempo map". Reviews
+  decisions 9, 10 and 6, and the new name of `gui.Transport` (decision 7).
+
+- ⬜ **Phase 4 — the multitrack in seconds.** Order: independent of Phase 3 in
+  code, after it in reading, since both remove tempo from where it does not
+  belong. Carries out the tempo entry's decision 8 (a multitrack's base is
+  seconds) and reviews decision 11 (one unit). Touches
+  `crates/clausters-document/PLAN.md`'s multitrack and the `X` applications
+  built on it (`crates/clausters-apps/PLAN.md`).
+
+- ⬜ **Phase 5 — a timeline on a server's transport.** Order: after Phase 2,
+  and after "Several transports on one server, to play concurrently" (root
+  `PLAN.md`, Future directions) has been looked at, since it decides how the
+  property names a transport. Carries out the tempo entry's "Following a
+  server transport" and "Both ways of playing a timeline are valid, and
+  coexist". Reviews decisions 7 and 6, and re-reads `T2` (root `PLAN.md`, T
+  track; section 4 below), which names the grid decision 6 is about.
+
+- ⬜ **Phase 6 — scores and render.** Order: after Phase 2 (a score becomes a
+  timeline) and Phase 5 (it can then follow a transport). Reviews the tempo
+  entry's decisions 5 and 12.
+
+- ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have
+  settled. Carries out the rest of **"piece" names no structure, yet it names
+  types, variables, a wire word and prose** (the wire word `"piece"` and the
+  prose) and reviews the tempo entry's decision 14.
 
 ---
 
@@ -162,23 +237,8 @@ on each one; none of them is being taken by this file.
   time across the client: a frame, a `Timeline` design, and fifteen decisions
   to take, each to be reviewed when it is taken up. All of it is read there.
 
-  **What to take first needs no decision:** the `Timeline` core on its own
-  clock, in both clients -- the internal clock and map, `play`/`locate`/
-  `pause`/`stop`, nesting with one parent and `copy()`, a parent's length
-  covering its children's -- which also retires the `Playhead` axis defect
-  the entry lists. Everything else (a timeline on a server's transport, a
-  timeline editor, the views without tempo) is built on it, and each of the
-  entry's decisions is taken when the work that needs it arrives.
-
-  **What it touches, in this file.** The automation fix in section 1 is one
-  of its decisions and can still land alone. The re-cued pass that drops a
-  clip (below), `C54`/`W31`'s events half, "The mapping exists and is private
-  to the `Editor`" and "A roll that sounds shows no cursor" all involve a
-  `Playhead` that becomes internal, so each is re-read against the core before
-  it is taken. `T2` names the server's grid, whose future is one of the
-  decisions. Two entries it produced live elsewhere: "piece" names no
-  structure (`clients/python/PLAN.md`, Found by use) and several transports on
-  one server (root `PLAN.md`, Future directions).
+  **Its work is sequenced in section 0**, "Do first", phase by phase, with the
+  entries of this file each phase re-reads.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
