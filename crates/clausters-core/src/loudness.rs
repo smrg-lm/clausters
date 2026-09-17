@@ -838,7 +838,7 @@ impl Profile {
     }
 
     /// **Re-measures the span an edit touched**, and the filters' settling
-    /// after it: the blocks from `start` to [`WARMUP_SECONDS`] past the end of
+    /// after it: the blocks from `start` to `WARMUP_SECONDS` past the end of
     /// the edit are read again, with the filters warmed over the same span
     /// before them, and the running sums are rebuilt from there. Returns whether it landed (the run
     /// has to be inside the samples this profile describes).

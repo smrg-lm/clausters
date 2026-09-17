@@ -15,7 +15,7 @@
 //! says otherwise, drawn as a line the way a loudness track draws it.
 //!
 //! **The curve is not measured here.** It is read off the
-//! [`Profile`](clausters_core::loudness::Profile) the element measured at its
+//! [`Profile`] the element measured at its
 //! mutation points, through the one renderer every signal against time is drawn
 //! by ([`trace::draw_channel`]) — with a vertical map in LU instead of the
 //! picture's own, which is the only difference between drawing this and drawing
