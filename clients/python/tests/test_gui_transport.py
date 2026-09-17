@@ -449,7 +449,7 @@ def test_an_ungoverned_pause_still_stops_the_playhead():
 
 # ---- the piece: the server owns the position, and the host reads it ----
 
-class PieceServer(FakeServer):
+class TransportServer(FakeServer):
     """A server whose transport is the piece's: it records the commands and
     answers where it is."""
 
@@ -477,7 +477,7 @@ class PieceServer(FakeServer):
         return dict(self.state)
 
 
-class PieceHost(FakeHost):
+class HeadClockHost(FakeHost):
     """A host that also records `head_clock`."""
 
     def __init__(self):
@@ -489,16 +489,16 @@ class PieceHost(FakeHost):
 
 
 def piece_transport(host=None, server=None):
-    host = PieceHost() if host is None else host
+    host = HeadClockHost() if host is None else host
     tp = Transport(host, 7, head_clock="piece", tempo=TEMPO, sample_rate=SR)
-    tp.server = PieceServer() if server is None else server
+    tp.server = TransportServer() if server is None else server
     return tp
 
 
 def test_a_piece_transport_tells_the_host_which_counter_to_draw():
     """The two halves of one decision, so they cannot disagree: the client stops
     computing the line and the host starts reading the piece's position."""
-    host = PieceHost()
+    host = HeadClockHost()
     tp = piece_transport(host)
     assert host.head == "piece"
     # And the anchor is 0, because the counter already *is* the piece's time.
@@ -562,10 +562,10 @@ def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
         cued.append(at)
         return None
 
-    host = PieceHost()
+    host = HeadClockHost()
     tp = Transport(host, 7, head_clock="piece", source=source,
                    tempo=TEMPO, sample_rate=SR)
-    tp.server = PieceServer()
+    tp.server = TransportServer()
     tp.play()
     assert cued == [0.0]
     tp.locate(2.0)

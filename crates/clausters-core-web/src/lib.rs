@@ -1521,17 +1521,17 @@ impl JsStepRunner {
 /// **One piece, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps (JSON).
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = PiecePlayback)]
-pub struct JsPiecePlayback(clausters_editing::playback::PiecePlayback);
+#[wasm_bindgen(js_name = MultitrackPlayback)]
+pub struct JsMultitrackPlayback(clausters_editing::playback::MultitrackPlayback);
 
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_class = PiecePlayback)]
-impl JsPiecePlayback {
+#[wasm_bindgen(js_class = MultitrackPlayback)]
+impl JsMultitrackPlayback {
     /// A playback; `chunk` is how many samples one fill carries. Where the
     /// piece is made and how the transport is bound are the crate's.
     #[wasm_bindgen(constructor)]
-    pub fn new(chunk: usize) -> JsPiecePlayback {
-        JsPiecePlayback(clausters_editing::playback::PiecePlayback::new(
+    pub fn new(chunk: usize) -> JsMultitrackPlayback {
+        JsMultitrackPlayback(clausters_editing::playback::MultitrackPlayback::new(
             clausters_editing::apply::Endpoint {
                 chunk: chunk.max(1),
             },

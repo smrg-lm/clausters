@@ -380,7 +380,7 @@ test("a transport with no host clock keeps update manual", async () => {
 
 /** A server whose transport is the piece's: records the commands, answers where
  * it is. */
-class PieceServer {
+class TransportServer {
     calls: unknown[][] = [];
     state = { playing: false, positionSample: 0, loop: null as unknown };
 
@@ -410,7 +410,7 @@ class PieceServer {
 }
 
 /** A host that also records `headClock`. */
-class PieceHost extends FakeHost {
+class HeadClockHost extends FakeHost {
     head: string | null = null;
 
     headClock(which: string): void {
@@ -418,20 +418,20 @@ class PieceHost extends FakeHost {
     }
 }
 
-function pieceTransport(host?: PieceHost): Transport {
-    const tp = new Transport((host ?? new PieceHost()) as unknown as GuiHost, 7, {
+function pieceTransport(host?: HeadClockHost): Transport {
+    const tp = new Transport((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
         headClock: "piece",
         tempo: TEMPO,
         sampleRate: SR,
     });
-    tp.server = new PieceServer() as unknown as Server;
+    tp.server = new TransportServer() as unknown as Server;
     return tp;
 }
 
 test("a piece transport tells the host which counter to draw", async () => {
     // The two halves of one decision, so they cannot disagree: the client stops
     // computing the line and the host starts reading the piece's position.
-    const host = new PieceHost();
+    const host = new HeadClockHost();
     const tp = pieceTransport(host);
     assert.equal(host.head, "piece");
     await tp.play();
@@ -440,7 +440,7 @@ test("a piece transport tells the host which counter to draw", async () => {
 
 test("a piece transport's verbs are the server's", async () => {
     const tp = pieceTransport();
-    const server = tp.server as unknown as PieceServer;
+    const server = tp.server as unknown as TransportServer;
     await tp.play();
     tp.pause();
     tp.locate(3.0);
@@ -458,7 +458,7 @@ test("a piece transport reads where it is instead of keeping it", async () => {
     // The whole point: the position is the engine's, so a locate nobody here
     // sent -- a loop's wrap, another client's seek -- is still where it says.
     const tp = pieceTransport();
-    const server = tp.server as unknown as PieceServer;
+    const server = tp.server as unknown as TransportServer;
     server.state.positionSample = Math.trunc(5 * BEAT);
     server.state.playing = true;
     assert.equal(tp.position, 0.0, "nothing was asked yet, so nothing is known yet");
@@ -471,7 +471,7 @@ test("a locate while the piece plays does not re-cue anything", async () => {
     // A device-clock transport throws the pass away and starts another; the
     // piece's seeks in the engine, so the sound carries on from there.
     const tp = pieceTransport();
-    const server = tp.server as unknown as PieceServer;
+    const server = tp.server as unknown as TransportServer;
     await tp.play();
     server.calls.length = 0;
     tp.locate(4.0);
@@ -480,7 +480,7 @@ test("a locate while the piece plays does not re-cue anything", async () => {
 
 test("a piece transport loops in the engine", () => {
     const tp = pieceTransport();
-    const server = tp.server as unknown as PieceServer;
+    const server = tp.server as unknown as TransportServer;
     tp.loop(1.0, 3.0);
     assert.deepEqual(server.calls.at(-1), [
         "loop",
@@ -495,7 +495,7 @@ test("a piece still cues a pass of voices, and only on a locate", async () => {
     // no pass, and what fires voices does -- so a source is still called, and a
     // locate cues it again while nothing re-cues on an edit.
     const cued: number[] = [];
-    const host = new PieceHost();
+    const host = new HeadClockHost();
     const tp = new Transport(host as unknown as GuiHost, 7, {
         headClock: "piece",
         source: (at) => {
@@ -505,7 +505,7 @@ test("a piece still cues a pass of voices, and only on a locate", async () => {
         tempo: TEMPO,
         sampleRate: SR,
     });
-    tp.server = new PieceServer() as unknown as Server;
+    tp.server = new TransportServer() as unknown as Server;
     await tp.play();
     assert.deepEqual(cued, [0.0]);
     tp.locate(2.0);

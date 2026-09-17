@@ -1499,7 +1499,7 @@ class StepRunner:
         return json.loads(raw) if raw else {}
 
 
-class PiecePlayback:
+class MultitrackPlayback:
     """**One piece, as it is playing** (`clausters_editing_playback_*`): its
     instance, its applier and its transport, answering every verb as steps.
 

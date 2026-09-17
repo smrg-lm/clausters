@@ -3974,7 +3974,13 @@ work, where a pending item reads as done.)*
     transport's position in samples, a quantity of the transport and not of any
     structure, and becomes `TransportPosition` -- beside `TransportSample`, the
     transport's clock, so the pair reads as clock and position, and matching
-    the `TransportPos` UGen and `positionSample` on the wire. The test doubles `PieceServer`/`PieceHost` follow what they fake.
+    the `TransportPos` UGen and `positionSample` on the wire. The test doubles
+    `PieceServer`/`PieceHost` follow what they fake. **Renamed 2026-09-17**:
+    `MultitrackPlayback` (its wasm class too; the C symbols never carried the
+    word), `TransportPosition`, and the doubles `TransportServer` (a server
+    that answers for its transport) and `HeadClockHost` (a host that records
+    `head_clock`). Variables holding them, the wire word and the prose still
+    say "piece".
   - **A wire word.** `"piece"` in `/gui_headClock`, `--clock piece` and
     `Transport(head_clock="piece")` means "draw from the transport's position";
     it is protocol, so its rename goes through `docs/gui-protocol.md`, the host

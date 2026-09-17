@@ -341,7 +341,7 @@ export class Instance {
  * **One piece, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
-export class PiecePlayback {
+export class MultitrackPlayback {
     free(): void;
     [Symbol.dispose](): void;
     /**
@@ -1583,7 +1583,7 @@ export interface InitOutput {
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
-    readonly __wbg_pieceplayback_free: (a: number, b: number) => void;
+    readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -1668,6 +1668,19 @@ export interface InitOutput {
     readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly multitrackplayback_beatsToSamples: (a: number, b: number) => number;
+    readonly multitrackplayback_close: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_cue: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_locate: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_meters: (a: number) => [number, number];
+    readonly multitrackplayback_new: (a: number) => number;
+    readonly multitrackplayback_pause: (a: number) => [number, number];
+    readonly multitrackplayback_play: (a: number) => [number, number];
+    readonly multitrackplayback_rolling: (a: number) => number;
+    readonly multitrackplayback_samplesToBeats: (a: number, b: number) => number;
+    readonly multitrackplayback_setRolling: (a: number, b: number) => void;
+    readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1676,19 +1689,6 @@ export interface InitOutput {
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
     readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
     readonly patchCompile: (a: number, b: number) => [number, number, number, number];
-    readonly pieceplayback_beatsToSamples: (a: number, b: number) => number;
-    readonly pieceplayback_close: (a: number, b: number) => [number, number];
-    readonly pieceplayback_cue: (a: number, b: number) => [number, number];
-    readonly pieceplayback_locate: (a: number, b: number) => [number, number];
-    readonly pieceplayback_meters: (a: number) => [number, number];
-    readonly pieceplayback_new: (a: number) => number;
-    readonly pieceplayback_pause: (a: number) => [number, number];
-    readonly pieceplayback_play: (a: number) => [number, number];
-    readonly pieceplayback_rolling: (a: number) => number;
-    readonly pieceplayback_samplesToBeats: (a: number, b: number) => number;
-    readonly pieceplayback_setRolling: (a: number, b: number) => void;
-    readonly pieceplayback_stop: (a: number, b: number) => [number, number];
-    readonly pieceplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pointsProps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;

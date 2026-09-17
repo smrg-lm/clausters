@@ -2,7 +2,7 @@
 //! releases.
 //!
 //! [`Applier`](crate::apply::Applier) and
-//! [`PiecePlayback`](crate::playback::PiecePlayback) answer [`Step`]s -- a
+//! [`MultitrackPlayback`](crate::playback::MultitrackPlayback) answer [`Step`]s -- a
 //! message, a `/done` the rest waits for, a barrier -- and say nothing about how
 //! they are walked. Every endpoint walked them its own way: the Python client
 //! paired a send with a blocking request, the web client awaited, and the GUI

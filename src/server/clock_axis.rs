@@ -11,7 +11,7 @@
 //! [`TransportSample::to_device`], which both take the frozen total explicitly.
 //!
 //! Beside them is a third quantity that is **not a clock**: the
-//! [`PiecePosition`], where the transport is in the piece. A clock counts
+//! [`TransportPosition`], where the transport is in the piece. A clock counts
 //! what has happened and only goes forward; a position says where you are and
 //! moves wherever a locate puts it. Keeping them apart is what lets a
 //! scheduler stay on an axis that cannot jump while a playhead sits on one
@@ -32,7 +32,7 @@ pub struct DeviceSample(u64);
 /// It is monotonic, which is what the transport scheduler queue needs — "due"
 /// only means anything on an axis that cannot jump. It is therefore *not*
 /// where the piece is: a locate leaves this untouched. That is
-/// [`PiecePosition`].
+/// [`TransportPosition`].
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct TransportSample(u64);
 
@@ -46,7 +46,7 @@ pub struct TransportSample(u64);
 /// Non-negative, like the clocks: locating before the start of the piece
 /// clamps to 0.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct PiecePosition(u64);
+pub struct TransportPosition(u64);
 
 /// What ties the piece's position to the transport clock: the position the
 /// transport was last located to, and the transport sample it was located at.
@@ -60,7 +60,7 @@ pub struct PiecePosition(u64);
 /// ramp.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub struct PositionAnchor {
-    position: PiecePosition,
+    position: TransportPosition,
     since: TransportSample,
 }
 
@@ -113,7 +113,7 @@ impl TransportSample {
     }
 }
 
-impl PiecePosition {
+impl TransportPosition {
     pub const fn new(samples: u64) -> Self {
         Self(samples)
     }
@@ -134,7 +134,7 @@ impl PiecePosition {
 
 impl PositionAnchor {
     /// The anchor a locate to `position` at transport sample `now` produces.
-    pub const fn located(position: PiecePosition, now: TransportSample) -> Self {
+    pub const fn located(position: TransportPosition, now: TransportSample) -> Self {
         Self {
             position,
             since: now,
@@ -147,7 +147,7 @@ impl PositionAnchor {
     /// transport clock does not run backwards), and saturating there means a
     /// wrong call reads as the anchor rather than as a position near `u64::MAX`
     /// — which is the same choice [`DeviceSample::to_transport`] makes.
-    pub const fn at(self, now: TransportSample) -> PiecePosition {
+    pub const fn at(self, now: TransportSample) -> TransportPosition {
         self.position
             .saturating_add(now.saturating_sub_axis(self.since))
     }
@@ -157,7 +157,7 @@ impl PositionAnchor {
     /// a loop's end.
     pub const fn reaching(
         self,
-        position: PiecePosition,
+        position: TransportPosition,
         now: TransportSample,
     ) -> Option<TransportSample> {
         let ahead = position.saturating_sub_axis(self.at(now));
@@ -170,7 +170,7 @@ impl PositionAnchor {
 
     /// Re-anchored at `now` without moving the piece: the same position, tied
     /// to a fresh transport sample. What a loop wrap and a resume both do.
-    pub const fn wrapped_to(self, position: PiecePosition, now: TransportSample) -> Self {
+    pub const fn wrapped_to(self, position: TransportPosition, now: TransportSample) -> Self {
         Self::located(position, now)
     }
 }
@@ -179,7 +179,7 @@ impl PositionAnchor {
 /// on. Half-open — the end sample is the first one *not* played, so a loop of
 /// `0..n` over an `n`-sample take plays every sample exactly once and joins
 /// its own start with no repeated frame.
-pub type Loop = Range<PiecePosition>;
+pub type Loop = Range<TransportPosition>;
 
 #[cfg(test)]
 mod tests {
@@ -221,9 +221,15 @@ mod tests {
     /// The anchor's whole job: the position advances one per transport sample.
     #[test]
     fn the_position_advances_with_the_transport_clock() {
-        let a = PositionAnchor::located(PiecePosition::new(1_000), TransportSample::new(500));
-        assert_eq!(a.at(TransportSample::new(500)), PiecePosition::new(1_000));
-        assert_eq!(a.at(TransportSample::new(564)), PiecePosition::new(1_064));
+        let a = PositionAnchor::located(TransportPosition::new(1_000), TransportSample::new(500));
+        assert_eq!(
+            a.at(TransportSample::new(500)),
+            TransportPosition::new(1_000)
+        );
+        assert_eq!(
+            a.at(TransportSample::new(564)),
+            TransportPosition::new(1_064)
+        );
     }
 
     /// A locate moves the piece and leaves the clock alone -- the distinction
@@ -232,48 +238,48 @@ mod tests {
     #[test]
     fn a_locate_moves_the_position_and_not_the_clock() {
         let now = TransportSample::new(48_000);
-        let before = PositionAnchor::located(PiecePosition::new(0), TransportSample::new(0));
-        assert_eq!(before.at(now), PiecePosition::new(48_000));
-        let after = PositionAnchor::located(PiecePosition::new(10), now);
-        assert_eq!(after.at(now), PiecePosition::new(10));
+        let before = PositionAnchor::located(TransportPosition::new(0), TransportSample::new(0));
+        assert_eq!(before.at(now), TransportPosition::new(48_000));
+        let after = PositionAnchor::located(TransportPosition::new(10), now);
+        assert_eq!(after.at(now), TransportPosition::new(10));
     }
 
     /// What the engine asks in order to cut a block at a loop's end.
     #[test]
     fn reaching_reports_the_transport_sample_a_position_arrives_at() {
-        let a = PositionAnchor::located(PiecePosition::new(100), TransportSample::new(0));
+        let a = PositionAnchor::located(TransportPosition::new(100), TransportSample::new(0));
         let now = TransportSample::new(10);
         assert_eq!(
-            a.reaching(PiecePosition::new(150), now),
+            a.reaching(TransportPosition::new(150), now),
             Some(TransportSample::new(50)),
             "the piece is at 110, so 40 samples to play and 40 of the clock"
         );
         assert_eq!(
-            a.reaching(PiecePosition::new(110), now),
+            a.reaching(TransportPosition::new(110), now),
             None,
             "already there: a loop end at the current position is not ahead"
         );
-        assert_eq!(a.reaching(PiecePosition::new(0), now), None, "behind");
+        assert_eq!(a.reaching(TransportPosition::new(0), now), None, "behind");
     }
 
     /// A wrap re-anchors without the position drifting: the sample after the
     /// last one of the loop is the loop's first, not the one after it.
     #[test]
     fn a_wrap_re_anchors_on_the_loop_start() {
-        let a = PositionAnchor::located(PiecePosition::new(0), TransportSample::new(0));
+        let a = PositionAnchor::located(TransportPosition::new(0), TransportSample::new(0));
         let end = a
-            .reaching(PiecePosition::new(64), TransportSample::new(0))
+            .reaching(TransportPosition::new(64), TransportSample::new(0))
             .expect("ahead");
-        let wrapped = a.wrapped_to(PiecePosition::new(0), end);
-        assert_eq!(wrapped.at(end), PiecePosition::new(0));
-        assert_eq!(wrapped.at(end.saturating_add(1)), PiecePosition::new(1));
+        let wrapped = a.wrapped_to(TransportPosition::new(0), end);
+        assert_eq!(wrapped.at(end), TransportPosition::new(0));
+        assert_eq!(wrapped.at(end.saturating_add(1)), TransportPosition::new(1));
     }
 
     /// A read before the anchor cannot happen; if it did it must not read as a
     /// position near `u64::MAX`, for the reason the frozen-total test gives.
     #[test]
     fn a_read_before_the_anchor_saturates_at_the_anchor() {
-        let a = PositionAnchor::located(PiecePosition::new(7), TransportSample::new(500));
-        assert_eq!(a.at(TransportSample::new(100)), PiecePosition::new(7));
+        let a = PositionAnchor::located(TransportPosition::new(7), TransportSample::new(500));
+        assert_eq!(a.at(TransportSample::new(100)), TransportPosition::new(7));
     }
 }

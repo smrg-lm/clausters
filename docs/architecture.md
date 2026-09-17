@@ -206,7 +206,7 @@ A transport that *stops time* (`/transport_group`) puts a second counter beside 
 
 **Frozen time is credited at the sample the transport flips**, inside the block-cut loop, not a whole block at a time at the block boundary. A stop and a resume both land mid-block, so flat-block accounting loses `(stop offset - resume offset)` samples per cycle and the error accumulates without bound. Crediting at the flip also keeps `frozen_total` correct *during* a block, which is what the transport queue's projection reads.
 
-**A clock is not a position, and the third quantity is the one an editor wants.** Both counters above are monotonic — that is what makes them clocks, and what the transport queue needs, since "due" only means anything on an axis that cannot jump. Neither of them says where the piece *is*: `/transport_locate` must be able to move that, and moving a clock is not a thing. So `PiecePosition` sits beside the two in `server::clock_axis`, a type again for the same reason they are, and it is **anchored rather than accumulated** — `PositionAnchor` holds the position a locate put it at and the transport sample that locate landed on, so a read is one add, a seek is one store, and the per-sample path costs nothing. A loop is the same store: the engine cuts its block at the wrap exactly as it cuts at a scheduled bundle, which keeps the position linear inside every slice, so the `TransportPos` UGen a buffer reader follows just ramps and never has to know a loop exists. A wrap landing on the block boundary belongs to *that* block, because the position published at a block's end is what the next block's first sample plays.
+**A clock is not a position, and the third quantity is the one an editor wants.** Both counters above are monotonic — that is what makes them clocks, and what the transport queue needs, since "due" only means anything on an axis that cannot jump. Neither of them says where the piece *is*: `/transport_locate` must be able to move that, and moving a clock is not a thing. So `TransportPosition` sits beside the two in `server::clock_axis`, a type again for the same reason they are, and it is **anchored rather than accumulated** — `PositionAnchor` holds the position a locate put it at and the transport sample that locate landed on, so a read is one add, a seek is one store, and the per-sample path costs nothing. A loop is the same store: the engine cuts its block at the wrap exactly as it cuts at a scheduled bundle, which keeps the position linear inside every slice, so the `TransportPos` UGen a buffer reader follows just ramps and never has to know a loop exists. A wrap landing on the block boundary belongs to *that* block, because the position published at a block's end is what the next block's first sample plays.
 
 The engine keeps a second queue, `sched_transport`, whose entries live on the transport axis; the block is cut by whichever queue falls due first, compared in device samples, and a stopped transport can never reach its own queue — **the pause freezes the queue by never letting it fall due, without rewriting anything in it**. Ties go to the device queue: a fixed preference, since cross-queue enqueue order is not recoverable at fire time (a transport entry's device time is not fixed when it is enqueued), and device-first makes an empty transport queue indistinguishable from a single queue over the device axis.
 
@@ -836,7 +836,7 @@ the two halves that are genuinely per-language; everything between them is the
 crate's.
 
 **Playing a piece is one object, and it sends nothing.**
-`clausters_editing::playback::PiecePlayback` holds a piece's instance (the
+`clausters_editing::playback::MultitrackPlayback` holds a piece's instance (the
 difference between what a server holds and what the piece says), its applier
 (every operation as the messages it is, allocating from the endpoint's
 `IdSpaces`) and its transport: the tempo a piece that states none is read at
@@ -845,7 +845,7 @@ pause, stop and cue send, and the zeroed meters of a paused piece. Every verb
 answers **steps** — a message, a `/done` the rest waits for, a barrier — and
 the endpoint sends them and waits where they say. A standalone GUI host holds it
 directly (`host/instance.rs`, draining the steps from its reply path); the
-clients hold it through `clausters_editing_playback_*` / `PiecePlayback`, behind
+clients hold it through `clausters_editing_playback_*` / `MultitrackPlayback`, behind
 their own `Playback`. So a session edited with no script behind it and a piece
 edited from a script are played by the same program, and the only thing each
 endpoint writes is its socket.

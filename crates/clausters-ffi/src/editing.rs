@@ -438,7 +438,7 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
 /// **One piece, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps. Free it with
 /// [`clausters_editing_playback_free`].
-pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::PiecePlayback>);
+pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::MultitrackPlayback>);
 
 /// A new playback; `chunk` is how many samples one `/buffer_setRange` carries.
 /// Where it makes the piece and how it binds the transport are the crate's, the
@@ -446,9 +446,9 @@ pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::PiecePlayba
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_playback_new(chunk: usize) -> *mut FfiPlayback {
     use clausters_editing::apply::Endpoint;
-    use clausters_editing::playback::PiecePlayback;
+    use clausters_editing::playback::MultitrackPlayback;
     Box::into_raw(Box::new(FfiPlayback(std::sync::Mutex::new(
-        PiecePlayback::new(Endpoint {
+        MultitrackPlayback::new(Endpoint {
             chunk: chunk.max(1),
         }),
     ))))
@@ -478,7 +478,7 @@ unsafe fn playback_verb(
     p: *mut FfiPlayback,
     out: *mut u8,
     out_cap: usize,
-    verb: impl FnOnce(&mut clausters_editing::playback::PiecePlayback) -> String,
+    verb: impl FnOnce(&mut clausters_editing::playback::MultitrackPlayback) -> String,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
     let Some(playback) = (unsafe { p.as_ref() }) else {
@@ -507,7 +507,7 @@ unsafe fn playback_ids_verb(
     out: *mut u8,
     out_cap: usize,
     verb: impl FnOnce(
-        &mut clausters_editing::playback::PiecePlayback,
+        &mut clausters_editing::playback::MultitrackPlayback,
         &mut clausters_core::ids::IdSpaces,
     ) -> String,
 ) -> usize {

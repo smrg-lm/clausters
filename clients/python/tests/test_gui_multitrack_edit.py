@@ -870,7 +870,7 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     """**What is left in a client is a socket, and waiting on it.**
 
     What a piece needs, the messages that carry it out and how it is played are
-    the crate's (`clausters._native.PiecePlayback`), and so is which reply
+    the crate's (`clausters._native.MultitrackPlayback`), and so is which reply
     releases what (`clausters._native.StepRunner`), tested there because they
     are one implementation for every endpoint. This is the other half: the
     message a step waits on goes out as the request whose reply is handed back,
@@ -909,7 +909,7 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     assert kinds == [("request", "/buffer_alloc"), ("send", "/buffer_setRange"),
                      ("request", "/server_sync")], "the fill waits for the allocation"
 
-    piece = _native.PiecePlayback()
+    piece = _native.MultitrackPlayback()
     playback.server.log.clear()
     playback._run(piece.locate(2.0))
     (entry,) = playback.server.log

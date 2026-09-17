@@ -27,7 +27,7 @@ use crate::dsp::{
     TransportCtx,
 };
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, Reject, SynthNode};
-use crate::server::clock_axis::{DeviceSample, PiecePosition, PositionAnchor, TransportSample};
+use crate::server::clock_axis::{DeviceSample, PositionAnchor, TransportPosition, TransportSample};
 use crate::server::device_epoch::DeviceEpoch;
 use crate::server::ipc::Segment;
 use crate::server::meters::{Meters, Role};
@@ -717,7 +717,7 @@ impl Engine {
     }
 
     /// Where the piece is at the cursor.
-    fn position_here(&self) -> PiecePosition {
+    fn position_here(&self) -> TransportPosition {
         self.position.at(self.transport_here())
     }
 
@@ -731,7 +731,7 @@ impl Engine {
         let span = self.transport_loop.as_ref()?;
         let here = self.transport_here();
         self.position
-            .reaching(PiecePosition::new(span.end), here)
+            .reaching(TransportPosition::new(span.end), here)
             .map(|t| t.to_device(self.frozen_total).get())
     }
 
@@ -957,7 +957,7 @@ impl Engine {
                 let start = self.transport_loop.as_ref().map_or(0, |span| span.start);
                 self.position = self
                     .position
-                    .wrapped_to(PiecePosition::new(start), self.transport_here());
+                    .wrapped_to(TransportPosition::new(start), self.transport_here());
                 continue;
             }
             // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
@@ -1208,7 +1208,7 @@ impl Engine {
                     // position is anchored rather than accumulated, so this
                     // is the whole of a seek on the audio thread.
                     self.position = PositionAnchor::located(
-                        PiecePosition::new(position),
+                        TransportPosition::new(position),
                         self.transport_here(),
                     );
                 }

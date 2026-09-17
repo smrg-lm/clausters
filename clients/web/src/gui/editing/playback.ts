@@ -10,7 +10,7 @@
  * and what is already sounding, the messages that carry it out and **how the
  * piece is played** — the tempo a piece that states none is read at, the sample
  * a beat is when the transport is located, what play, pause, stop and cue send,
- * and that a paused meter is zeroed — are `PiecePlayback`, in the shared crate.
+ * and that a paused meter is zeroed — are `MultitrackPlayback`, in the shared crate.
  * The GUI host playing a session with no page behind it holds the same object,
  * so the two are one program. What is left here is what a language genuinely
  * owns: a socket, and waiting on it.
@@ -36,7 +36,7 @@
  * @module
  */
 
-import { PiecePlayback, StepRunner } from "../../core/clausters_core_web.js";
+import { MultitrackPlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
 import { runSteps } from "../../steps.ts";
 import type { Step } from "../../steps.ts";
@@ -55,7 +55,7 @@ export class Playback {
      * The piece as it is playing — the crate's, as the host's is. Made in
      * `prepare`, which knows how many samples one fill may carry on this server.
      */
-    private piece: PiecePlayback | null = null;
+    private piece: MultitrackPlayback | null = null;
     /**
      * The steps not carried out yet — the crate's walk, as the script's and the
      * GUI host's are. Made in `prepare`, beside the playback.
@@ -98,7 +98,7 @@ export class Playback {
      * they can be waited for.
      */
     async prepare(): Promise<this> {
-        this.piece = new PiecePlayback(await this.server.bulkChunk());
+        this.piece = new MultitrackPlayback(await this.server.bulkChunk());
         this.runner = new StepRunner();
         // Node ids come back on their `/node_end`, which only a registered
         // client hears.

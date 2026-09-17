@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { multitrackPlan, PiecePlayback, StepRunner } from "../src/core/clausters_core_web.js";
+import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clausters_core_web.js";
 import {
     MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
@@ -946,7 +946,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
     // **What is left in a client is a socket, and waiting on it.**
     //
     // What a piece needs, the messages that carry it out and how it is played
-    // are the crate's (`PiecePlayback`), and so is which reply releases what
+    // are the crate's (`MultitrackPlayback`), and so is which reply releases what
     // (`StepRunner`), tested there because they are one implementation for
     // every endpoint. This is the other half: the message a step waits on goes
     // out as the request whose reply is handed back, a barrier included, and a
@@ -986,7 +986,7 @@ test("the playback sends the crate's steps and waits where they say", async () =
         "the fill waits for the allocation",
     );
 
-    const piece = new PiecePlayback(8192);
+    const piece = new MultitrackPlayback(8192);
     log.length = 0;
     await held.run(piece.locate(2.0));
     assert.equal(log.length, 1);

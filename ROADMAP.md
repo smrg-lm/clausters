@@ -118,13 +118,6 @@ numbered **decisions to take** are each reviewed when the phase that needs it
 starts, never earlier. Every phase closes in both clients (decision 15), with
 tests, an example and the books.
 
-- ⬜ **Phase 1 — independent fixes, no decision.** Order: first, since nothing
-  depends on anything else. Carries out:
-  - The type renames of **"piece" names no structure, yet it names types,
-    variables, a wire word and prose** (`clients/python/PLAN.md`, Found by use):
-    `PiecePlayback`, `PiecePosition` and the test doubles. The wire word and
-    the prose wait for Phase 7.
-
 - ⬜ **Phase 2 — the `Timeline` core on its own clock.** Order: the base every
   later phase builds on, fully designed. Carries out the tempo entry's
   section "`Timeline` is a plan in logical time, and it plays itself" and the

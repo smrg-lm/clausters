@@ -44,7 +44,7 @@ use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::SourceId;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_editing::apply::{Endpoint, Step};
-use clausters_editing::playback::PiecePlayback;
+use clausters_editing::playback::MultitrackPlayback;
 use clausters_editing::run::{Reply, Runner, Server};
 
 use crate::host::diag;
@@ -84,7 +84,7 @@ pub struct Playing {
     /// The instance, the applier and the transport — the crate's, as every
     /// endpoint holds it. Made on the first sync, and it makes the transport's
     /// group itself.
-    piece: Option<PiecePlayback>,
+    piece: Option<MultitrackPlayback>,
     /// The steps not carried out yet, across both servers — the crate's walk.
     run: Runner,
 }
@@ -95,22 +95,26 @@ impl Playing {
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
         self.piece
             .as_ref()
-            .map_or_else(Vec::new, PiecePlayback::meters)
+            .map_or_else(Vec::new, MultitrackPlayback::meters)
     }
 
     /// Whether anything is playing at all.
     pub fn is_sounding(&self) -> bool {
-        self.piece.as_ref().is_some_and(PiecePlayback::is_sounding)
+        self.piece
+            .as_ref()
+            .is_some_and(MultitrackPlayback::is_sounding)
     }
 
     /// How many nodes the piece is holding.
     pub fn nodes(&self) -> usize {
-        self.piece.as_ref().map_or(0, PiecePlayback::node_count)
+        self.piece
+            .as_ref()
+            .map_or(0, MultitrackPlayback::node_count)
     }
 
     /// Whether the transport was last told to roll the piece.
     pub fn rolling(&self) -> bool {
-        self.piece.as_ref().is_some_and(PiecePlayback::rolling)
+        self.piece.as_ref().is_some_and(MultitrackPlayback::rolling)
     }
 
     /// The playback, made the first time.
@@ -120,9 +124,9 @@ impl Playing {
     /// it. The take monitor's readers go inside that group too
     /// ([`Host::monitor_group`]), so one transport starts, stops and locates
     /// both.
-    fn playback(&mut self) -> &mut PiecePlayback {
+    fn playback(&mut self) -> &mut MultitrackPlayback {
         self.piece
-            .get_or_insert_with(|| PiecePlayback::new(Endpoint::default()))
+            .get_or_insert_with(|| MultitrackPlayback::new(Endpoint::default()))
     }
 }
 
@@ -258,7 +262,12 @@ impl Host {
         if let Some(group) = self.governed {
             return Some(group);
         }
-        let Some(transport) = self.instance.piece.as_ref().and_then(PiecePlayback::group) else {
+        let Some(transport) = self
+            .instance
+            .piece
+            .as_ref()
+            .and_then(MultitrackPlayback::group)
+        else {
             return self.govern_transport();
         };
         let monitor = self.alloc_nodes(1)?;
@@ -635,7 +644,7 @@ mod tests {
             playing
                 .piece
                 .as_ref()
-                .and_then(PiecePlayback::group)
+                .and_then(MultitrackPlayback::group)
                 .map(OscType::Int),
             Some(bound.args[0].clone())
         );
@@ -749,7 +758,7 @@ mod tests {
             .instance
             .piece
             .as_ref()
-            .and_then(PiecePlayback::group)
+            .and_then(MultitrackPlayback::group)
             .expect("the piece made its transport's group");
         let monitor = host.monitor_group().expect("a group for the monitor");
         assert_ne!(monitor, transport);

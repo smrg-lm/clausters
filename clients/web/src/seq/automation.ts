@@ -124,7 +124,7 @@ export function envGenArgs(env: Env): MsgArg[] {
  *
  * ```ts
  * const auto = Automation.fromPoints(
- *     [[0, 200.0, "lin", 0], [2, 4000.0, "exp", 0]],
+ *     [[0, 200.0, 2, 0], [2, 4000.0, 1, 0]],   // shape 2: exponential
  *     [synth, "cutoff"]);
  * await auto.prepare(server);   // at setup: this is the half that waits
  * timeline.add(0, auto);        // played by the Playhead as a timeline item

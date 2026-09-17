@@ -90,7 +90,7 @@ class Automation:
     Usage::
 
         auto = Automation.from_points(
-            [(0, 200.0, "lin", 0), (2, 4000.0, "exp", 0)],
+            [(0, 200.0, 2, 0), (2, 4000.0, 1, 0)],  # shape 2: exponential
             target=(synth, "cutoff"))
         auto.prepare(server)          # RT: at setup, off the clock thread
         timeline.add(0, auto)         # played by the Playhead as a Timeline item

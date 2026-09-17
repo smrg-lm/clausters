@@ -18,7 +18,7 @@
 //! locate is one `/transport_locateSample` and nothing is re-cued; what this
 //! keeps is whether it last told the transport to roll, which is what a cue
 //! asks, and a caller that learns otherwise (another client rolled it) says so
-//! with [`PiecePlayback::set_rolling`].
+//! with [`MultitrackPlayback::set_rolling`].
 
 use std::collections::HashMap;
 
@@ -43,10 +43,10 @@ pub const DEFAULT_BPM: f64 = 60.0;
 
 /// **One piece, as it is playing.**
 #[derive(Debug, Clone)]
-pub struct PiecePlayback {
+pub struct MultitrackPlayback {
     instance: Instance,
     applier: Applier,
-    /// The piece's beat → second map, as of the last [`PiecePlayback::sync`].
+    /// The piece's beat → second map, as of the last [`MultitrackPlayback::sync`].
     tempo: TempoMap,
     /// The rate the piece was last planned at.
     rate: f64,
@@ -54,11 +54,11 @@ pub struct PiecePlayback {
     rolling: bool,
 }
 
-impl PiecePlayback {
+impl MultitrackPlayback {
     /// A playback that has made nothing yet, carrying out its steps for
     /// `endpoint`.
-    pub fn new(endpoint: Endpoint) -> PiecePlayback {
-        PiecePlayback {
+    pub fn new(endpoint: Endpoint) -> MultitrackPlayback {
+        MultitrackPlayback {
             instance: Instance::new(),
             applier: Applier::new(endpoint),
             tempo: TempoMap::new(DEFAULT_BPM / 60.0),
@@ -228,10 +228,10 @@ pub fn answer_json(steps: Result<Vec<Step>, IdError>) -> String {
     }
 }
 
-/// [`PiecePlayback::sync`] over JSON: the piece as the document's own JSON and
+/// [`MultitrackPlayback::sync`] over JSON: the piece as the document's own JSON and
 /// the source table as [`crate::instance::sources_table`] reads it.
 pub fn sync_json(
-    playback: &mut PiecePlayback,
+    playback: &mut MultitrackPlayback,
     piece: &str,
     rate: f64,
     sources: &str,
@@ -246,8 +246,8 @@ pub fn sync_json(
     answer_json(playback.sync(&piece, rate, &table, gain, ids))
 }
 
-/// [`PiecePlayback::meters`] as JSON: `[{"track", "bus", "channels"}]`.
-pub fn meters_json(playback: &PiecePlayback) -> String {
+/// [`MultitrackPlayback::meters`] as JSON: `[{"track", "bus", "channels"}]`.
+pub fn meters_json(playback: &MultitrackPlayback) -> String {
     Value::Array(
         playback
             .meters()
@@ -290,7 +290,7 @@ mod tests {
     /// locate is that tempo's sample.
     #[test]
     fn a_locate_is_the_beat_s_sample_at_the_piece_s_tempo() {
-        let mut playback = PiecePlayback::new(Endpoint::default());
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
         playback
             .sync(&piece(), 48_000.0, &HashMap::new(), 1.0, &mut spaces())
             .unwrap();
@@ -331,7 +331,7 @@ mod tests {
     /// a stop goes back to the mark.
     #[test]
     fn a_cue_waits_for_a_stopped_transport_and_a_stop_returns_to_the_mark() {
-        let mut playback = PiecePlayback::new(Endpoint::default());
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
         assert_eq!(addrs(&playback.cue(1.0)), ["/transport_locateSample"]);
         assert_eq!(addrs(&playback.play()), ["/transport_play"]);
         assert!(
@@ -351,7 +351,7 @@ mod tests {
     /// is not a piece.
     #[test]
     fn the_json_doors_answer_steps_or_an_error() {
-        let mut playback = PiecePlayback::new(Endpoint::default());
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
         let answer: Value = serde_json::from_str(&answer_json(Ok(playback.locate(1.0)))).unwrap();
         assert_eq!(answer["steps"][0]["send"]["args"][0], json!({"h": 48_000}));
         let refused: Value = serde_json::from_str(&sync_json(

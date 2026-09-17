@@ -9,7 +9,7 @@ shared core's; which of them a given piece needs, the difference between that
 and what is already sounding, the messages that carry it out and **how the piece
 is played** -- the tempo a piece that states none is read at, the sample a beat
 is when the transport is located, what play, pause, stop and cue send, and that a
-paused meter is zeroed -- are `clausters._native.PiecePlayback`, in the shared
+paused meter is zeroed -- are `clausters._native.MultitrackPlayback`, in the shared
 crate. The GUI host playing a session with no script behind it holds the same
 object, so the two are one program. What is left here is what a language
 genuinely owns: a socket, and waiting on it.
@@ -61,7 +61,7 @@ class Playback:
         self.server = server
         self.gain = float(gain)
         #: The piece as it is playing -- the crate's, as the host's is.
-        self._piece = _native.PiecePlayback(chunk=server._bulk_chunk())
+        self._piece = _native.MultitrackPlayback(chunk=server._bulk_chunk())
         #: The steps not carried out yet -- the crate's walk, as the page's and
         #: the GUI host's are.
         self._runner = _native.StepRunner()
